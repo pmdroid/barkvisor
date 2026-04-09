@@ -1,0 +1,91 @@
+# SwiftLint configuration for BarkVisor
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - frontend
+
+# Rules
+disabled_rules:
+  - trailing_comma           # Style preference — we allow trailing commas
+  - todo                     # TODOs are fine during development
+  - nesting                  # Vapor controllers often nest DTOs
+  - opening_brace            # SwiftFormat handles this
+  - multiline_arguments      # SwiftFormat handles wrapping
+
+opt_in_rules:
+  - empty_count              # Prefer .isEmpty over .count == 0
+  - closure_spacing          # Consistent spacing in closures
+  - contains_over_first_not_nil
+  - fatal_error_message      # Require message in fatalError()
+  - first_where              # Prefer .first(where:) over .filter().first
+  - force_unwrapping         # Flag force unwraps
+  - implicitly_unwrapped_optional # Flag IUOs
+  - multiline_arguments      # Consistent multiline function calls
+  - overridden_super_call
+  - private_action
+  - private_outlet
+  - redundant_nil_coalescing
+  - sorted_first_last        # Prefer .min()/.max() over .sorted().first/.last
+  - unowned_variable_capture # Prefer weak over unowned
+  - vertical_whitespace_closing_braces
+
+# Tuning
+line_length:
+  warning: 150
+  error: 250
+  ignores_urls: true
+  ignores_function_declarations: false
+
+type_body_length:
+  warning: 400
+  error: 700
+
+file_length:
+  warning: 500
+  error: 1400
+
+function_body_length:
+  warning: 80
+  error: 220
+
+function_parameter_count:
+  warning: 5
+  error: 20
+
+cyclomatic_complexity:
+  warning: 15
+  error: 40
+
+large_tuple:
+  warning: 4
+  error: 6
+
+type_name:
+  excluded:
+    - VM                       # VM is a well-known abbreviation
+  allowed_symbols: ["_"]       # Migration types use underscores (M001_CreateUsers)
+
+identifier_name:
+  min_length: 1
+  excluded:
+    - id
+    - db
+    - vm
+    - ip
+    - ci
+    - fd
+    - n
+    - i
+    - s
+
+# Test files commonly use force unwraps, force casts, and IUOs for brevity
+force_unwrapping:
+  severity: warning
+force_cast:
+  severity: warning
+implicitly_unwrapped_optional:
+  severity: warning

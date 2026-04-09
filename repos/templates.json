@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "slug": "pi-hole",
+      "name": "Pi-hole",
+      "description": "Network-wide DNS ad blocker. Lightweight and effective.",
+      "category": "networking",
+      "icon": "shield",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "diskSizeGB": 8,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 80,
+          "guestPort": 80,
+          "httpPath": "/admin/login"
+        },
+        { "protocol": "udp", "hostPort": 53, "guestPort": 53 }
+      ],
+      "networkMode": "bridged",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "pihole",
+          "required": true,
+          "placeholder": "pihole"
+        },
+        {
+          "id": "password",
+          "label": "Web Admin Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Admin panel password",
+          "minLength": 6
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - mkdir -p /etc/pihole\n  - |\n    cat > /etc/pihole/setupVars.conf <<PVEOF\n    PIHOLE_INTERFACE=eth0\n    QUERY_LOGGING=true\n    INSTALL_WEB_SERVER=true\n    INSTALL_WEB_INTERFACE=true\n    LIGHTTPD_ENABLED=true\n    WEBPASSWORD=$(echo -n {{password}} | sha256sum | awk '{print $1}' | sha256sum | awk '{print $1}')\n    BLOCKING_ENABLED=true\n    PIHOLE_DNS_1=1.1.1.1\n    PIHOLE_DNS_2=8.8.8.8\n    PVEOF\n  - curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended\n"
+    }
+  ]
+}

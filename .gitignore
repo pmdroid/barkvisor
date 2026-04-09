@@ -1,0 +1,16 @@
+.build/
+.DS_Store
+.swiftpm/
+node_modules/
+frontend/dist/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+build/
+*.d
+*.dia
+*.swiftdeps
+*.swiftmodule
+.env
+.claude/
+Sources/BarkVisor/Resources/frontend/dist

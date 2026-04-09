@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "slug": "code-server",
+      "name": "Code Server",
+      "description": "VS Code in the browser. Access a full development environment from any device.",
+      "category": "development",
+      "icon": "code",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "diskSizeGB": 20,
+      "portForwards": [
+        { "protocol": "tcp", "hostPort": 8080, "guestPort": 8080, "httpPath": "/" }
+      ],
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "coder",
+          "required": true,
+          "placeholder": "coder"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - curl\n  - git\n  - build-essential\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - curl -fsSL https://code-server.dev/install.sh | sh\n  - systemctl enable --now code-server@{{username}}\n  - |\n    mkdir -p /home/{{username}}/.config/code-server\n    cat > /home/{{username}}/.config/code-server/config.yaml <<CEOF\n    bind-addr: 0.0.0.0:8080\n    auth: password\n    password: {{password}}\n    cert: false\n    CEOF\n    chown -R {{username}}:{{username}} /home/{{username}}/.config\n  - systemctl restart code-server@{{username}}\n"
+    },
+    {
+      "slug": "home-assistant",
+      "name": "Home Assistant",
+      "description": "Smart home automation platform. Uses the official Home Assistant OS image.",
+      "category": "home-automation",
+      "icon": "home",
+      "imageSlug": "haos-17.1-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "diskSizeGB": 32,
+      "portForwards": [
+        { "protocol": "tcp", "hostPort": 8123, "guestPort": 8123, "httpPath": "/" }
+      ],
+      "inputs": [],
+      "userDataTemplate": ""
+    },
+    {
+      "slug": "pi-hole",
+      "name": "Pi-hole",
+      "description": "Network-wide DNS ad blocker. Lightweight and effective.",
+      "category": "networking",
+      "icon": "shield",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "diskSizeGB": 8,
+      "portForwards": [
+        { "protocol": "tcp", "hostPort": 80, "guestPort": 80, "httpPath": "/admin/login" },
+        { "protocol": "udp", "hostPort": 53, "guestPort": 53 }
+      ],
+      "networkMode": "bridged",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "pihole",
+          "required": true,
+          "placeholder": "pihole"
+        },
+        {
+          "id": "password",
+          "label": "Web Admin Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Admin panel password",
+          "minLength": 6
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - mkdir -p /etc/pihole\n  - |\n    cat > /etc/pihole/setupVars.conf <<PVEOF\n    PIHOLE_INTERFACE=eth0\n    QUERY_LOGGING=true\n    INSTALL_WEB_SERVER=true\n    INSTALL_WEB_INTERFACE=true\n    LIGHTTPD_ENABLED=true\n    WEBPASSWORD=$(echo -n {{password}} | sha256sum | awk '{print $1}' | sha256sum | awk '{print $1}')\n    BLOCKING_ENABLED=true\n    PIHOLE_DNS_1=1.1.1.1\n    PIHOLE_DNS_2=8.8.8.8\n    PVEOF\n  - curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended\n"
+    },
+    {
+      "slug": "nextcloud",
+      "name": "Nextcloud",
+      "description": "Self-hosted file sync, sharing, and collaboration platform.",
+      "category": "cloud-storage",
+      "icon": "cloud",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "diskSizeGB": 40,
+      "portForwards": [
+        { "protocol": "tcp", "hostPort": 8880, "guestPort": 80, "httpPath": "/login" }
+      ],
+      "inputs": [
+        {
+          "id": "username",
+          "label": "System Username",
+          "type": "text",
+          "default": "nextcloud",
+          "required": true,
+          "placeholder": "nextcloud"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Used for system user and Nextcloud admin",
+          "minLength": 8
+        },
+        {
+          "id": "admin_user",
+          "label": "Nextcloud Admin Username",
+          "type": "text",
+          "default": "admin",
+          "required": true,
+          "placeholder": "admin"
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - apache2\n  - mariadb-server\n  - php\n  - php-gd\n  - php-mysql\n  - php-curl\n  - php-mbstring\n  - php-intl\n  - php-gmp\n  - php-bcmath\n  - php-xml\n  - php-imagick\n  - php-zip\n  - php-apcu\n  - libapache2-mod-php\n  - unzip\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - mysql -e \"CREATE DATABASE nextcloud;\"\n  - mysql -e \"CREATE USER 'nextcloud'@'localhost' IDENTIFIED BY '{{password}}';\"\n  - mysql -e \"GRANT ALL PRIVILEGES ON nextcloud.* TO 'nextcloud'@'localhost'; FLUSH PRIVILEGES;\"\n  - curl -Lo /tmp/nextcloud.zip https://download.nextcloud.com/server/releases/latest.zip\n  - unzip -q /tmp/nextcloud.zip -d /var/www/\n  - chown -R www-data:www-data /var/www/nextcloud\n  - |\n    cat > /etc/apache2/sites-available/nextcloud.conf <<NCEOF\n    <VirtualHost *:80>\n      DocumentRoot /var/www/nextcloud\n      <Directory /var/www/nextcloud>\n        Require all granted\n        AllowOverride All\n        Options FollowSymLinks MultiViews\n      </Directory>\n    </VirtualHost>\n    NCEOF\n  - a2ensite nextcloud.conf\n  - a2dissite 000-default.conf\n  - a2enmod rewrite headers env dir mime\n  - systemctl restart apache2\n  - sudo -u www-data php /var/www/nextcloud/occ maintenance:install --database mysql --database-name nextcloud --database-user nextcloud --database-pass {{password}} --admin-user {{admin_user}} --admin-pass {{password}}\n  - sudo -u www-data php /var/www/nextcloud/occ config:system:set trusted_domains 0 --value='*'\n"
+    },
+    {
+      "slug": "opencode",
+      "name": "OpenCode",
+      "description": "AI-powered terminal coding agent. Runs OpenCode with Node.js and common dev tools pre-installed.",
+      "category": "development",
+      "icon": "terminal",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 4,
+      "memoryMB": 4096,
+      "diskSizeGB": 30,
+      "portForwards": [],
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "dev",
+          "required": true,
+          "placeholder": "dev"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        },
+        {
+          "id": "anthropic_api_key",
+          "label": "Anthropic API Key",
+          "type": "password",
+          "required": false,
+          "placeholder": "sk-ant-... (optional, can set later)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - curl\n  - git\n  - build-essential\n  - unzip\n  - jq\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -\n  - apt-get install -y nodejs\n  - npm install -g opencode-ai\n  - |\n    if [ -n \"{{anthropic_api_key}}\" ]; then\n      echo 'export ANTHROPIC_API_KEY=\"{{anthropic_api_key}}\"' >> /home/{{username}}/.bashrc\n    fi\n  - echo 'OpenCode VM ready. Run: opencode' > /etc/motd\n  - chown -R {{username}}:{{username}} /home/{{username}}\n"
+    },
+    {
+      "slug": "cline",
+      "name": "Cline",
+      "description": "AI coding agent that runs in your terminal. Pre-configured with Node.js, Git, and common development tools.",
+      "category": "development",
+      "icon": "terminal",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 4,
+      "memoryMB": 4096,
+      "diskSizeGB": 30,
+      "portForwards": [],
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "dev",
+          "required": true,
+          "placeholder": "dev"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        },
+        {
+          "id": "anthropic_api_key",
+          "label": "Anthropic API Key",
+          "type": "password",
+          "required": false,
+          "placeholder": "sk-ant-... (optional, can set later)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - curl\n  - git\n  - build-essential\n  - unzip\n  - ripgrep\n  - fd-find\n  - jq\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -\n  - apt-get install -y nodejs\n  - npm install -g cline\n  - |\n    if [ -n \"{{anthropic_api_key}}\" ]; then\n      echo 'export ANTHROPIC_API_KEY=\"{{anthropic_api_key}}\"' >> /home/{{username}}/.bashrc\n    fi\n  - echo 'Cline VM ready. Run: cline' > /etc/motd\n  - chown -R {{username}}:{{username}} /home/{{username}}\n"
+    }
+  ]
+}
