@@ -1,0 +1,31 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+      - internal
+  categories:
+    - title: "Breaking Changes"
+      labels:
+        - breaking-change
+    - title: "New Features"
+      labels:
+        - enhancement
+        - feature
+    - title: "Bug Fixes"
+      labels:
+        - bug
+        - fix
+    - title: "Performance"
+      labels:
+        - performance
+    - title: "Documentation"
+      labels:
+        - documentation
+        - docs
+    - title: "Dependency Updates"
+      labels:
+        - dependencies
+        - dep-update
+    - title: "Other Changes"
+      labels:
+        - "*"

@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BarkVisor — QEMU Virtualization with a Web Interface</title>
+  <meta name="description" content="Open-source QEMU virtualization software for macOS with a modern web interface. Create, run, and manage virtual machines with ease." />
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="BarkVisor — QEMU Virtualization with a Web Interface" />
+  <meta property="og:description" content="Open-source QEMU virtualization software for macOS with a modern web interface. Create, run, and manage virtual machines with ease." />
+  <meta property="og:image" content="og-image.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="BarkVisor — QEMU Virtualization with a Web Interface" />
+  <meta name="twitter:description" content="Open-source QEMU virtualization software for macOS with a modern web interface. Create, run, and manage virtual machines with ease." />
+  <meta name="twitter:image" content="og-image.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e14;
+      --bg-surface: rgba(0,144,248,0.03);
+      --bg-card: rgba(0,144,248,0.05);
+      --bg-hover: rgba(0,144,248,0.08);
+      --glass-blur: blur(24px);
+      --glass-blur-lg: blur(40px);
+      --glass-shine: inset 0 1px 0 rgba(255,255,255,0.04);
+      --border: rgba(184,184,180,0.08);
+      --border-glass: rgba(184,184,180,0.12);
+      --text: #e4e4e2;
+      --text-secondary: #b8b8b4;
+      --text-dim: #6e6e6c;
+      --accent: #0090f8;
+      --accent-hover: #2ea8ff;
+      --accent-muted: rgba(0,144,248,0.12);
+      --accent-text: #fff;
+      --accent-glow: rgba(0,144,248,0.25);
+      --green: #34d399;
+      --green-muted: rgba(52,211,153,0.10);
+      --blue: #0090f8;
+      --blue-muted: rgba(0,144,248,0.10);
+      --purple: #0090f8;
+      --purple-muted: rgba(0,144,248,0.10);
+      --radius: 2px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.3), var(--glass-shine);
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 60% 40% at 70% 0%, rgba(0,144,248,0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 50% at 20% 80%, rgba(184,184,180,0.04) 0%, transparent 70%);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.5;
+    }
+    a { color: var(--accent); text-decoration: none; transition: color var(--transition); }
+    a:hover { color: var(--accent-hover); }
+
+    /* ── Nav ── */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 24px;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .nav-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 2px;
+      object-fit: contain;
+    }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a {
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .nav-links a:hover { color: var(--text-secondary); }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      max-width: 800px;
+      margin: 80px auto 0;
+      padding: 0 24px;
+    }
+    .hero-img {
+      display: block;
+      margin: 0 auto 24px;
+      width: 250px;
+      height: 250px;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 32px rgba(0,144,248,0.25));
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      background: var(--accent-muted);
+      padding: 4px 12px;
+      border-radius: 2px;
+      margin-bottom: 24px;
+      backdrop-filter: var(--glass-blur);
+    }
+    .hero-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #0090f8;
+      box-shadow: 0 0 8px #0090f8;
+    }
+    .hero h1 {
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      font-size: 15px;
+      color: var(--text-secondary);
+      max-width: 520px;
+      margin: 0 auto 32px;
+      line-height: 1.6;
+    }
+    .hero-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 24px;
+      border-radius: 2px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: all var(--transition);
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-text);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      color: var(--accent-text);
+      box-shadow: 0 0 32px var(--accent-glow);
+    }
+    .btn-ghost {
+      background: rgba(255,255,255,0.035);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-glass);
+      backdrop-filter: var(--glass-blur);
+      box-shadow: var(--glass-shine);
+    }
+    .btn-ghost:hover {
+      background: rgba(255,255,255,0.07);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.12);
+    }
+    .btn svg { width: 16px; height: 16px; }
+
+    /* ── Features ── */
+    .features {
+      max-width: 1100px;
+      margin: 100px auto 0;
+      padding: 0 24px;
+    }
+    .features-header {
+      margin-bottom: 16px;
+    }
+    .features-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .features-desc {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--glass-shine);
+      transition: all var(--transition);
+    }
+    .feature-card:hover {
+      border-color: rgba(255,255,255,0.12);
+      background: var(--bg-hover);
+    }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      margin-bottom: 14px;
+      color: var(--text-dim);
+      transition: all var(--transition);
+    }
+    .feature-card:hover .feature-icon {
+      color: #0090f8;
+      border-color: rgba(0,144,248,0.3);
+      background: rgba(0,144,248,0.1);
+    }
+    .feature-icon svg { width: 20px; height: 20px; }
+    .feature-card h3 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 6px;
+    }
+    .feature-card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    /* ── CTA ── */
+    .cta {
+      max-width: 1100px;
+      margin: 80px auto 0;
+      padding: 0 24px;
+    }
+    .cta-card {
+      background: var(--bg-card);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius);
+      padding: 40px;
+      text-align: center;
+      box-shadow: var(--glass-shine);
+      border-left: 3px solid var(--accent);
+    }
+    .cta-card h2 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+    .cta-card p {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding: 48px 24px 32px;
+      margin-top: 80px;
+      border-top: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .footer a { color: var(--text-dim); }
+    .footer a:hover { color: var(--text-secondary); }
+
+    /* ── Responsive ── */
+    @media (max-width: 1024px) {
+      .feature-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 768px) {
+      .hero { margin-top: 48px; }
+      .hero h1 { font-size: 28px; }
+      .features { margin-top: 64px; }
+      .feature-grid { grid-template-columns: 1fr; gap: 12px; }
+      .cta { margin-top: 56px; }
+      .cta-card { padding: 28px 20px; }
+    }
+    /* ── Light theme ── */
+    [data-theme="light"] {
+      --bg: #f6f6f5;
+      --bg-surface: rgba(0,144,248,0.03);
+      --bg-card: rgba(0,0,0,0.03);
+      --bg-hover: rgba(0,144,248,0.06);
+      --glass-shine: inset 0 1px 0 rgba(255,255,255,0.5);
+      --border: rgba(0,0,0,0.08);
+      --border-glass: rgba(0,0,0,0.1);
+      --text: #141618;
+      --text-secondary: #4a4a48;
+      --text-dim: #8a8a88;
+      --accent: #0078d4;
+      --accent-hover: #006abc;
+      --accent-muted: rgba(0,144,248,0.1);
+      --accent-text: #fff;
+      --accent-glow: rgba(0,144,248,0.15);
+      --green: #059669;
+      --green-muted: rgba(5,150,105,0.1);
+      --blue: #0078d4;
+      --blue-muted: rgba(0,120,212,0.1);
+      --purple: #0078d4;
+      --purple-muted: rgba(0,120,212,0.1);
+      --shadow: 0 2px 12px rgba(0,0,0,0.08), var(--glass-shine);
+    }
+    [data-theme="light"] body {
+      background-image:
+        radial-gradient(ellipse 60% 40% at 70% 0%, rgba(0,144,248,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 50% at 20% 80%, rgba(184,184,180,0.06) 0%, transparent 70%);
+    }
+
+    /* ── Theme toggle ── */
+    .theme-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border-glass);
+      border-radius: 2px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-dim);
+      transition: all var(--transition);
+      backdrop-filter: var(--glass-blur);
+    }
+    .theme-toggle:hover {
+      color: #0090f8;
+      border-color: rgba(0,144,248,0.3);
+      background: rgba(0,144,248,0.1);
+    }
+    .theme-toggle svg { width: 18px; height: 18px; }
+    .theme-toggle .icon-sun { display: none; }
+    [data-theme="light"] .theme-toggle .icon-moon { display: none; }
+    [data-theme="light"] .theme-toggle .icon-sun { display: block; }
+
+    /* ── Mobile menu ── */
+    .nav-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+    }
+    .nav-toggle svg { width: 24px; height: 24px; }
+
+    @media (max-width: 600px) {
+      .nav-toggle { display: block; }
+      .nav-links {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border-glass);
+        padding: 8px 24px 16px;
+        z-index: 100;
+      }
+      .nav-links.open { display: flex; }
+      .nav-links a {
+        padding: 10px 0;
+        font-size: 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-links a:last-of-type { border-bottom: none; }
+      .nav-links .theme-toggle { margin-top: 8px; align-self: flex-start; }
+      .nav { position: relative; }
+    }
+
+    @media (max-width: 480px) {
+      .feature-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="nav">
+    <div class="nav-brand">
+      <img src="hero.png" alt="BarkVisor" />
+      BarkVisor
+    </div>
+    <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.nav-links').classList.toggle('open')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+    </button>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="https://github.com/pmdroid/barkvisor/tree/main/docs">Docs</a>
+      <a href="https://github.com/pmdroid/barkvisor">GitHub</a>
+      <button class="theme-toggle" aria-label="Toggle theme">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <img src="hero.png" alt="BarkVisor mascot" class="hero-img" />
+    <div class="hero-badge">Open Source &middot; macOS</div>
+    <h1>QEMU virtualization,<br /><span>with a modern web interface.</span></h1>
+    <p>BarkVisor is open-source virtualization software for macOS that makes it easy to create, run, and manage QEMU virtual machines through a beautiful web UI.</p>
+    <div class="hero-buttons">
+      <a href="https://github.com/pmdroid/barkvisor/releases" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download for macOS
+      </a>
+      <a href="https://github.com/pmdroid/barkvisor" class="btn btn-ghost">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.1.82-.26.82-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.31-5.47-1.34-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6.02 0c2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.25 2.88.12 3.18a4.65 4.65 0 0 1 1.24 3.22c0 4.61-2.8 5.62-5.48 5.92.43.37.82 1.1.82 2.22v3.29c0 .32.21.7.82.58A12 12 0 0 0 12 .3"/></svg>
+        View on GitHub
+      </a>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="features-header">
+      <h2>Features</h2>
+    </div>
+    <p class="features-desc">Everything you need to run virtual machines on macOS</p>
+    <div class="feature-grid">
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+        </div>
+        <h3>Web UI &amp; Menu Bar</h3>
+        <p>Manage all your VMs from a clean web interface. No terminal required.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </div>
+        <h3>Full VM Configuration</h3>
+        <p>Configure CPU cores, RAM, UEFI boot, TPM 2.0 emulation, and cloud-init provisioning — all through the UI.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+        </div>
+        <h3>Disk Management</h3>
+        <p>Create and manage qcow2 and raw disk images with hot-plug support, live resizing, and snapshot capabilities.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        </div>
+        <h3>Console &amp; VNC</h3>
+        <p>Access your VMs directly in the browser with a built-in serial console (xterm.js) and VNC display (noVNC).</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </div>
+        <h3>Networking &amp; SSH</h3>
+        <p>Configure bridged or NAT networking with port forwarding. Manage SSH keys and connect to your VMs in seconds.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        </div>
+        <h3>Open Source</h3>
+        <p>Fully open source and self-hosted. Your VMs stay on your machine — no cloud accounts or subscriptions needed.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="cta-card">
+      <h2>Get started in minutes</h2>
+      <p>Download the latest release from GitHub, install, and you're ready to spin up your first VM.</p>
+      <a href="https://github.com/pmdroid/barkvisor/releases" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download from GitHub
+      </a>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>Made with ❤️ in SF &middot; <a href="https://github.com/pmdroid/barkvisor">GitHub</a></p>
+  </footer>
+
+  <script>
+    (function() {
+      var root = document.documentElement;
+      var stored = localStorage.getItem('theme');
+      if (stored) {
+        root.setAttribute('data-theme', stored);
+      } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+        root.setAttribute('data-theme', 'light');
+      }
+      document.querySelector('.theme-toggle').addEventListener('click', function() {
+        var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        root.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+      });
+    })();
+  </script>
+</body>
+</html>

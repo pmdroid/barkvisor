@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.barkvisor</string>
+    <key>Program</key>
+    <string>/usr/local/bin/barkvisor</string>
+    <key>UserName</key>
+    <string>_barkvisor</string>
+    <key>GroupName</key>
+    <string>_barkvisor</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>/var/lib/barkvisor</string>
+    <key>StandardOutPath</key>
+    <string>/var/log/barkvisor/server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/barkvisor/server.err</string>
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+</dict>
+</plist>

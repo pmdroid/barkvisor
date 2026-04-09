@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: brew install swiftlint swiftformat
+
+      - name: SwiftLint
+        run: swiftlint lint --quiet
+
+      - name: SwiftFormat check
+        run: swiftformat --lint Sources/ Tests/
+
+  build:
+    name: Build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Swift package
+        run: swift build -c release
+
+  test:
+    name: Test
+    runs-on: macos-26
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: swift test
+
+  # Only runs on push to main — never on PRs from forks
+  sign:
+    name: Sign Binaries
+    runs-on: self-hosted
+    needs: [build, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release binaries
+        run: swift build -c release
+
+      - name: Sign binaries
+        run: |
+          cat > /tmp/entitlements.plist <<'ENT'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.network.server</key>
+              <true/>
+              <key>com.apple.security.network.client</key>
+              <true/>
+          </dict>
+          </plist>
+          ENT
+
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ -z "$IDENTITY" ]; then
+            echo "ERROR: No Developer ID Application certificate found in Keychain"
+            exit 1
+          fi
+          echo "Signing with: $IDENTITY"
+
+          for bin in .build/release/BarkVisorApp .build/release/BarkVisorHelper; do
+            codesign --force --options runtime \
+              --entitlements /tmp/entitlements.plist \
+              --sign "$IDENTITY" "$bin"
+            codesign --verify --deep --strict "$bin"
+          done
+
+      - name: Upload signed binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: barkvisor-signed-${{ github.sha }}
+          path: |
+            .build/release/BarkVisorApp
+            .build/release/BarkVisorHelper

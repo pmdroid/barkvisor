@@ -1,0 +1,47 @@
+# SwiftFormat configuration for BarkVisor
+
+# File scope
+--exclude .build,frontend
+
+# Indentation
+--indent 4
+--indentcase false
+--ifdef indent
+--xcodeindentation disabled
+
+# Wrapping
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--wrapconditions after-first
+--maxwidth 150
+--closingparen balanced
+
+# Spacing
+--trimwhitespace always
+--stripunusedargs closure-only
+
+# Braces
+--allman false
+
+# Imports
+--importgrouping testable-bottom
+
+# Types
+--self init-only
+--selfrequired
+
+# Other
+--commas always
+--decimalgrouping 3,4
+--semicolons inline
+--header strip
+--marktypes never
+--markextensions never
+--extensionacl on-declarations
+
+# Disabled rules
+--disable redundantReturn
+--disable wrapMultilineStatementBraces
+--disable blankLinesBetweenScopes
+--disable redundantSelf

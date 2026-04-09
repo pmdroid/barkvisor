@@ -1,0 +1,60 @@
+{
+  "name": "BarkVisor Official",
+  "version": 1,
+  "images": [
+    {
+      "slug": "alpine-3.23-arm64",
+      "name": "Alpine Linux 3.23",
+      "description": "Lightweight virtual ISO for ARM64 (~75 MB)",
+      "imageType": "iso",
+      "arch": "arm64",
+      "version": "3.23.3",
+      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/aarch64/alpine-virt-3.23.3-aarch64.iso",
+      "sizeBytes": 79204352,
+      "sha256": "69223638286cb1c7728e70e6dee133c501490591804656b5051a2c1fa3eaa51f"
+    },
+    {
+      "slug": "ubuntu-24.04-arm64",
+      "name": "Ubuntu 24.04 LTS",
+      "description": "Minimal cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "24.04",
+      "downloadUrl": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
+      "sizeBytes": 624435712,
+      "sha256": "c7eff9b3ee6e7b212882e680a9e06cac939107fbf5298384340a0ad1c667a38a"
+    },
+    {
+      "slug": "debian-12-arm64",
+      "name": "Debian 12 Bookworm",
+      "description": "Generic cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "12",
+      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2",
+      "sizeBytes": 434186752,
+      "sha512": "d5e7f38648cfd32a49ebb42f835ac78435f507f540dcf86565ec32277eaf9b3b5f41876e49e4397795eda41cc7d1320fe6eb39604945d357c9f22e4b1cef0e7b"
+    },
+    {
+      "slug": "fedora-42-arm64",
+      "name": "Fedora 42 Cloud",
+      "description": "Cloud base image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "42",
+      "downloadUrl": "https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-42-1.1.aarch64.qcow2",
+      "sizeBytes": 533069824,
+      "sha256": "e10658419a8d50231037dc781c3155aa94180a8c7a74e5cac2a6b09eaa9342b7"
+    },
+    {
+      "slug": "haos-17.2-arm64",
+      "name": "Home Assistant OS",
+      "description": "Smart home OS for QEMU ARM64 (~300 MB)",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "17.2",
+      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/17.2/haos_generic-aarch64-17.2.qcow2.xz",
+      "sizeBytes": 314572800
+    }
+  ]
+}
