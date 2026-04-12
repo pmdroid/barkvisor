@@ -303,8 +303,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     // MARK: - startBridge
 
     func testStartBridgeValid() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().startBridge(interface: "en0") { ok, err in
+            p.startBridge(interface: "en0") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
@@ -313,8 +314,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     }
 
     func testStartBridgeInvalidInterface() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().startBridge(interface: "en0;bad") { ok, err in
+            p.startBridge(interface: "en0;bad") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
@@ -323,8 +325,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     }
 
     func testStartBridgeEmptyInterface() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().startBridge(interface: "") { ok, err in
+            p.startBridge(interface: "") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
@@ -334,8 +337,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     // MARK: - stopBridge
 
     func testStopBridgeValid() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().stopBridge(interface: "en0") { ok, err in
+            p.stopBridge(interface: "en0") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
@@ -344,8 +348,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     }
 
     func testStopBridgeInvalidInterface() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().stopBridge(interface: "") { ok, err in
+            p.stopBridge(interface: "") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
@@ -355,8 +360,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     // MARK: - bridgeStatus
 
     func testBridgeStatusValid() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().bridgeStatus(interface: "en0") { running, status in
+            p.bridgeStatus(interface: "en0") { running, status in
                 cont.resume(returning: (running, status))
             }
         }
@@ -365,8 +371,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     }
 
     func testBridgeStatusInvalidInterface() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().bridgeStatus(interface: "../etc") { running, status in
+            p.bridgeStatus(interface: "../etc") { running, status in
                 cont.resume(returning: (running, status))
             }
         }
@@ -377,8 +384,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     // MARK: - getAllBridgeStates
 
     func testGetAllBridgeStatesReturnsJSON() async throws {
+        let p = try proxy()
         let json: String = try await withCheckedThrowingContinuation { cont in
-            try proxy().getAllBridgeStates { reply in
+            p.getAllBridgeStates { reply in
                 cont.resume(returning: reply)
             }
         }
@@ -392,8 +400,9 @@ final class HelperXPCExtendedTests: XCTestCase {
     // MARK: - removeBridge
 
     func testRemoveBridgeInvalidInterface() async throws {
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().removeBridge(interface: "en0/../../etc") { ok, err in
+            p.removeBridge(interface: "en0/../../etc") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
@@ -403,8 +412,9 @@ final class HelperXPCExtendedTests: XCTestCase {
 
     func testRemoveBridgeInterfaceTooLong() async throws {
         let longName = String(repeating: "a", count: 16)
+        let p = try proxy()
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
-            try proxy().removeBridge(interface: longName) { ok, err in
+            p.removeBridge(interface: longName) { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }

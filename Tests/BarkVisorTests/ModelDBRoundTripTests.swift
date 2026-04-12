@@ -4,7 +4,7 @@ import XCTest
 
 /// Tests for DB round-trips of models not covered by the existing DatabaseMigrationTests.
 final class ModelDBRoundTripTests: XCTestCase {
-    private var dbPool: DatabaseQueue?
+    private var dbPool: DatabaseQueue!
 
     override func setUpWithError() throws {
         dbPool = try DatabaseQueue()
