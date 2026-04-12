@@ -45,12 +45,10 @@ public nonisolated(unsafe) let iso8601 = ISO8601DateFormatter()
 
 public enum Config {
     /// INJECT_VERSION
-    public static let version = "1.0.0-alpha.1"
+    public static let version = "1.0.0-alpha.2"
 
     public static let port = 7_777
-    public static var hostname: String {
-        UserDefaults.standard.string(forKey: "serverHostname") ?? "0.0.0.0"
-    }
+    
 
     /// Install prefix derived from binary location.
     /// `/usr/local/bin/barkvisor` → prefix = `/usr/local`
