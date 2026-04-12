@@ -13,8 +13,8 @@ private struct TestPasswordHasher: PasswordHasher {
 }
 
 final class AuthServiceTests: XCTestCase {
-    private var dbPool: DatabasePool?
-    private var tmpDir: URL?
+    private var dbPool: DatabasePool!
+    private var tmpDir: URL!
     private let hasher = TestPasswordHasher()
 
     override func setUpWithError() throws {

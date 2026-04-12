@@ -4,9 +4,9 @@ import XCTest
 @testable import BarkVisorCore
 
 final class ImageChecksumTests: XCTestCase {
-    private var dbPool: DatabasePool?
-    private var tmpDir: URL?
-    private var downloader: ImageDownloader?
+    private var dbPool: DatabasePool!
+    private var tmpDir: URL!
+    private var downloader: ImageDownloader!
 
     override func setUpWithError() throws {
         tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

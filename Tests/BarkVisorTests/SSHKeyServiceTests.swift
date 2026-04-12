@@ -3,8 +3,8 @@ import XCTest
 @testable import BarkVisorCore
 
 final class SSHKeyServiceTests: XCTestCase {
-    private var dbPool: DatabasePool?
-    private var tmpDir: URL?
+    private var dbPool: DatabasePool!
+    private var tmpDir: URL!
 
     override func setUpWithError() throws {
         tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
