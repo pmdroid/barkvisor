@@ -313,7 +313,7 @@ struct SetupController: RouteCollection {
         let payload = UserPayload(
             sub: .init(value: admin.id),
             username: admin.username,
-            exp: .init(value: Date().addingTimeInterval(2 * 60 * 60))
+            exp: .init(value: Date().addingTimeInterval(2 * 60 * 60)),
         )
         let token = try await keys.sign(payload)
 
