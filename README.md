@@ -143,7 +143,7 @@ Installed daemon builds store data in `/var/lib/barkvisor/`. Development builds 
 | `logs/` | Application logs |
 | `backups/` | Database backups |
 
-The server listens on port **7777** by default. The hostname is configurable in Settings.
+The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 ## Documentation
 
