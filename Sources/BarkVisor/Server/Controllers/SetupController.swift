@@ -1,12 +1,14 @@
 import BarkVisorCore
 import Foundation
 import GRDB
+import JWTKit
 import Vapor
 
 /// Handles the web-based onboarding wizard. All endpoints are unprotected (no JWT)
 /// but only accessible when setup has not been completed yet.
 struct SetupController: RouteCollection {
     let setupMiddleware: SetupMiddleware
+    let keys: JWTKeyCollection
 
     func boot(routes: any RoutesBuilder) throws {
         let setup = routes.grouped("api", "setup")
@@ -290,6 +292,7 @@ struct SetupController: RouteCollection {
 
     struct CompleteResponse: Content {
         let success: Bool
+        let token: String?
     }
 
     @Sendable
@@ -298,16 +301,24 @@ struct SetupController: RouteCollection {
             throw Abort(.notFound)
         }
 
-        // Verify admin password has been set
-        let hasAdmin = try await req.db.read { db in
-            try User.filter(User.Columns.password != "").fetchCount(db) > 0
+        // Fetch the admin user (first user with a password set)
+        let admin = try await req.db.read { db in
+            try User.filter(User.Columns.password != "").fetchOne(db)
         }
-        guard hasAdmin else {
+        guard let admin else {
             throw Abort(.badRequest, reason: "Admin user must be created before completing setup")
         }
 
+        // Generate a JWT so the frontend can auto-login
+        let payload = UserPayload(
+            sub: .init(value: admin.id),
+            username: admin.username,
+            exp: .init(value: Date().addingTimeInterval(2 * 60 * 60))
+        )
+        let token = try await keys.sign(payload)
+
         setupMiddleware.markComplete()
 
-        return CompleteResponse(success: true)
+        return CompleteResponse(success: true, token: token)
     }
 }

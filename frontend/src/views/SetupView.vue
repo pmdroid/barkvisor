@@ -16,8 +16,11 @@ import {
   type InterfaceInfo,
   type RepoSyncStatus,
 } from '../api/setup'
+import { useAuthStore } from '../stores/auth'
+import { clearSetupCache } from '../router'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const step = ref(1)
 const totalSteps = 5
 const error = ref('')
@@ -135,13 +138,16 @@ async function startSync() {
   }
 }
 
-// Step 5: Complete
+// Step 5: Complete — auto-login and redirect to dashboard
 async function finishSetup() {
   error.value = ''
   loading.value = true
   try {
-    await completeSetup()
-    router.replace('/login')
+    const { token } = await completeSetup()
+    clearSetupCache()
+    authStore.token = token
+    localStorage.setItem('token', token)
+    router.replace('/dashboard')
   } catch (e: any) {
     error.value = e.response?.data?.reason || 'Failed to complete setup'
   } finally {
@@ -267,8 +273,7 @@ async function finishSetup() {
       <div v-if="step === 5" class="step-content">
         <h2>All Set!</h2>
         <p class="step-desc">
-          BarkVisor is ready. You'll be redirected to the login page to sign in with your new admin
-          account.
+          BarkVisor is ready. You'll be signed in automatically and taken to the dashboard.
         </p>
         <FormError v-if="error" :message="error" />
         <AppButton
