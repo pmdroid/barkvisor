@@ -20,7 +20,7 @@ struct RouteDependencies {
 }
 
 func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
-    try app.register(collection: SetupController(setupMiddleware: deps.setupMiddleware))
+    try app.register(collection: SetupController(setupMiddleware: deps.setupMiddleware, keys: deps.keys))
     try app.register(collection: AuthController(keys: deps.keys, loginRateLimit: deps.loginRateLimit))
 
     app.get("api", "health") { req in

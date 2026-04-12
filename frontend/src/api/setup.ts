@@ -56,6 +56,7 @@ export async function getRepoSyncStatus(): Promise<RepoSyncStatus> {
   return data
 }
 
-export async function completeSetup(): Promise<void> {
-  await setupApi.post('/complete')
+export async function completeSetup(): Promise<{ token: string }> {
+  const { data } = await setupApi.post('/complete')
+  return data
 }
