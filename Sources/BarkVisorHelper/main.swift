@@ -9,7 +9,7 @@ let sentry = try? Sentry(dsn: "https://fd23965cd2644e52116484d7029e900d@o477595.
 LoggingSystem.bootstrap { [sentry] label in
     var handler = StreamLogHandler.standardOutput(label: label)
     handler.logLevel = .debug
-    if let sentry = sentry {
+    if let sentry {
         return MultiplexLogHandler([
             SentryLogHandler(label: label, sentry: sentry, level: .error),
             handler,
