@@ -8,3 +8,18 @@ XCODE_DEFAULT_TOOLCHAIN_OVERRIDE = { value = "{{ tools.swift.path }}", tools = t
 
 [settings]
 experimental = true
+
+[tasks.lint]
+description = "Run SwiftLint and SwiftFormat checks"
+run = [
+    "swiftlint lint --quiet",
+    "swiftformat --lint Sources/ Tests/",
+]
+
+[tasks.build]
+description = "Build the Swift package in release mode"
+run = "swift build -c release"
+
+[tasks.test]
+description = "Run the test suite"
+run = "swift test"

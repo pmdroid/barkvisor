@@ -21,14 +21,8 @@ jobs:
         with:
           install: true
 
-      - name: SwiftLint
-        run: >
-          mise exec -- env
-          XCODE_DEFAULT_TOOLCHAIN_OVERRIDE="$(dirname "$(dirname "$(mise which swift)")")"
-          swiftlint lint --quiet
-
-      - name: SwiftFormat check
-        run: mise exec -- swiftformat --lint Sources/ Tests/
+      - name: Lint
+        run: mise run lint
 
   build:
     name: Build
@@ -41,7 +35,7 @@ jobs:
           install: true
 
       - name: Build Swift package
-        run: mise exec -- swift build -c release
+        run: mise run build
 
   test:
     name: Test
@@ -55,4 +49,4 @@ jobs:
           install: true
 
       - name: Run tests
-        run: mise exec -- swift test
+        run: mise run test
