@@ -5,7 +5,7 @@ import Testing
 struct BackgroundTaskManagerTests {
     // MARK: - Submit and complete
 
-    @Test func `submit and complete`() async throws {
+    @Test func `submit and complete`() async {
         let manager = BackgroundTaskManager()
         let id = await manager.submit("task-1", kind: .diagnosticBundle) { "done" }
         #expect(id == "task-1")
@@ -53,7 +53,7 @@ struct BackgroundTaskManagerTests {
 
     // MARK: - Failed task
 
-    @Test func `failed task`() async throws {
+    @Test func `failed task`() async {
         let manager = BackgroundTaskManager()
         await manager.submit("task-1", kind: .diagnosticBundle) {
             throw BarkVisorError.internalError("test failure")
