@@ -4,7 +4,7 @@ import Testing
 /// Tests BridgeState encoding/decoding. BridgeState is defined in BridgeMonitor.swift
 /// which is in the BarkVisorHelper target. Since we can't import it directly, we
 /// replicate the struct to test the Codable contract.
-@Suite struct BridgeStateCodableTests {
+struct BridgeStateCodableTests {
     /// Mirror of BridgeState from BridgeMonitor.swift for Codable testing.
     private struct BridgeState: Codable, Equatable {
         let interface: String
@@ -14,7 +14,7 @@ import Testing
         let status: String
     }
 
-    @Test func roundTrip() throws {
+    @Test func `round trip`() throws {
         let state = BridgeState(
             interface: "en0", socketPath: "/var/run/socket_vmnet.bridged.en0",
             plistExists: true, daemonRunning: true, status: "active",
@@ -24,7 +24,7 @@ import Testing
         #expect(state == decoded)
     }
 
-    @Test func nilSocketPath() throws {
+    @Test func `nil socket path`() throws {
         let state = BridgeState(
             interface: "en1", socketPath: nil, plistExists: false, daemonRunning: false,
             status: "not_configured",
@@ -35,7 +35,7 @@ import Testing
         #expect(decoded.status == "not_configured")
     }
 
-    @Test func arrayEncoding() throws {
+    @Test func `array encoding`() throws {
         let states = [
             BridgeState(interface: "en0", socketPath: nil, plistExists: true, daemonRunning: false, status: "installed"),
             BridgeState(
@@ -54,14 +54,14 @@ import Testing
         #expect(decoded[1].interface == "en1")
     }
 
-    @Test func emptyArrayEncoding() throws {
+    @Test func `empty array encoding`() throws {
         let states: [BridgeState] = []
         let data = try JSONEncoder().encode(states)
         let json = try #require(String(data: data, encoding: .utf8))
         #expect(json == "[]")
     }
 
-    @Test func decodeFromExternalJSON() throws {
+    @Test func `decode from external JSON`() throws {
         let json = """
         {"interface":"bridge0","socketPath":"/var/run/socket_vmnet.bridged.bridge0","plistExists":true,"daemonRunning":true,"status":"active"}
         """
@@ -73,7 +73,7 @@ import Testing
         #expect(state.status == "active")
     }
 
-    @Test func statusValues() throws {
+    @Test func `status values`() throws {
         for status in ["active", "installed", "not_configured"] {
             let state = BridgeState(
                 interface: "en0", socketPath: nil, plistExists: false, daemonRunning: false, status: status,

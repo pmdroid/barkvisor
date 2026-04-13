@@ -3,10 +3,10 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite struct CloudInitServiceTests {
+struct CloudInitServiceTests {
     // MARK: - SSH Key Validation
 
-    @Test func validSSHKeys() throws {
+    @Test func `valid SSH keys`() throws {
         #expect(throws: Never.self) { try CloudInitService.validateSSHKey("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7 user@host") }
         #expect(throws: Never.self) { try CloudInitService.validateSSHKey("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGk user@host") }
         #expect(throws: Never.self) { try CloudInitService.validateSSHKey("ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTI user@host") }
@@ -16,37 +16,37 @@ import Testing
         #expect(throws: Never.self) { try CloudInitService.validateSSHKey("sk-ecdsa-sha2-nistp256@openssh.com AAAAInNr user@host") }
     }
 
-    @Test func invalidSSHKeyFormat() {
+    @Test func `invalid SSH key format`() {
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("not-a-key AAAA") }
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("random garbage") }
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("ssh-dsa AAAA") }
     }
 
-    @Test func sshKeyWithNewlines() {
+    @Test func `ssh key with newlines`() {
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("ssh-rsa AAAA\ninjection") }
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("ssh-rsa AAAA\rinjection") }
     }
 
-    @Test func sshKeyEmpty() throws {
+    @Test func `ssh key empty`() throws {
         // Empty/whitespace keys pass validation (by design)
         #expect(throws: Never.self) { try CloudInitService.validateSSHKey("") }
         #expect(throws: Never.self) { try CloudInitService.validateSSHKey("   ") }
     }
 
-    @Test func sshKeyWithControlCharacters() {
+    @Test func `ssh key with control characters`() {
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("ssh-rsa AAAA\u{00}injection") }
         #expect(throws: (any Error).self) { try CloudInitService.validateSSHKey("ssh-rsa AAAA\u{07}bell") }
     }
 
     // MARK: - User Data Validation
 
-    @Test func validateUserDataValidYAML() throws {
+    @Test func `validate user data valid YAML`() throws {
         #expect(throws: Never.self) { try CloudInitService.validateUserData("packages:\n  - vim\n  - curl\n") }
         #expect(throws: Never.self) { try CloudInitService.validateUserData("runcmd:\n  - echo hello\n") }
         #expect(throws: Never.self) { try CloudInitService.validateUserData("") }
     }
 
-    @Test func validateUserDataInvalidYAML() {
+    @Test func `validate user data invalid YAML`() {
         #expect(throws: (any Error).self) { try CloudInitService.validateUserData("key: [unclosed") }
         #expect(throws: (any Error).self) { try CloudInitService.validateUserData(":\n  bad:\n bad") }
     }

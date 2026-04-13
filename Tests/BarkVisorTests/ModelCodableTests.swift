@@ -3,10 +3,10 @@ import Testing
 @testable import BarkVisorCore
 
 /// Additional model Codable tests beyond existing ModelCodingTests.
-@Suite struct ModelCodableTests {
+struct ModelCodableTests {
     // MARK: - CloudInitConfig
 
-    @Test func cloudInitConfigCodable() throws {
+    @Test func `cloud init config codable`() throws {
         let config = CloudInitConfig(
             sshAuthorizedKeys: ["ssh-rsa AAAA key1"], userData: "packages:\n  - vim",
         )
@@ -17,7 +17,7 @@ import Testing
         #expect(decoded.userData == "packages:\n  - vim")
     }
 
-    @Test func cloudInitConfigNilFields() throws {
+    @Test func `cloud init config nil fields`() throws {
         let config = CloudInitConfig(sshAuthorizedKeys: nil, userData: nil)
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(CloudInitConfig.self, from: data)
@@ -28,7 +28,7 @@ import Testing
 
     // MARK: - GuestUserDTO
 
-    @Test func guestUserDTOCodable() throws {
+    @Test func `guest user DTO codable`() throws {
         let user = GuestUserDTO(name: "alice", loginTime: 1_234_567_890.0)
         let data = try JSONEncoder().encode(user)
         let decoded = try JSONDecoder().decode(GuestUserDTO.self, from: data)
@@ -37,7 +37,7 @@ import Testing
         #expect(decoded.loginTime == 1_234_567_890.0)
     }
 
-    @Test func guestUserDTONilLoginTime() throws {
+    @Test func `guest user DTO nil login time`() throws {
         let user = GuestUserDTO(name: "bob", loginTime: nil)
         let data = try JSONEncoder().encode(user)
         let decoded = try JSONDecoder().decode(GuestUserDTO.self, from: data)
@@ -48,7 +48,7 @@ import Testing
 
     // MARK: - GuestFilesystemDTO
 
-    @Test func guestFilesystemDTOCodable() throws {
+    @Test func `guest filesystem DTO codable`() throws {
         let fs = GuestFilesystemDTO(
             mountpoint: "/", type: "ext4", device: "/dev/vda1", totalBytes: 21_474_836_480,
             usedBytes: 5_368_709_120,
@@ -64,7 +64,7 @@ import Testing
 
     // MARK: - TemplateInput
 
-    @Test func templateInputCodable() throws {
+    @Test func `template input codable`() throws {
         let input = TemplateInput(
             id: "hostname", label: "Hostname", type: "text",
             default: "myhost", required: true, placeholder: "Enter hostname",
@@ -82,7 +82,7 @@ import Testing
         #expect(decoded.maxLength == 64)
     }
 
-    @Test func templateInputOptionalFields() throws {
+    @Test func `template input optional fields`() throws {
         let input = TemplateInput(
             id: "notes", label: "Notes", type: "textarea",
             default: nil, required: false, placeholder: nil,
@@ -100,7 +100,7 @@ import Testing
 
     // MARK: - TemplateCatalog
 
-    @Test func templateCatalogCodable() throws {
+    @Test func `template catalog codable`() throws {
         let entry = TemplateCatalogEntry(
             slug: "ubuntu-server", name: "Ubuntu Server",
             description: "Server template", category: "server", icon: "ubuntu",
@@ -135,7 +135,7 @@ import Testing
 
     // MARK: - MetricSample
 
-    @Test func metricSampleCodable() throws {
+    @Test func `metric sample codable`() throws {
         let sample = MetricSample(
             timestamp: "2025-01-01T00:00:00Z",
             cpuPercent: 45.5,
@@ -155,7 +155,7 @@ import Testing
 
     // MARK: - APIKeyResponse
 
-    @Test func apiKeyResponseCodable() throws {
+    @Test func `api key response codable`() throws {
         let resp = APIKeyResponse(
             id: "k1", name: "Test", keyPrefix: "barkvisor_abcde",
             expiresAt: "2026-01-01T00:00:00Z", lastUsedAt: nil, createdAt: "2025-01-01T00:00:00Z",
@@ -169,7 +169,7 @@ import Testing
 
     // MARK: - APIKeyCreateResponse
 
-    @Test func apiKeyCreateResponseCodable() throws {
+    @Test func `api key create response codable`() throws {
         let resp = APIKeyCreateResponse(
             id: "k1", name: "Test", key: "barkvisor_abc123",
             keyPrefix: "barkvisor_abc12", expiresAt: nil, createdAt: "2025-01-01T00:00:00Z",
@@ -181,7 +181,7 @@ import Testing
 
     // MARK: - UserPayload
 
-    @Test func userPayloadCodable() throws {
+    @Test func `user payload codable`() throws {
         let payload = UserPayload(
             sub: .init(value: "user-1"),
             username: "admin",

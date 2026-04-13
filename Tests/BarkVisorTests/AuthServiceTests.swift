@@ -4,11 +4,15 @@ import Testing
 @testable import BarkVisorCore
 
 private struct TestPasswordHasher: PasswordHasher {
-    func hash(_ password: String) throws -> String { "hashed:\(password)" }
-    func verify(_ password: String, against hash: String) throws -> Bool { hash == "hashed:\(password)" }
+    func hash(_ password: String) throws -> String {
+        "hashed:\(password)"
+    }
+    func verify(_ password: String, against hash: String) throws -> Bool {
+        hash == "hashed:\(password)"
+    }
 }
 
-@Suite final class AuthServiceTests {
+final class AuthServiceTests {
     private var dbPool: DatabasePool
     private let tmpDir: URL
     private let hasher = TestPasswordHasher()

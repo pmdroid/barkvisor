@@ -195,7 +195,7 @@ public final class VaporServer: @unchecked Sendable {
                     try database.migrate()
                     startupWarning =
                         "The database could not be opened and no backups were available. "
-                        + "A fresh database was created — all previous data has been lost."
+                            + "A fresh database was created — all previous data has been lost."
                     return database
                 }
             }

@@ -4,10 +4,10 @@ import Testing
 @testable import BarkVisorCore
 
 /// Tests for Data Transfer Objects (DTOs) used in controllers.
-@Suite struct DTOTests {
+struct DTOTests {
     // MARK: - VMResponse
 
-    @Test func vmResponseFromVM() {
+    @Test func `vm response from VM`() {
         let vm = VM(
             id: "vm-1", name: "test-vm", vmType: "linux-arm64", state: "running",
             cpuCount: 4, memoryMb: 2_048, bootDiskId: "disk-1",
@@ -44,7 +44,7 @@ import Testing
         #expect(response.portForwards?.first?.hostPort == 2_222)
     }
 
-    @Test func vmResponseNilOptionals() {
+    @Test func `vm response nil optionals`() {
         let vm = VM(
             id: "vm-1", name: "minimal", vmType: "linux-arm64", state: "stopped",
             cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
@@ -68,7 +68,7 @@ import Testing
         #expect(response.isoId == nil)
     }
 
-    @Test func vmResponseIsoIdBackwardsCompat() {
+    @Test func `vm response iso id backwards compat`() {
         let vm = VM(
             id: "vm-1", name: "iso-test", vmType: "linux-arm64", state: "stopped",
             cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
@@ -86,7 +86,7 @@ import Testing
         #expect(response.isoIds == ["iso-1", "iso-2"])
     }
 
-    @Test func vmResponseLegacyIsoId() {
+    @Test func `vm response legacy iso id`() {
         let vm = VM(
             id: "vm-1", name: "legacy-iso", vmType: "linux-arm64", state: "stopped",
             cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
@@ -106,7 +106,7 @@ import Testing
 
     // MARK: - VMResponse Encodable
 
-    @Test func vmResponseEncodesToJSON() throws {
+    @Test func `vm response encodes to JSON`() throws {
         let vm = VM(
             id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
             cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1",
@@ -130,7 +130,7 @@ import Testing
 
     // MARK: - ImageResponse
 
-    @Test func imageResponseFromVMImage() {
+    @Test func `image response from VM image`() {
         let image = VMImage(
             id: "img-1", name: "Ubuntu 24.04", imageType: "cloud-image", arch: "arm64",
             path: "/data/images/img-1.qcow2", sizeBytes: 1_073_741_824,
@@ -151,7 +151,7 @@ import Testing
         #expect(response.error == nil)
     }
 
-    @Test func imageResponseWithError() {
+    @Test func `image response with error`() {
         let image = VMImage(
             id: "img-2", name: "Failed", imageType: "iso", arch: "arm64",
             path: nil, sizeBytes: nil,
@@ -168,7 +168,7 @@ import Testing
 
     // MARK: - TemplateResponse
 
-    @Test func templateResponseFromVMTemplate() {
+    @Test func `template response from VM template`() {
         let template = VMTemplate(
             id: "tpl-1", slug: "ubuntu-server",
             name: "Ubuntu Server", description: "A server template",
@@ -201,7 +201,7 @@ import Testing
 
     // MARK: - RepositoryResponse
 
-    @Test func repositoryResponseFromImageRepository() {
+    @Test func `repository response from image repository`() {
         let repo = ImageRepository(
             id: "repo-1", name: "Official", url: "https://example.com/repo.json",
             isBuiltIn: true, repoType: "images",
@@ -223,7 +223,7 @@ import Testing
 
     // MARK: - RepositoryImageResponse
 
-    @Test func repositoryImageResponseFromModel() {
+    @Test func `repository image response from model`() {
         let img = RepositoryImage(
             id: "ri-1", repositoryId: "repo-1", slug: "ubuntu-24.04",
             name: "Ubuntu 24.04", description: "LTS release",
@@ -244,7 +244,7 @@ import Testing
 
     // MARK: - GuestInfoResponse
 
-    @Test func guestInfoResponseFromResult() {
+    @Test func `guest info response from result`() {
         let result = GuestInfoResult(
             available: true, ipAddresses: ["10.0.0.5", "fd00::5"],
             macAddress: "52:54:00:12:34:56", ipSource: "guest-agent",
@@ -265,7 +265,7 @@ import Testing
         #expect(response.osVersion == "24.04")
     }
 
-    @Test func guestInfoResponseUnavailable() {
+    @Test func `guest info response unavailable`() {
         let result = GuestInfoResult(
             available: false, ipAddresses: [], macAddress: nil,
             ipSource: "none", hostname: nil, osName: nil, osVersion: nil,

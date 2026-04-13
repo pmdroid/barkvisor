@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct WebSocketTicketStoreTests {
+struct WebSocketTicketStoreTests {
     // We use the shared singleton — tests are serial within this suite
 
-    @Test func createAndValidateVMTicket() async {
+    @Test func `create and validate VM ticket`() async {
         let store = WebSocketTicketStore.shared
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
@@ -17,7 +17,7 @@ import Testing
         #expect(result?.username == "admin")
     }
 
-    @Test func ticketIsSingleUse() async {
+    @Test func `ticket is single use`() async {
         let store = WebSocketTicketStore.shared
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
@@ -29,7 +29,7 @@ import Testing
         #expect(second == nil, "Ticket should be consumed after first use")
     }
 
-    @Test func ticketWrongVM() async {
+    @Test func `ticket wrong VM`() async {
         let store = WebSocketTicketStore.shared
         let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
 
@@ -37,7 +37,7 @@ import Testing
         #expect(result == nil, "Ticket scoped to vm-1 should not validate for vm-2")
     }
 
-    @Test func nonScopedTicket() async {
+    @Test func `non scoped ticket`() async {
         let store = WebSocketTicketStore.shared
         let ticket = await store.createTicket(forUserID: "u1", username: "admin")
 
@@ -46,7 +46,7 @@ import Testing
         #expect(result?.userID == "u1")
     }
 
-    @Test func nonScopedTicketIsSingleUse() async {
+    @Test func `non scoped ticket is single use`() async {
         let store = WebSocketTicketStore.shared
         let ticket = await store.createTicket(forUserID: "u1", username: "admin")
 
@@ -57,7 +57,7 @@ import Testing
         #expect(second == nil)
     }
 
-    @Test func invalidTicketReturnsNil() async {
+    @Test func `invalid ticket returns nil`() async {
         let store = WebSocketTicketStore.shared
         let result = await store.validateTicket("nonexistent-ticket", forVMID: "vm-1")
         #expect(result == nil)

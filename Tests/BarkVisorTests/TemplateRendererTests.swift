@@ -2,16 +2,16 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct TemplateRendererTests {
+struct TemplateRendererTests {
     // MARK: - Basic placeholder replacement
 
-    @Test func simplePlaceholderReplacement() throws {
+    @Test func `simple placeholder replacement`() throws {
         let template = "hostname: {{hostname}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["hostname": "myhost"])
         #expect(result == "hostname: myhost")
     }
 
-    @Test func multiplePlaceholders() throws {
+    @Test func `multiple placeholders`() throws {
         let template = "user: {{username}} host: {{hostname}}"
         let result = try TemplateRenderer.render(
             template: template, inputs: ["username": "admin", "hostname": "srv1"],
@@ -19,14 +19,14 @@ import Testing
         #expect(result == "user: admin host: srv1")
     }
 
-    @Test func emptyTemplateReturnsEmpty() throws {
+    @Test func `empty template returns empty`() throws {
         let result = try TemplateRenderer.render(template: "", inputs: ["key": "value"])
         #expect(result == "")
     }
 
     // MARK: - password_hash
 
-    @Test func passwordHashGeneration() throws {
+    @Test func `password hash generation`() throws {
         let template = "password: {{password_hash}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["password": "secret123"])
         #expect(result.contains("$6$"), "Should contain SHA-512 crypt prefix: \(result)")
@@ -35,7 +35,7 @@ import Testing
 
     // MARK: - ssh_keys_yaml
 
-    @Test func sshKeysYAMLGeneration() throws {
+    @Test func `ssh keys YAML generation`() throws {
         let template = "ssh_authorized_keys:\n{{ssh_keys_yaml}}"
         let keys = "ssh-rsa AAAA key1\nssh-ed25519 BBBB key2"
         let result = try TemplateRenderer.render(template: template, inputs: ["ssh_keys": keys])
@@ -43,7 +43,7 @@ import Testing
         #expect(result.contains("      - ssh-ed25519 BBBB key2"))
     }
 
-    @Test func sshKeysYAMLEmpty() throws {
+    @Test func `ssh keys YAML empty`() throws {
         let template = "keys: {{ssh_keys_yaml}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["ssh_keys": ""])
         #expect(result == "keys: ")
@@ -51,7 +51,7 @@ import Testing
 
     // MARK: - extra_packages_yaml
 
-    @Test func extraPackagesYAML() throws {
+    @Test func `extra packages YAML`() throws {
         let template = "packages:\n{{extra_packages_yaml}}"
         let result = try TemplateRenderer.render(
             template: template, inputs: ["extra_packages": "vim curl htop"],
@@ -61,7 +61,7 @@ import Testing
         #expect(result.contains("  - htop"))
     }
 
-    @Test func extraPackagesEmpty() throws {
+    @Test func `extra packages empty`() throws {
         let template = "packages: {{extra_packages_yaml}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["extra_packages": ""])
         #expect(result == "packages: ")
@@ -69,20 +69,20 @@ import Testing
 
     // MARK: - YAML escaping
 
-    @Test func yamlEscapingDangerousChars() throws {
+    @Test func `yaml escaping dangerous chars`() throws {
         let template = "value: {{input}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["input": "hello: world"])
         #expect(result.contains("'hello: world'"), "Should be YAML single-quoted: \(result)")
     }
 
-    @Test func yamlEscapingSingleQuotes() throws {
+    @Test func `yaml escaping single quotes`() throws {
         let template = "value: {{input}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["input": "it's"])
         // YAML single-quote escaping doubles the quote
         #expect(result.contains("'it''s'"), "Should escape single quotes: \(result)")
     }
 
-    @Test func safeValueNotQuoted() throws {
+    @Test func `safe value not quoted`() throws {
         let template = "value: {{input}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["input": "simple"])
         #expect(result == "value: simple")
@@ -90,25 +90,25 @@ import Testing
 
     // MARK: - SHA-512 Crypt
 
-    @Test func sha512CryptDeterministic() {
+    @Test func `sha 512 crypt deterministic`() {
         let hash1 = TemplateRenderer.sha512Crypt(password: "test", salt: "abcdefgh", rounds: 5_000)
         let hash2 = TemplateRenderer.sha512Crypt(password: "test", salt: "abcdefgh", rounds: 5_000)
         #expect(hash1 == hash2, "Same password + salt should produce same hash")
     }
 
-    @Test func sha512CryptFormat() {
+    @Test func `sha 512 crypt format`() {
         let hash = TemplateRenderer.sha512Crypt(password: "password", salt: "testsalt", rounds: 5_000)
         #expect(hash.hasPrefix("$6$testsalt$"), "Should have $6$salt$ format: \(hash)")
     }
 
-    @Test func sha512CryptCustomRounds() {
+    @Test func `sha 512 crypt custom rounds`() {
         let hash = TemplateRenderer.sha512Crypt(password: "password", salt: "salt1234", rounds: 1_000)
         #expect(
             hash.hasPrefix("$6$rounds=1000$salt1234$"), "Custom rounds should appear: \(hash)",
         )
     }
 
-    @Test func sha512CryptDifferentPasswordsDifferentHashes() {
+    @Test func `sha 512 crypt different passwords different hashes`() {
         let hash1 = TemplateRenderer.sha512Crypt(
             password: "password1", salt: "same_salt", rounds: 5_000,
         )
@@ -118,7 +118,7 @@ import Testing
         #expect(hash1 != hash2)
     }
 
-    @Test func sha512CryptDifferentSaltsDifferentHashes() {
+    @Test func `sha 512 crypt different salts different hashes`() {
         let hash1 = TemplateRenderer.sha512Crypt(
             password: "same_password", salt: "salt1111", rounds: 5_000,
         )
@@ -128,7 +128,7 @@ import Testing
         #expect(hash1 != hash2)
     }
 
-    @Test func generateSHA512CryptRandomSalt() {
+    @Test func `generate SHA 512 crypt random salt`() {
         let hash1 = TemplateRenderer.generateSHA512Crypt(password: "test")
         let hash2 = TemplateRenderer.generateSHA512Crypt(password: "test")
         #expect(hash1 != hash2, "Random salts should produce different hashes")

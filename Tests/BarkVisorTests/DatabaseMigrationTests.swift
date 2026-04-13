@@ -4,7 +4,7 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite struct DatabaseMigrationTests {
+struct DatabaseMigrationTests {
     private func makeInMemoryMigrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
@@ -21,18 +21,18 @@ import Testing
 
     // MARK: - Migration Integrity
 
-    @Test func allMigrationsRunWithoutError() throws {
+    @Test func `all migrations run without error`() throws {
         #expect(throws: Never.self) { try migratedQueue() }
     }
 
-    @Test func migrationsAreIdempotent() throws {
+    @Test func `migrations are idempotent`() throws {
         let queue = try migratedQueue()
         #expect(throws: Never.self) { try makeInMemoryMigrator().migrate(queue) }
     }
 
     // MARK: - VM Round Trip
 
-    @Test func vmRoundTrip() throws {
+    @Test func `vm round trip`() throws {
         let queue = try migratedQueue()
 
         let disk = Disk(
@@ -66,7 +66,7 @@ import Testing
 
     // MARK: - Disk Round Trip
 
-    @Test func diskRoundTrip() throws {
+    @Test func `disk round trip`() throws {
         let queue = try migratedQueue()
         let disk = Disk(
             id: "disk-1", name: "boot", path: "/data/boot.qcow2",
@@ -85,7 +85,7 @@ import Testing
 
     // MARK: - Network Round Trip
 
-    @Test func networkRoundTrip() throws {
+    @Test func `network round trip`() throws {
         let queue = try migratedQueue()
         let network = Network(
             id: "net-1", name: "default", mode: "nat", bridge: nil,
@@ -104,7 +104,7 @@ import Testing
 
     // MARK: - Tables Exist
 
-    @Test func expectedTablesExist() throws {
+    @Test func `expected tables exist`() throws {
         let queue = try migratedQueue()
         let tables = try queue.read { db -> [String] in
             try String.fetchAll(

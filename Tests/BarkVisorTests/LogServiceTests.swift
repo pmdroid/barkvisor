@@ -2,17 +2,17 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct LogServiceTests {
+struct LogServiceTests {
     // MARK: - LogLevel
 
-    @Test func logLevelOrdering() {
+    @Test func `log level ordering`() {
         #expect(LogLevel.debug < LogLevel.info)
         #expect(LogLevel.info < LogLevel.warn)
         #expect(LogLevel.warn < LogLevel.error)
         #expect(LogLevel.error < LogLevel.fatal)
     }
 
-    @Test func logLevelRawValues() {
+    @Test func `log level raw values`() {
         #expect(LogLevel.debug.rawValue == "debug")
         #expect(LogLevel.info.rawValue == "info")
         #expect(LogLevel.warn.rawValue == "warn")
@@ -20,7 +20,7 @@ import Testing
         #expect(LogLevel.fatal.rawValue == "fatal")
     }
 
-    @Test func logLevelFromRawValue() {
+    @Test func `log level from raw value`() {
         #expect(LogLevel(rawValue: "debug") == .debug)
         #expect(LogLevel(rawValue: "info") == .info)
         #expect(LogLevel(rawValue: "warn") == .warn)
@@ -29,7 +29,7 @@ import Testing
         #expect(LogLevel(rawValue: "verbose") == nil)
     }
 
-    @Test func logLevelNotGreaterThanSelf() {
+    @Test func `log level not greater than self`() {
         for level in [LogLevel.debug, .info, .warn, .error, .fatal] {
             #expect(!(level < level), "\(level) should not be less than itself")
         }
@@ -37,12 +37,12 @@ import Testing
 
     // MARK: - LogCategory
 
-    @Test func logCategoryRawValues() {
+    @Test func `log category raw values`() {
         #expect(LogCategory.app.rawValue == "app")
         #expect(LogCategory.server.rawValue == "server")
     }
 
-    @Test func logCategoryAllCases() {
+    @Test func `log category all cases`() {
         #expect(LogCategory.allCases.count == 8)
         #expect(LogCategory.allCases.contains(.app))
         #expect(LogCategory.allCases.contains(.server))
@@ -50,7 +50,7 @@ import Testing
 
     // MARK: - LogEntry Codable
 
-    @Test func logEntryCodable() throws {
+    @Test func `log entry codable`() throws {
         let entry = LogEntry(
             ts: "2025-01-01T00:00:00Z",
             level: .info,
@@ -75,7 +75,7 @@ import Testing
         #expect(decoded.detail?["key"] == "value")
     }
 
-    @Test func logEntryWithError() throws {
+    @Test func `log entry with error`() throws {
         let entry = LogEntry(
             ts: "2025-01-01T00:00:00Z",
             level: .error,

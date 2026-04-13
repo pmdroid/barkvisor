@@ -3,7 +3,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
-@Suite final class APIKeyServiceTests {
+final class APIKeyServiceTests {
     private var dbPool: DatabasePool
     private let tmpDir: URL
 
@@ -32,27 +32,27 @@ import Testing
 
     // MARK: - parseExpiry
 
-    @Test func parseExpiryDays() throws {
+    @Test func `parse expiry days`() throws {
         let result = try APIKeyService.parseExpiry("30d")
         #expect(result != nil)
     }
 
-    @Test func parseExpiryYears() throws {
+    @Test func `parse expiry years`() throws {
         let result = try APIKeyService.parseExpiry("1y")
         #expect(result != nil)
     }
 
-    @Test func parseExpiryNever() throws {
+    @Test func `parse expiry never`() throws {
         let result = try APIKeyService.parseExpiry("never")
         #expect(result == nil)
     }
 
-    @Test func parseExpiryNil() throws {
+    @Test func `parse expiry nil`() throws {
         let result = try APIKeyService.parseExpiry(nil)
         #expect(result == nil)
     }
 
-    @Test func parseExpiryInvalidFormat() {
+    @Test func `parse expiry invalid format`() {
         #expect(throws: (any Error).self) { try APIKeyService.parseExpiry("30h") }
         #expect(throws: (any Error).self) { try APIKeyService.parseExpiry("abc") }
         #expect(throws: (any Error).self) { try APIKeyService.parseExpiry("") }
@@ -60,7 +60,7 @@ import Testing
 
     // MARK: - create
 
-    @Test func createAPIKey() async throws {
+    @Test func `create API key`() async throws {
         let result = try await APIKeyService.create(
             name: "Test Key", expiresIn: "30d", userId: "user-1", db: dbPool,
         )
@@ -71,7 +71,7 @@ import Testing
         #expect(result.apiKey.expiresAt != nil)
     }
 
-    @Test func createAPIKeyEmptyNameRejected() async {
+    @Test func `create API key empty name rejected`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             _ = try await APIKeyService.create(name: "   ", expiresIn: nil, userId: "user-1", db: dbPool)
         }
@@ -80,7 +80,7 @@ import Testing
 
     // MARK: - list
 
-    @Test func listAPIKeys() async throws {
+    @Test func `list API keys`() async throws {
         _ = try await APIKeyService.create(name: "Key 1", expiresIn: nil, userId: "user-1", db: dbPool)
         _ = try await APIKeyService.create(name: "Key 2", expiresIn: nil, userId: "user-1", db: dbPool)
         let keys = try await APIKeyService.list(userId: "user-1", db: dbPool)
@@ -89,7 +89,7 @@ import Testing
 
     // MARK: - revoke
 
-    @Test func revokeAPIKey() async throws {
+    @Test func `revoke API key`() async throws {
         let created = try await APIKeyService.create(
             name: "Revoke Me", expiresIn: nil, userId: "user-1", db: dbPool,
         )
@@ -99,14 +99,14 @@ import Testing
         #expect(remaining.isEmpty)
     }
 
-    @Test func revokeNonExistentKeyThrows() async {
+    @Test func `revoke non existent key throws`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             _ = try await APIKeyService.revoke(id: "fake-id", userId: "user-1", db: dbPool)
         }
         #expect(error?.httpStatus == 404)
     }
 
-    @Test func revokeOtherUsersKeyForbidden() async throws {
+    @Test func `revoke other users key forbidden`() async throws {
         let created = try await APIKeyService.create(
             name: "Other", expiresIn: nil, userId: "user-1", db: dbPool,
         )
@@ -118,7 +118,7 @@ import Testing
 
     // MARK: - APIKey.isExpired
 
-    @Test func apiKeyNotExpiredWhenNil() {
+    @Test func `api key not expired when nil`() {
         let key = APIKey(
             id: "k1", name: "test", keyHash: "h", keyPrefix: "p", userId: "u1",
             expiresAt: nil, lastUsedAt: nil, createdAt: "2025-01-01T00:00:00Z",
@@ -126,7 +126,7 @@ import Testing
         #expect(!key.isExpired)
     }
 
-    @Test func apiKeyExpired() {
+    @Test func `api key expired`() {
         let key = APIKey(
             id: "k1", name: "test", keyHash: "h", keyPrefix: "p", userId: "u1",
             expiresAt: "2020-01-01T00:00:00Z", lastUsedAt: nil, createdAt: "2019-01-01T00:00:00Z",
@@ -134,7 +134,7 @@ import Testing
         #expect(key.isExpired)
     }
 
-    @Test func apiKeyNotYetExpired() {
+    @Test func `api key not yet expired`() {
         let future = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
         let key = APIKey(
             id: "k1", name: "test", keyHash: "h", keyPrefix: "p", userId: "u1",

@@ -2,31 +2,31 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct JSONColumnCodingTests {
+struct JSONColumnCodingTests {
     // MARK: - decodeArray
 
-    @Test func decodeArrayFromValidJSON() {
+    @Test func `decode array from valid JSON`() {
         let json = "[\"a\",\"b\",\"c\"]"
         let result = JSONColumnCoding.decodeArray(String.self, from: json)
         #expect(result == ["a", "b", "c"])
     }
 
-    @Test func decodeArrayFromNil() {
+    @Test func `decode array from nil`() {
         let result = JSONColumnCoding.decodeArray(String.self, from: nil)
         #expect(result == nil)
     }
 
-    @Test func decodeArrayFromInvalidJSON() {
+    @Test func `decode array from invalid JSON`() {
         let result = JSONColumnCoding.decodeArray(String.self, from: "not json")
         #expect(result == nil)
     }
 
-    @Test func decodeArrayFromEmptyString() {
+    @Test func `decode array from empty string`() {
         let result = JSONColumnCoding.decodeArray(String.self, from: "")
         #expect(result == nil)
     }
 
-    @Test func decodeArrayOfInts() {
+    @Test func `decode array of ints`() {
         let json = "[1,2,3]"
         let result = JSONColumnCoding.decodeArray(Int.self, from: json)
         #expect(result == [1, 2, 3])
@@ -34,26 +34,26 @@ import Testing
 
     // MARK: - decode single value
 
-    @Test func decodeSingleValue() {
+    @Test func `decode single value`() {
         let json = "{\"name\":\"test\",\"loginTime\":1234.5}"
         let result = JSONColumnCoding.decode(GuestUserDTO.self, from: json)
         #expect(result?.name == "test")
         #expect(result?.loginTime == 1_234.5)
     }
 
-    @Test func decodeSingleValueFromNil() {
+    @Test func `decode single value from nil`() {
         let result = JSONColumnCoding.decode(GuestUserDTO.self, from: nil)
         #expect(result == nil)
     }
 
-    @Test func decodeSingleValueFromInvalidJSON() {
+    @Test func `decode single value from invalid JSON`() {
         let result = JSONColumnCoding.decode(GuestUserDTO.self, from: "bad")
         #expect(result == nil)
     }
 
     // MARK: - encode
 
-    @Test func encodeValue() throws {
+    @Test func `encode value`() throws {
         let users = [GuestUserDTO(name: "alice", loginTime: nil)]
         let json = JSONColumnCoding.encode(users)
         #expect(json != nil)
@@ -61,14 +61,14 @@ import Testing
         #expect(unwrapped.contains("alice"))
     }
 
-    @Test func encodeNil() {
+    @Test func `encode nil`() {
         let result = JSONColumnCoding.encode(nil as [String]?)
         #expect(result == nil)
     }
 
     // MARK: - Round trip
 
-    @Test func roundTrip() {
+    @Test func `round trip`() {
         let original = [
             PortForwardRule(protocol: "tcp", hostPort: 2_222, guestPort: 22),
             PortForwardRule(protocol: "udp", hostPort: 5_353, guestPort: 53),

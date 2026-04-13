@@ -3,7 +3,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
-@Suite final class ImageServiceTests {
+final class ImageServiceTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
 
@@ -28,31 +28,31 @@ import Testing
 
     // MARK: - parseTusMetadata
 
-    @Test func parseTusMetadataSinglePair() {
+    @Test func `parse tus metadata single pair`() {
         let raw = "filename dWJ1bnR1Lmlzbw==" // "ubuntu.iso" in base64
         let result = ImageService.parseTusMetadata(raw)
         #expect(result["filename"] == "ubuntu.iso")
     }
 
-    @Test func parseTusMetadataMultiplePairs() {
+    @Test func `parse tus metadata multiple pairs`() {
         let raw = "filename dWJ1bnR1Lmlzbw==, filetype aW1hZ2UvaXNv" // "image/iso" in base64
         let result = ImageService.parseTusMetadata(raw)
         #expect(result["filename"] == "ubuntu.iso")
         #expect(result["filetype"] == "image/iso")
     }
 
-    @Test func parseTusMetadataEmpty() {
+    @Test func `parse tus metadata empty`() {
         let result = ImageService.parseTusMetadata("")
         #expect(result.isEmpty)
     }
 
-    @Test func parseTusMetadataInvalidBase64() {
+    @Test func `parse tus metadata invalid base 64`() {
         let raw = "filename not-valid-base64"
         let result = ImageService.parseTusMetadata(raw)
         #expect(result["filename"] == nil, "Invalid base64 should not produce a value")
     }
 
-    @Test func parseTusMetadataMissingValue() {
+    @Test func `parse tus metadata missing value`() {
         let raw = "filename"
         let result = ImageService.parseTusMetadata(raw)
         #expect(result.isEmpty, "Missing value should be skipped")
@@ -60,7 +60,7 @@ import Testing
 
     // MARK: - finalizeTusUpload
 
-    @Test func finalizeTusUploadFailureMarksImageErrorAndDeletesUpload() async throws {
+    @Test func `finalize tus upload failure marks image error and deletes upload`() async throws {
         let now = "2026-01-01T00:00:00Z"
         let image = VMImage(
             id: "img-1",

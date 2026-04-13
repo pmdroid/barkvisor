@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct HostInfoServiceTests {
-    @Test func listInterfacesReturnsAtLeastLoopback() {
+struct HostInfoServiceTests {
+    @Test func `list interfaces returns at least loopback`() {
         let interfaces = HostInfoService.listInterfaces()
         // On any macOS host, we should get at least lo0
         #expect(!interfaces.isEmpty, "Should find at least one network interface")
@@ -13,7 +13,7 @@ import Testing
         #expect(lo?.ipAddress == "127.0.0.1")
     }
 
-    @Test func listInterfacesHasValidFormat() {
+    @Test func `list interfaces has valid format`() {
         let interfaces = HostInfoService.listInterfaces()
         for iface in interfaces {
             #expect(!iface.name.isEmpty, "Interface name should not be empty")
@@ -24,11 +24,11 @@ import Testing
         }
     }
 
-    @Test func interfaceExistsForLoopback() {
+    @Test func `interface exists for loopback`() {
         #expect(HostInfoService.interfaceExists("lo0"), "lo0 should always exist on macOS")
     }
 
-    @Test func interfaceExistsForNonExistent() {
+    @Test func `interface exists for non existent`() {
         #expect(!HostInfoService.interfaceExists("fake_interface_999"))
     }
 }
