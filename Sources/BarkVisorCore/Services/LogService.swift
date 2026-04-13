@@ -1,5 +1,7 @@
 import Foundation
 import GRDB
+import Logging
+import SwiftSentry
 import os
 
 // MARK: - Log Types
@@ -80,8 +82,24 @@ public actor LogService {
     /// Maximum number of log rows to keep in the database
     private let maxRows = 50_000
 
+    /// SwiftLog logger for forwarding errors to Sentry
+    nonisolated(unsafe) static var swiftLogger: Logging.Logger?
+
     public init() {
         self.minLevel = .info
+    }
+
+    /// Configure SwiftLog with Sentry handler for error forwarding
+    public static func configureSentry(sentry: Sentry) {
+        LoggingSystem.bootstrap { label in
+            var handler = StreamLogHandler.standardOutput(label: label)
+            handler.logLevel = .debug
+            return MultiplexLogHandler([
+                SentryLogHandler(label: label, sentry: sentry, level: .error),
+                handler
+            ])
+        }
+        swiftLogger = Logger(label: "barkvisor")
     }
 
     /// Must be called once at startup to provide the database pool.
@@ -124,7 +142,7 @@ public actor LogService {
                         try db.execute(
                             sql: """
                                 INSERT INTO logs (ts, level, cat, msg, vm, req, err, detail)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             arguments: [
                                 entry.ts, entry.level.rawValue, entry.cat.rawValue,
@@ -136,6 +154,12 @@ public actor LogService {
                     os_log("LogService DB write failed: %{public}@", error.localizedDescription)
                 }
             }
+        }
+
+        // Forward error/critical to Sentry via SwiftLog
+        if level >= .error, let swiftLogger = Self.swiftLogger {
+            let sentryMsg = "[\(category.rawValue)] \(msg)\(error.map { " - \($0)" } ?? "")"
+            swiftLogger.log(level: .error, .init(stringLiteral: sentryMsg))
         }
 
         // Emit to os_log for Console.app visibility
