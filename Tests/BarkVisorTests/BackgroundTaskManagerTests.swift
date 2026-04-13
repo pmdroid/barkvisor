@@ -10,12 +10,13 @@ struct BackgroundTaskManagerTests {
         let id = await manager.submit("task-1", kind: .diagnosticBundle) { "done" }
         #expect(id == "task-1")
 
-        try await Task.sleep(nanoseconds: 200_000_000)
+        var finalEvent: BackgroundTaskManager.TaskEvent?
+        for await event in await manager.eventStream("task-1") {
+            finalEvent = event
+        }
 
-        let event = await manager.status("task-1")
-        #expect(event != nil)
-        #expect(event?.status == .completed)
-        #expect(event?.resultPayload == "done")
+        #expect(finalEvent?.status == .completed)
+        #expect(finalEvent?.resultPayload == "done")
     }
 
     @Test func `submit duplicate`() async {
@@ -58,11 +59,13 @@ struct BackgroundTaskManagerTests {
             throw BarkVisorError.internalError("test failure")
         }
 
-        try await Task.sleep(nanoseconds: 200_000_000)
+        var finalEvent: BackgroundTaskManager.TaskEvent?
+        for await event in await manager.eventStream("task-1") {
+            finalEvent = event
+        }
 
-        let event = await manager.status("task-1")
-        #expect(event?.status == .failed)
-        #expect(event?.error != nil)
+        #expect(finalEvent?.status == .failed)
+        #expect(finalEvent?.error != nil)
     }
 
     // MARK: - Progress

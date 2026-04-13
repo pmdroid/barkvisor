@@ -154,6 +154,11 @@ public actor BackgroundTaskManager {
             // Send current state immediately if available
             if let current = latestEvents[id] {
                 continuation.yield(current)
+                // If already terminal, close the stream immediately — no more events will arrive
+                if current.status != .running, current.status != .queued {
+                    continuation.finish()
+                    return
+                }
             }
             continuations[id, default: [:]][uuid] = continuation
             continuation.onTermination = { _ in
