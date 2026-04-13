@@ -3,10 +3,10 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite struct QEMUBuilderValidationTests {
+struct QEMUBuilderValidationTests {
     // MARK: - IPv4 Validation
 
-    @Test func validIPv4() {
+    @Test func `valid I pv 4`() {
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("192.168.1.1") }
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("0.0.0.0") }
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("255.255.255.255") }
@@ -14,7 +14,7 @@ import Testing
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("172.16.0.1") }
     }
 
-    @Test func invalidIPv4() {
+    @Test func `invalid I pv 4`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("256.0.0.0") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("1.2.3") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("1.2.3.4.5") }
@@ -25,14 +25,14 @@ import Testing
 
     // MARK: - Port Validation
 
-    @Test func validPort() {
+    @Test func `valid port`() {
         #expect(throws: Never.self) { try QEMUBuilder.validatePort(1) }
         #expect(throws: Never.self) { try QEMUBuilder.validatePort(80) }
         #expect(throws: Never.self) { try QEMUBuilder.validatePort(443) }
         #expect(throws: Never.self) { try QEMUBuilder.validatePort(65_535) }
     }
 
-    @Test func invalidPort() {
+    @Test func `invalid port`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validatePort(0) }
         #expect(throws: (any Error).self) { try QEMUBuilder.validatePort(-1) }
         #expect(throws: (any Error).self) { try QEMUBuilder.validatePort(65_536) }
@@ -41,12 +41,12 @@ import Testing
 
     // MARK: - Protocol Validation
 
-    @Test func validProtocol() {
+    @Test func `valid protocol`() {
         #expect(throws: Never.self) { try QEMUBuilder.validateProtocol("tcp") }
         #expect(throws: Never.self) { try QEMUBuilder.validateProtocol("udp") }
     }
 
-    @Test func invalidProtocol() {
+    @Test func `invalid protocol`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateProtocol("icmp") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateProtocol("TCP") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateProtocol("") }
@@ -55,7 +55,7 @@ import Testing
 
     // MARK: - Resolution Validation
 
-    @Test func validResolution() throws {
+    @Test func `valid resolution`() throws {
         let (w, h) = try QEMUBuilder.validateResolution("1280x800")
         #expect(w == "1280")
         #expect(h == "800")
@@ -69,7 +69,7 @@ import Testing
         #expect(h3 == "4320")
     }
 
-    @Test func invalidResolution() {
+    @Test func `invalid resolution`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateResolution("0x0") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateResolution("9999x9999") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateResolution("abc") }
@@ -80,13 +80,13 @@ import Testing
 
     // MARK: - MAC Address Validation
 
-    @Test func validMAC() {
+    @Test func `valid MAC`() {
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("52:54:00:12:34:56") }
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("aa:bb:cc:dd:ee:ff") }
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("AA:BB:CC:DD:EE:FF") }
     }
 
-    @Test func invalidMAC() {
+    @Test func `invalid MAC`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34") } // too few
         #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:56:78") } // too many
         #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:GG") } // non-hex
@@ -97,16 +97,16 @@ import Testing
 
     // MARK: - Shared Path Validation
 
-    @Test func sharedPathRejectsCommas() {
+    @Test func `shared path rejects commas`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateSharedPath("/Users/test/path,with,commas") }
     }
 
-    @Test func sharedPathRejectsOutsideAllowedPrefixes() {
+    @Test func `shared path rejects outside allowed prefixes`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateSharedPath("/etc/passwd") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateSharedPath("/tmp/something") }
     }
 
-    @Test func sharedPathRejectsNonExistentPath() {
+    @Test func `shared path rejects non existent path`() {
         #expect(throws: (any Error).self) {
             try QEMUBuilder.validateSharedPath(
                 NSHomeDirectory() + "/nonexistent_path_\(UUID().uuidString)",
@@ -114,14 +114,14 @@ import Testing
         }
     }
 
-    @Test func sharedPathAcceptsHomeDirectory() {
+    @Test func `shared path accepts home directory`() {
         // Home directory itself should be valid (it exists and is within allowed prefix)
         #expect(throws: Never.self) { try QEMUBuilder.validateSharedPath(NSHomeDirectory()) }
     }
 
     // MARK: - VM Type
 
-    @Test func unknownVMTypeThrows() {
+    @Test func `unknown VM type throws`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "linux-x86_64") }
         #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "freebsd") }
         #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "") }

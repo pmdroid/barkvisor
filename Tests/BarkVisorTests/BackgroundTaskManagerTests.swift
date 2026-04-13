@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct BackgroundTaskManagerTests {
+struct BackgroundTaskManagerTests {
     // MARK: - Submit and complete
 
-    @Test func submitAndComplete() async throws {
+    @Test func `submit and complete`() async throws {
         let manager = BackgroundTaskManager()
         let id = await manager.submit("task-1", kind: .diagnosticBundle) { "done" }
         #expect(id == "task-1")
@@ -18,7 +18,7 @@ import Testing
         #expect(event?.resultPayload == "done")
     }
 
-    @Test func submitDuplicate() async {
+    @Test func `submit duplicate`() async {
         let manager = BackgroundTaskManager()
 
         await manager.submit("task-1", kind: .diagnosticBundle) {
@@ -52,7 +52,7 @@ import Testing
 
     // MARK: - Failed task
 
-    @Test func failedTask() async throws {
+    @Test func `failed task`() async throws {
         let manager = BackgroundTaskManager()
         await manager.submit("task-1", kind: .diagnosticBundle) {
             throw BarkVisorError.internalError("test failure")
@@ -67,7 +67,7 @@ import Testing
 
     // MARK: - Progress
 
-    @Test func reportProgress() async throws {
+    @Test func `report progress`() async throws {
         let manager = BackgroundTaskManager()
         await manager.submit("task-1", kind: .vmProvision) {
             await manager.reportProgress("task-1", progress: 0.5)
@@ -82,7 +82,7 @@ import Testing
 
     // MARK: - Concurrency limits (queue)
 
-    @Test func concurrencyLimitQueues() async throws {
+    @Test func `concurrency limit queues`() async throws {
         let manager = BackgroundTaskManager()
 
         await manager.submit("task-1", kind: .vmProvision) {
@@ -102,7 +102,7 @@ import Testing
 
     // MARK: - CancelAll
 
-    @Test func cancelAll() async throws {
+    @Test func `cancel all`() async throws {
         let manager = BackgroundTaskManager()
         await manager.submit("task-1", kind: .diagnosticBundle) {
             try? await Task.sleep(nanoseconds: 10_000_000_000)
@@ -119,7 +119,7 @@ import Testing
 
     // MARK: - TaskStatus Codable
 
-    @Test func taskStatusCodable() throws {
+    @Test func `task status codable`() throws {
         let statuses: [BackgroundTaskManager.TaskStatus] = [.queued, .running, .completed, .failed, .cancelled]
         for status in statuses {
             let data = try JSONEncoder().encode(status)
@@ -130,7 +130,7 @@ import Testing
 
     // MARK: - TaskKind Codable
 
-    @Test func taskKindCodable() throws {
+    @Test func `task kind codable`() throws {
         let kinds: [BackgroundTaskManager.TaskKind] = [.vmProvision, .vmDelete, .diagnosticBundle, .repoSync]
         for kind in kinds {
             let data = try JSONEncoder().encode(kind)
@@ -141,7 +141,7 @@ import Testing
 
     // MARK: - TaskEvent Codable
 
-    @Test func taskEventCodable() throws {
+    @Test func `task event codable`() throws {
         let event = BackgroundTaskManager.TaskEvent(
             taskID: "t1", kind: "vmProvision", status: .completed,
             progress: 1.0, error: nil, resultPayload: "{\"vmId\":\"vm-1\"}",

@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct MACAddressTests {
-    @Test func generateQemuMACFormat() {
+struct MACAddressTests {
+    @Test func `generate qemu MAC format`() {
         for _ in 0 ..< 100 {
             let mac = MACAddress.generateQemu()
             let parts = mac.split(separator: ":")
@@ -13,12 +13,12 @@ import Testing
             #expect(String(parts[2]) == "00", "Third octet should be 00")
             for part in parts {
                 #expect(part.count == 2, "Each octet should be 2 chars: \(part)")
-                #expect(part.allSatisfy { $0.isHexDigit }, "Each octet must be hex: \(part)")
+                #expect(part.allSatisfy(\.isHexDigit), "Each octet must be hex: \(part)")
             }
         }
     }
 
-    @Test func generateQemuMACRandomness() {
+    @Test func `generate qemu MAC randomness`() {
         // Generate many MACs and check they aren't all the same
         let macs = (0 ..< 20).map { _ in MACAddress.generateQemu() }
         let uniqueMACs = Set(macs)

@@ -3,10 +3,10 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite struct ModelCodingTests {
+struct ModelCodingTests {
     // MARK: - VM Codable
 
-    @Test func vmCodable() throws {
+    @Test func `vm codable`() throws {
         let vm = VM(
             id: "test-id",
             name: "test-vm",
@@ -57,7 +57,7 @@ import Testing
 
     // MARK: - Disk Codable
 
-    @Test func diskCodable() throws {
+    @Test func `disk codable`() throws {
         let disk = Disk(
             id: "disk-1",
             name: "boot",
@@ -83,7 +83,7 @@ import Testing
 
     // MARK: - PortForwardRule Codable
 
-    @Test func portForwardRuleCodable() throws {
+    @Test func `port forward rule codable`() throws {
         let rule = PortForwardRule(protocol: "tcp", hostPort: 2_222, guestPort: 22)
 
         let data = try JSONEncoder().encode(rule)
@@ -96,7 +96,7 @@ import Testing
 
     // MARK: - Network Codable
 
-    @Test func networkCodable() throws {
+    @Test func `network codable`() throws {
         let network = Network(
             id: "net-1",
             name: "default",
@@ -121,7 +121,7 @@ import Testing
 
     // MARK: - BarkVisorError
 
-    @Test func barkVisorErrorDescriptions() throws {
+    @Test func `bark visor error descriptions`() throws {
         let errors: [BarkVisorError] = [
             .qemuNotFound("not found"),
             .firmwareNotFound("missing"),

@@ -4,7 +4,7 @@ import Testing
 @testable import BarkVisorCore
 
 /// Tests for DB round-trips of models not covered by the existing DatabaseMigrationTests.
-@Suite final class ModelDBRoundTripTests {
+final class ModelDBRoundTripTests {
     private let dbPool: DatabaseQueue
 
     init() throws {
@@ -19,7 +19,7 @@ import Testing
 
     // MARK: - User
 
-    @Test func userRoundTrip() throws {
+    @Test func `user round trip`() throws {
         let user = User(
             id: "u1", username: "alice", password: "hash123", createdAt: "2025-01-01T00:00:00Z",
         )
@@ -28,7 +28,7 @@ import Testing
         #expect(fetched?.username == "alice")
     }
 
-    @Test func userUniqueUsername() throws {
+    @Test func `user unique username`() throws {
         try dbPool.write { db in
             try User(id: "u1", username: "alice", password: "h1", createdAt: "2025-01-01T00:00:00Z")
                 .insert(db)
@@ -43,7 +43,7 @@ import Testing
 
     // MARK: - AppSetting
 
-    @Test func appSettingRoundTrip() throws {
+    @Test func `app setting round trip`() throws {
         let setting = AppSetting(key: "theme", value: "dark")
         try dbPool.write { db in try setting.insert(db) }
         let fetched = try dbPool.read { db in try AppSetting.fetchOne(db, key: "theme") }
@@ -52,7 +52,7 @@ import Testing
 
     // MARK: - BridgeRecord
 
-    @Test func bridgeRecordRoundTrip() throws {
+    @Test func `bridge record round trip`() throws {
         let bridge = BridgeRecord(
             id: nil,
             interface: "en0",
@@ -74,7 +74,7 @@ import Testing
 
     // MARK: - SSHKey
 
-    @Test func sshKeyRoundTrip() throws {
+    @Test func `ssh key round trip`() throws {
         let key = SSHKey(
             id: "k1",
             name: "My Key",
@@ -93,7 +93,7 @@ import Testing
 
     // MARK: - APIKey
 
-    @Test func apiKeyRoundTrip() throws {
+    @Test func `api key round trip`() throws {
         // Need a user first for FK
         try dbPool.write { db in
             try User(id: "u1", username: "admin", password: "h", createdAt: "2025-01-01T00:00:00Z")
@@ -117,7 +117,7 @@ import Testing
         #expect(fetched?.keyPrefix == "barkvisor_abcde")
     }
 
-    @Test func apiKeyCascadeDeleteOnUserDelete() throws {
+    @Test func `api key cascade delete on user delete`() throws {
         try dbPool.write { db in
             try User(id: "u1", username: "admin", password: "h", createdAt: "2025-01-01T00:00:00Z")
                 .insert(db)
@@ -141,7 +141,7 @@ import Testing
 
     // MARK: - AuditEntry
 
-    @Test func auditEntryAutoIncrementID() throws {
+    @Test func `audit entry auto increment ID`() throws {
         try dbPool.write { db in
             let entry = AuditEntry(
                 id: nil,
@@ -165,7 +165,7 @@ import Testing
 
     // MARK: - ImageRepository
 
-    @Test func imageRepositoryRoundTrip() throws {
+    @Test func `image repository round trip`() throws {
         let repo = ImageRepository(
             id: "repo-1", name: "Official", url: "https://example.com/repo.json",
             isBuiltIn: true, repoType: "both", lastSyncedAt: nil, lastError: nil,
@@ -180,7 +180,7 @@ import Testing
 
     // MARK: - RepositoryImage
 
-    @Test func repositoryImageRoundTrip() throws {
+    @Test func `repository image round trip`() throws {
         // Need repository first
         try dbPool.write { db in
             try ImageRepository(
@@ -204,7 +204,7 @@ import Testing
 
     // MARK: - VMImage
 
-    @Test func vmImageRoundTrip() throws {
+    @Test func `vm image round trip`() throws {
         let image = VMImage(
             id: "img-1", name: "Ubuntu", imageType: "cloud-image",
             arch: "arm64", path: "/data/images/test.img", sizeBytes: 500_000,
@@ -219,7 +219,7 @@ import Testing
 
     // MARK: - TusUpload (cascade)
 
-    @Test func tusUploadCascadeOnImageDelete() throws {
+    @Test func `tus upload cascade on image delete`() throws {
         try dbPool.write { db in
             try VMImage(
                 id: "img-1", name: "Test", imageType: "iso", arch: "arm64",
@@ -240,7 +240,7 @@ import Testing
 
     // MARK: - GuestInfoRecord
 
-    @Test func guestInfoRoundTrip() throws {
+    @Test func `guest info round trip`() throws {
         // Need disk and VM first
         try dbPool.write { db in
             try Disk(
@@ -279,7 +279,7 @@ import Testing
         #expect(fetched?.osName == "Ubuntu")
     }
 
-    @Test func guestInfoCascadeOnVMDelete() throws {
+    @Test func `guest info cascade on VM delete`() throws {
         try dbPool.write { db in
             try Disk(
                 id: "d1",
@@ -316,7 +316,7 @@ import Testing
 
     // MARK: - VMTemplate
 
-    @Test func vmTemplateRoundTrip() throws {
+    @Test func `vm template round trip`() throws {
         let template = VMTemplate(
             id: "t1", slug: "ubuntu-server", name: "Ubuntu Server",
             description: "A server template", category: "server", icon: "ubuntu",

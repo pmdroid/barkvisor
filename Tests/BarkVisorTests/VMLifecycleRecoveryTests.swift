@@ -3,7 +3,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
-@Suite final class VMLifecycleRecoveryTests {
+final class VMLifecycleRecoveryTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
 
@@ -26,7 +26,7 @@ import Testing
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
-    @Test func handleProvisionFailureMarksVMErrorAndRemovesDiskFile() async throws {
+    @Test func `handle provision failure marks VM error and removes disk file`() async throws {
         let now = "2026-01-01T00:00:00Z"
         let diskPath = tmpDir.appendingPathComponent("boot.qcow2")
         FileManager.default.createFile(atPath: diskPath.path, contents: Data("partial".utf8))
@@ -95,7 +95,7 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: diskPath.path))
     }
 
-    @Test func handleDeleteFailureMarksVMError() async throws {
+    @Test func `handle delete failure marks VM error`() async throws {
         let now = "2026-01-01T00:00:00Z"
         let diskPath = tmpDir.appendingPathComponent("delete.qcow2")
         FileManager.default.createFile(atPath: diskPath.path, contents: Data())

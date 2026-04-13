@@ -4,14 +4,14 @@ import Testing
 
 /// Verifies that the HelperProtocol is correctly defined as an ObjC protocol
 /// suitable for NSXPCInterface.
-@Suite struct HelperProtocolConformanceTests {
-    @Test func protocolCanBeUsedWithNSXPCInterface() {
+struct HelperProtocolConformanceTests {
+    @Test func `protocol can be used with NSXPC interface`() {
         // This would crash at runtime if the protocol is not properly @objc
         let interface = NSXPCInterface(with: HelperProtocol.self)
         #expect(interface != nil)
     }
 
-    @Test func handlerConformsToProtocol() {
+    @Test func `handler conforms to protocol`() {
         // Verify a basic NSObject subclass can conform to the protocol
         class MinimalHandler: NSObject, HelperProtocol {
             func getVersion(reply: @escaping (String) -> Void) {

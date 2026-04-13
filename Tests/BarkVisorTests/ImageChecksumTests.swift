@@ -4,7 +4,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
-@Suite final class ImageChecksumTests {
+final class ImageChecksumTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
     private let downloader: ImageDownloader
@@ -32,7 +32,7 @@ import Testing
 
     // MARK: - Schema
 
-    @Test func repositoryImagesTableHasChecksumColumns() throws {
+    @Test func `repository images table has checksum columns`() throws {
         let queue = try DatabaseQueue()
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
@@ -49,7 +49,7 @@ import Testing
 
     // MARK: - RepoCatalogImage parsing
 
-    @Test func repoCatalogImageDecodesChecksums() throws {
+    @Test func `repo catalog image decodes checksums`() throws {
         let json = """
         {
             "slug": "test-img",
@@ -65,7 +65,7 @@ import Testing
         #expect(image.sha512 == nil)
     }
 
-    @Test func repoCatalogImageDecodesWithoutChecksums() throws {
+    @Test func `repo catalog image decodes without checksums`() throws {
         let json = """
         {
             "slug": "test-img",
@@ -82,7 +82,7 @@ import Testing
 
     // MARK: - RepositoryImage DB round-trip
 
-    @Test func repositoryImageChecksumRoundTrip() async throws {
+    @Test func `repository image checksum round trip`() async throws {
         // Insert a repository first
         try await dbPool.write { db in
             try db.execute(
@@ -111,7 +111,7 @@ import Testing
 
     // MARK: - Checksum verification (via downloader)
 
-    @Test func downloadWithCorrectSHA256Succeeds() async throws {
+    @Test func `download with correct SHA 256 succeeds`() async throws {
         let content = Data("hello world".utf8)
         let hash = SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
 
@@ -147,7 +147,7 @@ import Testing
         #expect(image?.status == "ready", "Download with correct SHA256 should succeed")
     }
 
-    @Test func downloadWithWrongSHA256Fails() async throws {
+    @Test func `download with wrong SHA 256 fails`() async throws {
         let content = Data("hello world".utf8)
 
         let sourceFile = tmpDir.appendingPathComponent("source2.iso")
@@ -186,7 +186,7 @@ import Testing
         )
     }
 
-    @Test func downloadWithCorrectSHA512Succeeds() async throws {
+    @Test func `download with correct SHA 512 succeeds`() async throws {
         let content = Data("hello world".utf8)
         let hash = SHA512.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
 
@@ -220,7 +220,7 @@ import Testing
         #expect(image?.status == "ready", "Download with correct SHA512 should succeed")
     }
 
-    @Test func downloadWithNoChecksumSucceeds() async throws {
+    @Test func `download with no checksum succeeds`() async throws {
         let content = Data("no checksum".utf8)
         let sourceFile = tmpDir.appendingPathComponent("source4.iso")
         try content.write(to: sourceFile)

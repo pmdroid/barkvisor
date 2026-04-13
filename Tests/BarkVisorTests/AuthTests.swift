@@ -5,10 +5,10 @@ import Testing
 
 /// Tests for authentication-related logic: AuthenticatedUser, password validation,
 /// and Vapor request DTO validations.
-@Suite struct AuthTests {
+struct AuthTests {
     // MARK: - AuthenticatedUser
 
-    @Test func authenticatedUserJWT() {
+    @Test func `authenticated user JWT`() {
         let user = AuthenticatedUser(
             userId: "user-1", username: "admin", authMethod: "jwt", apiKeyId: nil,
         )
@@ -18,7 +18,7 @@ import Testing
         #expect(user.apiKeyId == nil)
     }
 
-    @Test func authenticatedUserAPIKey() {
+    @Test func `authenticated user API key`() {
         let user = AuthenticatedUser(
             userId: "user-1", username: "admin", authMethod: "apikey", apiKeyId: "key-1",
         )
@@ -26,7 +26,7 @@ import Testing
         #expect(user.apiKeyId == "key-1")
     }
 
-    @Test func authenticatedUserTicket() {
+    @Test func `authenticated user ticket`() {
         let user = AuthenticatedUser(
             userId: "user-1", username: "admin", authMethod: "ticket", apiKeyId: nil,
         )
@@ -35,7 +35,7 @@ import Testing
 
     // MARK: - Password Minimum Length
 
-    @Test func passwordMinLengthRequirement() {
+    @Test func `password min length requirement`() {
         let tooShort = ["", "a", "12345", "123456789"]
         for pw in tooShort {
             #expect(pw.count < 10, "'\(pw)' should fail the 10-char minimum")
@@ -46,7 +46,7 @@ import Testing
 
     // MARK: - Seeder Password Validation
 
-    @Test func seederPasswordMinLength() {
+    @Test func `seeder password min length`() {
         let shortPw = "123456789"
         #expect(shortPw.count < 10)
         let goodPw = "1234567890"
@@ -55,14 +55,14 @@ import Testing
 
     // MARK: - API Key Prefix Detection
 
-    @Test func apiKeyPrefixDetection() {
+    @Test func `api key prefix detection`() {
         let apiKey = "barkvisor_abcdefghij"
         #expect(apiKey.hasPrefix("barkvisor_"))
         let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
         #expect(!jwt.hasPrefix("barkvisor_"))
     }
 
-    @Test func apiKeyPrefixLength() {
+    @Test func `api key prefix length`() {
         let apiKey = "barkvisor_abcde_remaining_chars"
         let prefix = String(apiKey.prefix(15))
         #expect(prefix == "barkvisor_abcde")
@@ -71,12 +71,12 @@ import Testing
 
     // MARK: - BcryptHasher Protocol Conformance
 
-    @Test func bcryptHasherConformsToPasswordHasher() {
+    @Test func `bcrypt hasher conforms to password hasher`() {
         let hasher: PasswordHasher = BcryptHasher.shared
         #expect(hasher != nil)
     }
 
-    @Test func bcryptHasherHashAndVerify() throws {
+    @Test func `bcrypt hasher hash and verify`() throws {
         let hasher = BcryptHasher.shared
         let password = "test-password-123"
         let hash = try hasher.hash(password)
@@ -88,7 +88,7 @@ import Testing
 
     // MARK: - Stop Method Validation
 
-    @Test func stopMethodAllowedValues() {
+    @Test func `stop method allowed values`() {
         let allowedMethods: Set = ["guest-agent", "acpi", "force"]
         #expect(allowedMethods.contains("guest-agent"))
         #expect(allowedMethods.contains("acpi"))

@@ -16,13 +16,13 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
 // MARK: - HelperProtocol Constants Tests
 
-@Suite struct HelperProtocolConstantsTests {
-    @Test func machServiceName() {
+struct HelperProtocolConstantsTests {
+    @Test func `mach service name`() {
         #expect(kHelperMachServiceName == "dev.barkvisor.helper")
         #expect(!kHelperMachServiceName.isEmpty)
     }
 
-    @Test func teamIDIsDefined() {
+    @Test func `team ID is defined`() {
         #expect(!kHelperTeamID.isEmpty)
         #expect(kHelperTeamID == "W363QN58YY")
     }
@@ -33,7 +33,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 /// Tests the interface validation logic that mirrors HelperHandler.validateInterface.
 /// We test the rules directly since HelperHandler is in a separate module without
 /// public visibility for its private helpers.
-@Suite struct InterfaceValidationTests {
+struct InterfaceValidationTests {
     /// Mirrors HelperHandler.validateInterface for testing purposes.
     private func validateInterface(_ name: String) -> Bool {
         !name.isEmpty
@@ -43,79 +43,79 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: Valid interfaces
 
-    @Test func validSimpleInterface() {
+    @Test func `valid simple interface`() {
         #expect(validateInterface("en0"))
     }
 
-    @Test func validLongerInterface() {
+    @Test func `valid longer interface`() {
         #expect(validateInterface("bridge0"))
     }
 
-    @Test func validAllLetters() {
+    @Test func `valid all letters`() {
         #expect(validateInterface("loopback"))
     }
 
-    @Test func validAllDigits() {
+    @Test func `valid all digits`() {
         #expect(validateInterface("12345"))
     }
 
-    @Test func validMaxLength() {
+    @Test func `valid max length`() {
         let name = String(repeating: "a", count: 15)
         #expect(validateInterface(name))
     }
 
     // MARK: Invalid interfaces
 
-    @Test func emptyInterface() {
+    @Test func `empty interface`() {
         #expect(!validateInterface(""))
     }
 
-    @Test func interfaceTooLong() {
+    @Test func `interface too long`() {
         let name = String(repeating: "a", count: 16)
         #expect(!validateInterface(name))
     }
 
-    @Test func interfaceWithDot() {
+    @Test func `interface with dot`() {
         #expect(!validateInterface("en0.1"))
     }
 
-    @Test func interfaceWithSpace() {
+    @Test func `interface with space`() {
         #expect(!validateInterface("en 0"))
     }
 
-    @Test func interfaceWithSlash() {
+    @Test func `interface with slash`() {
         #expect(!validateInterface("en0/1"))
     }
 
-    @Test func interfaceWithSemicolon() {
+    @Test func `interface with semicolon`() {
         #expect(!validateInterface("en0;rm"))
     }
 
-    @Test func interfaceWithDash() {
+    @Test func `interface with dash`() {
         #expect(!validateInterface("en-0"))
     }
 
-    @Test func interfaceWithUnderscore() {
+    @Test func `interface with underscore`() {
         #expect(!validateInterface("en_0"))
     }
 
-    @Test func interfaceWithPathTraversal() {
+    @Test func `interface with path traversal`() {
         #expect(!validateInterface("../etc"))
     }
 
-    @Test func interfaceWithShellInjection() {
+    @Test func `interface with shell injection`() {
         #expect(!validateInterface("en0; rm -rf /"))
     }
 
-    @Test func interfaceWithNewline() {
+    @Test func `interface with newline`() {
         #expect(!validateInterface("en0\n"))
     }
 
-    @Test func interfaceWithNull() {
+    @Test func `interface with null`() {
         #expect(!validateInterface("en0\0"))
     }
 
-    @Test func interfaceWithUnicode() {
+    @Test func `interface with unicode`() {
         // Unicode letters should be accepted by Character.isLetter
         #expect(validateInterface("ën0"))
     }
@@ -124,7 +124,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 // MARK: - Vmnet Path Validation Tests
 
 /// Tests the vmnet binary path validation logic mirroring HelperHandler.validateVmnetPath.
-@Suite struct VmnetPathValidationTests {
+struct VmnetPathValidationTests {
     /// Mirrors HelperHandler.validateVmnetPath for testing purposes.
     private func validateVmnetPath(_ path: String) -> Bool {
         let canonicalized = (path as NSString).resolvingSymlinksInPath
@@ -132,48 +132,48 @@ struct UnsafeSendable<T>: @unchecked Sendable {
         return allowed.contains { canonicalized.hasPrefix($0) }
     }
 
-    @Test func validHomebrewPath() {
+    @Test func `valid homebrew path`() {
         #expect(validateVmnetPath("/opt/homebrew/bin/socket_vmnet"))
     }
 
-    @Test func validUsrLocalPath() {
+    @Test func `valid usr local path`() {
         #expect(validateVmnetPath("/usr/local/bin/socket_vmnet"))
     }
 
-    @Test func validOptSocketVmnetPath() {
+    @Test func `valid opt socket vmnet path`() {
         #expect(validateVmnetPath("/opt/socket_vmnet/bin/socket_vmnet"))
     }
 
-    @Test func invalidRootPath() {
+    @Test func `invalid root path`() {
         #expect(!validateVmnetPath("/bin/socket_vmnet"))
     }
 
-    @Test func invalidUsrBinPath() {
+    @Test func `invalid usr bin path`() {
         #expect(!validateVmnetPath("/usr/bin/socket_vmnet"))
     }
 
-    @Test func invalidEtcPath() {
+    @Test func `invalid etc path`() {
         #expect(!validateVmnetPath("/etc/socket_vmnet"))
     }
 
-    @Test func invalidTmpPath() {
+    @Test func `invalid tmp path`() {
         #expect(!validateVmnetPath("/tmp/socket_vmnet"))
     }
 
-    @Test func emptyPath() {
+    @Test func `empty path`() {
         #expect(!validateVmnetPath(""))
     }
 
-    @Test func relativePath() {
+    @Test func `relative path`() {
         // Relative paths resolve against cwd, which won't match allowed prefixes
         #expect(!validateVmnetPath("socket_vmnet"))
     }
 
-    @Test func pathWithTrailingSlashOnly() {
+    @Test func `path with trailing slash only`() {
         #expect(!validateVmnetPath("/"))
     }
 
-    @Test func pathPrefixPartialMatch() {
+    @Test func `path prefix partial match`() {
         // "/opt/homebrewfake" should NOT match "/opt/homebrew/"
         #expect(!validateVmnetPath("/opt/homebrewfake/bin/socket_vmnet"))
     }
@@ -183,7 +183,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
 /// Extended tests for XPC protocol methods beyond what HelperXPCTests covers.
 /// Uses an anonymous XPC listener to test all protocol methods in-process.
-@Suite final class HelperXPCExtendedTests {
+final class HelperXPCExtendedTests {
     /// Test handler that validates inputs like the real HelperHandler.
     private class StrictTestHandler: NSObject, HelperProtocol {
         func getVersion(reply: @escaping (String) -> Void) {
@@ -298,7 +298,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: - startBridge
 
-    @Test func startBridgeValid() async throws {
+    @Test func `start bridge valid`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.startBridge(interface: "en0") { ok, err in
@@ -309,7 +309,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
         #expect(result.1 == nil)
     }
 
-    @Test func startBridgeInvalidInterface() async throws {
+    @Test func `start bridge invalid interface`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.startBridge(interface: "en0;bad") { ok, err in
@@ -320,7 +320,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
         #expect(result.1 != nil)
     }
 
-    @Test func startBridgeEmptyInterface() async throws {
+    @Test func `start bridge empty interface`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.startBridge(interface: "") { ok, err in
@@ -332,7 +332,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: - stopBridge
 
-    @Test func stopBridgeValid() async throws {
+    @Test func `stop bridge valid`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.stopBridge(interface: "en0") { ok, err in
@@ -343,7 +343,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
         #expect(result.1 == nil)
     }
 
-    @Test func stopBridgeInvalidInterface() async throws {
+    @Test func `stop bridge invalid interface`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.stopBridge(interface: "") { ok, err in
@@ -355,7 +355,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: - bridgeStatus
 
-    @Test func bridgeStatusValid() async throws {
+    @Test func `bridge status valid`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.bridgeStatus(interface: "en0") { running, status in
@@ -366,7 +366,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
         #expect(result.1 == "not_installed")
     }
 
-    @Test func bridgeStatusInvalidInterface() async throws {
+    @Test func `bridge status invalid interface`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.bridgeStatus(interface: "../etc") { running, status in
@@ -379,7 +379,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: - getAllBridgeStates
 
-    @Test func getAllBridgeStatesReturnsJSON() async throws {
+    @Test func `get all bridge states returns JSON`() async throws {
         let p = try #require(proxy())
         let json: String = try await withCheckedThrowingContinuation { cont in
             p.getAllBridgeStates { reply in
@@ -395,7 +395,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: - removeBridge
 
-    @Test func removeBridgeInvalidInterface() async throws {
+    @Test func `remove bridge invalid interface`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.removeBridge(interface: "en0/../../etc") { ok, err in
@@ -406,7 +406,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
         #expect(result.1 != nil)
     }
 
-    @Test func removeBridgeInterfaceTooLong() async throws {
+    @Test func `remove bridge interface too long`() async throws {
         let longName = String(repeating: "a", count: 16)
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
@@ -419,7 +419,7 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
     // MARK: - Concurrent XPC calls
 
-    @Test func concurrentPings() async throws {
+    @Test func `concurrent pings`() async throws {
         let conn = UnsafeSendable(connection)
         try await withThrowingTaskGroup(of: String.self) { group in
             for _ in 0 ..< 10 {

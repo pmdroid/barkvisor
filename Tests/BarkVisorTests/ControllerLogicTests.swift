@@ -4,10 +4,10 @@ import Testing
 @testable import BarkVisorCore
 
 /// Tests for pure logic in controllers that can be tested without a Vapor server.
-@Suite struct ControllerLogicTests {
+struct ControllerLogicTests {
     // MARK: - Request Log Level Classification
 
-    @Test func logLevelByStatusCode() {
+    @Test func `log level by status code`() {
         func logLevel(for statusCode: UInt) -> String {
             if statusCode >= 500 { return "error" }
             if statusCode >= 400 { return "warn" }
@@ -30,7 +30,7 @@ import Testing
 
     // MARK: - SPA Fallback Path Matching
 
-    @Test func spaFallbackRules() {
+    @Test func `spa fallback rules`() {
         func shouldFallback(method: String, path: String) -> Bool {
             method == "GET" && !path.hasPrefix("/api/") && !path.contains(".") && path != "/"
         }
@@ -48,8 +48,10 @@ import Testing
 
     // MARK: - Metrics Minutes Clamping
 
-    @Test func metricsMinutesClamping() {
-        func clampMinutes(_ input: Int?) -> Int { min(input ?? 5, 1_440) }
+    @Test func `metrics minutes clamping`() {
+        func clampMinutes(_ input: Int?) -> Int {
+            min(input ?? 5, 1_440)
+        }
 
         #expect(clampMinutes(nil) == 5)
         #expect(clampMinutes(10) == 10)
@@ -61,8 +63,10 @@ import Testing
 
     // MARK: - Log Query Limit Clamping
 
-    @Test func logQueryLimitClamping() {
-        func clampLogLimit(_ input: Int?) -> Int { min(input ?? 500, 5_000) }
+    @Test func `log query limit clamping`() {
+        func clampLogLimit(_ input: Int?) -> Int {
+            min(input ?? 500, 5_000)
+        }
 
         #expect(clampLogLimit(nil) == 500)
         #expect(clampLogLimit(100) == 100)
@@ -72,7 +76,7 @@ import Testing
 
     // MARK: - Client Error Truncation
 
-    @Test func clientErrorTruncation() {
+    @Test func `client error truncation`() {
         let maxLen = 4_096
         let longError = String(repeating: "x", count: 10_000)
         let truncated = String(longError.prefix(maxLen))
@@ -83,7 +87,7 @@ import Testing
         #expect(shortTruncated == shortError)
     }
 
-    @Test func clientComponentTruncation() {
+    @Test func `client component truncation`() {
         let maxLen = 256
         let longComponent = String(repeating: "c", count: 500)
         let truncated = String(longComponent.prefix(maxLen))
@@ -92,7 +96,7 @@ import Testing
 
     // MARK: - Diagnostic Bundle Path Validation
 
-    @Test func diagnosticBundlePathTraversalPrevention() {
+    @Test func `diagnostic bundle path traversal prevention`() {
         let tempDir = (FileManager.default.temporaryDirectory.path as NSString).resolvingSymlinksInPath
         let tempDirWithSlash = tempDir.hasSuffix("/") ? tempDir : tempDir + "/"
 
@@ -107,7 +111,7 @@ import Testing
 
     // MARK: - Filename Sanitization
 
-    @Test func diagnosticBundleFilenameSanitization() {
+    @Test func `diagnostic bundle filename sanitization`() {
         let rawName = "diag\"bundle\n.tar.gz"
         let sanitized = rawName.replacingOccurrences(of: "\"", with: "_")
             .replacingOccurrences(of: "\n", with: "_")
@@ -121,7 +125,7 @@ import Testing
 
     // MARK: - Image File Extension Extraction
 
-    @Test func compoundExtensionHandling() {
+    @Test func `compound extension handling`() {
         func extractExtension(from filename: String, imageType: String) -> String {
             if filename.hasSuffix(".qcow2.xz") || filename.hasSuffix(".img.xz")
                 || filename.hasSuffix(".img.gz") || filename.hasSuffix(".qcow2.gz") {
@@ -145,7 +149,7 @@ import Testing
 
     // MARK: - Directory Browser Allowed Roots
 
-    @Test func directoryBrowserPathValidation() {
+    @Test func `directory browser path validation`() {
         let allowedRoots = [NSHomeDirectory(), "/Volumes"]
 
         func isAllowed(_ path: String) -> Bool {
@@ -168,7 +172,7 @@ import Testing
 
     // MARK: - Repo Type Validation
 
-    @Test func repositoryTypeValidation() {
+    @Test func `repository type validation`() {
         let validTypes = ["images", "templates"]
         #expect(validTypes.contains("images"))
         #expect(validTypes.contains("templates"))
@@ -178,7 +182,7 @@ import Testing
 
     // MARK: - Tus Image Type Validation
 
-    @Test func tusImageTypeValidation() {
+    @Test func `tus image type validation`() {
         let validImageTypes = ["iso", "cloud-image"]
         #expect(validImageTypes.contains("iso"))
         #expect(validImageTypes.contains("cloud-image"))
@@ -188,7 +192,7 @@ import Testing
 
     // MARK: - Tus Arch Validation
 
-    @Test func tusArchValidation() {
+    @Test func `tus arch validation`() {
         #expect("arm64" == "arm64")
         #expect("x86_64" != "arm64")
         #expect("amd64" != "arm64")

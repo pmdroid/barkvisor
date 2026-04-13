@@ -3,7 +3,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
-@Suite final class NetworkServiceTests {
+final class NetworkServiceTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
 
@@ -28,7 +28,7 @@ import Testing
 
     // MARK: - Create
 
-    @Test func createNATNetwork() async throws {
+    @Test func `create NAT network`() async throws {
         let network = try await NetworkService.create(
             CreateNetworkParams(name: "test-nat", mode: "nat", bridge: nil, macAddress: nil, dnsServer: "8.8.8.8"),
             db: dbPool,
@@ -41,7 +41,7 @@ import Testing
         #expect(!network.isDefault)
     }
 
-    @Test func createBridgedNetworkRequiresBridge() async {
+    @Test func `create bridged network requires bridge`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(
                 CreateNetworkParams(name: "test-bridged", mode: "bridged", bridge: nil, macAddress: nil, dnsServer: nil),
@@ -51,7 +51,7 @@ import Testing
         #expect(error?.httpStatus == 400)
     }
 
-    @Test func createInvalidModeRejected() async {
+    @Test func `create invalid mode rejected`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(
                 CreateNetworkParams(name: "test", mode: "host-only", bridge: nil, macAddress: nil, dnsServer: nil),
@@ -61,7 +61,7 @@ import Testing
         #expect(error?.httpStatus == 400)
     }
 
-    @Test func createWithInvalidDNS() async {
+    @Test func `create with invalid DNS`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(
                 CreateNetworkParams(name: "test", mode: "nat", bridge: nil, macAddress: nil, dnsServer: "not-an-ip"),
@@ -71,7 +71,7 @@ import Testing
         #expect(error?.httpStatus == 400)
     }
 
-    @Test func createWithInvalidMAC() async {
+    @Test func `create with invalid MAC`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(
                 CreateNetworkParams(name: "test", mode: "nat", bridge: nil, macAddress: "invalid", dnsServer: nil),
@@ -83,7 +83,7 @@ import Testing
 
     // MARK: - Delete
 
-    @Test func deleteNetwork() async throws {
+    @Test func `delete network`() async throws {
         let network = try await NetworkService.create(
             CreateNetworkParams(name: "deleteme", mode: "nat", bridge: nil, macAddress: nil, dnsServer: nil),
             db: dbPool,
@@ -96,7 +96,7 @@ import Testing
         #expect(fetched == nil)
     }
 
-    @Test func deleteDefaultNetworkForbidden() async throws {
+    @Test func `delete default network forbidden`() async throws {
         // Insert a default network directly
         try await dbPool.write { db in
             let net = Network(
@@ -118,7 +118,7 @@ import Testing
         #expect(error?.httpStatus == 403)
     }
 
-    @Test func deleteNetworkWithAttachedVMs() async throws {
+    @Test func `delete network with attached V ms`() async throws {
         let network = try await NetworkService.create(
             CreateNetworkParams(name: "in-use", mode: "nat", bridge: nil, macAddress: nil, dnsServer: nil),
             db: dbPool,
@@ -160,7 +160,7 @@ import Testing
 
     // MARK: - Update
 
-    @Test func updateDefaultNetworkForbidden() async throws {
+    @Test func `update default network forbidden`() async throws {
         try await dbPool.write { db in
             let net = Network(
                 id: "net-default",
@@ -187,7 +187,7 @@ import Testing
         #expect(error?.httpStatus == 403)
     }
 
-    @Test func updateNonExistent() async {
+    @Test func `update non existent`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.update(
                 UpdateNetworkParams(id: "fake", name: "New", mode: nil, bridge: nil, macAddress: nil, dnsServer: nil),

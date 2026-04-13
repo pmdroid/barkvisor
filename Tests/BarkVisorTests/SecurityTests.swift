@@ -3,10 +3,10 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite struct SecurityTests {
+struct SecurityTests {
     // MARK: - RateLimitStore: Blocking After Max Attempts
 
-    @Test func rateLimitBlocksAfterMaxAttempts() async {
+    @Test func `rate limit blocks after max attempts`() async {
         let store = RateLimitStore(maxAttempts: 3, window: 60)
 
         // First 3 requests should be allowed
@@ -21,7 +21,7 @@ import Testing
         #expect((blocked ?? 0) > 0, "Retry-after should be positive")
     }
 
-    @Test func rateLimitTracksKeysIndependently() async {
+    @Test func `rate limit tracks keys independently`() async {
         let store = RateLimitStore(maxAttempts: 2, window: 60)
 
         // Exhaust limit for key A
@@ -37,7 +37,7 @@ import Testing
 
     // MARK: - RateLimitStore: Window Expiration
 
-    @Test func rateLimitAllowsAfterWindowExpires() async {
+    @Test func `rate limit allows after window expires`() async {
         // Use a very short window so it expires quickly
         let store = RateLimitStore(maxAttempts: 1, window: 0.1)
 
@@ -59,7 +59,7 @@ import Testing
 
     // MARK: - RateLimitStore: Prune
 
-    @Test func pruneRemovesStaleEntries() async {
+    @Test func `prune removes stale entries`() async {
         let store = RateLimitStore(maxAttempts: 10, window: 0.1)
 
         // Add some entries
@@ -80,7 +80,7 @@ import Testing
         #expect(result2 == nil, "stale2 should be allowed after prune clears expired entries")
     }
 
-    @Test func pruneKeepsActiveEntries() async {
+    @Test func `prune keeps active entries`() async {
         let store = RateLimitStore(maxAttempts: 2, window: 60)
 
         // Use up the limit
@@ -96,7 +96,7 @@ import Testing
 
     // MARK: - Password Validation (min 10 characters)
 
-    @Test func passwordMinimumLength() {
+    @Test func `password minimum length`() {
         // Password setup requires at least 10 characters.
         let tooShort = ["", "a", "123456789"] // 0, 1, 9 chars
         for pw in tooShort {
@@ -112,7 +112,7 @@ import Testing
 
     // MARK: - QEMUBuilder: IPv4 Validation
 
-    @Test func validIPv4Addresses() {
+    @Test func `valid I pv 4 addresses`() {
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("192.168.1.1") }
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("0.0.0.0") }
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("255.255.255.255") }
@@ -120,7 +120,7 @@ import Testing
         #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("127.0.0.1") }
     }
 
-    @Test func invalidIPv4Addresses() {
+    @Test func `invalid I pv 4 addresses`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("256.0.0.0") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("1.2.3") }
         #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("1.2.3.4.5") }
@@ -133,14 +133,14 @@ import Testing
 
     // MARK: - QEMUBuilder: MAC Validation
 
-    @Test func validMACAddresses() {
+    @Test func `valid MAC addresses`() {
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("52:54:00:12:34:56") }
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("aa:bb:cc:dd:ee:ff") }
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("AA:BB:CC:DD:EE:FF") }
         #expect(throws: Never.self) { try QEMUBuilder.validateMAC("00:00:00:00:00:00") }
     }
 
-    @Test func invalidMACAddresses() {
+    @Test func `invalid MAC addresses`() {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34") } // too few octets
         #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:56:78") } // too many octets
         #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:GG") } // non-hex
@@ -152,7 +152,7 @@ import Testing
 
     // MARK: - QEMUBuilder: Port Validation (Boundary Values)
 
-    @Test func portValidationBoundaries() {
+    @Test func `port validation boundaries`() {
         // Lower boundary
         #expect(throws: (any Error).self) { try QEMUBuilder.validatePort(0) }
         #expect(throws: Never.self) { try QEMUBuilder.validatePort(1) }
@@ -172,19 +172,19 @@ import Testing
 
     // MARK: - VM Name Validation
 
-    @Test func validVMNames() {
+    @Test func `valid VM names`() {
         #expect(throws: Never.self) { try validateVMName("my-vm") }
         #expect(throws: Never.self) { try validateVMName("test_vm.01") }
         #expect(throws: Never.self) { try validateVMName("Ubuntu 24.04") }
         #expect(throws: Never.self) { try validateVMName("a") } // minimum: 1 character
     }
 
-    @Test func emptyVMNameRejected() {
+    @Test func `empty VM name rejected`() {
         #expect(throws: (any Error).self) { try validateVMName("") }
         #expect(throws: (any Error).self) { try validateVMName("   ") } // whitespace-only
     }
 
-    @Test func tooLongVMNameRejected() {
+    @Test func `too long VM name rejected`() {
         let longName = String(repeating: "a", count: 129)
         #expect(throws: (any Error).self) { try validateVMName(longName) }
 
@@ -193,7 +193,7 @@ import Testing
         #expect(throws: Never.self) { try validateVMName(maxName) }
     }
 
-    @Test func vmNameSpecialCharsRejected() {
+    @Test func `vm name special chars rejected`() {
         #expect(throws: (any Error).self) { try validateVMName("vm;rm -rf /") }
         #expect(throws: (any Error).self) { try validateVMName("vm&background") }
         #expect(throws: (any Error).self) { try validateVMName("vm$(cmd)") }

@@ -2,41 +2,41 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct ConfigTests {
-    @Test func defaultPort() {
+struct ConfigTests {
+    @Test func `default port`() {
         #expect(Config.port == 7_777)
     }
 
-    @Test func allowedURLSchemes() {
+    @Test func `allowed URL schemes`() {
         #expect(Config.allowedURLSchemes.contains("https"))
         #expect(Config.allowedURLSchemes.contains("http"))
         #expect(!Config.allowedURLSchemes.contains("ftp"))
         #expect(!Config.allowedURLSchemes.contains("file"))
     }
 
-    @Test func dataDirNotEmpty() {
+    @Test func `data dir not empty`() {
         let dataDir = Config.dataDir
         #expect(!dataDir.path.isEmpty)
         #expect(dataDir.path.localizedCaseInsensitiveContains("barkvisor"))
     }
 
-    @Test func dbPathIsUnderDataDir() {
+    @Test func `db path is under data dir`() {
         let dbPath = Config.dbPath
         #expect(dbPath.path.hasPrefix(Config.dataDir.path))
         #expect(dbPath.path.hasSuffix("db.sqlite"))
     }
 
-    @Test func backupRetentionDaysDefault() {
+    @Test func `backup retention days default`() {
         let days = Config.backupRetentionDays
         #expect(days > 0)
     }
 
-    @Test func socketDirPath() {
+    @Test func `socket dir path`() {
         let socketDir = Config.socketDir
         #expect(socketDir.path.contains("barkvisor"))
     }
 
-    @Test func iso8601FormatterAvailable() {
+    @Test func `iso 8601 formatter available`() {
         let date = Date()
         let formatted = iso8601.string(from: date)
         #expect(!formatted.isEmpty)

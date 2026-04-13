@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite struct VirtUIErrorTests {
+struct VirtUIErrorTests {
     // MARK: - errorDescription
 
-    @Test func allErrorsHaveDescriptions() throws {
+    @Test func `all errors have descriptions`() throws {
         let errors: [BarkVisorError] = [
             .qemuNotFound("not found"),
             .firmwareNotFound("missing"),
@@ -45,7 +45,7 @@ import Testing
 
     // MARK: - code
 
-    @Test func allErrorsHaveMachineReadableCodes() {
+    @Test func `all errors have machine readable codes`() {
         let expectations: [(BarkVisorError, String)] = [
             (.qemuNotFound(""), "qemu_not_found"),
             (.firmwareNotFound(""), "firmware_not_found"),
@@ -68,7 +68,7 @@ import Testing
 
     // MARK: - httpStatus
 
-    @Test func httpStatusCodes() {
+    @Test func `http status codes`() {
         #expect(BarkVisorError.badRequest("").httpStatus == 400)
         #expect(BarkVisorError.invalidArgument("").httpStatus == 400)
         #expect(BarkVisorError.invalidPortForward("").httpStatus == 400)
@@ -90,7 +90,7 @@ import Testing
 
     // MARK: - sanitizedDescription
 
-    @Test func sanitizedDescriptionStripsAbsolutePaths() {
+    @Test func `sanitized description strips absolute paths`() {
         let error = BarkVisorError.diskCreateFailed(
             "Failed to create disk at /Users/alice/Library/data/disk.qcow2",
         )
@@ -101,17 +101,17 @@ import Testing
         #expect(sanitized.contains("<path>"), "Should replace paths with <path>: \(sanitized)")
     }
 
-    @Test func sanitizedDescriptionPreservesNonPathMessages() {
+    @Test func `sanitized description preserves non path messages`() {
         let error = BarkVisorError.badRequest("Name is required")
         #expect(error.sanitizedDescription == "Name is required")
     }
 
-    @Test func notFoundDefaultDescription() {
+    @Test func `not found default description`() {
         let error = BarkVisorError.notFound()
         #expect(error.errorDescription == "Not found")
     }
 
-    @Test func unauthorizedDefaultDescription() {
+    @Test func `unauthorized default description`() {
         let error = BarkVisorError.unauthorized()
         #expect(error.errorDescription == "Unauthorized")
     }

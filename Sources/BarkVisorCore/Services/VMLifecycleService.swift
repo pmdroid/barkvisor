@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 
 // MARK: - VMLifecycleService
+
 public enum VMLifecycleService {
     // MARK: - Create VM
 
@@ -112,6 +113,7 @@ public enum VMLifecycleService {
         return (taskID: taskID, vmName: vm.name)
     }
 }
+
 // MARK: - Create VM Helpers
 
 extension VMLifecycleService {

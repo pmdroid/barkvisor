@@ -5,7 +5,7 @@ import Testing
 
 /// Tests for the StructuredErrorMiddleware JSON escape logic
 /// and the BarkVisorError HTTP status mapping.
-@Suite struct ErrorMiddlewareTests {
+struct ErrorMiddlewareTests {
     // MARK: - JSON Escape Logic
 
     /// Mirrors the private jsonEscape function in StructuredErrorMiddleware.
@@ -20,32 +20,32 @@ import Testing
         return "\"\(escaped)\""
     }
 
-    @Test func jsonEscapePlainString() {
+    @Test func `json escape plain string`() {
         #expect(jsonEscape("hello") == "\"hello\"")
     }
 
-    @Test func jsonEscapeQuotes() {
+    @Test func `json escape quotes`() {
         #expect(jsonEscape("say \"hello\"") == "\"say \\\"hello\\\"\"")
     }
 
-    @Test func jsonEscapeBackslash() {
+    @Test func `json escape backslash`() {
         #expect(jsonEscape("path\\to\\file") == "\"path\\\\to\\\\file\"")
     }
 
-    @Test func jsonEscapeNewlines() {
+    @Test func `json escape newlines`() {
         #expect(jsonEscape("line1\nline2") == "\"line1\\nline2\"")
         #expect(jsonEscape("line1\rline2") == "\"line1\\rline2\"")
     }
 
-    @Test func jsonEscapeTab() {
+    @Test func `json escape tab`() {
         #expect(jsonEscape("col1\tcol2") == "\"col1\\tcol2\"")
     }
 
-    @Test func jsonEscapeEmpty() {
+    @Test func `json escape empty`() {
         #expect(jsonEscape("") == "\"\"")
     }
 
-    @Test func jsonEscapeCombined() {
+    @Test func `json escape combined`() {
         let input = "Error: \"file\\not\\found\"\nPlease\tretry"
         let result = jsonEscape(input)
         // Verify it produces valid JSON string content
@@ -74,7 +74,7 @@ import Testing
         }
     }
 
-    @Test func httpErrorCodeMapping() {
+    @Test func `http error code mapping`() {
         #expect(httpErrorCode(400) == "bad_request")
         #expect(httpErrorCode(401) == "unauthorized")
         #expect(httpErrorCode(403) == "forbidden")
@@ -84,7 +84,7 @@ import Testing
         #expect(httpErrorCode(503) == "service_unavailable")
     }
 
-    @Test func httpErrorCodeDefaultFallback() {
+    @Test func `http error code default fallback`() {
         #expect(httpErrorCode(500) == "http_500")
         #expect(httpErrorCode(502) == "http_502")
         #expect(httpErrorCode(418) == "http_418")
@@ -92,7 +92,7 @@ import Testing
 
     // MARK: - Error Response JSON Structure
 
-    @Test func errorResponseJSONStructure() throws {
+    @Test func `error response JSON structure`() throws {
         // Verify the JSON template produces valid JSON
         let code = jsonEscape("bad_request")
         let reason = jsonEscape("Name is required")
@@ -109,7 +109,7 @@ import Testing
         #expect(parsed?["status"] as? Int == 400)
     }
 
-    @Test func errorResponseWithSpecialCharsInReason() throws {
+    @Test func `error response with special chars in reason`() throws {
         // Ensure special chars in reason don't break JSON structure
         let reason = jsonEscape("Invalid value: \"foo\\bar\"\nExpected: number")
         let json = "{\"error\":true,\"code\":\"bad_request\",\"reason\":\(reason),\"status\":400}"

@@ -3,7 +3,7 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
-@Suite final class SSHKeyServiceTests {
+final class SSHKeyServiceTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
 
@@ -28,21 +28,21 @@ import Testing
 
     // MARK: - extractKeyType
 
-    @Test func extractKeyTypeRSA() {
+    @Test func `extract key type RSA`() {
         #expect(SSHKeyService.extractKeyType("ssh-rsa AAAA user@host") == "ssh-rsa")
     }
 
-    @Test func extractKeyTypeEd25519() {
+    @Test func `extract key type ed 25519`() {
         #expect(SSHKeyService.extractKeyType("ssh-ed25519 AAAA user@host") == "ssh-ed25519")
     }
 
-    @Test func extractKeyTypeEmpty() {
+    @Test func `extract key type empty`() {
         #expect(SSHKeyService.extractKeyType("") == "unknown")
     }
 
     // MARK: - computeFingerprint
 
-    @Test func computeFingerprintValid() {
+    @Test func `compute fingerprint valid`() {
         // Use a valid base64 blob (48 bytes = valid ed25519 key blob)
         let key =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBRKHBnYEfAPOgGdGMbgMSxIwffOG6Uj8mGYmNGMWsT user@host"
@@ -51,14 +51,14 @@ import Testing
         #expect(!fp.contains("="), "Fingerprint should not contain padding")
     }
 
-    @Test func computeFingerprintInvalidReturnsUnknown() {
+    @Test func `compute fingerprint invalid returns unknown`() {
         #expect(SSHKeyService.computeFingerprint("not a key") == "unknown")
         #expect(SSHKeyService.computeFingerprint("ssh-rsa") == "unknown")
     }
 
     // MARK: - CRUD
 
-    @Test func createSSHKey() async throws {
+    @Test func `create SSH key`() async throws {
         let key = try await SSHKeyService.create(
             name: "My Key",
             publicKey:
@@ -72,7 +72,7 @@ import Testing
         #expect(key.fingerprint.hasPrefix("SHA256:"))
     }
 
-    @Test func createSSHKeyEmptyNameRejected() async {
+    @Test func `create SSH key empty name rejected`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await SSHKeyService.create(
                 name: "  ", publicKey: "ssh-rsa AAAA user@host", db: self.dbPool,
@@ -81,7 +81,7 @@ import Testing
         #expect(error?.httpStatus == 400)
     }
 
-    @Test func firstKeyBecomesDefault() async throws {
+    @Test func `first key becomes default`() async throws {
         let key1 = try await SSHKeyService.create(
             name: "Key1",
             publicKey:
@@ -99,7 +99,7 @@ import Testing
         #expect(!key2.isDefault, "Second key should not become default")
     }
 
-    @Test func setDefault() async throws {
+    @Test func `set default`() async throws {
         let key1 = try await SSHKeyService.create(
             name: "Key1",
             publicKey:
@@ -124,14 +124,14 @@ import Testing
         #expect(k2?.isDefault == true)
     }
 
-    @Test func setDefaultNonExistent() async {
+    @Test func `set default non existent`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await SSHKeyService.setDefault(id: "fake", db: self.dbPool)
         }
         #expect(error?.httpStatus == 404)
     }
 
-    @Test func deleteSSHKey() async throws {
+    @Test func `delete SSH key`() async throws {
         let key = try await SSHKeyService.create(
             name: "ToDelete",
             publicKey:
@@ -144,14 +144,14 @@ import Testing
         #expect(keys.isEmpty)
     }
 
-    @Test func deleteNonExistent() async {
+    @Test func `delete non existent`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await SSHKeyService.delete(id: "fake", db: self.dbPool)
         }
         #expect(error?.httpStatus == 404)
     }
 
-    @Test func listSSHKeys() async throws {
+    @Test func `list SSH keys`() async throws {
         _ = try await SSHKeyService.create(
             name: "A",
             publicKey:

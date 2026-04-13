@@ -86,7 +86,7 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
     }
 }
 
-@Suite final class HelperXPCTests {
+final class HelperXPCTests {
     private let listener: NSXPCListener
     private let listenerDelegate: TestListenerDelegate
     private let connection: NSXPCConnection
@@ -125,7 +125,7 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
         #expect(message == "Hello from BarkVisorHelper!")
     }
 
-    @Test func getVersion() async throws {
+    @Test func `get version`() async throws {
         let p = try #require(proxy())
         let version: String = try await withCheckedThrowingContinuation { cont in
             p.getVersion { reply in
@@ -135,7 +135,7 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
         #expect(version == "1.0.0")
     }
 
-    @Test func installBridge() async throws {
+    @Test func `install bridge`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.installBridge(interface: "en0") { ok, err in
@@ -146,7 +146,7 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
         #expect(result.1 == nil)
     }
 
-    @Test func installBridgeInvalidInterface() async throws {
+    @Test func `install bridge invalid interface`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.installBridge(interface: "en0; rm -rf /") { ok, err in
@@ -157,7 +157,7 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
         #expect(result.1 != nil)
     }
 
-    @Test func removeBridge() async throws {
+    @Test func `remove bridge`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.removeBridge(interface: "en0") { ok, err in
@@ -168,7 +168,7 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
         #expect(result.1 == nil)
     }
 
-    @Test func bridgeStatus() async throws {
+    @Test func `bridge status`() async throws {
         let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.bridgeStatus(interface: "en0") { running, status in
