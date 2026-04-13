@@ -415,6 +415,9 @@ mkdir -p "$STAGE_BIN" "$STAGE_LIBEXEC" "$STAGE_LIB" "$STAGE_QEMU" "$STAGE_FRONTE
 # Main server daemon binary
 cp "$EXECUTABLE" "$STAGE_BIN/barkvisor"
 
+# Wrapper script to ensure runtime directories exist (cleared on reboot)
+cp "$PROJECT_DIR/scripts/barkvisor-wrapper.sh" "$STAGE_LIBEXEC/barkvisor-wrapper.sh"
+
 # Privileged XPC helper
 log_sub "Copying BarkVisorHelper..."
 cp "$HELPER_EXECUTABLE" "$STAGE_HELPER/dev.barkvisor.helper"

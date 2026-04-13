@@ -6,7 +6,7 @@
     <key>Label</key>
     <string>dev.barkvisor</string>
     <key>Program</key>
-    <string>/usr/local/bin/barkvisor</string>
+    <string>/usr/local/libexec/barkvisor/barkvisor-wrapper.sh</string>
     <key>UserName</key>
     <string>_barkvisor</string>
     <key>GroupName</key>

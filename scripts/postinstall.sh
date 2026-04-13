@@ -57,6 +57,9 @@ chown -R $BARKVISOR_USER:$BARKVISOR_USER /var/lib/barkvisor
 chown -R $BARKVISOR_USER:$BARKVISOR_USER /var/log/barkvisor
 chown -R $BARKVISOR_USER:$BARKVISOR_USER /var/run/barkvisor
 
+# Ensure wrapper script is executable
+chmod +x /usr/local/libexec/barkvisor/barkvisor-wrapper.sh
+
 # --- Clean up downloaded update packages ---
 rm -f /var/lib/barkvisor/updates/*.pkg
 
