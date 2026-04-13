@@ -1,115 +1,102 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
-final class NetworkServiceTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
+@Suite final class NetworkServiceTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
 
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
-        dbPool = try DatabasePool(path: dbPath)
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
+
+        let dbPath = tmp.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-        try migrator.migrate(dbPool)
+        try migrator.migrate(pool)
+        dbPool = pool
     }
 
-    override func tearDown() {
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
     // MARK: - Create
 
-    func testCreateNATNetwork() async throws {
+    @Test func createNATNetwork() async throws {
         let network = try await NetworkService.create(
             CreateNetworkParams(name: "test-nat", mode: "nat", bridge: nil, macAddress: nil, dnsServer: "8.8.8.8"),
             db: dbPool,
         )
 
-        XCTAssertEqual(network.name, "test-nat")
-        XCTAssertEqual(network.mode, "nat")
-        XCTAssertEqual(network.dnsServer, "8.8.8.8")
-        XCTAssertFalse(network.autoCreated)
-        XCTAssertFalse(network.isDefault)
+        #expect(network.name == "test-nat")
+        #expect(network.mode == "nat")
+        #expect(network.dnsServer == "8.8.8.8")
+        #expect(!network.autoCreated)
+        #expect(!network.isDefault)
     }
 
-    func testCreateBridgedNetworkRequiresBridge() async {
-        do {
-            _ = try await NetworkService.create(
+    @Test func createBridgedNetworkRequiresBridge() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
                 CreateNetworkParams(name: "test-bridged", mode: "bridged", bridge: nil, macAddress: nil, dnsServer: nil),
-                db: dbPool,
+                db: self.dbPool,
             )
-            XCTFail("Should require bridge for bridged mode")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 400)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 400)
     }
 
-    func testCreateInvalidModeRejected() async {
-        do {
-            _ = try await NetworkService.create(
+    @Test func createInvalidModeRejected() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
                 CreateNetworkParams(name: "test", mode: "host-only", bridge: nil, macAddress: nil, dnsServer: nil),
-                db: dbPool,
+                db: self.dbPool,
             )
-            XCTFail("Should reject invalid mode")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 400)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 400)
     }
 
-    func testCreateWithInvalidDNS() async {
-        do {
-            _ = try await NetworkService.create(
+    @Test func createWithInvalidDNS() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
                 CreateNetworkParams(name: "test", mode: "nat", bridge: nil, macAddress: nil, dnsServer: "not-an-ip"),
-                db: dbPool,
+                db: self.dbPool,
             )
-            XCTFail("Should reject invalid DNS")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 400)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 400)
     }
 
-    func testCreateWithInvalidMAC() async {
-        do {
-            _ = try await NetworkService.create(
+    @Test func createWithInvalidMAC() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
                 CreateNetworkParams(name: "test", mode: "nat", bridge: nil, macAddress: "invalid", dnsServer: nil),
-                db: dbPool,
+                db: self.dbPool,
             )
-            XCTFail("Should reject invalid MAC")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 400)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 400)
     }
 
     // MARK: - Delete
 
-    func testDeleteNetwork() async throws {
+    @Test func deleteNetwork() async throws {
         let network = try await NetworkService.create(
             CreateNetworkParams(name: "deleteme", mode: "nat", bridge: nil, macAddress: nil, dnsServer: nil),
             db: dbPool,
         )
 
         let deleted = try await NetworkService.delete(id: network.id, db: dbPool)
-        XCTAssertEqual(deleted?.id, network.id)
+        #expect(deleted?.id == network.id)
 
         let fetched = try await dbPool.read { db in try Network.fetchOne(db, key: network.id) }
-        XCTAssertNil(fetched)
+        #expect(fetched == nil)
     }
 
-    func testDeleteDefaultNetworkForbidden() async throws {
+    @Test func deleteDefaultNetworkForbidden() async throws {
         // Insert a default network directly
         try await dbPool.write { db in
             let net = Network(
@@ -125,17 +112,13 @@ final class NetworkServiceTests: XCTestCase {
             try net.insert(db)
         }
 
-        do {
-            _ = try await NetworkService.delete(id: "net-default", db: dbPool)
-            XCTFail("Should forbid deleting default network")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 403)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.delete(id: "net-default", db: self.dbPool)
         }
+        #expect(error?.httpStatus == 403)
     }
 
-    func testDeleteNetworkWithAttachedVMs() async throws {
+    @Test func deleteNetworkWithAttachedVMs() async throws {
         let network = try await NetworkService.create(
             CreateNetworkParams(name: "in-use", mode: "nat", bridge: nil, macAddress: nil, dnsServer: nil),
             db: dbPool,
@@ -169,19 +152,15 @@ final class NetworkServiceTests: XCTestCase {
             try vm.insert(db)
         }
 
-        do {
-            _ = try await NetworkService.delete(id: network.id, db: dbPool)
-            XCTFail("Should conflict when VMs are attached")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 409)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.delete(id: network.id, db: self.dbPool)
         }
+        #expect(error?.httpStatus == 409)
     }
 
     // MARK: - Update
 
-    func testUpdateDefaultNetworkForbidden() async throws {
+    @Test func updateDefaultNetworkForbidden() async throws {
         try await dbPool.write { db in
             let net = Network(
                 id: "net-default",
@@ -196,33 +175,25 @@ final class NetworkServiceTests: XCTestCase {
             try net.insert(db)
         }
 
-        do {
-            _ = try await NetworkService.update(
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.update(
                 UpdateNetworkParams(
                     id: "net-default", name: "New Name", mode: nil,
                     bridge: nil, macAddress: nil, dnsServer: nil,
                 ),
-                db: dbPool,
+                db: self.dbPool,
             )
-            XCTFail("Should forbid updating default network")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 403)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 403)
     }
 
-    func testUpdateNonExistent() async {
-        do {
-            _ = try await NetworkService.update(
+    @Test func updateNonExistent() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.update(
                 UpdateNetworkParams(id: "fake", name: "New", mode: nil, bridge: nil, macAddress: nil, dnsServer: nil),
-                db: dbPool,
+                db: self.dbPool,
             )
-            XCTFail("Should throw notFound")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 404)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 404)
     }
 }

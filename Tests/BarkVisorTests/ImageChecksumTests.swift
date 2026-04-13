@@ -1,40 +1,38 @@
 import CryptoKit
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
-final class ImageChecksumTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
-    private var downloader: ImageDownloader!
+@Suite final class ImageChecksumTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
+    private let downloader: ImageDownloader
 
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
 
-        let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
-        dbPool = try DatabasePool(path: dbPath)
+        let dbPath = tmp.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-        try migrator.migrate(dbPool)
+        try migrator.migrate(pool)
+        dbPool = pool
 
-        downloader = ImageDownloader(dbPool: { [dbPool] in
-            guard let dbPool else { fatalError("dbPool not initialized") }
-            return dbPool
-        })
+        downloader = ImageDownloader(dbPool: { [pool] in pool })
     }
 
-    override func tearDown() {
-        downloader = nil
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
     // MARK: - Schema
 
-    func testRepositoryImagesTableHasChecksumColumns() throws {
+    @Test func repositoryImagesTableHasChecksumColumns() throws {
         let queue = try DatabaseQueue()
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
@@ -44,14 +42,14 @@ final class ImageChecksumTests: XCTestCase {
 
         try queue.read { db in
             let columns = try db.columns(in: "repository_images").map(\.name)
-            XCTAssertTrue(columns.contains("sha256"), "repository_images should have sha256 column")
-            XCTAssertTrue(columns.contains("sha512"), "repository_images should have sha512 column")
+            #expect(columns.contains("sha256"), "repository_images should have sha256 column")
+            #expect(columns.contains("sha512"), "repository_images should have sha512 column")
         }
     }
 
     // MARK: - RepoCatalogImage parsing
 
-    func testRepoCatalogImageDecodesChecksums() throws {
+    @Test func repoCatalogImageDecodesChecksums() throws {
         let json = """
         {
             "slug": "test-img",
@@ -63,11 +61,11 @@ final class ImageChecksumTests: XCTestCase {
         }
         """
         let image = try JSONDecoder().decode(RepoCatalogImage.self, from: Data(json.utf8))
-        XCTAssertEqual(image.sha256, "abcdef1234567890")
-        XCTAssertNil(image.sha512)
+        #expect(image.sha256 == "abcdef1234567890")
+        #expect(image.sha512 == nil)
     }
 
-    func testRepoCatalogImageDecodesWithoutChecksums() throws {
+    @Test func repoCatalogImageDecodesWithoutChecksums() throws {
         let json = """
         {
             "slug": "test-img",
@@ -78,13 +76,13 @@ final class ImageChecksumTests: XCTestCase {
         }
         """
         let image = try JSONDecoder().decode(RepoCatalogImage.self, from: Data(json.utf8))
-        XCTAssertNil(image.sha256)
-        XCTAssertNil(image.sha512)
+        #expect(image.sha256 == nil)
+        #expect(image.sha512 == nil)
     }
 
     // MARK: - RepositoryImage DB round-trip
 
-    func testRepositoryImageChecksumRoundTrip() async throws {
+    @Test func repositoryImageChecksumRoundTrip() async throws {
         // Insert a repository first
         try await dbPool.write { db in
             try db.execute(
@@ -107,13 +105,13 @@ final class ImageChecksumTests: XCTestCase {
         let fetched = try await dbPool.read { db in
             try RepositoryImage.fetchOne(db, key: "ri-1")
         }
-        XCTAssertEqual(fetched?.sha256, "abc123")
-        XCTAssertNil(fetched?.sha512)
+        #expect(fetched?.sha256 == "abc123")
+        #expect(fetched?.sha512 == nil)
     }
 
     // MARK: - Checksum verification (via downloader)
 
-    func testDownloadWithCorrectSHA256Succeeds() async throws {
+    @Test func downloadWithCorrectSHA256Succeeds() async throws {
         let content = Data("hello world".utf8)
         let hash = SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
 
@@ -146,10 +144,10 @@ final class ImageChecksumTests: XCTestCase {
         }
 
         let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        XCTAssertEqual(image?.status, "ready", "Download with correct SHA256 should succeed")
+        #expect(image?.status == "ready", "Download with correct SHA256 should succeed")
     }
 
-    func testDownloadWithWrongSHA256Fails() async throws {
+    @Test func downloadWithWrongSHA256Fails() async throws {
         let content = Data("hello world".utf8)
 
         let sourceFile = tmpDir.appendingPathComponent("source2.iso")
@@ -180,15 +178,15 @@ final class ImageChecksumTests: XCTestCase {
         }
 
         let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        XCTAssertEqual(image?.status, "error", "Download with wrong SHA256 should fail")
-        XCTAssertTrue(image?.error?.contains("SHA256 mismatch") ?? false)
-        XCTAssertFalse(
-            FileManager.default.fileExists(atPath: dest.path),
+        #expect(image?.status == "error", "Download with wrong SHA256 should fail")
+        #expect(image?.error?.contains("SHA256 mismatch") ?? false)
+        #expect(
+            !FileManager.default.fileExists(atPath: dest.path),
             "File should be deleted on checksum mismatch",
         )
     }
 
-    func testDownloadWithCorrectSHA512Succeeds() async throws {
+    @Test func downloadWithCorrectSHA512Succeeds() async throws {
         let content = Data("hello world".utf8)
         let hash = SHA512.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
 
@@ -219,10 +217,10 @@ final class ImageChecksumTests: XCTestCase {
         }
 
         let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        XCTAssertEqual(image?.status, "ready", "Download with correct SHA512 should succeed")
+        #expect(image?.status == "ready", "Download with correct SHA512 should succeed")
     }
 
-    func testDownloadWithNoChecksumSucceeds() async throws {
+    @Test func downloadWithNoChecksumSucceeds() async throws {
         let content = Data("no checksum".utf8)
         let sourceFile = tmpDir.appendingPathComponent("source4.iso")
         try content.write(to: sourceFile)
@@ -251,6 +249,6 @@ final class ImageChecksumTests: XCTestCase {
         }
 
         let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        XCTAssertEqual(image?.status, "ready", "Download without checksum should succeed")
+        #expect(image?.status == "ready", "Download without checksum should succeed")
     }
 }

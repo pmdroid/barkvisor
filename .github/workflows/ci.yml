@@ -17,14 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install tools
-        run: brew install swiftlint swiftformat
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
 
       - name: SwiftLint
-        run: swiftlint lint --quiet
+        run: >
+          mise exec -- env
+          XCODE_DEFAULT_TOOLCHAIN_OVERRIDE="$(dirname "$(dirname "$(mise which swift)")")"
+          swiftlint lint --quiet
 
       - name: SwiftFormat check
-        run: swiftformat --lint Sources/ Tests/
+        run: mise exec -- swiftformat --lint Sources/ Tests/
 
   build:
     name: Build
@@ -32,8 +36,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
+
       - name: Build Swift package
-        run: swift build -c release
+        run: mise exec -- swift build -c release
 
   test:
     name: Test
@@ -42,5 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: jdx/mise-action@v3
+        with:
+          install: true
+
       - name: Run tests
-        run: swift test
+        run: mise exec -- swift test

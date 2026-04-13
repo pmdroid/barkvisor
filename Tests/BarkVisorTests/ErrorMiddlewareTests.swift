@@ -1,10 +1,11 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
 /// Tests for the StructuredErrorMiddleware JSON escape logic
 /// and the BarkVisorError HTTP status mapping.
-final class ErrorMiddlewareTests: XCTestCase {
+@Suite struct ErrorMiddlewareTests {
     // MARK: - JSON Escape Logic
 
     /// Mirrors the private jsonEscape function in StructuredErrorMiddleware.
@@ -19,42 +20,42 @@ final class ErrorMiddlewareTests: XCTestCase {
         return "\"\(escaped)\""
     }
 
-    func testJsonEscapePlainString() {
-        XCTAssertEqual(jsonEscape("hello"), "\"hello\"")
+    @Test func jsonEscapePlainString() {
+        #expect(jsonEscape("hello") == "\"hello\"")
     }
 
-    func testJsonEscapeQuotes() {
-        XCTAssertEqual(jsonEscape("say \"hello\""), "\"say \\\"hello\\\"\"")
+    @Test func jsonEscapeQuotes() {
+        #expect(jsonEscape("say \"hello\"") == "\"say \\\"hello\\\"\"")
     }
 
-    func testJsonEscapeBackslash() {
-        XCTAssertEqual(jsonEscape("path\\to\\file"), "\"path\\\\to\\\\file\"")
+    @Test func jsonEscapeBackslash() {
+        #expect(jsonEscape("path\\to\\file") == "\"path\\\\to\\\\file\"")
     }
 
-    func testJsonEscapeNewlines() {
-        XCTAssertEqual(jsonEscape("line1\nline2"), "\"line1\\nline2\"")
-        XCTAssertEqual(jsonEscape("line1\rline2"), "\"line1\\rline2\"")
+    @Test func jsonEscapeNewlines() {
+        #expect(jsonEscape("line1\nline2") == "\"line1\\nline2\"")
+        #expect(jsonEscape("line1\rline2") == "\"line1\\rline2\"")
     }
 
-    func testJsonEscapeTab() {
-        XCTAssertEqual(jsonEscape("col1\tcol2"), "\"col1\\tcol2\"")
+    @Test func jsonEscapeTab() {
+        #expect(jsonEscape("col1\tcol2") == "\"col1\\tcol2\"")
     }
 
-    func testJsonEscapeEmpty() {
-        XCTAssertEqual(jsonEscape(""), "\"\"")
+    @Test func jsonEscapeEmpty() {
+        #expect(jsonEscape("") == "\"\"")
     }
 
-    func testJsonEscapeCombined() {
+    @Test func jsonEscapeCombined() {
         let input = "Error: \"file\\not\\found\"\nPlease\tretry"
         let result = jsonEscape(input)
         // Verify it produces valid JSON string content
-        XCTAssertTrue(result.hasPrefix("\""))
-        XCTAssertTrue(result.hasSuffix("\""))
+        #expect(result.hasPrefix("\""))
+        #expect(result.hasSuffix("\""))
         // Verify no unescaped control chars remain
         let inner = String(result.dropFirst().dropLast())
-        XCTAssertFalse(inner.contains("\n"))
-        XCTAssertFalse(inner.contains("\r"))
-        XCTAssertFalse(inner.contains("\t"))
+        #expect(!inner.contains("\n"))
+        #expect(!inner.contains("\r"))
+        #expect(!inner.contains("\t"))
     }
 
     // MARK: - HTTP Error Code Mapping
@@ -73,50 +74,50 @@ final class ErrorMiddlewareTests: XCTestCase {
         }
     }
 
-    func testHttpErrorCodeMapping() {
-        XCTAssertEqual(httpErrorCode(400), "bad_request")
-        XCTAssertEqual(httpErrorCode(401), "unauthorized")
-        XCTAssertEqual(httpErrorCode(403), "forbidden")
-        XCTAssertEqual(httpErrorCode(404), "not_found")
-        XCTAssertEqual(httpErrorCode(409), "conflict")
-        XCTAssertEqual(httpErrorCode(429), "rate_limited")
-        XCTAssertEqual(httpErrorCode(503), "service_unavailable")
+    @Test func httpErrorCodeMapping() {
+        #expect(httpErrorCode(400) == "bad_request")
+        #expect(httpErrorCode(401) == "unauthorized")
+        #expect(httpErrorCode(403) == "forbidden")
+        #expect(httpErrorCode(404) == "not_found")
+        #expect(httpErrorCode(409) == "conflict")
+        #expect(httpErrorCode(429) == "rate_limited")
+        #expect(httpErrorCode(503) == "service_unavailable")
     }
 
-    func testHttpErrorCodeDefaultFallback() {
-        XCTAssertEqual(httpErrorCode(500), "http_500")
-        XCTAssertEqual(httpErrorCode(502), "http_502")
-        XCTAssertEqual(httpErrorCode(418), "http_418")
+    @Test func httpErrorCodeDefaultFallback() {
+        #expect(httpErrorCode(500) == "http_500")
+        #expect(httpErrorCode(502) == "http_502")
+        #expect(httpErrorCode(418) == "http_418")
     }
 
     // MARK: - Error Response JSON Structure
 
-    func testErrorResponseJSONStructure() throws {
+    @Test func errorResponseJSONStructure() throws {
         // Verify the JSON template produces valid JSON
         let code = jsonEscape("bad_request")
         let reason = jsonEscape("Name is required")
         let status: UInt = 400
         let json = "{\"error\":true,\"code\":\(code),\"reason\":\(reason),\"status\":\(status)}"
 
-        let data = try XCTUnwrap(json.data(using: .utf8))
+        let data = try #require(json.data(using: .utf8))
         let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-        XCTAssertNotNil(parsed)
-        XCTAssertEqual(parsed?["error"] as? Bool, true)
-        XCTAssertEqual(parsed?["code"] as? String, "bad_request")
-        XCTAssertEqual(parsed?["reason"] as? String, "Name is required")
-        XCTAssertEqual(parsed?["status"] as? Int, 400)
+        #expect(parsed != nil)
+        #expect(parsed?["error"] as? Bool == true)
+        #expect(parsed?["code"] as? String == "bad_request")
+        #expect(parsed?["reason"] as? String == "Name is required")
+        #expect(parsed?["status"] as? Int == 400)
     }
 
-    func testErrorResponseWithSpecialCharsInReason() throws {
+    @Test func errorResponseWithSpecialCharsInReason() throws {
         // Ensure special chars in reason don't break JSON structure
         let reason = jsonEscape("Invalid value: \"foo\\bar\"\nExpected: number")
         let json = "{\"error\":true,\"code\":\"bad_request\",\"reason\":\(reason),\"status\":400}"
 
-        let data = try XCTUnwrap(json.data(using: .utf8))
+        let data = try #require(json.data(using: .utf8))
         let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-        XCTAssertNotNil(parsed, "JSON with escaped special chars should be parseable")
-        XCTAssertEqual(parsed?["reason"] as? String, "Invalid value: \"foo\\bar\"\nExpected: number")
+        #expect(parsed != nil, "JSON with escaped special chars should be parseable")
+        #expect(parsed?["reason"] as? String == "Invalid value: \"foo\\bar\"\nExpected: number")
     }
 }

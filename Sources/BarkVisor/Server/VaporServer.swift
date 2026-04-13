@@ -194,7 +194,8 @@ public final class VaporServer: @unchecked Sendable {
                     let database = try AppDatabase(path: dbPath.path)
                     try database.migrate()
                     startupWarning =
-                        "The database could not be opened and no backups were available. A fresh database was created — all previous data has been lost."
+                        "The database could not be opened and no backups were available. "
+                        + "A fresh database was created — all previous data has been lost."
                     return database
                 }
             }

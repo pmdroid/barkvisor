@@ -58,6 +58,7 @@ struct VirtioWinDownloadResponse: Content {
     let imageId: String
 }
 
+// swiftlint:disable file_length
 struct SystemController: RouteCollection {
     let imageDownloader: ImageDownloader
 
@@ -500,3 +501,4 @@ struct SystemController: RouteCollection {
         return VirtioWinDownloadResponse(imageId: image.id)
     }
 }
+// swiftlint:enable file_length

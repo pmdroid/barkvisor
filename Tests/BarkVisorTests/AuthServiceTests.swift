@@ -1,23 +1,19 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
 private struct TestPasswordHasher: PasswordHasher {
-    func hash(_ password: String) throws -> String {
-        "hashed:\(password)"
-    }
-
-    func verify(_ password: String, against hash: String) throws -> Bool {
-        hash == "hashed:\(password)"
-    }
+    func hash(_ password: String) throws -> String { "hashed:\(password)" }
+    func verify(_ password: String, against hash: String) throws -> Bool { hash == "hashed:\(password)" }
 }
 
-final class AuthServiceTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
+@Suite final class AuthServiceTests {
+    private var dbPool: DatabasePool
+    private let tmpDir: URL
     private let hasher = TestPasswordHasher()
 
-    override func setUpWithError() throws {
+    init() throws {
         tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
@@ -28,7 +24,6 @@ final class AuthServiceTests: XCTestCase {
         }
         try migrator.migrate(dbPool)
 
-        // Seed a user with password "testpass10"
         try dbPool.write { db in
             let user = User(
                 id: "user-1", username: "admin",
@@ -39,8 +34,7 @@ final class AuthServiceTests: XCTestCase {
         }
     }
 
-    override func tearDown() {
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 }

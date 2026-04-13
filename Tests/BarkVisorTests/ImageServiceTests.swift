@@ -1,63 +1,66 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
-final class ImageServiceTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
+@Suite final class ImageServiceTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
 
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
-        dbPool = try DatabasePool(path: dbPath)
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
+
+        let dbPath = tmp.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-        try migrator.migrate(dbPool)
+        try migrator.migrate(pool)
+        dbPool = pool
     }
 
-    override func tearDown() {
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
     // MARK: - parseTusMetadata
 
-    func testParseTusMetadataSinglePair() {
+    @Test func parseTusMetadataSinglePair() {
         let raw = "filename dWJ1bnR1Lmlzbw==" // "ubuntu.iso" in base64
         let result = ImageService.parseTusMetadata(raw)
-        XCTAssertEqual(result["filename"], "ubuntu.iso")
+        #expect(result["filename"] == "ubuntu.iso")
     }
 
-    func testParseTusMetadataMultiplePairs() {
+    @Test func parseTusMetadataMultiplePairs() {
         let raw = "filename dWJ1bnR1Lmlzbw==, filetype aW1hZ2UvaXNv" // "image/iso" in base64
         let result = ImageService.parseTusMetadata(raw)
-        XCTAssertEqual(result["filename"], "ubuntu.iso")
-        XCTAssertEqual(result["filetype"], "image/iso")
+        #expect(result["filename"] == "ubuntu.iso")
+        #expect(result["filetype"] == "image/iso")
     }
 
-    func testParseTusMetadataEmpty() {
+    @Test func parseTusMetadataEmpty() {
         let result = ImageService.parseTusMetadata("")
-        XCTAssertTrue(result.isEmpty)
+        #expect(result.isEmpty)
     }
 
-    func testParseTusMetadataInvalidBase64() {
+    @Test func parseTusMetadataInvalidBase64() {
         let raw = "filename not-valid-base64"
         let result = ImageService.parseTusMetadata(raw)
-        XCTAssertNil(result["filename"], "Invalid base64 should not produce a value")
+        #expect(result["filename"] == nil, "Invalid base64 should not produce a value")
     }
 
-    func testParseTusMetadataMissingValue() {
+    @Test func parseTusMetadataMissingValue() {
         let raw = "filename"
         let result = ImageService.parseTusMetadata(raw)
-        XCTAssertTrue(result.isEmpty, "Missing value should be skipped")
+        #expect(result.isEmpty, "Missing value should be skipped")
     }
 
     // MARK: - finalizeTusUpload
 
-    func testFinalizeTusUploadFailureMarksImageErrorAndDeletesUpload() async throws {
+    @Test func finalizeTusUploadFailureMarksImageErrorAndDeletesUpload() async throws {
         let now = "2026-01-01T00:00:00Z"
         let image = VMImage(
             id: "img-1",
@@ -88,10 +91,9 @@ final class ImageServiceTests: XCTestCase {
             try upload.insert(db)
         }
 
-        do {
-            try await ImageService.finalizeTusUpload(upload: upload, db: dbPool)
-            XCTFail("Expected finalizeTusUpload to throw when the chunk file is missing")
-        } catch {}
+        await #expect(throws: (any Error).self) {
+            try await ImageService.finalizeTusUpload(upload: upload, db: self.dbPool)
+        }
 
         let storedImage = try await dbPool.read { db in
             try VMImage.fetchOne(db, key: image.id)
@@ -100,8 +102,8 @@ final class ImageServiceTests: XCTestCase {
             try TusUpload.fetchOne(db, key: upload.id)
         }
 
-        XCTAssertEqual(storedImage?.status, "error")
-        XCTAssertNotNil(storedImage?.error)
-        XCTAssertNil(storedUpload)
+        #expect(storedImage?.status == "error")
+        #expect(storedImage?.error != nil)
+        #expect(storedUpload == nil)
     }
 }

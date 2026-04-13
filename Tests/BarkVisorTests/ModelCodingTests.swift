@@ -1,11 +1,12 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-final class ModelCodingTests: XCTestCase {
+@Suite struct ModelCodingTests {
     // MARK: - VM Codable
 
-    func testVMCodable() throws {
+    @Test func vmCodable() throws {
         let vm = VM(
             id: "test-id",
             name: "test-vm",
@@ -36,27 +37,27 @@ final class ModelCodingTests: XCTestCase {
         let data = try JSONEncoder().encode(vm)
         let decoded = try JSONDecoder().decode(VM.self, from: data)
 
-        XCTAssertEqual(decoded.id, vm.id)
-        XCTAssertEqual(decoded.name, vm.name)
-        XCTAssertEqual(decoded.vmType, vm.vmType)
-        XCTAssertEqual(decoded.state, vm.state)
-        XCTAssertEqual(decoded.cpuCount, vm.cpuCount)
-        XCTAssertEqual(decoded.memoryMb, vm.memoryMb)
-        XCTAssertEqual(decoded.bootDiskId, vm.bootDiskId)
-        XCTAssertEqual(decoded.networkId, vm.networkId)
-        XCTAssertEqual(decoded.description, vm.description)
-        XCTAssertEqual(decoded.bootOrder, vm.bootOrder)
-        XCTAssertEqual(decoded.displayResolution, vm.displayResolution)
-        XCTAssertEqual(decoded.uefi, vm.uefi)
-        XCTAssertEqual(decoded.tpmEnabled, vm.tpmEnabled)
-        XCTAssertEqual(decoded.macAddress, vm.macAddress)
-        XCTAssertEqual(decoded.autoCreated, vm.autoCreated)
-        XCTAssertEqual(decoded.pendingChanges, vm.pendingChanges)
+        #expect(decoded.id == vm.id)
+        #expect(decoded.name == vm.name)
+        #expect(decoded.vmType == vm.vmType)
+        #expect(decoded.state == vm.state)
+        #expect(decoded.cpuCount == vm.cpuCount)
+        #expect(decoded.memoryMb == vm.memoryMb)
+        #expect(decoded.bootDiskId == vm.bootDiskId)
+        #expect(decoded.networkId == vm.networkId)
+        #expect(decoded.description == vm.description)
+        #expect(decoded.bootOrder == vm.bootOrder)
+        #expect(decoded.displayResolution == vm.displayResolution)
+        #expect(decoded.uefi == vm.uefi)
+        #expect(decoded.tpmEnabled == vm.tpmEnabled)
+        #expect(decoded.macAddress == vm.macAddress)
+        #expect(decoded.autoCreated == vm.autoCreated)
+        #expect(decoded.pendingChanges == vm.pendingChanges)
     }
 
     // MARK: - Disk Codable
 
-    func testDiskCodable() throws {
+    @Test func diskCodable() throws {
         let disk = Disk(
             id: "disk-1",
             name: "boot",
@@ -72,30 +73,30 @@ final class ModelCodingTests: XCTestCase {
         let data = try JSONEncoder().encode(disk)
         let decoded = try JSONDecoder().decode(Disk.self, from: data)
 
-        XCTAssertEqual(decoded.id, disk.id)
-        XCTAssertEqual(decoded.name, disk.name)
-        XCTAssertEqual(decoded.path, disk.path)
-        XCTAssertEqual(decoded.sizeBytes, disk.sizeBytes)
-        XCTAssertEqual(decoded.format, disk.format)
-        XCTAssertEqual(decoded.vmId, disk.vmId)
+        #expect(decoded.id == disk.id)
+        #expect(decoded.name == disk.name)
+        #expect(decoded.path == disk.path)
+        #expect(decoded.sizeBytes == disk.sizeBytes)
+        #expect(decoded.format == disk.format)
+        #expect(decoded.vmId == disk.vmId)
     }
 
     // MARK: - PortForwardRule Codable
 
-    func testPortForwardRuleCodable() throws {
+    @Test func portForwardRuleCodable() throws {
         let rule = PortForwardRule(protocol: "tcp", hostPort: 2_222, guestPort: 22)
 
         let data = try JSONEncoder().encode(rule)
         let decoded = try JSONDecoder().decode(PortForwardRule.self, from: data)
 
-        XCTAssertEqual(decoded.protocol, "tcp")
-        XCTAssertEqual(decoded.hostPort, 2_222)
-        XCTAssertEqual(decoded.guestPort, 22)
+        #expect(decoded.protocol == "tcp")
+        #expect(decoded.hostPort == 2_222)
+        #expect(decoded.guestPort == 22)
     }
 
     // MARK: - Network Codable
 
-    func testNetworkCodable() throws {
+    @Test func networkCodable() throws {
         let network = Network(
             id: "net-1",
             name: "default",
@@ -110,17 +111,17 @@ final class ModelCodingTests: XCTestCase {
         let data = try JSONEncoder().encode(network)
         let decoded = try JSONDecoder().decode(Network.self, from: data)
 
-        XCTAssertEqual(decoded.id, network.id)
-        XCTAssertEqual(decoded.name, network.name)
-        XCTAssertEqual(decoded.mode, network.mode)
-        XCTAssertEqual(decoded.macAddress, network.macAddress)
-        XCTAssertEqual(decoded.dnsServer, network.dnsServer)
-        XCTAssertEqual(decoded.isDefault, network.isDefault)
+        #expect(decoded.id == network.id)
+        #expect(decoded.name == network.name)
+        #expect(decoded.mode == network.mode)
+        #expect(decoded.macAddress == network.macAddress)
+        #expect(decoded.dnsServer == network.dnsServer)
+        #expect(decoded.isDefault == network.isDefault)
     }
 
     // MARK: - BarkVisorError
 
-    func testBarkVisorErrorDescriptions() throws {
+    @Test func barkVisorErrorDescriptions() throws {
         let errors: [BarkVisorError] = [
             .qemuNotFound("not found"),
             .firmwareNotFound("missing"),
@@ -141,11 +142,9 @@ final class ModelCodingTests: XCTestCase {
         ]
 
         for error in errors {
-            XCTAssertNotNil(error.errorDescription, "errorDescription should not be nil for \(error)")
-            XCTAssertFalse(
-                try XCTUnwrap(error.errorDescription?.isEmpty),
-                "errorDescription should not be empty for \(error)",
-            )
+            #expect(error.errorDescription != nil, "errorDescription should not be nil for \(error)")
+            let desc = try #require(error.errorDescription)
+            #expect(!desc.isEmpty, "errorDescription should not be empty for \(error)")
         }
     }
 }
