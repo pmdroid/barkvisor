@@ -36,6 +36,7 @@ public struct QEMUBuildContext {
     public let bridgeSocketPath: String?
 }
 
+// swiftlint:disable file_length
 public enum QEMUBuilder {
     private static var isARM64: Set<String> {
         ["linux-arm64", "windows-arm64"]
@@ -499,3 +500,4 @@ public enum QEMUBuilder {
         }
     }
 }
+// swiftlint:enable file_length

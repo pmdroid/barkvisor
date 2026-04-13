@@ -392,7 +392,7 @@ CONFIG_SWIFT="$PROJECT_DIR/Sources/BarkVisorCore/Config.swift"
 log_sub "Injecting VERSION ($VERSION) into Config.swift"
 cp "$CONFIG_SWIFT" "$CONFIG_SWIFT.bak"
 sed -i '' \
-    -e 's/version = "0.0.0-dev"/version = "'"$VERSION"'"/' \
+    -e 's/version = "1.0.0-alpha.2"/version = "'"$VERSION"'"/' \
     "$CONFIG_SWIFT"
 
 swift build -c release --package-path "$PROJECT_DIR"

@@ -104,9 +104,7 @@ public enum SSRFGuard {
             var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
             var inAddr = sin.sin_addr
             inet_ntop(AF_INET, &inAddr, &buf, socklen_t(INET_ADDRSTRLEN))
-            return buf.withUnsafeBufferPointer {
-                String(decoding: $0.prefix(while: { $0 != 0 }).map(UInt8.init), as: UTF8.self)
-            }
+            return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
         case AF_INET6:
             guard let addr = info.ai_addr else { return nil }
             var sin6 = sockaddr_in6()
@@ -114,9 +112,7 @@ public enum SSRFGuard {
             var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
             var in6Addr = sin6.sin6_addr
             inet_ntop(AF_INET6, &in6Addr, &buf, socklen_t(INET6_ADDRSTRLEN))
-            return buf.withUnsafeBufferPointer {
-                String(decoding: $0.prefix(while: { $0 != 0 }).map(UInt8.init), as: UTF8.self)
-            }
+            return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
         default:
             return nil
         }
