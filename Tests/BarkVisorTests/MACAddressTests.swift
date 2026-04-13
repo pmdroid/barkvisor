@@ -13,7 +13,8 @@ struct MACAddressTests {
             #expect(String(parts[2]) == "00", "Third octet should be 00")
             for part in parts {
                 #expect(part.count == 2, "Each octet should be 2 chars: \(part)")
-                #expect(part.allSatisfy(\.isHexDigit), "Each octet must be hex: \(part)")
+                // swiftformat:disable:next preferKeyPath
+                #expect(part.allSatisfy { $0.isHexDigit }, "Each octet must be hex: \(part)")
             }
         }
     }
