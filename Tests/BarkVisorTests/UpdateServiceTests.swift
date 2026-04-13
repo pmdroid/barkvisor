@@ -1,42 +1,43 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class UpdateServiceTests: XCTestCase {
+@Suite struct UpdateServiceTests {
     // MARK: - Semver Comparison
 
-    func testPrereleaseNumericBump() {
-        XCTAssertTrue(UpdateService.isVersion("1.0.0-alpha.2", newerThan: "1.0.0-alpha.1"))
-        XCTAssertTrue(UpdateService.isVersion("1.0.0-alpha.3", newerThan: "1.0.0-alpha.2"))
-        XCTAssertTrue(UpdateService.isVersion("1.0.0-alpha.10", newerThan: "1.0.0-alpha.9"))
+    @Test func prereleaseNumericBump() {
+        #expect(UpdateService.isVersion("1.0.0-alpha.2", newerThan: "1.0.0-alpha.1"))
+        #expect(UpdateService.isVersion("1.0.0-alpha.3", newerThan: "1.0.0-alpha.2"))
+        #expect(UpdateService.isVersion("1.0.0-alpha.10", newerThan: "1.0.0-alpha.9"))
     }
 
-    func testBetaNewerThanAlpha() {
-        XCTAssertTrue(UpdateService.isVersion("1.0.0-beta.1", newerThan: "1.0.0-alpha.3"))
+    @Test func betaNewerThanAlpha() {
+        #expect(UpdateService.isVersion("1.0.0-beta.1", newerThan: "1.0.0-alpha.3"))
     }
 
-    func testRcNewerThanBeta() {
-        XCTAssertTrue(UpdateService.isVersion("1.0.0-rc.1", newerThan: "1.0.0-beta.2"))
+    @Test func rcNewerThanBeta() {
+        #expect(UpdateService.isVersion("1.0.0-rc.1", newerThan: "1.0.0-beta.2"))
     }
 
-    func testReleaseNewerThanPrerelease() {
-        XCTAssertTrue(UpdateService.isVersion("1.0.0", newerThan: "1.0.0-beta.1"))
-        XCTAssertTrue(UpdateService.isVersion("1.0.0", newerThan: "1.0.0-rc.1"))
+    @Test func releaseNewerThanPrerelease() {
+        #expect(UpdateService.isVersion("1.0.0", newerThan: "1.0.0-beta.1"))
+        #expect(UpdateService.isVersion("1.0.0", newerThan: "1.0.0-rc.1"))
     }
 
-    func testNotNewer() {
-        XCTAssertFalse(UpdateService.isVersion("1.0.0-alpha.1", newerThan: "1.0.0-alpha.2"))
-        XCTAssertFalse(UpdateService.isVersion("1.0.0-alpha.1", newerThan: "1.0.0-alpha.1"))
-        XCTAssertFalse(UpdateService.isVersion("1.0.0-beta.1", newerThan: "1.0.0"))
+    @Test func notNewer() {
+        #expect(!UpdateService.isVersion("1.0.0-alpha.1", newerThan: "1.0.0-alpha.2"))
+        #expect(!UpdateService.isVersion("1.0.0-alpha.1", newerThan: "1.0.0-alpha.1"))
+        #expect(!UpdateService.isVersion("1.0.0-beta.1", newerThan: "1.0.0"))
     }
 
-    func testMajorMinorPatchTakesPrecedence() {
-        XCTAssertTrue(UpdateService.isVersion("2.0.0", newerThan: "1.9.9"))
-        XCTAssertTrue(UpdateService.isVersion("1.1.0", newerThan: "1.0.9"))
-        XCTAssertTrue(UpdateService.isVersion("2.0.0-alpha.1", newerThan: "1.9.9"))
+    @Test func majorMinorPatchTakesPrecedence() {
+        #expect(UpdateService.isVersion("2.0.0", newerThan: "1.9.9"))
+        #expect(UpdateService.isVersion("1.1.0", newerThan: "1.0.9"))
+        #expect(UpdateService.isVersion("2.0.0-alpha.1", newerThan: "1.9.9"))
     }
 
-    func testSameVersionNotNewer() {
-        XCTAssertFalse(UpdateService.isVersion("1.0.0", newerThan: "1.0.0"))
-        XCTAssertFalse(UpdateService.isVersion("2.1.3", newerThan: "2.1.3"))
+    @Test func sameVersionNotNewer() {
+        #expect(!UpdateService.isVersion("1.0.0", newerThan: "1.0.0"))
+        #expect(!UpdateService.isVersion("2.1.3", newerThan: "2.1.3"))
     }
 }

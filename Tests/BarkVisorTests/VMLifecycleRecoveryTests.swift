@@ -1,29 +1,32 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
-final class VMLifecycleRecoveryTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
+@Suite final class VMLifecycleRecoveryTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
 
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
-        dbPool = try DatabasePool(path: dbPath)
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
+
+        let dbPath = tmp.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-        try migrator.migrate(dbPool)
+        try migrator.migrate(pool)
+        dbPool = pool
     }
 
-    override func tearDown() {
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
-    func testHandleProvisionFailureMarksVMErrorAndRemovesDiskFile() async throws {
+    @Test func handleProvisionFailureMarksVMErrorAndRemovesDiskFile() async throws {
         let now = "2026-01-01T00:00:00Z"
         let diskPath = tmpDir.appendingPathComponent("boot.qcow2")
         FileManager.default.createFile(atPath: diskPath.path, contents: Data("partial".utf8))
@@ -86,13 +89,13 @@ final class VMLifecycleRecoveryTests: XCTestCase {
             try Disk.fetchOne(db, key: "disk-1")
         }
 
-        XCTAssertEqual(vm?.state, "error")
-        XCTAssertNil(vm?.cloudInitPath)
-        XCTAssertEqual(disk?.status, "creating")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: diskPath.path))
+        #expect(vm?.state == "error")
+        #expect(vm?.cloudInitPath == nil)
+        #expect(disk?.status == "creating")
+        #expect(!FileManager.default.fileExists(atPath: diskPath.path))
     }
 
-    func testHandleDeleteFailureMarksVMError() async throws {
+    @Test func handleDeleteFailureMarksVMError() async throws {
         let now = "2026-01-01T00:00:00Z"
         let diskPath = tmpDir.appendingPathComponent("delete.qcow2")
         FileManager.default.createFile(atPath: diskPath.path, contents: Data())
@@ -150,6 +153,6 @@ final class VMLifecycleRecoveryTests: XCTestCase {
             try VM.fetchOne(db, key: "vm-2")
         }
 
-        XCTAssertEqual(vm?.state, "error")
+        #expect(vm?.state == "error")
     }
 }

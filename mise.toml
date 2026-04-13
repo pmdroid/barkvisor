@@ -1,0 +1,7 @@
+[tools]
+swift = '6.3'
+swiftformat = '0.61.0'
+swiftlint = '0.63.2'
+
+[env]
+XCODE_DEFAULT_TOOLCHAIN_OVERRIDE = { value = "{{ tools.swift.path }}", tools = true }

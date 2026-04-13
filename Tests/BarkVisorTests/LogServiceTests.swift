@@ -1,55 +1,56 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class LogServiceTests: XCTestCase {
+@Suite struct LogServiceTests {
     // MARK: - LogLevel
 
-    func testLogLevelOrdering() {
-        XCTAssertTrue(LogLevel.debug < LogLevel.info)
-        XCTAssertTrue(LogLevel.info < LogLevel.warn)
-        XCTAssertTrue(LogLevel.warn < LogLevel.error)
-        XCTAssertTrue(LogLevel.error < LogLevel.fatal)
+    @Test func logLevelOrdering() {
+        #expect(LogLevel.debug < LogLevel.info)
+        #expect(LogLevel.info < LogLevel.warn)
+        #expect(LogLevel.warn < LogLevel.error)
+        #expect(LogLevel.error < LogLevel.fatal)
     }
 
-    func testLogLevelRawValues() {
-        XCTAssertEqual(LogLevel.debug.rawValue, "debug")
-        XCTAssertEqual(LogLevel.info.rawValue, "info")
-        XCTAssertEqual(LogLevel.warn.rawValue, "warn")
-        XCTAssertEqual(LogLevel.error.rawValue, "error")
-        XCTAssertEqual(LogLevel.fatal.rawValue, "fatal")
+    @Test func logLevelRawValues() {
+        #expect(LogLevel.debug.rawValue == "debug")
+        #expect(LogLevel.info.rawValue == "info")
+        #expect(LogLevel.warn.rawValue == "warn")
+        #expect(LogLevel.error.rawValue == "error")
+        #expect(LogLevel.fatal.rawValue == "fatal")
     }
 
-    func testLogLevelFromRawValue() {
-        XCTAssertEqual(LogLevel(rawValue: "debug"), .debug)
-        XCTAssertEqual(LogLevel(rawValue: "info"), .info)
-        XCTAssertEqual(LogLevel(rawValue: "warn"), .warn)
-        XCTAssertEqual(LogLevel(rawValue: "error"), .error)
-        XCTAssertEqual(LogLevel(rawValue: "fatal"), .fatal)
-        XCTAssertNil(LogLevel(rawValue: "verbose"))
+    @Test func logLevelFromRawValue() {
+        #expect(LogLevel(rawValue: "debug") == .debug)
+        #expect(LogLevel(rawValue: "info") == .info)
+        #expect(LogLevel(rawValue: "warn") == .warn)
+        #expect(LogLevel(rawValue: "error") == .error)
+        #expect(LogLevel(rawValue: "fatal") == .fatal)
+        #expect(LogLevel(rawValue: "verbose") == nil)
     }
 
-    func testLogLevelNotGreaterThanSelf() {
+    @Test func logLevelNotGreaterThanSelf() {
         for level in [LogLevel.debug, .info, .warn, .error, .fatal] {
-            XCTAssertFalse(level < level, "\(level) should not be less than itself")
+            #expect(!(level < level), "\(level) should not be less than itself")
         }
     }
 
     // MARK: - LogCategory
 
-    func testLogCategoryRawValues() {
-        XCTAssertEqual(LogCategory.app.rawValue, "app")
-        XCTAssertEqual(LogCategory.server.rawValue, "server")
+    @Test func logCategoryRawValues() {
+        #expect(LogCategory.app.rawValue == "app")
+        #expect(LogCategory.server.rawValue == "server")
     }
 
-    func testLogCategoryAllCases() {
-        XCTAssertEqual(LogCategory.allCases.count, 8)
-        XCTAssertTrue(LogCategory.allCases.contains(.app))
-        XCTAssertTrue(LogCategory.allCases.contains(.server))
+    @Test func logCategoryAllCases() {
+        #expect(LogCategory.allCases.count == 8)
+        #expect(LogCategory.allCases.contains(.app))
+        #expect(LogCategory.allCases.contains(.server))
     }
 
     // MARK: - LogEntry Codable
 
-    func testLogEntryCodable() throws {
+    @Test func logEntryCodable() throws {
         let entry = LogEntry(
             ts: "2025-01-01T00:00:00Z",
             level: .info,
@@ -64,17 +65,17 @@ final class LogServiceTests: XCTestCase {
         let data = try JSONEncoder().encode(entry)
         let decoded = try JSONDecoder().decode(LogEntry.self, from: data)
 
-        XCTAssertEqual(decoded.ts, entry.ts)
-        XCTAssertEqual(decoded.level, entry.level)
-        XCTAssertEqual(decoded.cat, entry.cat)
-        XCTAssertEqual(decoded.msg, entry.msg)
-        XCTAssertEqual(decoded.vm, "vm-1")
-        XCTAssertEqual(decoded.req, "req-1")
-        XCTAssertNil(decoded.err)
-        XCTAssertEqual(decoded.detail?["key"], "value")
+        #expect(decoded.ts == entry.ts)
+        #expect(decoded.level == entry.level)
+        #expect(decoded.cat == entry.cat)
+        #expect(decoded.msg == entry.msg)
+        #expect(decoded.vm == "vm-1")
+        #expect(decoded.req == "req-1")
+        #expect(decoded.err == nil)
+        #expect(decoded.detail?["key"] == "value")
     }
 
-    func testLogEntryWithError() throws {
+    @Test func logEntryWithError() throws {
         let entry = LogEntry(
             ts: "2025-01-01T00:00:00Z",
             level: .error,
@@ -89,8 +90,8 @@ final class LogServiceTests: XCTestCase {
         let data = try JSONEncoder().encode(entry)
         let decoded = try JSONDecoder().decode(LogEntry.self, from: data)
 
-        XCTAssertEqual(decoded.err, "something broke")
-        XCTAssertNil(decoded.vm)
-        XCTAssertNil(decoded.detail)
+        #expect(decoded.err == "something broke")
+        #expect(decoded.vm == nil)
+        #expect(decoded.detail == nil)
     }
 }

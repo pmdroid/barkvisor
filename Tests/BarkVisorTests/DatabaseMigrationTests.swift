@@ -1,9 +1,10 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-final class DatabaseMigrationTests: XCTestCase {
+@Suite struct DatabaseMigrationTests {
     private func makeInMemoryMigrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
@@ -20,22 +21,20 @@ final class DatabaseMigrationTests: XCTestCase {
 
     // MARK: - Migration Integrity
 
-    func testAllMigrationsRunWithoutError() throws {
-        XCTAssertNoThrow(try migratedQueue())
+    @Test func allMigrationsRunWithoutError() throws {
+        #expect(throws: Never.self) { try migratedQueue() }
     }
 
-    func testMigrationsAreIdempotent() throws {
+    @Test func migrationsAreIdempotent() throws {
         let queue = try migratedQueue()
-        // Running migrations again should be a no-op
-        XCTAssertNoThrow(try makeInMemoryMigrator().migrate(queue))
+        #expect(throws: Never.self) { try makeInMemoryMigrator().migrate(queue) }
     }
 
     // MARK: - VM Round Trip
 
-    func testVMRoundTrip() throws {
+    @Test func vmRoundTrip() throws {
         let queue = try migratedQueue()
 
-        // Insert a disk first to satisfy the foreign key constraint
         let disk = Disk(
             id: "disk-1", name: "boot", path: "/data/boot.qcow2",
             sizeBytes: 21_474_836_480, format: "qcow2", vmId: nil,
@@ -57,17 +56,17 @@ final class DatabaseMigrationTests: XCTestCase {
         try queue.write { db in try vm.insert(db) }
         let fetched = try queue.read { db in try VM.fetchOne(db, key: "vm-1") }
 
-        XCTAssertNotNil(fetched)
-        XCTAssertEqual(fetched?.name, "test")
-        XCTAssertEqual(fetched?.vmType, "linux-arm64")
-        XCTAssertEqual(fetched?.cpuCount, 2)
-        XCTAssertEqual(fetched?.memoryMb, 1_024)
-        XCTAssertEqual(fetched?.macAddress, "52:54:00:12:34:56")
+        #expect(fetched != nil)
+        #expect(fetched?.name == "test")
+        #expect(fetched?.vmType == "linux-arm64")
+        #expect(fetched?.cpuCount == 2)
+        #expect(fetched?.memoryMb == 1_024)
+        #expect(fetched?.macAddress == "52:54:00:12:34:56")
     }
 
     // MARK: - Disk Round Trip
 
-    func testDiskRoundTrip() throws {
+    @Test func diskRoundTrip() throws {
         let queue = try migratedQueue()
         let disk = Disk(
             id: "disk-1", name: "boot", path: "/data/boot.qcow2",
@@ -78,63 +77,49 @@ final class DatabaseMigrationTests: XCTestCase {
         try queue.write { db in try disk.insert(db) }
         let fetched = try queue.read { db in try Disk.fetchOne(db, key: "disk-1") }
 
-        XCTAssertNotNil(fetched)
-        XCTAssertEqual(fetched?.name, "boot")
-        XCTAssertEqual(fetched?.sizeBytes, 21_474_836_480)
-        XCTAssertEqual(fetched?.format, "qcow2")
+        #expect(fetched != nil)
+        #expect(fetched?.name == "boot")
+        #expect(fetched?.sizeBytes == 21_474_836_480)
+        #expect(fetched?.format == "qcow2")
     }
 
     // MARK: - Network Round Trip
 
-    func testNetworkRoundTrip() throws {
+    @Test func networkRoundTrip() throws {
         let queue = try migratedQueue()
         let network = Network(
             id: "net-1", name: "default", mode: "nat", bridge: nil,
-            macAddress: nil, dnsServer: "8.8.8.8",
-            autoCreated: true, isDefault: true,
+            macAddress: nil, dnsServer: "8.8.8.8", autoCreated: true, isDefault: true,
         )
 
         try queue.write { db in try network.insert(db) }
         let fetched = try queue.read { db in try Network.fetchOne(db, key: "net-1") }
 
-        XCTAssertNotNil(fetched)
-        XCTAssertEqual(fetched?.name, "default")
-        XCTAssertEqual(fetched?.mode, "nat")
-        XCTAssertEqual(fetched?.dnsServer, "8.8.8.8")
-        XCTAssertEqual(fetched?.isDefault, true)
+        #expect(fetched != nil)
+        #expect(fetched?.name == "default")
+        #expect(fetched?.mode == "nat")
+        #expect(fetched?.dnsServer == "8.8.8.8")
+        #expect(fetched?.isDefault == true)
     }
 
     // MARK: - Tables Exist
 
-    func testExpectedTablesExist() throws {
+    @Test func expectedTablesExist() throws {
         let queue = try migratedQueue()
         let tables = try queue.read { db -> [String] in
             try String.fetchAll(
                 db,
-                sql:
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'grdb_%' ORDER BY name",
+                sql: "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'grdb_%' ORDER BY name",
             )
         }
 
         let expected = [
-            "api_keys",
-            "app_settings",
-            "audit_log",
-            "bridges",
-            "disks",
-            "guest_info",
-            "image_repositories",
-            "images",
-            "networks",
-            "repository_images",
-            "ssh_keys",
-            "tus_uploads",
-            "users",
-            "vm_templates",
-            "vms",
+            "api_keys", "app_settings", "audit_log", "bridges", "disks", "guest_info",
+            "image_repositories", "images", "networks", "repository_images", "ssh_keys",
+            "tus_uploads", "users", "vm_templates", "vms",
         ]
         for table in expected {
-            XCTAssert(tables.contains(table), "Expected table '\(table)' to exist, got: \(tables)")
+            #expect(tables.contains(table), "Expected table '\(table)' to exist, got: \(tables)")
         }
     }
 }

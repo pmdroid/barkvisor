@@ -1,13 +1,13 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
 /// Tests for Data Transfer Objects (DTOs) used in controllers.
-/// Verifies JSON round-trip encoding and initialization from model objects.
-final class DTOTests: XCTestCase {
+@Suite struct DTOTests {
     // MARK: - VMResponse
 
-    func testVMResponseFromVM() {
+    @Test func vmResponseFromVM() {
         let vm = VM(
             id: "vm-1", name: "test-vm", vmType: "linux-arm64", state: "running",
             cpuCount: 4, memoryMb: 2_048, bootDiskId: "disk-1",
@@ -19,171 +19,156 @@ final class DTOTests: XCTestCase {
             sharedPaths: "[\"/Users/test/share\"]",
             portForwards: "[{\"protocol\":\"tcp\",\"hostPort\":2222,\"guestPort\":22}]",
             autoCreated: false, pendingChanges: true,
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = VMResponse(from: vm)
 
-        XCTAssertEqual(response.id, "vm-1")
-        XCTAssertEqual(response.name, "test-vm")
-        XCTAssertEqual(response.vmType, "linux-arm64")
-        XCTAssertEqual(response.state, "running")
-        XCTAssertEqual(response.cpuCount, 4)
-        XCTAssertEqual(response.memoryMB, 2_048)
-        XCTAssertEqual(response.bootDiskId, "disk-1")
-        XCTAssertEqual(response.networkId, "net-1")
-        XCTAssertEqual(response.description, "A VM")
-        XCTAssertEqual(response.uefi, true)
-        XCTAssertEqual(response.tpmEnabled, false)
-        XCTAssertEqual(response.macAddress, "52:54:00:12:34:56")
-        XCTAssertEqual(response.pendingChanges, true)
-        XCTAssertEqual(response.additionalDiskIds, ["disk-2", "disk-3"])
-        XCTAssertEqual(response.sharedPaths, ["/Users/test/share"])
-        XCTAssertEqual(response.portForwards?.count, 1)
-        XCTAssertEqual(response.portForwards?.first?.guestPort, 22)
-        XCTAssertEqual(response.portForwards?.first?.hostPort, 2_222)
+        #expect(response.id == "vm-1")
+        #expect(response.name == "test-vm")
+        #expect(response.vmType == "linux-arm64")
+        #expect(response.state == "running")
+        #expect(response.cpuCount == 4)
+        #expect(response.memoryMB == 2_048)
+        #expect(response.bootDiskId == "disk-1")
+        #expect(response.networkId == "net-1")
+        #expect(response.description == "A VM")
+        #expect(response.uefi == true)
+        #expect(response.tpmEnabled == false)
+        #expect(response.macAddress == "52:54:00:12:34:56")
+        #expect(response.pendingChanges == true)
+        #expect(response.additionalDiskIds == ["disk-2", "disk-3"])
+        #expect(response.sharedPaths == ["/Users/test/share"])
+        #expect(response.portForwards?.count == 1)
+        #expect(response.portForwards?.first?.guestPort == 22)
+        #expect(response.portForwards?.first?.hostPort == 2_222)
     }
 
-    func testVMResponseNilOptionals() {
+    @Test func vmResponseNilOptionals() {
         let vm = VM(
             id: "vm-1", name: "minimal", vmType: "linux-arm64", state: "stopped",
             cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
             isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
-            description: nil, bootOrder: nil, displayResolution: nil,
-            additionalDiskIds: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
             autoCreated: false, pendingChanges: false,
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = VMResponse(from: vm)
 
-        XCTAssertNil(response.networkId)
-        XCTAssertNil(response.description)
-        XCTAssertNil(response.additionalDiskIds)
-        XCTAssertNil(response.sharedPaths)
-        XCTAssertNil(response.portForwards)
-        XCTAssertNil(response.macAddress)
-        // isoIds should be nil when no ISOs
-        XCTAssertNil(response.isoIds)
-        XCTAssertNil(response.isoId)
+        #expect(response.networkId == nil)
+        #expect(response.description == nil)
+        #expect(response.additionalDiskIds == nil)
+        #expect(response.sharedPaths == nil)
+        #expect(response.portForwards == nil)
+        #expect(response.macAddress == nil)
+        #expect(response.isoIds == nil)
+        #expect(response.isoId == nil)
     }
 
-    func testVMResponseIsoIdBackwardsCompat() {
-        // When isoIds JSON column has values, isoId should be the first element
+    @Test func vmResponseIsoIdBackwardsCompat() {
         let vm = VM(
             id: "vm-1", name: "iso-test", vmType: "linux-arm64", state: "stopped",
             cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
             isoId: nil, isoIds: "[\"iso-1\",\"iso-2\"]",
             networkId: nil, cloudInitPath: nil, vncPort: nil,
-            description: nil, bootOrder: nil, displayResolution: nil,
-            additionalDiskIds: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
             autoCreated: false, pendingChanges: false,
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = VMResponse(from: vm)
-        XCTAssertEqual(response.isoId, "iso-1")
-        XCTAssertEqual(response.isoIds, ["iso-1", "iso-2"])
+        #expect(response.isoId == "iso-1")
+        #expect(response.isoIds == ["iso-1", "iso-2"])
     }
 
-    func testVMResponseLegacyIsoId() {
-        // When legacy isoId is set but isoIds is nil, should use legacy value
+    @Test func vmResponseLegacyIsoId() {
         let vm = VM(
             id: "vm-1", name: "legacy-iso", vmType: "linux-arm64", state: "stopped",
             cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
             isoId: "legacy-iso-1", isoIds: nil,
             networkId: nil, cloudInitPath: nil, vncPort: nil,
-            description: nil, bootOrder: nil, displayResolution: nil,
-            additionalDiskIds: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
             autoCreated: false, pendingChanges: false,
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = VMResponse(from: vm)
-        XCTAssertEqual(response.isoId, "legacy-iso-1")
-        XCTAssertEqual(response.isoIds, ["legacy-iso-1"])
+        #expect(response.isoId == "legacy-iso-1")
+        #expect(response.isoIds == ["legacy-iso-1"])
     }
 
     // MARK: - VMResponse Encodable
 
-    func testVMResponseEncodesToJSON() throws {
+    @Test func vmResponseEncodesToJSON() throws {
         let vm = VM(
             id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
             cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1",
             isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
-            description: nil, bootOrder: nil, displayResolution: nil,
-            additionalDiskIds: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: true, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
             autoCreated: false, pendingChanges: false,
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = VMResponse(from: vm)
         let data = try JSONEncoder().encode(response)
         let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-        XCTAssertNotNil(dict)
-        XCTAssertEqual(dict?["id"] as? String, "vm-1")
-        XCTAssertEqual(dict?["memoryMB"] as? Int, 1_024)
-        XCTAssertEqual(dict?["uefi"] as? Bool, true)
+        #expect(dict != nil)
+        #expect(dict?["id"] as? String == "vm-1")
+        #expect(dict?["memoryMB"] as? Int == 1_024)
+        #expect(dict?["uefi"] as? Bool == true)
     }
 
     // MARK: - ImageResponse
 
-    func testImageResponseFromVMImage() {
+    @Test func imageResponseFromVMImage() {
         let image = VMImage(
             id: "img-1", name: "Ubuntu 24.04", imageType: "cloud-image", arch: "arm64",
             path: "/data/images/img-1.qcow2", sizeBytes: 1_073_741_824,
             status: "ready", error: nil,
             sourceUrl: "https://example.com/ubuntu.qcow2",
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = ImageResponse(from: image)
 
-        XCTAssertEqual(response.id, "img-1")
-        XCTAssertEqual(response.name, "Ubuntu 24.04")
-        XCTAssertEqual(response.imageType, "cloud-image")
-        XCTAssertEqual(response.arch, "arm64")
-        XCTAssertEqual(response.status, "ready")
-        XCTAssertEqual(response.sizeBytes, 1_073_741_824)
-        XCTAssertEqual(response.sourceUrl, "https://example.com/ubuntu.qcow2")
-        XCTAssertNil(response.error)
+        #expect(response.id == "img-1")
+        #expect(response.name == "Ubuntu 24.04")
+        #expect(response.imageType == "cloud-image")
+        #expect(response.arch == "arm64")
+        #expect(response.status == "ready")
+        #expect(response.sizeBytes == 1_073_741_824)
+        #expect(response.sourceUrl == "https://example.com/ubuntu.qcow2")
+        #expect(response.error == nil)
     }
 
-    func testImageResponseWithError() {
+    @Test func imageResponseWithError() {
         let image = VMImage(
             id: "img-2", name: "Failed", imageType: "iso", arch: "arm64",
             path: nil, sizeBytes: nil,
             status: "error", error: "Download failed",
             sourceUrl: "https://example.com/bad.iso",
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = ImageResponse(from: image)
-
-        XCTAssertEqual(response.status, "error")
-        XCTAssertEqual(response.error, "Download failed")
-        XCTAssertNil(response.sizeBytes)
+        #expect(response.status == "error")
+        #expect(response.error == "Download failed")
+        #expect(response.sizeBytes == nil)
     }
 
     // MARK: - TemplateResponse
 
-    func testTemplateResponseFromVMTemplate() {
+    @Test func templateResponseFromVMTemplate() {
         let template = VMTemplate(
             id: "tpl-1", slug: "ubuntu-server",
             name: "Ubuntu Server", description: "A server template",
@@ -192,56 +177,53 @@ final class DTOTests: XCTestCase {
             cpuCount: 2, memoryMB: 2_048, diskSizeGB: 20,
             portForwards: "[{\"protocol\":\"tcp\",\"hostPort\":2222,\"guestPort\":22}]",
             networkMode: "nat",
-            inputs:
-            "[{\"id\":\"hostname\",\"label\":\"Hostname\",\"type\":\"text\",\"default\":\"ubuntu\",\"required\":true}]",
+            inputs: "[{\"id\":\"hostname\",\"label\":\"Hostname\",\"type\":\"text\",\"default\":\"ubuntu\",\"required\":true}]",
             userDataTemplate: "#cloud-config\nhostname: {{hostname}}",
             isBuiltIn: true, repositoryId: nil,
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-01-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
         let response = TemplateResponse(from: template)
 
-        XCTAssertEqual(response.id, "tpl-1")
-        XCTAssertEqual(response.slug, "ubuntu-server")
-        XCTAssertEqual(response.name, "Ubuntu Server")
-        XCTAssertEqual(response.category, "linux")
-        XCTAssertEqual(response.cpuCount, 2)
-        XCTAssertEqual(response.memoryMB, 2_048)
-        XCTAssertEqual(response.diskSizeGB, 20)
-        XCTAssertEqual(response.networkMode, "nat")
-        XCTAssertEqual(response.isBuiltIn, true)
-        XCTAssertEqual(response.portForwards?.count, 1)
-        XCTAssertEqual(response.inputs.count, 1)
-        XCTAssertEqual(response.inputs.first?.id, "hostname")
+        #expect(response.id == "tpl-1")
+        #expect(response.slug == "ubuntu-server")
+        #expect(response.name == "Ubuntu Server")
+        #expect(response.category == "linux")
+        #expect(response.cpuCount == 2)
+        #expect(response.memoryMB == 2_048)
+        #expect(response.diskSizeGB == 20)
+        #expect(response.networkMode == "nat")
+        #expect(response.isBuiltIn == true)
+        #expect(response.portForwards?.count == 1)
+        #expect(response.inputs.count == 1)
+        #expect(response.inputs.first?.id == "hostname")
     }
 
     // MARK: - RepositoryResponse
 
-    func testRepositoryResponseFromImageRepository() {
+    @Test func repositoryResponseFromImageRepository() {
         let repo = ImageRepository(
             id: "repo-1", name: "Official", url: "https://example.com/repo.json",
             isBuiltIn: true, repoType: "images",
             lastSyncedAt: "2025-06-01T00:00:00Z", lastError: nil,
             syncStatus: "idle",
-            createdAt: "2025-01-01T00:00:00Z",
-            updatedAt: "2025-06-01T00:00:00Z",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-06-01T00:00:00Z",
         )
 
         let response = RepositoryResponse(from: repo)
 
-        XCTAssertEqual(response.id, "repo-1")
-        XCTAssertEqual(response.name, "Official")
-        XCTAssertEqual(response.isBuiltIn, true)
-        XCTAssertEqual(response.repoType, "images")
-        XCTAssertEqual(response.syncStatus, "idle")
-        XCTAssertNotNil(response.lastSyncedAt)
-        XCTAssertNil(response.lastError)
+        #expect(response.id == "repo-1")
+        #expect(response.name == "Official")
+        #expect(response.isBuiltIn == true)
+        #expect(response.repoType == "images")
+        #expect(response.syncStatus == "idle")
+        #expect(response.lastSyncedAt != nil)
+        #expect(response.lastError == nil)
     }
 
     // MARK: - RepositoryImageResponse
 
-    func testRepositoryImageResponseFromModel() {
+    @Test func repositoryImageResponseFromModel() {
         let img = RepositoryImage(
             id: "ri-1", repositoryId: "repo-1", slug: "ubuntu-24.04",
             name: "Ubuntu 24.04", description: "LTS release",
@@ -252,69 +234,49 @@ final class DTOTests: XCTestCase {
 
         let response = RepositoryImageResponse(from: img)
 
-        XCTAssertEqual(response.id, "ri-1")
-        XCTAssertEqual(response.repositoryId, "repo-1")
-        XCTAssertEqual(response.slug, "ubuntu-24.04")
-        XCTAssertEqual(response.name, "Ubuntu 24.04")
-        XCTAssertEqual(response.imageType, "cloud-image")
-        XCTAssertEqual(response.downloadUrl, "https://example.com/ubuntu.qcow2")
+        #expect(response.id == "ri-1")
+        #expect(response.repositoryId == "repo-1")
+        #expect(response.slug == "ubuntu-24.04")
+        #expect(response.name == "Ubuntu 24.04")
+        #expect(response.imageType == "cloud-image")
+        #expect(response.downloadUrl == "https://example.com/ubuntu.qcow2")
     }
 
     // MARK: - GuestInfoResponse
 
-    func testGuestInfoResponseFromResult() {
+    @Test func guestInfoResponseFromResult() {
         let result = GuestInfoResult(
-            available: true,
-            ipAddresses: ["10.0.0.5", "fd00::5"],
-            macAddress: "52:54:00:12:34:56",
-            ipSource: "guest-agent",
-            hostname: "ubuntu-vm",
-            osName: "Ubuntu",
-            osVersion: "24.04",
-            osId: "ubuntu",
-            kernelVersion: "6.5.0",
-            kernelRelease: "6.5.0-44-generic",
-            machine: "aarch64",
-            timezone: "UTC",
-            timezoneOffset: 0,
-            users: nil,
-            filesystems: nil,
+            available: true, ipAddresses: ["10.0.0.5", "fd00::5"],
+            macAddress: "52:54:00:12:34:56", ipSource: "guest-agent",
+            hostname: "ubuntu-vm", osName: "Ubuntu", osVersion: "24.04",
+            osId: "ubuntu", kernelVersion: "6.5.0", kernelRelease: "6.5.0-44-generic",
+            machine: "aarch64", timezone: "UTC", timezoneOffset: 0,
+            users: nil, filesystems: nil,
         )
 
         let response = GuestInfoResponse(from: result)
 
-        XCTAssertTrue(response.available)
-        XCTAssertEqual(response.ipAddresses, ["10.0.0.5", "fd00::5"])
-        XCTAssertEqual(response.macAddress, "52:54:00:12:34:56")
-        XCTAssertEqual(response.ipSource, "guest-agent")
-        XCTAssertEqual(response.hostname, "ubuntu-vm")
-        XCTAssertEqual(response.osName, "Ubuntu")
-        XCTAssertEqual(response.osVersion, "24.04")
+        #expect(response.available)
+        #expect(response.ipAddresses == ["10.0.0.5", "fd00::5"])
+        #expect(response.macAddress == "52:54:00:12:34:56")
+        #expect(response.ipSource == "guest-agent")
+        #expect(response.hostname == "ubuntu-vm")
+        #expect(response.osName == "Ubuntu")
+        #expect(response.osVersion == "24.04")
     }
 
-    func testGuestInfoResponseUnavailable() {
+    @Test func guestInfoResponseUnavailable() {
         let result = GuestInfoResult(
-            available: false,
-            ipAddresses: [],
-            macAddress: nil,
-            ipSource: "none",
-            hostname: nil,
-            osName: nil,
-            osVersion: nil,
-            osId: nil,
-            kernelVersion: nil,
-            kernelRelease: nil,
-            machine: nil,
-            timezone: nil,
-            timezoneOffset: nil,
-            users: nil,
-            filesystems: nil,
+            available: false, ipAddresses: [], macAddress: nil,
+            ipSource: "none", hostname: nil, osName: nil, osVersion: nil,
+            osId: nil, kernelVersion: nil, kernelRelease: nil, machine: nil,
+            timezone: nil, timezoneOffset: nil, users: nil, filesystems: nil,
         )
 
         let response = GuestInfoResponse(from: result)
 
-        XCTAssertFalse(response.available)
-        XCTAssertTrue(response.ipAddresses.isEmpty)
-        XCTAssertNil(response.hostname)
+        #expect(!response.available)
+        #expect(response.ipAddresses.isEmpty)
+        #expect(response.hostname == nil)
     }
 }

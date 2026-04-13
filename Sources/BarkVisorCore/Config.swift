@@ -44,11 +44,10 @@ public struct DBLogger: Sendable {
 public nonisolated(unsafe) let iso8601 = ISO8601DateFormatter()
 
 public enum Config {
-    /// INJECT_VERSION
-    public static let version = "1.0.0-alpha.2"
+    /// INJECT_VERSION (replaced at build time via sed)
+    public static let version = "0.0.0-dev"
 
     public static let port = 7_777
-    
 
     /// Install prefix derived from binary location.
     /// `/usr/local/bin/barkvisor` → prefix = `/usr/local`

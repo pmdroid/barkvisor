@@ -1,87 +1,88 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class ValidationTests: XCTestCase {
+@Suite struct ValidationTests {
     // MARK: - validateVMName
 
-    func testValidVMNames() throws {
-        XCTAssertNoThrow(try validateVMName("my-vm"))
-        XCTAssertNoThrow(try validateVMName("test_vm.01"))
-        XCTAssertNoThrow(try validateVMName("Ubuntu 24.04"))
-        XCTAssertNoThrow(try validateVMName("a"))
-        XCTAssertNoThrow(try validateVMName(String(repeating: "a", count: 128)))
+    @Test func validVMNames() {
+        #expect(throws: Never.self) { try validateVMName("my-vm") }
+        #expect(throws: Never.self) { try validateVMName("test_vm.01") }
+        #expect(throws: Never.self) { try validateVMName("Ubuntu 24.04") }
+        #expect(throws: Never.self) { try validateVMName("a") }
+        #expect(throws: Never.self) { try validateVMName(String(repeating: "a", count: 128)) }
     }
 
-    func testEmptyVMNameRejected() {
-        XCTAssertThrowsError(try validateVMName(""))
-        XCTAssertThrowsError(try validateVMName("   "))
+    @Test func emptyVMNameRejected() {
+        #expect(throws: (any Error).self) { try validateVMName("") }
+        #expect(throws: (any Error).self) { try validateVMName("   ") }
     }
 
-    func testTooLongVMNameRejected() {
-        XCTAssertThrowsError(try validateVMName(String(repeating: "a", count: 129)))
+    @Test func tooLongVMNameRejected() {
+        #expect(throws: (any Error).self) { try validateVMName(String(repeating: "a", count: 129)) }
     }
 
-    func testVMNameShellInjectionRejected() {
-        XCTAssertThrowsError(try validateVMName("vm;rm -rf /"))
-        XCTAssertThrowsError(try validateVMName("vm&background"))
-        XCTAssertThrowsError(try validateVMName("vm$(cmd)"))
-        XCTAssertThrowsError(try validateVMName("vm`cmd`"))
-        XCTAssertThrowsError(try validateVMName("name\nnewline"))
-        XCTAssertThrowsError(try validateVMName("vm/path"))
+    @Test func vmNameShellInjectionRejected() {
+        #expect(throws: (any Error).self) { try validateVMName("vm;rm -rf /") }
+        #expect(throws: (any Error).self) { try validateVMName("vm&background") }
+        #expect(throws: (any Error).self) { try validateVMName("vm$(cmd)") }
+        #expect(throws: (any Error).self) { try validateVMName("vm`cmd`") }
+        #expect(throws: (any Error).self) { try validateVMName("name\nnewline") }
+        #expect(throws: (any Error).self) { try validateVMName("vm/path") }
     }
 
     // MARK: - validateBridgeName
 
-    func testValidBridgeNames() throws {
-        XCTAssertNoThrow(try validateBridgeName("en0"))
-        XCTAssertNoThrow(try validateBridgeName("bridge0"))
-        XCTAssertNoThrow(try validateBridgeName("lo0"))
-        XCTAssertNoThrow(try validateBridgeName(String(repeating: "a", count: 15)))
+    @Test func validBridgeNames() {
+        #expect(throws: Never.self) { try validateBridgeName("en0") }
+        #expect(throws: Never.self) { try validateBridgeName("bridge0") }
+        #expect(throws: Never.self) { try validateBridgeName("lo0") }
+        #expect(throws: Never.self) { try validateBridgeName(String(repeating: "a", count: 15)) }
     }
 
-    func testBridgeNameTooLong() {
-        XCTAssertThrowsError(try validateBridgeName(String(repeating: "a", count: 16)))
+    @Test func bridgeNameTooLong() {
+        #expect(throws: (any Error).self) { try validateBridgeName(String(repeating: "a", count: 16)) }
     }
 
-    func testBridgeNameRejectsSpecialChars() {
-        XCTAssertThrowsError(try validateBridgeName("en0; rm -rf /"))
-        XCTAssertThrowsError(try validateBridgeName("br-0"))
-        XCTAssertThrowsError(try validateBridgeName("br_0"))
-        XCTAssertThrowsError(try validateBridgeName("br.0"))
-        XCTAssertThrowsError(try validateBridgeName("br 0"))
+    @Test func bridgeNameRejectsSpecialChars() {
+        #expect(throws: (any Error).self) { try validateBridgeName("en0; rm -rf /") }
+        #expect(throws: (any Error).self) { try validateBridgeName("br-0") }
+        #expect(throws: (any Error).self) { try validateBridgeName("br_0") }
+        #expect(throws: (any Error).self) { try validateBridgeName("br.0") }
+        #expect(throws: (any Error).self) { try validateBridgeName("br 0") }
     }
 
     // MARK: - validateDNS
 
-    func testValidDNS() throws {
-        XCTAssertNoThrow(try validateDNS("8.8.8.8"))
-        XCTAssertNoThrow(try validateDNS("192.168.1.1"))
-        XCTAssertNoThrow(try validateDNS("0.0.0.0"))
-        XCTAssertNoThrow(try validateDNS("255.255.255.255"))
+    @Test func validDNS() {
+        #expect(throws: Never.self) { try validateDNS("8.8.8.8") }
+        #expect(throws: Never.self) { try validateDNS("192.168.1.1") }
+        #expect(throws: Never.self) { try validateDNS("0.0.0.0") }
+        #expect(throws: Never.self) { try validateDNS("255.255.255.255") }
     }
 
-    func testInvalidDNS() {
-        XCTAssertThrowsError(try validateDNS("256.0.0.0"))
-        XCTAssertThrowsError(try validateDNS("1.2.3"))
-        XCTAssertThrowsError(try validateDNS("1.2.3.4.5"))
-        XCTAssertThrowsError(try validateDNS("abc"))
-        XCTAssertThrowsError(try validateDNS(""))
-        XCTAssertThrowsError(try validateDNS("01.02.03.04"))
+    @Test func invalidDNS() {
+        #expect(throws: (any Error).self) { try validateDNS("256.0.0.0") }
+        #expect(throws: (any Error).self) { try validateDNS("1.2.3") }
+        #expect(throws: (any Error).self) { try validateDNS("1.2.3.4.5") }
+        #expect(throws: (any Error).self) { try validateDNS("abc") }
+        #expect(throws: (any Error).self) { try validateDNS("") }
+        #expect(throws: (any Error).self) { try validateDNS("01.02.03.04") }
     }
 
     // MARK: - validateMAC
 
-    func testValidMAC() throws {
-        XCTAssertNoThrow(try validateMAC("52:54:00:12:34:56"))
-        XCTAssertNoThrow(try validateMAC("aa:bb:cc:dd:ee:ff"))
-        XCTAssertNoThrow(try validateMAC("AA:BB:CC:DD:EE:FF"))
+    @Test func validMAC() {
+        #expect(throws: Never.self) { try validateMAC("52:54:00:12:34:56") }
+        #expect(throws: Never.self) { try validateMAC("aa:bb:cc:dd:ee:ff") }
+        #expect(throws: Never.self) { try validateMAC("AA:BB:CC:DD:EE:FF") }
     }
 
-    func testInvalidMAC() {
-        XCTAssertThrowsError(try validateMAC("52:54:00:12:34"))
-        XCTAssertThrowsError(try validateMAC("52:54:00:12:34:56:78"))
-        XCTAssertThrowsError(try validateMAC("52:54:00:12:34:GG"))
-        XCTAssertThrowsError(try validateMAC("52-54-00-12-34-56"))
-        XCTAssertThrowsError(try validateMAC(""))
+    @Test func invalidMAC() {
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34") }
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34:56:78") }
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34:GG") }
+        #expect(throws: (any Error).self) { try validateMAC("52-54-00-12-34-56") }
+        #expect(throws: (any Error).self) { try validateMAC("") }
     }
 }

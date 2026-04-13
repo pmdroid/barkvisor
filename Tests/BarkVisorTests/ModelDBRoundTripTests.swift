@@ -1,60 +1,58 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
 /// Tests for DB round-trips of models not covered by the existing DatabaseMigrationTests.
-final class ModelDBRoundTripTests: XCTestCase {
-    private var dbPool: DatabaseQueue!
+@Suite final class ModelDBRoundTripTests {
+    private let dbPool: DatabaseQueue
 
-    override func setUpWithError() throws {
-        dbPool = try DatabaseQueue()
+    init() throws {
+        let queue = try DatabaseQueue()
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-        try migrator.migrate(dbPool)
-    }
-
-    override func tearDown() {
-        dbPool = nil
+        try migrator.migrate(queue)
+        dbPool = queue
     }
 
     // MARK: - User
 
-    func testUserRoundTrip() throws {
+    @Test func userRoundTrip() throws {
         let user = User(
             id: "u1", username: "alice", password: "hash123", createdAt: "2025-01-01T00:00:00Z",
         )
         try dbPool.write { db in try user.insert(db) }
         let fetched = try dbPool.read { db in try User.fetchOne(db, key: "u1") }
-        XCTAssertEqual(fetched?.username, "alice")
+        #expect(fetched?.username == "alice")
     }
 
-    func testUserUniqueUsername() throws {
+    @Test func userUniqueUsername() throws {
         try dbPool.write { db in
             try User(id: "u1", username: "alice", password: "h1", createdAt: "2025-01-01T00:00:00Z")
                 .insert(db)
         }
-        XCTAssertThrowsError(
-            try dbPool.write { db in
+        #expect(throws: (any Error).self) {
+            try self.dbPool.write { db in
                 try User(id: "u2", username: "alice", password: "h2", createdAt: "2025-01-01T00:00:00Z")
                     .insert(db)
-            },
-        )
+            }
+        }
     }
 
     // MARK: - AppSetting
 
-    func testAppSettingRoundTrip() throws {
+    @Test func appSettingRoundTrip() throws {
         let setting = AppSetting(key: "theme", value: "dark")
         try dbPool.write { db in try setting.insert(db) }
         let fetched = try dbPool.read { db in try AppSetting.fetchOne(db, key: "theme") }
-        XCTAssertEqual(fetched?.value, "dark")
+        #expect(fetched?.value == "dark")
     }
 
     // MARK: - BridgeRecord
 
-    func testBridgeRecordRoundTrip() throws {
+    @Test func bridgeRecordRoundTrip() throws {
         let bridge = BridgeRecord(
             id: nil,
             interface: "en0",
@@ -68,15 +66,15 @@ final class ModelDBRoundTripTests: XCTestCase {
         let fetched = try dbPool.read { db in
             try BridgeRecord.filter(Column("interface") == "en0").fetchOne(db)
         }
-        XCTAssertEqual(fetched?.interface, "en0")
-        XCTAssertEqual(fetched?.plistExists, true)
-        XCTAssertEqual(fetched?.daemonRunning, false)
-        XCTAssertNotNil(fetched?.id)
+        #expect(fetched?.interface == "en0")
+        #expect(fetched?.plistExists == true)
+        #expect(fetched?.daemonRunning == false)
+        #expect(fetched?.id != nil)
     }
 
     // MARK: - SSHKey
 
-    func testSSHKeyRoundTrip() throws {
+    @Test func sshKeyRoundTrip() throws {
         let key = SSHKey(
             id: "k1",
             name: "My Key",
@@ -88,14 +86,14 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try key.insert(db) }
         let fetched = try dbPool.read { db in try SSHKey.fetchOne(db, key: "k1") }
-        XCTAssertEqual(fetched?.name, "My Key")
-        XCTAssertEqual(fetched?.isDefault, true)
-        XCTAssertEqual(fetched?.keyType, "ssh-ed25519")
+        #expect(fetched?.name == "My Key")
+        #expect(fetched?.isDefault == true)
+        #expect(fetched?.keyType == "ssh-ed25519")
     }
 
     // MARK: - APIKey
 
-    func testAPIKeyRoundTrip() throws {
+    @Test func apiKeyRoundTrip() throws {
         // Need a user first for FK
         try dbPool.write { db in
             try User(id: "u1", username: "admin", password: "h", createdAt: "2025-01-01T00:00:00Z")
@@ -114,12 +112,12 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try key.insert(db) }
         let fetched = try dbPool.read { db in try APIKey.fetchOne(db, key: "ak1") }
-        XCTAssertEqual(fetched?.name, "Test")
-        XCTAssertEqual(fetched?.userId, "u1")
-        XCTAssertEqual(fetched?.keyPrefix, "barkvisor_abcde")
+        #expect(fetched?.name == "Test")
+        #expect(fetched?.userId == "u1")
+        #expect(fetched?.keyPrefix == "barkvisor_abcde")
     }
 
-    func testAPIKeyCascadeDeleteOnUserDelete() throws {
+    @Test func apiKeyCascadeDeleteOnUserDelete() throws {
         try dbPool.write { db in
             try User(id: "u1", username: "admin", password: "h", createdAt: "2025-01-01T00:00:00Z")
                 .insert(db)
@@ -138,12 +136,12 @@ final class ModelDBRoundTripTests: XCTestCase {
         // Delete user — API key should cascade
         try dbPool.write { db in try User.deleteOne(db, key: "u1") }
         let key = try dbPool.read { db in try APIKey.fetchOne(db, key: "ak1") }
-        XCTAssertNil(key, "API key should be cascade-deleted with user")
+        #expect(key == nil, "API key should be cascade-deleted with user")
     }
 
     // MARK: - AuditEntry
 
-    func testAuditEntryAutoIncrementID() throws {
+    @Test func auditEntryAutoIncrementID() throws {
         try dbPool.write { db in
             let entry = AuditEntry(
                 id: nil,
@@ -161,13 +159,13 @@ final class ModelDBRoundTripTests: XCTestCase {
             try entry.insert(db)
         }
         let fetched = try dbPool.read { db in try AuditEntry.fetchAll(db) }
-        XCTAssertEqual(fetched.count, 1)
-        XCTAssertNotNil(fetched.first?.id)
+        #expect(fetched.count == 1)
+        #expect(fetched.first?.id != nil)
     }
 
     // MARK: - ImageRepository
 
-    func testImageRepositoryRoundTrip() throws {
+    @Test func imageRepositoryRoundTrip() throws {
         let repo = ImageRepository(
             id: "repo-1", name: "Official", url: "https://example.com/repo.json",
             isBuiltIn: true, repoType: "both", lastSyncedAt: nil, lastError: nil,
@@ -175,14 +173,14 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try repo.insert(db) }
         let fetched = try dbPool.read { db in try ImageRepository.fetchOne(db, key: "repo-1") }
-        XCTAssertEqual(fetched?.name, "Official")
-        XCTAssertEqual(fetched?.repoType, "both")
-        XCTAssertEqual(fetched?.syncStatus, "idle")
+        #expect(fetched?.name == "Official")
+        #expect(fetched?.repoType == "both")
+        #expect(fetched?.syncStatus == "idle")
     }
 
     // MARK: - RepositoryImage
 
-    func testRepositoryImageRoundTrip() throws {
+    @Test func repositoryImageRoundTrip() throws {
         // Need repository first
         try dbPool.write { db in
             try ImageRepository(
@@ -200,13 +198,13 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try image.insert(db) }
         let fetched = try dbPool.read { db in try RepositoryImage.fetchOne(db, key: "ri-1") }
-        XCTAssertEqual(fetched?.slug, "ubuntu-24.04")
-        XCTAssertEqual(fetched?.arch, "arm64")
+        #expect(fetched?.slug == "ubuntu-24.04")
+        #expect(fetched?.arch == "arm64")
     }
 
     // MARK: - VMImage
 
-    func testVMImageRoundTrip() throws {
+    @Test func vmImageRoundTrip() throws {
         let image = VMImage(
             id: "img-1", name: "Ubuntu", imageType: "cloud-image",
             arch: "arm64", path: "/data/images/test.img", sizeBytes: 500_000,
@@ -215,13 +213,13 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try image.insert(db) }
         let fetched = try dbPool.read { db in try VMImage.fetchOne(db, key: "img-1") }
-        XCTAssertEqual(fetched?.name, "Ubuntu")
-        XCTAssertEqual(fetched?.status, "ready")
+        #expect(fetched?.name == "Ubuntu")
+        #expect(fetched?.status == "ready")
     }
 
     // MARK: - TusUpload (cascade)
 
-    func testTusUploadCascadeOnImageDelete() throws {
+    @Test func tusUploadCascadeOnImageDelete() throws {
         try dbPool.write { db in
             try VMImage(
                 id: "img-1", name: "Test", imageType: "iso", arch: "arm64",
@@ -237,12 +235,12 @@ final class ModelDBRoundTripTests: XCTestCase {
 
         try dbPool.write { db in try VMImage.deleteOne(db, key: "img-1") }
         let upload = try dbPool.read { db in try TusUpload.fetchOne(db, key: "tus-1") }
-        XCTAssertNil(upload, "TusUpload should cascade-delete with image")
+        #expect(upload == nil, "TusUpload should cascade-delete with image")
     }
 
     // MARK: - GuestInfoRecord
 
-    func testGuestInfoRoundTrip() throws {
+    @Test func guestInfoRoundTrip() throws {
         // Need disk and VM first
         try dbPool.write { db in
             try Disk(
@@ -277,11 +275,11 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try guest.insert(db) }
         let fetched = try dbPool.read { db in try GuestInfoRecord.fetchOne(db, key: "vm-1") }
-        XCTAssertEqual(fetched?.hostname, "myhost")
-        XCTAssertEqual(fetched?.osName, "Ubuntu")
+        #expect(fetched?.hostname == "myhost")
+        #expect(fetched?.osName == "Ubuntu")
     }
 
-    func testGuestInfoCascadeOnVMDelete() throws {
+    @Test func guestInfoCascadeOnVMDelete() throws {
         try dbPool.write { db in
             try Disk(
                 id: "d1",
@@ -313,12 +311,12 @@ final class ModelDBRoundTripTests: XCTestCase {
 
         try dbPool.write { db in try VM.deleteOne(db, key: "vm-1") }
         let guest = try dbPool.read { db in try GuestInfoRecord.fetchOne(db, key: "vm-1") }
-        XCTAssertNil(guest, "GuestInfo should cascade-delete with VM")
+        #expect(guest == nil, "GuestInfo should cascade-delete with VM")
     }
 
     // MARK: - VMTemplate
 
-    func testVMTemplateRoundTrip() throws {
+    @Test func vmTemplateRoundTrip() throws {
         let template = VMTemplate(
             id: "t1", slug: "ubuntu-server", name: "Ubuntu Server",
             description: "A server template", category: "server", icon: "ubuntu",
@@ -329,8 +327,8 @@ final class ModelDBRoundTripTests: XCTestCase {
         )
         try dbPool.write { db in try template.insert(db) }
         let fetched = try dbPool.read { db in try VMTemplate.fetchOne(db, key: "t1") }
-        XCTAssertEqual(fetched?.slug, "ubuntu-server")
-        XCTAssertEqual(fetched?.cpuCount, 4)
-        XCTAssertEqual(fetched?.memoryMB, 4_096)
+        #expect(fetched?.slug == "ubuntu-server")
+        #expect(fetched?.cpuCount == 4)
+        #expect(fetched?.memoryMB == 4_096)
     }
 }

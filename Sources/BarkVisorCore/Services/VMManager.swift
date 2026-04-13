@@ -112,6 +112,7 @@ public actor VMManager: VMStateQuerying {
 
     // MARK: - Start
 
+    // swiftlint:disable:next function_body_length
     public func start(vmID: String) async throws {
         guard runningVMs[vmID] == nil, !startingVMs.contains(vmID) else {
             throw BarkVisorError.vmAlreadyRunning(vmID)

@@ -1,16 +1,17 @@
 import BarkVisorHelperProtocol
-import XCTest
+import Foundation
+import Testing
 
 /// Verifies that the HelperProtocol is correctly defined as an ObjC protocol
 /// suitable for NSXPCInterface.
-final class HelperProtocolConformanceTests: XCTestCase {
-    func testProtocolCanBeUsedWithNSXPCInterface() {
+@Suite struct HelperProtocolConformanceTests {
+    @Test func protocolCanBeUsedWithNSXPCInterface() {
         // This would crash at runtime if the protocol is not properly @objc
         let interface = NSXPCInterface(with: HelperProtocol.self)
-        XCTAssertNotNil(interface)
+        #expect(interface != nil)
     }
 
-    func testHandlerConformsToProtocol() {
+    @Test func handlerConformsToProtocol() {
         // Verify a basic NSObject subclass can conform to the protocol
         class MinimalHandler: NSObject, HelperProtocol {
             func getVersion(reply: @escaping (String) -> Void) {
@@ -45,7 +46,7 @@ final class HelperProtocolConformanceTests: XCTestCase {
         }
 
         let handler = MinimalHandler()
-        XCTAssertTrue(handler is HelperProtocol)
+        #expect(handler is HelperProtocol)
 
         // Verify it can be set as exportedObject
         let listener = NSXPCListener.anonymous()

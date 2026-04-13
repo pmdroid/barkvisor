@@ -1,10 +1,11 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class VirtUIErrorTests: XCTestCase {
+@Suite struct VirtUIErrorTests {
     // MARK: - errorDescription
 
-    func testAllErrorsHaveDescriptions() throws {
+    @Test func allErrorsHaveDescriptions() throws {
         let errors: [BarkVisorError] = [
             .qemuNotFound("not found"),
             .firmwareNotFound("missing"),
@@ -36,16 +37,15 @@ final class VirtUIErrorTests: XCTestCase {
         ]
 
         for error in errors {
-            XCTAssertNotNil(error.errorDescription, "Missing description for \(error)")
-            XCTAssertFalse(
-                try XCTUnwrap(error.errorDescription?.isEmpty), "Empty description for \(error)",
-            )
+            #expect(error.errorDescription != nil, "Missing description for \(error)")
+            let desc = try #require(error.errorDescription)
+            #expect(!desc.isEmpty, "Empty description for \(error)")
         }
     }
 
     // MARK: - code
 
-    func testAllErrorsHaveMachineReadableCodes() {
+    @Test func allErrorsHaveMachineReadableCodes() {
         let expectations: [(BarkVisorError, String)] = [
             (.qemuNotFound(""), "qemu_not_found"),
             (.firmwareNotFound(""), "firmware_not_found"),
@@ -62,57 +62,57 @@ final class VirtUIErrorTests: XCTestCase {
         ]
 
         for (error, expectedCode) in expectations {
-            XCTAssertEqual(error.code, expectedCode, "Wrong code for \(error)")
+            #expect(error.code == expectedCode, "Wrong code for \(error)")
         }
     }
 
     // MARK: - httpStatus
 
-    func testHTTPStatusCodes() {
-        XCTAssertEqual(BarkVisorError.badRequest("").httpStatus, 400)
-        XCTAssertEqual(BarkVisorError.invalidArgument("").httpStatus, 400)
-        XCTAssertEqual(BarkVisorError.invalidPortForward("").httpStatus, 400)
-        XCTAssertEqual(BarkVisorError.unknownVMType("").httpStatus, 400)
-        XCTAssertEqual(BarkVisorError.unauthorized().httpStatus, 401)
-        XCTAssertEqual(BarkVisorError.forbidden("").httpStatus, 403)
-        XCTAssertEqual(BarkVisorError.notFound().httpStatus, 404)
-        XCTAssertEqual(BarkVisorError.repositoryNotFound("").httpStatus, 404)
-        XCTAssertEqual(BarkVisorError.conflict("").httpStatus, 409)
-        XCTAssertEqual(BarkVisorError.vmAlreadyRunning("").httpStatus, 409)
-        XCTAssertEqual(BarkVisorError.preconditionFailed("").httpStatus, 412)
+    @Test func httpStatusCodes() {
+        #expect(BarkVisorError.badRequest("").httpStatus == 400)
+        #expect(BarkVisorError.invalidArgument("").httpStatus == 400)
+        #expect(BarkVisorError.invalidPortForward("").httpStatus == 400)
+        #expect(BarkVisorError.unknownVMType("").httpStatus == 400)
+        #expect(BarkVisorError.unauthorized().httpStatus == 401)
+        #expect(BarkVisorError.forbidden("").httpStatus == 403)
+        #expect(BarkVisorError.notFound().httpStatus == 404)
+        #expect(BarkVisorError.repositoryNotFound("").httpStatus == 404)
+        #expect(BarkVisorError.conflict("").httpStatus == 409)
+        #expect(BarkVisorError.vmAlreadyRunning("").httpStatus == 409)
+        #expect(BarkVisorError.preconditionFailed("").httpStatus == 412)
 
         // Domain errors default to 500
-        XCTAssertEqual(BarkVisorError.qemuNotFound("").httpStatus, 500)
-        XCTAssertEqual(BarkVisorError.diskCreateFailed("").httpStatus, 500)
-        XCTAssertEqual(BarkVisorError.monitorError("").httpStatus, 500)
-        XCTAssertEqual(BarkVisorError.internalError("").httpStatus, 500)
+        #expect(BarkVisorError.qemuNotFound("").httpStatus == 500)
+        #expect(BarkVisorError.diskCreateFailed("").httpStatus == 500)
+        #expect(BarkVisorError.monitorError("").httpStatus == 500)
+        #expect(BarkVisorError.internalError("").httpStatus == 500)
     }
 
     // MARK: - sanitizedDescription
 
-    func testSanitizedDescriptionStripsAbsolutePaths() {
+    @Test func sanitizedDescriptionStripsAbsolutePaths() {
         let error = BarkVisorError.diskCreateFailed(
             "Failed to create disk at /Users/alice/Library/data/disk.qcow2",
         )
         let sanitized = error.sanitizedDescription
-        XCTAssertFalse(
-            sanitized.contains("/Users/alice"), "Should strip filesystem paths: \(sanitized)",
+        #expect(
+            !sanitized.contains("/Users/alice"), "Should strip filesystem paths: \(sanitized)",
         )
-        XCTAssertTrue(sanitized.contains("<path>"), "Should replace paths with <path>: \(sanitized)")
+        #expect(sanitized.contains("<path>"), "Should replace paths with <path>: \(sanitized)")
     }
 
-    func testSanitizedDescriptionPreservesNonPathMessages() {
+    @Test func sanitizedDescriptionPreservesNonPathMessages() {
         let error = BarkVisorError.badRequest("Name is required")
-        XCTAssertEqual(error.sanitizedDescription, "Name is required")
+        #expect(error.sanitizedDescription == "Name is required")
     }
 
-    func testNotFoundDefaultDescription() {
+    @Test func notFoundDefaultDescription() {
         let error = BarkVisorError.notFound()
-        XCTAssertEqual(error.errorDescription, "Not found")
+        #expect(error.errorDescription == "Not found")
     }
 
-    func testUnauthorizedDefaultDescription() {
+    @Test func unauthorizedDefaultDescription() {
         let error = BarkVisorError.unauthorized()
-        XCTAssertEqual(error.errorDescription, "Unauthorized")
+        #expect(error.errorDescription == "Unauthorized")
     }
 }
