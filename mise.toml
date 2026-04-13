@@ -5,3 +5,6 @@ swiftlint = '0.63.2'
 
 [env]
 XCODE_DEFAULT_TOOLCHAIN_OVERRIDE = { value = "{{ tools.swift.path }}", tools = true }
+
+[settings]
+experimental = true
