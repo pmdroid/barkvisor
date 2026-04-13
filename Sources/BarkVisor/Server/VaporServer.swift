@@ -120,18 +120,13 @@ public final class VaporServer: @unchecked Sendable {
     }
 
     private func configureMiddleware(app: Vapor.Application) {
-        app.http.server.configuration.hostname = Config.hostname
+        app.http.server.configuration.hostname = "0.0.0.0"
         app.http.server.configuration.port = Config.port
         app.routes.defaultMaxBodySize = "1mb"
 
         app.middleware.use(StructuredErrorMiddleware())
 
-        let allowedOrigin: CORSMiddleware.AllowOriginSetting =
-            if Config.hostname == "0.0.0.0" || Config.hostname == "::" {
-                .any(["http://localhost:\(Config.port)", "http://127.0.0.1:\(Config.port)"])
-            } else {
-                .custom("http://\(Config.hostname):\(Config.port)")
-            }
+        let allowedOrigin: CORSMiddleware.AllowOriginSetting = .all
         let cors = CORSMiddleware(
             configuration: .init(
                 allowedOrigin: allowedOrigin,
@@ -199,7 +194,8 @@ public final class VaporServer: @unchecked Sendable {
                     let database = try AppDatabase(path: dbPath.path)
                     try database.migrate()
                     startupWarning =
-                        "The database could not be opened and no backups were available. A fresh database was created — all previous data has been lost."
+                        "The database could not be opened and no backups were available. "
+                            + "A fresh database was created — all previous data has been lost."
                     return database
                 }
             }

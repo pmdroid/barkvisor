@@ -1,137 +1,138 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class TemplateRendererTests: XCTestCase {
+struct TemplateRendererTests {
     // MARK: - Basic placeholder replacement
 
-    func testSimplePlaceholderReplacement() throws {
+    @Test func `simple placeholder replacement`() throws {
         let template = "hostname: {{hostname}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["hostname": "myhost"])
-        XCTAssertEqual(result, "hostname: myhost")
+        #expect(result == "hostname: myhost")
     }
 
-    func testMultiplePlaceholders() throws {
+    @Test func `multiple placeholders`() throws {
         let template = "user: {{username}} host: {{hostname}}"
         let result = try TemplateRenderer.render(
             template: template, inputs: ["username": "admin", "hostname": "srv1"],
         )
-        XCTAssertEqual(result, "user: admin host: srv1")
+        #expect(result == "user: admin host: srv1")
     }
 
-    func testEmptyTemplateReturnsEmpty() throws {
+    @Test func `empty template returns empty`() throws {
         let result = try TemplateRenderer.render(template: "", inputs: ["key": "value"])
-        XCTAssertEqual(result, "")
+        #expect(result == "")
     }
 
     // MARK: - password_hash
 
-    func testPasswordHashGeneration() throws {
+    @Test func `password hash generation`() throws {
         let template = "password: {{password_hash}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["password": "secret123"])
-        XCTAssertTrue(result.contains("$6$"), "Should contain SHA-512 crypt prefix: \(result)")
-        XCTAssertFalse(result.contains("{{password_hash}}"), "Placeholder should be replaced")
+        #expect(result.contains("$6$"), "Should contain SHA-512 crypt prefix: \(result)")
+        #expect(!result.contains("{{password_hash}}"), "Placeholder should be replaced")
     }
 
     // MARK: - ssh_keys_yaml
 
-    func testSSHKeysYAMLGeneration() throws {
+    @Test func `ssh keys YAML generation`() throws {
         let template = "ssh_authorized_keys:\n{{ssh_keys_yaml}}"
         let keys = "ssh-rsa AAAA key1\nssh-ed25519 BBBB key2"
         let result = try TemplateRenderer.render(template: template, inputs: ["ssh_keys": keys])
-        XCTAssertTrue(result.contains("      - ssh-rsa AAAA key1"))
-        XCTAssertTrue(result.contains("      - ssh-ed25519 BBBB key2"))
+        #expect(result.contains("      - ssh-rsa AAAA key1"))
+        #expect(result.contains("      - ssh-ed25519 BBBB key2"))
     }
 
-    func testSSHKeysYAMLEmpty() throws {
+    @Test func `ssh keys YAML empty`() throws {
         let template = "keys: {{ssh_keys_yaml}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["ssh_keys": ""])
-        XCTAssertEqual(result, "keys: ")
+        #expect(result == "keys: ")
     }
 
     // MARK: - extra_packages_yaml
 
-    func testExtraPackagesYAML() throws {
+    @Test func `extra packages YAML`() throws {
         let template = "packages:\n{{extra_packages_yaml}}"
         let result = try TemplateRenderer.render(
             template: template, inputs: ["extra_packages": "vim curl htop"],
         )
-        XCTAssertTrue(result.contains("  - vim"))
-        XCTAssertTrue(result.contains("  - curl"))
-        XCTAssertTrue(result.contains("  - htop"))
+        #expect(result.contains("  - vim"))
+        #expect(result.contains("  - curl"))
+        #expect(result.contains("  - htop"))
     }
 
-    func testExtraPackagesEmpty() throws {
+    @Test func `extra packages empty`() throws {
         let template = "packages: {{extra_packages_yaml}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["extra_packages": ""])
-        XCTAssertEqual(result, "packages: ")
+        #expect(result == "packages: ")
     }
 
     // MARK: - YAML escaping
 
-    func testYAMLEscapingDangerousChars() throws {
+    @Test func `yaml escaping dangerous chars`() throws {
         let template = "value: {{input}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["input": "hello: world"])
-        XCTAssertTrue(result.contains("'hello: world'"), "Should be YAML single-quoted: \(result)")
+        #expect(result.contains("'hello: world'"), "Should be YAML single-quoted: \(result)")
     }
 
-    func testYAMLEscapingSingleQuotes() throws {
+    @Test func `yaml escaping single quotes`() throws {
         let template = "value: {{input}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["input": "it's"])
         // YAML single-quote escaping doubles the quote
-        XCTAssertTrue(result.contains("'it''s'"), "Should escape single quotes: \(result)")
+        #expect(result.contains("'it''s'"), "Should escape single quotes: \(result)")
     }
 
-    func testSafeValueNotQuoted() throws {
+    @Test func `safe value not quoted`() throws {
         let template = "value: {{input}}"
         let result = try TemplateRenderer.render(template: template, inputs: ["input": "simple"])
-        XCTAssertEqual(result, "value: simple")
+        #expect(result == "value: simple")
     }
 
     // MARK: - SHA-512 Crypt
 
-    func testSHA512CryptDeterministic() {
+    @Test func `sha 512 crypt deterministic`() {
         let hash1 = TemplateRenderer.sha512Crypt(password: "test", salt: "abcdefgh", rounds: 5_000)
         let hash2 = TemplateRenderer.sha512Crypt(password: "test", salt: "abcdefgh", rounds: 5_000)
-        XCTAssertEqual(hash1, hash2, "Same password + salt should produce same hash")
+        #expect(hash1 == hash2, "Same password + salt should produce same hash")
     }
 
-    func testSHA512CryptFormat() {
+    @Test func `sha 512 crypt format`() {
         let hash = TemplateRenderer.sha512Crypt(password: "password", salt: "testsalt", rounds: 5_000)
-        XCTAssertTrue(hash.hasPrefix("$6$testsalt$"), "Should have $6$salt$ format: \(hash)")
+        #expect(hash.hasPrefix("$6$testsalt$"), "Should have $6$salt$ format: \(hash)")
     }
 
-    func testSHA512CryptCustomRounds() {
+    @Test func `sha 512 crypt custom rounds`() {
         let hash = TemplateRenderer.sha512Crypt(password: "password", salt: "salt1234", rounds: 1_000)
-        XCTAssertTrue(
+        #expect(
             hash.hasPrefix("$6$rounds=1000$salt1234$"), "Custom rounds should appear: \(hash)",
         )
     }
 
-    func testSHA512CryptDifferentPasswordsDifferentHashes() {
+    @Test func `sha 512 crypt different passwords different hashes`() {
         let hash1 = TemplateRenderer.sha512Crypt(
             password: "password1", salt: "same_salt", rounds: 5_000,
         )
         let hash2 = TemplateRenderer.sha512Crypt(
             password: "password2", salt: "same_salt", rounds: 5_000,
         )
-        XCTAssertNotEqual(hash1, hash2)
+        #expect(hash1 != hash2)
     }
 
-    func testSHA512CryptDifferentSaltsDifferentHashes() {
+    @Test func `sha 512 crypt different salts different hashes`() {
         let hash1 = TemplateRenderer.sha512Crypt(
             password: "same_password", salt: "salt1111", rounds: 5_000,
         )
         let hash2 = TemplateRenderer.sha512Crypt(
             password: "same_password", salt: "salt2222", rounds: 5_000,
         )
-        XCTAssertNotEqual(hash1, hash2)
+        #expect(hash1 != hash2)
     }
 
-    func testGenerateSHA512CryptRandomSalt() {
+    @Test func `generate SHA 512 crypt random salt`() {
         let hash1 = TemplateRenderer.generateSHA512Crypt(password: "test")
         let hash2 = TemplateRenderer.generateSHA512Crypt(password: "test")
-        XCTAssertNotEqual(hash1, hash2, "Random salts should produce different hashes")
-        XCTAssertTrue(hash1.hasPrefix("$6$"))
-        XCTAssertTrue(hash2.hasPrefix("$6$"))
+        #expect(hash1 != hash2, "Random salts should produce different hashes")
+        #expect(hash1.hasPrefix("$6$"))
+        #expect(hash2.hasPrefix("$6$"))
     }
 }

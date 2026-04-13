@@ -1,5 +1,6 @@
 import BarkVisorHelperProtocol
-import XCTest
+import Foundation
+import Testing
 
 /// In-process handler matching the real BarkVisorHelper implementation.
 private class TestHelperHandler: NSObject, HelperProtocol {
@@ -85,14 +86,12 @@ private class TestListenerDelegate: NSObject, NSXPCListenerDelegate {
     }
 }
 
-final class HelperXPCTests: XCTestCase {
-    private var listener: NSXPCListener?
-    private var listenerDelegate: TestListenerDelegate?
-    private var connection: NSXPCConnection?
+final class HelperXPCTests {
+    private let listener: NSXPCListener
+    private let listenerDelegate: TestListenerDelegate
+    private let connection: NSXPCConnection
 
-    override func setUp() {
-        super.setUp()
-        // Anonymous listener — no launchd registration needed
+    init() {
         listenerDelegate = TestListenerDelegate()
         let newListener = NSXPCListener.anonymous()
         newListener.delegate = listenerDelegate
@@ -105,82 +104,78 @@ final class HelperXPCTests: XCTestCase {
         connection = conn
     }
 
-    override func tearDown() {
-        connection?.invalidate()
-        listener?.invalidate()
-        super.tearDown()
+    deinit {
+        connection.invalidate()
+        listener.invalidate()
     }
 
-    private func proxy() throws -> HelperProtocol {
-        let conn = try XCTUnwrap(connection)
-        return try XCTUnwrap(
-            conn.remoteObjectProxyWithErrorHandler { error in
-                XCTFail("XPC error: \(error)")
-            } as? HelperProtocol,
-        )
+    private func proxy() -> HelperProtocol? {
+        connection.remoteObjectProxyWithErrorHandler { error in
+            Issue.record("XPC error: \(error)")
+        } as? HelperProtocol
     }
 
-    func testPing() async throws {
-        let p = try proxy()
+    @Test func ping() async throws {
+        let p = try #require(proxy())
         let message: String = try await withCheckedThrowingContinuation { cont in
             p.ping { reply in
                 cont.resume(returning: reply)
             }
         }
-        XCTAssertEqual(message, "Hello from BarkVisorHelper!")
+        #expect(message == "Hello from BarkVisorHelper!")
     }
 
-    func testGetVersion() async throws {
-        let p = try proxy()
+    @Test func `get version`() async throws {
+        let p = try #require(proxy())
         let version: String = try await withCheckedThrowingContinuation { cont in
             p.getVersion { reply in
                 cont.resume(returning: reply)
             }
         }
-        XCTAssertEqual(version, "1.0.0")
+        #expect(version == "1.0.0")
     }
 
-    func testInstallBridge() async throws {
-        let p = try proxy()
+    @Test func `install bridge`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.installBridge(interface: "en0") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertTrue(result.0)
-        XCTAssertNil(result.1)
+        #expect(result.0)
+        #expect(result.1 == nil)
     }
 
-    func testInstallBridgeInvalidInterface() async throws {
-        let p = try proxy()
+    @Test func `install bridge invalid interface`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.installBridge(interface: "en0; rm -rf /") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertFalse(result.0)
-        XCTAssertNotNil(result.1)
+        #expect(!result.0)
+        #expect(result.1 != nil)
     }
 
-    func testRemoveBridge() async throws {
-        let p = try proxy()
+    @Test func `remove bridge`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.removeBridge(interface: "en0") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertTrue(result.0)
-        XCTAssertNil(result.1)
+        #expect(result.0)
+        #expect(result.1 == nil)
     }
 
-    func testBridgeStatus() async throws {
-        let p = try proxy()
+    @Test func `bridge status`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.bridgeStatus(interface: "en0") { running, status in
                 cont.resume(returning: (running, status))
             }
         }
-        XCTAssertFalse(result.0)
-        XCTAssertEqual(result.1, "not_installed")
+        #expect(!result.0)
+        #expect(result.1 == "not_installed")
     }
 }

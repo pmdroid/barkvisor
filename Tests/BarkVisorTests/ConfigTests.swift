@@ -1,47 +1,46 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class ConfigTests: XCTestCase {
-    func testDefaultPort() {
-        XCTAssertEqual(Config.port, 7_777)
+struct ConfigTests {
+    @Test func `default port`() {
+        #expect(Config.port == 7_777)
     }
 
-    func testAllowedURLSchemes() {
-        XCTAssertTrue(Config.allowedURLSchemes.contains("https"))
-        XCTAssertTrue(Config.allowedURLSchemes.contains("http"))
-        XCTAssertFalse(Config.allowedURLSchemes.contains("ftp"))
-        XCTAssertFalse(Config.allowedURLSchemes.contains("file"))
+    @Test func `allowed URL schemes`() {
+        #expect(Config.allowedURLSchemes.contains("https"))
+        #expect(Config.allowedURLSchemes.contains("http"))
+        #expect(!Config.allowedURLSchemes.contains("ftp"))
+        #expect(!Config.allowedURLSchemes.contains("file"))
     }
 
-    func testDataDirNotEmpty() {
+    @Test func `data dir not empty`() {
         let dataDir = Config.dataDir
-        XCTAssertFalse(dataDir.path.isEmpty)
-        XCTAssertTrue(dataDir.path.localizedCaseInsensitiveContains("barkvisor"))
+        #expect(!dataDir.path.isEmpty)
+        #expect(dataDir.path.localizedCaseInsensitiveContains("barkvisor"))
     }
 
-    func testDBPathIsUnderDataDir() {
+    @Test func `db path is under data dir`() {
         let dbPath = Config.dbPath
-        XCTAssertTrue(dbPath.path.hasPrefix(Config.dataDir.path))
-        XCTAssertTrue(dbPath.path.hasSuffix("db.sqlite"))
+        #expect(dbPath.path.hasPrefix(Config.dataDir.path))
+        #expect(dbPath.path.hasSuffix("db.sqlite"))
     }
 
-    func testBackupRetentionDaysDefault() {
-        // Default should be 30 when UserDefaults has no value
+    @Test func `backup retention days default`() {
         let days = Config.backupRetentionDays
-        XCTAssertGreaterThan(days, 0)
+        #expect(days > 0)
     }
 
-    func testSocketDirPath() {
+    @Test func `socket dir path`() {
         let socketDir = Config.socketDir
-        XCTAssertTrue(socketDir.path.contains("barkvisor"))
+        #expect(socketDir.path.contains("barkvisor"))
     }
 
-    func testISO8601FormatterAvailable() {
+    @Test func `iso 8601 formatter available`() {
         let date = Date()
         let formatted = iso8601.string(from: date)
-        XCTAssertFalse(formatted.isEmpty)
-
+        #expect(!formatted.isEmpty)
         let parsed = iso8601.date(from: formatted)
-        XCTAssertNotNil(parsed)
+        #expect(parsed != nil)
     }
 }

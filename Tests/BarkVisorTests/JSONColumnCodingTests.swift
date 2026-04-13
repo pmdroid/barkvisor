@@ -1,81 +1,83 @@
-import XCTest
+import Foundation
+import Testing
 @testable import BarkVisorCore
 
-final class JSONColumnCodingTests: XCTestCase {
+struct JSONColumnCodingTests {
     // MARK: - decodeArray
 
-    func testDecodeArrayFromValidJSON() {
+    @Test func `decode array from valid JSON`() {
         let json = "[\"a\",\"b\",\"c\"]"
         let result = JSONColumnCoding.decodeArray(String.self, from: json)
-        XCTAssertEqual(result, ["a", "b", "c"])
+        #expect(result == ["a", "b", "c"])
     }
 
-    func testDecodeArrayFromNil() {
+    @Test func `decode array from nil`() {
         let result = JSONColumnCoding.decodeArray(String.self, from: nil)
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testDecodeArrayFromInvalidJSON() {
+    @Test func `decode array from invalid JSON`() {
         let result = JSONColumnCoding.decodeArray(String.self, from: "not json")
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testDecodeArrayFromEmptyString() {
+    @Test func `decode array from empty string`() {
         let result = JSONColumnCoding.decodeArray(String.self, from: "")
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testDecodeArrayOfInts() {
+    @Test func `decode array of ints`() {
         let json = "[1,2,3]"
         let result = JSONColumnCoding.decodeArray(Int.self, from: json)
-        XCTAssertEqual(result, [1, 2, 3])
+        #expect(result == [1, 2, 3])
     }
 
     // MARK: - decode single value
 
-    func testDecodeSingleValue() {
+    @Test func `decode single value`() {
         let json = "{\"name\":\"test\",\"loginTime\":1234.5}"
         let result = JSONColumnCoding.decode(GuestUserDTO.self, from: json)
-        XCTAssertEqual(result?.name, "test")
-        XCTAssertEqual(result?.loginTime, 1_234.5)
+        #expect(result?.name == "test")
+        #expect(result?.loginTime == 1_234.5)
     }
 
-    func testDecodeSingleValueFromNil() {
+    @Test func `decode single value from nil`() {
         let result = JSONColumnCoding.decode(GuestUserDTO.self, from: nil)
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testDecodeSingleValueFromInvalidJSON() {
+    @Test func `decode single value from invalid JSON`() {
         let result = JSONColumnCoding.decode(GuestUserDTO.self, from: "bad")
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
     // MARK: - encode
 
-    func testEncodeValue() throws {
+    @Test func `encode value`() throws {
         let users = [GuestUserDTO(name: "alice", loginTime: nil)]
         let json = JSONColumnCoding.encode(users)
-        XCTAssertNotNil(json)
-        XCTAssertTrue(try XCTUnwrap(json?.contains("alice")))
+        #expect(json != nil)
+        let unwrapped = try #require(json)
+        #expect(unwrapped.contains("alice"))
     }
 
-    func testEncodeNil() {
+    @Test func `encode nil`() {
         let result = JSONColumnCoding.encode(nil as [String]?)
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
     // MARK: - Round trip
 
-    func testRoundTrip() {
+    @Test func `round trip`() {
         let original = [
             PortForwardRule(protocol: "tcp", hostPort: 2_222, guestPort: 22),
             PortForwardRule(protocol: "udp", hostPort: 5_353, guestPort: 53),
         ]
         let encoded = JSONColumnCoding.encode(original)
-        XCTAssertNotNil(encoded)
+        #expect(encoded != nil)
         let decoded = JSONColumnCoding.decodeArray(PortForwardRule.self, from: encoded)
-        XCTAssertEqual(decoded?.count, 2)
-        XCTAssertEqual(decoded?[0].hostPort, 2_222)
-        XCTAssertEqual(decoded?[1].guestPort, 53)
+        #expect(decoded?.count == 2)
+        #expect(decoded?[0].hostPort == 2_222)
+        #expect(decoded?[1].guestPort == 53)
     }
 }

@@ -1,5 +1,6 @@
 import BarkVisorHelperProtocol
-import XCTest
+import Foundation
+import Testing
 
 private enum XPCProxyError: Error {
     case castFailed
@@ -15,15 +16,15 @@ struct UnsafeSendable<T>: @unchecked Sendable {
 
 // MARK: - HelperProtocol Constants Tests
 
-final class HelperProtocolConstantsTests: XCTestCase {
-    func testMachServiceName() {
-        XCTAssertEqual(kHelperMachServiceName, "dev.barkvisor.helper")
-        XCTAssertFalse(kHelperMachServiceName.isEmpty)
+struct HelperProtocolConstantsTests {
+    @Test func `mach service name`() {
+        #expect(kHelperMachServiceName == "dev.barkvisor.helper")
+        #expect(!kHelperMachServiceName.isEmpty)
     }
 
-    func testTeamIDIsDefined() {
-        XCTAssertFalse(kHelperTeamID.isEmpty)
-        XCTAssertEqual(kHelperTeamID, "W363QN58YY")
+    @Test func `team ID is defined`() {
+        #expect(!kHelperTeamID.isEmpty)
+        #expect(kHelperTeamID == "W363QN58YY")
     }
 }
 
@@ -32,7 +33,7 @@ final class HelperProtocolConstantsTests: XCTestCase {
 /// Tests the interface validation logic that mirrors HelperHandler.validateInterface.
 /// We test the rules directly since HelperHandler is in a separate module without
 /// public visibility for its private helpers.
-final class InterfaceValidationTests: XCTestCase {
+struct InterfaceValidationTests {
     /// Mirrors HelperHandler.validateInterface for testing purposes.
     private func validateInterface(_ name: String) -> Bool {
         !name.isEmpty
@@ -42,88 +43,88 @@ final class InterfaceValidationTests: XCTestCase {
 
     // MARK: Valid interfaces
 
-    func testValidSimpleInterface() {
-        XCTAssertTrue(validateInterface("en0"))
+    @Test func `valid simple interface`() {
+        #expect(validateInterface("en0"))
     }
 
-    func testValidLongerInterface() {
-        XCTAssertTrue(validateInterface("bridge0"))
+    @Test func `valid longer interface`() {
+        #expect(validateInterface("bridge0"))
     }
 
-    func testValidAllLetters() {
-        XCTAssertTrue(validateInterface("loopback"))
+    @Test func `valid all letters`() {
+        #expect(validateInterface("loopback"))
     }
 
-    func testValidAllDigits() {
-        XCTAssertTrue(validateInterface("12345"))
+    @Test func `valid all digits`() {
+        #expect(validateInterface("12345"))
     }
 
-    func testValidMaxLength() {
+    @Test func `valid max length`() {
         let name = String(repeating: "a", count: 15)
-        XCTAssertTrue(validateInterface(name))
+        #expect(validateInterface(name))
     }
 
     // MARK: Invalid interfaces
 
-    func testEmptyInterface() {
-        XCTAssertFalse(validateInterface(""))
+    @Test func `empty interface`() {
+        #expect(!validateInterface(""))
     }
 
-    func testInterfaceTooLong() {
+    @Test func `interface too long`() {
         let name = String(repeating: "a", count: 16)
-        XCTAssertFalse(validateInterface(name))
+        #expect(!validateInterface(name))
     }
 
-    func testInterfaceWithDot() {
-        XCTAssertFalse(validateInterface("en0.1"))
+    @Test func `interface with dot`() {
+        #expect(!validateInterface("en0.1"))
     }
 
-    func testInterfaceWithSpace() {
-        XCTAssertFalse(validateInterface("en 0"))
+    @Test func `interface with space`() {
+        #expect(!validateInterface("en 0"))
     }
 
-    func testInterfaceWithSlash() {
-        XCTAssertFalse(validateInterface("en0/1"))
+    @Test func `interface with slash`() {
+        #expect(!validateInterface("en0/1"))
     }
 
-    func testInterfaceWithSemicolon() {
-        XCTAssertFalse(validateInterface("en0;rm"))
+    @Test func `interface with semicolon`() {
+        #expect(!validateInterface("en0;rm"))
     }
 
-    func testInterfaceWithDash() {
-        XCTAssertFalse(validateInterface("en-0"))
+    @Test func `interface with dash`() {
+        #expect(!validateInterface("en-0"))
     }
 
-    func testInterfaceWithUnderscore() {
-        XCTAssertFalse(validateInterface("en_0"))
+    @Test func `interface with underscore`() {
+        #expect(!validateInterface("en_0"))
     }
 
-    func testInterfaceWithPathTraversal() {
-        XCTAssertFalse(validateInterface("../etc"))
+    @Test func `interface with path traversal`() {
+        #expect(!validateInterface("../etc"))
     }
 
-    func testInterfaceWithShellInjection() {
-        XCTAssertFalse(validateInterface("en0; rm -rf /"))
+    @Test func `interface with shell injection`() {
+        #expect(!validateInterface("en0; rm -rf /"))
     }
 
-    func testInterfaceWithNewline() {
-        XCTAssertFalse(validateInterface("en0\n"))
+    @Test func `interface with newline`() {
+        #expect(!validateInterface("en0\n"))
     }
 
-    func testInterfaceWithNull() {
-        XCTAssertFalse(validateInterface("en0\0"))
+    @Test func `interface with null`() {
+        #expect(!validateInterface("en0\0"))
     }
 
-    func testInterfaceWithUnicode() {
+    @Test func `interface with unicode`() {
         // Unicode letters should be accepted by Character.isLetter
-        XCTAssertTrue(validateInterface("ën0"))
+        #expect(validateInterface("ën0"))
     }
 }
 
 // MARK: - Vmnet Path Validation Tests
 
 /// Tests the vmnet binary path validation logic mirroring HelperHandler.validateVmnetPath.
-final class VmnetPathValidationTests: XCTestCase {
+struct VmnetPathValidationTests {
     /// Mirrors HelperHandler.validateVmnetPath for testing purposes.
     private func validateVmnetPath(_ path: String) -> Bool {
         let canonicalized = (path as NSString).resolvingSymlinksInPath
@@ -131,50 +132,50 @@ final class VmnetPathValidationTests: XCTestCase {
         return allowed.contains { canonicalized.hasPrefix($0) }
     }
 
-    func testValidHomebrewPath() {
-        XCTAssertTrue(validateVmnetPath("/opt/homebrew/bin/socket_vmnet"))
+    @Test func `valid homebrew path`() {
+        #expect(validateVmnetPath("/opt/homebrew/bin/socket_vmnet"))
     }
 
-    func testValidUsrLocalPath() {
-        XCTAssertTrue(validateVmnetPath("/usr/local/bin/socket_vmnet"))
+    @Test func `valid usr local path`() {
+        #expect(validateVmnetPath("/usr/local/bin/socket_vmnet"))
     }
 
-    func testValidOptSocketVmnetPath() {
-        XCTAssertTrue(validateVmnetPath("/opt/socket_vmnet/bin/socket_vmnet"))
+    @Test func `valid opt socket vmnet path`() {
+        #expect(validateVmnetPath("/opt/socket_vmnet/bin/socket_vmnet"))
     }
 
-    func testInvalidRootPath() {
-        XCTAssertFalse(validateVmnetPath("/bin/socket_vmnet"))
+    @Test func `invalid root path`() {
+        #expect(!validateVmnetPath("/bin/socket_vmnet"))
     }
 
-    func testInvalidUsrBinPath() {
-        XCTAssertFalse(validateVmnetPath("/usr/bin/socket_vmnet"))
+    @Test func `invalid usr bin path`() {
+        #expect(!validateVmnetPath("/usr/bin/socket_vmnet"))
     }
 
-    func testInvalidEtcPath() {
-        XCTAssertFalse(validateVmnetPath("/etc/socket_vmnet"))
+    @Test func `invalid etc path`() {
+        #expect(!validateVmnetPath("/etc/socket_vmnet"))
     }
 
-    func testInvalidTmpPath() {
-        XCTAssertFalse(validateVmnetPath("/tmp/socket_vmnet"))
+    @Test func `invalid tmp path`() {
+        #expect(!validateVmnetPath("/tmp/socket_vmnet"))
     }
 
-    func testEmptyPath() {
-        XCTAssertFalse(validateVmnetPath(""))
+    @Test func `empty path`() {
+        #expect(!validateVmnetPath(""))
     }
 
-    func testRelativePath() {
+    @Test func `relative path`() {
         // Relative paths resolve against cwd, which won't match allowed prefixes
-        XCTAssertFalse(validateVmnetPath("socket_vmnet"))
+        #expect(!validateVmnetPath("socket_vmnet"))
     }
 
-    func testPathWithTrailingSlashOnly() {
-        XCTAssertFalse(validateVmnetPath("/"))
+    @Test func `path with trailing slash only`() {
+        #expect(!validateVmnetPath("/"))
     }
 
-    func testPathPrefixPartialMatch() {
+    @Test func `path prefix partial match`() {
         // "/opt/homebrewfake" should NOT match "/opt/homebrew/"
-        XCTAssertFalse(validateVmnetPath("/opt/homebrewfake/bin/socket_vmnet"))
+        #expect(!validateVmnetPath("/opt/homebrewfake/bin/socket_vmnet"))
     }
 }
 
@@ -182,7 +183,7 @@ final class VmnetPathValidationTests: XCTestCase {
 
 /// Extended tests for XPC protocol methods beyond what HelperXPCTests covers.
 /// Uses an anonymous XPC listener to test all protocol methods in-process.
-final class HelperXPCExtendedTests: XCTestCase {
+final class HelperXPCExtendedTests {
     /// Test handler that validates inputs like the real HelperHandler.
     private class StrictTestHandler: NSObject, HelperProtocol {
         func getVersion(reply: @escaping (String) -> Void) {
@@ -267,12 +268,11 @@ final class HelperXPCExtendedTests: XCTestCase {
         }
     }
 
-    private var listener: NSXPCListener?
-    private var listenerDelegate: StrictListenerDelegate?
-    private var connection: NSXPCConnection?
+    private let listener: NSXPCListener
+    private let listenerDelegate: StrictListenerDelegate
+    private let connection: NSXPCConnection
 
-    override func setUp() {
-        super.setUp()
+    init() {
         listenerDelegate = StrictListenerDelegate()
         let newListener = NSXPCListener.anonymous()
         newListener.delegate = listenerDelegate
@@ -285,146 +285,142 @@ final class HelperXPCExtendedTests: XCTestCase {
         connection = conn
     }
 
-    override func tearDown() {
-        connection?.invalidate()
-        listener?.invalidate()
-        super.tearDown()
+    deinit {
+        connection.invalidate()
+        listener.invalidate()
     }
 
-    private func proxy() throws -> HelperProtocol {
-        let conn = try XCTUnwrap(connection)
-        return try XCTUnwrap(
-            conn.remoteObjectProxyWithErrorHandler { error in
-                XCTFail("XPC error: \(error)")
-            } as? HelperProtocol,
-        )
+    private func proxy() -> HelperProtocol? {
+        connection.remoteObjectProxyWithErrorHandler { error in
+            Issue.record("XPC error: \(error)")
+        } as? HelperProtocol
     }
 
     // MARK: - startBridge
 
-    func testStartBridgeValid() async throws {
-        let p = try proxy()
+    @Test func `start bridge valid`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.startBridge(interface: "en0") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertTrue(result.0)
-        XCTAssertNil(result.1)
+        #expect(result.0)
+        #expect(result.1 == nil)
     }
 
-    func testStartBridgeInvalidInterface() async throws {
-        let p = try proxy()
+    @Test func `start bridge invalid interface`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.startBridge(interface: "en0;bad") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertFalse(result.0)
-        XCTAssertNotNil(result.1)
+        #expect(!result.0)
+        #expect(result.1 != nil)
     }
 
-    func testStartBridgeEmptyInterface() async throws {
-        let p = try proxy()
+    @Test func `start bridge empty interface`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.startBridge(interface: "") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertFalse(result.0)
+        #expect(!result.0)
     }
 
     // MARK: - stopBridge
 
-    func testStopBridgeValid() async throws {
-        let p = try proxy()
+    @Test func `stop bridge valid`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.stopBridge(interface: "en0") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertTrue(result.0)
-        XCTAssertNil(result.1)
+        #expect(result.0)
+        #expect(result.1 == nil)
     }
 
-    func testStopBridgeInvalidInterface() async throws {
-        let p = try proxy()
+    @Test func `stop bridge invalid interface`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.stopBridge(interface: "") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertFalse(result.0)
+        #expect(!result.0)
     }
 
     // MARK: - bridgeStatus
 
-    func testBridgeStatusValid() async throws {
-        let p = try proxy()
+    @Test func `bridge status valid`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.bridgeStatus(interface: "en0") { running, status in
                 cont.resume(returning: (running, status))
             }
         }
-        XCTAssertFalse(result.0)
-        XCTAssertEqual(result.1, "not_installed")
+        #expect(!result.0)
+        #expect(result.1 == "not_installed")
     }
 
-    func testBridgeStatusInvalidInterface() async throws {
-        let p = try proxy()
+    @Test func `bridge status invalid interface`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.bridgeStatus(interface: "../etc") { running, status in
                 cont.resume(returning: (running, status))
             }
         }
-        XCTAssertFalse(result.0)
-        XCTAssertTrue(result.1?.contains("Invalid") ?? false)
+        #expect(!result.0)
+        #expect(result.1?.contains("Invalid") ?? false)
     }
 
     // MARK: - getAllBridgeStates
 
-    func testGetAllBridgeStatesReturnsJSON() async throws {
-        let p = try proxy()
+    @Test func `get all bridge states returns JSON`() async throws {
+        let p = try #require(proxy())
         let json: String = try await withCheckedThrowingContinuation { cont in
             p.getAllBridgeStates { reply in
                 cont.resume(returning: reply)
             }
         }
-        XCTAssertEqual(json, "[]")
+        #expect(json == "[]")
         // Verify it parses as valid JSON array
-        let data = try XCTUnwrap(json.data(using: .utf8))
+        let data = try #require(json.data(using: .utf8))
         let parsed = try JSONSerialization.jsonObject(with: data) as? [Any]
-        XCTAssertNotNil(parsed)
+        #expect(parsed != nil)
     }
 
     // MARK: - removeBridge
 
-    func testRemoveBridgeInvalidInterface() async throws {
-        let p = try proxy()
+    @Test func `remove bridge invalid interface`() async throws {
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.removeBridge(interface: "en0/../../etc") { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertFalse(result.0)
-        XCTAssertNotNil(result.1)
+        #expect(!result.0)
+        #expect(result.1 != nil)
     }
 
-    func testRemoveBridgeInterfaceTooLong() async throws {
+    @Test func `remove bridge interface too long`() async throws {
         let longName = String(repeating: "a", count: 16)
-        let p = try proxy()
+        let p = try #require(proxy())
         let result: (Bool, String?) = try await withCheckedThrowingContinuation { cont in
             p.removeBridge(interface: longName) { ok, err in
                 cont.resume(returning: (ok, err))
             }
         }
-        XCTAssertFalse(result.0)
+        #expect(!result.0)
     }
 
     // MARK: - Concurrent XPC calls
 
-    func testConcurrentPings() async throws {
-        let conn = try UnsafeSendable(XCTUnwrap(connection))
+    @Test func `concurrent pings`() async throws {
+        let conn = UnsafeSendable(connection)
         try await withThrowingTaskGroup(of: String.self) { group in
             for _ in 0 ..< 10 {
                 group.addTask {
@@ -445,10 +441,10 @@ final class HelperXPCExtendedTests: XCTestCase {
             }
             var count = 0
             for try await reply in group {
-                XCTAssertEqual(reply, "Hello from BarkVisorHelper!")
+                #expect(reply == "Hello from BarkVisorHelper!")
                 count += 1
             }
-            XCTAssertEqual(count, 10)
+            #expect(count == 10)
         }
     }
 }

@@ -1,12 +1,13 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
-final class APIKeyServiceTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
+final class APIKeyServiceTests {
+    private var dbPool: DatabasePool
+    private let tmpDir: URL
 
-    override func setUpWithError() throws {
+    init() throws {
         tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
@@ -17,7 +18,6 @@ final class APIKeyServiceTests: XCTestCase {
         }
         try migrator.migrate(dbPool)
 
-        // Seed a user
         try dbPool.write { db in
             let user = User(
                 id: "user-1", username: "admin", password: "hashed:test", createdAt: "2025-01-01T00:00:00Z",
@@ -26,166 +26,120 @@ final class APIKeyServiceTests: XCTestCase {
         }
     }
 
-    override func tearDown() {
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
     // MARK: - parseExpiry
 
-    func testParseExpiryDays() throws {
+    @Test func `parse expiry days`() throws {
         let result = try APIKeyService.parseExpiry("30d")
-        XCTAssertNotNil(result)
+        #expect(result != nil)
     }
 
-    func testParseExpiryYears() throws {
+    @Test func `parse expiry years`() throws {
         let result = try APIKeyService.parseExpiry("1y")
-        XCTAssertNotNil(result)
+        #expect(result != nil)
     }
 
-    func testParseExpiryNever() throws {
+    @Test func `parse expiry never`() throws {
         let result = try APIKeyService.parseExpiry("never")
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testParseExpiryNil() throws {
+    @Test func `parse expiry nil`() throws {
         let result = try APIKeyService.parseExpiry(nil)
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testParseExpiryInvalidFormat() {
-        XCTAssertThrowsError(try APIKeyService.parseExpiry("30h"))
-        XCTAssertThrowsError(try APIKeyService.parseExpiry("abc"))
-        XCTAssertThrowsError(try APIKeyService.parseExpiry(""))
+    @Test func `parse expiry invalid format`() {
+        #expect(throws: (any Error).self) { try APIKeyService.parseExpiry("30h") }
+        #expect(throws: (any Error).self) { try APIKeyService.parseExpiry("abc") }
+        #expect(throws: (any Error).self) { try APIKeyService.parseExpiry("") }
     }
 
     // MARK: - create
 
-    func testCreateAPIKey() async throws {
+    @Test func `create API key`() async throws {
         let result = try await APIKeyService.create(
-            name: "Test Key",
-            expiresIn: "30d",
-            userId: "user-1",
-            db: dbPool,
+            name: "Test Key", expiresIn: "30d", userId: "user-1", db: dbPool,
         )
-
-        XCTAssertEqual(result.apiKey.name, "Test Key")
-        XCTAssertTrue(result.plaintext.hasPrefix("barkvisor_"))
-        XCTAssertEqual(result.plaintext.count, 10 + 64) // "barkvisor_" + 64 hex chars
-        XCTAssertEqual(result.apiKey.keyPrefix, String(result.plaintext.prefix(15)))
-        XCTAssertNotNil(result.apiKey.expiresAt)
+        #expect(result.apiKey.name == "Test Key")
+        #expect(result.plaintext.hasPrefix("barkvisor_"))
+        #expect(result.plaintext.count == 10 + 64)
+        #expect(result.apiKey.keyPrefix == String(result.plaintext.prefix(15)))
+        #expect(result.apiKey.expiresAt != nil)
     }
 
-    func testCreateAPIKeyEmptyNameRejected() async {
-        do {
-            _ = try await APIKeyService.create(
-                name: "   ",
-                expiresIn: nil,
-                userId: "user-1",
-                db: dbPool,
-            )
-            XCTFail("Should throw for empty name")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 400)
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
+    @Test func `create API key empty name rejected`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await APIKeyService.create(name: "   ", expiresIn: nil, userId: "user-1", db: dbPool)
         }
+        #expect(error?.httpStatus == 400)
     }
 
     // MARK: - list
 
-    func testListAPIKeys() async throws {
+    @Test func `list API keys`() async throws {
         _ = try await APIKeyService.create(name: "Key 1", expiresIn: nil, userId: "user-1", db: dbPool)
         _ = try await APIKeyService.create(name: "Key 2", expiresIn: nil, userId: "user-1", db: dbPool)
-
         let keys = try await APIKeyService.list(userId: "user-1", db: dbPool)
-        XCTAssertEqual(keys.count, 2)
+        #expect(keys.count == 2)
     }
 
     // MARK: - revoke
 
-    func testRevokeAPIKey() async throws {
+    @Test func `revoke API key`() async throws {
         let created = try await APIKeyService.create(
             name: "Revoke Me", expiresIn: nil, userId: "user-1", db: dbPool,
         )
-
-        let revoked = try await APIKeyService.revoke(
-            id: created.apiKey.id, userId: "user-1", db: dbPool,
-        )
-        XCTAssertEqual(revoked.name, "Revoke Me")
-
+        let revoked = try await APIKeyService.revoke(id: created.apiKey.id, userId: "user-1", db: dbPool)
+        #expect(revoked.name == "Revoke Me")
         let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
-        XCTAssertEqual(remaining.count, 0)
+        #expect(remaining.isEmpty)
     }
 
-    func testRevokeNonExistentKeyThrows() async {
-        do {
+    @Test func `revoke non existent key throws`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
             _ = try await APIKeyService.revoke(id: "fake-id", userId: "user-1", db: dbPool)
-            XCTFail("Should throw notFound")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 404)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 404)
     }
 
-    func testRevokeOtherUsersKeyForbidden() async throws {
+    @Test func `revoke other users key forbidden`() async throws {
         let created = try await APIKeyService.create(
             name: "Other", expiresIn: nil, userId: "user-1", db: dbPool,
         )
-
-        do {
+        let error = await #expect(throws: BarkVisorError.self) {
             _ = try await APIKeyService.revoke(id: created.apiKey.id, userId: "user-2", db: dbPool)
-            XCTFail("Should throw forbidden")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 403)
-        } catch {
-            XCTFail("Wrong error type: \(error)")
         }
+        #expect(error?.httpStatus == 403)
     }
 
     // MARK: - APIKey.isExpired
 
-    func testAPIKeyNotExpiredWhenNil() {
+    @Test func `api key not expired when nil`() {
         let key = APIKey(
-            id: "k1",
-            name: "test",
-            keyHash: "h",
-            keyPrefix: "p",
-            userId: "u1",
-            expiresAt: nil,
-            lastUsedAt: nil,
-            createdAt: "2025-01-01T00:00:00Z",
+            id: "k1", name: "test", keyHash: "h", keyPrefix: "p", userId: "u1",
+            expiresAt: nil, lastUsedAt: nil, createdAt: "2025-01-01T00:00:00Z",
         )
-        XCTAssertFalse(key.isExpired)
+        #expect(!key.isExpired)
     }
 
-    func testAPIKeyExpired() {
+    @Test func `api key expired`() {
         let key = APIKey(
-            id: "k1",
-            name: "test",
-            keyHash: "h",
-            keyPrefix: "p",
-            userId: "u1",
-            expiresAt: "2020-01-01T00:00:00Z",
-            lastUsedAt: nil,
-            createdAt: "2019-01-01T00:00:00Z",
+            id: "k1", name: "test", keyHash: "h", keyPrefix: "p", userId: "u1",
+            expiresAt: "2020-01-01T00:00:00Z", lastUsedAt: nil, createdAt: "2019-01-01T00:00:00Z",
         )
-        XCTAssertTrue(key.isExpired)
+        #expect(key.isExpired)
     }
 
-    func testAPIKeyNotYetExpired() {
+    @Test func `api key not yet expired`() {
         let future = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
         let key = APIKey(
-            id: "k1",
-            name: "test",
-            keyHash: "h",
-            keyPrefix: "p",
-            userId: "u1",
-            expiresAt: future,
-            lastUsedAt: nil,
-            createdAt: "2025-01-01T00:00:00Z",
+            id: "k1", name: "test", keyHash: "h", keyPrefix: "p", userId: "u1",
+            expiresAt: future, lastUsedAt: nil, createdAt: "2025-01-01T00:00:00Z",
         )
-        XCTAssertFalse(key.isExpired)
+        #expect(!key.isExpired)
     }
 }

@@ -10,7 +10,7 @@ BarkVisor's HTTP server binds to port 7777 by default (configured in `Config.por
 lsof -i :7777
 ```
 
-Kill the conflicting process or change the bind hostname in BarkVisor Settings. The hostname is stored in UserDefaults under the key `serverHostname` (default `0.0.0.0`).
+Kill the conflicting process. The server always binds to `0.0.0.0`.
 
 ### Permission errors on data directory
 
