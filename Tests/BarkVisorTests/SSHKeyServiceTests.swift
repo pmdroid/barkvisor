@@ -1,61 +1,64 @@
+import Foundation
 import GRDB
-import XCTest
+import Testing
 @testable import BarkVisorCore
 
-final class SSHKeyServiceTests: XCTestCase {
-    private var dbPool: DatabasePool!
-    private var tmpDir: URL!
+final class SSHKeyServiceTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
 
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
-        dbPool = try DatabasePool(path: dbPath)
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
+
+        let dbPath = tmp.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
         var migrator = DatabaseMigrator()
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-        try migrator.migrate(dbPool)
+        try migrator.migrate(pool)
+        dbPool = pool
     }
 
-    override func tearDown() {
-        dbPool = nil
+    deinit {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
     // MARK: - extractKeyType
 
-    func testExtractKeyTypeRSA() {
-        XCTAssertEqual(SSHKeyService.extractKeyType("ssh-rsa AAAA user@host"), "ssh-rsa")
+    @Test func `extract key type RSA`() {
+        #expect(SSHKeyService.extractKeyType("ssh-rsa AAAA user@host") == "ssh-rsa")
     }
 
-    func testExtractKeyTypeEd25519() {
-        XCTAssertEqual(SSHKeyService.extractKeyType("ssh-ed25519 AAAA user@host"), "ssh-ed25519")
+    @Test func `extract key type ed 25519`() {
+        #expect(SSHKeyService.extractKeyType("ssh-ed25519 AAAA user@host") == "ssh-ed25519")
     }
 
-    func testExtractKeyTypeEmpty() {
-        XCTAssertEqual(SSHKeyService.extractKeyType(""), "unknown")
+    @Test func `extract key type empty`() {
+        #expect(SSHKeyService.extractKeyType("") == "unknown")
     }
 
     // MARK: - computeFingerprint
 
-    func testComputeFingerprintValid() {
+    @Test func `compute fingerprint valid`() {
         // Use a valid base64 blob (48 bytes = valid ed25519 key blob)
         let key =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBRKHBnYEfAPOgGdGMbgMSxIwffOG6Uj8mGYmNGMWsT user@host"
         let fp = SSHKeyService.computeFingerprint(key)
-        XCTAssertTrue(fp.hasPrefix("SHA256:"), "Fingerprint should start with SHA256: but got \(fp)")
-        XCTAssertFalse(fp.contains("="), "Fingerprint should not contain padding")
+        #expect(fp.hasPrefix("SHA256:"), "Fingerprint should start with SHA256: but got \(fp)")
+        #expect(!fp.contains("="), "Fingerprint should not contain padding")
     }
 
-    func testComputeFingerprintInvalidReturnsUnknown() {
-        XCTAssertEqual(SSHKeyService.computeFingerprint("not a key"), "unknown")
-        XCTAssertEqual(SSHKeyService.computeFingerprint("ssh-rsa"), "unknown")
+    @Test func `compute fingerprint invalid returns unknown`() {
+        #expect(SSHKeyService.computeFingerprint("not a key") == "unknown")
+        #expect(SSHKeyService.computeFingerprint("ssh-rsa") == "unknown")
     }
 
     // MARK: - CRUD
 
-    func testCreateSSHKey() async throws {
+    @Test func `create SSH key`() async throws {
         let key = try await SSHKeyService.create(
             name: "My Key",
             publicKey:
@@ -63,33 +66,29 @@ final class SSHKeyServiceTests: XCTestCase {
             db: dbPool,
         )
 
-        XCTAssertEqual(key.name, "My Key")
-        XCTAssertEqual(key.keyType, "ssh-ed25519")
-        XCTAssertTrue(key.isDefault, "First key should automatically become the default")
-        XCTAssertTrue(key.fingerprint.hasPrefix("SHA256:"))
+        #expect(key.name == "My Key")
+        #expect(key.keyType == "ssh-ed25519")
+        #expect(key.isDefault, "First key should automatically become the default")
+        #expect(key.fingerprint.hasPrefix("SHA256:"))
     }
 
-    func testCreateSSHKeyEmptyNameRejected() async {
-        do {
-            _ = try await SSHKeyService.create(
-                name: "  ", publicKey: "ssh-rsa AAAA user@host", db: dbPool,
+    @Test func `create SSH key empty name rejected`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await SSHKeyService.create(
+                name: "  ", publicKey: "ssh-rsa AAAA user@host", db: self.dbPool,
             )
-            XCTFail("Should reject empty name")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 400)
-        } catch {
-            XCTFail("Wrong error type")
         }
+        #expect(error?.httpStatus == 400)
     }
 
-    func testFirstKeyBecomesDefault() async throws {
+    @Test func `first key becomes default`() async throws {
         let key1 = try await SSHKeyService.create(
             name: "Key1",
             publicKey:
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAx user@host",
             db: dbPool,
         )
-        XCTAssertTrue(key1.isDefault, "First key should automatically become the default")
+        #expect(key1.isDefault, "First key should automatically become the default")
 
         let key2 = try await SSHKeyService.create(
             name: "Key2",
@@ -97,10 +96,10 @@ final class SSHKeyServiceTests: XCTestCase {
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAy user@host",
             db: dbPool,
         )
-        XCTAssertFalse(key2.isDefault, "Second key should not become default")
+        #expect(!key2.isDefault, "Second key should not become default")
     }
 
-    func testSetDefault() async throws {
+    @Test func `set default`() async throws {
         let key1 = try await SSHKeyService.create(
             name: "Key1",
             publicKey:
@@ -115,28 +114,24 @@ final class SSHKeyServiceTests: XCTestCase {
         )
 
         let updated = try await SSHKeyService.setDefault(id: key2.id, db: dbPool)
-        XCTAssertTrue(updated.isDefault)
+        #expect(updated.isDefault)
 
         // key1 should no longer be default
         let keys = try await SSHKeyService.list(db: dbPool)
         let k1 = keys.first(where: { $0.id == key1.id })
         let k2 = keys.first(where: { $0.id == key2.id })
-        XCTAssertEqual(k1?.isDefault, false)
-        XCTAssertEqual(k2?.isDefault, true)
+        #expect(k1?.isDefault == false)
+        #expect(k2?.isDefault == true)
     }
 
-    func testSetDefaultNonExistent() async {
-        do {
-            _ = try await SSHKeyService.setDefault(id: "fake", db: dbPool)
-            XCTFail("Should throw notFound")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 404)
-        } catch {
-            XCTFail("Wrong error type")
+    @Test func `set default non existent`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await SSHKeyService.setDefault(id: "fake", db: self.dbPool)
         }
+        #expect(error?.httpStatus == 404)
     }
 
-    func testDeleteSSHKey() async throws {
+    @Test func `delete SSH key`() async throws {
         let key = try await SSHKeyService.create(
             name: "ToDelete",
             publicKey:
@@ -146,21 +141,17 @@ final class SSHKeyServiceTests: XCTestCase {
         try await SSHKeyService.delete(id: key.id, db: dbPool)
 
         let keys = try await SSHKeyService.list(db: dbPool)
-        XCTAssertTrue(keys.isEmpty)
+        #expect(keys.isEmpty)
     }
 
-    func testDeleteNonExistent() async {
-        do {
-            try await SSHKeyService.delete(id: "fake", db: dbPool)
-            XCTFail("Should throw notFound")
-        } catch let error as BarkVisorError {
-            XCTAssertEqual(error.httpStatus, 404)
-        } catch {
-            XCTFail("Wrong error type")
+    @Test func `delete non existent`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await SSHKeyService.delete(id: "fake", db: self.dbPool)
         }
+        #expect(error?.httpStatus == 404)
     }
 
-    func testListSSHKeys() async throws {
+    @Test func `list SSH keys`() async throws {
         _ = try await SSHKeyService.create(
             name: "A",
             publicKey:
@@ -175,6 +166,6 @@ final class SSHKeyServiceTests: XCTestCase {
         )
 
         let keys = try await SSHKeyService.list(db: dbPool)
-        XCTAssertEqual(keys.count, 2)
+        #expect(keys.count == 2)
     }
 }
