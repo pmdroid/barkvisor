@@ -1,8 +1,8 @@
 import Foundation
 import GRDB
 import Logging
-import SwiftSentry
 import os
+import SwiftSentry
 
 // MARK: - Log Types
 
@@ -96,7 +96,7 @@ public actor LogService {
             handler.logLevel = .debug
             return MultiplexLogHandler([
                 SentryLogHandler(label: label, sentry: sentry, level: .error),
-                handler
+                handler,
             ])
         }
         swiftLogger = Logger(label: "barkvisor")

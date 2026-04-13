@@ -22,17 +22,17 @@ signal(SIGINT) { _ in
 
 let sentry = try? Sentry(dsn: "https://fd23965cd2644e52116484d7029e900d@o477595.ingest.us.sentry.io/4511210185162752")
 
-if let sentry = sentry {
+if sentry != nil {
     await LogService.configureSentry(sentry: sentry)
 }
 
 LoggingSystem.bootstrap { [sentry] label in
     var handler = StreamLogHandler.standardOutput(label: label)
     handler.logLevel = .debug
-    if let sentry = sentry {
+    if sentry != nil {
         return MultiplexLogHandler([
             SentryLogHandler(label: label, sentry: sentry, level: .error),
-            handler
+            handler,
         ])
     }
     return handler
