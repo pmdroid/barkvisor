@@ -1,7 +1,25 @@
 import BarkVisorHelperProtocol
 import Foundation
 import Security
-import Sentry
+import Logging
+import SwiftSentry
+
+let sentry = try? Sentry(dsn: "https://fd23965cd2644e52116484d7029e900d@o477595.ingest.us.sentry.io/4511210185162752")
+
+LoggingSystem.bootstrap { [sentry] label in
+    var handler = StreamLogHandler.standardOutput(label: label)
+    handler.logLevel = .debug
+    if let sentry = sentry {
+        return MultiplexLogHandler([
+            SentryLogHandler(label: label, sentry: sentry, level: .error),
+            handler
+        ])
+    }
+    return handler
+}
+
+var helperLogger = Logger(label: "barkvisor.helper")
+helperLogger[metadataKey: "version"] = Logger.MetadataValue(stringLiteral: "1.0.0")
 
 class HelperDelegate: NSObject, NSXPCListenerDelegate {
     func listener(
@@ -45,12 +63,7 @@ class HelperDelegate: NSObject, NSXPCListenerDelegate {
     }
 }
 
-SentrySDK.start { options in
-    options.dsn =
-        "https://d5e5eb34a4353cb69a861084a2c9e522@o477595.ingest.us.sentry.io/4511188107788288"
-    options.debug = true
-    options.sendDefaultPii = false
-}
+helperLogger.info("BarkVisorHelper started")
 
 BridgeMonitor.shared.start()
 

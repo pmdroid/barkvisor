@@ -10,7 +10,8 @@ let package = Package(
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.0.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
-        .package(url: "https://github.com/getsentry/sentry-cocoa.git", from: "8.0.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
+        .package(url: "https://github.com/swift-sentry/swift-sentry.git", from: "1.0.0"),
     ],
     targets: [
         .target(
@@ -21,7 +22,8 @@ let package = Package(
             name: "BarkVisorHelper",
             dependencies: [
                 "BarkVisorHelperProtocol",
-                .product(name: "Sentry", package: "sentry-cocoa"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "SwiftSentry", package: "swift-sentry"),
             ],
             path: "Sources/BarkVisorHelper"
         ),
@@ -57,7 +59,8 @@ let package = Package(
             name: "BarkVisorApp",
             dependencies: [
                 "BarkVisor",
-                .product(name: "Sentry", package: "sentry-cocoa"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "SwiftSentry", package: "swift-sentry"),
             ],
             path: "Sources/BarkVisorApp"
         ),
