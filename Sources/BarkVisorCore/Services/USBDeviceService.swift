@@ -144,7 +144,7 @@ public enum USBDeviceService {
     private static func collectUSBHostDevices(from node: Any, into collection: inout [[String: Any]]) {
         if let entry = node as? [String: Any] {
             // If this entry has idVendor and idProduct, it's a USB device
-            if entry["idVendor"] is Int && entry["idProduct"] is Int {
+            if entry["idVendor"] is Int, entry["idProduct"] is Int {
                 collection.append(entry)
             }
             // Recursively check children
