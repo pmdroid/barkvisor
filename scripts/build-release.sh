@@ -78,7 +78,7 @@ XZ_VERSION="${XZ_VERSION:-5.8.2}"
 LIBTPMS_VERSION="${LIBTPMS_VERSION:-v0.10.2}"
 SWTPM_VERSION="${SWTPM_VERSION:-v0.10.1}"
 SOCKET_VMNET_VERSION="${SOCKET_VMNET_VERSION:-v1.2.2}"
-AAVMF_DEB_VERSION="${AAVMF_DEB_VERSION:-2025.11-3ubuntu6}"
+AAVMF_DEB_VERSION="${AAVMF_DEB_VERSION:-2025.11-3ubuntu7}"
 
 # Options
 SKIP_DEPS=false
@@ -365,10 +365,6 @@ bun install
 VITE_APP_VERSION="$VERSION" bun run build
 cd "$PROJECT_DIR"
 
-# Sync fresh build into the Resources directory used by the Swift bundle
-rm -rf "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend/dist"
-cp -r "$PROJECT_DIR/frontend/dist" "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend/dist"
-
 # =============================================================================
 # Step 7: Build Swift app (release)
 # =============================================================================
@@ -494,7 +490,7 @@ if [ -d "$QEMU_SHARE/keymaps" ]; then
 fi
 
 # Frontend dist → /usr/local/share/barkvisor/frontend/dist/
-cp -r "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend/dist/"* "$STAGE_FRONTEND/"
+cp -r "$PROJECT_DIR/frontend/dist/"* "$STAGE_FRONTEND/"
 
 # Server resources
 cp "$PROJECT_DIR/Sources/BarkVisor/Server/Resources/templates.json" "$STAGE_SHARE/templates.json"
