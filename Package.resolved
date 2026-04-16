@@ -1,5 +1,5 @@
 {
-  "originHash" : "b11747e242b0d125fbecdd3bd623b4a2ea7139e4595a924ecd12cf69a3cc2091",
+  "originHash" : "488eb186c8a7b92d77b94cbadf785583fcb034b11ed9628bf8243376d174ab15",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -62,15 +62,6 @@
       "state" : {
         "revision" : "1a10ccea61e4248effd23b6e814999ce7bdf0ee0",
         "version" : "4.9.3"
-      }
-    },
-    {
-      "identity" : "sentry-cocoa",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/getsentry/sentry-cocoa.git",
-      "state" : {
-        "revision" : "16cd512711375fa73f25ae5e373f596bdf4251ae",
-        "version" : "8.58.0"
       }
     },
     {
@@ -242,6 +233,15 @@
       "state" : {
         "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
         "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "swift-sentry",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swift-sentry/swift-sentry.git",
+      "state" : {
+        "revision" : "f139f984394f00790fd3ab7206d9da2e9e07a1dc",
+        "version" : "1.0.3"
       }
     },
     {
