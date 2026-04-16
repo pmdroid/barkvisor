@@ -1,7 +1,8 @@
 import BarkVisor
 import BarkVisorCore
 import Foundation
-import Sentry
+import Logging
+import SwiftSentry
 
 /// Pipe for signal→async communication.
 /// A raw POSIX signal handler writes here; the async main reads from it.
@@ -19,12 +20,26 @@ signal(SIGINT) { _ in
     Darwin.write(signalPipeFDs[1], &b, 1)
 }
 
-SentrySDK.start { options in
-    options.dsn =
-        "https://d5e5eb34a4353cb69a861084a2c9e522@o477595.ingest.us.sentry.io/4511188107788288"
-    options.debug = true
-    options.sendDefaultPii = false
+let sentry = try? Sentry(dsn: "https://fd23965cd2644e52116484d7029e900d@o477595.ingest.us.sentry.io/4511210185162752")
+
+LoggingSystem.bootstrap { [sentry] label in
+    var handler = StreamLogHandler.standardOutput(label: label)
+    handler.logLevel = .debug
+    if let sentry {
+        return MultiplexLogHandler([
+            SentryLogHandler(label: label, sentry: sentry, level: .error),
+            handler,
+        ])
+    }
+    return handler
 }
+
+if let sentry {
+    LogService.configureSentry(sentry: sentry)
+}
+
+var serverLogger = Logger(label: "barkvisor.server")
+serverLogger[metadataKey: "version"] = Logger.MetadataValue(stringLiteral: "1.0.0")
 
 let server = VaporServer()
 
