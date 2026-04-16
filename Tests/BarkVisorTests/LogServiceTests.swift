@@ -1,8 +1,25 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
 struct LogServiceTests {
+    private func makeMigratedPool() throws -> (pool: DatabasePool, tmpDir: URL) {
+        let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
+
+        var migrator = DatabaseMigrator()
+        migrator.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        try migrator.migrate(pool)
+
+        return (pool, tmpDir)
+    }
+
     // MARK: - LogLevel
 
     @Test func `log level ordering`() {
@@ -93,5 +110,60 @@ struct LogServiceTests {
         #expect(decoded.err == "something broke")
         #expect(decoded.vm == nil)
         #expect(decoded.detail == nil)
+    }
+
+    @Test func `log writes all 8 values to logs table`() async throws {
+        let (dbPool, tmpDir) = try makeMigratedPool()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let service = LogService()
+        await service.setDatabase(dbPool)
+
+        await service.log(
+            .error,
+            "placeholder count regression",
+            category: .server,
+            vm: "vm-1",
+            req: "req-1",
+            error: "boom",
+            detail: ["k": "v"],
+        )
+
+        var inserted = false
+        for _ in 0 ..< 50 {
+            let count = try await dbPool.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM logs WHERE msg = ?",
+                    arguments: ["placeholder count regression"],
+                ) ?? 0
+            }
+            if count == 1 {
+                inserted = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(inserted)
+
+        let fetched = try await dbPool.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT level, cat, msg, vm, req, err, detail FROM logs WHERE msg = ?",
+                arguments: ["placeholder count regression"],
+            )
+        }
+
+        #expect((fetched?["level"] as String?) == "error")
+        #expect((fetched?["cat"] as String?) == "server")
+        #expect((fetched?["msg"] as String?) == "placeholder count regression")
+        #expect((fetched?["vm"] as String?) == "vm-1")
+        #expect((fetched?["req"] as String?) == "req-1")
+        #expect((fetched?["err"] as String?) == "boom")
+
+        let detailJSONString: String? = fetched?["detail"]
+        let detailData = try #require(detailJSONString?.data(using: .utf8))
+        let detail = try JSONDecoder().decode([String: String].self, from: detailData)
+        #expect(detail["k"] == "v")
     }
 }
