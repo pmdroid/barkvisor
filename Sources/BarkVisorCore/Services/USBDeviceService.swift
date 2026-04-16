@@ -41,17 +41,21 @@ public enum USBDeviceService {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard !data.isEmpty else { return [] }
 
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
-              let entries = plist as? [[String: Any]]
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
         else {
             return []
         }
+
+        // Recursively collect all entries from the tree structure
+        // USB devices can be nested under hubs, so we need to traverse IORegistryEntryChildren
+        var allEntries: [[String: Any]] = []
+        collectUSBHostDevices(from: plist, into: &allEntries)
 
         // Collect product names of USB storage devices so we can exclude them
         let storageNames = findUSBStorageProductNames()
 
         var devices: [HostUSBDevice] = []
-        for entry in entries {
+        for entry in allEntries {
             guard let vendorInt = entry["idVendor"] as? Int,
                   let productInt = entry["idProduct"] as? Int
             else {
@@ -133,5 +137,27 @@ public enum USBDeviceService {
             }
         }
         return names
+    }
+
+    /// Recursively collect all IOUSBHostDevice entries from the ioreg tree.
+    /// Devices are nested under parent hubs in IORegistryEntryChildren arrays.
+    private static func collectUSBHostDevices(from node: Any, into collection: inout [[String: Any]]) {
+        if let entry = node as? [String: Any] {
+            // If this entry has idVendor and idProduct, it's a USB device
+            if entry["idVendor"] is Int, entry["idProduct"] is Int {
+                collection.append(entry)
+            }
+            // Recursively check children
+            if let children = entry["IORegistryEntryChildren"] as? [Any] {
+                for child in children {
+                    collectUSBHostDevices(from: child, into: &collection)
+                }
+            }
+        } else if let array = node as? [Any] {
+            // Handle case where root is an array
+            for element in array {
+                collectUSBHostDevices(from: element, into: &collection)
+            }
+        }
     }
 }
