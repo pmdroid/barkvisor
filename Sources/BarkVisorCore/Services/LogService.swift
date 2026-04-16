@@ -89,16 +89,10 @@ public actor LogService {
         self.minLevel = .info
     }
 
-    /// Configure SwiftLog with Sentry handler for error forwarding
-    public static func configureSentry(sentry: Sentry) {
-        LoggingSystem.bootstrap { label in
-            var handler = StreamLogHandler.standardOutput(label: label)
-            handler.logLevel = .debug
-            return MultiplexLogHandler([
-                SentryLogHandler(label: label, sentry: sentry, level: .error),
-                handler,
-            ])
-        }
+    /// Set SwiftLog logger used for forwarding error logs.
+    ///
+    /// LoggingSystem bootstrap must already be configured by the executable.
+    public static func configureSentry(sentry _: Sentry) {
         swiftLogger = Logger(label: "barkvisor")
     }
 
