@@ -55,6 +55,6 @@ src/
 - **Vue Router** for client-side routing
 - **axios** for HTTP requests
 - **Chart.js** / **vue-chartjs** for metrics charts
-- **xterm.js** for serial console
+- **wterm** (`@wterm/dom` + `@wterm/core`) for serial console
 - **noVNC** for VNC display
 - **Cypress** for E2E testing

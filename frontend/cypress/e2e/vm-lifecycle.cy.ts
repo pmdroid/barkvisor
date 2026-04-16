@@ -408,8 +408,8 @@ describe('VM Lifecycle', () => {
         // --- Console Tab ---
         cy.get('.tab').contains('Console').click()
         cy.get('.tab.active').should('contain', 'Console')
-        // xterm.js container should be mounted (height:480px div)
-        cy.get('.xterm', { timeout: 10000 }).should('exist')
+        // wterm container should be mounted (height:480px div)
+        cy.get('.console-terminal', { timeout: 10000 }).should('exist')
 
         // --- Metrics Tab ---
         cy.get('.tab').contains('Metrics').click()

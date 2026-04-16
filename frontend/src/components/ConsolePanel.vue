@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import '@xterm/xterm/css/xterm.css'
+import { WTerm } from '@wterm/dom'
+import '@wterm/dom/src/terminal.css'
+import wasmUrl from '@wterm/core/wasm?url'
 import { getWSTicket } from '../api/client'
 
 const props = defineProps<{ vmId: string; vmState: string }>()
@@ -11,20 +11,38 @@ const isAlive = () => props.vmState === 'running' || props.vmState === 'stopping
 
 const termEl = ref<HTMLElement>()
 const status = ref('')
-let terminal: Terminal | null = null
-let fitAddon: FitAddon | null = null
+let terminal: WTerm | null = null
 let ws: WebSocket | null = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let reconnectDelay = 1000
-let resizeObserver: ResizeObserver | null = null
 const MAX_RECONNECT_DELAY = 30000
 const MAX_RECONNECT_ATTEMPTS = 10
 let reconnectAttempts = 0
+
+async function ensureTerminal() {
+  if (terminal || !termEl.value) return
+  terminal = new WTerm(termEl.value, {
+    autoResize: true,
+    cursorBlink: true,
+    wasmUrl,
+    onData: (d) => {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(d)
+    },
+  })
+  await terminal.init()
+}
 
 async function connect() {
   if (!isAlive()) return
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     status.value = 'Max reconnect attempts reached'
+    return
+  }
+
+  try {
+    await ensureTerminal()
+  } catch (e: any) {
+    status.value = `Terminal init failed: ${e.message}`
     return
   }
 
@@ -46,22 +64,7 @@ async function connect() {
     status.value = ''
     reconnectDelay = 1000
     reconnectAttempts = 0
-    if (!terminal && termEl.value) {
-      terminal = new Terminal({
-        cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'JetBrains Mono, Menlo, monospace',
-        theme: { background: '#0d0d0d', foreground: '#e8e8e8' },
-      })
-      fitAddon = new FitAddon()
-      terminal.loadAddon(fitAddon)
-      terminal.open(termEl.value)
-      fitAddon.fit()
-      terminal.onData((d) => { if (ws?.readyState === WebSocket.OPEN) ws.send(d) })
-
-      resizeObserver = new ResizeObserver(() => { fitAddon?.fit() })
-      resizeObserver.observe(termEl.value)
-    }
+    terminal?.focus()
   }
 
   ws.onerror = () => {
@@ -100,11 +103,10 @@ watch(() => props.vmState, () => {
 
 onUnmounted(() => {
   if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null }
-  resizeObserver?.disconnect()
-  resizeObserver = null
   ws?.close()
   ws = null
-  terminal?.dispose()
+  terminal?.destroy()
+  terminal = null
 })
 </script>
 
@@ -114,6 +116,6 @@ onUnmounted(() => {
     <div v-if="status" style="padding: 8px 12px; font-size: 12px; color: var(--text-dim); background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border);">
       {{ status }}
     </div>
-    <div ref="termEl" style="height: 480px; background: #0d0d0d; border-radius: 0; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 4px 24px rgba(0,0,0,0.5);"></div>
+    <div ref="termEl" class="console-terminal" style="height: 480px; background: #0d0d0d; border-radius: 0; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 4px 24px rgba(0,0,0,0.5);"></div>
   </div>
 </template>
