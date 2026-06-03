@@ -302,3 +302,9 @@ DISABLE_RATE_LIMIT=1
 ```
 
 This is intended for automated testing only.
+
+## Console
+
+### xterm.js to wterm migration
+
+BarkVisor is migrating the serial console from xterm.js to wterm for better performance, native Swift integration, and improved terminal emulation on Apple Silicon.
