@@ -9,18 +9,25 @@ public enum BundleResolver {
     // MARK: - Helpers (executables)
 
     /// Resolve a helper binary by name.
-    /// Checks: installed libexec/ → /opt/homebrew/bin → /usr/local/bin → PATH lookup.
+    /// Checks: installed libexec/ → platform bin paths → PATH lookup.
     public static func helper(_ name: String) throws -> URL {
         // 1. Installed location
         let installed = "\(Config.libexecDir)/\(name)"
         if FileManager.default.isExecutableFile(atPath: installed) {
             return URL(fileURLWithPath: installed)
         }
-        // 2. Homebrew / system
-        let candidates = [
+        // 2. Platform search paths (Homebrew on macOS; FHS on Linux)
+        var candidates = [
             "/opt/homebrew/bin/\(name)",
             "/usr/local/bin/\(name)",
+            "/usr/bin/\(name)",
         ]
+        #if os(Linux)
+        candidates += [
+            "/usr/lib/qemu/\(name)",
+            "/usr/libexec/\(name)",
+        ]
+        #endif
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)
         }
@@ -29,7 +36,7 @@ public enum BundleResolver {
             return found
         }
         throw BarkVisorError.processSpawnFailed(
-            "\(name) not found. Install via Homebrew or ensure it is in your PATH.",
+            "\(name) not found. Install via package manager or ensure it is in your PATH.",
         )
     }
 
@@ -69,17 +76,19 @@ public enum BundleResolver {
     // MARK: - Resources (firmware, data files)
 
     /// Resolve a QEMU resource file (firmware, vgabios, keymaps, etc.).
-    /// Checks: installed share/ → /opt/homebrew/share/qemu → /usr/local/share/qemu.
+    /// Checks: installed share/ → Homebrew share → Linux FHS qemu share/lib paths.
     public static func qemuResource(_ name: String) -> URL? {
         // 1. Installed location
         let installed = "\(Config.qemuShareDir)/\(name)"
         if FileManager.default.fileExists(atPath: installed) {
             return URL(fileURLWithPath: installed)
         }
-        // 2. Homebrew / system
+        // 2. Homebrew / system / Linux FHS
         let candidates = [
             "/opt/homebrew/share/qemu/\(name)",
             "/usr/local/share/qemu/\(name)",
+            "/usr/share/qemu/\(name)",
+            "/usr/lib/qemu/\(name)",
         ]
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)
@@ -88,7 +97,7 @@ public enum BundleResolver {
     }
 
     /// Resolve the QEMU data directory for the `-L` flag.
-    /// Returns the installed share/qemu/ directory if it exists, otherwise the Homebrew share path.
+    /// Returns the installed share/qemu/ directory if it exists, otherwise Homebrew/Linux share paths.
     public static func qemuDataDir() -> URL? {
         let installed = Config.qemuShareDir
         if FileManager.default.fileExists(atPath: installed) {
@@ -97,6 +106,8 @@ public enum BundleResolver {
         let candidates = [
             "/opt/homebrew/share/qemu",
             "/usr/local/share/qemu",
+            "/usr/share/qemu",
+            "/usr/lib/qemu",
         ]
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)
