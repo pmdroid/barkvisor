@@ -141,9 +141,15 @@ struct SetupController: RouteCollection {
         guard !setupMiddleware.isSetupComplete else {
             throw Abort(.notFound)
         }
+        guard PrivilegeService.isBridgedNetworkingSupported else {
+            throw Abort(
+                .notImplemented,
+                reason: "Bridged networking is not supported on Linux yet. Use NAT networking.",
+            )
+        }
         let body = try req.content.decode(BridgeRequest.self)
         do {
-            try await HelperXPCClient.shared.installBridge(interface: body.interface)
+            try await PrivilegeService.shared.installBridge(interface: body.interface)
         } catch {
             let msg = error.localizedDescription
             // Bridge already configured is not an error during setup

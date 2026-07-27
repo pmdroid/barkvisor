@@ -20,11 +20,22 @@ public struct HostUSBDevice: Codable {
 
 public enum USBDeviceService {
     /// List non-storage USB devices connected to the host.
-    /// Uses `ioreg` (IOKit registry) which is reliable on Apple Silicon,
-    /// unlike `system_profiler SPUSBDataType` which can return empty results.
+    /// On macOS uses `ioreg` (IOKit registry). On Linux returns an empty list
+    /// until a Linux enumeration path is implemented.
+    public static func listDevices() throws -> [HostUSBDevice] {
+        #if os(macOS)
+        try listDevicesMacOS()
+        #else
+        []
+        #endif
+    }
+
+    #if os(macOS)
+    /// Uses `ioreg` which is reliable on Apple Silicon, unlike
+    /// `system_profiler SPUSBDataType` which can return empty results.
     /// USB mass storage devices are excluded — they require macOS to release
     /// the device first and are unreliable for passthrough on macOS.
-    public static func listDevices() throws -> [HostUSBDevice] {
+    private static func listDevicesMacOS() throws -> [HostUSBDevice] {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
         proc.arguments = ["-p", "IOUSB", "-c", "IOUSBHostDevice", "-r", "-a"]
@@ -160,4 +171,5 @@ public enum USBDeviceService {
             }
         }
     }
+    #endif
 }
