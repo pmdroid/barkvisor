@@ -6,7 +6,9 @@
 
 > **Alpha Software** -- BarkVisor is under active development. APIs, configuration, and behavior may change rapidly between releases. Use at your own risk and expect breaking changes.
 
-A headless macOS daemon for managing QEMU virtual machines through a web UI.
+A headless daemon for managing QEMU virtual machines through a web UI.
+
+**Platforms:** macOS (primary) · [Linux experimental](docs/getting-started-linux.md) (NAT-only MVP)
 
 ## Features
 
@@ -25,7 +27,9 @@ A headless macOS daemon for managing QEMU virtual machines through a web UI.
 
 ## Prerequisites
 
-- macOS 26+ (Apple Silicon only)
+### macOS (primary)
+
+- macOS 26+ (Apple Silicon only for HVF guests today)
 - Xcode with Swift 6 toolchain
 - [Bun](https://bun.sh) (for the frontend)
 - Homebrew
@@ -36,6 +40,17 @@ Install build dependencies:
 brew install meson ninja pkg-config glib pixman dylibbundler \
   gnutls jpeg-turbo libpng libssh libusb zstd lzo snappy \
   autoconf automake libtool json-glib swiftlint swiftformat
+```
+
+### Linux (experimental)
+
+See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for Ubuntu/OrbStack setup, NAT-only limitations, Docker, and systemd install.
+
+```bash
+# After Swift + QEMU packages are installed:
+swift build
+swift run BarkVisorApp
+# → http://localhost:7777
 ```
 
 ## Quick Start
