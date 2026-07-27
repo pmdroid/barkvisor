@@ -44,11 +44,11 @@ public enum QEMUBuilder {
     /// Host accelerator: HVF on macOS, KVM on Linux.
     public static var accelerator: String {
         #if os(macOS)
-        "hvf"
+            "hvf"
         #elseif os(Linux)
-        "kvm"
+            "kvm"
         #else
-        "tcg"
+            "tcg"
         #endif
     }
 
@@ -131,17 +131,17 @@ public enum QEMUBuilder {
         let home = NSHomeDirectory()
         var allowedPrefixes = [home + "/"]
         #if os(macOS)
-        allowedPrefixes.append("/Volumes/")
+            allowedPrefixes.append("/Volumes/")
         #elseif os(Linux)
-        allowedPrefixes.append(contentsOf: ["/mnt/", "/media/"])
+            allowedPrefixes.append(contentsOf: ["/mnt/", "/media/"])
         #endif
         guard resolved == home || allowedPrefixes.contains(where: { resolved.hasPrefix($0) }) else {
             #if os(macOS)
-            let hint = "your home directory or /Volumes"
+                let hint = "your home directory or /Volumes"
             #elseif os(Linux)
-            let hint = "your home directory, /mnt, or /media"
+                let hint = "your home directory, /mnt, or /media"
             #else
-            let hint = "your home directory"
+                let hint = "your home directory"
             #endif
             throw BarkVisorError.invalidArgument(
                 "Shared path must be within \(hint): \(path)",
@@ -187,7 +187,7 @@ public enum QEMUBuilder {
     }
 
     public static func binary(for vmType: String) throws -> URL {
-        try resolveQEMU(try binaryName(for: vmType))
+        try resolveQEMU(binaryName(for: vmType))
     }
 
     public static func launchConfig(ctx: QEMUBuildContext) throws -> QEMULaunchConfig {
@@ -229,18 +229,18 @@ public enum QEMUBuilder {
         // socket_vmnet wrap is macOS-only (bridged networking).
         if useBridged {
             #if os(macOS)
-            let (clientBin, socketPath) = try resolveSocketVmnet(
-                bridgeInterface: ctx.network?.bridge, dbSocketPath: ctx.bridgeSocketPath,
-            )
-            let wrappedArgs = [socketPath, qemuBinary.path] + args
-            return QEMULaunchConfig(
-                executable: clientBin, arguments: wrappedArgs,
-                swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
-            )
+                let (clientBin, socketPath) = try resolveSocketVmnet(
+                    bridgeInterface: ctx.network?.bridge, dbSocketPath: ctx.bridgeSocketPath,
+                )
+                let wrappedArgs = [socketPath, qemuBinary.path] + args
+                return QEMULaunchConfig(
+                    executable: clientBin, arguments: wrappedArgs,
+                    swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
+                )
             #else
-            throw BarkVisorError.badRequest(
-                "Bridged networking is not supported on Linux yet. Use NAT networking.",
-            )
+                throw BarkVisorError.badRequest(
+                    "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                )
             #endif
         }
 
@@ -362,12 +362,12 @@ public enum QEMUBuilder {
         if let net = network {
             if net.mode == "bridged" {
                 #if os(macOS)
-                netdevArgs = "socket,id=net0,fd=3"
-                useBridged = true
+                    netdevArgs = "socket,id=net0,fd=3"
+                    useBridged = true
                 #else
-                throw BarkVisorError.badRequest(
-                    "Bridged networking is not supported on Linux yet. Use NAT networking.",
-                )
+                    throw BarkVisorError.badRequest(
+                        "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                    )
                 #endif
             } else {
                 netdevArgs = "user,id=net0"
@@ -491,40 +491,40 @@ public enum QEMUBuilder {
     public static func resolveSocketVmnet(bridgeInterface: String?, dbSocketPath: String? = nil)
         throws -> (client: URL, socketPath: String) {
         #if os(macOS)
-        let clientBin = try BundleResolver.optHelper(
-            "socket_vmnet_client",
-            package: "socket_vmnet",
-            extraPaths: ["/opt/socket_vmnet/bin/socket_vmnet_client"],
-        )
-
-        // Prefer socket path from DB (kept current by bridge helper)
-        if let dbPath = dbSocketPath, FileManager.default.fileExists(atPath: dbPath) {
-            return (clientBin, dbPath)
-        }
-
-        // Fallback: scan filesystem for socket (backward compat)
-        let iface = bridgeInterface ?? "en0"
-        let socketCandidates = [
-            "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
-            "/var/run/socket_vmnet.bridged.\(iface)",
-            "/opt/homebrew/var/run/socket_vmnet",
-            "/var/run/socket_vmnet",
-        ]
-
-        guard let socketPath = socketCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
-        else {
-            throw BarkVisorError.processSpawnFailed(
-                "socket_vmnet daemon socket not found. For bridged networking run:\n"
-                    + "sudo brew services start socket_vmnet\n"
-                    + "For true bridged mode on \(iface), see: https://github.com/lima-vm/socket_vmnet",
+            let clientBin = try BundleResolver.optHelper(
+                "socket_vmnet_client",
+                package: "socket_vmnet",
+                extraPaths: ["/opt/socket_vmnet/bin/socket_vmnet_client"],
             )
-        }
 
-        return (clientBin, socketPath)
+            // Prefer socket path from DB (kept current by bridge helper)
+            if let dbPath = dbSocketPath, FileManager.default.fileExists(atPath: dbPath) {
+                return (clientBin, dbPath)
+            }
+
+            // Fallback: scan filesystem for socket (backward compat)
+            let iface = bridgeInterface ?? "en0"
+            let socketCandidates = [
+                "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
+                "/var/run/socket_vmnet.bridged.\(iface)",
+                "/opt/homebrew/var/run/socket_vmnet",
+                "/var/run/socket_vmnet",
+            ]
+
+            guard let socketPath = socketCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
+            else {
+                throw BarkVisorError.processSpawnFailed(
+                    "socket_vmnet daemon socket not found. For bridged networking run:\n"
+                        + "sudo brew services start socket_vmnet\n"
+                        + "For true bridged mode on \(iface), see: https://github.com/lima-vm/socket_vmnet",
+                )
+            }
+
+            return (clientBin, socketPath)
         #else
-        throw BarkVisorError.badRequest(
-            "Bridged networking (socket_vmnet) is not supported on Linux yet. Use NAT networking.",
-        )
+            throw BarkVisorError.badRequest(
+                "Bridged networking (socket_vmnet) is not supported on Linux yet. Use NAT networking.",
+            )
         #endif
     }
 
@@ -535,9 +535,9 @@ public enum QEMUBuilder {
             return try BundleResolver.helper(name)
         } catch {
             #if os(macOS)
-            let hint = "brew install qemu"
+                let hint = "brew install qemu"
             #else
-            let hint = "install qemu-system (e.g. apt install qemu-system)"
+                let hint = "install qemu-system (e.g. apt install qemu-system)"
             #endif
             throw BarkVisorError.qemuNotFound("\(name) not found. Install QEMU via: \(hint)")
         }

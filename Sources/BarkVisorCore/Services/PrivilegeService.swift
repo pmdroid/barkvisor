@@ -26,26 +26,26 @@ public enum PrivilegeService {
     /// Bridged networking (socket_vmnet) is macOS-only for the Linux MVP.
     public static var isBridgedNetworkingSupported: Bool {
         #if os(macOS)
-        true
+            true
         #else
-        false
+            false
         #endif
     }
 
     /// In-app privileged software updates (PKG install via helper) are macOS-only.
     public static var isUpdateInstallSupported: Bool {
         #if os(macOS)
-        true
+            true
         #else
-        false
+            false
         #endif
     }
 
     private static func makeShared() -> any PrivilegeServicing {
         #if os(macOS)
-        MacOSPrivilegeService()
+            MacOSPrivilegeService()
         #else
-        LinuxPrivilegeService()
+            LinuxPrivilegeService()
         #endif
     }
 }
@@ -53,43 +53,45 @@ public enum PrivilegeService {
 // MARK: - macOS implementation
 
 #if os(macOS)
-/// Wraps the privileged XPC helper for bridge and update operations.
-public struct MacOSPrivilegeService: PrivilegeServicing {
-    public var isAvailable: Bool { true }
+    /// Wraps the privileged XPC helper for bridge and update operations.
+    public struct MacOSPrivilegeService: PrivilegeServicing {
+        public var isAvailable: Bool {
+            true
+        }
 
-    public init() {}
+        public init() {}
 
-    public func installBridge(interface: String) async throws {
-        try await HelperXPCClient.shared.installBridge(interface: interface)
+        public func installBridge(interface: String) async throws {
+            try await HelperXPCClient.shared.installBridge(interface: interface)
+        }
+
+        public func removeBridge(interface: String) async throws {
+            try await HelperXPCClient.shared.removeBridge(interface: interface)
+        }
+
+        public func startBridge(interface: String) async throws {
+            try await HelperXPCClient.shared.startBridge(interface: interface)
+        }
+
+        public func stopBridge(interface: String) async throws {
+            try await HelperXPCClient.shared.stopBridge(interface: interface)
+        }
+
+        public func bridgeStatus(interface: String) async throws -> String {
+            try await HelperXPCClient.shared.bridgeStatus(interface: interface)
+        }
+
+        public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
+            try await HelperXPCClient.shared.getAllBridgeStates()
+        }
+
+        public func installUpdate(packagePath: String, expectedVersion: String) async throws {
+            try await HelperXPCClient.shared.installUpdate(
+                packagePath: packagePath,
+                expectedVersion: expectedVersion,
+            )
+        }
     }
-
-    public func removeBridge(interface: String) async throws {
-        try await HelperXPCClient.shared.removeBridge(interface: interface)
-    }
-
-    public func startBridge(interface: String) async throws {
-        try await HelperXPCClient.shared.startBridge(interface: interface)
-    }
-
-    public func stopBridge(interface: String) async throws {
-        try await HelperXPCClient.shared.stopBridge(interface: interface)
-    }
-
-    public func bridgeStatus(interface: String) async throws -> String {
-        try await HelperXPCClient.shared.bridgeStatus(interface: interface)
-    }
-
-    public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
-        try await HelperXPCClient.shared.getAllBridgeStates()
-    }
-
-    public func installUpdate(packagePath: String, expectedVersion: String) async throws {
-        try await HelperXPCClient.shared.installUpdate(
-            packagePath: packagePath,
-            expectedVersion: expectedVersion,
-        )
-    }
-}
 #endif
 
 // MARK: - Linux / no-op implementation
@@ -97,7 +99,9 @@ public struct MacOSPrivilegeService: PrivilegeServicing {
 /// No-op privilege backend for Linux (and other non-macOS hosts).
 /// Bridge and update ops throw clear errors; bridge state listing returns empty.
 public struct LinuxPrivilegeService: PrivilegeServicing {
-    public var isAvailable: Bool { false }
+    public var isAvailable: Bool {
+        false
+    }
 
     public init() {}
 
