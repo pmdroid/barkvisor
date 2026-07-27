@@ -111,23 +111,23 @@ struct SystemController: RouteCollection {
     /// unmerged PlatformCapabilities work from other branches.
     static func currentCapabilities() -> SystemCapabilitiesResponse {
         #if os(macOS)
-        return SystemCapabilitiesResponse(
-            platform: "macOS",
-            supportsBridgedNetworking: true,
-            supportsUSBPassthrough: true,
-            supportsInAppUpdate: true,
-            accelerator: "hvf",
-            hostArch: hostArchitecture(),
-        )
+            return SystemCapabilitiesResponse(
+                platform: "macOS",
+                supportsBridgedNetworking: true,
+                supportsUSBPassthrough: true,
+                supportsInAppUpdate: true,
+                accelerator: "hvf",
+                hostArch: hostArchitecture(),
+            )
         #else
-        return SystemCapabilitiesResponse(
-            platform: "Linux",
-            supportsBridgedNetworking: false,
-            supportsUSBPassthrough: false,
-            supportsInAppUpdate: false,
-            accelerator: "kvm",
-            hostArch: hostArchitecture(),
-        )
+            return SystemCapabilitiesResponse(
+                platform: "Linux",
+                supportsBridgedNetworking: false,
+                supportsUSBPassthrough: false,
+                supportsInAppUpdate: false,
+                accelerator: "kvm",
+                hostArch: hostArchitecture(),
+            )
         #endif
     }
 
