@@ -1,0 +1,71 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import type { SystemCapabilities } from '../api/types'
+
+/** Safe defaults match macOS full feature set so a failed fetch never hides UI on Mac. */
+const defaultCapabilities: SystemCapabilities = {
+  platform: 'macOS',
+  supportsBridgedNetworking: true,
+  supportsUSBPassthrough: true,
+  supportsInAppUpdate: true,
+  accelerator: 'hvf',
+  hostArch: 'arm64',
+}
+
+export const useCapabilitiesStore = defineStore('capabilities', () => {
+  const capabilities = ref<SystemCapabilities>({ ...defaultCapabilities })
+  const loaded = ref(false)
+  const loading = ref(false)
+  let loadPromise: Promise<void> | null = null
+
+  const supportsBridgedNetworking = computed(() => capabilities.value.supportsBridgedNetworking)
+  const supportsUSBPassthrough = computed(() => capabilities.value.supportsUSBPassthrough)
+  const supportsInAppUpdate = computed(() => capabilities.value.supportsInAppUpdate)
+  const platform = computed(() => capabilities.value.platform)
+  const accelerator = computed(() => capabilities.value.accelerator)
+  const hostArch = computed(() => capabilities.value.hostArch)
+
+  async function fetchCapabilities(): Promise<void> {
+    if (loaded.value) return
+    if (loadPromise) return loadPromise
+
+    loading.value = true
+    loadPromise = (async () => {
+      try {
+        // Public endpoint — works before login (setup wizard).
+        const res = await fetch('/api/system/capabilities')
+        if (res.ok) {
+          const data = (await res.json()) as SystemCapabilities
+          capabilities.value = {
+            platform: data.platform ?? defaultCapabilities.platform,
+            supportsBridgedNetworking: !!data.supportsBridgedNetworking,
+            supportsUSBPassthrough: !!data.supportsUSBPassthrough,
+            supportsInAppUpdate: !!data.supportsInAppUpdate,
+            accelerator: data.accelerator ?? defaultCapabilities.accelerator,
+            hostArch: data.hostArch ?? defaultCapabilities.hostArch,
+          }
+        }
+      } catch {
+        // Keep defaults on network/server errors
+      } finally {
+        loaded.value = true
+        loading.value = false
+      }
+    })()
+
+    return loadPromise
+  }
+
+  return {
+    capabilities,
+    loaded,
+    loading,
+    supportsBridgedNetworking,
+    supportsUSBPassthrough,
+    supportsInAppUpdate,
+    platform,
+    accelerator,
+    hostArch,
+    fetchCapabilities,
+  }
+})

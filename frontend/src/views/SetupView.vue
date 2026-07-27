@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton from '../components/ui/AppButton.vue'
 import FormError from '../components/ui/FormError.vue'
@@ -17,12 +17,28 @@ import {
   type RepoSyncStatus,
 } from '../api/setup'
 import { useAuthStore } from '../stores/auth'
+import { useCapabilitiesStore } from '../stores/capabilities'
 import { clearSetupCache } from '../router'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const caps = useCapabilitiesStore()
+/** Linear UI step index (1-based). Bridge step is omitted on unsupported platforms. */
 const step = ref(1)
-const totalSteps = 5
+const showBridgeStep = computed(() => caps.supportsBridgedNetworking)
+const totalSteps = computed(() => (showBridgeStep.value ? 5 : 4))
+/** Which content panel to show for the current linear index. */
+const panel = computed(() => {
+  if (step.value === 1) return 'welcome'
+  if (step.value === 2) return 'admin'
+  if (showBridgeStep.value) {
+    if (step.value === 3) return 'bridge'
+    if (step.value === 4) return 'repos'
+    return 'ready'
+  }
+  if (step.value === 3) return 'repos'
+  return 'ready'
+})
 const error = ref('')
 const loading = ref(false)
 
@@ -31,16 +47,17 @@ const username = ref('admin')
 const password = ref('')
 const passwordConfirm = ref('')
 
-// Step 3: Bridge
+// Bridge step
 const interfaces = ref<InterfaceInfo[]>([])
 const selectedInterface = ref('')
 const bridgeResult = ref('')
 
-// Step 4: Repo sync
+// Repo sync step
 const syncStatus = ref<RepoSyncStatus | null>(null)
 let syncPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  await caps.fetchCapabilities()
   try {
     const status = await getSetupStatus()
     if (status.complete) {
@@ -51,8 +68,16 @@ onMounted(async () => {
   }
 })
 
-function nextStep() {
+async function nextStep() {
   error.value = ''
+  // Leaving admin without a bridge step: record NAT-only skip for setup progress.
+  if (step.value === 2 && !showBridgeStep.value) {
+    try {
+      await skipBridge()
+    } catch {
+      // Already skipped or endpoint unavailable — continue wizard.
+    }
+  }
   step.value++
 }
 
@@ -70,7 +95,7 @@ async function submitAdmin() {
   loading.value = true
   try {
     await createAdmin(username.value, password.value)
-    nextStep()
+    await nextStep()
   } catch (e: any) {
     error.value = e.response?.data?.reason || 'Failed to create admin user'
   } finally {
@@ -171,8 +196,8 @@ async function finishSetup() {
         />
       </div>
 
-      <!-- Step 1: Welcome -->
-      <div v-if="step === 1" class="step-content">
+      <!-- Welcome -->
+      <div v-if="panel === 'welcome'" class="step-content">
         <h1>Welcome to BarkVisor</h1>
         <p class="step-desc">
           Let's get your virtual machine server set up. This will only take a minute.
@@ -180,8 +205,8 @@ async function finishSetup() {
         <AppButton variant="primary" class="step-btn" @click="nextStep">Get Started</AppButton>
       </div>
 
-      <!-- Step 2: Admin credentials -->
-      <div v-if="step === 2" class="step-content">
+      <!-- Admin credentials -->
+      <div v-if="panel === 'admin'" class="step-content">
         <h2>Create Admin Account</h2>
         <p class="step-desc">Set up the administrator account for the web dashboard.</p>
         <form @submit.prevent="submitAdmin">
@@ -204,8 +229,8 @@ async function finishSetup() {
         </form>
       </div>
 
-      <!-- Step 3: Bridge setup -->
-      <div v-if="step === 3" class="step-content" @vue:mounted="loadInterfaces">
+      <!-- Bridge setup (macOS / platforms with bridged networking) -->
+      <div v-if="panel === 'bridge'" class="step-content" @vue:mounted="loadInterfaces">
         <h2>Network Bridge</h2>
         <p class="step-desc">
           Configure bridged networking to give VMs direct network access. You can skip this and use
@@ -235,8 +260,8 @@ async function finishSetup() {
         </div>
       </div>
 
-      <!-- Step 4: Repository sync -->
-      <div v-if="step === 4" class="step-content">
+      <!-- Repository sync -->
+      <div v-if="panel === 'repos'" class="step-content">
         <h2>Image Catalog</h2>
         <p class="step-desc">Sync the OS image and template catalog so you can create VMs.</p>
         <div v-if="syncStatus">
@@ -269,8 +294,8 @@ async function finishSetup() {
         </div>
       </div>
 
-      <!-- Step 5: Ready -->
-      <div v-if="step === 5" class="step-content">
+      <!-- Ready -->
+      <div v-if="panel === 'ready'" class="step-content">
         <h2>All Set!</h2>
         <p class="step-desc">
           BarkVisor is ready. You'll be signed in automatically and taken to the dashboard.
