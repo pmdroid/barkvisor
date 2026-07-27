@@ -218,58 +218,6 @@ const isNAT = computed(() => {
 // State
 const error = ref('')
 const loading = ref(false)
-const showQemuCmd = ref(false)
-
-const qemuCommand = computed(() => {
-  const win = vmType.value.startsWith('windows')
-  const parts: string[] = ['qemu-system-aarch64']
-
-  parts.push('-machine virt -accel hvf -cpu host')
-  parts.push(`-smp ${cpuCount.value} -m ${memoryMB.value}M`)
-  parts.push('-drive if=pflash,format=raw,readonly=on,file=<efi-code.fd>')
-  parts.push('-drive if=pflash,format=raw,file=<efi-vars.fd>')
-  parts.push('-device qemu-xhci')
-
-  const diskLabel = diskSource.value === 'existing' ? '<existing-disk>' : `<${name.value || 'vm'}-disk.qcow2>`
-  if (win) {
-    parts.push(`-drive file=${diskLabel},format=qcow2,if=none,id=boot0,cache=writethrough`)
-    parts.push('-device nvme,drive=boot0,serial=boot')
-  } else {
-    parts.push(`-drive file=${diskLabel},format=qcow2,if=none,id=boot0,cache=writethrough`)
-    parts.push('-device virtio-blk-pci,drive=boot0,bootindex=0')
-  }
-
-  if (selectedImage.value && mode.value === 'iso') {
-    const isoName = `<${selectedImage.value.name}.iso>`
-    parts.push(`-drive file=${isoName},format=raw,if=none,id=cdrom0,readonly=on,media=cdrom`)
-    parts.push('-device virtio-blk-pci,drive=cdrom0,bootindex=1')
-  }
-
-  if (tpmEnabled.value) {
-    parts.push('-chardev socket,id=chrtpm,path=<tpm.sock>')
-    parts.push('-tpmdev emulator,id=tpm0,chardev=chrtpm')
-    parts.push('-device tpm-tis-device,tpmdev=tpm0')
-  }
-
-  parts.push('-netdev user,id=net0')
-  parts.push('-device virtio-net-pci,netdev=net0')
-
-  parts.push('-chardev socket,id=serial0,path=<serial.sock>,server=on,wait=off')
-  parts.push('-serial chardev:serial0')
-  parts.push(`-vnc 127.0.0.1:<display>`)
-  parts.push('-monitor unix:<mon.sock>,server,nowait')
-  parts.push('-qmp unix:<qmp.sock>,server,nowait')
-
-  const res = displayResolution.value.split('x')
-  parts.push('-device ramfb')
-  parts.push(`-device virtio-gpu-pci,xres=${res[0]},yres=${res[1]}`)
-  parts.push('-device usb-kbd')
-  parts.push('-device usb-tablet')
-  parts.push('-device virtio-balloon-pci')
-  parts.push('-display none')
-
-  return parts.join(' \\\n  ')
-})
 
 onMounted(async () => {
   imageStore.fetchAll()
@@ -766,15 +714,6 @@ function formatBytes(b: number) {
           </div>
         </div>
 
-        <div class="qemu-collapse" style="margin-top:16px">
-          <button class="qemu-toggle" @click="showQemuCmd = !showQemuCmd">
-            <svg :style="{ transform: showQemuCmd ? 'rotate(90deg)' : '' }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-            QEMU Command Preview
-          </button>
-          <div v-if="showQemuCmd" class="qemu-cmd">
-            <pre>{{ qemuCommand }}</pre>
-          </div>
-        </div>
       </div>
 
       <!-- Error -->
@@ -909,45 +848,6 @@ function formatBytes(b: number) {
   padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
 }
-.qemu-collapse {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 12px;
-}
-.qemu-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  padding: 0;
-}
-.qemu-toggle:hover { color: var(--text-secondary); }
-.qemu-toggle svg { transition: transform 0.15s; }
-.qemu-cmd {
-  margin-top: 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  padding: 12px;
-  overflow-x: auto;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.qemu-cmd pre {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
 /* Driver download step */
 .driver-status {
   display: flex;

@@ -107,28 +107,16 @@ struct SystemController: RouteCollection {
         currentCapabilities()
     }
 
-    /// Host platform feature matrix. Self-contained (`#if os`) — does not depend on
-    /// unmerged PlatformCapabilities work from other branches.
+    /// Host platform feature matrix — single source: PlatformCapabilities.
     static func currentCapabilities() -> SystemCapabilitiesResponse {
-        #if os(macOS)
-            return SystemCapabilitiesResponse(
-                platform: "macOS",
-                supportsBridgedNetworking: true,
-                supportsUSBPassthrough: true,
-                supportsInAppUpdate: true,
-                accelerator: "hvf",
-                hostArch: hostArchitecture(),
-            )
-        #else
-            return SystemCapabilitiesResponse(
-                platform: "Linux",
-                supportsBridgedNetworking: false,
-                supportsUSBPassthrough: false,
-                supportsInAppUpdate: false,
-                accelerator: "kvm",
-                hostArch: hostArchitecture(),
-            )
-        #endif
+        SystemCapabilitiesResponse(
+            platform: PlatformHost.platformName,
+            supportsBridgedNetworking: PlatformCapabilities.supportsBridgedNetworking,
+            supportsUSBPassthrough: PlatformCapabilities.supportsUSBPassthrough,
+            supportsInAppUpdate: PlatformCapabilities.supportsInAppUpdate,
+            accelerator: PlatformCapabilities.accelerator,
+            hostArch: hostArchitecture(),
+        )
     }
 
     private static func hostArchitecture() -> String {
@@ -355,6 +343,9 @@ struct SystemController: RouteCollection {
 
     @Sendable
     func listUSBDevices(req: Vapor.Request) async throws -> [HostUSBDeviceResponse] {
+        guard PlatformCapabilities.supportsUSBPassthrough else {
+            return []
+        }
         let hostDevices = try USBDeviceService.listDevices()
 
         // Build a map of claimed USB devices (vendorId:productId → VM)
