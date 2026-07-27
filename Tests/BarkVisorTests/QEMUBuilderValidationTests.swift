@@ -122,8 +122,30 @@ struct QEMUBuilderValidationTests {
     // MARK: - VM Type
 
     @Test func `unknown VM type throws`() {
-        #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "linux-x86_64") }
         #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "freebsd") }
         #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "") }
+        #expect(throws: (any Error).self) { try QEMUBuilder.binary(for: "windows-amd64") }
+    }
+
+    @Test func `binary name is arch aware`() throws {
+        #expect(try QEMUBuilder.binaryName(for: "linux-arm64") == "qemu-system-aarch64")
+        #expect(try QEMUBuilder.binaryName(for: "windows-arm64") == "qemu-system-aarch64")
+        #expect(try QEMUBuilder.binaryName(for: "linux-amd64") == "qemu-system-x86_64")
+        #expect(try QEMUBuilder.binaryName(for: "linux-x86_64") == "qemu-system-x86_64")
+    }
+
+    @Test func `machine type is arch aware`() {
+        #expect(QEMUBuilder.machineType(for: "linux-arm64") == "virt")
+        #expect(QEMUBuilder.machineType(for: "windows-arm64") == "virt")
+        #expect(QEMUBuilder.machineType(for: "linux-amd64") == "q35")
+        #expect(QEMUBuilder.machineType(for: "linux-x86_64") == "q35")
+    }
+
+    @Test func `accelerator is host platform specific`() {
+        #if os(macOS)
+        #expect(QEMUBuilder.accelerator == "hvf")
+        #elseif os(Linux)
+        #expect(QEMUBuilder.accelerator == "kvm")
+        #endif
     }
 }

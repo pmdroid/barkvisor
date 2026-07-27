@@ -39,6 +39,12 @@ extension VMManager {
     func validateBridgeIfNeeded(network: Network?) async throws -> String? {
         guard let network, network.mode == "bridged" else { return nil }
 
+        guard PrivilegeService.isBridgedNetworkingSupported else {
+            throw BarkVisorError.badRequest(
+                "Bridged networking is not supported on Linux yet. Use NAT networking.",
+            )
+        }
+
         let iface = network.bridge ?? "en0"
         let bridge = try await dbPool.read { db in
             try BridgeRecord.filter(Column("interface") == iface).fetchOne(db)
