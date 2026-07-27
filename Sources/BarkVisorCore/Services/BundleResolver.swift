@@ -23,10 +23,10 @@ public enum BundleResolver {
             "/usr/bin/\(name)",
         ]
         #if os(Linux)
-        candidates += [
-            "/usr/lib/qemu/\(name)",
-            "/usr/libexec/\(name)",
-        ]
+            candidates += [
+                "/usr/lib/qemu/\(name)",
+                "/usr/libexec/\(name)",
+            ]
         #endif
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)

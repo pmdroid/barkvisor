@@ -32,10 +32,10 @@ public enum HostInfoService {
                 seen.insert(name)
                 var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-                let addrLen = socklen_t(ifaAddr.pointee.sa_len)
+                    let addrLen = socklen_t(ifaAddr.pointee.sa_len)
                 #else
-                // Linux sockaddr has no sa_len; use sockaddr_in size for AF_INET.
-                let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                    // Linux sockaddr has no sa_len; use sockaddr_in size for AF_INET.
+                    let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
                 #endif
                 if getnameinfo(
                     ifaAddr, addrLen,

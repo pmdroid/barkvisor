@@ -1,7 +1,7 @@
 import Foundation
 
 #if os(macOS)
-import Security
+    import Security
 #endif
 
 /// Secure random bytes for secrets and salts.
@@ -10,11 +10,11 @@ public enum PlatformRandom {
     public static func secureBytes(count: Int) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: count)
         #if os(macOS)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status == errSecSuccess {
-            return bytes
-        }
-        // Fall through to SystemRandomNumberGenerator if SecRandom fails unexpectedly.
+            let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+            if status == errSecSuccess {
+                return bytes
+            }
+            // Fall through to SystemRandomNumberGenerator if SecRandom fails unexpectedly.
         #endif
         var rng = SystemRandomNumberGenerator()
         for i in 0 ..< count {
