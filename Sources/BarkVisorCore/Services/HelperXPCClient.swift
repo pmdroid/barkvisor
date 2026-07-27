@@ -1,28 +1,8 @@
-import BarkVisorHelperProtocol
 import Foundation
 import os
 
-public struct BridgeStateDTO: Codable, Sendable {
-    public let interface: String
-    public let socketPath: String?
-    public let plistExists: Bool
-    public let daemonRunning: Bool
-    public let status: String
-
-    public init(
-        interface: String,
-        socketPath: String?,
-        plistExists: Bool,
-        daemonRunning: Bool,
-        status: String,
-    ) {
-        self.interface = interface
-        self.socketPath = socketPath
-        self.plistExists = plistExists
-        self.daemonRunning = daemonRunning
-        self.status = status
-    }
-}
+#if os(macOS)
+import BarkVisorHelperProtocol
 
 public actor HelperXPCClient {
     public static let shared = HelperXPCClient()
@@ -221,6 +201,61 @@ public actor HelperXPCClient {
         }
     }
 }
+
+#else
+
+/// Linux stub: privileged helper XPC is macOS-only.
+public actor HelperXPCClient {
+    public static let shared = HelperXPCClient()
+
+    private func unsupported(_ feature: String) -> NSError {
+        NSError(
+            domain: "BarkVisor",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey: "\(feature) is not available on this platform",
+            ],
+        )
+    }
+
+    public func getVersion() async throws -> String {
+        throw unsupported("Helper XPC")
+    }
+
+    public func ping() async throws -> String {
+        throw unsupported("Helper XPC")
+    }
+
+    public func installBridge(interface: String) async throws {
+        throw unsupported("Bridged networking")
+    }
+
+    public func removeBridge(interface: String) async throws {
+        throw unsupported("Bridged networking")
+    }
+
+    public func startBridge(interface: String) async throws {
+        throw unsupported("Bridged networking")
+    }
+
+    public func stopBridge(interface: String) async throws {
+        throw unsupported("Bridged networking")
+    }
+
+    public func installUpdate(packagePath: String, expectedVersion: String) async throws {
+        throw unsupported("In-app update")
+    }
+
+    public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
+        []
+    }
+
+    public func bridgeStatus(interface: String) async throws -> String {
+        "not_installed"
+    }
+}
+
+#endif
 
 public struct XPCTimeoutError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {

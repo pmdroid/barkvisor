@@ -11,9 +11,14 @@ public enum DiagnosticService {
 
         // System info
         let systemInfo: [String: Any] = [
-            "macOSVersion": ProcessInfo.processInfo.operatingSystemVersionString,
-            "cpuCount": ProcessInfo.processInfo.processorCount,
-            "physicalMemoryMB": ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024),
+            "platform": PlatformHost.platformName,
+            "osVersion": PlatformHost.osVersionString,
+            // Keep macOSVersion key for older consumers; mirrors osVersion.
+            "macOSVersion": PlatformHost.osVersionString,
+            "cpuCount": PlatformHost.cpuCount,
+            "physicalMemoryMB": PlatformHost.physicalMemoryMB,
+            "accelerator": PlatformCapabilities.accelerator,
+            "defaultGuestArch": PlatformCapabilities.defaultGuestArch,
             "timestamp": ISO8601DateFormatter().string(from: Date()),
         ]
         let systemData = try JSONSerialization.data(withJSONObject: systemInfo, options: .prettyPrinted)
