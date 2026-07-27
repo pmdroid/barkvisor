@@ -31,8 +31,13 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
 
         let path = request.url.path
 
-        // Always allow: static assets, health check, setup endpoints
-        if !path.hasPrefix("/api/") || path.hasPrefix("/api/setup") || path.hasPrefix("/api/health") {
+        // Always allow: static assets, health, setup wizard, and public capabilities
+        // (UI needs platform flags before admin exists).
+        if !path.hasPrefix("/api/")
+            || path.hasPrefix("/api/setup")
+            || path.hasPrefix("/api/health")
+            || path == "/api/system/capabilities"
+        {
             return try await next.respond(to: request)
         }
 
