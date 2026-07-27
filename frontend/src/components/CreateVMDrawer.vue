@@ -6,6 +6,8 @@ import { useToastStore } from '../stores/toast'
 import api, { getWSTicket } from '../api/client'
 import type { Network, Disk, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import { useSSHKeyStore } from '../stores/sshKeys'
+import { useCapabilitiesStore } from '../stores/capabilities'
+import { storeToRefs } from 'pinia'
 import FolderPicker from './FolderPicker.vue'
 import CloudInitEditor from './CloudInitEditor.vue'
 import AppSelect from './ui/AppSelect.vue'
@@ -16,6 +18,8 @@ const vmStore = useVMStore()
 const imageStore = useImageStore()
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
+const caps = useCapabilitiesStore()
+const { supportsUSBPassthrough } = storeToRefs(caps)
 
 // Wizard step
 const step = ref(1)
@@ -358,7 +362,9 @@ async function submit() {
     if (selectedNetworkId.value) req.networkId = selectedNetworkId.value
     if (portForwards.value.length > 0) req.portForwards = portForwards.value
     if (sharedPaths.value.length > 0) req.sharedPaths = sharedPaths.value
-    if (selectedUSBDevices.value.length > 0) req.usbDevices = selectedUSBDevices.value
+    if (supportsUSBPassthrough.value && selectedUSBDevices.value.length > 0) {
+      req.usbDevices = selectedUSBDevices.value
+    }
 
     const result = await vmStore.create(req)
     if (result.taskID) {
@@ -643,7 +649,7 @@ function formatBytes(b: number) {
         </div>
 
         <!-- USB Passthrough -->
-        <div style="margin-top:16px">
+        <div v-if="supportsUSBPassthrough" style="margin-top:16px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <label style="margin:0">USB Passthrough</label>
             <button class="btn-ghost btn-sm" @click="showUSBPicker = true; fetchUSBDevices()">
@@ -665,7 +671,7 @@ function formatBytes(b: number) {
         </div>
 
         <!-- USB Device Picker Modal -->
-        <div v-if="showUSBPicker" class="modal-overlay" @click.self="showUSBPicker = false" style="z-index:1100">
+        <div v-if="supportsUSBPassthrough && showUSBPicker" class="modal-overlay" @click.self="showUSBPicker = false" style="z-index:1100">
           <div class="modal" style="max-width:480px">
             <h2>Select USB Devices</h2>
             <div v-if="hostUSBDevices.length === 0" class="empty" style="padding:24px 0">
@@ -750,7 +756,7 @@ function formatBytes(b: number) {
             <span class="summary-label">Shared</span>
             <span style="font-family:var(--font-mono);font-size:12px">{{ sharedPaths.join(', ') }}</span>
           </div>
-          <div v-if="selectedUSBDevices.length" class="summary-row">
+          <div v-if="supportsUSBPassthrough && selectedUSBDevices.length" class="summary-row">
             <span class="summary-label">USB</span>
             <span style="font-size:12px">{{ selectedUSBDevices.map(d => d.label || `${d.vendorId}:${d.productId}`).join(', ') }}</span>
           </div>
