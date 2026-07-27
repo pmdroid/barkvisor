@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// Structured logging for BarkVisor subsystems — writes to the database via LogService
 public enum Log {

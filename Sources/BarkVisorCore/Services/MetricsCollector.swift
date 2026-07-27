@@ -1,4 +1,8 @@
-import Darwin
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 import Foundation
 import GRDB
 
@@ -238,27 +242,45 @@ public actor MetricsCollector {
         }
     }
 
-    // MARK: - CPU from macOS process stats
+    // MARK: - Per-process CPU
 
     private func pollCPU(vmID: String, pid: Int32) -> Double {
-        var info = proc_taskinfo()
-        let size = MemoryLayout<proc_taskinfo>.size
-        let ret = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, Int32(size))
-        guard ret == size else { return 0 }
+        #if os(macOS)
+            var info = proc_taskinfo()
+            let size = MemoryLayout<proc_taskinfo>.size
+            let ret = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, Int32(size))
+            guard ret == size else { return 0 }
 
-        let totalTime = Int64(info.pti_total_user) + Int64(info.pti_total_system)
-        let prev = prevCPUTime[vmID] ?? totalTime
-        prevCPUTime[vmID] = totalTime
+            let totalTime = Int64(info.pti_total_user) + Int64(info.pti_total_system)
+            let prev = prevCPUTime[vmID] ?? totalTime
+            prevCPUTime[vmID] = totalTime
 
-        let delta = totalTime - prev
-        // pti_total_user/system are in Mach absolute time units
-        // Convert to nanoseconds using timebase
-        var timebase = mach_timebase_info_data_t()
-        mach_timebase_info(&timebase)
-        let deltaNs = Double(delta) * Double(timebase.numer) / Double(timebase.denom)
-
-        // Percentage of one core over the polling interval (5s)
-        let percent = deltaNs / Double(5_000_000_000) * 100.0
-        return min(max(percent, 0), 100.0)
+            let delta = totalTime - prev
+            var timebase = mach_timebase_info_data_t()
+            mach_timebase_info(&timebase)
+            let deltaNs = Double(delta) * Double(timebase.numer) / Double(timebase.denom)
+            let percent = deltaNs / Double(5_000_000_000) * 100.0
+            return min(max(percent, 0), 100.0)
+        #else
+            // Linux: /proc/<pid>/stat fields utime+stime in clock ticks
+            guard let content = try? String(contentsOfFile: "/proc/\(pid)/stat", encoding: .utf8) else {
+                return 0
+            }
+            guard let rparen = content.lastIndex(of: ")") else { return 0 }
+            let rest = content[content.index(after: rparen)...].split(separator: " ")
+            // rest[0]=state (field 3); utime field 14 => index 11; stime field 15 => index 12
+            guard rest.count > 12,
+                  let utime = Int64(rest[11]),
+                  let stime = Int64(rest[12])
+            else { return 0 }
+            let totalTime = utime + stime
+            let prev = prevCPUTime[vmID] ?? totalTime
+            prevCPUTime[vmID] = totalTime
+            let delta = Double(totalTime - prev)
+            let ticks = Double(sysconf(Int32(_SC_CLK_TCK)))
+            guard ticks > 0 else { return 0 }
+            let percent = (delta / ticks) / 5.0 * 100.0
+            return min(max(percent, 0), 100.0)
+        #endif
     }
 }
