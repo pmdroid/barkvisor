@@ -143,9 +143,9 @@ struct QEMUBuilderValidationTests {
 
     @Test func `accelerator is host platform specific`() {
         #if os(macOS)
-        #expect(QEMUBuilder.accelerator == "hvf")
+            #expect(QEMUBuilder.accelerator == "hvf")
         #elseif os(Linux)
-        #expect(QEMUBuilder.accelerator == "kvm")
+            #expect(QEMUBuilder.accelerator == "kvm")
         #endif
     }
 }
