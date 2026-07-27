@@ -157,7 +157,7 @@ public actor LogService {
                         try db.execute(
                             sql: """
                                 INSERT INTO logs (ts, level, cat, msg, vm, req, err, detail)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             arguments: [
                                 entry.ts, entry.level.rawValue, entry.cat.rawValue,
