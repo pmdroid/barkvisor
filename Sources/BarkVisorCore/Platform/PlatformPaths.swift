@@ -3,10 +3,15 @@ import Foundation
 /// Cross-platform path helpers for data dirs, sockets, and install detection.
 public enum PlatformPaths {
     /// Application data directory.
+    /// - Override: `BARKVISOR_DATA_DIR` (absolute path)
     /// - Installed: `/var/lib/barkvisor` on all platforms
     /// - Dev macOS: `~/Library/Application Support/BarkVisor`
-    /// - Dev Linux: `~/.local/share/barkvisor`
+    /// - Dev Linux: `~/.local/share/barkvisor` (or `$XDG_DATA_HOME/barkvisor`)
     public static func dataDir(isInstalled: Bool) -> URL {
+        if let override = ProcessInfo.processInfo.environment["BARKVISOR_DATA_DIR"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
         if isInstalled {
             return URL(fileURLWithPath: "/var/lib/barkvisor")
         }
@@ -19,12 +24,12 @@ public enum PlatformPaths {
             }
             return FileManager.default.temporaryDirectory.appendingPathComponent("BarkVisor")
         #else
+            if let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !xdg.isEmpty {
+                return URL(fileURLWithPath: xdg).appendingPathComponent("barkvisor")
+            }
             if let home = ProcessInfo.processInfo.environment["HOME"], !home.isEmpty {
                 return URL(fileURLWithPath: home)
                     .appendingPathComponent(".local/share/barkvisor")
-            }
-            if let xdg = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !xdg.isEmpty {
-                return URL(fileURLWithPath: xdg).appendingPathComponent("barkvisor")
             }
             return FileManager.default.temporaryDirectory.appendingPathComponent("barkvisor")
         #endif

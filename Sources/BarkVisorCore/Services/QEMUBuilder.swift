@@ -544,12 +544,29 @@ public enum QEMUBuilder {
     }
 
     private static func resolveEDK2ARM64() throws -> URL {
-        guard let url = BundleResolver.qemuResource("edk2-aarch64-code.fd") else {
-            throw BarkVisorError.firmwareNotFound(
-                "edk2-aarch64-code.fd not found. Install via: brew install qemu",
-            )
+        // Homebrew / bundled name
+        if let url = BundleResolver.qemuResource("edk2-aarch64-code.fd") {
+            return url
         }
-        return url
+        // Ubuntu/Debian: qemu-efi-aarch64 → /usr/share/AAVMF/
+        let linuxCandidates = [
+            "/usr/share/AAVMF/AAVMF_CODE.fd",
+            "/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd",
+            "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+            "/usr/share/edk2/aarch64/QEMU_EFI.fd",
+            "/usr/share/edk2-arm/QEMU_EFI.fd",
+        ]
+        if let found = linuxCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            return URL(fileURLWithPath: found)
+        }
+        #if os(macOS)
+            let hint = "brew install qemu"
+        #else
+            let hint = "apt install qemu-efi-aarch64 qemu-system-arm"
+        #endif
+        throw BarkVisorError.firmwareNotFound(
+            "ARM64 UEFI firmware not found (edk2-aarch64-code.fd / AAVMF_CODE.fd). Install via: \(hint)",
+        )
     }
 
     private static func resolveEDK2X86_64() throws -> URL {
@@ -564,15 +581,21 @@ public enum QEMUBuilder {
         let linuxCandidates = [
             "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
+            "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.fd",
+            "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
             "/usr/share/qemu/OVMF.fd",
         ]
         if let found = linuxCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
             return URL(fileURLWithPath: found)
         }
+        #if os(macOS)
+            let hint = "brew install qemu"
+        #else
+            let hint = "apt install ovmf qemu-system-x86"
+        #endif
         throw BarkVisorError.firmwareNotFound(
-            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. "
-                + "Install QEMU firmware packages for your platform.",
+            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. Install via: \(hint)",
         )
     }
 
@@ -580,23 +603,39 @@ public enum QEMUBuilder {
         // Bundled by build-release.sh into the QEMU share directory
         let bundledPath = URL(fileURLWithPath: Config.qemuShareDir)
             .appendingPathComponent("AAVMF_CODE.secboot.fd")
-
-        guard FileManager.default.fileExists(atPath: bundledPath.path) else {
-            throw BarkVisorError.firmwareNotFound(
-                "AAVMF_CODE.secboot.fd not found at \(bundledPath.path). "
-                    + "Reinstall BarkVisor or run scripts/build-release.sh to bundle firmware.",
-            )
+        if FileManager.default.fileExists(atPath: bundledPath.path) {
+            return bundledPath
         }
-
-        return bundledPath
+        // Ubuntu package qemu-efi-aarch64
+        let systemCandidates = [
+            "/usr/share/AAVMF/AAVMF_CODE.secboot.fd",
+            "/usr/share/AAVMF/AAVMF_CODE.ms.fd",
+            "/usr/share/AAVMF/AAVMF_CODE.fd",
+        ]
+        if let found = systemCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            return URL(fileURLWithPath: found)
+        }
+        #if os(macOS)
+            let hint = "Reinstall BarkVisor or run scripts/build-release.sh to bundle firmware."
+        #else
+            let hint = "Install via: apt install qemu-efi-aarch64"
+        #endif
+        throw BarkVisorError.firmwareNotFound(
+            "AAVMF secure-boot firmware not found. \(hint)",
+        )
     }
 
     private static func resolveSwtpm() throws -> URL {
         do {
             return try BundleResolver.helper("swtpm")
         } catch {
+            #if os(macOS)
+                let hint = "brew install swtpm"
+            #else
+                let hint = "apt install swtpm"
+            #endif
             throw BarkVisorError.processSpawnFailed(
-                "swtpm not found. TPM 2.0 emulation requires swtpm.\n" + "Install via: brew install swtpm",
+                "swtpm not found. TPM 2.0 emulation requires swtpm.\nInstall via: \(hint)",
             )
         }
     }
