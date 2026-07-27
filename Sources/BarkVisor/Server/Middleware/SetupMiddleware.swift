@@ -36,8 +36,7 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
         if !path.hasPrefix("/api/")
             || path.hasPrefix("/api/setup")
             || path.hasPrefix("/api/health")
-            || path == "/api/system/capabilities"
-        {
+            || path == "/api/system/capabilities" {
             return try await next.respond(to: request)
         }
 
