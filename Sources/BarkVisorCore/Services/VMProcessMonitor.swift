@@ -1,9 +1,12 @@
 import Foundation
 import GRDB
-import os
 
 public actor VMProcessMonitor {
-    private var processMonitorSources: [String: DispatchSourceProcess] = [:]
+    #if os(macOS)
+        private var processMonitorSources: [String: DispatchSourceProcess] = [:]
+    #else
+        private var processMonitorTasks: [String: Task<Void, Never>] = [:]
+    #endif
     private var expectedStops: Set<String> = []
     private let dbPool: DatabasePool
     private let pidsDir: URL
@@ -156,31 +159,49 @@ public actor VMProcessMonitor {
         expectedStops.insert(vmID)
     }
 
-    // MARK: - Process Monitor (for reconnected VMs via dispatch source)
+    // MARK: - Process Monitor (reconnected VMs)
 
-    /// Watch a reconnected VM's PID for exit using kqueue (via DispatchSource).
+    /// Watch a reconnected VM's PID for exit (kqueue/DispatchSource on macOS, poll on Linux).
     public func watchProcess(vmID: String, pid: pid_t) {
-        guard processMonitorSources[vmID] == nil else { return }
-        let source = DispatchSource.makeProcessSource(
-            identifier: pid, eventMask: .exit, queue: .global(),
-        )
-        source.setEventHandler { [weak self] in
-            Task { [weak self] in
-                guard let self else { return }
-                let wasExpected = await consumeExpectedStop(vmID: vmID)
-                let exitStatus: Int32 = wasExpected ? 0 : -1
-                Log.vm.info(
-                    "Reconnected VM \(vmID) (PID: \(pid)) has exited (expected: \(wasExpected))", vm: vmID,
-                )
-                if let vmManager = await vmManager {
-                    await vmManager.handleTermination(vmID: vmID, status: exitStatus)
+        #if os(macOS)
+            guard processMonitorSources[vmID] == nil else { return }
+            let source = DispatchSource.makeProcessSource(
+                identifier: pid, eventMask: .exit, queue: .global(),
+            )
+            source.setEventHandler { [weak self] in
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.handleWatchedProcessExit(vmID: vmID, pid: pid)
                 }
-                await removeProcessSource(vmID: vmID)
             }
+            source.setCancelHandler {} // prevent crash on dealloc
+            source.resume()
+            processMonitorSources[vmID] = source
+        #else
+            guard processMonitorTasks[vmID] == nil else { return }
+            processMonitorTasks[vmID] = Task { [weak self] in
+                // Poll until process exits or watch is cancelled.
+                while !Task.isCancelled {
+                    if kill(pid, 0) != 0 {
+                        await self?.handleWatchedProcessExit(vmID: vmID, pid: pid)
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
+        #endif
+    }
+
+    private func handleWatchedProcessExit(vmID: String, pid: pid_t) async {
+        let wasExpected = consumeExpectedStop(vmID: vmID)
+        let exitStatus: Int32 = wasExpected ? 0 : -1
+        Log.vm.info(
+            "Reconnected VM \(vmID) (PID: \(pid)) has exited (expected: \(wasExpected))", vm: vmID,
+        )
+        if let vmManager {
+            await vmManager.handleTermination(vmID: vmID, status: exitStatus)
         }
-        source.setCancelHandler {} // prevent crash on dealloc
-        source.resume()
-        processMonitorSources[vmID] = source
+        removeProcessSource(vmID: vmID)
     }
 
     private func consumeExpectedStop(vmID: String) -> Bool {
@@ -188,27 +209,35 @@ public actor VMProcessMonitor {
     }
 
     public func removeProcessSource(vmID: String) {
-        if let source = processMonitorSources.removeValue(forKey: vmID) {
-            source.cancel()
-        }
+        #if os(macOS)
+            if let source = processMonitorSources.removeValue(forKey: vmID) {
+                source.cancel()
+            }
+        #else
+            if let task = processMonitorTasks.removeValue(forKey: vmID) {
+                task.cancel()
+            }
+        #endif
     }
 
     public func stopAllProcessSources() {
-        for (_, source) in processMonitorSources {
-            source.cancel()
-        }
-        processMonitorSources.removeAll()
+        #if os(macOS)
+            for (_, source) in processMonitorSources {
+                source.cancel()
+            }
+            processMonitorSources.removeAll()
+        #else
+            for (_, task) in processMonitorTasks {
+                task.cancel()
+            }
+            processMonitorTasks.removeAll()
+        #endif
     }
 
     // MARK: - Private Helpers
 
     private func isQEMUProcess(pid: Int32) -> Bool {
-        var pathBuffer = [CChar](repeating: 0, count: 4_096)
-        let ret = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
-        guard ret > 0 else { return false }
-        let path = pathBuffer.withUnsafeBufferPointer {
-            String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
-        }
+        guard let path = PlatformProcess.executablePath(pid: pid) else { return false }
         return path.contains("qemu-system")
     }
 

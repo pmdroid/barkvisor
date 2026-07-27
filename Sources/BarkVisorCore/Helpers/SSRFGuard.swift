@@ -50,7 +50,7 @@ public enum SSRFGuard {
     public static func resolvesToPrivateIP(_ host: String) -> Bool {
         var hints = addrinfo()
         hints.ai_family = AF_UNSPEC // both IPv4 and IPv6
-        hints.ai_socktype = SOCK_STREAM
+        hints.ai_socktype = PlatformSocket.stream
 
         var result: UnsafeMutablePointer<addrinfo>?
         let status = getaddrinfo(host, nil, &hints, &result)

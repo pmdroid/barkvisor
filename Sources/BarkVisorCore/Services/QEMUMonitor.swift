@@ -1,11 +1,16 @@
 import Foundation
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 
 /// Sends HMP commands to QEMU via its monitor unix socket
 public struct QEMUMonitor {
     public let socketPath: String
 
     public func send(_ command: String) throws -> String {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let fd = socket(AF_UNIX, PlatformSocket.stream, 0)
         guard fd >= 0 else {
             throw BarkVisorError.monitorError(
                 "Failed to create socket: \(String(cString: strerror(errno)))",
@@ -29,7 +34,7 @@ public struct QEMUMonitor {
 
         let connectResult = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                Darwin.connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         guard connectResult == 0 else {

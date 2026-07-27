@@ -1,6 +1,11 @@
 import BarkVisor
 import BarkVisorCore
 import Foundation
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 import Logging
 import SwiftSentry
 
@@ -13,11 +18,11 @@ pipe(&signalPipeFDs)
 
 signal(SIGTERM) { _ in
     var b: UInt8 = 1
-    Darwin.write(signalPipeFDs[1], &b, 1)
+    write(signalPipeFDs[1], &b, 1)
 }
 signal(SIGINT) { _ in
     var b: UInt8 = 1
-    Darwin.write(signalPipeFDs[1], &b, 1)
+    write(signalPipeFDs[1], &b, 1)
 }
 
 let sentry = try? Sentry(dsn: "https://fd23965cd2644e52116484d7029e900d@o477595.ingest.us.sentry.io/4511210185162752")
@@ -47,14 +52,18 @@ do {
     try await server.start()
 } catch {
     Log.server.critical("Server failed to start: \(error)")
-    fputs("Server failed to start: \(error)\n", stderr)
+    FileHandle.standardError.write(Data("Server failed to start: \(error)\n".utf8))
     exit(1)
 }
 
-/// Block (async-safe) until a signal writes to the pipe
-let fh = FileHandle(fileDescriptor: signalPipeFDs[0], closeOnDealloc: false)
-_ = try? await fh.bytes.first { _ in true }
-
+// Block (async-safe) until a signal writes to the pipe (POSIX read; portable).
+await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+    DispatchQueue.global().async {
+        var b: UInt8 = 0
+        _ = read(signalPipeFDs[0], &b, 1)
+        cont.resume()
+    }
+}
 Log.server.info("Received signal, shutting down gracefully...")
 
 // Second signal → force exit
