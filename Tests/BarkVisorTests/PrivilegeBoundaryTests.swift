@@ -9,7 +9,7 @@ struct PrivilegeBoundaryTests {
         "BarkVisorCore/Services/HelperXPCClient.swift",
     ]
 
-    @Test func `HelperXPCClient is only used from PrivilegeService and its own file`() throws {
+    @Test func `helperXPCClient is only used from PrivilegeService and its own file`() throws {
         let sourcesRoot = try Self.packageSourcesRoot()
         let violations = try Self.scanForHelperXPCClient(in: sourcesRoot)
 
