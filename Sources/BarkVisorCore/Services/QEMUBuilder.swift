@@ -40,9 +40,14 @@ public enum QEMUBuilder {
     private static let arm64Types: Set<String> = ["linux-arm64", "windows-arm64"]
     private static let x86Types: Set<String> = ["linux-amd64", "linux-x86_64"]
 
-    /// Host accelerator: HVF on macOS, KVM on Linux — single source: PlatformCapabilities.
+    /// Host accelerator — single source: PlatformCapabilities (KVM if available, else TCG).
     public static var accelerator: String {
         PlatformCapabilities.accelerator
+    }
+
+    /// QEMU CPU model for the current accelerator.
+    public static var cpuModel: String {
+        PlatformCapabilities.qemuCPUModel
     }
 
     /// Machine type for the guest architecture.
@@ -201,7 +206,7 @@ public enum QEMUBuilder {
         let machine = machineType(for: vm.vmType)
 
         var args: [String] = []
-        args += ["-machine", machine, "-accel", accelerator, "-cpu", "host"]
+        args += ["-machine", machine, "-accel", accelerator, "-cpu", cpuModel]
         args += ["-smp", "\(vm.cpuCount)", "-m", "\(vm.memoryMb)M"]
         args += try firmwareArgs(vmID: vm.id, vmType: vm.vmType)
         args += ["-device", "qemu-xhci"]
