@@ -33,7 +33,7 @@ struct SystemBridgeController: RouteCollection {
         guard PrivilegeService.isBridgedNetworkingSupported else {
             throw Abort(
                 .notImplemented,
-                reason: "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                reason: "Bridged networking is not supported on this platform. Use NAT networking.",
             )
         }
     }
