@@ -22,10 +22,16 @@
 #   BARKVISOR_DATA_DIR          Override data dir (else mktemp)
 #   BARKVISOR_ADMIN_USER        Default: admin
 #   BARKVISOR_ADMIN_PASSWORD    Default: barkvisor-smoke-pass (must be >= 10 chars)
-#   BARKVISOR_CLOUD_IMAGE_URL   Optional cloud-image download for bootable guest
+#   BARKVISOR_CLOUD_IMAGE_URL   Cloud-image URL (set by REAL_GUEST=1 default)
+#   REAL_GUEST=1                Ubuntu 24.04 arm64 cloud image + cloud-init + SSH probe
+#   BARKVISOR_DEFAULT_CLOUD_IMAGE_URL  Override default image when REAL_GUEST=1
 #   BARKVISOR_VM_TYPE           Override vmType (default: host-arch mapping)
-#   DISK_SIZE_GB                Default: 2
-#   CPU_COUNT / MEMORY_MB       Defaults: 1 / 512
+#   DISK_SIZE_GB                Default: 2 (blank) / 8 (REAL_GUEST)
+#   CPU_COUNT / MEMORY_MB       Defaults: 1/512 (blank) or 2/1024 (REAL_GUEST)
+#   SSH_HOST_PORT               Host port for guest SSH (default: free port)
+#   SKIP_SSH_PROBE=1            Do not wait for SSH after start
+#   SSH_WAIT_SECS               Max wait for SSH (default 900; TCG is slow)
+#   ALLOW_SSH_TIMEOUT=1         Accept running VM if SSH not ready in time
 #   SKIP_BUILD=1                Reuse existing BarkVisorApp binary
 #   DRY_RUN=1                   No server/QEMU; validate script + list endpoints
 #   ALLOW_NO_QEMU=1             If qemu missing, stop after create (still exercise API)
@@ -36,10 +42,24 @@ cd "$ROOT"
 
 ADMIN_USER="${BARKVISOR_ADMIN_USER:-admin}"
 ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
-DISK_SIZE_GB="${DISK_SIZE_GB:-2}"
-CPU_COUNT="${CPU_COUNT:-1}"
-MEMORY_MB="${MEMORY_MB:-512}"
 VM_NAME="${VM_NAME:-linux-guest-smoke}"
+
+# Default Ubuntu 24.04 LTS minimal cloud image (arm64) for cloud-init + QEMU virt.
+DEFAULT_CLOUD_IMAGE_URL="${BARKVISOR_DEFAULT_CLOUD_IMAGE_URL:-https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img}"
+
+if [[ "${REAL_GUEST:-0}" == "1" ]]; then
+  export BARKVISOR_CLOUD_IMAGE_URL="${BARKVISOR_CLOUD_IMAGE_URL:-$DEFAULT_CLOUD_IMAGE_URL}"
+  DISK_SIZE_GB="${DISK_SIZE_GB:-8}"
+  CPU_COUNT="${CPU_COUNT:-2}"
+  MEMORY_MB="${MEMORY_MB:-1024}"
+  VM_NAME="${VM_NAME:-linux-real-guest}"
+  SSH_WAIT_SECS="${SSH_WAIT_SECS:-900}"
+else
+  DISK_SIZE_GB="${DISK_SIZE_GB:-2}"
+  CPU_COUNT="${CPU_COUNT:-1}"
+  MEMORY_MB="${MEMORY_MB:-512}"
+  SSH_WAIT_SECS="${SSH_WAIT_SECS:-120}"
+fi
 
 # Required API paths exercised by this smoke (documented for DRY_RUN / reviewers)
 REQUIRED_ENDPOINTS=(
@@ -89,7 +109,10 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
     "/api/images/download" \
     "/api/disks" \
     "/api/vms" \
-    "/start"; do
+    "/start" \
+    "cloudInit" \
+    "portForwards" \
+    "REAL_GUEST"; do
     grep -qF "$path" "$0" || die "script missing reference to $path"
   done
 
@@ -342,6 +365,32 @@ else
   log "disk: $EXISTING_DISK_ID"
 fi
 
+# --- optional SSH key for cloud-init ---
+SSH_PUBKEY=""
+SSH_KEY_PATH=""
+SSH_HOST_PORT="${SSH_HOST_PORT:-}"
+if [[ -n "$CLOUD_IMAGE_ID" && "${SKIP_SSH_PROBE:-0}" != "1" ]]; then
+  if command -v ssh-keygen >/dev/null 2>&1; then
+    SSH_KEY_PATH="${BARKVISOR_DATA_DIR}/smoke_guest_ed25519"
+    ssh-keygen -t ed25519 -N "" -f "$SSH_KEY_PATH" -C "barkvisor-smoke" >/dev/null
+    SSH_PUBKEY="$(cat "${SSH_KEY_PATH}.pub")"
+    log "generated smoke SSH key: $SSH_KEY_PATH"
+  else
+    log "ssh-keygen missing — skipping cloud-init SSH key injection"
+  fi
+  if [[ -z "$SSH_HOST_PORT" ]]; then
+    SSH_HOST_PORT="$(python3 - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
+  fi
+  log "SSH port-forward hostPort=$SSH_HOST_PORT -> guest 22"
+fi
+
 # --- create VM ---
 if [[ -n "$CLOUD_IMAGE_ID" ]]; then
   VM_BODY="$(jq -n \
@@ -352,15 +401,26 @@ if [[ -n "$CLOUD_IMAGE_ID" ]]; then
     --argjson disk "$DISK_SIZE_GB" \
     --arg net "$NETWORK_ID" \
     --arg cloud "$CLOUD_IMAGE_ID" \
-    '{
+    --arg pubkey "$SSH_PUBKEY" \
+    --argjson hostPort "${SSH_HOST_PORT:-0}" \
+    '
+    {
       name:$name,
       vmType:$vmType,
       cpuCount:$cpu,
       memoryMB:$mem,
       diskSizeGB:$disk,
       networkId:$net,
-      cloudImageId:$cloud
-    }')"
+      cloudImageId:$cloud,
+      uefi: true
+    }
+    + (if $pubkey != "" then
+        {cloudInit: {sshAuthorizedKeys: [$pubkey], userData: "package_update: false\n"}}
+      else {} end)
+    + (if $hostPort > 0 then
+        {portForwards: [{protocol: "tcp", hostPort: $hostPort, guestPort: 22}]}
+      else {} end)
+    ')"
 else
   VM_BODY="$(jq -n \
     --arg name "$VM_NAME" \
@@ -427,6 +487,31 @@ for _ in $(seq 1 30); do
   case "$final" in
     running | starting)
       log "VM state: $final"
+      if [[ -n "$CLOUD_IMAGE_ID" && -n "${SSH_KEY_PATH:-}" && "${SKIP_SSH_PROBE:-0}" != "1" && -n "${SSH_HOST_PORT:-}" ]]; then
+        log "waiting up to ${SSH_WAIT_SECS}s for guest SSH on 127.0.0.1:${SSH_HOST_PORT} (TCG boots are slow)"
+        ssh_ok=0
+        for i in $(seq 1 "$SSH_WAIT_SECS"); do
+          if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=2 -o LogLevel=ERROR \
+            -i "$SSH_KEY_PATH" -p "$SSH_HOST_PORT" ubuntu@127.0.0.1 "echo barkvisor-ssh-ok" 2>/dev/null \
+            | grep -q barkvisor-ssh-ok; then
+            ssh_ok=1
+            log "guest SSH OK after ${i}s"
+            break
+          fi
+          if ((i % 30 == 0)); then
+            log "still waiting for SSH (${i}/${SSH_WAIT_SECS}s)…"
+          fi
+          sleep 1
+        done
+        if [[ "$ssh_ok" -ne 1 ]]; then
+          if [[ "${ALLOW_SSH_TIMEOUT:-0}" == "1" ]]; then
+            log "SSH probe timed out (ALLOW_SSH_TIMEOUT=1) — create+start treated as OK"
+          else
+            fail "guest SSH not ready within ${SSH_WAIT_SECS}s (set ALLOW_SSH_TIMEOUT=1 to accept QEMU-running-only)"
+          fi
+        fi
+      fi
       log "linux-guest-smoke: OK"
       exit 0
       ;;
