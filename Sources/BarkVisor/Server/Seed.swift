@@ -1,5 +1,8 @@
 import BarkVisorCore
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import GRDB
 import Vapor
 

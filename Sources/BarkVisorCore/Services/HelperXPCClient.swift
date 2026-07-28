@@ -1,8 +1,8 @@
 import Foundation
-import os
 
 #if os(macOS)
     import BarkVisorHelperProtocol
+    import os
 
     public actor HelperXPCClient {
         public static let shared = HelperXPCClient()

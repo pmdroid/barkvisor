@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import os
 
 extension VMManager {
     // MARK: - Termination Handling
@@ -128,12 +127,7 @@ extension VMManager {
         }
         // For reconnected VMs, also validate it's still a QEMU process (guard against PID reuse)
         guard kill(running.pid, 0) == 0 else { return false }
-        var pathBuffer = [CChar](repeating: 0, count: 4_096)
-        let ret = proc_pidpath(running.pid, &pathBuffer, UInt32(pathBuffer.count))
-        guard ret > 0 else { return false }
-        let path = pathBuffer.withUnsafeBufferPointer {
-            String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
-        }
+        guard let path = PlatformProcess.executablePath(pid: running.pid) else { return false }
         return path.contains("qemu-system")
     }
 

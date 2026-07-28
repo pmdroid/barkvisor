@@ -1,5 +1,12 @@
-import CryptoKit
+#if canImport(CryptoKit)
+    import CryptoKit
+#else
+    import Crypto
+#endif
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 
 // MARK: - Types
 
@@ -229,48 +236,63 @@ public actor UpdateService {
         Log.server.info("Downloading update v\(release.version) from \(release.pkgURL)")
         await progressHandler(0.05)
 
-        let (asyncBytes, response) = try await Self.session.bytes(from: pkgURL)
-        guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw BarkVisorError.updateFailed("PKG download returned HTTP \(statusCode)")
-        }
-        let totalBytes = http.expectedContentLength
+        let bytesWritten: Int64
+        #if canImport(FoundationNetworking) && !canImport(Darwin)
+            let (tempURL, response) = try await Self.session.download(from: pkgURL)
+            guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                throw BarkVisorError.updateFailed("PKG download returned HTTP \(statusCode)")
+            }
+            if FileManager.default.fileExists(atPath: pkgPath.path) {
+                try FileManager.default.removeItem(at: pkgPath)
+            }
+            try FileManager.default.moveItem(at: tempURL, to: pkgPath)
+            bytesWritten =
+                (try? FileManager.default.attributesOfItem(atPath: pkgPath.path)[.size] as? Int64) ?? 0
+        #else
+            let (asyncBytes, response) = try await Self.session.bytes(from: pkgURL)
+            guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                throw BarkVisorError.updateFailed("PKG download returned HTTP \(statusCode)")
+            }
+            let totalBytes = http.expectedContentLength
 
-        let handle = try FileHandle(
-            forWritingTo: {
-                FileManager.default.createFile(atPath: pkgPath.path, contents: nil)
-                return pkgPath
-            }(),
-        )
-        defer { try? handle.close() }
+            let handle = try FileHandle(
+                forWritingTo: {
+                    FileManager.default.createFile(atPath: pkgPath.path, contents: nil)
+                    return pkgPath
+                }(),
+            )
+            defer { try? handle.close() }
 
-        var bytesWritten: Int64 = 0
-        var buffer = Data()
-        buffer.reserveCapacity(256 * 1_024)
+            var written: Int64 = 0
+            var buffer = Data()
+            buffer.reserveCapacity(256 * 1_024)
 
-        for try await byte in asyncBytes {
-            buffer.append(byte)
-            if buffer.count >= 256 * 1_024 {
-                handle.write(buffer)
-                bytesWritten += Int64(buffer.count)
-                buffer.removeAll(keepingCapacity: true)
+            for try await byte in asyncBytes {
+                buffer.append(byte)
+                if buffer.count >= 256 * 1_024 {
+                    handle.write(buffer)
+                    written += Int64(buffer.count)
+                    buffer.removeAll(keepingCapacity: true)
 
-                if totalBytes > 0 {
-                    let downloadProgress = Double(bytesWritten) / Double(totalBytes)
-                    // Download is 0.05–0.80 of total progress
-                    await progressHandler(0.05 + downloadProgress * 0.75)
+                    if totalBytes > 0 {
+                        let downloadProgress = Double(written) / Double(totalBytes)
+                        // Download is 0.05–0.80 of total progress
+                        await progressHandler(0.05 + downloadProgress * 0.75)
+                    }
                 }
             }
-        }
-        if !buffer.isEmpty {
-            handle.write(buffer)
-            bytesWritten += Int64(buffer.count)
-        }
-        try handle.close()
+            if !buffer.isEmpty {
+                handle.write(buffer)
+                written += Int64(buffer.count)
+            }
+            try handle.close()
+            bytesWritten = written
+        #endif
 
         await progressHandler(0.80)
         Log.server.info("Download complete (\(bytesWritten) bytes), verifying checksum...")
-
         // Verify SHA256 checksum if available
         if let checksumURLStr = release.checksumURL, let checksumURL = URL(string: checksumURLStr) {
             let (checksumData, _) = try await Self.session.data(from: checksumURL)

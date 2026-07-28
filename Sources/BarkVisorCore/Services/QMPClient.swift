@@ -13,7 +13,7 @@ public final class QMPClient: @unchecked Sendable {
     }
 
     public func connect() throws {
-        fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        fd = socket(AF_UNIX, PlatformSocket.stream, 0)
         guard fd >= 0 else {
             throw BarkVisorError.monitorError("Failed to create QMP socket")
         }
@@ -66,7 +66,7 @@ public final class QMPClient: @unchecked Sendable {
 
     /// Connect without QMP greeting/capabilities — for guest agent socket
     public func connectRaw(timeoutSeconds: Int = 2) throws {
-        fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        fd = socket(AF_UNIX, PlatformSocket.stream, 0)
         guard fd >= 0 else {
             throw BarkVisorError.monitorError("Failed to create socket")
         }

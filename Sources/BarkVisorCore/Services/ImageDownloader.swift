@@ -1,5 +1,12 @@
-import CryptoKit
+#if canImport(CryptoKit)
+    import CryptoKit
+#else
+    import Crypto
+#endif
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import GRDB
 
 public struct ImageProgressEvent: Codable, Sendable {
@@ -130,16 +137,36 @@ public actor ImageDownloader {
     private func performDownload(
         imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
     ) async throws {
-        let (asyncBytes, response) = try await Self.downloadSession.bytes(from: url)
-        let httpResponse = response as? HTTPURLResponse
-        if let statusCode = httpResponse?.statusCode, !(200 ... 299).contains(statusCode) {
-            throw BarkVisorError.downloadFailed("HTTP \(statusCode) from \(url)")
-        }
-        let total = httpResponse?.expectedContentLength ?? -1
+        #if canImport(FoundationNetworking) && !canImport(Darwin)
+            // Linux FoundationNetworking: use download(from:) (no URLSession.AsyncBytes).
+            let (tempURL, response) = try await Self.downloadSession.download(from: url)
+            let httpResponse = response as? HTTPURLResponse
+            if let statusCode = httpResponse?.statusCode, !(200 ... 299).contains(statusCode) {
+                throw BarkVisorError.downloadFailed("HTTP \(statusCode) from \(url)")
+            }
+            let parentDir = destination.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: parentDir.path) {
+                try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+            }
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: tempURL, to: destination)
+            let received =
+                (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64)
+                    ?? 0
+        #else
+            let (asyncBytes, response) = try await Self.downloadSession.bytes(from: url)
+            let httpResponse = response as? HTTPURLResponse
+            if let statusCode = httpResponse?.statusCode, !(200 ... 299).contains(statusCode) {
+                throw BarkVisorError.downloadFailed("HTTP \(statusCode) from \(url)")
+            }
+            let total = httpResponse?.expectedContentLength ?? -1
 
-        let received = try await downloadToFile(
-            imageID: imageID, asyncBytes: asyncBytes, destination: destination, total: total,
-        )
+            let received = try await downloadToFile(
+                imageID: imageID, asyncBytes: asyncBytes, destination: destination, total: total,
+            )
+        #endif
 
         if let expectedChecksum {
             try verifyChecksum(
@@ -178,48 +205,50 @@ public actor ImageDownloader {
         finish(imageID: imageID)
     }
 
-    private func downloadToFile(
-        imageID: String, asyncBytes: URLSession.AsyncBytes,
-        destination: URL, total: Int64,
-    ) async throws -> Int64 {
-        let parentDir = destination.deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: parentDir.path) {
-            try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
-        }
-        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
-            throw BarkVisorError.downloadFailed("Failed to create file at \(destination.path)")
-        }
-        let handle = try FileHandle(forWritingTo: destination)
-        defer { try? handle.close() }
-        var received: Int64 = 0
-        var buffer = Data()
-        let chunkSize = 1_024 * 1_024
-
-        for try await byte in asyncBytes {
-            buffer.append(byte)
-            received += 1
-
-            if buffer.count >= chunkSize {
-                try handle.write(contentsOf: buffer)
-                buffer.removeAll(keepingCapacity: true)
-
-                let event = ImageProgressEvent(
-                    id: imageID,
-                    status: "downloading",
-                    bytesReceived: received,
-                    totalBytes: total < 0 ? nil : total,
-                    percent: total > 0 ? Int((Double(received) / Double(total)) * 100) : nil,
-                    error: nil,
-                )
-                emit(imageID: imageID, event: event)
+    #if !(canImport(FoundationNetworking) && !canImport(Darwin))
+        private func downloadToFile(
+            imageID: String, asyncBytes: URLSession.AsyncBytes,
+            destination: URL, total: Int64,
+        ) async throws -> Int64 {
+            let parentDir = destination.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: parentDir.path) {
+                try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
             }
-        }
+            guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+                throw BarkVisorError.downloadFailed("Failed to create file at \(destination.path)")
+            }
+            let handle = try FileHandle(forWritingTo: destination)
+            defer { try? handle.close() }
+            var received: Int64 = 0
+            var buffer = Data()
+            let chunkSize = 1_024 * 1_024
 
-        if !buffer.isEmpty {
-            try handle.write(contentsOf: buffer)
+            for try await byte in asyncBytes {
+                buffer.append(byte)
+                received += 1
+
+                if buffer.count >= chunkSize {
+                    try handle.write(contentsOf: buffer)
+                    buffer.removeAll(keepingCapacity: true)
+
+                    let event = ImageProgressEvent(
+                        id: imageID,
+                        status: "downloading",
+                        bytesReceived: received,
+                        totalBytes: total < 0 ? nil : total,
+                        percent: total > 0 ? Int((Double(received) / Double(total)) * 100) : nil,
+                        error: nil,
+                    )
+                    emit(imageID: imageID, event: event)
+                }
+            }
+
+            if !buffer.isEmpty {
+                try handle.write(contentsOf: buffer)
+            }
+            return received
         }
-        return received
-    }
+    #endif
 
     private func verifyChecksum(
         imageID: String, destination: URL,

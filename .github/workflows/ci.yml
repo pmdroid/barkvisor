@@ -1,13 +1,13 @@
 name: CI
 
 on:
+  # All PR bases (including stacked feature branches), not only main.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -50,3 +50,37 @@ jobs:
 
       - name: Run tests
         run: mise run test
+
+  # Experimental: compile Core/App on Linux (Ubuntu 24.04 matches official Swift packages).
+  linux-build:
+    name: Linux Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            curl ca-certificates binutils \
+            libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
+            zlib1g-dev libzstd-dev libedit-dev uuid-dev pkg-config
+
+      # setup-swift action lags behind releases; install official Ubuntu 24.04 tarball.
+      - name: Install Swift 6.2.3
+        run: |
+          set -euo pipefail
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "x86_64" ]; then
+            URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04.tar.gz"
+          else
+            URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404-aarch64/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04-aarch64.tar.gz"
+          fi
+          curl -fL "$URL" -o /tmp/swift.tar.gz
+          sudo mkdir -p /opt/swift
+          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
+          echo /opt/swift/usr/bin >> "$GITHUB_PATH"
+          /opt/swift/usr/bin/swift --version
+
+      - name: swift build
+        run: swift build --product BarkVisorApp

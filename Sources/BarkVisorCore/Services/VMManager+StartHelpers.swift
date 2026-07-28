@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import os
 
 struct VMSockets {
     let vnc: URL
