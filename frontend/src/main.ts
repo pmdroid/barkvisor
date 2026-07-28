@@ -15,6 +15,10 @@ app.use(router)
 import { useThemeStore } from './stores/theme'
 useThemeStore()
 
+// Load platform capabilities once at boot (gates bridged/USB/update UI)
+import { useCapabilitiesStore } from './stores/capabilities'
+useCapabilitiesStore().fetchCapabilities()
+
 // Soft redirect on 401 (preserves SPA state instead of full page reload)
 setUnauthorizedHandler(() => {
   if (router.currentRoute.value.name !== 'login') {

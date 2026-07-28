@@ -32,6 +32,9 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         }
     }
 
+    // Public: platform capabilities for UI gating (setup wizard before login).
+    SystemController.registerPublicRoutes(app)
+
     let protected = app.grouped(JWTAuthMiddleware(keys: deps.keys))
 
     try protected.register(collection: ImageController(downloader: deps.imageDownloader))

@@ -18,10 +18,14 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
+import { useCapabilitiesStore } from '../stores/capabilities'
+import { storeToRefs } from 'pinia'
 
 const route = useRoute()
 const router = useRouter()
 const store = useVMStore()
+const caps = useCapabilitiesStore()
+const { supportsUSBPassthrough, supportsBridgedNetworking } = storeToRefs(caps)
 const vmId = computed(() => route.params.id as string)
 const tab = ref((route.query.tab as string) || 'overview')
 
@@ -129,6 +133,7 @@ async function fetchBridges() {
 }
 
 const bridgeNotReady = computed(() => {
+  if (!supportsBridgedNetworking.value) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
   const info = bridges.value.find(b => b.interface === currentNetwork.value!.bridge)
   return !info || info.status !== 'active'
@@ -292,7 +297,7 @@ async function loadVMDetail() {
       store.fetchOne(vmId.value),
       fetchNetworks(),
       fetchImages(),
-      fetchBridges(),
+      ...(supportsBridgedNetworking.value ? [fetchBridges()] : []),
     ])
     if (loadVersion !== detailLoadVersion) return
 
@@ -305,7 +310,7 @@ async function loadVMDetail() {
     connectStateSSE()
     pollInterval = window.setInterval(() => {
       store.fetchOne(vmId.value).then(fetchGuestInfo).catch(() => {})
-      fetchBridges()
+      if (supportsBridgedNetworking.value) fetchBridges()
     }, 15000)
   } catch (e: any) {
     if (loadVersion === detailLoadVersion) {
@@ -803,7 +808,7 @@ const currentNetwork = computed(() => {
       </div>
 
       <!-- USB Devices Section -->
-      <div style="margin-top:20px">
+      <div v-if="supportsUSBPassthrough" style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
           <AppButton size="sm" icon="plus" @click="showAttachUSB = true; fetchUSBDevices()">Attach USB Device</AppButton>
@@ -830,7 +835,7 @@ const currentNetwork = computed(() => {
     <MetricsPanel v-if="tab === 'metrics' && vm.state === 'running'" :key="`metrics-${vmId}`" :vm-id="vmId" />
 
     <!-- Attach USB Device Modal -->
-    <div v-if="showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
+    <div v-if="supportsUSBPassthrough && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
       <div class="modal">
         <h2>Attach USB Device</h2>
         <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on the host." />

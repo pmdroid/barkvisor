@@ -4,7 +4,9 @@ import api from '../api/client'
 import type { APIKeyResponse, AuditEntry, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
+import { useCapabilitiesStore } from '../stores/capabilities'
 import { useTaskPoller } from '../composables/useTaskPoller'
+import { storeToRefs } from 'pinia'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
@@ -13,6 +15,8 @@ import EmptyState from '../components/ui/EmptyState.vue'
 
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
+const caps = useCapabilitiesStore()
+const { supportsInAppUpdate } = storeToRefs(caps)
 const tab = ref<'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
 
 // API Keys
@@ -345,7 +349,11 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
-    <button :class="{ active: tab === 'updates' }" @click="tab = 'updates'; fetchUpdateSettings(); checkForUpdates()">Updates</button>
+    <button
+      v-if="supportsInAppUpdate"
+      :class="{ active: tab === 'updates' }"
+      @click="tab = 'updates'; fetchUpdateSettings(); checkForUpdates()"
+    >Updates</button>
   </div>
 
   <!-- API Keys Tab -->
@@ -521,7 +529,7 @@ onUnmounted(() => {
   </div>
 
   <!-- Updates Tab -->
-  <div v-if="tab === 'updates'">
+  <div v-if="supportsInAppUpdate && tab === 'updates'">
     <!-- Success state -->
     <div v-if="updatePhase === 'success'" class="update-status-card update-success">
       <div style="font-size:20px;margin-bottom:8px">Updated successfully</div>
