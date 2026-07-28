@@ -92,29 +92,24 @@ may fall back slowly or fail depending on config.
 - `accelerator` — `kvm`  
 - `hostArch` — `arm64` / `x86_64`
 
-## Stack / PR order
+## Status on main
 
-Linux work is stacked for easy rebase:
-
-1. Platform foundation  
-2. QEMU + privilege stubs  
-3. Capabilities UI  
-4. Linux build fixes (if any)  
-5. This docs/Dockerfile PR  
-6. systemd install PR  
-
-When restacking: rebase each branch onto its parent, force-with-lease, keep PR
-`base` pointing at the parent branch (not always `main`).
+The Linux foundation stack (platform helpers, privilege stubs, capabilities UI,
+build fixes, docs/Dockerfile, systemd install, product firmware/env/smoke, and
+complexity cuts) is **merged to `main`**. Branch from `main` for new work; see
+`docs/agent-handoff-linux-port.md` for milestones and follow-up themes.
 
 ## Limitations (MVP)
 
 - No bridged networking (use NAT + port forwards)
 - No USB passthrough listing
 - No in-app package updates
+- Not full macOS feature parity
 - Firmware/QEMU still resolved via `PATH` / common distro paths
 - Windows guests and TPM may need extra packages (`swtpm`) not covered here
 
-## Next steps
+## Smoke and next steps
 
-- systemd unit: see `Resources/barkvisor.service` and `scripts/install-linux.sh`
-- Smoke: create a `linux-arm64` or `linux-amd64` VM with NAT only
+- **Daemon smoke (on main):** `./scripts/linux-smoke.sh` — builds BarkVisorApp, starts briefly, checks `/api/health` and `/api/system/capabilities`
+- **systemd:** `Resources/barkvisor.service` and `scripts/install-linux.sh`
+- **Guest boot:** create a `linux-arm64` or `linux-amd64` VM with NAT only (follow-up work; guest-smoke may land in a separate PR)
