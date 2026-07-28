@@ -147,5 +147,7 @@ struct QEMUBuilderValidationTests {
         #elseif os(Linux)
             #expect(QEMUBuilder.accelerator == "kvm")
         #endif
+        // QEMUBuilder and PlatformCapabilities must agree (capabilities API + launch args).
+        #expect(QEMUBuilder.accelerator == PlatformCapabilities.accelerator)
     }
 }
