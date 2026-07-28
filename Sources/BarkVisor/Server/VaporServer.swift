@@ -290,8 +290,11 @@ public final class VaporServer: @unchecked Sendable {
             BackupService.performBackup(pool: pool)
             BackupService.pruneOldBackups()
         }
-        await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: 5 * 1_000_000_000) {
-            await BridgeSyncService.syncOnce(db: pool)
+        // Bridged networking is macOS-only; skip XPC/helper polling on unsupported platforms.
+        if PrivilegeService.isBridgedNetworkingSupported {
+            await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: 5 * 1_000_000_000) {
+                await BridgeSyncService.syncOnce(db: pool)
+            }
         }
         await backgroundTasks.schedulePeriodicTask(
             id: "api-key-expiry", interval: 60 * 60 * 1_000_000_000,

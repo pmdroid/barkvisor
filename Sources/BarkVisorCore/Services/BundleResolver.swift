@@ -119,7 +119,8 @@ public enum BundleResolver {
         return nil
     }
 
-    /// Whether we're running from an installed layout (as opposed to `swift run` development).
+    /// Alias for `Config.isInstalled` (single source of truth for install layout).
+    @available(*, deprecated, renamed: "Config.isInstalled")
     public static var isBundle: Bool {
         Config.isInstalled
     }

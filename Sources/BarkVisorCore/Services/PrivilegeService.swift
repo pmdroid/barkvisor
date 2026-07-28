@@ -23,22 +23,14 @@ public enum PrivilegeService {
     /// Platform-selected privilege backend.
     public static let shared: any PrivilegeServicing = makeShared()
 
-    /// Bridged networking (socket_vmnet) is macOS-only for the Linux MVP.
+    /// Bridged networking (socket_vmnet) — single source: PlatformCapabilities.
     public static var isBridgedNetworkingSupported: Bool {
-        #if os(macOS)
-            true
-        #else
-            false
-        #endif
+        PlatformCapabilities.supportsBridgedNetworking
     }
 
-    /// In-app privileged software updates (PKG install via helper) are macOS-only.
+    /// In-app privileged software updates — single source: PlatformCapabilities.
     public static var isUpdateInstallSupported: Bool {
-        #if os(macOS)
-            true
-        #else
-            false
-        #endif
+        PlatformCapabilities.supportsInAppUpdate
     }
 
     private static func makeShared() -> any PrivilegeServicing {
