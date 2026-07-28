@@ -362,3 +362,13 @@ export interface UpdateSettings {
   isDevBuild: boolean
   updateURL?: string | null
 }
+
+/** Platform feature flags from GET /api/system/capabilities */
+export interface SystemCapabilities {
+  platform: 'macOS' | 'Linux' | string
+  supportsBridgedNetworking: boolean
+  supportsUSBPassthrough: boolean
+  supportsInAppUpdate: boolean
+  accelerator: 'hvf' | 'kvm' | string
+  hostArch: 'arm64' | 'x86_64' | string
+}

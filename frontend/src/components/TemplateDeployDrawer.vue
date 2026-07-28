@@ -6,6 +6,8 @@ import { useSSHKeyStore } from '../stores/sshKeys'
 import api, { getWSTicket } from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
 import type { VMTemplate, DeployTemplateRequest, BridgeInfo } from '../api/types'
+import { useCapabilitiesStore } from '../stores/capabilities'
+import { storeToRefs } from 'pinia'
 
 const props = defineProps<{ template: VMTemplate }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -13,24 +15,32 @@ const emit = defineEmits(['close', 'deployed'])
 const templateStore = useTemplateStore()
 const vmStore = useVMStore()
 const sshKeyStore = useSSHKeyStore()
+const caps = useCapabilitiesStore()
+const { supportsBridgedNetworking } = storeToRefs(caps)
 
 const selectedSSHKeyId = ref('')
 
 // Bridge status for bridged templates
 const bridgeAvailable = ref<boolean | null>(null) // null = loading
 const bridgeChecked = ref(false)
+const platformBridgeUnsupported = computed(
+  () => props.template.networkMode === 'bridged' && !supportsBridgedNetworking.value,
+)
 
 onMounted(async () => {
   sshKeyStore.fetchAll().then(() => {
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
   })
-  if (props.template.networkMode === 'bridged') {
+  if (props.template.networkMode === 'bridged' && supportsBridgedNetworking.value) {
     try {
       const { data } = await api.get<BridgeInfo[]>('/system/bridges')
       bridgeAvailable.value = data.some(b => b.status === 'active')
     } catch {
       bridgeAvailable.value = false
     }
+    bridgeChecked.value = true
+  } else if (props.template.networkMode === 'bridged') {
+    bridgeAvailable.value = false
     bridgeChecked.value = true
   } else {
     bridgeAvailable.value = true
@@ -216,7 +226,10 @@ async function submit() {
         </svg>
         <div>
           <strong>Bridged networking required</strong>
-          <p style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
+          <p v-if="platformBridgeUnsupported" style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
+            Bridged networking is not available on this platform yet. This template cannot be deployed until NAT support is added for it.
+          </p>
+          <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.
             Install the BarkVisor Helper and enable a bridge under <strong>Settings &rarr; Network</strong>.
           </p>

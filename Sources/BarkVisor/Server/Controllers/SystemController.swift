@@ -58,9 +58,24 @@ struct VirtioWinDownloadResponse: Content {
     let imageId: String
 }
 
+/// Platform feature flags for UI gating (bridged networking, USB, in-app updates).
+struct SystemCapabilitiesResponse: Content {
+    let platform: String
+    let supportsBridgedNetworking: Bool
+    let supportsUSBPassthrough: Bool
+    let supportsInAppUpdate: Bool
+    let accelerator: String
+    let hostArch: String
+}
+
 // swiftlint:disable file_length
 struct SystemController: RouteCollection {
     let imageDownloader: ImageDownloader
+
+    /// Public endpoint (no JWT) so setup wizard can gate bridge step before login.
+    static func registerPublicRoutes(_ routes: any RoutesBuilder) {
+        routes.get("api", "system", "capabilities", use: getCapabilities)
+    }
 
     func boot(routes: any RoutesBuilder) throws {
         let system = routes.grouped("api", "system")
@@ -83,6 +98,52 @@ struct SystemController: RouteCollection {
         // Firmware
         system.get("virtio-win", "status", use: virtioWinStatus)
         system.post("virtio-win", "download", use: virtioWinDownload)
+    }
+
+    // MARK: - Capabilities
+
+    @Sendable
+    static func getCapabilities(req: Vapor.Request) async throws -> SystemCapabilitiesResponse {
+        currentCapabilities()
+    }
+
+    /// Host platform feature matrix. Self-contained (`#if os`) — does not depend on
+    /// unmerged PlatformCapabilities work from other branches.
+    static func currentCapabilities() -> SystemCapabilitiesResponse {
+        #if os(macOS)
+            return SystemCapabilitiesResponse(
+                platform: "macOS",
+                supportsBridgedNetworking: true,
+                supportsUSBPassthrough: true,
+                supportsInAppUpdate: true,
+                accelerator: "hvf",
+                hostArch: hostArchitecture(),
+            )
+        #else
+            return SystemCapabilitiesResponse(
+                platform: "Linux",
+                supportsBridgedNetworking: false,
+                supportsUSBPassthrough: false,
+                supportsInAppUpdate: false,
+                accelerator: "kvm",
+                hostArch: hostArchitecture(),
+            )
+        #endif
+    }
+
+    private static func hostArchitecture() -> String {
+        var info = utsname()
+        uname(&info)
+        let machine = withUnsafePointer(to: &info.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 256) {
+                String(cString: $0)
+            }
+        }
+        switch machine {
+        case "arm64", "aarch64": return "arm64"
+        case "x86_64", "amd64": return "x86_64"
+        default: return machine
+        }
     }
 
     // MARK: - Onboarding

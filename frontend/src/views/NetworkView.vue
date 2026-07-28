@@ -10,8 +10,12 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import AppModal from '../components/ui/AppModal.vue'
 import { useToastStore } from '../stores/toast'
+import { useCapabilitiesStore } from '../stores/capabilities'
+import { storeToRefs } from 'pinia'
 
 const toast = useToastStore()
+const caps = useCapabilitiesStore()
+const { supportsBridgedNetworking } = storeToRefs(caps)
 
 // Data
 const networks = ref<Network[]>([])
@@ -107,17 +111,19 @@ async function fetchBridges() {
 }
 
 async function fetchAll() {
-  await Promise.all([fetchNetworks(), fetchInterfaces(), fetchBridges()])
+  const tasks: Promise<void>[] = [fetchNetworks(), fetchInterfaces()]
+  if (supportsBridgedNetworking.value) tasks.push(fetchBridges())
+  await Promise.all(tasks)
 }
 
 let bridgePoll: number | undefined
 
 onMounted(() => {
-  fetchAll()
+  void caps.fetchCapabilities().then(() => fetchAll())
 })
 
 watch(showBridges, (open) => {
-  if (open) {
+  if (open && supportsBridgedNetworking.value) {
     fetchInterfaces()
     fetchBridges()
     bridgePoll = window.setInterval(fetchBridges, 7000)
@@ -145,19 +151,20 @@ function openCreate() {
   resetForm()
   showCreate.value = true
   fetchInterfaces()
-  fetchBridges()
+  if (supportsBridgedNetworking.value) fetchBridges()
 }
 
 function openEdit(n: Network) {
   editingId.value = n.id
   newName.value = n.name
-  newMode.value = n.mode
-  newBridge.value = n.bridge || ''
+  // Fall back to NAT if bridged is unsupported on this platform
+  newMode.value = supportsBridgedNetworking.value ? n.mode : 'nat'
+  newBridge.value = supportsBridgedNetworking.value ? (n.bridge || '') : ''
   newDns.value = n.dnsServer || ''
   error.value = ''
   showCreate.value = true
   fetchInterfaces()
-  fetchBridges()
+  if (supportsBridgedNetworking.value) fetchBridges()
 }
 
 async function saveNetwork() {
@@ -276,7 +283,7 @@ async function setupBridgeInline() {
   <div class="page-header">
     <h1>Networks</h1>
     <div style="display:flex;gap:8px;align-items:center">
-      <AppButton icon="settings" @click="showBridges = true">Manage Bridges</AppButton>
+      <AppButton v-if="supportsBridgedNetworking" icon="settings" @click="showBridges = true">Manage Bridges</AppButton>
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
   </div>
@@ -367,10 +374,13 @@ async function setupBridgeInline() {
       <label>Mode</label>
       <AppSelect v-model="newMode">
         <option value="nat">NAT</option>
-        <option value="bridged">Bridged</option>
+        <option v-if="supportsBridgedNetworking" value="bridged">Bridged</option>
       </AppSelect>
+      <p v-if="!supportsBridgedNetworking" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+        Bridged networking is not available on this platform yet.
+      </p>
     </div>
-    <div v-if="newMode === 'bridged'" class="form-group">
+    <div v-if="supportsBridgedNetworking && newMode === 'bridged'" class="form-group">
       <label>Bridge Interface</label>
       <AppSelect v-model="newBridge">
         <option value="" disabled>Select interface...</option>
