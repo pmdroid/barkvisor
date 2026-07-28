@@ -1,37 +1,39 @@
 # Agent handoff: BarkVisor Linux port + simplification
 
-**Last updated:** 2026-07-27  
+**Last updated:** 2026-07-28  
 **Repo:** `github.com/pmdroid/barkvisor`  
-**Primary host:** macOS (dev) + OrbStack Ubuntu 24.04 `barkvisor-u24` for Linux proof  
-**Goal:** Linux NAT-only MVP usable on a VM; reduce macOS-only complexity; merge stack when green.
+**Primary host:** macOS (production focus) + OrbStack Ubuntu 24.04 `barkvisor-u24` for Linux proof  
+**Goal:** Linux NAT-only MVP usable on a VM; reduce macOS-only complexity; ship guest boot and follow-up cleanups on `main`.
 
-Use this file as the source of truth for the next agent. Do **not** restart the port from main without reading the stack below.
+Use this file as the source of truth for the next agent. The Linux foundation stack is **already on main** — do **not** re-land PRs #7–#13 or restart the port from scratch.
 
 ---
 
-## 1. Current PR stack (merge bottom → top)
+## 1. Merged stack (historical — all on `main`)
 
-| Order | PR | Branch | Base | Role |
-|------:|----|--------|------|------|
-| 1 | [#7](https://github.com/pmdroid/barkvisor/pull/7) | `pmdroid/bv-platform-foundation-2` | `main` | Platform paths/random/host/capabilities helpers |
-| 2 | [#8](https://github.com/pmdroid/barkvisor/pull/8) | `pmdroid/bv-qemu-privilege` | #7 | HVF/KVM, PrivilegeService, NAT-only Linux, no socket_vmnet on Linux |
-| 3 | [#6](https://github.com/pmdroid/barkvisor/pull/6) | `pmdroid/bv-capabilities-ui` | #8 | `GET /api/system/capabilities` + Vue gating |
-| 4 | [#9](https://github.com/pmdroid/barkvisor/pull/9) | `pmdroid/linux-build-fixes` | #6 | Linux compile (Crypto, FoundationNetworking, sockets, process watch) |
-| 5 | [#10](https://github.com/pmdroid/barkvisor/pull/10) | `pmdroid/linux-docker-docs` | #9 | `docs/getting-started-linux.md`, Dockerfile |
-| 6 | [#11](https://github.com/pmdroid/barkvisor/pull/11) | `pmdroid/linux-systemd` | #10 | `Resources/barkvisor.service`, `scripts/install-linux.sh` |
-| 7 | [#12](https://github.com/pmdroid/barkvisor/pull/12) | `pmdroid/linux-product` | #11 | Firmware AAVMF/OVMF, env vars, `linux-smoke.sh` / `linux-dev.sh` |
-| 8 | [#13](https://github.com/pmdroid/barkvisor/pull/13) | `pmdroid/simplify-complexity` | #12 | Delete QEMUMonitor, skip bridge-sync on Linux, remove fake QEMU preview, capabilities single source |
+| Order | PR | Branch | Role | Status |
+|------:|----|--------|------|--------|
+| 1 | [#7](https://github.com/pmdroid/barkvisor/pull/7) | `pmdroid/bv-platform-foundation-2` | Platform paths/random/host/capabilities helpers | **MERGED** |
+| 2 | [#8](https://github.com/pmdroid/barkvisor/pull/8) | `pmdroid/bv-qemu-privilege` | HVF/KVM, PrivilegeService, NAT-only Linux | **MERGED** |
+| 3 | [#6](https://github.com/pmdroid/barkvisor/pull/6) | `pmdroid/bv-capabilities-ui` | `GET /api/system/capabilities` + Vue gating | **MERGED** |
+| 4 | [#9](https://github.com/pmdroid/barkvisor/pull/9) | `pmdroid/linux-build-fixes` | Linux compile (Crypto, sockets, process watch) | **MERGED** |
+| 5 | [#10](https://github.com/pmdroid/barkvisor/pull/10) | `pmdroid/linux-docker-docs` | `docs/getting-started-linux.md`, Dockerfile | **MERGED** |
+| 6 | [#11](https://github.com/pmdroid/barkvisor/pull/11) | `pmdroid/linux-systemd` | `Resources/barkvisor.service`, `scripts/install-linux.sh` | **MERGED** |
+| 7 | [#12](https://github.com/pmdroid/barkvisor/pull/12) | `pmdroid/linux-product` | Firmware AAVMF/OVMF, env vars, `linux-smoke.sh` / `linux-dev.sh` | **MERGED** |
+| 8 | [#13](https://github.com/pmdroid/barkvisor/pull/13) | `pmdroid/simplify-complexity` | Delete QEMUMonitor, skip bridge-sync on Linux, capabilities single source | **MERGED** |
 
-### Restack rule
+Merge tip on `main`: `Merge pull request #13` (and parents #12…#7 / #6).
 
-When a lower PR changes:
+### Workflow now (post-merge)
+
+Primary workflow is **branch from `main`**, small focused PRs (still fine as independent stacks if needed). Restacking the old #7–#13 chain is **not** the default.
 
 ```bash
 git fetch origin
-git checkout pmdroid/<branch>
-git rebase origin/<parent-branch>
-git push --force-with-lease
-# Keep PR base = parent branch name (not always main)
+git checkout main
+git pull origin main
+git checkout -b pmdroid/<feature>
+# … implement, push, open PR against main …
 ```
 
 Use HTTPS remote if SSH agent fails:
@@ -45,38 +47,34 @@ gh auth setup-git
 
 Under `/Users/pascal/orca/workspaces/barkvisor/`:
 
-- `bv-platform-foundation-2`, `bv-qemu-privilege`, `bv-capabilities-ui`
-- `linux-build-fixes`, `linux-docker-docs`, `linux-systemd`, `linux-product`
-- `simplify-complexity` ← **current tip**
+- `docs-post-merge` — this handoff / README update  
+- Follow-up theme worktrees (branch from main):  
+  `linux-guest-boot`, `createvm-step-split`, `privilege-monitor-cleanup`,  
+  `system-controller-split`, `platform-path-tables`  
+- Historical stack worktrees may still exist; treat them as archived once merged
 
-Main clone: `/Volumes/Data/workspace-mac/barkvisor` (often still on `main` only).
+Main clone: `/Volumes/Data/workspace-mac/barkvisor` (often on `main`).
 
 ---
 
-## 2. CI status (as of last full poll)
+## 2. CI notes (merged stack)
 
-| PRs | Expected checks | Status |
-|-----|-----------------|--------|
-| **#7, #8, #6** | Lint, Build, Test | **All green** |
-| **#9–#12** | Lint, Build, Test, **Linux Build** | **All green** (after fixes below) |
-| **#13** | Same as #9–#12 | Lint green; Build/Linux may still be running after open |
-
-### Fixes that made Linux CI green
+Linux CI path that stayed green:
 
 1. **SwiftFormat** on `SetupMiddleware` public-route allowlist.  
-2. **Swift tarball URL** on x86_64 GitHub runners must be:
+2. **Swift tarball URL** on x86_64 GitHub runners:
 
    `https://download.swift.org/swift-6.2.3-release/ubuntu2404/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04.tar.gz`  
 
    (**not** `…-ubuntu24.04-x86_64.tar.gz` — that 404s).
 
-3. CI runs on **all PR bases** (not only `main`) so stacked PRs get checks.  
-4. Linux job installs official Swift tarball (not `swift-actions/setup-swift` for 6.2.3).
+3. Linux job installs official Swift tarball (not `swift-actions/setup-swift` for 6.2.3).  
+4. CI runs on PR bases so stacked branches still get checks when used.
 
-Before merging, re-run:
+After opening a new PR:
 
 ```bash
-for n in 7 8 6 9 10 11 12 13; do echo "PR $n"; gh pr checks $n --repo pmdroid/barkvisor; done
+gh pr checks <n> --repo pmdroid/barkvisor
 ```
 
 ---
@@ -101,7 +99,8 @@ for n in 7 8 6 9 10 11 12 13; do echo "PR $n"; gh pr checks $n --repo pmdroid/ba
   ```
 
 - Distro firmware present: `/usr/share/AAVMF/AAVMF_CODE.fd` (`qemu-efi-aarch64`)  
-- Prefer **Ubuntu 24.04** for Swift toolchains; **26.04** breaks on `libxml2.so.16` vs Swift’s `libxml2.so.2`
+- Prefer **Ubuntu 24.04** for Swift toolchains; **26.04** breaks on `libxml2.so.16` vs Swift’s `libxml2.so.2`  
+- `./scripts/linux-smoke.sh` — build + brief start + health + capabilities
 
 ### Architecture decisions already made
 
@@ -111,7 +110,7 @@ for n in 7 8 6 9 10 11 12 13; do echo "PR $n"; gh pr checks $n --repo pmdroid/ba
 - **PlatformPaths** for data/socket dirs + env overrides  
 - Env: `BARKVISOR_PORT`, `BARKVISOR_DATA_DIR`, `BARKVISOR_FRONTEND_DIR`
 
-### Simplification already in #13
+### Simplification already on main (from #13)
 
 - Deleted unused `QEMUMonitor.swift`  
 - `bridge-sync` periodic task only if `PrivilegeService.isBridgedNetworkingSupported`  
@@ -124,8 +123,8 @@ for n in 7 8 6 9 10 11 12 13; do echo "PR $n"; gh pr checks $n --repo pmdroid/ba
 
 | Milestone | Meaning | Status |
 |-----------|---------|--------|
-| **M1 Alpha Linux** | Build + run + capabilities + setup possible | ~Done once stack merges |
-| **M2 Usable Linux** | M1 + SPA UI + **one NAT guest boot** + console | **Next** |
+| **M1 Alpha Linux** | Build + run + capabilities + setup possible | **Done** (stack #7–#13 on `main`) |
+| **M2 Usable Linux** | M1 + SPA UI + **one NAT guest boot** + console | **Next** — guest boot PRs |
 | **M3 Installable** | M2 + systemd/tarball/docker proven | Scripts exist; not E2E-proven |
 | **M4 Multi-arch** | x86_64 host/guest | Partial code paths only |
 | **M5 Network parity** | Linux bridge model | Explicitly later |
@@ -134,47 +133,49 @@ for n in 7 8 6 9 10 11 12 13; do echo "PR $n"; gh pr checks $n --repo pmdroid/ba
 
 ## 5. Next steps for the continuing agent (priority order)
 
-### P0 — Before more features
+### P0 — Highest product value (M2)
 
-1. **Confirm #13 CI fully green** (Build, Test, Linux Build).  
-2. **Optionally merge stack** #7→#13 bottom-up (user decision). If merging, restack is no longer needed.
-
-### P0 — Highest product value next (M2)
-
-3. **First NAT guest boot on Orb** (new PR on tip, e.g. `#14`):
+1. **First NAT guest boot on Orb** (new PR from `main`, e.g. `pmdroid/linux-guest-boot`):
    - Ensure `qemu-system-aarch64` + AAVMF resolve via `QEMUBuilder`  
    - Download a known-good arm64 cloud image (or document exact image URL)  
    - API or UI: create VM `linux-arm64`, NAT network, start  
    - Verify process running, serial/VNC sockets, optional guest SSH via port-forward  
    - Prefer a small script `scripts/linux-guest-smoke.sh` using curl + JWT after setup  
+   - Keep `./scripts/linux-smoke.sh` green (health/capabilities only today)
 
-4. **Frontend SPA on Linux**:
+2. **Frontend SPA on Linux**:
    - `cd frontend && bun install && bun run build`  
    - Serve via existing `findFrontendDist()` / `BARKVISOR_FRONTEND_DIR`  
-   - Document in `docs/getting-started-linux.md`  
+   - Document in `docs/getting-started-linux.md` if gaps remain  
 
-5. **Setup wizard E2E** on Linux (create admin, login, create VM).
+3. **Setup wizard E2E** on Linux (create admin, login, create VM).
 
 ### P1 — Install / ops proof
 
-6. Dry-run `scripts/install-linux.sh` + systemd on Orb (may need root).  
-7. Make Dockerfile actually build (multi-stage with correct Swift image).  
-8. Keep `scripts/linux-smoke.sh` green; extend it after guest boot exists.
+4. Dry-run `scripts/install-linux.sh` + systemd on Orb (may need root).  
+5. Make Dockerfile actually build (multi-stage with correct Swift image).  
+6. Extend smoke after guest boot exists (do not claim guest-smoke files until they land).
 
-### P1 — Further simplification (from complexity audit)
+### P1 — Follow-up PR themes (open / planned on main)
 
-Do these after or in parallel with M2, as small stacked PRs:
+Independent cleanups; prefer small PRs from `main`. Local worktrees may already exist under `/Users/pascal/orca/workspaces/barkvisor/`.
 
-| Priority | Task | Why |
-|----------|------|-----|
-| High | **CreateVMDrawer step split** | Largest remaining frontend complexity |
-| High | **Controllers never touch HelperXPCClient** (already mostly PrivilegeService—audit any leftovers) | Single privilege boundary |
-| Medium | **SystemController split** (host / bridge / about) | Kitchen sink |
-| Medium | **BundleResolver path-list consolidation** | Fewer duplicate search paths |
-| Medium | QEMUBuilder accel/binary **only** from PlatformCapabilities tables | Fewer literals |
-| Low | Split `scripts/build-release.sh` | macOS ops only |
-| **Defer** | VMManager DI / actor graph rewrite | High risk, low urgency |
-| **Defer** | Linux bridge / USB / in-app updates | Not MVP |
+| Theme | Suggested branch / focus | Why |
+|-------|--------------------------|-----|
+| **Guest smoke / boot** | `pmdroid/linux-guest-boot` | Unlocks M2 — one NAT guest + optional guest-smoke script |
+| **CreateVM step split** | `pmdroid/createvm-step-split` | Largest remaining frontend complexity |
+| **Privilege / monitor cleanup** | `pmdroid/privilege-monitor-cleanup` | Controllers never touch `HelperXPCClient`; audit leftover HMP `-monitor` if unused |
+| **SystemController split** | `pmdroid/system-controller-split` | Host / bridge / about kitchen sink |
+| **Platform path tables** | `pmdroid/platform-path-tables` | QEMUBuilder accel/binary + BundleResolver paths only from PlatformCapabilities / consolidated tables |
+
+Other still useful:
+
+| Priority | Task |
+|----------|------|
+| Medium | BundleResolver path-list consolidation |
+| Low | Split `scripts/build-release.sh` (macOS ops only) |
+| **Defer** | VMManager DI / actor graph rewrite |
+| **Defer** | Linux bridge / USB / in-app updates |
 
 ### P2 — Explicit non-goals for now
 
@@ -182,7 +183,8 @@ Do these after or in parallel with M2, as small stacked PRs:
 - USB passthrough on Linux  
 - In-app Linux updates  
 - Building QEMU from source for Linux releases  
-- Weakening macOS signing/notarization for “simplicity”
+- Weakening macOS signing/notarization for “simplicity”  
+- Claiming full Linux feature parity with macOS  
 
 ---
 
@@ -198,8 +200,8 @@ Full analysis was done by a plan agent. Core message:
 Quick wins still available:
 
 - Audit/remove unused HMP `-monitor` socket if nothing uses it  
-- README multi-platform blurb on main after merge  
 - Any remaining direct `HelperXPCClient` call sites outside PrivilegeService  
+- README multi-platform blurb (done on post-merge docs PR)  
 
 ---
 
@@ -218,7 +220,7 @@ orb list
 ```bash
 orb -m barkvisor-u24
 export PATH="$HOME/swift/usr/bin:$PATH"
-cd /Users/pascal/orca/workspaces/barkvisor/simplify-complexity   # or stack tip
+cd /Users/pascal/orca/workspaces/barkvisor/<worktree>   # or main clone
 swift build --product BarkVisorApp
 export BARKVISOR_PORT=7777
 export BARKVISOR_DATA_DIR=/tmp/barkvisor-dev
@@ -227,11 +229,14 @@ export BARKVISOR_DATA_DIR=/tmp/barkvisor-dev
 # curl http://127.0.0.1:7777/api/system/capabilities
 ```
 
-### Smoke script (from #12+)
+### Smoke script (on main)
 
 ```bash
 ./scripts/linux-smoke.sh
 ```
+
+Builds BarkVisorApp, starts briefly, checks `/api/health` and `/api/system/capabilities`.  
+Guest boot smoke is a separate follow-up (not on main until a guest-boot PR lands).
 
 ### Free port 7777 if bind fails
 
@@ -265,22 +270,22 @@ kill -9 <pid>
 ## 9. Suggested first actions for the next agent session
 
 ```text
-1. gh pr checks for #7–#13; fix any red on #13 first
-2. Confirm tip branch: pmdroid/simplify-complexity
-3. Implement PR #14: first NAT guest boot + optional linux-guest-smoke.sh
-4. Implement PR #15: frontend build path verified on Orb
-5. Update this handoff when milestones move
+1. Start from origin/main (stack #7–#13 is merged)
+2. Implement guest boot / NAT smoke (M2) — highest product value
+3. Or pick a follow-up theme PR: createvm split, privilege/monitor,
+   system split, platform path tables
+4. Update this handoff when milestones move
 ```
 
 ---
 
 ## 10. User preferences (from this project)
 
-- Work in **worktrees**, **stacked PRs**, easy rebase  
+- Work in **worktrees**, small PRs (stacked only when dependent)  
 - Prefer **Grok/parallel agents** for independent chunks  
 - **Linux NAT MVP first**, not full macOS parity  
 - Use **Orb** for real Linux verification  
-- Keep **draft PRs** for review before merge  
+- Keep **draft PRs** for review before merge when useful  
 - Avoid expanding scope into bridge/USB/updates until M2 is done  
 
 ---

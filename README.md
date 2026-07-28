@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** macOS (primary) · [Linux experimental](docs/getting-started-linux.md) (NAT-only MVP)
+**Platforms:** production focus is **macOS**; **Linux** is experimental and **NAT-only** (not full feature parity). See [Linux getting started](docs/getting-started-linux.md).
 
 ## Features
 
@@ -17,7 +17,7 @@ A headless daemon for managing QEMU virtual machines through a web UI.
 - Cloud-init provisioning with user data templates
 - Deploy VMs from templates, synced from remote catalogs
 - qcow2/raw disk management with hot-plug and online resize
-- NAT and bridged networking with port forwarding
+- NAT networking with port forwarding (bridged networking on **macOS**; Linux is NAT-only for now)
 - OS image library with HTTP download and auto-decompression
 - Live CPU, memory, and disk I/O metrics
 - Serial console (xterm.js) and VNC display (NoVNC) in the browser
@@ -27,7 +27,7 @@ A headless daemon for managing QEMU virtual machines through a web UI.
 
 ## Prerequisites
 
-### macOS (primary)
+### macOS (primary / production)
 
 - macOS 26+ (Apple Silicon only for HVF guests today)
 - Xcode with Swift 6 toolchain
@@ -42,9 +42,11 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
   autoconf automake libtool json-glib swiftlint swiftformat
 ```
 
-### Linux (experimental)
+### Linux (experimental, NAT-only)
 
-See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for Ubuntu/OrbStack setup, NAT-only limitations, Docker, and systemd install.
+Linux support targets a headless NAT-only MVP (no bridged networking, USB passthrough, or in-app updates yet). It is **not** full macOS parity.
+
+See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for Ubuntu/OrbStack setup, limitations, Docker, and systemd install. Smoke: `./scripts/linux-smoke.sh`.
 
 ```bash
 # After Swift + QEMU packages are installed:
@@ -103,6 +105,8 @@ bun run test:e2e    # Headless Cypress
 
 ## Installation
 
+### macOS
+
 Download the latest `.pkg` from the releases page and install:
 
 ```bash
@@ -119,6 +123,10 @@ To uninstall:
 sudo ./scripts/uninstall.sh          # keep data
 sudo ./scripts/uninstall.sh --purge  # remove everything
 ```
+
+### Linux (experimental)
+
+No production `.pkg` equivalent yet. Use source build, optional `scripts/install-linux.sh` + systemd, or Docker — see [docs/getting-started-linux.md](docs/getting-started-linux.md).
 
 ## Release Build
 
@@ -147,7 +155,8 @@ The output is `build/stage/` (install layout), `build/BarkVisor-<version>-standa
 
 ## Configuration
 
-Installed daemon builds store data in `/var/lib/barkvisor/`. Development builds use `~/Library/Application Support/BarkVisor/`.
+**macOS:** installed daemon data is under `/var/lib/barkvisor/`; development builds use `~/Library/Application Support/BarkVisor/`.  
+**Linux:** development default is `~/.local/share/barkvisor`; installed layout uses `/var/lib/barkvisor` (see Linux guide). Override with `BARKVISOR_DATA_DIR` / `BARKVISOR_PORT` / `BARKVISOR_FRONTEND_DIR`.
 
 | Path | Contents |
 |------|----------|
@@ -164,7 +173,8 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 ### Getting Started
 
-- [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory
+- [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory (macOS)
+- [Linux (experimental)](docs/getting-started-linux.md) — Ubuntu/Orb NAT-only MVP, smoke script, systemd/Docker
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, helper daemon
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
