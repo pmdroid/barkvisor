@@ -3,7 +3,6 @@ import GRDB
 
 struct VMSockets {
     let vnc: URL
-    let monitor: URL
     let serial: URL
     let qmp: URL
     let event: URL
@@ -11,20 +10,19 @@ struct VMSockets {
     init(vmID: String) {
         let shortID = String(vmID.prefix(12))
         vnc = Config.socketDir.appendingPathComponent("\(shortID)-vnc.sock")
-        monitor = Config.socketDir.appendingPathComponent("\(shortID)-mon.sock")
         serial = Config.socketDir.appendingPathComponent("\(shortID)-ser.sock")
         qmp = Config.socketDir.appendingPathComponent("\(shortID)-qmp.sock")
         event = Config.socketDir.appendingPathComponent("\(shortID)-evt.sock")
     }
 
     func removeStale() {
-        for url in [vnc, monitor, serial, qmp] {
+        for url in [vnc, serial, qmp] {
             try? FileManager.default.removeItem(at: url)
         }
     }
 
     func setOwnerOnlyPermissions() {
-        for sockPath in [vnc.path, qmp.path, serial.path, monitor.path] {
+        for sockPath in [vnc.path, qmp.path, serial.path] {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o600], ofItemAtPath: sockPath,
             )

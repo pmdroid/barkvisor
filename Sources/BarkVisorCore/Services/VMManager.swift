@@ -6,7 +6,6 @@ public struct RunningVM: @unchecked Sendable {
     public let pid: Int32
     public let serialSocketPath: String
     public let vncSocketPath: String
-    public let monitorSocketPath: String
     public let qmpSocketPath: String
     public let qmpEventSocketPath: String // dedicated socket for persistent event listening
     public let swtpmProcess: Process?
@@ -17,7 +16,6 @@ public struct RunningVM: @unchecked Sendable {
         pid: Int32,
         serialSocketPath: String,
         vncSocketPath: String,
-        monitorSocketPath: String,
         qmpSocketPath: String,
         qmpEventSocketPath: String,
         swtpmProcess: Process?,
@@ -27,7 +25,6 @@ public struct RunningVM: @unchecked Sendable {
         self.pid = pid
         self.serialSocketPath = serialSocketPath
         self.vncSocketPath = vncSocketPath
-        self.monitorSocketPath = monitorSocketPath
         self.qmpSocketPath = qmpSocketPath
         self.qmpEventSocketPath = qmpEventSocketPath
         self.swtpmProcess = swtpmProcess
@@ -145,7 +142,7 @@ public actor VMManager: VMStateQuerying {
             let launch = try QEMUBuilder.launchConfig(ctx: QEMUBuildContext(
                 vm: loaded.vm, disk: loaded.disk, isos: loaded.isos, network: loaded.network,
                 additionalDisks: loaded.additionalDisks,
-                vncSock: sockets.vnc, monitorSock: sockets.monitor,
+                vncSock: sockets.vnc,
                 serialSock: sockets.serial, qmpSock: sockets.qmp,
                 bridgeSocketPath: bridgeSocketPath,
             ))
@@ -187,7 +184,6 @@ public actor VMManager: VMStateQuerying {
                 pid: pid,
                 serialSocketPath: sockets.serial.path,
                 vncSocketPath: sockets.vnc.path,
-                monitorSocketPath: sockets.monitor.path,
                 qmpSocketPath: sockets.qmp.path,
                 qmpEventSocketPath: sockets.event.path,
                 swtpmProcess: swtpmProc,
