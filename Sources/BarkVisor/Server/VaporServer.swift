@@ -354,6 +354,13 @@ public final class VaporServer: @unchecked Sendable {
 
     /// Find the frontend dist directory by searching known paths
     private static func findFrontendDist() -> String? {
+        // 0. Explicit override for containers / custom layouts
+        if let override = ProcessInfo.processInfo.environment["BARKVISOR_FRONTEND_DIR"],
+           !override.isEmpty,
+           FileManager.default.fileExists(atPath: override + "/index.html") {
+            return override
+        }
+
         // 1. Installed location
         if FileManager.default.fileExists(atPath: Config.frontendDir + "/index.html") {
             return Config.frontendDir

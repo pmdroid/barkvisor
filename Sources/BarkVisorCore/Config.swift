@@ -45,7 +45,14 @@ public enum Config {
     /// INJECT_VERSION (replaced at build time via sed)
     public static let version = "0.0.0-dev"
 
-    public static let port = 7_777
+    /// HTTP listen port. Override with `BARKVISOR_PORT` (1–65535).
+    public static let port: Int = {
+        if let raw = ProcessInfo.processInfo.environment["BARKVISOR_PORT"],
+           let value = Int(raw), value >= 1, value <= 65_535 {
+            return value
+        }
+        return 7_777
+    }()
 
     /// Install prefix derived from binary location.
     /// `/usr/local/bin/barkvisor` → prefix = `/usr/local`

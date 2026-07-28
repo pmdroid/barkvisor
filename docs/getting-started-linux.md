@@ -13,7 +13,16 @@
 | Arch | `aarch64` or `x86_64` (matches guest types you enable) |
 | Swift | 6.2+ toolchain for **ubuntu2404** (see [swift.org](https://www.swift.org/install/linux/)) |
 | QEMU | Distro package, e.g. `qemu-system-arm` / `qemu-system-x86` + `qemu-utils` |
+| Firmware | **arm64:** `qemu-efi-aarch64` (AAVMF). **x86_64:** `ovmf` |
 | KVM | `/dev/kvm` readable by the barkvisor user (add to `kvm` group) |
+
+### Environment overrides
+
+| Variable | Effect |
+|----------|--------|
+| `BARKVISOR_PORT` | Listen port (default `7777`) |
+| `BARKVISOR_DATA_DIR` | Data directory (default `~/.local/share/barkvisor` in dev) |
+| `BARKVISOR_FRONTEND_DIR` | Path to SPA `dist/` with `index.html` |
 
 ### OrbStack smoke host
 
@@ -29,23 +38,31 @@ orb -m barkvisor-u24
 export PATH="$HOME/swift/usr/bin:$PATH"
 swift --version
 
-# 2. System packages (Ubuntu/Debian names vary by release)
+# 2. System packages (or: ./scripts/linux-dev.sh)
 sudo apt-get update
 sudo apt-get install -y build-essential pkg-config git \
   libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
   zlib1g-dev libzstd-dev libedit-dev uuid-dev \
-  qemu-system-arm qemu-utils   # or qemu-system-x86 on amd64
+  qemu-system-arm qemu-utils qemu-efi-aarch64
 
-# 3. Build
+# 3. Build + automated smoke
 git clone https://github.com/pmdroid/barkvisor.git
 cd barkvisor
-swift build
+./scripts/linux-smoke.sh
 
-# 4. Run (dev data dir: ~/.local/share/barkvisor)
+# 4. Run for real (dev data dir: ~/.local/share/barkvisor)
 swift run BarkVisorApp
 ```
 
 Open `http://localhost:7777` and complete the setup wizard.
+
+### Frontend (optional for full UI)
+
+```bash
+cd frontend && bun install && bun run build
+# served from frontend/dist or Sources/BarkVisor/Resources/frontend/dist
+# or: BARKVISOR_FRONTEND_DIR=/path/to/dist swift run BarkVisorApp
+```
 
 ### Optional: Docker
 

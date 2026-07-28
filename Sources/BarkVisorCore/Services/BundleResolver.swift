@@ -83,12 +83,16 @@ public enum BundleResolver {
         if FileManager.default.fileExists(atPath: installed) {
             return URL(fileURLWithPath: installed)
         }
-        // 2. Homebrew / system / Linux FHS
+        // 2. Homebrew / system / Linux FHS (incl. distro firmware dirs)
         let candidates = [
             "/opt/homebrew/share/qemu/\(name)",
             "/usr/local/share/qemu/\(name)",
             "/usr/share/qemu/\(name)",
             "/usr/lib/qemu/\(name)",
+            "/usr/share/AAVMF/\(name)",
+            "/usr/share/OVMF/\(name)",
+            "/usr/share/edk2/ovmf/\(name)",
+            "/usr/share/edk2/aarch64/\(name)",
         ]
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)
