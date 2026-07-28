@@ -15,7 +15,7 @@ $SUDO apt-get install -y -qq \
   curl ca-certificates binutils git build-essential pkg-config \
   libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
   zlib1g-dev libzstd-dev libedit-dev uuid-dev \
-  qemu-system-arm qemu-utils qemu-efi-aarch64 \
+  qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage \
   || true
 
 # Optional x86 guests on amd64 hosts

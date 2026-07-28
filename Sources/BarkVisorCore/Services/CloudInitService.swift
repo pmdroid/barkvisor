@@ -123,21 +123,14 @@ public enum CloudInitService {
         let ud = "#cloud-config\n" + yamlBody
         try ud.write(to: dir.appendingPathComponent("user-data"), atomically: true, encoding: .utf8)
 
-        // Generate ISO using mkisofs (same as Ubuntu's cloud-localds)
+        // Generate ISO using mkisofs / genisoimage (same as Ubuntu's cloud-localds)
         let isoURL = dir.appendingPathComponent("cidata.iso")
         try? FileManager.default.removeItem(at: isoURL)
 
-        let tool: URL
-        if let mkisofs = try? BundleResolver.helper("mkisofs") {
-            tool = mkisofs
-        } else {
-            throw BarkVisorError.cloudInitFailed(
-                "mkisofs not found — it should be bundled inside the app",
-            )
-        }
-
+        let tool = try resolveCloudInitISOTool()
         let process = Process()
         process.executableURL = tool
+        // genisoimage accepts the same option set as classic mkisofs for this use.
         process.arguments = [
             "-output", isoURL.path,
             "-volid", "cidata",
@@ -154,9 +147,38 @@ public enum CloudInitService {
         guard process.terminationStatus == 0 else {
             let stderr =
                 String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw BarkVisorError.cloudInitFailed("mkisofs failed: \(stderr)")
+            throw BarkVisorError.cloudInitFailed("cloud-init ISO tool failed: \(stderr)")
         }
 
         return isoURL
+    }
+
+    /// Resolve mkisofs-compatible tooling: bundled helper first, then distro PATH.
+    /// Linux packages: `genisoimage` (Debian/Ubuntu) or `cdrtools` (mkisofs).
+    private static func resolveCloudInitISOTool() throws -> URL {
+        if let bundled = try? BundleResolver.helper("mkisofs") {
+            return bundled
+        }
+        let names = ["mkisofs", "genisoimage"]
+        let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")
+            .split(separator: ":")
+            .map(String.init)
+        let fixed = ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"]
+        for name in names {
+            for dir in fixed + pathDirs {
+                let candidate = URL(fileURLWithPath: dir).appendingPathComponent(name)
+                if FileManager.default.isExecutableFile(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+        }
+        #if os(macOS)
+            let hint = "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
+        #else
+            let hint = "Install via: apt install genisoimage"
+        #endif
+        throw BarkVisorError.cloudInitFailed(
+            "mkisofs/genisoimage not found. \(hint)",
+        )
     }
 }
