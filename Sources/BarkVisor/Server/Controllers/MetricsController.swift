@@ -30,41 +30,6 @@ struct MetricsController: RouteCollection {
 
     @Sendable
     func getSystemStats(req: Vapor.Request) async throws -> SystemStatsResponse {
-        // Host memory from sysctl
-        var memSize: UInt64 = 0
-        var size = MemoryLayout<UInt64>.size
-        sysctlbyname("hw.memsize", &memSize, &size, nil, 0)
-        let hostTotalMB = Int(memSize / (1_024 * 1_024))
-
-        // Host memory used from vm_statistics64
-        let hostUsedMB: Int = {
-            var stats = vm_statistics64()
-            var count = mach_msg_type_number_t(
-                MemoryLayout<vm_statistics64>.size / MemoryLayout<natural_t>.size,
-            )
-            let hostPort = mach_host_self()
-            defer { mach_port_deallocate(mach_task_self_, hostPort) }
-            let result = withUnsafeMutablePointer(to: &stats) {
-                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                    host_statistics64(hostPort, HOST_VM_INFO64, $0, &count)
-                }
-            }
-            guard result == KERN_SUCCESS else { return 0 }
-            let pageSize = UInt64(sysconf(_SC_PAGESIZE))
-            let used = (UInt64(stats.active_count) + UInt64(stats.wire_count)) * pageSize
-            return Int(used / (1_024 * 1_024))
-        }()
-
-        // Host CPU from host_processor_info (percentage of all cores)
-        // Simplified: use load average as a proxy
-        var loadAvg = [Double](repeating: 0, count: 3)
-        let loadCount = getloadavg(&loadAvg, 3)
-        var ncpu: Int32 = 0
-        size = MemoryLayout<Int32>.size
-        sysctlbyname("hw.ncpu", &ncpu, &size, nil, 0)
-        let load1m = loadCount >= 1 ? loadAvg[0] : 0.0
-        let hostCpuPercent = min(load1m / Double(max(ncpu, 1)) * 100.0, 100.0)
-
         // VM aggregate from metrics collector
         let samples = await metricsCollector.latestSamples()
         var vmCpu = 0.0
@@ -78,9 +43,9 @@ struct MetricsController: RouteCollection {
         let runningVMs = await vmState.allRunningVMs().count
 
         return SystemStatsResponse(
-            hostCpuPercent: hostCpuPercent,
-            hostMemoryTotalMB: hostTotalMB,
-            hostMemoryUsedMB: hostUsedMB,
+            hostCpuPercent: PlatformHost.cpuLoadPercent,
+            hostMemoryTotalMB: PlatformHost.physicalMemoryMB,
+            hostMemoryUsedMB: PlatformHost.memoryUsedMB,
             runningVMs: runningVMs,
             totalVMs: totalVMs,
             vmCpuPercent: vmCpu,
