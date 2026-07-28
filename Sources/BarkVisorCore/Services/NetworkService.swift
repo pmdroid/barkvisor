@@ -47,8 +47,15 @@ public enum NetworkService {
         guard ["nat", "bridged"].contains(params.mode) else {
             throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
         }
-        if params.mode == "bridged", (params.bridge ?? "").isEmpty {
-            throw BarkVisorError.badRequest("bridge interface required for bridged mode")
+        if params.mode == "bridged" {
+            guard PrivilegeService.isBridgedNetworkingSupported else {
+                throw BarkVisorError.badRequest(
+                    "Bridged networking is not supported on Linux yet. Use NAT mode.",
+                )
+            }
+            if (params.bridge ?? "").isEmpty {
+                throw BarkVisorError.badRequest("bridge interface required for bridged mode")
+            }
         }
 
         if let bridge = params.bridge, !bridge.isEmpty { try validateBridgeName(bridge) }
@@ -92,6 +99,11 @@ public enum NetworkService {
         if let mode = params.mode {
             guard ["nat", "bridged"].contains(mode) else {
                 throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
+            }
+            if mode == "bridged", !PrivilegeService.isBridgedNetworkingSupported {
+                throw BarkVisorError.badRequest(
+                    "Bridged networking is not supported on Linux yet. Use NAT mode.",
+                )
             }
             network.mode = mode
         }

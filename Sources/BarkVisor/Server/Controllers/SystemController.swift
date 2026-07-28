@@ -339,8 +339,19 @@ struct SystemController: RouteCollection {
         }
     }
 
+    private static func requireBridgedNetworking() throws {
+        guard PrivilegeService.isBridgedNetworkingSupported else {
+            throw Abort(
+                .notImplemented,
+                reason: "Bridged networking is not supported on Linux yet. Use NAT networking.",
+            )
+        }
+    }
+
     @Sendable
     func installBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        try Self.requireBridgedNetworking()
+
         let body = try req.content.decode(BridgeRequest.self)
         let iface = body.interface
 
@@ -360,9 +371,9 @@ struct SystemController: RouteCollection {
             )
         }
 
-        // Delegate to privileged helper via XPC
+        // Delegate to privilege service (XPC helper on macOS)
         do {
-            try await HelperXPCClient.shared.installBridge(interface: iface)
+            try await PrivilegeService.shared.installBridge(interface: iface)
             // Immediate sync so DB reflects the change
             let db = req.db
             Task { await BridgeSyncService.syncOnce(db: db) }
@@ -392,6 +403,8 @@ struct SystemController: RouteCollection {
             }
 
             return BridgeActionResponse(success: true, message: "Bridge installed for \(iface)")
+        } catch let error as BarkVisorError {
+            throw error
         } catch {
             Log.server.error("Failed to install bridge for \(iface): \(error)")
             throw Abort(
@@ -402,6 +415,8 @@ struct SystemController: RouteCollection {
 
     @Sendable
     func startBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        try Self.requireBridgedNetworking()
+
         guard let iface = req.parameters.get("interface") else {
             throw Abort(.badRequest, reason: "Missing interface parameter")
         }
@@ -410,9 +425,11 @@ struct SystemController: RouteCollection {
         }
 
         do {
-            try await HelperXPCClient.shared.startBridge(interface: iface)
+            try await PrivilegeService.shared.startBridge(interface: iface)
             await BridgeSyncService.syncOnce(db: req.db)
             return BridgeActionResponse(success: true, message: "Bridge started for \(iface)")
+        } catch let error as BarkVisorError {
+            throw error
         } catch {
             Log.server.error("Failed to start bridge for \(iface): \(error)")
             throw Abort(
@@ -423,6 +440,8 @@ struct SystemController: RouteCollection {
 
     @Sendable
     func stopBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        try Self.requireBridgedNetworking()
+
         guard let iface = req.parameters.get("interface") else {
             throw Abort(.badRequest, reason: "Missing interface parameter")
         }
@@ -431,9 +450,11 @@ struct SystemController: RouteCollection {
         }
 
         do {
-            try await HelperXPCClient.shared.stopBridge(interface: iface)
+            try await PrivilegeService.shared.stopBridge(interface: iface)
             await BridgeSyncService.syncOnce(db: req.db)
             return BridgeActionResponse(success: true, message: "Bridge stopped for \(iface)")
+        } catch let error as BarkVisorError {
+            throw error
         } catch {
             Log.server.error("Failed to stop bridge for \(iface): \(error)")
             throw Abort(
@@ -444,6 +465,8 @@ struct SystemController: RouteCollection {
 
     @Sendable
     func removeBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        try Self.requireBridgedNetworking()
+
         guard let iface = req.parameters.get("interface") else {
             throw Abort(.badRequest, reason: "Missing interface parameter")
         }
@@ -452,9 +475,11 @@ struct SystemController: RouteCollection {
         }
 
         do {
-            try await HelperXPCClient.shared.removeBridge(interface: iface)
+            try await PrivilegeService.shared.removeBridge(interface: iface)
             await BridgeSyncService.syncOnce(db: req.db)
             return BridgeActionResponse(success: true, message: "Bridge removed for \(iface)")
+        } catch let error as BarkVisorError {
+            throw error
         } catch {
             Log.server.error("Failed to remove bridge for \(iface): \(error)")
             throw Abort(

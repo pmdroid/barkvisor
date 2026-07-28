@@ -109,8 +109,11 @@ extension VMLifecycleService {
     ) async throws {
         try validateVMName(params.name)
 
-        guard ["linux-arm64", "windows-arm64"].contains(params.vmType) else {
-            throw BarkVisorError.badRequest("vmType must be 'linux-arm64' or 'windows-arm64'")
+        guard ["linux-arm64", "windows-arm64", "linux-amd64", "linux-x86_64"].contains(params.vmType)
+        else {
+            throw BarkVisorError.badRequest(
+                "vmType must be 'linux-arm64', 'windows-arm64', 'linux-amd64', or 'linux-x86_64'",
+            )
         }
         guard params.cpuCount >= 1, params.cpuCount <= 256 else {
             throw BarkVisorError.badRequest("cpuCount must be between 1 and 256")
