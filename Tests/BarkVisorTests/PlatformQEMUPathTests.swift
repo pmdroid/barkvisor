@@ -25,8 +25,8 @@ struct PlatformQEMUPathTests {
         #expect(candidates.contains { $0.contains("AAVMF_CODE") })
     }
 
-    @Test func `edk2X86_64Candidates is non-empty and includes OVMF_CODE`() {
-        let candidates = PlatformQEMU.edk2X86_64Candidates
+    @Test func `edk2X86Candidates is non-empty and includes OVMF_CODE`() {
+        let candidates = PlatformQEMU.edk2X86Candidates
         #expect(!candidates.isEmpty)
         #expect(candidates.contains("/usr/share/OVMF/OVMF_CODE.fd"))
         #expect(candidates.contains { $0.contains("OVMF") })
@@ -43,7 +43,7 @@ struct PlatformQEMUPathTests {
     @Test func `install hints are non-empty`() {
         #expect(!PlatformQEMU.qemuInstallHint.isEmpty)
         #expect(!PlatformQEMU.firmwareInstallHintARM64.isEmpty)
-        #expect(!PlatformQEMU.firmwareInstallHintX86_64.isEmpty)
+        #expect(!PlatformQEMU.firmwareInstallHintX86.isEmpty)
         #expect(!PlatformQEMU.aavmfSecureBootInstallHint.isEmpty)
         #expect(!PlatformQEMU.swtpmInstallHint.isEmpty)
     }
@@ -52,12 +52,12 @@ struct PlatformQEMUPathTests {
         #if os(macOS)
             #expect(PlatformQEMU.qemuInstallHint.contains("brew"))
             #expect(PlatformQEMU.firmwareInstallHintARM64.contains("brew"))
-            #expect(PlatformQEMU.firmwareInstallHintX86_64.contains("brew"))
+            #expect(PlatformQEMU.firmwareInstallHintX86.contains("brew"))
             #expect(PlatformQEMU.swtpmInstallHint.contains("brew"))
         #else
             #expect(PlatformQEMU.qemuInstallHint.contains("qemu-system"))
             #expect(PlatformQEMU.firmwareInstallHintARM64.contains("qemu-efi-aarch64"))
-            #expect(PlatformQEMU.firmwareInstallHintX86_64.contains("ovmf"))
+            #expect(PlatformQEMU.firmwareInstallHintX86.contains("ovmf"))
             #expect(PlatformQEMU.aavmfSecureBootInstallHint.contains("qemu-efi-aarch64"))
             #expect(PlatformQEMU.swtpmInstallHint.contains("swtpm"))
         #endif

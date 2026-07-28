@@ -22,7 +22,7 @@ public enum PlatformQEMU {
 
     /// System paths for x86_64 UEFI firmware (OVMF / EDK2).
     /// Checked after `BundleResolver.qemuResource` for edk2/OVMF names.
-    public static var edk2X86_64Candidates: [String] {
+    public static var edk2X86Candidates: [String] {
         [
             "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
@@ -64,7 +64,7 @@ public enum PlatformQEMU {
     }
 
     /// How to install x86_64 UEFI firmware on this platform.
-    public static var firmwareInstallHintX86_64: String {
+    public static var firmwareInstallHintX86: String {
         #if os(macOS)
             "brew install qemu"
         #else
