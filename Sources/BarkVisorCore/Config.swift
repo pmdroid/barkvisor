@@ -1,6 +1,5 @@
 import Foundation
 import os
-import Security
 
 /// Structured logging for BarkVisor subsystems — writes to the database via LogService
 public enum Log {
@@ -89,7 +88,7 @@ public enum Config {
 
     /// Whether running from installed daemon layout (vs. dev build)
     public static var isInstalled: Bool {
-        FileManager.default.isExecutableFile(atPath: "\(libexecDir)/qemu-system-aarch64")
+        PlatformPaths.isInstalled(libexecDir: libexecDir)
     }
 
     private static var secretFile: URL {
@@ -106,9 +105,7 @@ public enum Config {
             return existing
         }
         // First start: generate and persist
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        let secret = Data(bytes).base64EncodedString()
+        let secret = PlatformRandom.secureBase64(byteCount: 32)
         do {
             try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
         } catch {
@@ -120,8 +117,8 @@ public enum Config {
             )
         }
         do {
-            try Data(secret.utf8).write(to: secretFile, options: [.atomic, .completeFileProtection])
-            // Restrict to owner-only access (0600)
+            // Atomic write + 0600 on all platforms (completeFileProtection is macOS-only).
+            try Data(secret.utf8).write(to: secretFile, options: [.atomic])
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o600], ofItemAtPath: secretFile.path,
             )
@@ -141,30 +138,12 @@ public enum Config {
     public static let allowedURLSchemes: Set<String> = ["https", "http"]
 
     public static var dataDir: URL {
-        // Installed daemon: use /var/lib/barkvisor
-        if isInstalled {
-            return URL(fileURLWithPath: "/var/lib/barkvisor")
-        }
-        // Dev build: use ~/Library/Application Support/BarkVisor
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first
-        else {
-            Log.server.critical("Application Support directory not available — falling back to tmp")
-            return FileManager.default.temporaryDirectory.appendingPathComponent("BarkVisor")
-        }
-        return base.appendingPathComponent("BarkVisor")
+        PlatformPaths.dataDir(isInstalled: isInstalled)
     }
 
     /// Short path for unix sockets (must be < 104 bytes)
     public static var socketDir: URL {
-        let base: String = isInstalled ? "/var/run/barkvisor" : NSTemporaryDirectory() + "barkvisor"
-        let dir = URL(fileURLWithPath: base)
-        try? FileManager.default.createDirectory(
-            at: dir,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700],
-        )
-        return dir
+        PlatformPaths.socketDir(isInstalled: isInstalled)
     }
 
     public static var dbPath: URL {
@@ -174,16 +153,15 @@ public enum Config {
     // MARK: - Backup settings
 
     public static var backupEnabled: Bool {
-        UserDefaults.standard.object(forKey: "backupEnabled") as? Bool ?? true
+        PlatformPaths.settingsBool(forKey: "backupEnabled", dataDir: dataDir, default: true)
     }
 
     public static var backupRetentionDays: Int {
-        let val = UserDefaults.standard.integer(forKey: "backupRetentionDays")
-        return val > 0 ? val : 30
+        PlatformPaths.settingsInt(forKey: "backupRetentionDays", dataDir: dataDir, default: 30)
     }
 
     public static var backupDir: URL {
-        let custom = UserDefaults.standard.string(forKey: "backupDirectory") ?? ""
+        let custom = PlatformPaths.settingsString(forKey: "backupDirectory", dataDir: dataDir) ?? ""
         if !custom.isEmpty {
             let url = URL(fileURLWithPath: custom)
             // Fall back to default if custom directory is inaccessible
@@ -198,17 +176,15 @@ public enum Config {
     // MARK: - Rate limiting
 
     public static var rateLimitEnabled: Bool {
-        UserDefaults.standard.object(forKey: "rateLimitEnabled") as? Bool ?? true
+        PlatformPaths.settingsBool(forKey: "rateLimitEnabled", dataDir: dataDir, default: true)
     }
 
     public static var rateLimitMaxAttempts: Int {
-        let val = UserDefaults.standard.integer(forKey: "rateLimitMaxAttempts")
-        return val > 0 ? val : 10
+        PlatformPaths.settingsInt(forKey: "rateLimitMaxAttempts", dataDir: dataDir, default: 10)
     }
 
     public static var rateLimitWindow: Int {
-        let val = UserDefaults.standard.integer(forKey: "rateLimitWindow")
-        return val > 0 ? val : 300
+        PlatformPaths.settingsInt(forKey: "rateLimitWindow", dataDir: dataDir, default: 300)
     }
 
     // MARK: - Directories

@@ -93,8 +93,7 @@ public enum TemplateRenderer {
 
     public static func generateSHA512Crypt(password: String, rounds: Int = 5_000) -> String {
         // Generate 16-byte random salt
-        var saltBytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, saltBytes.count, &saltBytes)
+        let saltBytes = PlatformRandom.secureBytes(count: 16)
         let salt = saltBytes.map { itoa64[Int($0) % itoa64.count] }.map { Character(UnicodeScalar($0)) }
         let saltString = String(salt)
 
