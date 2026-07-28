@@ -4,7 +4,7 @@ import Testing
 struct PlatformQEMUPathTests {
     // MARK: - Accelerator
 
-    @Test func `PlatformCapabilities accelerator is host platform specific`() {
+    @Test func `platformCapabilities accelerator is host platform specific`() {
         #if os(macOS)
             #expect(PlatformCapabilities.accelerator == "hvf")
         #elseif os(Linux)
@@ -12,7 +12,7 @@ struct PlatformQEMUPathTests {
         #endif
     }
 
-    @Test func `QEMUBuilder accelerator matches PlatformCapabilities`() {
+    @Test func `qemuBuilder accelerator matches PlatformCapabilities`() {
         #expect(QEMUBuilder.accelerator == PlatformCapabilities.accelerator)
     }
 
