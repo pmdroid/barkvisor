@@ -41,15 +41,9 @@ public enum QEMUBuilder {
     private static let arm64Types: Set<String> = ["linux-arm64", "windows-arm64"]
     private static let x86Types: Set<String> = ["linux-amd64", "linux-x86_64"]
 
-    /// Host accelerator: HVF on macOS, KVM on Linux.
+    /// Host accelerator: HVF on macOS, KVM on Linux — single source: PlatformCapabilities.
     public static var accelerator: String {
-        #if os(macOS)
-            "hvf"
-        #elseif os(Linux)
-            "kvm"
-        #else
-            "tcg"
-        #endif
+        PlatformCapabilities.accelerator
     }
 
     /// Machine type for the guest architecture.
@@ -534,38 +528,24 @@ public enum QEMUBuilder {
         do {
             return try BundleResolver.helper(name)
         } catch {
-            #if os(macOS)
-                let hint = "brew install qemu"
-            #else
-                let hint = "install qemu-system (e.g. apt install qemu-system)"
-            #endif
-            throw BarkVisorError.qemuNotFound("\(name) not found. Install QEMU via: \(hint)")
+            throw BarkVisorError.qemuNotFound(
+                "\(name) not found. Install QEMU via: \(PlatformQEMU.qemuInstallHint)",
+            )
         }
     }
 
     private static func resolveEDK2ARM64() throws -> URL {
-        // Homebrew / bundled name
+        // Homebrew / bundled name, then distro firmware tables
         if let url = BundleResolver.qemuResource("edk2-aarch64-code.fd") {
             return url
         }
-        // Ubuntu/Debian: qemu-efi-aarch64 → /usr/share/AAVMF/
-        let linuxCandidates = [
-            "/usr/share/AAVMF/AAVMF_CODE.fd",
-            "/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd",
-            "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
-            "/usr/share/edk2/aarch64/QEMU_EFI.fd",
-            "/usr/share/edk2-arm/QEMU_EFI.fd",
-        ]
-        if let found = linuxCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+        if let found = PlatformQEMU.edk2ARM64Candidates.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        }) {
             return URL(fileURLWithPath: found)
         }
-        #if os(macOS)
-            let hint = "brew install qemu"
-        #else
-            let hint = "apt install qemu-efi-aarch64 qemu-system-arm"
-        #endif
         throw BarkVisorError.firmwareNotFound(
-            "ARM64 UEFI firmware not found (edk2-aarch64-code.fd / AAVMF_CODE.fd). Install via: \(hint)",
+            "ARM64 UEFI firmware not found (edk2-aarch64-code.fd / AAVMF_CODE.fd). Install via: \(PlatformQEMU.firmwareInstallHintARM64)",
         )
     }
 
@@ -577,51 +557,28 @@ public enum QEMUBuilder {
         if let url = BundleResolver.qemuResource("OVMF_CODE.fd") {
             return url
         }
-        // Common distro paths outside the QEMU share dir
-        let linuxCandidates = [
-            "/usr/share/OVMF/OVMF_CODE.fd",
-            "/usr/share/OVMF/OVMF_CODE_4M.fd",
-            "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
-            "/usr/share/edk2/ovmf/OVMF_CODE.fd",
-            "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
-            "/usr/share/qemu/OVMF.fd",
-        ]
-        if let found = linuxCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+        if let found = PlatformQEMU.edk2X86_64Candidates.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        }) {
             return URL(fileURLWithPath: found)
         }
-        #if os(macOS)
-            let hint = "brew install qemu"
-        #else
-            let hint = "apt install ovmf qemu-system-x86"
-        #endif
         throw BarkVisorError.firmwareNotFound(
-            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. Install via: \(hint)",
+            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. Install via: \(PlatformQEMU.firmwareInstallHintX86_64)",
         )
     }
 
     private static func resolveAAVMFSecureBoot() throws -> URL {
-        // Bundled by build-release.sh into the QEMU share directory
-        let bundledPath = URL(fileURLWithPath: Config.qemuShareDir)
-            .appendingPathComponent("AAVMF_CODE.secboot.fd")
-        if FileManager.default.fileExists(atPath: bundledPath.path) {
-            return bundledPath
+        // Bundled / Homebrew share via BundleResolver, then distro AAVMF paths
+        if let url = BundleResolver.qemuResource("AAVMF_CODE.secboot.fd") {
+            return url
         }
-        // Ubuntu package qemu-efi-aarch64
-        let systemCandidates = [
-            "/usr/share/AAVMF/AAVMF_CODE.secboot.fd",
-            "/usr/share/AAVMF/AAVMF_CODE.ms.fd",
-            "/usr/share/AAVMF/AAVMF_CODE.fd",
-        ]
-        if let found = systemCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+        if let found = PlatformQEMU.aavmfSecureBootCandidates.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        }) {
             return URL(fileURLWithPath: found)
         }
-        #if os(macOS)
-            let hint = "Reinstall BarkVisor or run scripts/build-release.sh to bundle firmware."
-        #else
-            let hint = "Install via: apt install qemu-efi-aarch64"
-        #endif
         throw BarkVisorError.firmwareNotFound(
-            "AAVMF secure-boot firmware not found. \(hint)",
+            "AAVMF secure-boot firmware not found. \(PlatformQEMU.aavmfSecureBootInstallHint)",
         )
     }
 
@@ -629,13 +586,8 @@ public enum QEMUBuilder {
         do {
             return try BundleResolver.helper("swtpm")
         } catch {
-            #if os(macOS)
-                let hint = "brew install swtpm"
-            #else
-                let hint = "apt install swtpm"
-            #endif
             throw BarkVisorError.processSpawnFailed(
-                "swtpm not found. TPM 2.0 emulation requires swtpm.\nInstall via: \(hint)",
+                "swtpm not found. TPM 2.0 emulation requires swtpm.\nInstall via: \(PlatformQEMU.swtpmInstallHint)",
             )
         }
     }
