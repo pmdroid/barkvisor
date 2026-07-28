@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import os
 
 extension VMManager {
     // MARK: - Detach ISO

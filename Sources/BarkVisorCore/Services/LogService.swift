@@ -1,8 +1,10 @@
 import Foundation
 import GRDB
 import Logging
-import os
 import SwiftSentry
+#if canImport(os)
+    import os
+#endif
 
 // MARK: - Log Types
 
@@ -23,15 +25,17 @@ public enum LogLevel: String, Codable, Comparable, Sendable {
         lhs.order < rhs.order
     }
 
-    public var osLogType: OSLogType {
-        switch self {
-        case .debug: return .debug
-        case .info: return .info
-        case .warn: return .default
-        case .error: return .error
-        case .fatal: return .fault
+    #if canImport(os)
+        public var osLogType: OSLogType {
+            switch self {
+            case .debug: return .debug
+            case .info: return .info
+            case .warn: return .default
+            case .error: return .error
+            case .fatal: return .fault
+            }
         }
-    }
+    #endif
 }
 
 public enum LogCategory: String, Codable, CaseIterable, Sendable {
@@ -96,6 +100,23 @@ public actor LogService {
         swiftLogger = Logger(label: "barkvisor")
     }
 
+    private nonisolated static func platformLog(_ message: String, level: LogLevel = .error) {
+        #if canImport(os)
+            let type: OSLogType = {
+                switch level {
+                case .debug: return .debug
+                case .info: return .info
+                case .warn: return .default
+                case .error: return .error
+                case .fatal: return .fault
+                }
+            }()
+            os_log("%{public}@", log: OSLog(subsystem: "dev.barkvisor.app", category: "app"), type: type, message)
+        #else
+            FileHandle.standardError.write(Data((message + "\n").utf8))
+        #endif
+    }
+
     /// Must be called once at startup to provide the database pool.
     public func setDatabase(_ pool: DatabasePool) {
         self.dbPool = pool
@@ -136,7 +157,7 @@ public actor LogService {
                         try db.execute(
                             sql: """
                                 INSERT INTO logs (ts, level, cat, msg, vm, req, err, detail)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             arguments: [
                                 entry.ts, entry.level.rawValue, entry.cat.rawValue,
@@ -145,7 +166,7 @@ public actor LogService {
                         )
                     }
                 } catch {
-                    os_log("LogService DB write failed: %{public}@", error.localizedDescription)
+                    Self.platformLog("LogService DB write failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -156,9 +177,8 @@ public actor LogService {
             swiftLogger.log(level: .error, .init(stringLiteral: sentryMsg))
         }
 
-        // Emit to os_log for Console.app visibility
-        let osLog = OSLog(subsystem: "dev.barkvisor.app", category: category.rawValue)
-        os_log("%{public}@", log: osLog, type: level.osLogType, msg)
+        // Platform log (os_log on Apple, stderr on Linux)
+        Self.platformLog("[\(category.rawValue)] \(msg)", level: level)
 
         // Notify tail listeners
         for (_, cont) in tailContinuations {
@@ -266,7 +286,7 @@ public actor LogService {
                 }
             }
         } catch {
-            os_log("LogService DB read failed: %{public}@", error.localizedDescription)
+            Self.platformLog("LogService DB read failed: \(error.localizedDescription)")
             return []
         }
     }
@@ -303,7 +323,7 @@ public actor LogService {
                 }
             }
         } catch {
-            os_log("LogService prune failed: %{public}@", error.localizedDescription)
+            Self.platformLog("LogService prune failed: \(error.localizedDescription)")
         }
     }
 
