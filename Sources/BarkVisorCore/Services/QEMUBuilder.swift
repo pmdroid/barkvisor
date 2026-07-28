@@ -557,13 +557,13 @@ public enum QEMUBuilder {
         if let url = BundleResolver.qemuResource("OVMF_CODE.fd") {
             return url
         }
-        if let found = PlatformQEMU.edk2X86_64Candidates.first(where: {
+        if let found = PlatformQEMU.edk2X86Candidates.first(where: {
             FileManager.default.fileExists(atPath: $0)
         }) {
             return URL(fileURLWithPath: found)
         }
         throw BarkVisorError.firmwareNotFound(
-            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. Install via: \(PlatformQEMU.firmwareInstallHintX86_64)",
+            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. Install via: \(PlatformQEMU.firmwareInstallHintX86)",
         )
     }
 
