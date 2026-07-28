@@ -197,4 +197,17 @@ struct ControllerLogicTests {
         #expect("x86_64" != "arm64")
         #expect("amd64" != "arm64")
     }
+
+    // MARK: - System Capabilities
+
+    @Test func `currentCapabilities returns platform and accelerator fields`() {
+        let caps = SystemCapabilitiesController.currentCapabilities()
+        #expect(!caps.platform.isEmpty)
+        #expect(!caps.accelerator.isEmpty)
+        #expect(caps.hostArch == "arm64" || caps.hostArch == "x86_64" || !caps.hostArch.isEmpty)
+        #expect(caps.accelerator == PlatformCapabilities.accelerator)
+        #expect(caps.supportsBridgedNetworking == PlatformCapabilities.supportsBridgedNetworking)
+        #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
+        #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
+    }
 }
