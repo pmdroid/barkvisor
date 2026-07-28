@@ -111,7 +111,6 @@ public actor VMProcessMonitor {
         }
 
         let vncSock = Config.socketDir.appendingPathComponent("\(shortID)-vnc.sock").path
-        let monSock = Config.socketDir.appendingPathComponent("\(shortID)-mon.sock").path
         let serSock = Config.socketDir.appendingPathComponent("\(shortID)-ser.sock").path
         let evtSock = Config.socketDir.appendingPathComponent("\(shortID)-evt.sock").path
         let running = RunningVM(
@@ -119,7 +118,6 @@ public actor VMProcessMonitor {
             pid: pid,
             serialSocketPath: serSock,
             vncSocketPath: vncSock,
-            monitorSocketPath: monSock,
             qmpSocketPath: qmpSock,
             qmpEventSocketPath: evtSock,
             swtpmProcess: nil,

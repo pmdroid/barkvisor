@@ -49,7 +49,7 @@ extension VMManager {
     // MARK: - Guest-Initiated Shutdown
 
     /// Called by QMPEventListener when QEMU reports a guest-initiated SHUTDOWN event.
-    /// Updates state to "stopping", sends `quit` to QEMU via the HMP monitor to ensure
+    /// Updates state to "stopping", sends `quit` to QEMU via QMP to ensure
     /// the process exits (QEMU can linger after guest halt on macOS HVF), and waits
     /// with a force-kill timeout.
     public func handleGuestShutdown(vmID: String) async {

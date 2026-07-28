@@ -4,6 +4,9 @@ import Foundation
 
 /// Abstracts privileged host operations (bridge daemons, software updates)
 /// that require a macOS XPC helper. On Linux these ops are unavailable for MVP.
+///
+/// Controllers and other call sites must use `PrivilegeService.shared` only —
+/// never call `HelperXPCClient` directly (enforced by PrivilegeBoundaryTests).
 public protocol PrivilegeServicing: Sendable {
     /// Whether this platform can perform privileged bridge / update ops.
     var isAvailable: Bool { get }
