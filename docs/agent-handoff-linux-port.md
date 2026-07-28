@@ -291,3 +291,14 @@ kill -9 <pid>
 ---
 
 *End of handoff. Prefer extending this file over scattering status in chat.*
+
+---
+
+## Phase A (post-merge stack)
+
+Open / merged follow-ups for **usable Linux**:
+
+- Real guest: `scripts/linux-real-guest-smoke.sh` (Ubuntu 24.04 arm64 cloud image + cloud-init + SSH)
+- SPA: `scripts/linux-frontend-serve.sh --verify` / `--install-dev`
+- Always verify on Orb `barkvisor-u24` (TCG) and KVM hosts when available
+- Default cloud image: Ubuntu noble minimal arm64 (see getting-started-linux.md)
