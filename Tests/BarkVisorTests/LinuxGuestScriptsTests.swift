@@ -51,5 +51,7 @@ struct LinuxGuestScriptsTests {
         let body = try String(contentsOfFile: path, encoding: .utf8)
         #expect(body.contains("BARKVISOR_FRONTEND_DIR"))
         #expect(body.contains("bun"))
+        #expect(body.contains("--verify"))
+        #expect(body.contains("--install-dev"))
     }
 }
