@@ -30,7 +30,6 @@ public struct QEMUBuildContext {
     public let network: Network?
     public let additionalDisks: [Disk]
     public let vncSock: URL
-    public let monitorSock: URL
     public let serialSock: URL
     public let qmpSock: URL
     public let bridgeSocketPath: String?
@@ -402,7 +401,6 @@ public enum QEMUBuilder {
             "-chardev", "socket,id=serial0,path=\(ctx.serialSock.path),server=on,wait=off",
             "-serial", "chardev:serial0",
             "-vnc", "unix:\(ctx.vncSock.path)",
-            "-monitor", "unix:\(ctx.monitorSock.path),server,nowait",
             "-qmp", "unix:\(ctx.qmpSock.path),server,nowait",
             "-qmp", "unix:\(evtSockPath),server,nowait",
             "-device", "virtio-serial-pci",
