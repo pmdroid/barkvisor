@@ -3,8 +3,9 @@ import GRDB
 
 public enum BridgeSyncService {
     public static func syncOnce(db: DatabasePool) async {
+        // On Linux PrivilegeService returns an empty list (no-op).
         do {
-            let states = try await HelperXPCClient.shared.getAllBridgeStates()
+            let states = try await PrivilegeService.shared.getAllBridgeStates()
             let now = iso8601.string(from: Date())
 
             try await db.write { db in

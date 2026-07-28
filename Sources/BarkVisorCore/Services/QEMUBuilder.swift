@@ -38,8 +38,31 @@ public struct QEMUBuildContext {
 
 // swiftlint:disable file_length
 public enum QEMUBuilder {
-    private static var isARM64: Set<String> {
-        ["linux-arm64", "windows-arm64"]
+    private static let arm64Types: Set<String> = ["linux-arm64", "windows-arm64"]
+    private static let x86Types: Set<String> = ["linux-amd64", "linux-x86_64"]
+
+    /// Host accelerator: HVF on macOS, KVM on Linux.
+    public static var accelerator: String {
+        #if os(macOS)
+            "hvf"
+        #elseif os(Linux)
+            "kvm"
+        #else
+            "tcg"
+        #endif
+    }
+
+    /// Machine type for the guest architecture.
+    public static func machineType(for vmType: String) -> String {
+        x86Types.contains(vmType) ? "q35" : "virt"
+    }
+
+    public static func isARM64(_ vmType: String) -> Bool {
+        arm64Types.contains(vmType)
+    }
+
+    public static func isX86(_ vmType: String) -> Bool {
+        x86Types.contains(vmType)
     }
 
     // MARK: - Input Validation
@@ -97,7 +120,8 @@ public enum QEMUBuilder {
         return value
     }
 
-    /// Validates a shared path: no commas (QEMU injection), must exist, and within home or /Volumes
+    /// Validates a shared path: no commas (QEMU injection), must exist, and within allowed prefixes.
+    /// Home is always allowed. macOS also allows `/Volumes/`; Linux also allows `/mnt/` and `/media/`.
     public static func validateSharedPath(_ path: String) throws {
         guard !path.contains(",") else {
             throw BarkVisorError.invalidArgument("Shared path must not contain commas: \(path)")
@@ -105,10 +129,22 @@ public enum QEMUBuilder {
         // Resolve symlinks to prevent traversal
         let resolved = (path as NSString).resolvingSymlinksInPath
         let home = NSHomeDirectory()
-        let allowedPrefixes = [home + "/", "/Volumes/"]
+        var allowedPrefixes = [home + "/"]
+        #if os(macOS)
+            allowedPrefixes.append("/Volumes/")
+        #elseif os(Linux)
+            allowedPrefixes.append(contentsOf: ["/mnt/", "/media/"])
+        #endif
         guard resolved == home || allowedPrefixes.contains(where: { resolved.hasPrefix($0) }) else {
+            #if os(macOS)
+                let hint = "your home directory or /Volumes"
+            #elseif os(Linux)
+                let hint = "your home directory, /mnt, or /media"
+            #else
+                let hint = "your home directory"
+            #endif
             throw BarkVisorError.invalidArgument(
-                "Shared path must be within your home directory or /Volumes: \(path)",
+                "Shared path must be within \(hint): \(path)",
             )
         }
         var isDir: ObjCBool = false
@@ -140,11 +176,18 @@ public enum QEMUBuilder {
         }
     }
 
-    public static func binary(for vmType: String) throws -> URL {
-        guard isARM64.contains(vmType) else {
-            throw BarkVisorError.unknownVMType(vmType)
+    public static func binaryName(for vmType: String) throws -> String {
+        if arm64Types.contains(vmType) {
+            return "qemu-system-aarch64"
         }
-        return try resolveQEMU("qemu-system-aarch64")
+        if x86Types.contains(vmType) {
+            return "qemu-system-x86_64"
+        }
+        throw BarkVisorError.unknownVMType(vmType)
+    }
+
+    public static func binary(for vmType: String) throws -> URL {
+        try resolveQEMU(binaryName(for: vmType))
     }
 
     public static func launchConfig(ctx: QEMUBuildContext) throws -> QEMULaunchConfig {
@@ -155,16 +198,17 @@ public enum QEMUBuilder {
         _ = try sanitizeQEMUArg(disk.path, label: "Disk path")
         _ = try sanitizeQEMUArg(disk.format, label: "Disk format")
 
-        guard isARM64.contains(vm.vmType) else {
+        guard arm64Types.contains(vm.vmType) || x86Types.contains(vm.vmType) else {
             throw BarkVisorError.unknownVMType(vm.vmType)
         }
 
         let windows = vm.vmType.hasPrefix("windows")
         let bootOrder = vm.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
+        let machine = machineType(for: vm.vmType)
 
         var args: [String] = []
-        args += ["-machine", "virt", "-accel", "hvf", "-cpu", "host"]
+        args += ["-machine", machine, "-accel", accelerator, "-cpu", "host"]
         args += ["-smp", "\(vm.cpuCount)", "-m", "\(vm.memoryMb)M"]
         args += try firmwareArgs(vmID: vm.id, vmType: vm.vmType)
         args += ["-device", "qemu-xhci"]
@@ -182,15 +226,22 @@ public enum QEMUBuilder {
         args += try usbPassthroughArgs(vm: vm)
         args += try miscArgs(vm: vm)
 
+        // socket_vmnet wrap is macOS-only (bridged networking).
         if useBridged {
-            let (clientBin, socketPath) = try resolveSocketVmnet(
-                bridgeInterface: ctx.network?.bridge, dbSocketPath: ctx.bridgeSocketPath,
-            )
-            let wrappedArgs = [socketPath, qemuBinary.path] + args
-            return QEMULaunchConfig(
-                executable: clientBin, arguments: wrappedArgs,
-                swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
-            )
+            #if os(macOS)
+                let (clientBin, socketPath) = try resolveSocketVmnet(
+                    bridgeInterface: ctx.network?.bridge, dbSocketPath: ctx.bridgeSocketPath,
+                )
+                let wrappedArgs = [socketPath, qemuBinary.path] + args
+                return QEMULaunchConfig(
+                    executable: clientBin, arguments: wrappedArgs,
+                    swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
+                )
+            #else
+                throw BarkVisorError.badRequest(
+                    "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                )
+            #endif
         }
 
         return QEMULaunchConfig(
@@ -274,10 +325,12 @@ public enum QEMUBuilder {
             "--tpm2",
             "--log", "level=20",
         ]
+        // aarch64 uses tpm-tis-device; x86_64 uses tpm-tis.
+        let tpmDevice = x86Types.contains(vm.vmType) ? "tpm-tis,tpmdev=tpm0" : "tpm-tis-device,tpmdev=tpm0"
         let args = [
             "-chardev", "socket,id=chrtpm,path=\(tpmSock.path)",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
-            "-device", "tpm-tis-device,tpmdev=tpm0",
+            "-device", tpmDevice,
         ]
         return (args, exe, swtpmArgs, tpmStateDir)
     }
@@ -308,8 +361,14 @@ public enum QEMUBuilder {
 
         if let net = network {
             if net.mode == "bridged" {
-                netdevArgs = "socket,id=net0,fd=3"
-                useBridged = true
+                #if os(macOS)
+                    netdevArgs = "socket,id=net0,fd=3"
+                    useBridged = true
+                #else
+                    throw BarkVisorError.badRequest(
+                        "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                    )
+                #endif
             } else {
                 netdevArgs = "user,id=net0"
                 if let dns = net.dnsServer, !dns.isEmpty {
@@ -415,6 +474,13 @@ public enum QEMUBuilder {
                 FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 67_108_864))
             }
             return (codeFile, varsFile)
+        case "linux-amd64", "linux-x86_64":
+            let codeFile = try resolveEDK2X86_64()
+            if !FileManager.default.fileExists(atPath: varsFile.path) {
+                // OVMF vars is typically 540 KiB; allocate a generous blank file.
+                FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 540_672))
+            }
+            return (codeFile, varsFile)
         default:
             throw BarkVisorError.unknownVMType(vmType)
         }
@@ -424,36 +490,42 @@ public enum QEMUBuilder {
 
     public static func resolveSocketVmnet(bridgeInterface: String?, dbSocketPath: String? = nil)
         throws -> (client: URL, socketPath: String) {
-        let clientBin = try BundleResolver.optHelper(
-            "socket_vmnet_client",
-            package: "socket_vmnet",
-            extraPaths: ["/opt/socket_vmnet/bin/socket_vmnet_client"],
-        )
-
-        // Prefer socket path from DB (kept current by bridge helper)
-        if let dbPath = dbSocketPath, FileManager.default.fileExists(atPath: dbPath) {
-            return (clientBin, dbPath)
-        }
-
-        // Fallback: scan filesystem for socket (backward compat)
-        let iface = bridgeInterface ?? "en0"
-        let socketCandidates = [
-            "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
-            "/var/run/socket_vmnet.bridged.\(iface)",
-            "/opt/homebrew/var/run/socket_vmnet",
-            "/var/run/socket_vmnet",
-        ]
-
-        guard let socketPath = socketCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
-        else {
-            throw BarkVisorError.processSpawnFailed(
-                "socket_vmnet daemon socket not found. For bridged networking run:\n"
-                    + "sudo brew services start socket_vmnet\n"
-                    + "For true bridged mode on \(iface), see: https://github.com/lima-vm/socket_vmnet",
+        #if os(macOS)
+            let clientBin = try BundleResolver.optHelper(
+                "socket_vmnet_client",
+                package: "socket_vmnet",
+                extraPaths: ["/opt/socket_vmnet/bin/socket_vmnet_client"],
             )
-        }
 
-        return (clientBin, socketPath)
+            // Prefer socket path from DB (kept current by bridge helper)
+            if let dbPath = dbSocketPath, FileManager.default.fileExists(atPath: dbPath) {
+                return (clientBin, dbPath)
+            }
+
+            // Fallback: scan filesystem for socket (backward compat)
+            let iface = bridgeInterface ?? "en0"
+            let socketCandidates = [
+                "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
+                "/var/run/socket_vmnet.bridged.\(iface)",
+                "/opt/homebrew/var/run/socket_vmnet",
+                "/var/run/socket_vmnet",
+            ]
+
+            guard let socketPath = socketCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
+            else {
+                throw BarkVisorError.processSpawnFailed(
+                    "socket_vmnet daemon socket not found. For bridged networking run:\n"
+                        + "sudo brew services start socket_vmnet\n"
+                        + "For true bridged mode on \(iface), see: https://github.com/lima-vm/socket_vmnet",
+                )
+            }
+
+            return (clientBin, socketPath)
+        #else
+            throw BarkVisorError.badRequest(
+                "Bridged networking (socket_vmnet) is not supported on Linux yet. Use NAT networking.",
+            )
+        #endif
     }
 
     // MARK: - Binary resolution
@@ -462,7 +534,12 @@ public enum QEMUBuilder {
         do {
             return try BundleResolver.helper(name)
         } catch {
-            throw BarkVisorError.qemuNotFound("\(name) not found. Install QEMU via: brew install qemu")
+            #if os(macOS)
+                let hint = "brew install qemu"
+            #else
+                let hint = "install qemu-system (e.g. apt install qemu-system)"
+            #endif
+            throw BarkVisorError.qemuNotFound("\(name) not found. Install QEMU via: \(hint)")
         }
     }
 
@@ -473,6 +550,30 @@ public enum QEMUBuilder {
             )
         }
         return url
+    }
+
+    private static func resolveEDK2X86_64() throws -> URL {
+        // Homebrew ships edk2-x86_64-code.fd; Linux packages often use OVMF_CODE.fd.
+        if let url = BundleResolver.qemuResource("edk2-x86_64-code.fd") {
+            return url
+        }
+        if let url = BundleResolver.qemuResource("OVMF_CODE.fd") {
+            return url
+        }
+        // Common distro paths outside the QEMU share dir
+        let linuxCandidates = [
+            "/usr/share/OVMF/OVMF_CODE.fd",
+            "/usr/share/OVMF/OVMF_CODE_4M.fd",
+            "/usr/share/edk2/ovmf/OVMF_CODE.fd",
+            "/usr/share/qemu/OVMF.fd",
+        ]
+        if let found = linuxCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            return URL(fileURLWithPath: found)
+        }
+        throw BarkVisorError.firmwareNotFound(
+            "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. "
+                + "Install QEMU firmware packages for your platform.",
+        )
     }
 
     private static func resolveAAVMFSecureBoot() throws -> URL {

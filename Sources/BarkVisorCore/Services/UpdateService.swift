@@ -207,6 +207,13 @@ public actor UpdateService {
         release: UpdateInfo,
         progressHandler: @Sendable @escaping (Double) async -> Void,
     ) async throws {
+        guard PrivilegeService.isUpdateInstallSupported else {
+            throw BarkVisorError.updateFailed(
+                "In-app software updates are not supported on Linux yet. "
+                    + "Update BarkVisor using your package manager or release artifacts.",
+            )
+        }
+
         let updatesDir = Config.dataDir.appendingPathComponent("updates")
         try FileManager.default.createDirectory(at: updatesDir, withIntermediateDirectories: true)
         let pkgPath = updatesDir.appendingPathComponent("BarkVisor-\(release.version).pkg")
@@ -296,7 +303,7 @@ public actor UpdateService {
         // so we normally get a clean success. The 4097 catch is a safety net in case
         // the XPC reply doesn't flush before the postinstall script kills the daemon.
         do {
-            try await HelperXPCClient.shared.installUpdate(
+            try await PrivilegeService.shared.installUpdate(
                 packagePath: pkgPath.path,
                 expectedVersion: release.version,
             )
