@@ -2,21 +2,24 @@ import Foundation
 
 /// Static capability flags for the current host platform.
 public enum PlatformCapabilities {
-    /// Bridged networking via privileged helper / socket_vmnet (macOS today).
+    /// Bridged networking:
+    /// - macOS: privileged helper + socket_vmnet
+    /// - Linux: QEMU `-netdev bridge` (host bridge + qemu-bridge-helper)
     public static var supportsBridgedNetworking: Bool {
-        #if os(macOS)
+        #if os(macOS) || os(Linux)
             true
         #else
             false
         #endif
     }
 
-    /// USB device passthrough into guests.
+    /// USB device passthrough into guests (`usb-host` device).
+    /// - macOS: ioreg enumeration
+    /// - Linux: `lsusb` enumeration (permissions via udev / plugdev)
     public static var supportsUSBPassthrough: Bool {
-        #if os(macOS)
+        #if os(macOS) || os(Linux)
             true
         #else
-            // Available via vfio on Linux in a later PR.
             false
         #endif
     }

@@ -38,22 +38,35 @@ extension VMManager {
 
         guard PrivilegeService.isBridgedNetworkingSupported else {
             throw BarkVisorError.badRequest(
-                "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                "Bridged networking is not supported on this platform. Use NAT networking.",
             )
         }
 
-        let iface = network.bridge ?? "en0"
-        let bridge = try await dbPool.read { db in
-            try BridgeRecord.filter(Column("interface") == iface).fetchOne(db)
-        }
-        if bridge?.status != "active" {
-            let detail = bridge.map { "status: \($0.status)" } ?? "no bridge record"
-            throw BarkVisorError.bridgeNotReady(
-                "Bridge for \(iface) is not active (\(detail)). "
-                    + "Set up the bridge in Network settings.",
-            )
-        }
-        return bridge?.socketPath
+        let iface = network.bridge ?? {
+            #if os(macOS)
+                "en0"
+            #else
+                "br0"
+            #endif
+        }()
+
+        #if os(Linux)
+            // QEMU `-netdev bridge` only needs a live host bridge + qemu-bridge-helper ACL.
+            try LinuxHostNetwork.requireBridgeableInterface(iface)
+            return nil
+        #else
+            let bridge = try await dbPool.read { db in
+                try BridgeRecord.filter(Column("interface") == iface).fetchOne(db)
+            }
+            if bridge?.status != "active" {
+                let detail = bridge.map { "status: \($0.status)" } ?? "no bridge record"
+                throw BarkVisorError.bridgeNotReady(
+                    "Bridge for \(iface) is not active (\(detail)). "
+                        + "Set up the bridge in Network settings.",
+                )
+            }
+            return bridge?.socketPath
+        #endif
     }
 
     // MARK: - swtpm
