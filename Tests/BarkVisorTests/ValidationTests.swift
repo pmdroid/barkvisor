@@ -37,19 +37,28 @@ struct ValidationTests {
         #expect(throws: Never.self) { try validateBridgeName("en0") }
         #expect(throws: Never.self) { try validateBridgeName("bridge0") }
         #expect(throws: Never.self) { try validateBridgeName("lo0") }
+        #expect(throws: Never.self) { try validateBridgeName("br0") }
+        #expect(throws: Never.self) { try validateBridgeName("virbr0") }
+        #expect(throws: Never.self) { try validateBridgeName("br-lan") }
+        #expect(throws: Never.self) { try validateBridgeName("br-0") }
+        #expect(throws: Never.self) { try validateBridgeName("br_0") }
+        #expect(throws: Never.self) { try validateBridgeName("br.0") }
+        #expect(throws: Never.self) { try validateBridgeName("ovs-br0") }
+        #expect(throws: Never.self) { try validateBridgeName("br-0123456789ab") } // 15 chars Docker-style
         #expect(throws: Never.self) { try validateBridgeName(String(repeating: "a", count: 15)) }
     }
 
     @Test func `bridge name too long`() {
         #expect(throws: (any Error).self) { try validateBridgeName(String(repeating: "a", count: 16)) }
+        #expect(throws: (any Error).self) { try validateBridgeName("br-0123456789abc") } // 16 chars
     }
 
     @Test func `bridge name rejects special chars`() {
+        #expect(throws: (any Error).self) { try validateBridgeName("") }
         #expect(throws: (any Error).self) { try validateBridgeName("en0; rm -rf /") }
-        #expect(throws: (any Error).self) { try validateBridgeName("br-0") }
-        #expect(throws: (any Error).self) { try validateBridgeName("br_0") }
-        #expect(throws: (any Error).self) { try validateBridgeName("br.0") }
         #expect(throws: (any Error).self) { try validateBridgeName("br 0") }
+        #expect(throws: (any Error).self) { try validateBridgeName("br/0") }
+        #expect(throws: (any Error).self) { try validateBridgeName("bad-name!") }
     }
 
     // MARK: - validateDNS
