@@ -1,3 +1,4 @@
+#if os(macOS)
 import BarkVisorHelperProtocol
 import Foundation
 import Testing
@@ -179,3 +180,4 @@ final class HelperXPCTests {
         #expect(result.1 == "not_installed")
     }
 }
+#endif

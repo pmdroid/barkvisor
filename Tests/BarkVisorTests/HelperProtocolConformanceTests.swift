@@ -1,3 +1,4 @@
+#if os(macOS)
 import BarkVisorHelperProtocol
 import Foundation
 import Testing
@@ -58,3 +59,4 @@ struct HelperProtocolConformanceTests {
         listener.invalidate()
     }
 }
+#endif

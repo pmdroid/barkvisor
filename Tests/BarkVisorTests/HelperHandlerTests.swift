@@ -1,3 +1,4 @@
+#if os(macOS)
 import BarkVisorHelperProtocol
 import Foundation
 import Testing
@@ -448,3 +449,4 @@ final class HelperXPCExtendedTests {
         }
     }
 }
+#endif
