@@ -32,18 +32,6 @@ public struct RunningVM: @unchecked Sendable {
     }
 }
 
-public struct VMInfo: Sendable {
-    public let id: String
-    public let name: String
-    public let state: String
-
-    public init(id: String, name: String, state: String) {
-        self.id = id
-        self.name = name
-        self.state = state
-    }
-}
-
 public struct VMLoadResult: Sendable {
     public let vm: VM
     public let disk: Disk

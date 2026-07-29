@@ -24,18 +24,6 @@ public enum LogLevel: String, Codable, Comparable, Sendable {
     public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
         lhs.order < rhs.order
     }
-
-    #if canImport(os)
-        public var osLogType: OSLogType {
-            switch self {
-            case .debug: return .debug
-            case .info: return .info
-            case .warn: return .default
-            case .error: return .error
-            case .fatal: return .fault
-            }
-        }
-    #endif
 }
 
 public enum LogCategory: String, Codable, CaseIterable, Sendable {

@@ -91,11 +91,6 @@ public actor MetricsCollector {
         }
     }
 
-    public func stopSystemStatsCollection() {
-        systemPollTask?.cancel()
-        systemPollTask = nil
-    }
-
     public func recentSystemStats(minutes: Int) -> [SystemStatsSample] {
         let cutoff = iso8601.string(from: Date().addingTimeInterval(TimeInterval(-minutes * 60)))
         return systemStatsBuffer.filter { $0.timestamp >= cutoff }

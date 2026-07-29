@@ -27,18 +27,6 @@ public enum CloudInitService {
         }
     }
 
-    /// Read current user-data for a VM (strips #cloud-config header)
-    public static func readUserData(vmID: String) -> String? {
-        let path = Config.dataDir.appendingPathComponent("cloud-init/\(vmID)/user-data")
-        guard let content = try? String(contentsOf: path, encoding: .utf8) else { return nil }
-        // Strip the #cloud-config header line
-        let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
-        if lines.first == "#cloud-config" {
-            return lines.dropFirst().joined(separator: "\n")
-        }
-        return content
-    }
-
     /// Validates SSH key format: must start with a recognized key type prefix
     private static let validSSHKeyPrefixes = [
         "ssh-rsa ", "ssh-ed25519 ", "ssh-dss ", "ecdsa-sha2-nistp256 ",
