@@ -115,7 +115,8 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
     }
 
     public func bridgeStatus(interface: String) async throws -> String {
-        if LinuxHostNetwork.interfaceExists(interface) {
+        // Same existence policy as HostInfoService / requireBridgeableInterface (sysfs on Linux).
+        if HostInfoService.interfaceExists(interface) {
             return "active"
         }
         return "inactive"
