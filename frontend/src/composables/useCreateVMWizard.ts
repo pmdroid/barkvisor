@@ -7,6 +7,7 @@ import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import api, { getWSTicket } from '../api/client'
 import type { Network, Disk, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
+import { apiErrorMessage } from '../api/errors'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -144,7 +145,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
         }
       }
     } catch (e: any) {
-      virtioWinError.value = e.response?.data?.reason || e.message
+      virtioWinError.value = apiErrorMessage(e)
       virtioWinDownloading.value = false
     }
   }
@@ -343,7 +344,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       }
       emit('created')
     } catch (e: any) {
-      error.value = e.response?.data?.reason || e.message
+      error.value = apiErrorMessage(e)
     } finally {
       loading.value = false
     }

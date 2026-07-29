@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
 import type { Network, HostInterface, BridgeInfo } from '../api/types'
@@ -187,7 +188,7 @@ async function saveNetwork() {
     showCreate.value = false
     resetForm()
     await fetchNetworks()
-  } catch (e: any) { error.value = e.response?.data?.reason || e.message }
+  } catch (e: any) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
 
@@ -200,11 +201,8 @@ async function doDeleteNetwork() {
   deleting.value = true
   try {
     const { id } = deleteTarget.value
-    await Promise.all([
-      api.delete(`/networks/${id}`).then(() => fetchNetworks()),
-      new Promise(r => setTimeout(r, 400))
-    ])
-  } catch (e: any) { toast.error(e.response?.data?.reason || e.message) }
+    await api.delete(`/networks/${id}`).then(() => fetchNetworks())
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally {
     deleting.value = false
     deleteTarget.value = null
@@ -219,7 +217,7 @@ async function setupBridge(ifaceName: string) {
     toast.success(`Bridge installed for ${ifaceName}`)
     await Promise.all([fetchBridges(), fetchNetworks()])
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
   }
@@ -232,7 +230,7 @@ async function removeBridge(ifaceName: string) {
     toast.success(`Bridge removed for ${ifaceName}`)
     await fetchBridges()
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
   }
@@ -245,7 +243,7 @@ async function startBridge(ifaceName: string) {
     toast.success(`Bridge started for ${ifaceName}`)
     await fetchBridges()
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
   }
@@ -258,7 +256,7 @@ async function stopBridge(ifaceName: string) {
     toast.success(`Bridge stopped for ${ifaceName}`)
     await fetchBridges()
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
   }
@@ -272,7 +270,7 @@ async function setupBridgeInline() {
     toast.success(`Bridge installed for ${newBridge.value}`)
     await Promise.all([fetchBridges(), fetchNetworks()])
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
   }

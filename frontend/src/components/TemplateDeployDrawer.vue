@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTemplateStore } from '../stores/templates'
 import { useVMStore } from '../stores/vms'
@@ -187,7 +188,7 @@ async function doDeploy() {
       emit('deployed', result.vm)
     }
   } catch (e: any) {
-    error.value = e.response?.data?.reason || e.message
+    error.value = apiErrorMessage(e)
     phase.value = 'form'
   }
 }
@@ -206,7 +207,7 @@ async function submit() {
       emit('deployed', result.vm)
     }
   } catch (e: any) {
-    error.value = e.response?.data?.reason || e.message
+    error.value = apiErrorMessage(e)
   } finally {
     loading.value = false
   }

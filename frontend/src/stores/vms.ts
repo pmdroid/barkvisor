@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
 import type { VM, CreateVMRequest, UpdateVMRequest } from '../api/types'
+import { apiErrorMessage } from '../api/errors'
 
 export const useVMStore = defineStore('vms', () => {
   const vms = ref<VM[]>([])
@@ -15,7 +16,7 @@ export const useVMStore = defineStore('vms', () => {
       const { data } = await api.get('/vms')
       vms.value = data
     } catch (e: any) {
-      error.value = e.response?.data?.reason || e.message || 'Failed to load VMs'
+      error.value = apiErrorMessage(e, 'Failed to load VMs')
     } finally {
       loading.value = false
     }

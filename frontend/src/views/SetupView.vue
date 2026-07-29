@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton from '../components/ui/AppButton.vue'
@@ -97,7 +98,7 @@ async function submitAdmin() {
     await createAdmin(username.value, password.value)
     await nextStep()
   } catch (e: any) {
-    error.value = e.response?.data?.reason || 'Failed to create admin user'
+    error.value = apiErrorMessage(e, 'Failed to create admin user')
   } finally {
     loading.value = false
   }
@@ -127,7 +128,7 @@ async function submitBridge() {
       error.value = result.message || 'Failed to install bridge'
     }
   } catch (e: any) {
-    error.value = e.response?.data?.reason || 'Failed to install bridge'
+    error.value = apiErrorMessage(e, 'Failed to install bridge')
   } finally {
     loading.value = false
   }
@@ -158,7 +159,7 @@ async function startSync() {
       }
     }, 1000)
   } catch (e: any) {
-    error.value = e.response?.data?.reason || 'Failed to start sync'
+    error.value = apiErrorMessage(e, 'Failed to start sync')
     loading.value = false
   }
 }
@@ -174,7 +175,7 @@ async function finishSetup() {
     localStorage.setItem('token', token)
     router.replace('/dashboard')
   } catch (e: any) {
-    error.value = e.response?.data?.reason || 'Failed to complete setup'
+    error.value = apiErrorMessage(e, 'Failed to complete setup')
   } finally {
     loading.value = false
   }
