@@ -2,10 +2,12 @@
 import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
+import { useDiskStore } from '../stores/disks'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import api from '../api/client'
-import type { SystemStats, SystemStatsSample, Disk, StorageSummary } from '../api/types'
+import type { SystemStats, SystemStatsSample } from '../api/types'
+import { storeToRefs } from 'pinia'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -22,9 +24,9 @@ const MAX_HISTORY = 60
 
 const router = useRouter()
 const store = useVMStore()
+const diskStore = useDiskStore()
+const { disks, summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
-const disks = ref<Disk[]>([])
-const storageSummary = ref<StorageSummary | null>(null)
 const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[] }>({
   timestamps: [],
   cpu: [],
@@ -77,14 +79,7 @@ async function fetchHistory() {
 }
 
 async function fetchStorage() {
-  try {
-    const [diskRes, summaryRes] = await Promise.all([
-      api.get('/disks'),
-      api.get('/disks/summary'),
-    ])
-    disks.value = diskRes.data
-    storageSummary.value = summaryRes.data
-  } catch { /* ignore */ }
+  await Promise.all([diskStore.fetchAll(), diskStore.fetchSummary()])
 }
 
 let pollTimer: number

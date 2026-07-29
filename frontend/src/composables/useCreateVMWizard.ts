@@ -6,9 +6,11 @@ import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import api from '../api/client'
-import type { Network, Disk, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
+import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
+import { useNetworkStore } from '../stores/networks'
+import { useDiskStore } from '../stores/disks'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -16,7 +18,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const toast = useToastStore()
   const sshKeyStore = useSSHKeyStore()
   const caps = useCapabilitiesStore()
+  const networkStore = useNetworkStore()
+  const diskStore = useDiskStore()
   const { supportsUSBPassthrough, hostArch } = storeToRefs(caps)
+  const { networks } = storeToRefs(networkStore)
+  const { unattached: availableDisks } = storeToRefs(diskStore)
 
   // Wizard step
   const step = ref(1)
@@ -147,7 +153,6 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const diskSource = ref<'new' | 'existing'>('new')
   const diskSizeGB = ref(10)
   const existingDiskId = ref('')
-  const availableDisks = ref<Disk[]>([])
   const sharedPaths = ref<string[]>([])
   const showFolderPicker = ref(false)
 
@@ -192,8 +197,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     )
   }
 
-  // Step 5/6: Network
-  const networks = ref<Network[]>([])
+  // Step 5/6: Network (list from shared store)
   const selectedNetworkId = ref('')
   const portForwards = ref<PortForwardRule[]>([])
   const newPFProto = ref<'tcp' | 'udp'>('tcp')
@@ -230,16 +234,12 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     sshKeyStore.fetchAll().then(() => {
       if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
     })
-    try {
-      const { data } = await api.get('/networks')
-      networks.value = data
-      const defaultNet = data.find((n: Network) => n.isDefault)
-      if (defaultNet) selectedNetworkId.value = defaultNet.id
-    } catch { /* ignore */ }
-    try {
-      const { data } = await api.get('/disks')
-      availableDisks.value = data.filter((d: Disk) => !d.vmId)
-    } catch { /* ignore */ }
+    await Promise.all([networkStore.fetchAll(), diskStore.fetchAll()])
+    const defaultNet =
+      networkStore.defaultNAT
+      ?? networks.value.find(n => n.isDefault)
+      ?? null
+    if (defaultNet) selectedNetworkId.value = defaultNet.id
   })
 
   const isoImages = computed(() =>

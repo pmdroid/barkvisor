@@ -12,14 +12,16 @@ import FormError from '../components/ui/FormError.vue'
 import AppModal from '../components/ui/AppModal.vue'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
 
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
+const networkStore = useNetworkStore()
 const { supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
+const { networks } = storeToRefs(networkStore)
 
-// Data
-const networks = ref<Network[]>([])
+// Host-only data (not shared via network store)
 const hostInterfaces = ref<HostInterface[]>([])
 const bridges = ref<BridgeInfo[]>([])
 
@@ -93,12 +95,6 @@ function interfaceIp(ifaceName: string): string {
   return iface?.ipAddress || ''
 }
 
-// Fetch data
-async function fetchNetworks() {
-  const { data } = await api.get('/networks')
-  networks.value = data
-}
-
 async function fetchInterfaces() {
   try {
     const { data } = await api.get('/system/interfaces')
@@ -114,7 +110,7 @@ async function fetchBridges() {
 }
 
 async function fetchAll() {
-  const tasks: Promise<void>[] = [fetchNetworks(), fetchInterfaces()]
+  const tasks: Promise<void>[] = [networkStore.fetchAll(), fetchInterfaces()]
   if (supportsBridgedNetworking.value) tasks.push(fetchBridges())
   await Promise.all(tasks)
 }
@@ -183,13 +179,12 @@ async function saveNetwork() {
       dnsServer: newMode.value === 'nat' ? (newDns.value || (editingId.value ? '' : undefined)) : undefined,
     }
     if (editingId.value) {
-      await api.patch(`/networks/${editingId.value}`, body)
+      await networkStore.update(editingId.value, body)
     } else {
-      await api.post('/networks', body)
+      await networkStore.create(body)
     }
     showCreate.value = false
     resetForm()
-    await fetchNetworks()
   } catch (e: any) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
@@ -202,8 +197,7 @@ async function doDeleteNetwork() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    const { id } = deleteTarget.value
-    await api.delete(`/networks/${id}`).then(() => fetchNetworks())
+    await networkStore.remove(deleteTarget.value.id)
   } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally {
     deleting.value = false
@@ -217,7 +211,7 @@ async function setupBridge(ifaceName: string) {
   try {
     await api.post('/system/bridges', { interface: ifaceName })
     toast.success(`Bridge installed for ${ifaceName}`)
-    await Promise.all([fetchBridges(), fetchNetworks()])
+    await Promise.all([fetchBridges(), networkStore.fetchAll()])
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -270,7 +264,7 @@ async function setupBridgeInline() {
   try {
     await api.post('/system/bridges', { interface: newBridge.value })
     toast.success(`Bridge installed for ${newBridge.value}`)
-    await Promise.all([fetchBridges(), fetchNetworks()])
+    await Promise.all([fetchBridges(), networkStore.fetchAll()])
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {

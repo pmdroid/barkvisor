@@ -2,10 +2,10 @@
 import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../api/client'
-import type { Disk, DiskUsage, StorageSummary } from '../api/types'
+import type { Disk } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
+import { useDiskStore } from '../stores/disks'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
@@ -13,14 +13,14 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import { formatBytes } from '../utils/format'
+import { storeToRefs } from 'pinia'
 
 const router = useRouter()
 const toast = useToastStore()
 const vmStore = useVMStore()
+const diskStore = useDiskStore()
+const { disks, usages: diskUsages, summary: storageSummary } = storeToRefs(diskStore)
 
-const disks = ref<Disk[]>([])
-const diskUsages = ref<Record<string, DiskUsage>>({})
-const storageSummary = ref<StorageSummary | null>(null)
 const showCreate = ref(false)
 const newName = ref('')
 const newSizeGB = ref(10)
@@ -36,39 +36,26 @@ const resizeError = ref('')
 const resizeDone = ref(false)
 const guestCmdsOpen = ref<string | null>(null)
 
-async function fetchDisks() {
-  const { data } = await api.get('/disks')
-  disks.value = data
-  // Fetch usage for each disk in parallel
-  const usages: Record<string, DiskUsage> = {}
-  await Promise.all(data.map(async (d: Disk) => {
-    try {
-      const { data: usage } = await api.get(`/disks/${d.id}/usage`)
-      usages[d.id] = usage
-    } catch { /* ignore */ }
-  }))
-  diskUsages.value = usages
-}
-
-async function fetchSummary() {
-  try {
-    const { data } = await api.get('/disks/summary')
-    storageSummary.value = data
-  } catch { /* ignore */ }
-}
-
-onMounted(() => { fetchDisks(); fetchSummary(); vmStore.fetchAll() })
+onMounted(() => {
+  void diskStore.fetchAll({ withUsage: true })
+  void diskStore.fetchSummary()
+  void vmStore.fetchAll()
+})
 
 async function createDisk() {
   error.value = ''
   if (!newName.value.trim()) { error.value = 'Name required'; return }
   loading.value = true
   try {
-    await api.post('/disks', { name: newName.value.trim(), sizeGB: newSizeGB.value, format: newFormat.value })
+    await diskStore.create({
+      name: newName.value.trim(),
+      sizeGB: newSizeGB.value,
+      format: newFormat.value,
+    })
     showCreate.value = false
     newName.value = ''
     newFormat.value = 'qcow2'
-    await Promise.all([fetchDisks(), fetchSummary()])
+    await diskStore.fetchAll({ withUsage: true })
   } catch (e: any) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
@@ -84,8 +71,7 @@ async function doDeleteDisk() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    const { id } = deleteTarget.value
-    await api.delete(`/disks/${id}`).then(() => Promise.all([fetchDisks(), fetchSummary()]))
+    await diskStore.remove(deleteTarget.value.id)
   } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally {
     deleting.value = false
@@ -110,9 +96,8 @@ async function resizeDisk() {
   resizeError.value = ''
   resizeLoading.value = true
   try {
-    await api.post(`/disks/${resizingDisk.value.id}/resize`, { sizeGB: resizeSizeGB.value })
+    await diskStore.resize(resizingDisk.value.id, resizeSizeGB.value)
     resizeDone.value = true
-    await Promise.all([fetchDisks(), fetchSummary()])
   } catch (e: any) { resizeError.value = apiErrorMessage(e) }
   finally { resizeLoading.value = false }
 }
