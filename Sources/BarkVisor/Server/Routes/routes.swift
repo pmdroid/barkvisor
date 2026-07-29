@@ -73,7 +73,9 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
 
     try protected.register(
         collection: TemplateController(
-            vmManager: deps.vmManager, imageDownloader: deps.imageDownloader,
+            vmManager: deps.vmManager,
+            imageDownloader: deps.imageDownloader,
+            backgroundTasks: deps.backgroundTasks,
         ),
     )
 

@@ -290,8 +290,10 @@ export interface DeployTemplateRequest {
 }
 
 export interface DeployTemplateResponse {
-  status: 'downloading' | 'created'
+  status: 'downloading' | 'provisioning' | 'created'
   imageId: string | null
+  /** Present when status is provisioning (HTTP 202) — poll GET /tasks/:taskID */
+  taskID?: string | null
   vm: VM | null
 }
 
