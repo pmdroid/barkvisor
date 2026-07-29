@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import api from '../api/client'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
-import type { Disk, DiskUsage, Network, GuestInfo, Image, PortForwardRule, BridgeInfo, HostUSBDevice, USBPassthroughDevice } from '../api/types'
+import type { Disk, GuestInfo, Image, PortForwardRule, BridgeInfo, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
 import ConsolePanel from '../components/ConsolePanel.vue'
@@ -21,13 +21,19 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useDiskStore } from '../stores/disks'
+import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
 
 const route = useRoute()
 const router = useRouter()
 const store = useVMStore()
 const caps = useCapabilitiesStore()
+const diskStore = useDiskStore()
+const networkStore = useNetworkStore()
 const { supportsUSBPassthrough, supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
+const { disks: allDisks, usages: diskUsages } = storeToRefs(diskStore)
+const { networks: allNetworks } = storeToRefs(networkStore)
 const vmId = computed(() => route.params.id as string)
 const tab = ref((route.query.tab as string) || 'overview')
 
@@ -46,14 +52,11 @@ const editDraft = ref({
 })
 const editSaving = ref(false)
 
-// Disk management
-const allDisks = ref<Disk[]>([])
-const diskUsages = ref<Record<string, DiskUsage>>({})
+// Disk management (list from shared store)
 const showAttachDisk = ref(false)
 const attachLoading = ref(false)
 
-// Network management
-const allNetworks = ref<Network[]>([])
+// Network management (list from shared store)
 const bridges = ref<BridgeInfo[]>([])
 const bridgeLoading = ref<string | null>(null)
 
@@ -108,23 +111,13 @@ const additionalDiskDetails = computed(() => {
 const allImages = ref<Image[]>([])
 
 async function fetchDisks() {
-  const { data } = await api.get('/disks')
-  allDisks.value = data
-  // Fetch usage for VM's disks
+  await diskStore.fetchAll()
   const vmDiskIds = [vm.value?.bootDiskId, ...(vm.value?.additionalDiskIds || [])].filter(Boolean) as string[]
-  const usages: Record<string, DiskUsage> = {}
-  await Promise.all(vmDiskIds.map(async (diskId) => {
-    try {
-      const { data: usage } = await api.get(`/disks/${diskId}/usage`)
-      usages[diskId] = usage
-    } catch { /* ignore */ }
-  }))
-  diskUsages.value = usages
+  if (vmDiskIds.length) await diskStore.fetchUsages(vmDiskIds)
 }
 
 async function fetchNetworks() {
-  const { data } = await api.get('/networks')
-  allNetworks.value = data
+  await networkStore.fetchAll()
 }
 
 async function fetchBridges() {
