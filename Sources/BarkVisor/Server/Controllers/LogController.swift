@@ -97,11 +97,7 @@ struct LogController: RouteCollection {
             try await DiagnosticService.generateBundle(vmState: vmState)
         }
 
-        let response = TaskAcceptedResponse(taskID: taskID)
-        let data = try JSONEncoder().encode(response)
-        var headers = HTTPHeaders()
-        headers.contentType = .json
-        return Response(status: .accepted, headers: headers, body: .init(data: data))
+        return try Response.json(TaskAcceptedResponse(taskID: taskID), status: .accepted)
     }
 
     @Sendable
