@@ -18,3 +18,8 @@ systemctl daemon-reload
 systemctl enable --now barkvisor.service
 systemctl --no-pager --full status barkvisor.service || true
 echo "UI: http://$(hostname -I 2>/dev/null | awk \"{print \$1}\"):7777"
+
+# --- SPA (optional) ---
+# If you built the frontend (./scripts/linux-frontend-serve.sh), serve it with:
+#   export BARKVISOR_FRONTEND_DIR=/path/to/frontend/dist
+# Or copy into the package layout under share/frontend/dist before install.
