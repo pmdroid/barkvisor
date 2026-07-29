@@ -5,59 +5,32 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=lib/linux-smoke-common.sh
+source "$ROOT/scripts/lib/linux-smoke-common.sh"
 
-if ! command -v swift >/dev/null 2>&1; then
-  echo "swift not on PATH. Install Ubuntu 24.04 Swift toolchain first." >&2
-  exit 1
-fi
+command -v swift >/dev/null 2>&1 || die "swift not on PATH. Install Ubuntu 24.04 Swift toolchain first."
+command -v curl >/dev/null 2>&1 || die "curl is required"
 
-PORT="${BARKVISOR_PORT:-17777}"
+PORT="$(pick_port)"
 export BARKVISOR_PORT="$PORT"
 export BARKVISOR_DATA_DIR="${BARKVISOR_DATA_DIR:-$(mktemp -d /tmp/barkvisor-smoke.XXXXXX)}"
-echo "data dir: $BARKVISOR_DATA_DIR"
-echo "port: $PORT"
+log "data dir: $BARKVISOR_DATA_DIR"
+log "port: $PORT"
 
-echo "==> swift build --product BarkVisorApp"
-swift build --product BarkVisorApp
+smoke_cleanup_trap
+build_barkvisor
+BIN="$(find_bin)" || die "BarkVisorApp binary not found under .build/"
+start_server "$BIN"
+wait_health 30 0.5
 
-BIN="$ROOT/.build/debug/BarkVisorApp"
-if [[ ! -x "$BIN" ]]; then
-  BIN="$ROOT/.build/release/BarkVisorApp"
-fi
-
-"$BIN" >"$BARKVISOR_DATA_DIR/server.log" 2>&1 &
-PID=$!
-cleanup() {
-  kill "$PID" 2>/dev/null || true
-  wait "$PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-ok=0
-for i in $(seq 1 30); do
-  if curl -sf "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
-    ok=1
-    break
-  fi
-  sleep 0.5
-done
-if [[ "$ok" -ne 1 ]]; then
-  echo "health check failed; server log:" >&2
-  tail -40 "$BARKVISOR_DATA_DIR/server.log" >&2 || true
-  exit 1
-fi
-
-echo "==> health"
-curl -sS "http://127.0.0.1:${PORT}/api/health"
+log "health"
+curl -sS "${BASE}/api/health"
 echo
 
-echo "==> capabilities"
-CAPS=$(curl -sS "http://127.0.0.1:${PORT}/api/system/capabilities")
+log "capabilities"
+CAPS=$(curl -sS "${BASE}/api/system/capabilities")
 echo "$CAPS"
-echo "$CAPS" | grep -q '"platform"' || {
-  echo "capabilities JSON missing platform" >&2
-  exit 1
-}
+echo "$CAPS" | grep -q '"platform"' || die "capabilities JSON missing platform"
 
 echo
 echo "linux-smoke: OK"
