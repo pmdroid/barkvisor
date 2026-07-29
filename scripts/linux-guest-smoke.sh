@@ -39,9 +39,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=lib/linux-smoke-common.sh
+source "$ROOT/scripts/lib/linux-smoke-common.sh"
 
-ADMIN_USER="${BARKVISOR_ADMIN_USER:-admin}"
-ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+export BARKVISOR_ADMIN_USER="${BARKVISOR_ADMIN_USER:-admin}"
+export BARKVISOR_ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+ADMIN_USER="${BARKVISOR_ADMIN_USER}"
+ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD}"
 VM_NAME="${VM_NAME:-linux-guest-smoke}"
 
 # Default Ubuntu 24.04 LTS minimal cloud image (arm64) for cloud-init + QEMU virt.
@@ -79,19 +83,11 @@ REQUIRED_ENDPOINTS=(
   "GET  /api/vms/:id"
 )
 
-die() {
-  echo "error: $*" >&2
-  exit 1
-}
-
-log() {
-  echo "==> $*"
-}
-
 # --- DRY_RUN: syntax + endpoint inventory (no server) ---
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   log "DRY_RUN=1 — bash -n self-check"
   bash -n "$0"
+  bash -n "$ROOT/scripts/lib/linux-smoke-common.sh"
 
   log "required API endpoints:"
   for ep in "${REQUIRED_ENDPOINTS[@]}"; do
@@ -124,49 +120,12 @@ command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required (free-port picker)"
 
-# Host arch → guest vmType (API CreateVMRequest currently validates linux-arm64 / windows-arm64;
-# lifecycle also accepts linux-amd64 / linux-x86_64 — use host-matched type.)
-detect_vm_type() {
-  local m
-  m="$(uname -m)"
-  case "$m" in
-    arm64 | aarch64) echo "linux-arm64" ;;
-    x86_64 | amd64) echo "linux-amd64" ;;
-    *) echo "linux-arm64" ;;
-  esac
-}
-
-detect_image_arch() {
-  # Image download API currently accepts arch "arm64" only.
-  case "$(uname -m)" in
-    arm64 | aarch64) echo "arm64" ;;
-    *) echo "arm64" ;;
-  esac
-}
-
 VM_TYPE="${BARKVISOR_VM_TYPE:-$(detect_vm_type)}"
 IMAGE_ARCH="$(detect_image_arch)"
-
-# Free port (or honor BARKVISOR_PORT if free-ish)
-pick_port() {
-  if [[ -n "${BARKVISOR_PORT:-}" ]]; then
-    echo "$BARKVISOR_PORT"
-    return
-  fi
-  python3 - <<'PY'
-import socket
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-}
 
 PORT="$(pick_port)"
 export BARKVISOR_PORT="$PORT"
 export BARKVISOR_DATA_DIR="${BARKVISOR_DATA_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/barkvisor-guest-smoke.XXXXXX")}"
-BASE="http://127.0.0.1:${PORT}"
-LOG_FILE="${BARKVISOR_DATA_DIR}/server.log"
 TOKEN=""
 SERVER_PID=""
 
@@ -174,76 +133,10 @@ log "data dir: $BARKVISOR_DATA_DIR"
 log "port: $PORT"
 log "vmType: $VM_TYPE"
 
-print_log_tail() {
-  echo "---- server log tail ($LOG_FILE) ----" >&2
-  if [[ -f "$LOG_FILE" ]]; then
-    tail -80 "$LOG_FILE" >&2 || true
-  else
-    echo "(no log file)" >&2
-  fi
-  echo "---- end log ----" >&2
-}
+smoke_cleanup_trap
 
-cleanup() {
-  local code=$?
-  if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
-    kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
-  fi
-  if [[ $code -ne 0 ]]; then
-    print_log_tail
-  fi
-}
-trap cleanup EXIT
-
-fail() {
-  echo "error: $*" >&2
-  print_log_tail
-  exit 1
-}
-
-api() {
-  # api METHOD PATH [curl body args...]
-  local method="$1"
-  local path="$2"
-  shift 2
-  local args=(-sS -X "$method" "${BASE}${path}" -H "Content-Type: application/json")
-  if [[ -n "${TOKEN:-}" ]]; then
-    args+=(-H "Authorization: Bearer ${TOKEN}")
-  fi
-  curl "${args[@]}" "$@"
-}
-
-api_code() {
-  local method="$1"
-  local path="$2"
-  shift 2
-  local args=(-sS -o /tmp/barkvisor-smoke-body.$$ -w "%{http_code}" -X "$method" "${BASE}${path}" -H "Content-Type: application/json")
-  if [[ -n "${TOKEN:-}" ]]; then
-    args+=(-H "Authorization: Bearer ${TOKEN}")
-  fi
-  curl "${args[@]}" "$@"
-}
-
-# --- build ---
-find_bin() {
-  if [[ -x "$ROOT/.build/debug/BarkVisorApp" ]]; then
-    echo "$ROOT/.build/debug/BarkVisorApp"
-  elif [[ -x "$ROOT/.build/release/BarkVisorApp" ]]; then
-    echo "$ROOT/.build/release/BarkVisorApp"
-  else
-    return 1
-  fi
-}
-
-if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  command -v swift >/dev/null 2>&1 || die "swift not on PATH"
-  log "swift build --product BarkVisorApp"
-  swift build --product BarkVisorApp
-else
-  log "SKIP_BUILD=1 — reusing binary"
-fi
-
+# --- build + start ---
+build_barkvisor
 BIN="$(find_bin)" || die "BarkVisorApp binary not found under .build/"
 
 # QEMU presence (soft unless we plan to start)
@@ -255,58 +148,9 @@ if ! command -v qemu-system-aarch64 >/dev/null 2>&1 && ! command -v qemu-system-
   fi
 fi
 
-# --- start server ---
-log "starting BarkVisorApp"
-"$BIN" >"$LOG_FILE" 2>&1 &
-SERVER_PID=$!
-
-ok=0
-for _ in $(seq 1 60); do
-  if curl -sf "${BASE}/api/health" >/dev/null 2>&1; then
-    ok=1
-    break
-  fi
-  # bail early if process died
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    fail "server exited before health check"
-  fi
-  sleep 0.5
-done
-[[ "$ok" -eq 1 ]] || fail "health check failed"
-
-log "health OK"
-
-# --- setup ---
-STATUS_JSON="$(api GET /api/setup/status || true)"
-COMPLETE="$(echo "$STATUS_JSON" | jq -r '.complete // false' 2>/dev/null || echo false)"
-
-if [[ "$COMPLETE" != "true" ]]; then
-  log "setup incomplete — creating admin + skipping bridge"
-  code="$(api_code POST /api/setup/admin -d "$(jq -n --arg u "$ADMIN_USER" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')")"
-  # 200 success; 409 if user already exists with password
-  if [[ "$code" != "200" && "$code" != "409" ]]; then
-    fail "POST /api/setup/admin returned HTTP $code: $(cat /tmp/barkvisor-smoke-body.$$ 2>/dev/null || true)"
-  fi
-
-  code="$(api_code POST /api/setup/bridge/skip -d '{}')"
-  [[ "$code" == "200" ]] || fail "POST /api/setup/bridge/skip returned HTTP $code"
-
-  COMPLETE_JSON="$(api POST /api/setup/complete -d '{}')"
-  TOKEN="$(echo "$COMPLETE_JSON" | jq -r '.token // empty')"
-  if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
-    fail "setup complete did not return token: $COMPLETE_JSON"
-  fi
-  log "setup complete (token from /api/setup/complete)"
-else
-  log "setup already complete — logging in"
-fi
-
-if [[ -z "${TOKEN:-}" ]]; then
-  LOGIN_JSON="$(api POST /api/auth/login -d "$(jq -n --arg u "$ADMIN_USER" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')")"
-  TOKEN="$(echo "$LOGIN_JSON" | jq -r '.token // empty')"
-  [[ -n "$TOKEN" && "$TOKEN" != "null" ]] || fail "login failed: $LOGIN_JSON"
-  log "login OK"
-fi
+start_server "$BIN"
+wait_health 60 0.5
+setup_or_login
 
 # --- default NAT network ---
 NETWORKS_JSON="$(api GET /api/networks)"

@@ -1,0 +1,211 @@
+# Shared helpers for Linux smoke entry points.
+# Source from scripts/linux-*.sh after ROOT is set:
+#   # shellcheck source=lib/linux-smoke-common.sh
+#   source "$ROOT/scripts/lib/linux-smoke-common.sh"
+#
+# Provides: die, log, fail, pick_port, find_bin, build_barkvisor, start_server,
+# wait_health, api, api_code, setup_or_login, print_log_tail, smoke_cleanup_trap
+#
+# Env used:
+#   BARKVISOR_PORT, BARKVISOR_DATA_DIR, BARKVISOR_ADMIN_USER, BARKVISOR_ADMIN_PASSWORD
+#   SKIP_BUILD, TOKEN (set by setup_or_login), SERVER_PID, LOG_FILE, BASE
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+log() {
+  echo "==> $*"
+}
+
+print_log_tail() {
+  local log_file="${LOG_FILE:-${BARKVISOR_DATA_DIR:-}/server.log}"
+  echo "---- server log tail (${log_file}) ----" >&2
+  if [[ -n "${log_file}" && -f "$log_file" ]]; then
+    tail -80 "$log_file" >&2 || true
+  else
+    echo "(no log file)" >&2
+  fi
+  echo "---- end log ----" >&2
+}
+
+fail() {
+  echo "error: $*" >&2
+  print_log_tail
+  exit 1
+}
+
+smoke_cleanup() {
+  local code=$?
+  if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  if [[ $code -ne 0 ]]; then
+    print_log_tail
+  fi
+}
+
+# Install EXIT trap (idempotent enough for smoke scripts).
+smoke_cleanup_trap() {
+  trap smoke_cleanup EXIT
+}
+
+pick_port() {
+  if [[ -n "${BARKVISOR_PORT:-}" ]]; then
+    echo "$BARKVISOR_PORT"
+    return
+  fi
+  python3 - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+}
+
+find_bin() {
+  local root="${ROOT:-.}"
+  if [[ -x "$root/.build/debug/BarkVisorApp" ]]; then
+    echo "$root/.build/debug/BarkVisorApp"
+  elif [[ -x "$root/.build/release/BarkVisorApp" ]]; then
+    echo "$root/.build/release/BarkVisorApp"
+  else
+    return 1
+  fi
+}
+
+build_barkvisor() {
+  local root="${ROOT:-.}"
+  if [[ "${SKIP_BUILD:-0}" == "1" ]]; then
+    log "SKIP_BUILD=1 — reusing binary"
+    return 0
+  fi
+  command -v swift >/dev/null 2>&1 || die "swift not on PATH"
+  log "swift build --product BarkVisorApp"
+  (cd "$root" && swift build --product BarkVisorApp)
+}
+
+# Start server in background; sets SERVER_PID, LOG_FILE, BASE.
+# Requires BARKVISOR_PORT and BARKVISOR_DATA_DIR.
+start_server() {
+  local bin="$1"
+  [[ -x "$bin" ]] || die "binary not executable: $bin"
+  [[ -n "${BARKVISOR_PORT:-}" ]] || die "BARKVISOR_PORT not set"
+  [[ -n "${BARKVISOR_DATA_DIR:-}" ]] || die "BARKVISOR_DATA_DIR not set"
+
+  export BARKVISOR_PORT BARKVISOR_DATA_DIR
+  LOG_FILE="${BARKVISOR_DATA_DIR}/server.log"
+  BASE="http://127.0.0.1:${BARKVISOR_PORT}"
+
+  log "starting BarkVisorApp (port ${BARKVISOR_PORT})"
+  "$bin" >"$LOG_FILE" 2>&1 &
+  SERVER_PID=$!
+}
+
+# Wait until /api/health succeeds or fail.
+# Args: max attempts (default 60), sleep secs (default 0.5)
+wait_health() {
+  local attempts="${1:-60}"
+  local sleep_s="${2:-0.5}"
+  local base="${BASE:-http://127.0.0.1:${BARKVISOR_PORT}}"
+  local ok=0
+  local i
+  for i in $(seq 1 "$attempts"); do
+    if curl -sf "${base}/api/health" >/dev/null 2>&1; then
+      ok=1
+      break
+    fi
+    if [[ -n "${SERVER_PID:-}" ]] && ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      fail "server exited before health check"
+    fi
+    sleep "$sleep_s"
+  done
+  [[ "$ok" -eq 1 ]] || fail "health check failed"
+  log "health OK"
+}
+
+api() {
+  # api METHOD PATH [curl body args...]
+  local method="$1"
+  local path="$2"
+  shift 2
+  local base="${BASE:-http://127.0.0.1:${BARKVISOR_PORT}}"
+  local args=(-sS -X "$method" "${base}${path}" -H "Content-Type: application/json")
+  if [[ -n "${TOKEN:-}" ]]; then
+    args+=(-H "Authorization: Bearer ${TOKEN}")
+  fi
+  curl "${args[@]}" "$@"
+}
+
+api_code() {
+  local method="$1"
+  local path="$2"
+  shift 2
+  local base="${BASE:-http://127.0.0.1:${BARKVISOR_PORT}}"
+  local body_file="${SMOKE_BODY_FILE:-/tmp/barkvisor-smoke-body.$$}"
+  local args=(-sS -o "$body_file" -w "%{http_code}" -X "$method" "${base}${path}" -H "Content-Type: application/json")
+  if [[ -n "${TOKEN:-}" ]]; then
+    args+=(-H "Authorization: Bearer ${TOKEN}")
+  fi
+  curl "${args[@]}" "$@"
+}
+
+# Complete setup wizard or login. Sets TOKEN.
+# Uses BARKVISOR_ADMIN_USER / BARKVISOR_ADMIN_PASSWORD.
+setup_or_login() {
+  local admin_user="${BARKVISOR_ADMIN_USER:-admin}"
+  local admin_password="${BARKVISOR_ADMIN_PASSWORD:-barkvisor-smoke-pass}"
+  local status_json complete code complete_json login_json
+
+  STATUS_JSON="$(api GET /api/setup/status || true)"
+  complete="$(echo "$STATUS_JSON" | jq -r '.complete // false' 2>/dev/null || echo false)"
+
+  if [[ "$complete" != "true" ]]; then
+    log "setup incomplete — creating admin + skipping bridge"
+    code="$(api_code POST /api/setup/admin -d "$(jq -n --arg u "$admin_user" --arg p "$admin_password" '{username:$u,password:$p}')")"
+    if [[ "$code" != "200" && "$code" != "409" ]]; then
+      fail "POST /api/setup/admin returned HTTP $code: $(cat "${SMOKE_BODY_FILE:-/tmp/barkvisor-smoke-body.$$}" 2>/dev/null || true)"
+    fi
+
+    code="$(api_code POST /api/setup/bridge/skip -d '{}')"
+    [[ "$code" == "200" ]] || fail "POST /api/setup/bridge/skip returned HTTP $code"
+
+    complete_json="$(api POST /api/setup/complete -d '{}')"
+    TOKEN="$(echo "$complete_json" | jq -r '.token // empty')"
+    if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+      fail "setup complete did not return token: $complete_json"
+    fi
+    log "setup complete (token from /api/setup/complete)"
+  else
+    log "setup already complete — logging in"
+  fi
+
+  if [[ -z "${TOKEN:-}" ]]; then
+    login_json="$(api POST /api/auth/login -d "$(jq -n --arg u "$admin_user" --arg p "$admin_password" '{username:$u,password:$p}')")"
+    TOKEN="$(echo "$login_json" | jq -r '.token // empty')"
+    [[ -n "$TOKEN" && "$TOKEN" != "null" ]] || fail "login failed: $login_json"
+    log "login OK"
+  fi
+  export TOKEN
+}
+
+detect_vm_type() {
+  local m
+  m="$(uname -m)"
+  case "$m" in
+    arm64 | aarch64) echo "linux-arm64" ;;
+    x86_64 | amd64) echo "linux-amd64" ;;
+    *) echo "linux-arm64" ;;
+  esac
+}
+
+detect_image_arch() {
+  # Image download API currently accepts arch "arm64" primarily on Apple Silicon hosts.
+  case "$(uname -m)" in
+    arm64 | aarch64) echo "arm64" ;;
+    *) echo "arm64" ;;
+  esac
+}
