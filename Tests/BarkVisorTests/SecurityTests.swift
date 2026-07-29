@@ -113,41 +113,41 @@ struct SecurityTests {
     // MARK: - QEMUBuilder: IPv4 Validation
 
     @Test func `valid I pv 4 addresses`() {
-        #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("192.168.1.1") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("0.0.0.0") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("255.255.255.255") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("10.0.0.1") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateIPv4("127.0.0.1") }
+        #expect(throws: Never.self) { try validateIPv4("192.168.1.1") }
+        #expect(throws: Never.self) { try validateIPv4("0.0.0.0") }
+        #expect(throws: Never.self) { try validateIPv4("255.255.255.255") }
+        #expect(throws: Never.self) { try validateIPv4("10.0.0.1") }
+        #expect(throws: Never.self) { try validateIPv4("127.0.0.1") }
     }
 
     @Test func `invalid I pv 4 addresses`() {
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("256.0.0.0") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("1.2.3") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("1.2.3.4.5") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("01.02.03.04") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("abc.def.ghi.jkl") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("192.168.1.1; rm -rf /") }
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateIPv4("-1.0.0.0") }
+        #expect(throws: (any Error).self) { try validateIPv4("256.0.0.0") }
+        #expect(throws: (any Error).self) { try validateIPv4("1.2.3") }
+        #expect(throws: (any Error).self) { try validateIPv4("1.2.3.4.5") }
+        #expect(throws: (any Error).self) { try validateIPv4("01.02.03.04") }
+        #expect(throws: (any Error).self) { try validateIPv4("abc.def.ghi.jkl") }
+        #expect(throws: (any Error).self) { try validateIPv4("") }
+        #expect(throws: (any Error).self) { try validateIPv4("192.168.1.1; rm -rf /") }
+        #expect(throws: (any Error).self) { try validateIPv4("-1.0.0.0") }
     }
 
     // MARK: - QEMUBuilder: MAC Validation
 
     @Test func `valid MAC addresses`() {
-        #expect(throws: Never.self) { try QEMUBuilder.validateMAC("52:54:00:12:34:56") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateMAC("aa:bb:cc:dd:ee:ff") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateMAC("AA:BB:CC:DD:EE:FF") }
-        #expect(throws: Never.self) { try QEMUBuilder.validateMAC("00:00:00:00:00:00") }
+        #expect(throws: Never.self) { try validateMAC("52:54:00:12:34:56") }
+        #expect(throws: Never.self) { try validateMAC("aa:bb:cc:dd:ee:ff") }
+        #expect(throws: Never.self) { try validateMAC("AA:BB:CC:DD:EE:FF") }
+        #expect(throws: Never.self) { try validateMAC("00:00:00:00:00:00") }
     }
 
     @Test func `invalid MAC addresses`() {
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34") } // too few octets
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:56:78") } // too many octets
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:GG") } // non-hex
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52-54-00-12-34-56") } // wrong separator
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("") } // empty
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("5254.0012.3456") } // dot notation
-        #expect(throws: (any Error).self) { try QEMUBuilder.validateMAC("52:54:00:12:34:5") } // short octet
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34") } // too few octets
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34:56:78") } // too many octets
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34:GG") } // non-hex
+        #expect(throws: (any Error).self) { try validateMAC("52-54-00-12-34-56") } // wrong separator
+        #expect(throws: (any Error).self) { try validateMAC("") } // empty
+        #expect(throws: (any Error).self) { try validateMAC("5254.0012.3456") } // dot notation
+        #expect(throws: (any Error).self) { try validateMAC("52:54:00:12:34:5") } // short octet
     }
 
     // MARK: - QEMUBuilder: Port Validation (Boundary Values)
