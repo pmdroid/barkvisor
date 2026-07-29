@@ -26,7 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useVMStore()
 const caps = useCapabilitiesStore()
-const { supportsUSBPassthrough, supportsBridgedNetworking } = storeToRefs(caps)
+const { supportsUSBPassthrough, supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
 const vmId = computed(() => route.params.id as string)
 const tab = ref((route.query.tab as string) || 'overview')
 
@@ -133,7 +133,9 @@ async function fetchBridges() {
   } catch {}
 }
 
+/** macOS only: socket_vmnet daemon must be active before start. Linux uses host bridges. */
 const bridgeNotReady = computed(() => {
+  if (!supportsManagedBridgeDaemon.value) return false
   if (!supportsBridgedNetworking.value) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
   const info = bridges.value.find(b => b.interface === currentNetwork.value!.bridge)
@@ -298,7 +300,7 @@ async function loadVMDetail() {
       store.fetchOne(vmId.value),
       fetchNetworks(),
       fetchImages(),
-      ...(supportsBridgedNetworking.value ? [fetchBridges()] : []),
+      ...(supportsManagedBridgeDaemon.value ? [fetchBridges()] : []),
     ])
     if (loadVersion !== detailLoadVersion) return
 
@@ -311,7 +313,7 @@ async function loadVMDetail() {
     connectStateSSE()
     pollInterval = window.setInterval(() => {
       store.fetchOne(vmId.value).then(fetchGuestInfo).catch(() => {})
-      if (supportsBridgedNetworking.value) fetchBridges()
+      if (supportsManagedBridgeDaemon.value) fetchBridges()
     }, 15000)
   } catch (e: any) {
     if (loadVersion === detailLoadVersion) {

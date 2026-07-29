@@ -3,7 +3,8 @@ import GRDB
 
 public enum BridgeSyncService {
     public static func syncOnce(db: DatabasePool) async {
-        // On Linux PrivilegeService returns an empty list (no-op).
+        // Intended for managed bridge daemons (macOS). Call sites should gate on
+        // PlatformCapabilities.supportsManagedBridgeDaemon.
         do {
             let states = try await PrivilegeService.shared.getAllBridgeStates()
             let now = iso8601.string(from: Date())

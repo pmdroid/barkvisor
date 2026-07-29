@@ -290,8 +290,8 @@ public final class VaporServer: @unchecked Sendable {
             BackupService.performBackup(pool: pool)
             BackupService.pruneOldBackups()
         }
-        // Bridged networking is macOS-only; skip XPC/helper polling on unsupported platforms.
-        if PrivilegeService.isBridgedNetworkingSupported {
+        // Poll managed bridge daemons (socket_vmnet) only — Linux host bridges are not daemons.
+        if PrivilegeService.isManagedBridgeDaemonSupported {
             await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: 5 * 1_000_000_000) {
                 await BridgeSyncService.syncOnce(db: pool)
             }
