@@ -232,20 +232,16 @@ struct VMController: RouteCollection {
             AuditService.log(
                 action: "vm.create", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
-            let data = try JSONEncoder().encode(VMResponse(from: vm))
-            var headers = HTTPHeaders()
-            headers.contentType = .json
-            return Response(status: .ok, headers: headers, body: .init(data: data))
+            return try Response.json(VMResponse(from: vm), status: .ok)
 
         case let .provisioning(taskID, vm):
             AuditService.log(
                 action: "vm.create", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
-            let response = VMTaskAcceptedResponse(taskID: taskID, vm: VMResponse(from: vm))
-            let data = try JSONEncoder().encode(response)
-            var headers = HTTPHeaders()
-            headers.contentType = .json
-            return Response(status: .accepted, headers: headers, body: .init(data: data))
+            return try Response.json(
+                VMTaskAcceptedResponse(taskID: taskID, vm: VMResponse(from: vm)),
+                status: .accepted,
+            )
         }
     }
 
@@ -287,11 +283,7 @@ struct VMController: RouteCollection {
             action: "vm.delete", resourceType: "vm", resourceId: id, resourceName: vmName, req: req,
         )
 
-        let response = TaskAcceptedResponse(taskID: taskID)
-        let data = try JSONEncoder().encode(response)
-        var headers = HTTPHeaders()
-        headers.contentType = .json
-        return Response(status: .accepted, headers: headers, body: .init(data: data))
+        return try Response.json(TaskAcceptedResponse(taskID: taskID), status: .accepted)
     }
 
     // MARK: - Lifecycle
@@ -382,54 +374,7 @@ struct VMController: RouteCollection {
             throw Abort(.notFound)
         }
 
-        let headers = HTTPHeaders([
-            ("Content-Type", "text/event-stream"),
-            ("Cache-Control", "no-cache"),
-            ("Connection", "keep-alive"),
-        ])
-
         let stream = await stateStreamService.stateStream(vmID: id)
-        let encoder = JSONEncoder()
-
-        return Response(
-            status: .ok, headers: headers,
-            body: .init(asyncStream: { writer in
-                do {
-                    let merged = AsyncStream<String> { continuation in
-                        let eventTask = Task {
-                            for await event in stream {
-                                if let data = try? encoder.encode(event),
-                                   let json = String(data: data, encoding: .utf8) {
-                                    continuation.yield("data: \(json)\n\n")
-                                }
-                            }
-                            continuation.finish()
-                        }
-                        let keepaliveTask = Task {
-                            while !Task.isCancelled {
-                                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                                guard !Task.isCancelled else { break }
-                                continuation.yield(": keepalive\n\n")
-                            }
-                        }
-                        continuation.onTermination = { _ in
-                            eventTask.cancel()
-                            keepaliveTask.cancel()
-                        }
-                    }
-
-                    for await chunk in merged {
-                        try await writer.write(.buffer(.init(string: chunk)))
-                    }
-                    try await writer.write(.end)
-                } catch {
-                    let isBrokenPipe = "\(error)".contains("Broken pipe")
-                    if !isBrokenPipe {
-                        Log.vm.error("VM state stream error for \(id): \(error)", vm: id)
-                    }
-                    try? await writer.write(.end)
-                }
-            }),
-        )
+        return SSEResponse.stream(from: stream, keepaliveSeconds: 15)
     }
 }
