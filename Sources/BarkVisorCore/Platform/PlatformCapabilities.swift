@@ -31,12 +31,30 @@ public enum PlatformCapabilities {
     }
 
     /// QEMU accelerator name for this host.
+    /// Linux uses KVM when `/dev/kvm` is present; otherwise falls back to TCG
+    /// (common in nested VMs such as OrbStack without nested virt).
     public static var accelerator: String {
         #if os(macOS)
-            "hvf"
+            return "hvf"
+        #elseif os(Linux)
+            if FileManager.default.fileExists(atPath: "/dev/kvm") {
+                return "kvm"
+            }
+            return "tcg"
         #else
-            "kvm"
+            return "tcg"
         #endif
+    }
+
+    /// QEMU `-cpu` model matching the accelerator.
+    /// `host` requires KVM/HVF; TCG needs a software model (`max`).
+    public static var qemuCPUModel: String {
+        switch accelerator {
+        case "hvf", "kvm":
+            return "host"
+        default:
+            return "max"
+        }
     }
 
     /// Default guest architecture matching the host CPU.
