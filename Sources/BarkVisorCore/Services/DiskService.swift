@@ -50,16 +50,13 @@ public enum DiskService {
             throw BarkVisorError.diskCreateFailed("Unsupported format: \(format)")
         }
         let qemuImg = try resolveQEMUImg()
-        let process = Process()
-        process.executableURL = qemuImg
-        process.arguments = ["create", "-f", format, path.path, "\(sizeGB)G"]
-        let pipe = Pipe()
-        process.standardError = pipe
-        try runWithTimeout(process)
-        guard process.terminationStatus == 0 else {
-            let stderr =
-                String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw BarkVisorError.diskCreateFailed("qemu-img create failed: \(stderr)")
+        let result = try PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["create", "-f", format, path.path, "\(sizeGB)G"],
+            timeout: 300,
+        )
+        guard result.succeeded else {
+            throw BarkVisorError.diskCreateFailed("qemu-img create failed: \(result.stderrString)")
         }
     }
 
@@ -68,39 +65,36 @@ public enum DiskService {
         let qemuImg = try resolveQEMUImg()
 
         // Convert to qcow2
-        let convert = Process()
-        convert.executableURL = qemuImg
-        convert.arguments = ["convert", "-f", "qcow2", "-O", "qcow2", sourcePath, destPath.path]
-        let pipe1 = Pipe()
-        convert.standardError = pipe1
-        try runWithTimeout(convert)
-        if convert.terminationStatus != 0 {
+        let convert = try PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["convert", "-f", "qcow2", "-O", "qcow2", sourcePath, destPath.path],
+            timeout: 300,
+        )
+        if !convert.succeeded {
             // Fallback: try without explicit source format
-            let convert2 = Process()
-            convert2.executableURL = qemuImg
-            convert2.arguments = ["convert", "-O", "qcow2", sourcePath, destPath.path]
-            let pipe1b = Pipe()
-            convert2.standardError = pipe1b
-            try runWithTimeout(convert2)
-            guard convert2.terminationStatus == 0 else {
-                let stderr =
-                    String(data: pipe1b.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                throw BarkVisorError.diskCreateFailed("qemu-img convert failed: \(stderr)")
+            let convert2 = try PlatformProcess.run(
+                executable: qemuImg,
+                arguments: ["convert", "-O", "qcow2", sourcePath, destPath.path],
+                timeout: 300,
+            )
+            guard convert2.succeeded else {
+                throw BarkVisorError.diskCreateFailed(
+                    "qemu-img convert failed: \(convert2.stderrString)",
+                )
             }
         }
 
         // Resize if requested
         if let sizeGB, sizeGB > 0 {
-            let resize = Process()
-            resize.executableURL = qemuImg
-            resize.arguments = ["resize", destPath.path, "\(sizeGB)G"]
-            let pipe2 = Pipe()
-            resize.standardError = pipe2
-            try runWithTimeout(resize)
-            guard resize.terminationStatus == 0 else {
-                let stderr =
-                    String(data: pipe2.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                throw BarkVisorError.diskCreateFailed("qemu-img resize failed: \(stderr)")
+            let resize = try PlatformProcess.run(
+                executable: qemuImg,
+                arguments: ["resize", destPath.path, "\(sizeGB)G"],
+                timeout: 300,
+            )
+            guard resize.succeeded else {
+                throw BarkVisorError.diskCreateFailed(
+                    "qemu-img resize failed: \(resize.stderrString)",
+                )
             }
         }
     }
@@ -108,30 +102,25 @@ public enum DiskService {
     /// Resize a disk image to a new size
     public static func resize(path: String, sizeGB: Int) throws {
         let qemuImg = try resolveQEMUImg()
-        let process = Process()
-        process.executableURL = qemuImg
-        process.arguments = ["resize", path, "\(sizeGB)G"]
-        let pipe = Pipe()
-        process.standardError = pipe
-        try runWithTimeout(process)
-        guard process.terminationStatus == 0 else {
-            let stderr =
-                String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw BarkVisorError.diskCreateFailed("qemu-img resize failed: \(stderr)")
+        let result = try PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["resize", path, "\(sizeGB)G"],
+            timeout: 300,
+        )
+        guard result.succeeded else {
+            throw BarkVisorError.diskCreateFailed("qemu-img resize failed: \(result.stderrString)")
         }
     }
 
     /// Get virtual size of a disk image in bytes
     public static func getVirtualSize(path: String) throws -> Int64 {
         let qemuImg = try resolveQEMUImg()
-        let process = Process()
-        process.executableURL = qemuImg
-        process.arguments = ["info", "--output=json", "-U", path]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        try runWithTimeout(process)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let result = try PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["info", "--output=json", "-U", path],
+            timeout: 60,
+        )
+        if let json = try JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
            let virtualSize = json["virtual-size"] as? Int64 {
             return virtualSize
         }
@@ -143,39 +132,21 @@ public enum DiskService {
     /// Get disk image info (virtual size and actual on-disk size) via qemu-img info
     public static func getImageInfo(path: String) throws -> DiskImageInfo {
         let qemuImg = try resolveQEMUImg()
-        let process = Process()
-        process.executableURL = qemuImg
-        process.arguments = ["info", "--output=json", "-U", path]
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try runWithTimeout(process)
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let stderr =
-                String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw BarkVisorError.diskCreateFailed("qemu-img info failed: \(stderr)")
+        let result = try PlatformProcess.run(
+            executable: qemuImg,
+            arguments: ["info", "--output=json", "-U", path],
+            timeout: 60,
+        )
+        guard result.succeeded else {
+            throw BarkVisorError.diskCreateFailed("qemu-img info failed: \(result.stderrString)")
         }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let json = try JSONSerialization.jsonObject(with: result.stdout) as? [String: Any]
+        else {
             throw BarkVisorError.diskCreateFailed("qemu-img info returned invalid JSON")
         }
         let virtualSize = (json["virtual-size"] as? Int64) ?? 0
         let actualSize = (json["actual-size"] as? Int64) ?? 0
         return DiskImageInfo(virtualSize: virtualSize, actualSize: actualSize)
-    }
-
-    /// Run a `Process` with a timeout to avoid blocking the thread indefinitely.
-    private static func runWithTimeout(_ process: Process, timeout: TimeInterval = 300) throws {
-        try process.run()
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-        if process.isRunning {
-            process.terminate()
-            throw BarkVisorError.timeout("Process timed out after \(Int(timeout))s")
-        }
     }
 
     // MARK: - High-level operations (extracted from DiskController)
