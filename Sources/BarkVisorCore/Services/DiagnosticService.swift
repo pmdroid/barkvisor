@@ -58,14 +58,13 @@ public enum DiagnosticService {
             "barkvisor-diagnostics-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")).tar.gz"
         let archivePath = FileManager.default.temporaryDirectory.appendingPathComponent(archiveName)
 
-        let tarProcess = Process()
-        tarProcess.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        tarProcess.arguments = ["-czf", archivePath.path, "-C", tempDir.path, "."]
-        try tarProcess.run()
-        tarProcess.waitUntilExit()
+        let tar = try PlatformProcess.run(
+            path: "/usr/bin/tar",
+            arguments: ["-czf", archivePath.path, "-C", tempDir.path, "."],
+            timeout: 120,
+        )
 
-        guard tarProcess.terminationStatus == 0,
-              FileManager.default.fileExists(atPath: archivePath.path)
+        guard tar.succeeded, FileManager.default.fileExists(atPath: archivePath.path)
         else {
             throw BarkVisorError.processSpawnFailed("Failed to create diagnostic bundle")
         }

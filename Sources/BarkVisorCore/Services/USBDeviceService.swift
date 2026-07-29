@@ -71,18 +71,12 @@ public enum USBDeviceService {
                 return []
             }
 
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: exe)
-            proc.arguments = []
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-            try proc.run()
-            proc.waitUntilExit()
-            guard proc.terminationStatus == 0 else { return [] }
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let text = String(data: data, encoding: .utf8) else { return [] }
+            let result = (try? PlatformProcess.run(path: exe, arguments: [], timeout: 15)) ?? .init(
+                exitCode: -1, stdout: Data(), stderr: Data(),
+            )
+            guard result.succeeded else { return [] }
+            let text = result.stdoutString
+            guard !text.isEmpty else { return [] }
 
             var devices: [HostUSBDevice] = []
             var seen = Set<String>()
@@ -103,23 +97,16 @@ public enum USBDeviceService {
         /// USB mass storage devices are excluded — they require macOS to release
         /// the device first and are unreliable for passthrough on macOS.
         private static func listDevicesMacOS() throws -> [HostUSBDevice] {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
-            proc.arguments = ["-p", "IOUSB", "-c", "IOUSBHostDevice", "-r", "-a"]
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-            try proc.run()
-            proc.waitUntilExit()
+            let result = (try? PlatformProcess.run(
+                path: "/usr/sbin/ioreg",
+                arguments: ["-p", "IOUSB", "-c", "IOUSBHostDevice", "-r", "-a"],
+                timeout: 15,
+            )) ?? .init(exitCode: -1, stdout: Data(), stderr: Data())
+            guard result.succeeded, !result.stdout.isEmpty else { return [] }
 
-            guard proc.terminationStatus == 0 else {
-                return []
-            }
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard !data.isEmpty else { return [] }
-
-            guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
+            guard let plist = try? PropertyListSerialization.propertyList(
+                from: result.stdout, format: nil,
+            )
             else {
                 return []
             }
@@ -175,19 +162,16 @@ public enum USBDeviceService {
 
         /// Find product names of USB devices that are registered as external physical disks.
         private static func findUSBStorageProductNames() -> Set<String> {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-            proc.arguments = ["list", "-plist", "external", "physical"]
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-            guard (try? proc.run()) != nil else { return [] }
-            proc.waitUntilExit()
-            guard proc.terminationStatus == 0 else { return [] }
+            let list = (try? PlatformProcess.run(
+                path: "/usr/sbin/diskutil",
+                arguments: ["list", "-plist", "external", "physical"],
+                timeout: 15,
+            )) ?? .init(exitCode: -1, stdout: Data(), stderr: Data())
+            guard list.succeeded else { return [] }
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
-                as? [String: Any],
+            guard let plist = try? PropertyListSerialization.propertyList(
+                from: list.stdout, format: nil,
+            ) as? [String: Any],
                 let disks = plist["AllDisksAndPartitions"] as? [[String: Any]]
             else {
                 return []
@@ -197,20 +181,17 @@ public enum USBDeviceService {
             for disk in disks {
                 guard let deviceId = disk["DeviceIdentifier"] as? String else { continue }
 
-                let infoProc = Process()
-                infoProc.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-                infoProc.arguments = ["info", "-plist", deviceId]
-                let infoPipe = Pipe()
-                infoProc.standardOutput = infoPipe
-                infoProc.standardError = FileHandle.nullDevice
-                guard (try? infoProc.run()) != nil else { continue }
-                infoProc.waitUntilExit()
-                guard infoProc.terminationStatus == 0 else { continue }
+                let info = (try? PlatformProcess.run(
+                    path: "/usr/sbin/diskutil",
+                    arguments: ["info", "-plist", deviceId],
+                    timeout: 10,
+                )) ?? .init(exitCode: -1, stdout: Data(), stderr: Data())
+                guard info.succeeded else { continue }
 
-                let infoData = infoPipe.fileHandleForReading.readDataToEndOfFile()
-                if let info = try? PropertyListSerialization.propertyList(from: infoData, format: nil)
-                    as? [String: Any],
-                    let mediaName = info["MediaName"] as? String, !mediaName.isEmpty {
+                if let infoPlist = try? PropertyListSerialization.propertyList(
+                    from: info.stdout, format: nil,
+                ) as? [String: Any],
+                    let mediaName = infoPlist["MediaName"] as? String, !mediaName.isEmpty {
                     names.insert(mediaName)
                 }
             }

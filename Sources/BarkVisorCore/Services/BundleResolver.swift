@@ -126,22 +126,15 @@ public enum BundleResolver {
     }
 
     private static func whichLookup(_ name: String) -> URL? {
-        let which = Process()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = [name]
-        let pipe = Pipe()
-        which.standardOutput = pipe
-        which.standardError = FileHandle.nullDevice
-        do {
-            try which.run()
-            which.waitUntilExit()
-            let output =
-                String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if which.terminationStatus == 0, !output.isEmpty {
-                return URL(fileURLWithPath: output)
-            }
-        } catch {}
-        return nil
+        guard let result = try? PlatformProcess.run(
+            path: "/usr/bin/which",
+            arguments: [name],
+            timeout: 5,
+        ), result.succeeded else {
+            return nil
+        }
+        let output = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !output.isEmpty else { return nil }
+        return URL(fileURLWithPath: output)
     }
 }
