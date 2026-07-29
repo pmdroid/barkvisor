@@ -80,6 +80,40 @@ public enum NetworkService {
         return network
     }
 
+    /// Ensure a bridged `Network` row exists for a host interface (setup / system bridge install).
+    /// Returns the existing row when present; otherwise creates an auto-created bridged network.
+    /// Does not install the managed bridge daemon — call PrivilegeService separately.
+    @discardableResult
+    public static func ensureBridgedNetwork(
+        for interface: String,
+        db: DatabasePool,
+    ) async throws -> Network {
+        let existing = try await db.read { db in
+            try Network.filter(Column("bridge") == interface).fetchOne(db)
+        }
+        if let existing {
+            return existing
+        }
+
+        try PlatformCapabilities.requireBridgedNetworking()
+        try validateBridgeName(interface)
+
+        let network = Network(
+            id: UUID().uuidString,
+            name: "Bridged (\(interface))",
+            mode: "bridged",
+            bridge: interface,
+            macAddress: nil,
+            dnsServer: nil,
+            autoCreated: true,
+            isDefault: false,
+        )
+        try await db.write { db in
+            try network.insert(db)
+        }
+        return network
+    }
+
     /// Update a network's fields after validation.
     public static func update(
         _ params: UpdateNetworkParams,

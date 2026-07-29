@@ -97,32 +97,19 @@ struct SetupController: RouteCollection {
         guard !setupMiddleware.isSetupComplete else {
             throw Abort(.notFound)
         }
-        let bridgeRecords = try await req.db.read { db in
-            try BridgeRecord.fetchAll(db)
+        let bridgeStatusByInterface = try await req.db.read { db in
+            try Dictionary(
+                uniqueKeysWithValues: BridgeRecord.fetchAll(db).map { ($0.interface, $0.status) },
+            )
         }
-        let bridgeByInterface = Dictionary(
-            uniqueKeysWithValues: bridgeRecords.map { ($0.interface, $0) },
-        )
-
-        let rawInterfaces = HostInfoService.listInterfaces()
-        return rawInterfaces.map { iface in
-            let displayName: String =
-                if iface.name.hasPrefix("en") {
-                    "\(iface.name) (Ethernet/Wi-Fi)"
-                } else if iface.name.hasPrefix("bridge") {
-                    "\(iface.name) (Bridge)"
-                } else if iface.name == "lo0" {
-                    "lo0 (Loopback)"
-                } else {
-                    iface.name
-                }
-
-            let bridge = bridgeByInterface[iface.name]
-            return InterfaceResponse(
-                name: iface.name,
-                displayName: displayName,
-                ipAddress: iface.ipAddress,
-                bridgeStatus: bridge?.status == "not_configured" ? nil : bridge?.status,
+        return HostInfoService.listInterfaceSnapshots(
+            bridgeStatusByInterface: bridgeStatusByInterface,
+        ).map {
+            InterfaceResponse(
+                name: $0.name,
+                displayName: $0.displayName,
+                ipAddress: $0.ipAddress,
+                bridgeStatus: $0.bridgeStatus,
             )
         }
     }
@@ -160,23 +147,8 @@ struct SetupController: RouteCollection {
 
         // Sync bridge state into the DB immediately
         await BridgeSyncService.syncOnce(db: req.db)
-
-        // Create a bridged network record if one doesn't exist for this interface
-        let existing = try await req.db.read { db in
-            try Network.filter(Column("bridge") == body.interface).fetchOne(db)
-        }
-        if existing == nil {
-            _ = try await NetworkService.create(
-                CreateNetworkParams(
-                    name: "Bridged (\(body.interface))",
-                    mode: "bridged",
-                    bridge: body.interface,
-                    macAddress: nil,
-                    dnsServer: nil,
-                ),
-                db: req.db,
-            )
-        }
+        // Setup-only: swallow already-exists above; shared helper creates the network row.
+        _ = try await NetworkService.ensureBridgedNetwork(for: body.interface, db: req.db)
 
         return BridgeResponse(success: true, message: nil)
     }
