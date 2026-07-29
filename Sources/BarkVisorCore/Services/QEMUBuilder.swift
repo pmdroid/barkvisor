@@ -29,10 +29,36 @@ public struct QEMUBuildContext {
     public let isos: [VMImage]
     public let network: Network?
     public let additionalDisks: [Disk]
-    public let vncSock: URL
-    public let serialSock: URL
-    public let qmpSock: URL
+    public let sockets: VMSockets
     public let bridgeSocketPath: String?
+
+    public var vncSock: URL {
+        sockets.vnc
+    }
+    public var serialSock: URL {
+        sockets.serial
+    }
+    public var qmpSock: URL {
+        sockets.qmp
+    }
+
+    public init(
+        vm: VM,
+        disk: Disk,
+        isos: [VMImage],
+        network: Network?,
+        additionalDisks: [Disk],
+        sockets: VMSockets,
+        bridgeSocketPath: String?,
+    ) {
+        self.vm = vm
+        self.disk = disk
+        self.isos = isos
+        self.network = network
+        self.additionalDisks = additionalDisks
+        self.sockets = sockets
+        self.bridgeSocketPath = bridgeSocketPath
+    }
 }
 
 // swiftlint:disable file_length
@@ -375,18 +401,15 @@ public enum QEMUBuilder {
     }
 
     private static func socketArgs(ctx: QEMUBuildContext) -> [String] {
-        let evtSockPath = ctx.qmpSock.path.replacingOccurrences(of: "-qmp.sock", with: "-evt.sock")
-        let vmPrefix = ctx.qmpSock.lastPathComponent.replacingOccurrences(of: "-qmp.sock", with: "")
-        let gaSockPath = ctx.qmpSock.deletingLastPathComponent()
-            .appendingPathComponent("\(vmPrefix)-ga.sock").path
+        let s = ctx.sockets
         return [
-            "-chardev", "socket,id=serial0,path=\(ctx.serialSock.path),server=on,wait=off",
+            "-chardev", "socket,id=serial0,path=\(s.serial.path),server=on,wait=off",
             "-serial", "chardev:serial0",
-            "-vnc", "unix:\(ctx.vncSock.path)",
-            "-qmp", "unix:\(ctx.qmpSock.path),server,nowait",
-            "-qmp", "unix:\(evtSockPath),server,nowait",
+            "-vnc", "unix:\(s.vnc.path)",
+            "-qmp", "unix:\(s.qmp.path),server,nowait",
+            "-qmp", "unix:\(s.event.path),server,nowait",
             "-device", "virtio-serial-pci",
-            "-chardev", "socket,path=\(gaSockPath),server=on,wait=off,id=qga0",
+            "-chardev", "socket,path=\(s.guestAgent.path),server=on,wait=off,id=qga0",
             "-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",
         ]
     }

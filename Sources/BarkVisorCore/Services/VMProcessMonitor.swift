@@ -89,9 +89,8 @@ public actor VMProcessMonitor {
             return false
         }
 
-        let shortID = String(vmID.prefix(12))
-        let qmpSock = Config.socketDir.appendingPathComponent("\(shortID)-qmp.sock").path
-        guard FileManager.default.fileExists(atPath: qmpSock) else {
+        let sockets = VMSockets(vmID: vmID)
+        guard FileManager.default.fileExists(atPath: sockets.qmp.path) else {
             Log.vm.warning("VM \(vmID): sockets missing, killing orphaned process", vm: vmID)
             kill(pid, SIGTERM)
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -110,28 +109,28 @@ public actor VMProcessMonitor {
             return false
         }
 
-        let vncSock = Config.socketDir.appendingPathComponent("\(shortID)-vnc.sock").path
-        let serSock = Config.socketDir.appendingPathComponent("\(shortID)-ser.sock").path
-        let evtSock = Config.socketDir.appendingPathComponent("\(shortID)-evt.sock").path
         let running = RunningVM(
             process: nil,
             pid: pid,
-            serialSocketPath: serSock,
-            vncSocketPath: vncSock,
-            qmpSocketPath: qmpSock,
-            qmpEventSocketPath: evtSock,
+            serialSocketPath: sockets.serial.path,
+            vncSocketPath: sockets.vnc.path,
+            qmpSocketPath: sockets.qmp.path,
+            qmpEventSocketPath: sockets.event.path,
             swtpmProcess: nil,
             reconnected: true,
         )
         await vmManager?.registerReconnectedVM(vmID: vmID, running: running)
 
-        await consoleBuffers?.attach(vmID: vmID, serialSocketPath: serSock)
-        await metricsCollector?.start(vmID: vmID, qmpSocketPath: qmpSock, pid: pid)
-        await qmpEventListener?.start(vmID: vmID, eventSocketPath: evtSock)
+        await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
+        await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
+        await qmpEventListener?.start(vmID: vmID, eventSocketPath: sockets.event.path)
 
         watchProcess(vmID: vmID, pid: pid)
 
-        Log.vm.info("Reconnected to VM \(vmRecord.name) (PID: \(pid), VNC: \(vncSock))", vm: vmID)
+        Log.vm.info(
+            "Reconnected to VM \(vmRecord.name) (PID: \(pid), VNC: \(sockets.vnc.path))",
+            vm: vmID,
+        )
         return true
     }
 
@@ -241,12 +240,7 @@ public actor VMProcessMonitor {
 
     private func cleanupDeadVM(vmID: String) {
         try? FileManager.default.removeItem(at: pidsDir.appendingPathComponent("\(vmID).pid"))
-        let shortID = String(vmID.prefix(12))
-        for suffix in ["mon", "ser", "qmp", "evt", "ga", "vnc"] {
-            try? FileManager.default.removeItem(
-                at: Config.socketDir.appendingPathComponent("\(shortID)-\(suffix).sock"),
-            )
-        }
+        VMSockets(vmID: vmID).removeStale()
         // Retry DB update up to 3 times to prevent orphaned running state
         for attempt in 1 ... 3 {
             do {

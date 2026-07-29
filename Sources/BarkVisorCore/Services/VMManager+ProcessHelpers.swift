@@ -152,12 +152,6 @@ extension VMManager {
         }
         // Remove PID file
         try? FileManager.default.removeItem(at: pidsDir.appendingPathComponent("\(vmID).pid"))
-        // Remove sockets
-        let shortID = String(vmID.prefix(12))
-        for suffix in ["mon", "ser", "qmp", "evt", "ga", "vnc"] {
-            try? FileManager.default.removeItem(
-                at: Config.socketDir.appendingPathComponent("\(shortID)-\(suffix).sock"),
-            )
-        }
+        VMSockets(vmID: vmID).removeStale()
     }
 }

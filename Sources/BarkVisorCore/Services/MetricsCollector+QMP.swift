@@ -95,7 +95,8 @@ extension MetricsCollector {
     }
 
     private static func pollGuestAgent(qmpSocketPath: String, vmID: String, dbPool: DatabasePool) {
-        let gaSockPath = qmpSocketPath.replacingOccurrences(of: "-qmp.sock", with: "-ga.sock")
+        let gaSockPath = VMSockets(qmpSocketPath: qmpSocketPath)?.guestAgent.path
+            ?? VMSockets(vmID: vmID).guestAgent.path
         let gaClient = QMPClient(socketPath: gaSockPath)
         guard (try? gaClient.connectRaw(timeoutSeconds: 1)) != nil else { return }
         defer { gaClient.disconnect() }
