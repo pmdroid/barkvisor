@@ -290,9 +290,12 @@ public final class VaporServer: @unchecked Sendable {
             BackupService.performBackup(pool: pool)
             BackupService.pruneOldBackups()
         }
-        // Poll managed bridge daemons (socket_vmnet) only — Linux host bridges are not daemons.
+        // Poll managed bridge daemons (socket_vmnet) only — Linux host bridges are
+        // OS-managed (no 5s sysfs forever). Slightly longer than 5s keeps UI fresh
+        // without constant wakeups.
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: 5 * 1_000_000_000) {
+            let bridgeSyncNs: UInt64 = 15 * 1_000_000_000
+            await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: bridgeSyncNs) {
                 await BridgeSyncService.syncOnce(db: pool)
             }
         }
