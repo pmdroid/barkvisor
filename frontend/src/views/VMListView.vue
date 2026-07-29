@@ -4,8 +4,10 @@ import { onMounted, onUnmounted, ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useToastStore } from '../stores/toast'
+import { useNetworkStore } from '../stores/networks'
 import api from '../api/client'
-import type { SystemStats, GuestInfo, Network, PortForwardRule } from '../api/types'
+import type { SystemStats, GuestInfo, PortForwardRule } from '../api/types'
+import { storeToRefs } from 'pinia'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -17,12 +19,13 @@ import { pct } from '../utils/format'
 
 const store = useVMStore()
 const toast = useToastStore()
+const networkStore = useNetworkStore()
+const { byId: networkMap } = storeToRefs(networkStore)
 const router = useRouter()
 const route = useRoute()
 const showCreate = ref(false)
 const stats = ref<SystemStats | null>(null)
 const guestInfoMap = reactive<Record<string, GuestInfo>>({})
-const networkMap = reactive<Record<string, Network>>({})
 const actionLoading = reactive<Record<string, boolean>>({})
 const copied = reactive<Record<string, boolean>>({})
 
@@ -46,22 +49,13 @@ async function fetchGuestInfo() {
   }
 }
 
-async function fetchNetworks() {
-  try {
-    const { data } = await api.get('/networks')
-    for (const n of data as Network[]) {
-      networkMap[n.id] = n
-    }
-  } catch { /* ignore */ }
-}
-
 function vmPortForwards(vm: typeof store.vms[0]): PortForwardRule[] {
   return vm.portForwards ?? []
 }
 
 function isNatVM(vm: typeof store.vms[0]): boolean {
   if (!vm.networkId) return true
-  const net = networkMap[vm.networkId]
+  const net = networkMap.value[vm.networkId]
   return !net || net.mode === 'nat'
 }
 
@@ -70,7 +64,7 @@ onMounted(async () => {
   await store.fetchAll()
   fetchStats()
   fetchGuestInfo()
-  fetchNetworks()
+  void networkStore.fetchAll()
   pollTimer = window.setInterval(() => {
     fetchStats()
     store.fetchAll().then(fetchGuestInfo)
