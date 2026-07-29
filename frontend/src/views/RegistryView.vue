@@ -16,7 +16,7 @@ import FormError from '../components/ui/FormError.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import AppModal from '../components/ui/AppModal.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
-import { getWSTicket } from '../api/client'
+import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
@@ -147,7 +147,7 @@ function onDeployed() {
 
 // === Repositories / Images ===
 const dlProgress = reactive<Record<string, { percent: number; bytesReceived: number; totalBytes: number | null; status?: string }>>({})
-const eventSources: Record<string, EventSource> = {}
+const progressStreams: Record<string, ReturnType<typeof useImageProgress>> = {}
 let pollTimer: number
 
 const showRepoSettings = ref(false)
@@ -186,34 +186,36 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(pollTimer)
-  Object.values(eventSources).forEach(es => es.close())
+  Object.values(progressStreams).forEach(s => s.stop())
 })
 
-async function subscribeDownloading() {
+function subscribeDownloading() {
   for (const img of imageStore.images) {
-    if ((img.status === 'downloading' || img.status === 'decompressing') && !eventSources[img.id]) {
-      let ticket: string
-      try {
-        ticket = await getWSTicket()
-      } catch { continue }
-      const es = new EventSource(`/api/images/${img.id}/progress?ticket=${ticket}`)
-      es.onmessage = (e) => {
-        const data = JSON.parse(e.data)
-        dlProgress[img.id] = {
-          percent: data.percent ?? 0,
-          bytesReceived: data.bytesReceived,
-          totalBytes: data.totalBytes,
-          status: data.status,
-        }
-        if (data.status === 'ready' || data.status === 'error') {
-          es.close()
-          delete eventSources[img.id]
+    if ((img.status === 'downloading' || img.status === 'decompressing') && !progressStreams[img.id]) {
+      const stream = useImageProgress()
+      progressStreams[img.id] = stream
+      stream.start(img.id, {
+        onProgress: (data) => {
+          dlProgress[img.id] = {
+            percent: data.percent ?? 0,
+            bytesReceived: data.bytesReceived ?? 0,
+            totalBytes: data.totalBytes ?? null,
+            status: data.status,
+          }
+        },
+        onReady: () => {
+          stream.stop()
+          delete progressStreams[img.id]
           delete dlProgress[img.id]
           imageStore.fetchAll()
-        }
-      }
-      es.onerror = () => { es.close(); delete eventSources[img.id] }
-      eventSources[img.id] = es
+        },
+        onError: () => {
+          stream.stop()
+          delete progressStreams[img.id]
+          delete dlProgress[img.id]
+          imageStore.fetchAll()
+        },
+      })
     }
   }
 }
@@ -308,9 +310,9 @@ async function download(img: RepositoryImage) {
 async function cancelDownload(img: RepositoryImage) {
   const local = localImage(img)
   if (!local) return
-  if (eventSources[local.id]) {
-    eventSources[local.id].close()
-    delete eventSources[local.id]
+  if (progressStreams[local.id]) {
+    progressStreams[local.id].stop()
+    delete progressStreams[local.id]
   }
   delete dlProgress[local.id]
   try {
