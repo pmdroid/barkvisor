@@ -178,10 +178,14 @@ extension VMLifecycleService {
         else {
             throw BarkVisorError.badRequest("Cloud image not found or not ready")
         }
-        guard cloudImage.arch == "arm64" else {
-            throw BarkVisorError.badRequest(
-                "Image arch (\(cloudImage.arch)) does not match VM type (\(params.vmType))",
-            )
+        if let profile = GuestProfiles.profile(for: params.vmType) {
+            let imageArch = cloudImage.arch == "amd64" ? "x86_64" : cloudImage.arch
+            let imageArchNorm = imageArch == "aarch64" ? "arm64" : imageArch
+            guard imageArchNorm == profile.arch else {
+                throw BarkVisorError.badRequest(
+                    "Image arch (\(cloudImage.arch)) does not match VM type (\(params.vmType))",
+                )
+            }
         }
 
         let id = UUID().uuidString
@@ -217,10 +221,14 @@ extension VMLifecycleService {
             guard let iso, iso.imageType == "iso", iso.status == "ready" else {
                 throw BarkVisorError.badRequest("ISO image not found or not ready")
             }
-            guard iso.arch == "arm64" else {
-                throw BarkVisorError.badRequest(
-                    "ISO arch (\(iso.arch)) does not match VM type (\(params.vmType))",
-                )
+            if let profile = GuestProfiles.profile(for: params.vmType) {
+                let imageArch = iso.arch == "amd64" ? "x86_64" : iso.arch
+                let imageArchNorm = imageArch == "aarch64" ? "arm64" : imageArch
+                guard imageArchNorm == profile.arch else {
+                    throw BarkVisorError.badRequest(
+                        "ISO arch (\(iso.arch)) does not match VM type (\(params.vmType))",
+                    )
+                }
             }
         }
 

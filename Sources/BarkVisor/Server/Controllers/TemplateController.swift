@@ -59,9 +59,10 @@ struct DeployTemplateRequest: Content, Validatable {
 }
 
 struct DeployTemplateResponse: Content {
-    let status: String // "downloading" | "created"
+    let status: String // "downloading" | "provisioning" | "created"
     let imageId: String? // set when status == "downloading"
-    let vm: VMResponse? // set when status == "created"
+    let taskID: String? // set when status == "provisioning"
+    let vm: VMResponse? // set when status == "created" | "provisioning"
 }
 
 // MARK: - Controller
@@ -69,6 +70,7 @@ struct DeployTemplateResponse: Content {
 struct TemplateController: RouteCollection {
     let vmManager: VMManager
     let imageDownloader: ImageDownloader
+    let backgroundTasks: BackgroundTaskManager
 
     func boot(routes: any RoutesBuilder) throws {
         let templates = routes.grouped("api", "templates")
@@ -98,7 +100,7 @@ struct TemplateController: RouteCollection {
     }
 
     @Sendable
-    func deploy(req: Vapor.Request) async throws -> DeployTemplateResponse {
+    func deploy(req: Vapor.Request) async throws -> Response {
         try DeployTemplateRequest.validate(content: req)
         let body = try req.content.decode(DeployTemplateRequest.self)
 
@@ -113,19 +115,43 @@ struct TemplateController: RouteCollection {
         )
         let result = try await TemplateDeployService.deploy(
             options: options,
-            vmManager: vmManager,
             imageDownloader: imageDownloader,
+            backgroundTasks: backgroundTasks,
             db: req.db,
         )
 
         switch result {
         case let .downloading(imageId):
-            return DeployTemplateResponse(status: "downloading", imageId: imageId, vm: nil)
+            let body = DeployTemplateResponse(
+                status: "downloading", imageId: imageId, taskID: nil, vm: nil,
+            )
+            return try Self.jsonResponse(body, status: .ok)
+
         case let .created(vm):
             AuditService.log(
                 action: "vm.deploy", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
-            return DeployTemplateResponse(status: "created", imageId: nil, vm: VMResponse(from: vm))
+            let body = DeployTemplateResponse(
+                status: "created", imageId: nil, taskID: nil, vm: VMResponse(from: vm),
+            )
+            return try Self.jsonResponse(body, status: .ok)
+
+        case let .provisioning(taskID, vm):
+            AuditService.log(
+                action: "vm.deploy", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
+            )
+            let body = DeployTemplateResponse(
+                status: "provisioning", imageId: nil, taskID: taskID, vm: VMResponse(from: vm),
+            )
+            // 202 Accepted — client polls taskID (same pattern as POST /api/vms cloud-image create).
+            return try Self.jsonResponse(body, status: .accepted)
         }
+    }
+
+    private static func jsonResponse(_ value: some Content, status: HTTPStatus) throws -> Response {
+        let data = try JSONEncoder().encode(value)
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+        return Response(status: status, headers: headers, body: .init(data: data))
     }
 }
