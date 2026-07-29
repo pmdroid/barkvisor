@@ -330,7 +330,7 @@ public enum TemplateDeployService {
         } else if templateMode == "bridged" {
             guard PrivilegeService.isBridgedNetworkingSupported else {
                 throw BarkVisorError.badRequest(
-                    "This template requires bridged networking, which is not supported on Linux yet. "
+                    "This template requires bridged networking, which is not supported on this platform. "
                         + "Deploy with a NAT network or use BarkVisor on macOS.",
                 )
             }

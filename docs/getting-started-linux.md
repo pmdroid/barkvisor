@@ -169,10 +169,10 @@ for a real boot, or the blank-disk path for a process/start smoke.
 
 `GET /api/system/capabilities` (public) returns flags such as:
 
-- `supportsBridgedNetworking` — `false` on Linux for now  
-- `supportsUSBPassthrough` — `false`  
+- `supportsBridgedNetworking` — `true` (QEMU `-netdev bridge`; host bridge required)  
+- `supportsUSBPassthrough` — `true` (`lsusb` + `usb-host`)  
 - `supportsInAppUpdate` — `false`  
-- `accelerator` — `kvm`  
+- `accelerator` — `kvm` if `/dev/kvm`, else `tcg`  
 - `hostArch` — `arm64` / `x86_64`
 
 ## Status on main
@@ -248,23 +248,23 @@ sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 \
 |-------|----------------|
 | `platform` | `Linux` |
 | `accelerator` | `kvm` if `/dev/kvm`, else `tcg` |
-| `supportsBridgedNetworking` | `false` until bridge PR lands |
-| `supportsUSBPassthrough` | `false` until USB PR lands |
+| `supportsBridgedNetworking` | `true` (host bridge + qemu-bridge-helper) |
+| `supportsUSBPassthrough` | `true` (`lsusb` / `usb-host`) |
 | `supportsInAppUpdate` | `false` |
 
 ## Roadmap (after Phase A)
 
 - Deb/tarball + systemd E2E install
 - x86_64 host + guests
-- Linux bridge/TAP (QEMU `-netdev bridge`) + USB
+- Managed bridge-daemon lifecycle split (product capability vs macOS XPC)
 - Windows guests
 
 ## Limitations (MVP)
 
-- No bridged networking (use NAT + port forwards) until bridge support lands
-- No USB passthrough listing until USB support lands
+- Bridged networking needs a host bridge (`br0`) and qemu-bridge-helper ACL (not socket_vmnet)
+- USB needs `usbutils` + permissions (udev/plugdev)
 - No in-app package updates
-- Not full macOS feature parity
+- Not full macOS feature parity (no managed bridge helper daemon on Linux)
 - Firmware/QEMU still resolved via `PATH` / common distro paths
 - Windows guests and TPM may need extra packages (`swtpm`) not covered here
 - Image download API currently validates `arch: "arm64"` only
@@ -279,3 +279,41 @@ sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 \
 | `scripts/linux-real-guest-smoke.sh` | Cloud-image boot + cloud-init + SSH |
 | `scripts/linux-frontend-serve.sh` | Build SPA; `--verify` / `--run` / `--install-dev` |
 | `scripts/install-linux.sh` | systemd install (`Resources/barkvisor.service`) |
+
+## Bridged networking (QEMU bridge)
+
+Linux bridging does **not** use socket_vmnet. BarkVisor launches:
+
+```text
+-netdev bridge,id=net0,br=<bridge>
+-device virtio-net-pci,netdev=net0
+```
+
+### Host setup
+
+```bash
+# Example: bridge br0 with physical NIC eth0
+sudo ip link add name br0 type bridge
+sudo ip link set br0 up
+sudo ip link set eth0 master br0
+sudo ip addr add 192.168.1.10/24 dev br0   # or use DHCP on br0
+
+# Allow QEMU's helper to attach taps to br0
+echo 'allow br0' | sudo tee /etc/qemu/bridge.conf
+sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper   # if not already setuid
+# path may be /usr/libexec/qemu-bridge-helper on some distros
+```
+
+In the UI: create a **bridged** network with bridge interface `br0`, then attach VMs to it.
+
+## USB passthrough
+
+- Capability `supportsUSBPassthrough` is **true** on Linux.
+- Device list comes from `lsusb` (`usbutils` package).
+- QEMU uses `-device usb-host,vendorid=…,productid=…` (same as macOS).
+- Grant access: add user to `plugdev` / udev rules, or run with sufficient permissions.
+
+```bash
+sudo apt-get install -y usbutils
+lsusb
+```
