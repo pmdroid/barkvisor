@@ -4,12 +4,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTemplateStore } from '../stores/templates'
 import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
-import api, { getWSTicket } from '../api/client'
+import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
 import type { VMTemplate, DeployTemplateRequest, BridgeInfo, DeployTemplateResponse } from '../api/types'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { storeToRefs } from 'pinia'
 import { useTaskPoller } from '../composables/useTaskPoller'
+import { useImageProgress } from '../composables/useTicketedEventSource'
 
 const props = defineProps<{ template: VMTemplate }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -75,10 +76,10 @@ const loading = ref(false)
 const phase = ref<'form' | 'downloading' | 'deploying' | 'done'>('form')
 const downloadPercent = ref(0)
 const downloadStatus = ref('')
-let eventSource: EventSource | null = null
+const imageProgress = useImageProgress()
 
 onUnmounted(() => {
-  eventSource?.close()
+  imageProgress.stop()
 })
 
 function canProceed(): boolean {
@@ -120,24 +121,13 @@ function buildRequest(): DeployTemplateRequest {
   }
 }
 
-async function watchDownload(imageId: string) {
+function watchDownload(imageId: string) {
   phase.value = 'downloading'
   downloadPercent.value = 0
   downloadStatus.value = 'Starting download...'
 
-  let ticket: string
-  try {
-    ticket = await getWSTicket()
-  } catch {
-    error.value = 'Failed to obtain connection ticket'
-    phase.value = 'form'
-    return
-  }
-  eventSource = new EventSource(`/api/images/${imageId}/progress?ticket=${ticket}`)
-
-  eventSource.onmessage = async (event) => {
-    try {
-      const data = JSON.parse(event.data)
+  imageProgress.start(imageId, {
+    onProgress: (data) => {
       if (data.status === 'downloading') {
         downloadPercent.value = data.percent ?? 0
         const mb = Math.round((data.bytesReceived || 0) / 1024 / 1024)
@@ -148,26 +138,17 @@ async function watchDownload(imageId: string) {
       } else if (data.status === 'decompressing') {
         downloadStatus.value = 'Decompressing image...'
         downloadPercent.value = 100
-      } else if (data.status === 'ready') {
-        eventSource?.close()
-        eventSource = null
-        // Image is ready — re-deploy to create the VM
-        await doDeploy()
-      } else if (data.status === 'error') {
-        eventSource?.close()
-        eventSource = null
-        error.value = data.error || 'Image download failed'
-        phase.value = 'form'
       }
-    } catch { /* ignore parse errors */ }
-  }
-
-  eventSource.onerror = () => {
-    eventSource?.close()
-    eventSource = null
-    error.value = 'Lost connection to download progress'
-    phase.value = 'form'
-  }
+    },
+    onReady: () => {
+      // Image is ready — re-deploy to create the VM
+      void doDeploy()
+    },
+    onError: (data) => {
+      error.value = data?.error || 'Image download failed'
+      phase.value = 'form'
+    },
+  })
 }
 
 async function finishDeploy(result: DeployTemplateResponse) {

@@ -5,9 +5,10 @@ import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import api, { getWSTicket } from '../api/client'
+import api from '../api/client'
 import type { Network, Disk, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
+import { useImageProgress } from './useTicketedEventSource'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -105,45 +106,37 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     }
   }
 
+  const virtioProgress = useImageProgress()
+
   async function startVirtioWinDownload() {
     virtioWinError.value = ''
     virtioWinDownloading.value = true
     virtioWinProgress.value = 0
     virtioWinStatus.value = 'downloading'
+    virtioProgress.stop()
 
     try {
       const { data } = await api.post('/system/virtio-win/download')
       virtioWinImageId.value = data.imageId
 
-      const ticket = await getWSTicket()
-      const es = new EventSource(`/api/images/${data.imageId}/progress?ticket=${ticket}`)
-
-      es.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
+      virtioProgress.start(data.imageId, {
+        onProgress: (msg) => {
           virtioWinProgress.value = msg.percent ?? 0
           virtioWinStatus.value = msg.status ?? 'downloading'
-
-          if (msg.status === 'ready') {
-            virtioWinAvailable.value = true
-            virtioWinDownloading.value = false
-            es.close()
-            imageStore.fetchAll()
-          } else if (msg.status === 'error') {
-            virtioWinError.value = msg.error || 'Download failed'
-            virtioWinDownloading.value = false
-            es.close()
-          }
-        } catch { /* ignore parse errors */ }
-      }
-
-      es.onerror = () => {
-        es.close()
-        if (virtioWinStatus.value !== 'ready') {
+        },
+        onReady: () => {
+          virtioWinAvailable.value = true
           virtioWinDownloading.value = false
-          checkVirtioWinStatus()
-        }
-      }
+          imageStore.fetchAll()
+        },
+        onError: (msg) => {
+          virtioWinError.value = msg?.error || 'Download failed'
+          virtioWinDownloading.value = false
+          if (virtioWinStatus.value !== 'ready') {
+            checkVirtioWinStatus()
+          }
+        },
+      })
     } catch (e: any) {
       virtioWinError.value = apiErrorMessage(e)
       virtioWinDownloading.value = false

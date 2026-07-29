@@ -3,7 +3,8 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
-import api, { getWSTicket } from '../api/client'
+import api from '../api/client'
+import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type { Disk, DiskUsage, Network, GuestInfo, Image, PortForwardRule, BridgeInfo, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
@@ -240,9 +241,7 @@ async function usbDetach(dev: USBPassthroughDevice) {
 }
 
 let pollInterval: number | undefined
-let stateSSE: EventSource | null = null
-
-let sseReconnectTimeout: ReturnType<typeof setTimeout> | null = null
+const stateSSE = useTicketedEventSource()
 let detailLoadVersion = 0
 
 function stopRealtimeSync() {
@@ -250,44 +249,25 @@ function stopRealtimeSync() {
     clearInterval(pollInterval)
     pollInterval = undefined
   }
-  if (sseReconnectTimeout) {
-    clearTimeout(sseReconnectTimeout)
-    sseReconnectTimeout = null
-  }
-  stateSSE?.close()
-  stateSSE = null
+  stateSSE.stop()
 }
 
-async function connectStateSSE() {
-  stateSSE?.close()
-  stateSSE = null
-  const currentId = vmId.value
-  let ticket: string
-  try { ticket = await getWSTicket(currentId) } catch { return }
-  if (currentId !== vmId.value) return
-  const es = new EventSource(`/api/vms/${currentId}/state?ticket=${ticket}`)
-  stateSSE = es
-  es.onmessage = (e) => {
-    try {
-      const event = JSON.parse(e.data) as { id: string; state: string }
-      const v = store.vms.find(v => v.id === event.id)
-      if (v) v.state = event.state as typeof v.state
-      fetchGuestInfo()
-    } catch {}
-  }
-  es.onerror = () => {
-    // EventSource natively retries on transient errors, but the ticket is
-    // single-use so native retries will 401. Close and reconnect with a fresh ticket.
-    es.close()
-    stateSSE = null
-    if (sseReconnectTimeout) clearTimeout(sseReconnectTimeout)
-    sseReconnectTimeout = setTimeout(() => {
-      sseReconnectTimeout = null
-      if (currentId === vmId.value) {
-        connectStateSSE()
-      }
-    }, 5000)
-  }
+function connectStateSSE() {
+  stateSSE.start({
+    vmID: () => vmId.value,
+    url: (ticket) => `/api/vms/${vmId.value}/state?ticket=${ticket}`,
+    reconnect: true,
+    initialDelayMs: 5000,
+    maxDelayMs: 30_000,
+    onMessage: (e) => {
+      try {
+        const event = JSON.parse(e.data) as { id: string; state: string }
+        const v = store.vms.find(v => v.id === event.id)
+        if (v) v.state = event.state as typeof v.state
+        fetchGuestInfo()
+      } catch { /* ignore */ }
+    },
+  })
 }
 
 async function loadVMDetail() {

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import api, { getWSTicket } from '../api/client'
+import api from '../api/client'
+import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 
 export interface LogEntry {
   ts: string
@@ -16,7 +17,7 @@ export interface LogEntry {
 export const useLogStore = defineStore('logs', () => {
   const entries = ref<LogEntry[]>([])
   const loading = ref(false)
-  let eventSource: EventSource | null = null
+  const tail = useTicketedEventSource()
 
   async function fetchLogs(params: {
     category?: string
@@ -36,56 +37,27 @@ export const useLogStore = defineStore('logs', () => {
     }
   }
 
-  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
-  let reconnectDelay = 1000
-  const MAX_RECONNECT_DELAY = 30000
-  const MAX_RECONNECT_ATTEMPTS = 10
-  let reconnectAttempts = 0
-
   function startTail() {
     stopTail()
-    reconnectDelay = 1000
-    reconnectAttempts = 0
-    connectTailSSE()
-  }
-
-  async function connectTailSSE() {
-    let ticket: string
-    try {
-      ticket = await getWSTicket()
-    } catch { return }
-    const url = `/api/logs/stream?ticket=${ticket}`
-    eventSource = new EventSource(url)
-    eventSource.onopen = () => {
-      reconnectDelay = 1000
-      reconnectAttempts = 0
-    }
-    eventSource.onmessage = (event) => {
-      const entry: LogEntry = JSON.parse(event.data)
-      entries.value.unshift(entry)
-      if (entries.value.length > 2000) {
-        entries.value = entries.value.slice(0, 2000)
-      }
-    }
-    eventSource.onerror = () => {
-      eventSource?.close()
-      eventSource = null
-      reconnectAttempts++
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return
-      reconnectTimeout = setTimeout(() => {
-        reconnectTimeout = null
-        connectTailSSE()
-      }, reconnectDelay)
-      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY)
-    }
+    tail.start({
+      url: (ticket) => `/api/logs/stream?ticket=${ticket}`,
+      reconnect: true,
+      onMessage: (event) => {
+        try {
+          const entry: LogEntry = JSON.parse(event.data)
+          entries.value.unshift(entry)
+          if (entries.value.length > 2000) {
+            entries.value = entries.value.slice(0, 2000)
+          }
+        } catch {
+          /* ignore parse errors */
+        }
+      },
+    })
   }
 
   function stopTail() {
-    if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null }
-    if (eventSource) {
-      eventSource.close()
-      eventSource = null
-    }
+    tail.stop()
   }
 
   function clear() {

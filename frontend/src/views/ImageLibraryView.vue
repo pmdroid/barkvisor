@@ -2,7 +2,7 @@
 import { apiErrorMessage } from '../api/errors'
 import { onMounted, onUnmounted, ref, reactive } from 'vue'
 import { useImageStore } from '../stores/images'
-import { getWSTicket } from '../api/client'
+import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -34,33 +34,37 @@ const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement>()
 let currentUpload: tus.Upload | null = null
 
-// Download progress tracking via SSE
+// Download progress tracking via ticketed SSE
 const downloadProgress = reactive<Record<string, { percent: number; bytesReceived: number; totalBytes: number | null; status: string }>>({})
-const eventSources: Record<string, EventSource> = {}
+const progressStreams: Record<string, ReturnType<typeof useImageProgress>> = {}
 
-async function subscribeDownloading() {
+function subscribeDownloading() {
   for (const img of store.images) {
-    if ((img.status === 'downloading' || img.status === 'decompressing') && !eventSources[img.id]) {
-      let ticket: string
-      try { ticket = await getWSTicket() } catch { continue }
-      const es = new EventSource(`/api/images/${img.id}/progress?ticket=${ticket}`)
-      es.onmessage = (e) => {
-        const data = JSON.parse(e.data)
-        downloadProgress[img.id] = {
-          percent: data.percent ?? 0,
-          bytesReceived: data.bytesReceived,
-          totalBytes: data.totalBytes,
-          status: data.status,
-        }
-        if (data.status === 'ready' || data.status === 'error') {
-          es.close()
-          delete eventSources[img.id]
+    if ((img.status === 'downloading' || img.status === 'decompressing') && !progressStreams[img.id]) {
+      const stream = useImageProgress()
+      progressStreams[img.id] = stream
+      stream.start(img.id, {
+        onProgress: (data) => {
+          downloadProgress[img.id] = {
+            percent: data.percent ?? 0,
+            bytesReceived: data.bytesReceived ?? 0,
+            totalBytes: data.totalBytes ?? null,
+            status: data.status ?? 'downloading',
+          }
+        },
+        onReady: () => {
+          stream.stop()
+          delete progressStreams[img.id]
           delete downloadProgress[img.id]
           store.fetchAll()
-        }
-      }
-      es.onerror = () => { es.close(); delete eventSources[img.id] }
-      eventSources[img.id] = es
+        },
+        onError: () => {
+          stream.stop()
+          delete progressStreams[img.id]
+          delete downloadProgress[img.id]
+          store.fetchAll()
+        },
+      })
     }
   }
 }
@@ -79,7 +83,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(pollTimer)
-  Object.values(eventSources).forEach(es => es.close())
+  Object.values(progressStreams).forEach(s => s.stop())
 })
 
 async function startDownload() {
