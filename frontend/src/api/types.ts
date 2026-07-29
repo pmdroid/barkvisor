@@ -366,7 +366,10 @@ export interface UpdateSettings {
 /** Platform feature flags from GET /api/system/capabilities */
 export interface SystemCapabilities {
   platform: 'macOS' | 'Linux' | string
+  /** VMs may use bridged networking (Linux host bridge or macOS socket_vmnet). */
   supportsBridgedNetworking: boolean
+  /** Install/start/stop privileged bridge daemons (macOS only). */
+  supportsManagedBridgeDaemon: boolean
   supportsUSBPassthrough: boolean
   supportsInAppUpdate: boolean
   accelerator: 'hvf' | 'kvm' | string

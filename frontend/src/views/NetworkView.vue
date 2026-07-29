@@ -16,7 +16,7 @@ import { storeToRefs } from 'pinia'
 
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
-const { supportsBridgedNetworking } = storeToRefs(caps)
+const { supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
 
 // Data
 const networks = ref<Network[]>([])
@@ -80,7 +80,9 @@ const usedBridgeInterfaces = computed(() => {
   return used
 })
 
+/** Show "setup bridge daemon" only when the host manages socket_vmnet (macOS). */
 const selectedInterfaceNeedsBridge = computed(() => {
+  if (!supportsManagedBridgeDaemon.value) return false
   if (!newBridge.value) return false
   const info = selectedInterfaceBridge.value
   return !info || info.status === 'not_configured'
@@ -124,7 +126,7 @@ onMounted(() => {
 })
 
 watch(showBridges, (open) => {
-  if (open && supportsBridgedNetworking.value) {
+  if (open && supportsManagedBridgeDaemon.value) {
     fetchInterfaces()
     fetchBridges()
     bridgePoll = window.setInterval(fetchBridges, 7000)
@@ -281,7 +283,7 @@ async function setupBridgeInline() {
   <div class="page-header">
     <h1>Networks</h1>
     <div style="display:flex;gap:8px;align-items:center">
-      <AppButton v-if="supportsBridgedNetworking" icon="settings" @click="showBridges = true">Manage Bridges</AppButton>
+      <AppButton v-if="supportsManagedBridgeDaemon" icon="settings" @click="showBridges = true">Manage Bridges</AppButton>
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
   </div>
@@ -387,11 +389,14 @@ async function setupBridgeInline() {
           {{ iface.name }}{{ iface.ipAddress ? ` (${iface.ipAddress})` : '' }}{{ usedBridgeInterfaces.has(iface.name) ? ` — used by "${usedBridgeInterfaces.get(iface.name)}"` : iface.bridgeStatus === 'active' ? ' — active' : iface.bridgeStatus === 'installed' ? ' — installed' : '' }}
         </option>
       </AppSelect>
+      <p v-if="!supportsManagedBridgeDaemon" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+        Use an existing host bridge (e.g. br0). Create it with ip/netplan before starting VMs.
+      </p>
       <div v-if="selectedInterfaceNeedsBridge" class="bridge-warning">
         <span style="color:var(--text-secondary);font-size:13px">No bridge configured for this interface.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Setting up..." @click="setupBridgeInline">Setup Bridge</AppButton>
       </div>
-      <div v-else-if="selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
+      <div v-else-if="supportsManagedBridgeDaemon && selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
         <span style="color:var(--text-secondary);font-size:13px">Bridge is installed but not currently running.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Starting..." @click="startBridge(newBridge)">Start Bridge</AppButton>
       </div>

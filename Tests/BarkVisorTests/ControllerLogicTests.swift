@@ -207,7 +207,14 @@ struct ControllerLogicTests {
         #expect(caps.hostArch == "arm64" || caps.hostArch == "x86_64" || !caps.hostArch.isEmpty)
         #expect(caps.accelerator == PlatformCapabilities.accelerator)
         #expect(caps.supportsBridgedNetworking == PlatformCapabilities.supportsBridgedNetworking)
+        #expect(caps.supportsManagedBridgeDaemon == PlatformCapabilities.supportsManagedBridgeDaemon)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
         #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
+        #if os(macOS)
+            #expect(caps.supportsManagedBridgeDaemon)
+        #elseif os(Linux)
+            #expect(caps.supportsBridgedNetworking)
+            #expect(!caps.supportsManagedBridgeDaemon)
+        #endif
     }
 }
