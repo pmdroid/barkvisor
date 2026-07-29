@@ -184,15 +184,15 @@ public enum QEMUBuilder {
         let tpm = try tpmArgs(vm: vm)
         args += tpm.args
         args += try additionalDiskArgs(ctx.additionalDisks)
-        let (netArgs, useBridged) = try networkArgs(vm: vm, network: ctx.network)
+        let (netArgs, needsSocketVmnetWrap) = try networkArgs(vm: vm, network: ctx.network)
         args += netArgs
         args += socketArgs(ctx: ctx)
         args += displayAndInputArgs(vm: vm)
         args += try usbPassthroughArgs(vm: vm)
         args += try miscArgs(vm: vm)
 
-        // socket_vmnet wrap is macOS-only (bridged networking).
-        if useBridged {
+        // socket_vmnet wrap is macOS-only (not the same as "bridged networking is in use").
+        if needsSocketVmnetWrap {
             #if os(macOS)
                 let (clientBin, socketPath) = try resolveSocketVmnet(
                     bridgeInterface: ctx.network?.bridge, dbSocketPath: ctx.bridgeSocketPath,
@@ -203,7 +203,7 @@ public enum QEMUBuilder {
                     swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
                 )
             #else
-                // Linux uses -netdev bridge without socket_vmnet wrap (useBridged is false).
+                // Linux bridged path sets needsSocketVmnetWrap = false (-netdev bridge).
                 throw BarkVisorError.badRequest(
                     "socket_vmnet wrapping is only available on macOS.",
                 )
@@ -315,10 +315,11 @@ public enum QEMUBuilder {
     }
 
     private static func networkArgs(vm: VM, network: Network?) throws
-        -> (args: [String], useBridged: Bool) {
+        -> (args: [String], needsSocketVmnetWrap: Bool) {
         var netdevArgs = ""
         var deviceArgs = "virtio-net-pci,netdev=net0"
-        var useBridged = false
+        // True only when QEMU must be exec'd under socket_vmnet_client (macOS bridged).
+        var needsSocketVmnetWrap = false
 
         if let mac = vm.macAddress, !mac.isEmpty {
             try validateMAC(mac)
@@ -330,7 +331,7 @@ public enum QEMUBuilder {
                 #if os(macOS)
                     // socket_vmnet injects a pre-opened AF_VSOCK/unix fd as netdev fd=3.
                     netdevArgs = "socket,id=net0,fd=3"
-                    useBridged = true
+                    needsSocketVmnetWrap = true
                 #elseif os(Linux)
                     // QEMU native bridge: attaches via qemu-bridge-helper to host bridge
                     // named in network.bridge (e.g. br0). No socket_vmnet wrap.
@@ -343,7 +344,7 @@ public enum QEMUBuilder {
                     try validateBridgeName(br)
                     let safeBr = try sanitizeQEMUArg(br, label: "Bridge interface")
                     netdevArgs = "bridge,id=net0,br=\(safeBr)"
-                    useBridged = false
+                    needsSocketVmnetWrap = false
                 #else
                     throw BarkVisorError.badRequest(
                         "Bridged networking is not supported on this platform. Use NAT networking.",
@@ -370,7 +371,7 @@ public enum QEMUBuilder {
             netdevArgs = "user,id=net0"
         }
 
-        return (["-netdev", netdevArgs, "-device", deviceArgs], useBridged)
+        return (["-netdev", netdevArgs, "-device", deviceArgs], needsSocketVmnetWrap)
     }
 
     private static func socketArgs(ctx: QEMUBuildContext) -> [String] {

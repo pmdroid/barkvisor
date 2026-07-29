@@ -6,6 +6,7 @@ import type { SystemCapabilities } from '../api/types'
 const defaultCapabilities: SystemCapabilities = {
   platform: 'macOS',
   supportsBridgedNetworking: true,
+  supportsManagedBridgeDaemon: true,
   supportsUSBPassthrough: true,
   supportsInAppUpdate: true,
   accelerator: 'hvf',
@@ -19,6 +20,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   let loadPromise: Promise<void> | null = null
 
   const supportsBridgedNetworking = computed(() => capabilities.value.supportsBridgedNetworking)
+  const supportsManagedBridgeDaemon = computed(() => capabilities.value.supportsManagedBridgeDaemon)
   const supportsUSBPassthrough = computed(() => capabilities.value.supportsUSBPassthrough)
   const supportsInAppUpdate = computed(() => capabilities.value.supportsInAppUpdate)
   const platform = computed(() => capabilities.value.platform)
@@ -39,6 +41,8 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
           capabilities.value = {
             platform: data.platform ?? defaultCapabilities.platform,
             supportsBridgedNetworking: !!data.supportsBridgedNetworking,
+            // Older servers omit the field — treat as product-bridge-only platforms.
+            supportsManagedBridgeDaemon: !!data.supportsManagedBridgeDaemon,
             supportsUSBPassthrough: !!data.supportsUSBPassthrough,
             supportsInAppUpdate: !!data.supportsInAppUpdate,
             accelerator: data.accelerator ?? defaultCapabilities.accelerator,
@@ -61,6 +65,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     loaded,
     loading,
     supportsBridgedNetworking,
+    supportsManagedBridgeDaemon,
     supportsUSBPassthrough,
     supportsInAppUpdate,
     platform,

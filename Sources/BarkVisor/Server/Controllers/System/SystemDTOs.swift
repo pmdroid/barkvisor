@@ -58,7 +58,10 @@ struct VirtioWinDownloadResponse: Content {
 /// Platform feature flags for UI gating (bridged networking, USB, in-app updates).
 struct SystemCapabilitiesResponse: Content {
     let platform: String
+    /// VMs may use bridged networking (Linux host bridge or macOS socket_vmnet).
     let supportsBridgedNetworking: Bool
+    /// Install/start/stop privileged bridge daemons (macOS socket_vmnet helper only).
+    let supportsManagedBridgeDaemon: Bool
     let supportsUSBPassthrough: Bool
     let supportsInAppUpdate: Bool
     let accelerator: String
