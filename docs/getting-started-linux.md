@@ -17,7 +17,7 @@ boot a first NAT guest.
 | Arch | `aarch64` or `x86_64` (matches guest types you enable) |
 | Swift | 6.2+ toolchain for **ubuntu2404** (see [swift.org](https://www.swift.org/install/linux/)) |
 | QEMU | Distro package, e.g. `qemu-system-arm` / `qemu-system-x86` + `qemu-utils` |
-| Firmware | **arm64:** `qemu-efi-aarch64` (AAVMF). **x86_64:** `ovmf` |
+| Firmware | **arm64:** `qemu-efi-aarch64 genisoimage` (AAVMF). **x86_64:** `ovmf` |
 | KVM | `/dev/kvm` readable by the barkvisor user (add to `kvm` group) |
 
 ### Environment overrides
@@ -47,7 +47,7 @@ sudo apt-get update
 sudo apt-get install -y build-essential pkg-config git \
   libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
   zlib1g-dev libzstd-dev libedit-dev uuid-dev \
-  qemu-system-arm qemu-utils qemu-efi-aarch64
+  qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage
 
 # 3. Build + automated smoke (daemon health + capabilities)
 git clone https://github.com/pmdroid/barkvisor.git
@@ -182,10 +182,87 @@ build fixes, docs/Dockerfile, systemd install, product firmware/env/smoke, and
 complexity cuts) is **merged to `main`**. Branch from `main` for new work; see
 `docs/agent-handoff-linux-port.md` for milestones and follow-up themes.
 
+## Phase A: usable NAT guests
+
+### OrbStack (dev / nested — usually **no** `/dev/kvm`)
+
+```bash
+orb -m barkvisor-u24   # Ubuntu 24.04 arm64 recommended
+export PATH="$HOME/swift/usr/bin:$PATH"
+cd /path/to/barkvisor
+
+# Health + capabilities (accelerator reports tcg without KVM)
+./scripts/linux-smoke.sh
+
+# Blank disk: proves QEMU start path
+SKIP_BUILD=1 ./scripts/linux-guest-smoke.sh
+
+# Real Ubuntu 24.04 minimal cloud image + cloud-init + SSH port-forward
+# TCG boots are slow; ALLOW_SSH_TIMEOUT=1 accepts QEMU running if SSH is late
+SKIP_BUILD=1 ALLOW_SSH_TIMEOUT=1 ./scripts/linux-real-guest-smoke.sh
+```
+
+Default image URL (override with `BARKVISOR_CLOUD_IMAGE_URL`):
+
+`https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img`
+
+### Bare metal / KVM host
+
+```bash
+# ensure /dev/kvm is readable (group kvm)
+ls -l /dev/kvm
+sudo usermod -aG kvm "$USER"   # re-login after
+
+./scripts/linux-real-guest-smoke.sh
+# Expect accelerator: kvm and guest SSH within a few minutes
+```
+
+### Frontend SPA
+
+```bash
+# Build SPA and verify GET / serves HTML
+./scripts/linux-frontend-serve.sh --verify
+
+# Or run the daemon with SPA permanently for the session
+./scripts/linux-frontend-serve.sh --run
+
+# Dev: copy dist into resource search path
+./scripts/linux-frontend-serve.sh --install-dev
+```
+
+Env: `BARKVISOR_FRONTEND_DIR=/path/to/frontend/dist`
+
+### Packages (Ubuntu 24.04 arm64)
+
+```bash
+sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 \
+  jq curl ca-certificates openssh-client genisoimage
+# optional: swtpm for Windows/TPM guests later
+```
+
+### Capabilities
+
+`GET /api/system/capabilities` (public):
+
+| Field | Linux typical |
+|-------|----------------|
+| `platform` | `Linux` |
+| `accelerator` | `kvm` if `/dev/kvm`, else `tcg` |
+| `supportsBridgedNetworking` | `false` until bridge PR lands |
+| `supportsUSBPassthrough` | `false` until USB PR lands |
+| `supportsInAppUpdate` | `false` |
+
+## Roadmap (after Phase A)
+
+- Deb/tarball + systemd E2E install
+- x86_64 host + guests
+- Linux bridge/TAP (QEMU `-netdev bridge`) + USB
+- Windows guests
+
 ## Limitations (MVP)
 
-- No bridged networking (use NAT + port forwards)
-- No USB passthrough listing
+- No bridged networking (use NAT + port forwards) until bridge support lands
+- No USB passthrough listing until USB support lands
 - No in-app package updates
 - Not full macOS feature parity
 - Firmware/QEMU still resolved via `PATH` / common distro paths
@@ -199,5 +276,6 @@ complexity cuts) is **merged to `main`**. Branch from `main` for new work; see
 | `scripts/linux-dev.sh` | Install build + QEMU packages (Ubuntu) |
 | `scripts/linux-smoke.sh` | Build + health/capabilities smoke |
 | `scripts/linux-guest-smoke.sh` | Setup + NAT VM create/start smoke |
-| `scripts/linux-frontend-serve.sh` | Build SPA; optional `--run` with `BARKVISOR_FRONTEND_DIR` |
+| `scripts/linux-real-guest-smoke.sh` | Cloud-image boot + cloud-init + SSH |
+| `scripts/linux-frontend-serve.sh` | Build SPA; `--verify` / `--run` / `--install-dev` |
 | `scripts/install-linux.sh` | systemd install (`Resources/barkvisor.service`) |
