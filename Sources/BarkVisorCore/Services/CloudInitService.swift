@@ -116,26 +116,23 @@ public enum CloudInitService {
         try? FileManager.default.removeItem(at: isoURL)
 
         let tool = try resolveCloudInitISOTool()
-        let process = Process()
-        process.executableURL = tool
         // genisoimage accepts the same option set as classic mkisofs for this use.
-        process.arguments = [
-            "-output", isoURL.path,
-            "-volid", "cidata",
-            "-joliet", "-rock",
-            dir.appendingPathComponent("meta-data").path,
-            dir.appendingPathComponent("user-data").path,
-        ]
-        let pipe = Pipe()
-        process.standardError = pipe
-        process.standardOutput = Pipe()
-        try process.run()
-        process.waitUntilExit()
+        let result = try PlatformProcess.run(
+            executable: tool,
+            arguments: [
+                "-output", isoURL.path,
+                "-volid", "cidata",
+                "-joliet", "-rock",
+                dir.appendingPathComponent("meta-data").path,
+                dir.appendingPathComponent("user-data").path,
+            ],
+            timeout: 60,
+        )
 
-        guard process.terminationStatus == 0 else {
-            let stderr =
-                String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw BarkVisorError.cloudInitFailed("cloud-init ISO tool failed: \(stderr)")
+        guard result.succeeded else {
+            throw BarkVisorError.cloudInitFailed(
+                "cloud-init ISO tool failed: \(result.stderrString)",
+            )
         }
 
         return isoURL

@@ -195,35 +195,31 @@ public enum ImageService {
         }
 
         let decompressed = path.deletingPathExtension()
-        let process = Process()
-        let errPipe = Pipe()
-        process.standardError = errPipe
-
+        let executable: URL
+        let arguments: [String]
         switch compExt {
         case ".xz":
-            process.executableURL = try BundleResolver.helper("xz")
-            process.arguments = ["--decompress", "--keep", pathStr]
+            executable = try BundleResolver.helper("xz")
+            arguments = ["--decompress", "--keep", pathStr]
         case ".gz":
-            process.executableURL = try BundleResolver.system("gunzip")
-            process.arguments = ["--keep", pathStr]
+            executable = try BundleResolver.system("gunzip")
+            arguments = ["--keep", pathStr]
         case ".zst":
-            process.executableURL = try BundleResolver.helper("zstd")
-            process.arguments = ["-d", "--keep", pathStr]
+            executable = try BundleResolver.helper("zstd")
+            arguments = ["-d", "--keep", pathStr]
         case ".bz2":
-            process.executableURL = try BundleResolver.system("bunzip2")
-            process.arguments = ["--keep", pathStr]
+            executable = try BundleResolver.system("bunzip2")
+            arguments = ["--keep", pathStr]
         default:
             return path
         }
 
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            let stderr =
-                String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let result = try PlatformProcess.run(
+            executable: executable, arguments: arguments, timeout: 600,
+        )
+        guard result.succeeded else {
             throw BarkVisorError.decompressFailed(
-                "Decompression failed (exit \(process.terminationStatus)): \(stderr)",
+                "Decompression failed (exit \(result.exitCode)): \(result.stderrString)",
             )
         }
 
