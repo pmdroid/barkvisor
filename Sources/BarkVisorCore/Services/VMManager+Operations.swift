@@ -14,18 +14,16 @@ extension VMManager {
                 throw BarkVisorError.notFound("VM not found")
             }
 
-            let newIsoIds: [String]?
+            var updated = vm
             if let isoId {
-                // Remove specific ISO
-                var ids = JSONColumnCoding.decodeArray(String.self, from: vm.isoIds) ?? []
+                var ids = updated.decodedISOIds
                 ids.removeAll { $0 == isoId }
-                newIsoIds = ids.isEmpty ? nil : ids
+                updated.setISOIds(ids.isEmpty ? nil : ids)
             } else {
-                // Detach all
-                newIsoIds = nil
+                updated.setISOIds(nil)
             }
 
-            let isoIdsJSON = JSONColumnCoding.encode(newIsoIds)
+            let isoIdsJSON = updated.isoIds
             if isRunning {
                 try db.execute(
                     sql:
@@ -61,12 +59,14 @@ extension VMManager {
                 throw BarkVisorError.notFound("VM not found")
             }
 
-            var ids = JSONColumnCoding.decodeArray(String.self, from: vm.isoIds) ?? []
+            var updated = vm
+            var ids = updated.decodedISOIds
             guard !ids.contains(isoId) else { return } // already attached
             ids.append(isoId)
+            updated.setISOIds(ids)
 
             let now = iso8601.string(from: Date())
-            let isoIdsJSON = JSONColumnCoding.encode(ids)
+            let isoIdsJSON = updated.isoIds
             if isRunning {
                 try db.execute(
                     sql: "UPDATE vms SET isoIds = ?, pendingChanges = 1, updatedAt = ? WHERE id = ?",
@@ -136,15 +136,9 @@ extension VMManager {
             guard let disk = try Disk.fetchOne(db, key: vm.bootDiskId) else {
                 throw BarkVisorError.diskCreateFailed("Boot disk \(vm.bootDiskId) not found")
             }
-            // Load ISOs from isoIds (JSON array), falling back to legacy isoId
+            // Load ISOs via typed accessor (includes legacy isoId fallback).
             var isos: [VMImage] = []
-            let isoIdList =
-                JSONColumnCoding.decodeArray(String.self, from: vm.isoIds)
-                    ?? {
-                        if let legacyId = vm.isoId { return [legacyId] }
-                        return []
-                    }()
-            for isoId in isoIdList {
+            for isoId in vm.decodedISOIds {
                 if let image = try VMImage.fetchOne(db, key: isoId) {
                     isos.append(image)
                 }
@@ -155,21 +149,10 @@ extension VMManager {
                 } else {
                     nil
                 }
-            // Load additional disks
             var additionalDisks: [Disk] = []
-            if let idsJSON = vm.additionalDiskIds,
-               let idsData = idsJSON.data(using: .utf8) {
-                let ids: [String]
-                do {
-                    ids = try JSONDecoder().decode([String].self, from: idsData)
-                } catch {
-                    Log.vm.error("Failed to decode additionalDiskIds for VM \(id): \(error)", vm: id)
-                    ids = []
-                }
-                for diskId in ids {
-                    if let d = try Disk.fetchOne(db, key: diskId) {
-                        additionalDisks.append(d)
-                    }
+            for diskId in vm.decodedAdditionalDiskIds {
+                if let d = try Disk.fetchOne(db, key: diskId) {
+                    additionalDisks.append(d)
                 }
             }
             return VMLoadResult(vm: vm, disk: disk, isos: isos, network: network, additionalDisks: additionalDisks)
