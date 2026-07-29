@@ -32,15 +32,4 @@ public final class AppDatabase: Sendable {
     }
 }
 
-// MARK: - Checkpoint
-
-extension AppDatabase {
-    /// Checkpoint WAL and prepare for file replacement (used by restore)
-    public func checkpoint() throws {
-        try pool.write { db in
-            try db.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)")
-        }
-    }
-}
-
 // Vapor storage extensions moved to Sources/BarkVisor/Server/VaporExtensions/DatabaseVaporExtensions.swift

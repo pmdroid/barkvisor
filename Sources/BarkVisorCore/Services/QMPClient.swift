@@ -117,39 +117,6 @@ public final class QMPClient: @unchecked Sendable {
         return try readCommandResponse()
     }
 
-    /// Wait for a specific QMP event type (e.g. "DEVICE_DELETED").
-    /// Reads messages until the event arrives or the socket timeout expires.
-    /// Any command responses received while waiting are discarded.
-    public func waitForEvent(_ eventType: String, timeout: TimeInterval = 5) throws -> [String: Any] {
-        // Temporarily set a longer timeout for event waiting
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        defer {
-            // Restore original timeout
-            var original = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &original, socklen_t(MemoryLayout<timeval>.size))
-        }
-
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let msg: [String: Any]
-            do {
-                msg = try readMessage()
-            } catch {
-                // Socket read timed out — keep waiting until deadline
-                if case let BarkVisorError.monitorError(m) = error, m.contains("timed out") {
-                    continue
-                }
-                throw error
-            }
-            if let event = msg["event"] as? String, event == eventType {
-                return msg
-            }
-            // Not our event — keep reading (could be another event or stale response)
-        }
-        throw BarkVisorError.monitorError("Timed out waiting for QMP event: \(eventType)")
-    }
-
     public func disconnect() {
         if fd >= 0 {
             close(fd)
