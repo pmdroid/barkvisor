@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
 import type { VMTemplate, DeployTemplateRequest, DeployTemplateResponse } from '../api/types'
+import { apiErrorMessage } from '../api/errors'
 
 export const useTemplateStore = defineStore('templates', () => {
   const templates = ref<VMTemplate[]>([])
@@ -15,7 +16,7 @@ export const useTemplateStore = defineStore('templates', () => {
       const { data } = await api.get('/templates')
       templates.value = data
     } catch (e: any) {
-      error.value = e.response?.data?.reason || e.message || 'Failed to load templates'
+      error.value = apiErrorMessage(e, 'Failed to load templates')
     } finally {
       loading.value = false
     }

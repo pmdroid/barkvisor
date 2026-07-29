@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { onMounted, onUnmounted, ref, reactive } from 'vue'
 import { useImageStore } from '../stores/images'
 import { getWSTicket } from '../api/client'
@@ -97,7 +98,7 @@ async function startDownload() {
     await store.fetchAll()
     setTimeout(subscribeDownloading, 500)
   } catch (e: any) {
-    dlError.value = e.response?.data?.reason || e.message
+    dlError.value = apiErrorMessage(e)
   } finally {
     dlLoading.value = false
   }
@@ -184,10 +185,7 @@ async function doDeleteImage() {
   const { id } = confirmTarget.value
   deleting.value = true
   try {
-    await Promise.all([
-      store.remove(id),
-      new Promise(r => setTimeout(r, 400))
-    ])
+    await store.remove(id)
   } finally {
     deleting.value = false
     confirmTarget.value = null

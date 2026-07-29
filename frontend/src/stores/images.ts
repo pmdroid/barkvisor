@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
 import type { Image, DownloadImageRequest } from '../api/types'
+import { apiErrorMessage } from '../api/errors'
 
 export const useImageStore = defineStore('images', () => {
   const images = ref<Image[]>([])
@@ -15,7 +16,7 @@ export const useImageStore = defineStore('images', () => {
       const { data } = await api.get('/images')
       images.value = data
     } catch (e: any) {
-      error.value = e.response?.data?.reason || e.message || 'Failed to load images'
+      error.value = apiErrorMessage(e, 'Failed to load images')
     } finally {
       loading.value = false
     }

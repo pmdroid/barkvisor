@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -33,7 +34,7 @@ async function connect() {
   try {
     ticket = await getWSTicket(props.vmId)
   } catch (e: any) {
-    status.value = `Ticket failed: ${e.response?.data?.reason || e.message}`
+    status.value = `Ticket failed: ${apiErrorMessage(e)}`
     return
   }
 
