@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import api from '../api/client'
 import type { ImageRepository, RepositoryImage } from '../api/types'
 import { useTaskPoller } from '../composables/useTaskPoller'
+import { apiErrorMessage } from '../api/errors'
 
 export const useRepositoryStore = defineStore('repositories', () => {
   const repositories = ref<ImageRepository[]>([])
@@ -17,7 +18,7 @@ export const useRepositoryStore = defineStore('repositories', () => {
       const { data } = await api.get('/repositories')
       repositories.value = data
     } catch (e: any) {
-      error.value = e.response?.data?.reason || e.message || 'Failed to load repositories'
+      error.value = apiErrorMessage(e, 'Failed to load repositories')
     } finally {
       loading.value = false
     }

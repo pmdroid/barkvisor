@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -19,7 +20,7 @@ async function submit() {
     await auth.login(username.value, password.value)
     router.push('/vms')
   } catch (e: any) {
-    error.value = e.response?.data?.reason || 'Login failed'
+    error.value = apiErrorMessage(e, 'Login failed')
   } finally {
     loading.value = false
   }

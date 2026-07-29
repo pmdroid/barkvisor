@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { onMounted, onUnmounted, ref, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useVMStore } from '../stores/vms'
@@ -109,7 +110,7 @@ async function doStart(id: string) {
   try {
     await store.start(id)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     actionLoading[id] = false
   }
@@ -122,7 +123,7 @@ async function doRestart(id: string) {
   try {
     await store.restart(id)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     restartLoading[id] = false
   }
@@ -143,7 +144,7 @@ async function doStop() {
     await store.stop(id, { method })
     stopConfirm.value = null
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     actionLoading[id] = false
   }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import api from '../api/client'
 import type { APIKeyResponse, AuditEntry, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
@@ -45,7 +46,7 @@ async function createKey() {
     newKeyName.value = ''
     await fetchKeys()
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     createLoading.value = false
   }
@@ -75,7 +76,7 @@ async function doRevoke() {
     await fetchKeys()
     toast.success('API key revoked')
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     revoking.value = false
     revokeTarget.value = null
@@ -100,7 +101,7 @@ async function addSSHKey() {
     newSSHKeyPublicKey.value = ''
     showAddSSHKey.value = false
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     addSSHKeyLoading.value = false
   }
@@ -111,7 +112,7 @@ async function setSSHKeyDefault(id: string) {
     await sshKeyStore.setDefault(id)
     toast.success('Default SSH key updated')
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   }
 }
 
@@ -122,7 +123,7 @@ async function doDeleteSSHKey() {
     await sshKeyStore.remove(deleteSSHKeyTarget.value.id)
     toast.success('SSH key deleted')
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     deletingSSHKey.value = false
     deleteSSHKeyTarget.value = null
@@ -149,7 +150,7 @@ async function fetchAudit() {
     auditEntries.value = data.entries
     auditTotal.value = data.total
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     auditLoading.value = false
   }
@@ -228,7 +229,7 @@ async function saveUpdateSettings() {
     updateSettings.value = data
     toast.success('Update settings saved')
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   }
 }
 
@@ -242,7 +243,7 @@ async function checkForUpdates() {
       toast.success('You are running the latest version')
     }
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     checkingUpdate.value = false
   }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTemplateStore } from '../stores/templates'
@@ -281,10 +282,10 @@ async function doDeleteLocal() {
   if (!local) { confirmDeleteLocal.value = null; return }
   deletingLocal.value = true
   try {
-    await Promise.all([imageStore.remove(local.id), new Promise(r => setTimeout(r, 400))])
+    await imageStore.remove(local.id)
     toast.success(`Deleted "${img.name}"`)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     deletingLocal.value = false
     confirmDeleteLocal.value = null
@@ -298,7 +299,7 @@ async function download(img: RepositoryImage) {
     await imageStore.fetchAll()
     setTimeout(subscribeDownloading, 500)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     downloading.value.delete(img.id)
   }
@@ -315,7 +316,7 @@ async function cancelDownload(img: RepositoryImage) {
   try {
     await imageStore.remove(local.id)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   }
 }
 
@@ -332,7 +333,7 @@ async function syncRepo(id: string) {
       toast.success('Repository synced')
     }
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   }
 }
 
@@ -345,13 +346,13 @@ async function doDeleteRepo() {
   const { id } = confirmDeleteRepo.value
   deletingRepo.value = true
   try {
-    await Promise.all([repoStore.remove(id), new Promise(r => setTimeout(r, 400))])
+    await repoStore.remove(id)
     if (selectedRepoId.value === id) {
       selectedRepoId.value = repoStore.repositories.length > 0 ? repoStore.repositories[0].id : null
       repoImages.value = []
     }
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     deletingRepo.value = false
     confirmDeleteRepo.value = null
@@ -368,7 +369,7 @@ async function addRepo() {
     newUrl.value = ''
     toast.success('Repository added')
   } catch (e: any) {
-    addError.value = e.response?.data?.reason || e.message
+    addError.value = apiErrorMessage(e)
   } finally {
     addLoading.value = false
   }
