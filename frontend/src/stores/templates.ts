@@ -23,7 +23,8 @@ export const useTemplateStore = defineStore('templates', () => {
   }
 
   async function deploy(req: DeployTemplateRequest): Promise<DeployTemplateResponse> {
-    const { data } = await api.post('/templates/deploy', req)
+    // 200 (created/downloading) or 202 (provisioning) — both return the same body shape.
+    const { data } = await api.post<DeployTemplateResponse>('/templates/deploy', req)
     return data
   }
 

@@ -6,9 +6,10 @@ import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import api, { getWSTicket } from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
-import type { VMTemplate, DeployTemplateRequest, BridgeInfo } from '../api/types'
+import type { VMTemplate, DeployTemplateRequest, BridgeInfo, DeployTemplateResponse } from '../api/types'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { storeToRefs } from 'pinia'
+import { useTaskPoller } from '../composables/useTaskPoller'
 
 const props = defineProps<{ template: VMTemplate }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -169,24 +170,59 @@ async function watchDownload(imageId: string) {
   }
 }
 
+async function finishDeploy(result: DeployTemplateResponse) {
+  if (result.status === 'downloading' && result.imageId) {
+    watchDownload(result.imageId)
+    return
+  }
+
+  if (result.status === 'provisioning' && result.vm && result.taskID) {
+    // Shared create pipeline: async disk clone — poll like Create VM.
+    if (!vmStore.vms.find(v => v.id === result.vm!.id)) {
+      vmStore.vms.push(result.vm)
+    }
+    phase.value = 'deploying'
+    downloadStatus.value = 'Provisioning disk from cloud image...'
+    const { poll } = useTaskPoller()
+    const event = await poll(result.taskID)
+    if (event.status !== 'completed') {
+      error.value = event.error || 'Provisioning failed'
+      phase.value = 'form'
+      return
+    }
+    // Auto-start after provision (previous template deploy UX).
+    try {
+      await vmStore.start(result.vm.id)
+    } catch {
+      // VM is created; start can fail if host lacks accel — still report deployed.
+    }
+    phase.value = 'done'
+    emit('deployed', result.vm)
+    return
+  }
+
+  if (result.status === 'created' && result.vm) {
+    if (!vmStore.vms.find(v => v.id === result.vm!.id)) {
+      vmStore.vms.push(result.vm)
+    }
+    try {
+      await vmStore.start(result.vm.id)
+    } catch {
+      /* ignore */
+    }
+    phase.value = 'done'
+    emit('deployed', result.vm)
+  }
+}
+
 async function doDeploy() {
   phase.value = 'deploying'
-  downloadStatus.value = 'Creating VM and starting...'
+  downloadStatus.value = 'Creating VM...'
   error.value = ''
 
   try {
     const result = await templateStore.deploy(buildRequest())
-
-    if (result.status === 'downloading' && result.imageId) {
-      watchDownload(result.imageId)
-      return
-    }
-
-    if (result.status === 'created' && result.vm) {
-      vmStore.vms.push(result.vm)
-      phase.value = 'done'
-      emit('deployed', result.vm)
-    }
+    await finishDeploy(result)
   } catch (e: any) {
     error.value = apiErrorMessage(e)
     phase.value = 'form'
@@ -198,14 +234,7 @@ async function submit() {
   loading.value = true
   try {
     const result = await templateStore.deploy(buildRequest())
-
-    if (result.status === 'downloading' && result.imageId) {
-      watchDownload(result.imageId)
-    } else if (result.status === 'created' && result.vm) {
-      vmStore.vms.push(result.vm)
-      phase.value = 'done'
-      emit('deployed', result.vm)
-    }
+    await finishDeploy(result)
   } catch (e: any) {
     error.value = apiErrorMessage(e)
   } finally {
