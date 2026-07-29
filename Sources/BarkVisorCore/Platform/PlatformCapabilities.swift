@@ -1,6 +1,17 @@
 import Foundation
 
-/// Static capability flags for the current host platform.
+#if os(macOS)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#elseif canImport(Musl)
+    import Musl
+#endif
+
+/// Static capability flags and remediation messages for the current host platform.
+///
+/// Prefer calling this type directly from services/controllers. PrivilegeService is only for
+/// privileged operations (XPC / host bridge registration), not capability checks.
 public enum PlatformCapabilities {
     /// Product capability: attach VMs to a host bridge / bridged network.
     /// - macOS: socket_vmnet (requires managed daemon lifecycle below)
@@ -70,14 +81,98 @@ public enum PlatformCapabilities {
         }
     }
 
-    /// Default guest architecture matching the host CPU.
+    /// Host CPU architecture for API/UI (`arm64` / `x86_64`).
+    /// Single implementation: runtime `uname` (matches process machine).
+    public static var hostArch: String {
+        var info = utsname()
+        uname(&info)
+        let machine = withUnsafePointer(to: &info.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 256) {
+                String(cString: $0)
+            }
+        }
+        switch machine {
+        case "arm64", "aarch64": return "arm64"
+        case "x86_64", "amd64": return "x86_64"
+        default: return machine.isEmpty ? "x86_64" : machine
+        }
+    }
+
+    /// Default QEMU guest architecture for this host (`aarch64` / `x86_64`).
     public static var defaultGuestArch: String {
-        #if arch(arm64)
-            "aarch64"
-        #elseif arch(x86_64)
-            "x86_64"
-        #else
-            "x86_64"
-        #endif
+        hostArch == "arm64" ? "aarch64" : "x86_64"
+    }
+
+    // MARK: - Unsupported feature messages
+
+    public enum Feature: String, Sendable {
+        case bridgedNetworking
+        case managedBridgeDaemon
+        case usbPassthrough
+        case inAppUpdate
+    }
+
+    /// Platform-correct remediation text for an unsupported feature.
+    public static func unsupportedMessage(_ feature: Feature) -> String {
+        switch feature {
+        case .bridgedNetworking:
+            #if os(Linux)
+                return "Bridged networking requires a host bridge and qemu-bridge-helper "
+                    + "(e.g. br0 + /etc/qemu/bridge.conf). Use NAT if bridging is unavailable."
+            #elseif os(macOS)
+                return "Bridged networking is not supported on this host. Use NAT networking."
+            #else
+                return "Bridged networking is not supported on this platform. Use NAT networking."
+            #endif
+        case .managedBridgeDaemon:
+            #if os(Linux)
+                return "Managed bridge daemon lifecycle is not supported on Linux. "
+                    + "Create a host bridge with ip/netplan (e.g. br0), then attach VMs "
+                    + "via a Bridged network record."
+            #else
+                return "Managed bridge daemon lifecycle is not supported on this platform."
+            #endif
+        case .usbPassthrough:
+            #if os(Linux)
+                return "USB passthrough is not available (install usbutils / check udev permissions)."
+            #else
+                return "USB passthrough is not supported on this platform."
+            #endif
+        case .inAppUpdate:
+            #if os(Linux)
+                return "In-app software updates are not supported on Linux yet. "
+                    + "Update BarkVisor using your package manager or release artifacts."
+            #else
+                return "In-app software updates are not supported on this platform."
+            #endif
+        }
+    }
+
+    /// Throw `BarkVisorError.badRequest` when product bridged networking is unavailable.
+    public static func requireBridgedNetworking() throws {
+        guard supportsBridgedNetworking else {
+            throw BarkVisorError.badRequest(unsupportedMessage(.bridgedNetworking))
+        }
+    }
+
+    /// Throw when managed bridge daemon ops are unavailable.
+    public static func requireManagedBridgeDaemon() throws {
+        guard supportsManagedBridgeDaemon else {
+            throw BarkVisorError.badRequest(unsupportedMessage(.managedBridgeDaemon))
+        }
+    }
+
+    /// Throw when USB passthrough is unavailable.
+    public static func requireUSBPassthrough() throws {
+        guard supportsUSBPassthrough else {
+            throw BarkVisorError.badRequest(unsupportedMessage(.usbPassthrough))
+        }
+    }
+
+    /// Throw when in-app updates are unavailable.
+    public static func requireInAppUpdate() throws {
+        guard supportsInAppUpdate else {
+            throw BarkVisorError.updateFailed(unsupportedMessage(.inAppUpdate))
+        }
     }
 }

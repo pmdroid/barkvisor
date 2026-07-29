@@ -328,12 +328,7 @@ public enum TemplateDeployService {
             }
             return userNetId
         } else if templateMode == "bridged" {
-            guard PrivilegeService.isBridgedNetworkingSupported else {
-                throw BarkVisorError.badRequest(
-                    "This template requires bridged networking, which is not supported on this platform. "
-                        + "Deploy with a NAT network or use BarkVisor on macOS.",
-                )
-            }
+            try PlatformCapabilities.requireBridgedNetworking()
             let activeBridge = try await db.read { db in
                 try BridgeRecord.filter(Column("status") == "active").fetchOne(db)
             }
