@@ -7,8 +7,12 @@ struct PlatformQEMUPathTests {
     @Test func `platformCapabilities accelerator is host platform specific`() {
         #if os(macOS)
             #expect(PlatformCapabilities.accelerator == "hvf")
+            #expect(PlatformCapabilities.qemuCPUModel == "host")
         #elseif os(Linux)
-            #expect(PlatformCapabilities.accelerator == "kvm")
+            // KVM when /dev/kvm exists; TCG fallback (e.g. nested VM without nested virt).
+            let accel = PlatformCapabilities.accelerator
+            #expect(accel == "kvm" || accel == "tcg")
+            #expect(PlatformCapabilities.qemuCPUModel == (accel == "kvm" ? "host" : "max"))
         #endif
     }
 

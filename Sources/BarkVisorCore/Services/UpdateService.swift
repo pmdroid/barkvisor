@@ -214,12 +214,7 @@ public actor UpdateService {
         release: UpdateInfo,
         progressHandler: @Sendable @escaping (Double) async -> Void,
     ) async throws {
-        guard PrivilegeService.isUpdateInstallSupported else {
-            throw BarkVisorError.updateFailed(
-                "In-app software updates are not supported on Linux yet. "
-                    + "Update BarkVisor using your package manager or release artifacts.",
-            )
-        }
+        try PlatformCapabilities.requireInAppUpdate()
 
         let updatesDir = Config.dataDir.appendingPathComponent("updates")
         try FileManager.default.createDirectory(at: updatesDir, withIntermediateDirectories: true)

@@ -7,15 +7,18 @@ struct LinuxBridgeUSBTests {
         #if os(Linux) || os(macOS)
             #expect(PlatformCapabilities.supportsBridgedNetworking)
             #expect(PlatformCapabilities.supportsUSBPassthrough)
-            #expect(PrivilegeService.isBridgedNetworkingSupported)
         #endif
         #if os(Linux)
             // Linux uses host bridges + QEMU -netdev bridge — not a managed daemon.
             #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
-            #expect(!PrivilegeService.isManagedBridgeDaemonSupported)
+            #expect(throws: BarkVisorError.self) {
+                try PlatformCapabilities.requireManagedBridgeDaemon()
+            }
         #elseif os(macOS)
             #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
-            #expect(PrivilegeService.isManagedBridgeDaemonSupported)
+            #expect(throws: Never.self) {
+                try PlatformCapabilities.requireManagedBridgeDaemon()
+            }
         #endif
     }
 

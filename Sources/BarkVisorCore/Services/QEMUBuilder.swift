@@ -347,7 +347,7 @@ public enum QEMUBuilder {
                     needsSocketVmnetWrap = false
                 #else
                     throw BarkVisorError.badRequest(
-                        "Bridged networking is not supported on this platform. Use NAT networking.",
+                        PlatformCapabilities.unsupportedMessage(.bridgedNetworking),
                     )
                 #endif
             } else {
@@ -503,7 +503,7 @@ public enum QEMUBuilder {
             return (clientBin, socketPath)
         #else
             throw BarkVisorError.badRequest(
-                "Bridged networking (socket_vmnet) is not supported on Linux yet. Use NAT networking.",
+                PlatformCapabilities.unsupportedMessage(.managedBridgeDaemon),
             )
         #endif
     }
