@@ -84,3 +84,9 @@ jobs:
 
       - name: swift build
         run: swift build --product BarkVisorApp
+
+      # Execute Linux-only paths (LinuxPrivilegeService, lsusb parse, HostNetwork, …).
+      # Prefer full suite; if individual tests fail, disable with an explicit reason —
+      # do not silently skip.
+      - name: swift test
+        run: swift test --skip-update
