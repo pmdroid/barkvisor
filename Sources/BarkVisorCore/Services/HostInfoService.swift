@@ -70,8 +70,30 @@ public enum HostInfoService {
         return interfaces
     }
 
-    /// Check whether a network interface name exists on this host.
+    /// Whether a network interface name exists on this host.
+    ///
+    /// **Down and address-less interfaces count as present** — a Linux bridge
+    /// used with QEMU `-netdev bridge` may have no IPv4 address and still be valid.
+    ///
+    /// Single definition used by setup/system routes, privilege paths, and VM start:
+    /// - **Linux:** `/sys/class/net/<name>` (sysfs), same as `LinuxHostNetwork`.
+    /// - **macOS / others:** `getifaddrs` name match (any address family).
+    ///
+    /// `listInterfaces()` only returns interfaces that currently have an IPv4 address;
+    /// an interface can therefore exist without appearing in that list.
     public static func interfaceExists(_ name: String) -> Bool {
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return false
+        }
+        #if os(Linux)
+            return LinuxHostNetwork.interfaceExists(name)
+        #else
+            return interfaceExistsViaGetifaddrs(name)
+        #endif
+    }
+
+    /// BSD/macOS existence probe via getifaddrs (includes interfaces without IPv4).
+    private static func interfaceExistsViaGetifaddrs(_ name: String) -> Bool {
         var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
             return false

@@ -41,6 +41,16 @@ struct HostInfoServiceTests {
 
     @Test func `interface exists for non existent`() {
         #expect(!HostInfoService.interfaceExists("fake_interface_999"))
+        #expect(!HostInfoService.interfaceExists(""))
+        #expect(!HostInfoService.interfaceExists("../etc"))
+    }
+
+    @Test func `interface exists includes interfaces without requiring listInterfaces membership`() {
+        // listInterfaces is IPv4-only; existence must still be true for loopback
+        // even when we only care about the name probe (down/no-IP policy).
+        #expect(HostInfoService.interfaceExists(Self.loopbackName))
+        let listed = Set(HostInfoService.listInterfaces().map(\.name))
+        #expect(listed.contains(Self.loopbackName))
     }
 
     @Test func `displayName labels loopback and common interfaces`() {
