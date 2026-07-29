@@ -1,28 +1,62 @@
 import Foundation
 import GRDB
 
-struct VMSockets {
-    let vnc: URL
-    let serial: URL
-    let qmp: URL
-    let event: URL
+/// Canonical owner of per-VM Unix socket paths under `Config.socketDir`.
+///
+/// Filenames are byte-stable (`{shortID}-{suffix}.sock`) so reconnect/adoption
+/// keeps working. Prefer this type over string surgery on `-qmp.sock` paths.
+public struct VMSockets: Sendable {
+    /// First 12 characters of the VM UUID (path segment prefix).
+    public let shortID: String
+    public let vnc: URL
+    public let serial: URL
+    public let qmp: URL
+    public let event: URL
+    public let guestAgent: URL
+    /// Legacy HMP monitor socket (no longer created; still removed on cleanup).
+    public let monitor: URL
 
-    init(vmID: String) {
+    /// All known socket URLs for this VM (including legacy monitor).
+    public var all: [URL] {
+        [vnc, serial, qmp, event, guestAgent, monitor]
+    }
+
+    public init(vmID: String) {
         let shortID = String(vmID.prefix(12))
+        self.shortID = shortID
         vnc = Config.socketDir.appendingPathComponent("\(shortID)-vnc.sock")
         serial = Config.socketDir.appendingPathComponent("\(shortID)-ser.sock")
         qmp = Config.socketDir.appendingPathComponent("\(shortID)-qmp.sock")
         event = Config.socketDir.appendingPathComponent("\(shortID)-evt.sock")
+        guestAgent = Config.socketDir.appendingPathComponent("\(shortID)-ga.sock")
+        monitor = Config.socketDir.appendingPathComponent("\(shortID)-mon.sock")
     }
 
-    func removeStale() {
-        for url in [vnc, serial, qmp] {
+    /// Reconstruct sockets from a QMP socket path (`…/{shortID}-qmp.sock`).
+    public init?(qmpSocketPath: String) {
+        let name = URL(fileURLWithPath: qmpSocketPath).lastPathComponent
+        guard name.hasSuffix("-qmp.sock") else { return nil }
+        let shortID = String(name.dropLast("-qmp.sock".count))
+        guard !shortID.isEmpty else { return nil }
+        self.shortID = shortID
+        let dir = URL(fileURLWithPath: qmpSocketPath).deletingLastPathComponent()
+        vnc = dir.appendingPathComponent("\(shortID)-vnc.sock")
+        serial = dir.appendingPathComponent("\(shortID)-ser.sock")
+        qmp = dir.appendingPathComponent("\(shortID)-qmp.sock")
+        event = dir.appendingPathComponent("\(shortID)-evt.sock")
+        guestAgent = dir.appendingPathComponent("\(shortID)-ga.sock")
+        monitor = dir.appendingPathComponent("\(shortID)-mon.sock")
+    }
+
+    public func removeStale() {
+        for url in all {
             try? FileManager.default.removeItem(at: url)
         }
     }
 
-    func setOwnerOnlyPermissions() {
-        for sockPath in [vnc.path, qmp.path, serial.path] {
+    public func setOwnerOnlyPermissions() {
+        // Only sockets that QEMU creates at launch (monitor is legacy / unused).
+        for sockPath in [vnc.path, serial.path, qmp.path, event.path, guestAgent.path] {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o600], ofItemAtPath: sockPath,
             )

@@ -130,8 +130,7 @@ public actor VMManager: VMStateQuerying {
             let launch = try QEMUBuilder.launchConfig(ctx: QEMUBuildContext(
                 vm: loaded.vm, disk: loaded.disk, isos: loaded.isos, network: loaded.network,
                 additionalDisks: loaded.additionalDisks,
-                vncSock: sockets.vnc,
-                serialSock: sockets.serial, qmpSock: sockets.qmp,
+                sockets: sockets,
                 bridgeSocketPath: bridgeSocketPath,
             ))
             swtpmProc = try await startSwtpmIfNeeded(launch: launch, vmID: vmID, vmName: loaded.vm.name)
