@@ -39,12 +39,7 @@ struct VMResponse: Content {
         self.cpuCount = vm.cpuCount
         self.memoryMB = vm.memoryMb
         self.bootDiskId = vm.bootDiskId
-        let decodedIsoIds =
-            JSONColumnCoding.decodeArray(String.self, from: vm.isoIds)
-                ?? {
-                    if let legacyId = vm.isoId { return [legacyId] }
-                    return []
-                }()
+        let decodedIsoIds = vm.decodedISOIds
         self.isoIds = decodedIsoIds.isEmpty ? nil : decodedIsoIds
         self.isoId = decodedIsoIds.first
         self.networkId = vm.networkId
@@ -58,10 +53,14 @@ struct VMResponse: Content {
         self.pendingChanges = vm.pendingChanges
         self.createdAt = vm.createdAt
         self.updatedAt = vm.updatedAt
-        self.additionalDiskIds = JSONColumnCoding.decodeArray(String.self, from: vm.additionalDiskIds)
-        self.sharedPaths = JSONColumnCoding.decodeArray(String.self, from: vm.sharedPaths)
-        self.portForwards = JSONColumnCoding.decodeArray(PortForwardRule.self, from: vm.portForwards)
-        self.usbDevices = JSONColumnCoding.decodeArray(USBPassthroughDevice.self, from: vm.usbDevices)
+        let disks = vm.decodedAdditionalDiskIds
+        self.additionalDiskIds = disks.isEmpty ? nil : disks
+        let paths = vm.decodedSharedPaths
+        self.sharedPaths = paths.isEmpty ? nil : paths
+        let pfs = vm.decodedPortForwards
+        self.portForwards = pfs.isEmpty ? nil : pfs
+        let usb = vm.decodedUSBDevices
+        self.usbDevices = usb.isEmpty ? nil : usb
     }
 }
 
