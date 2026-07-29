@@ -144,8 +144,19 @@ struct QEMUBuilderValidationTests {
     @Test func `accelerator is host platform specific`() {
         #if os(macOS)
             #expect(QEMUBuilder.accelerator == "hvf")
+            #expect(QEMUBuilder.cpuModel == "host")
         #elseif os(Linux)
-            #expect(QEMUBuilder.accelerator == "kvm")
+            // KVM when /dev/kvm exists; TCG fallback (e.g. Orb without nested virt).
+            let accel = QEMUBuilder.accelerator
+            #expect(accel == "kvm" || accel == "tcg")
+            if accel == "kvm" {
+                #expect(QEMUBuilder.cpuModel == "host")
+            } else {
+                #expect(QEMUBuilder.cpuModel == "max")
+            }
         #endif
+        // QEMUBuilder and PlatformCapabilities must agree (capabilities API + launch args).
+        #expect(QEMUBuilder.accelerator == PlatformCapabilities.accelerator)
+        #expect(QEMUBuilder.cpuModel == PlatformCapabilities.qemuCPUModel)
     }
 }

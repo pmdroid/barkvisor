@@ -5,6 +5,10 @@
 > networking, USB passthrough, and in-app updates are **not** supported yet
 > (the UI hides them when `GET /api/system/capabilities` reports them off).
 
+The Linux foundation stack is on **main** (platform paths, QEMU/KVM, capabilities
+UI, systemd unit). This document covers day-one product use: serve the SPA and
+boot a first NAT guest.
+
 ## Requirements
 
 | Component | Notes |
@@ -22,7 +26,7 @@
 |----------|--------|
 | `BARKVISOR_PORT` | Listen port (default `7777`) |
 | `BARKVISOR_DATA_DIR` | Data directory (default `~/.local/share/barkvisor` in dev) |
-| `BARKVISOR_FRONTEND_DIR` | Path to SPA `dist/` with `index.html` |
+| `BARKVISOR_FRONTEND_DIR` | Absolute path to SPA **`dist/`** directory that contains `index.html` |
 
 ### OrbStack smoke host
 
@@ -45,7 +49,7 @@ sudo apt-get install -y build-essential pkg-config git \
   zlib1g-dev libzstd-dev libedit-dev uuid-dev \
   qemu-system-arm qemu-utils qemu-efi-aarch64
 
-# 3. Build + automated smoke
+# 3. Build + automated smoke (daemon health + capabilities)
 git clone https://github.com/pmdroid/barkvisor.git
 cd barkvisor
 ./scripts/linux-smoke.sh
@@ -54,15 +58,43 @@ cd barkvisor
 swift run BarkVisorApp
 ```
 
-Open `http://localhost:7777` and complete the setup wizard.
+Open `http://localhost:7777` and complete the setup wizard (or use the guest
+smoke script below for an API-driven path).
 
-### Frontend (optional for full UI)
+### Frontend SPA (`BARKVISOR_FRONTEND_DIR`)
+
+The API works without a UI, but the setup wizard and VM console need the built
+Vue SPA. Prefer the helper script:
+
+```bash
+./scripts/linux-frontend-serve.sh
+# prints:
+#   SPA dist: /path/to/repo/frontend/dist
+#   export BARKVISOR_FRONTEND_DIR="..."
+
+export BARKVISOR_FRONTEND_DIR="$(pwd)/frontend/dist"
+swift run BarkVisorApp
+```
+
+Or build + start in one step:
+
+```bash
+./scripts/linux-frontend-serve.sh --run
+```
+
+Manual build (bun preferred):
 
 ```bash
 cd frontend && bun install && bun run build
-# served from frontend/dist or Sources/BarkVisor/Resources/frontend/dist
-# or: BARKVISOR_FRONTEND_DIR=/path/to/dist swift run BarkVisorApp
+# dist is frontend/dist — must contain index.html
+export BARKVISOR_FRONTEND_DIR="$PWD/dist"
 ```
+
+Resolution order inside the daemon (`VaporServer.findFrontendDist`):
+
+1. **`BARKVISOR_FRONTEND_DIR`** if it contains `index.html`
+2. Installed share path (`Config.frontendDir`)
+3. Dev probes: `frontend/dist`, `Sources/BarkVisor/Resources/frontend/dist`
 
 ### Optional: Docker
 
@@ -73,6 +105,57 @@ docker run --rm -it --device /dev/kvm -p 7777:7777 barkvisor:dev
 
 KVM passthrough requires nested virt or bare metal. Without `/dev/kvm`, QEMU
 may fall back slowly or fail depending on config.
+
+## First NAT guest boot
+
+On Linux, only **NAT** networking is supported for the MVP. A default NAT
+network is seeded as **"Default NAT"** (`isDefault: true`) on first launch.
+
+### Automated guest smoke
+
+```bash
+# Structural check only (no server):
+DRY_RUN=1 ./scripts/linux-guest-smoke.sh
+
+# Full API path: build → setup → create NAT VM → start → assert running/starting
+./scripts/linux-guest-smoke.sh
+
+# Bootable guest (recommended): provide a cloud image URL
+BARKVISOR_CLOUD_IMAGE_URL='https://example.com/ubuntu-24.04-server-cloudimg-arm64.img' \
+  ./scripts/linux-guest-smoke.sh
+```
+
+What the script does:
+
+1. Builds `BarkVisorApp` (or reuses `.build/*/BarkVisorApp` with `SKIP_BUILD=1`)
+2. Starts the server on a free port with a temp `BARKVISOR_DATA_DIR`
+3. Completes setup if needed: `POST /api/setup/admin`, `POST /api/setup/bridge/skip`,
+   `POST /api/setup/complete` (skips bridge — required on Linux)
+4. Logs in via `POST /api/auth/login` when no setup token was returned
+5. `GET /api/networks` and selects the default NAT network
+6. Creates a small VM (`linux-arm64` on aarch64, `linux-amd64` on x86_64):
+   - **With** `BARKVISOR_CLOUD_IMAGE_URL`: `POST /api/images/download` then
+     `POST /api/vms` with `cloudImageId` + ~2 GB disk
+   - **Without**: `POST /api/disks` then `POST /api/vms` with `existingDiskId`
+     (QEMU start still exercises the NAT guest path; the disk has no OS)
+7. `POST /api/vms/:id/start` and checks `GET /api/vms/:id` for `running` or `starting`
+8. On failure, prints the server log tail
+
+Useful env vars: `BARKVISOR_ADMIN_USER`, `BARKVISOR_ADMIN_PASSWORD`,
+`BARKVISOR_VM_TYPE`, `DISK_SIZE_GB`, `CPU_COUNT`, `MEMORY_MB`, `ALLOW_NO_QEMU=1`.
+
+**Note:** create requires `isoId`, `cloudImageId`, or `existingDiskId` — a bare
+`diskSizeGB` alone is rejected by `VMLifecycleService`. Use a cloud image URL
+for a real boot, or the blank-disk path for a process/start smoke.
+
+### Manual first guest (API / UI)
+
+1. Complete setup (wizard or smoke script). Skip bridge install on Linux.
+2. Confirm `GET /api/networks` shows Default NAT.
+3. Import a cloud image (`POST /api/images/download` or Image Library UI).
+4. Create a VM with `vmType: "linux-arm64"` (or host-matched type), NAT
+   `networkId`, and `cloudImageId` + `diskSizeGB`.
+5. Start the VM; open console/VNC from the UI or API.
 
 ## Data directories
 
@@ -107,9 +190,14 @@ complexity cuts) is **merged to `main`**. Branch from `main` for new work; see
 - Not full macOS feature parity
 - Firmware/QEMU still resolved via `PATH` / common distro paths
 - Windows guests and TPM may need extra packages (`swtpm`) not covered here
+- Image download API currently validates `arch: "arm64"` only
 
-## Smoke and next steps
+## Related scripts
 
-- **Daemon smoke (on main):** `./scripts/linux-smoke.sh` — builds BarkVisorApp, starts briefly, checks `/api/health` and `/api/system/capabilities`
-- **systemd:** `Resources/barkvisor.service` and `scripts/install-linux.sh`
-- **Guest boot:** create a `linux-arm64` or `linux-amd64` VM with NAT only (follow-up work; guest-smoke may land in a separate PR)
+| Script | Purpose |
+|--------|---------|
+| `scripts/linux-dev.sh` | Install build + QEMU packages (Ubuntu) |
+| `scripts/linux-smoke.sh` | Build + health/capabilities smoke |
+| `scripts/linux-guest-smoke.sh` | Setup + NAT VM create/start smoke |
+| `scripts/linux-frontend-serve.sh` | Build SPA; optional `--run` with `BARKVISOR_FRONTEND_DIR` |
+| `scripts/install-linux.sh` | systemd install (`Resources/barkvisor.service`) |
