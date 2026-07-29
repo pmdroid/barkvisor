@@ -11,6 +11,7 @@ const defaultCapabilities: SystemCapabilities = {
   supportsInAppUpdate: true,
   accelerator: 'hvf',
   hostArch: 'arm64',
+  guestTypes: [],
 }
 
 export const useCapabilitiesStore = defineStore('capabilities', () => {
@@ -26,6 +27,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   const platform = computed(() => capabilities.value.platform)
   const accelerator = computed(() => capabilities.value.accelerator)
   const hostArch = computed(() => capabilities.value.hostArch)
+  const guestTypes = computed(() => capabilities.value.guestTypes ?? [])
 
   async function fetchCapabilities(): Promise<void> {
     if (loaded.value) return
@@ -47,6 +49,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
             supportsInAppUpdate: !!data.supportsInAppUpdate,
             accelerator: data.accelerator ?? defaultCapabilities.accelerator,
             hostArch: data.hostArch ?? defaultCapabilities.hostArch,
+            guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
           }
         }
       } catch {
@@ -71,6 +74,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     platform,
     accelerator,
     hostArch,
+    guestTypes,
     fetchCapabilities,
   }
 })

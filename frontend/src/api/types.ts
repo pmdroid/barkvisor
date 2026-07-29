@@ -363,6 +363,15 @@ export interface UpdateSettings {
   updateURL?: string | null
 }
 
+/** Supported guest type from GET /api/system/capabilities (stable persisted IDs). */
+export interface GuestTypeInfo {
+  id: string
+  arch: string
+  machine: string
+  osFamily: string
+  qemuBinary: string
+}
+
 /** Platform feature flags from GET /api/system/capabilities */
 export interface SystemCapabilities {
   platform: 'macOS' | 'Linux' | string
@@ -374,4 +383,6 @@ export interface SystemCapabilities {
   supportsInAppUpdate: boolean
   accelerator: 'hvf' | 'kvm' | string
   hostArch: 'arm64' | 'x86_64' | string
+  /** Canonical guest profiles (persisted vmType IDs). */
+  guestTypes?: GuestTypeInfo[]
 }
