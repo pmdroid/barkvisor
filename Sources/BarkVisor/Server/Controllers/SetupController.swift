@@ -141,11 +141,10 @@ struct SetupController: RouteCollection {
         guard !setupMiddleware.isSetupComplete else {
             throw Abort(.notFound)
         }
-        guard PrivilegeService.isManagedBridgeDaemonSupported else {
+        guard PlatformCapabilities.supportsManagedBridgeDaemon else {
             throw Abort(
                 .notImplemented,
-                reason: "Managed bridge setup is not supported on this platform. "
-                    + "Skip this step and create a Bridged network later if needed.",
+                reason: PlatformCapabilities.unsupportedMessage(.managedBridgeDaemon),
             )
         }
         let body = try req.content.decode(BridgeRequest.self)

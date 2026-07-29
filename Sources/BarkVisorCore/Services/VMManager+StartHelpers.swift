@@ -36,11 +36,7 @@ extension VMManager {
     func validateBridgeIfNeeded(network: Network?) async throws -> String? {
         guard let network, network.mode == "bridged" else { return nil }
 
-        guard PrivilegeService.isBridgedNetworkingSupported else {
-            throw BarkVisorError.badRequest(
-                "Bridged networking is not supported on this platform. Use NAT networking.",
-            )
-        }
+        try PlatformCapabilities.requireBridgedNetworking()
 
         let iface = network.bridge ?? {
             #if os(macOS)
