@@ -42,4 +42,34 @@ struct HostInfoServiceTests {
     @Test func `interface exists for non existent`() {
         #expect(!HostInfoService.interfaceExists("fake_interface_999"))
     }
+
+    @Test func `displayName labels loopback and common interfaces`() {
+        #if os(Linux)
+            #expect(HostInfoService.displayName(for: "lo") == "lo (Loopback)")
+            #expect(HostInfoService.displayName(for: "br0") == "br0 (Bridge)")
+            #expect(HostInfoService.displayName(for: "docker0") == "docker0 (Container)")
+            #expect(HostInfoService.displayName(for: "eth0") == "eth0 (Ethernet)")
+            #expect(HostInfoService.displayName(for: "ens3") == "ens3 (Ethernet)")
+        #else
+            #expect(HostInfoService.displayName(for: "lo0") == "lo0 (Loopback)")
+            #expect(HostInfoService.displayName(for: "en0") == "en0 (Ethernet/Wi-Fi)")
+            #expect(HostInfoService.displayName(for: "bridge0") == "bridge0 (Bridge)")
+        #endif
+    }
+
+    @Test func `apiBridgeStatus hides not_configured`() {
+        #expect(HostInfoService.apiBridgeStatus(nil) == nil)
+        #expect(HostInfoService.apiBridgeStatus("not_configured") == nil)
+        #expect(HostInfoService.apiBridgeStatus("active") == "active")
+        #expect(HostInfoService.apiBridgeStatus("installed") == "installed")
+    }
+
+    @Test func `listInterfaceSnapshots includes display names`() {
+        let snaps = HostInfoService.listInterfaceSnapshots()
+        #expect(!snaps.isEmpty)
+        let lo = snaps.first(where: { $0.name == Self.loopbackName })
+        #expect(lo != nil)
+        #expect(lo?.displayName.contains("Loopback") == true)
+        #expect(lo?.bridgeStatus == nil)
+    }
 }
