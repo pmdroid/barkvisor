@@ -125,7 +125,7 @@ struct TemplateController: RouteCollection {
             let body = DeployTemplateResponse(
                 status: "downloading", imageId: imageId, taskID: nil, vm: nil,
             )
-            return try Self.jsonResponse(body, status: .ok)
+            return try Response.json(body, status: .ok)
 
         case let .created(vm):
             AuditService.log(
@@ -134,7 +134,7 @@ struct TemplateController: RouteCollection {
             let body = DeployTemplateResponse(
                 status: "created", imageId: nil, taskID: nil, vm: VMResponse(from: vm),
             )
-            return try Self.jsonResponse(body, status: .ok)
+            return try Response.json(body, status: .ok)
 
         case let .provisioning(taskID, vm):
             AuditService.log(
@@ -144,14 +144,7 @@ struct TemplateController: RouteCollection {
                 status: "provisioning", imageId: nil, taskID: taskID, vm: VMResponse(from: vm),
             )
             // 202 Accepted — client polls taskID (same pattern as POST /api/vms cloud-image create).
-            return try Self.jsonResponse(body, status: .accepted)
+            return try Response.json(body, status: .accepted)
         }
-    }
-
-    private static func jsonResponse(_ value: some Content, status: HTTPStatus) throws -> Response {
-        let data = try JSONEncoder().encode(value)
-        var headers = HTTPHeaders()
-        headers.contentType = .json
-        return Response(status: status, headers: headers, body: .init(data: data))
     }
 }
