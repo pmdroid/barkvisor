@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
@@ -83,7 +84,7 @@ async function savePortForwards() {
       toast.show('Port forward changes require a VM restart to take effect.', { type: 'info' })
     }
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     pfSaving.value = false
   }
@@ -152,7 +153,7 @@ async function setupBridgeFromDetail() {
     toast.success(`Bridge installed for ${currentNetwork.value.bridge}`)
     await fetchBridges()
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
   }
@@ -214,7 +215,7 @@ async function usbAttach(dev: HostUSBDevice) {
     } else {
       toast.success(`USB device "${dev.name}" attached`)
     }
-  } catch (e: any) { toast.error(e.response?.data?.reason || e.message) }
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally { usbLoading.value = false }
 }
 
@@ -232,7 +233,7 @@ async function usbDetach(dev: USBPassthroughDevice) {
     } else {
       toast.success(`USB device detached`)
     }
-  } catch (e: any) { toast.error(e.response?.data?.reason || e.message) }
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally { usbLoading.value = false }
 }
 
@@ -314,7 +315,7 @@ async function loadVMDetail() {
     }, 15000)
   } catch (e: any) {
     if (loadVersion === detailLoadVersion) {
-      toast.error(e.response?.data?.reason || e.message)
+      toast.error(apiErrorMessage(e))
     }
   }
 }
@@ -341,7 +342,7 @@ async function action(name: string, fn: () => Promise<void>) {
   try {
     await fn()
   } catch (e: any) {
-    const reason = e.response?.data?.reason || e.message
+    const reason = apiErrorMessage(e)
     const code = e.response?.data?.code
     if (code === 'bridge_not_ready') {
       toast.error(reason + ' Go to Network settings to set it up.')
@@ -367,7 +368,7 @@ async function confirmStop() {
   try {
     await store.stop(vmId.value, { method })
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   }
 }
 
@@ -400,7 +401,7 @@ async function deleteVM() {
       router.push('/vms')
     }
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     deletingVM.value = false
     showDeleteDialog.value = false
@@ -428,10 +429,7 @@ async function doRemoveSharedPath() {
   removingShare.value = true
   try {
     const current = vm.value?.sharedPaths || []
-    await Promise.all([
-      store.update(vmId.value, { sharedPaths: current.filter(p => p !== path) } as any),
-      new Promise(r => setTimeout(r, 400))
-    ])
+    await store.update(vmId.value, { sharedPaths: current.filter(p => p !== path) } as any)
   } finally {
     removingShare.value = false
     confirmRemoveShare.value = null
@@ -462,7 +460,7 @@ async function saveEdit() {
     showEditModal.value = false
     await store.fetchOne(vmId.value)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     editSaving.value = false
   }
@@ -476,7 +474,7 @@ async function attachDisk(diskId: string) {
     showAttachDisk.value = false
     await store.fetchOne(vmId.value)
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     attachLoading.value = false
   }
@@ -495,10 +493,7 @@ async function doDetachDisk() {
   detaching.value = true
   try {
     const current = vm.value?.additionalDiskIds || []
-    await Promise.all([
-      store.update(vmId.value, { additionalDiskIds: current.filter(d => d !== diskId) } as any).then(() => store.fetchOne(vmId.value)),
-      new Promise(r => setTimeout(r, 400))
-    ])
+    await store.update(vmId.value, { additionalDiskIds: current.filter(d => d !== diskId) } as any).then(() => store.fetchOne(vmId.value))
   } finally {
     detaching.value = false
     confirmDetachDisk.value = null

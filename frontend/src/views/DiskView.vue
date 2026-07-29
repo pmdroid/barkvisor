@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api/client'
@@ -68,7 +69,7 @@ async function createDisk() {
     newName.value = ''
     newFormat.value = 'qcow2'
     await Promise.all([fetchDisks(), fetchSummary()])
-  } catch (e: any) { error.value = e.response?.data?.reason || e.message }
+  } catch (e: any) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
 
@@ -84,11 +85,8 @@ async function doDeleteDisk() {
   deleting.value = true
   try {
     const { id } = deleteTarget.value
-    await Promise.all([
-      api.delete(`/disks/${id}`).then(() => Promise.all([fetchDisks(), fetchSummary()])),
-      new Promise(r => setTimeout(r, 400))
-    ])
-  } catch (e: any) { toast.error(e.response?.data?.reason || e.message) }
+    await api.delete(`/disks/${id}`).then(() => Promise.all([fetchDisks(), fetchSummary()]))
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally {
     deleting.value = false
     deleteTarget.value = null
@@ -112,13 +110,10 @@ async function resizeDisk() {
   resizeError.value = ''
   resizeLoading.value = true
   try {
-    await Promise.all([
-      api.post(`/disks/${resizingDisk.value.id}/resize`, { sizeGB: resizeSizeGB.value }),
-      new Promise(r => setTimeout(r, 400))
-    ])
+    await api.post(`/disks/${resizingDisk.value.id}/resize`, { sizeGB: resizeSizeGB.value })
     resizeDone.value = true
     await Promise.all([fetchDisks(), fetchSummary()])
-  } catch (e: any) { resizeError.value = e.response?.data?.reason || e.message }
+  } catch (e: any) { resizeError.value = apiErrorMessage(e) }
   finally { resizeLoading.value = false }
 }
 

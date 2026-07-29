@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, computed } from 'vue'
 import api from '../api/client'
 
@@ -43,7 +44,7 @@ async function validate() {
     const { data } = await api.post('/cloud-init/validate', { userData: localValue.value })
     validationResult.value = data
   } catch (e: any) {
-    validationResult.value = { valid: false, error: e.response?.data?.reason || e.message }
+    validationResult.value = { valid: false, error: apiErrorMessage(e) }
   } finally {
     validating.value = false
   }

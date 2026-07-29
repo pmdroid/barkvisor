@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiErrorMessage } from '../api/errors'
 import { ref, watch, computed } from 'vue'
 import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
@@ -47,7 +48,7 @@ async function download(img: RepositoryImage) {
     await store.downloadImage(img.id)
     toast.success(`Download started for "${img.name}"`, { label: 'View in Images', to: '/images' })
   } catch (e: any) {
-    toast.error(e.response?.data?.reason || e.message)
+    toast.error(apiErrorMessage(e))
   } finally {
     downloading.value.delete(img.id)
   }
