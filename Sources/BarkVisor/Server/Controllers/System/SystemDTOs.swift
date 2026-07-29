@@ -55,6 +55,15 @@ struct VirtioWinDownloadResponse: Content {
     let imageId: String
 }
 
+/// Supported guest type for create UI / validation (stable persisted IDs).
+struct GuestTypeInfo: Content {
+    let id: String
+    let arch: String
+    let machine: String
+    let osFamily: String
+    let qemuBinary: String
+}
+
 /// Platform feature flags for UI gating (bridged networking, USB, in-app updates).
 struct SystemCapabilitiesResponse: Content {
     let platform: String
@@ -66,6 +75,8 @@ struct SystemCapabilitiesResponse: Content {
     let supportsInAppUpdate: Bool
     let accelerator: String
     let hostArch: String
+    /// Canonical guest profiles (persisted `vmType` IDs).
+    let guestTypes: [GuestTypeInfo]
 }
 
 struct HostUSBDeviceResponse: Content {
