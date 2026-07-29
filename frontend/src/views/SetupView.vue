@@ -26,7 +26,9 @@ const authStore = useAuthStore()
 const caps = useCapabilitiesStore()
 /** Linear UI step index (1-based). Bridge step is omitted on unsupported platforms. */
 const step = ref(1)
-const showBridgeStep = computed(() => caps.supportsBridgedNetworking)
+/** Setup installs the managed bridge helper (socket_vmnet) — macOS only. */
+const showBridgeStep = computed(() => caps.supportsManagedBridgeDaemon)
+
 const totalSteps = computed(() => (showBridgeStep.value ? 5 : 4))
 /** Which content panel to show for the current linear index. */
 const panel = computed(() => {

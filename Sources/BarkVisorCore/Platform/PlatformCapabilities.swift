@@ -2,11 +2,21 @@ import Foundation
 
 /// Static capability flags for the current host platform.
 public enum PlatformCapabilities {
-    /// Bridged networking:
-    /// - macOS: privileged helper + socket_vmnet
-    /// - Linux: QEMU `-netdev bridge` (host bridge + qemu-bridge-helper)
+    /// Product capability: attach VMs to a host bridge / bridged network.
+    /// - macOS: socket_vmnet (requires managed daemon lifecycle below)
+    /// - Linux: QEMU `-netdev bridge` against an existing host bridge (e.g. br0)
     public static var supportsBridgedNetworking: Bool {
         #if os(macOS) || os(Linux)
+            true
+        #else
+            false
+        #endif
+    }
+
+    /// Whether BarkVisor can install/start/stop a privileged bridge helper daemon.
+    /// macOS only (socket_vmnet via XPC helper). Linux host bridges are OS-managed.
+    public static var supportsManagedBridgeDaemon: Bool {
+        #if os(macOS)
             true
         #else
             false

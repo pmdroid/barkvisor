@@ -26,9 +26,14 @@ public enum PrivilegeService {
     /// Platform-selected privilege backend.
     public static let shared: any PrivilegeServicing = makeShared()
 
-    /// Bridged networking (socket_vmnet) — single source: PlatformCapabilities.
+    /// Product bridged networking — single source: PlatformCapabilities.
     public static var isBridgedNetworkingSupported: Bool {
         PlatformCapabilities.supportsBridgedNetworking
+    }
+
+    /// Managed bridge daemon lifecycle (install/start/stop/sync) — macOS only.
+    public static var isManagedBridgeDaemonSupported: Bool {
+        PlatformCapabilities.supportsManagedBridgeDaemon
     }
 
     /// In-app privileged software updates — single source: PlatformCapabilities.

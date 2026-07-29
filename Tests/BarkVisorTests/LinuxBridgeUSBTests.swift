@@ -9,6 +9,14 @@ struct LinuxBridgeUSBTests {
             #expect(PlatformCapabilities.supportsUSBPassthrough)
             #expect(PrivilegeService.isBridgedNetworkingSupported)
         #endif
+        #if os(Linux)
+            // Linux uses host bridges + QEMU -netdev bridge — not a managed daemon.
+            #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(!PrivilegeService.isManagedBridgeDaemonSupported)
+        #elseif os(macOS)
+            #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(PrivilegeService.isManagedBridgeDaemonSupported)
+        #endif
     }
 
     @Test func `parse lsusb line extracts vendor product and name`() {

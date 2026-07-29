@@ -29,18 +29,22 @@ struct SystemBridgeController: RouteCollection {
         }
     }
 
-    private static func requireBridgedNetworking() throws {
-        guard PrivilegeService.isBridgedNetworkingSupported else {
+    /// install/start/stop/remove require the macOS managed bridge daemon (XPC helper).
+    /// Product bridged networking on Linux uses host bridges without these lifecycle routes.
+    private static func requireManagedBridgeDaemon() throws {
+        guard PrivilegeService.isManagedBridgeDaemonSupported else {
             throw Abort(
                 .notImplemented,
-                reason: "Bridged networking is not supported on this platform. Use NAT networking.",
+                reason: "Managed bridge daemon lifecycle is not supported on this platform. "
+                    + "On Linux, create a host bridge (e.g. br0) with ip/netplan, then attach "
+                    + "VMs via a Bridged network record.",
             )
         }
     }
 
     @Sendable
     func installBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
-        try Self.requireBridgedNetworking()
+        try Self.requireManagedBridgeDaemon()
 
         let body = try req.content.decode(BridgeRequest.self)
         let iface = body.interface
@@ -105,7 +109,7 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func startBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
-        try Self.requireBridgedNetworking()
+        try Self.requireManagedBridgeDaemon()
 
         guard let iface = req.parameters.get("interface") else {
             throw Abort(.badRequest, reason: "Missing interface parameter")
@@ -130,7 +134,7 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func stopBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
-        try Self.requireBridgedNetworking()
+        try Self.requireManagedBridgeDaemon()
 
         guard let iface = req.parameters.get("interface") else {
             throw Abort(.badRequest, reason: "Missing interface parameter")
@@ -155,7 +159,7 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func removeBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
-        try Self.requireBridgedNetworking()
+        try Self.requireManagedBridgeDaemon()
 
         guard let iface = req.parameters.get("interface") else {
             throw Abort(.badRequest, reason: "Missing interface parameter")
