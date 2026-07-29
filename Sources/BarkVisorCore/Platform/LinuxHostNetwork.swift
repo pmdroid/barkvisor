@@ -2,15 +2,23 @@ import Foundation
 
 /// Linux host bridge / netdev discovery via sysfs.
 /// Used for QEMU `-netdev bridge,br=…` (not macOS socket_vmnet).
+///
+/// **Existence policy:** a name under `/sys/class/net` is present even if the
+/// interface is administratively down or has no IP address. Prefer
+/// `HostInfoService.interfaceExists` from cross-platform call sites; that API
+/// delegates here on Linux so setup, privilege, and VM start agree.
 public enum LinuxHostNetwork {
     /// Directory listing of `/sys/class/net`.
     public static var netClassPath: String {
         "/sys/class/net"
     }
 
-    /// True if `name` exists as a network interface.
+    /// True if `name` exists as a network interface (sysfs; down/no-IP count).
     public static func interfaceExists(_ name: String) -> Bool {
-        FileManager.default.fileExists(atPath: "\(netClassPath)/\(name)")
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return false
+        }
+        return FileManager.default.fileExists(atPath: "\(netClassPath)/\(name)")
     }
 
     /// True if `name` is a Linux bridge (has `bridge/` sysfs subtree).

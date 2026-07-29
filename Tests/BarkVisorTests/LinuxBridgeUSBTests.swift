@@ -54,4 +54,28 @@ struct LinuxBridgeUSBTests {
     @Test func `linux host network sysfs path is stable`() {
         #expect(LinuxHostNetwork.netClassPath == "/sys/class/net")
     }
+
+    @Test func `interfaceExists agrees HostInfoService and LinuxHostNetwork on Linux`() {
+        #if os(Linux)
+            // Single existence policy: sysfs (down / no-IP still present).
+            #expect(HostInfoService.interfaceExists("lo"))
+            #expect(LinuxHostNetwork.interfaceExists("lo"))
+            #expect(HostInfoService.interfaceExists("lo") == LinuxHostNetwork.interfaceExists("lo"))
+            #expect(!HostInfoService.interfaceExists("fake_interface_999"))
+            #expect(!LinuxHostNetwork.interfaceExists("fake_interface_999"))
+            // Reject path-like names (no traversal into sysfs).
+            #expect(!HostInfoService.interfaceExists("../etc"))
+            #expect(!LinuxHostNetwork.interfaceExists("lo/../lo"))
+            #expect(!HostInfoService.interfaceExists(""))
+        #endif
+    }
+
+    @Test func `requireBridgeableInterface rejects missing iface`() {
+        #if os(Linux)
+            let err = #expect(throws: BarkVisorError.self) {
+                try LinuxHostNetwork.requireBridgeableInterface("no_such_iface_xyz")
+            }
+            #expect(err?.httpStatus == 503 || err?.httpStatus == 400 || err?.httpStatus == 500)
+        #endif
+    }
 }
