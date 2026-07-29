@@ -106,7 +106,7 @@ struct SystemHostController: RouteCollection {
         let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
         var claimed: [String: (id: String, name: String)] = [:]
         for vm in allVMs {
-            let devs = JSONColumnCoding.decodeArray(USBPassthroughDevice.self, from: vm.usbDevices) ?? []
+            let devs = vm.decodedUSBDevices
             for dev in devs {
                 claimed["\(dev.vendorId):\(dev.productId)"] = (id: vm.id, name: vm.name)
             }

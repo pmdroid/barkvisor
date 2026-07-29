@@ -21,8 +21,8 @@ public struct QMPDiskService: Sendable {
         let vm = try await dbPool.read { db in try VM.fetchOne(db, key: vmID) }
         if let vm, vm.bootDiskId == disk.id {
             deviceName = "boot0"
-        } else if let vm, let json = vm.additionalDiskIds, let data = json.data(using: .utf8) {
-            let ids = try JSONDecoder().decode([String].self, from: data)
+        } else if let vm {
+            let ids = vm.decodedAdditionalDiskIds
             if let idx = ids.firstIndex(of: disk.id) {
                 deviceName = "extra\(idx)"
             } else {

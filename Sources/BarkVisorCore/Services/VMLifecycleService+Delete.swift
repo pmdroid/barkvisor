@@ -31,10 +31,10 @@ extension VMLifecycleService {
             bootDiskId: vm.bootDiskId, vmID: vm.id, keepDisk: keepDisk, db: db,
         )
 
-        if let ids = JSONColumnCoding.decodeArray(String.self, from: vm.additionalDiskIds) {
-            let diskIds = ids
+        let additionalDiskIds = vm.decodedAdditionalDiskIds
+        if !additionalDiskIds.isEmpty {
             _ = try await db.write { db in
-                for diskId in diskIds {
+                for diskId in additionalDiskIds {
                     try db.execute(sql: "UPDATE disks SET vmId = NULL WHERE id = ?", arguments: [diskId])
                 }
             }

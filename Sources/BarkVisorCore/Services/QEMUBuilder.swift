@@ -289,10 +289,8 @@ public enum QEMUBuilder {
     }
 
     private static func sharedFolderArgs(vm: VM) throws -> [String] {
-        guard let json = vm.sharedPaths,
-              let data = json.data(using: .utf8),
-              let paths = try? JSONDecoder().decode([String].self, from: data)
-        else { return [] }
+        let paths = vm.decodedSharedPaths
+        guard !paths.isEmpty else { return [] }
         var args: [String] = []
         for (i, path) in paths.enumerated() {
             try validateSharedPath(path)
@@ -382,15 +380,11 @@ public enum QEMUBuilder {
                     try validateIPv4(dns)
                     netdevArgs += ",dns=\(dns)"
                 }
-                if let pfJSON = vm.portForwards,
-                   let pfData = pfJSON.data(using: .utf8),
-                   let rules = try? JSONDecoder().decode([PortForwardRule].self, from: pfData) {
-                    for rule in rules {
-                        try validateProtocol(rule.protocol)
-                        try validatePort(rule.hostPort)
-                        try validatePort(rule.guestPort)
-                        netdevArgs += ",hostfwd=\(rule.protocol)::\(rule.hostPort)-:\(rule.guestPort)"
-                    }
+                for rule in vm.decodedPortForwards {
+                    try validateProtocol(rule.protocol)
+                    try validatePort(rule.hostPort)
+                    try validatePort(rule.guestPort)
+                    netdevArgs += ",hostfwd=\(rule.protocol)::\(rule.hostPort)-:\(rule.guestPort)"
                 }
             }
         } else {
@@ -426,10 +420,8 @@ public enum QEMUBuilder {
     }
 
     private static func usbPassthroughArgs(vm: VM) throws -> [String] {
-        guard let json = vm.usbDevices,
-              let data = json.data(using: .utf8),
-              let usbDevs = try? JSONDecoder().decode([USBPassthroughDevice].self, from: data)
-        else { return [] }
+        let usbDevs = vm.decodedUSBDevices
+        guard !usbDevs.isEmpty else { return [] }
         var args: [String] = []
         for (i, dev) in usbDevs.enumerated() {
             try validateUSBId(dev.vendorId)
