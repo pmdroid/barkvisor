@@ -32,6 +32,8 @@ struct LinuxBridgeUSBTests {
     @Test func `bridge interface names validate`() throws {
         try validateBridgeName("br0")
         try validateBridgeName("virbr0")
+        try validateBridgeName("br-lan")
+        try validateBridgeName("ovs-br0")
         let err = #expect(throws: BarkVisorError.self) {
             try validateBridgeName("bad-name!")
         }
