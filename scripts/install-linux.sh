@@ -1,25 +1,180 @@
 #!/usr/bin/env bash
+# Install BarkVisor as a systemd service on Linux (root).
+#
+# Usage:
+#   sudo ./scripts/install-linux.sh [/path/to/BarkVisorApp]
+#   sudo DRY_RUN=1 ./scripts/install-linux.sh              # print actions only
+#   sudo SKIP_START=1 ./scripts/install-linux.sh           # install unit, do not enable/start
+#   sudo FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh
+#
+# Layout (matches Config.prefix when binary is /usr/local/bin/barkvisor):
+#   /usr/local/bin/barkvisor
+#   /usr/local/share/barkvisor/frontend/dist/   # SPA (optional)
+#   /usr/local/lib/systemd/system/barkvisor.service
+#   /etc/barkvisor/barkvisor.env                # EnvironmentFile
+#   /var/lib/barkvisor  /var/run/barkvisor
+#
+# Orb / VM dry-run (no root needed for the print path):
+#   DRY_RUN=1 ./scripts/install-linux.sh .build/release/BarkVisorApp
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DRY_RUN="${DRY_RUN:-0}"
+SKIP_START="${SKIP_START:-0}"
+
+PREFIX="${PREFIX:-/usr/local}"
+BIN_DST="${PREFIX}/bin/barkvisor"
+SHARE_DST="${PREFIX}/share/barkvisor"
+FRONTEND_DST="${SHARE_DST}/frontend/dist"
+UNIT_DST="/usr/local/lib/systemd/system/barkvisor.service"
+ENV_DIR="/etc/barkvisor"
+ENV_FILE="${ENV_DIR}/barkvisor.env"
+DATA_DIR="/var/lib/barkvisor"
+RUN_DIR="/var/run/barkvisor"
+
+run() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "DRY_RUN: $*"
+  else
+    "$@"
+  fi
+}
+
+need_root() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return 0
+  fi
+  [[ "$(id -u)" -eq 0 ]] || {
+    echo "error: run as root (or DRY_RUN=1)" >&2
+    exit 1
+  }
+}
+
+# --- resolve binary ---
 BIN_SRC="${1:-}"
 if [[ -z "$BIN_SRC" ]]; then
-  if [[ -x ".build/release/BarkVisorApp" ]]; then BIN_SRC=".build/release/BarkVisorApp"
-  elif [[ -x ".build/debug/BarkVisorApp" ]]; then BIN_SRC=".build/debug/BarkVisorApp"
-  else echo "Usage: $0 /path/to/BarkVisorApp" >&2; exit 1; fi
+  if [[ -x "$ROOT/.build/release/BarkVisorApp" ]]; then
+    BIN_SRC="$ROOT/.build/release/BarkVisorApp"
+  elif [[ -x "$ROOT/.build/debug/BarkVisorApp" ]]; then
+    BIN_SRC="$ROOT/.build/debug/BarkVisorApp"
+  else
+    echo "Usage: $0 [/path/to/BarkVisorApp]" >&2
+    echo "  Build first: swift build -c release --product BarkVisorApp" >&2
+    exit 1
+  fi
 fi
-[[ "$(id -u)" -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
-install -d /usr/local/bin /var/lib/barkvisor /var/run/barkvisor /usr/local/lib/systemd/system
-install -m 0755 "$BIN_SRC" /usr/local/bin/barkvisor
-id barkvisor &>/dev/null || useradd --system --home /var/lib/barkvisor --shell /usr/sbin/nologin barkvisor
-getent group kvm &>/dev/null && usermod -aG kvm barkvisor || true
-chown -R barkvisor:barkvisor /var/lib/barkvisor /var/run/barkvisor
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-install -m 0644 "$SCRIPT_DIR/../Resources/barkvisor.service" /usr/local/lib/systemd/system/barkvisor.service
-systemctl daemon-reload
-systemctl enable --now barkvisor.service
-systemctl --no-pager --full status barkvisor.service || true
-echo "UI: http://$(hostname -I 2>/dev/null | awk \"{print \$1}\"):7777"
+[[ -x "$BIN_SRC" || "$DRY_RUN" == "1" ]] || {
+  echo "error: not executable: $BIN_SRC" >&2
+  exit 1
+}
 
-# --- SPA (optional) ---
-# If you built the frontend (./scripts/linux-frontend-serve.sh), serve it with:
-#   export BARKVISOR_FRONTEND_DIR=/path/to/frontend/dist
-# Or copy into the package layout under share/frontend/dist before install.
+# --- resolve SPA dist (optional) ---
+FRONTEND_SRC="${FRONTEND_DIST:-}"
+if [[ -z "$FRONTEND_SRC" ]]; then
+  for cand in \
+    "$ROOT/frontend/dist" \
+    "$ROOT/Sources/BarkVisor/Resources/frontend/dist" \
+    "${BARKVISOR_FRONTEND_DIR:-}"; do
+    if [[ -n "$cand" && -f "$cand/index.html" ]]; then
+      FRONTEND_SRC="$cand"
+      break
+    fi
+  done
+fi
+
+echo "==> BarkVisor Linux install"
+echo "    binary:  $BIN_SRC → $BIN_DST"
+echo "    data:    $DATA_DIR"
+echo "    unit:    $UNIT_DST"
+if [[ -n "$FRONTEND_SRC" ]]; then
+  echo "    SPA:     $FRONTEND_SRC → $FRONTEND_DST"
+else
+  echo "    SPA:     (none — API only; set FRONTEND_DIST= or build frontend/dist)"
+fi
+[[ "$DRY_RUN" == "1" ]] && echo "    mode:    DRY_RUN (no changes)"
+
+need_root
+
+run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR"
+run install -m 0755 "$BIN_SRC" "$BIN_DST"
+
+if [[ -n "$FRONTEND_SRC" ]]; then
+  run install -d "$FRONTEND_DST"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "DRY_RUN: cp -a $FRONTEND_SRC/. $FRONTEND_DST/"
+  else
+    rm -rf "${FRONTEND_DST:?}/"*
+    cp -a "$FRONTEND_SRC"/. "$FRONTEND_DST"/
+    # ensure index.html landed
+    [[ -f "$FRONTEND_DST/index.html" ]] || {
+      echo "error: SPA copy failed (no index.html in $FRONTEND_DST)" >&2
+      exit 1
+    }
+  fi
+fi
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: create system user barkvisor if missing"
+  echo "DRY_RUN: usermod -aG kvm barkvisor (if group exists)"
+  echo "DRY_RUN: chown barkvisor:barkvisor $DATA_DIR $RUN_DIR"
+else
+  id barkvisor &>/dev/null || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin barkvisor
+  getent group kvm &>/dev/null && usermod -aG kvm barkvisor || true
+  chown -R barkvisor:barkvisor "$DATA_DIR" "$RUN_DIR"
+  if [[ -d "$SHARE_DST" ]]; then
+    chown -R root:root "$SHARE_DST"
+  fi
+fi
+
+# Environment file (override port / data / frontend without editing the unit)
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: write $ENV_FILE"
+else
+  if [[ ! -f "$ENV_FILE" ]]; then
+    cat >"$ENV_FILE" <<EOF
+# BarkVisor daemon environment (systemd EnvironmentFile)
+BARKVISOR_PORT=7777
+BARKVISOR_DATA_DIR=${DATA_DIR}
+# SPA is resolved via Config.frontendDir (${FRONTEND_DST}) when installed under ${PREFIX}.
+# Uncomment to force a custom dist path:
+# BARKVISOR_FRONTEND_DIR=${FRONTEND_DST}
+HOME=${DATA_DIR}
+EOF
+    chmod 0644 "$ENV_FILE"
+  fi
+fi
+
+run install -m 0644 "$ROOT/Resources/barkvisor.service" "$UNIT_DST"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: systemctl daemon-reload"
+  if [[ "$SKIP_START" != "1" ]]; then
+    echo "DRY_RUN: systemctl enable --now barkvisor.service"
+    echo "DRY_RUN: systemctl status barkvisor.service"
+  else
+    echo "DRY_RUN: SKIP_START=1 — would not enable/start"
+  fi
+else
+  systemctl daemon-reload
+  if [[ "$SKIP_START" != "1" ]]; then
+    systemctl enable --now barkvisor.service
+    systemctl --no-pager --full status barkvisor.service || true
+  else
+    systemctl enable barkvisor.service
+    echo "Installed unit (not started). Start with: systemctl start barkvisor.service"
+  fi
+fi
+
+HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+echo
+echo "UI: http://${HOST_IP:-127.0.0.1}:7777"
+echo "Env: $ENV_FILE"
+echo "Logs: journalctl -u barkvisor.service -f"
+if [[ -z "$FRONTEND_SRC" ]]; then
+  echo
+  echo "Note: no SPA installed. Build and re-run with FRONTEND_DIST=:"
+  echo "  ./scripts/linux-frontend-serve.sh"
+  echo "  sudo FRONTEND_DIST=./frontend/dist $0 $BIN_SRC"
+fi
+[[ "$DRY_RUN" == "1" ]] && echo && echo "linux install DRY_RUN: OK"

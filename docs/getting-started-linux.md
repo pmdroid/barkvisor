@@ -1,13 +1,12 @@
 # Linux (experimental)
 
-> **Status:** initial / experimental. BarkVisor on Linux targets a **NAT-only**
-> headless daemon: create VMs, start/stop, console/VNC, images, auth. Bridged
-> networking, USB passthrough, and in-app updates are **not** supported yet
-> (the UI hides them when `GET /api/system/capabilities` reports them off).
+> **Status:** usable for product smoke. Headless daemon + SPA: create VMs,
+> start/stop, console/VNC, images, auth, **bridged networking** (host bridge +
+> qemu-bridge-helper), and **USB passthrough** (`lsusb`). **In-app updates**
+> remain macOS-only. Check `GET /api/system/capabilities` for live flags.
 
-The Linux foundation stack is on **main** (platform paths, QEMU/KVM, capabilities
-UI, systemd unit). This document covers day-one product use: serve the SPA and
-boot a first NAT guest.
+This document covers day-one use: SPA serve, systemd install, Docker, and a
+first NAT guest.
 
 ## Requirements
 
@@ -96,20 +95,62 @@ Resolution order inside the daemon (`VaporServer.findFrontendDist`):
 2. Installed share path (`Config.frontendDir`)
 3. Dev probes: `frontend/dist`, `Sources/BarkVisor/Resources/frontend/dist`
 
-### Optional: Docker
+### Optional: Docker (daemon + SPA)
+
+Multi-stage image: Bun builds `frontend/dist`, Swift builds `BarkVisorApp`,
+runtime copies both into the **install layout** (`/usr/local/bin/barkvisor` +
+`/usr/local/share/barkvisor/frontend/dist`).
 
 ```bash
 docker build -t barkvisor:dev -f Dockerfile .
+# Prefer KVM when available
 docker run --rm -it --device /dev/kvm -p 7777:7777 barkvisor:dev
+# TCG fallback (slow) if no /dev/kvm
+docker run --rm -it -p 7777:7777 barkvisor:dev
 ```
 
-KVM passthrough requires nested virt or bare metal. Without `/dev/kvm`, QEMU
-may fall back slowly or fail depending on config.
+Open `http://localhost:7777` — SPA is served from the image share path (no
+`BARKVISOR_FRONTEND_DIR` required). KVM passthrough needs nested virt or bare
+metal; without it the daemon uses TCG when `/dev/kvm` is missing.
+
+### systemd install (root)
+
+```bash
+# 1. Release binary
+swift build -c release --product BarkVisorApp
+
+# 2. SPA (optional but recommended for UI)
+./scripts/linux-frontend-serve.sh
+
+# 3. Dry-run on Orb (no root / no changes)
+DRY_RUN=1 ./scripts/install-linux.sh .build/release/BarkVisorApp
+
+# 4. Install + enable
+sudo FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh .build/release/BarkVisorApp
+# Install unit only (do not start yet):
+# sudo SKIP_START=1 FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh ...
+```
+
+Layout after install:
+
+| Path | Purpose |
+|------|---------|
+| `/usr/local/bin/barkvisor` | Daemon (sets `Config.prefix` → `/usr/local`) |
+| `/usr/local/share/barkvisor/frontend/dist` | SPA (`Config.frontendDir`) |
+| `/etc/barkvisor/barkvisor.env` | Port / data overrides |
+| `/var/lib/barkvisor` | Data + DB |
+| `barkvisor.service` | systemd unit (`EnvironmentFile=-/etc/barkvisor/barkvisor.env`) |
+
+```bash
+journalctl -u barkvisor.service -f
+systemctl status barkvisor.service
+```
 
 ## First NAT guest boot
 
-On Linux, only **NAT** networking is supported for the MVP. A default NAT
-network is seeded as **"Default NAT"** (`isDefault: true`) on first launch.
+A default NAT network is seeded as **"Default NAT"** (`isDefault: true`) on
+first launch. Bridged mode is available when a host bridge exists (see
+capabilities + Network settings).
 
 ### Automated guest smoke
 
@@ -169,9 +210,14 @@ for a real boot, or the blank-disk path for a process/start smoke.
 
 `GET /api/system/capabilities` (public) returns flags such as:
 
-- `supportsBridgedNetworking` — `true` (QEMU `-netdev bridge`; host bridge required)  
+- `supportsBridgedNetworking` — `true` (QEMU `-netdev bridge`; host bridge + helper ACL)  
+- `supportsManagedBridgeDaemon` — `false` on Linux (no socket_vmnet XPC lifecycle)  
 - `supportsUSBPassthrough` — `true` (`lsusb` + `usb-host`)  
 - `supportsInAppUpdate` — `false`  
+- `guestTypes` — table of stable `vmType` IDs (linux-arm64, …)  
+
+Managed bridge **daemon** polling runs only on macOS (15s interval). Linux does
+**not** run a 5s sysfs bridge-sync loop.
 - `accelerator` — `kvm` if `/dev/kvm`, else `tcg`  
 - `hostArch` — `arm64` / `x86_64`
 

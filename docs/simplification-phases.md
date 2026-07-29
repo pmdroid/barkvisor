@@ -260,18 +260,18 @@ This plan is **what to improve next**, ordered so each phase is independently sh
 
 ---
 
-## Phase 5 — Packaging & product polish (later)
+## Phase 5 — Packaging & product polish
 
 **Goal:** Linux install/run feels finished; not required for simplification ROI.
 
-| Item | Notes |
-|------|--------|
-| Dockerfile multi-stage reliability | Align with install + SPA layout from #21 |
-| `install-linux.sh` + systemd dry-run on Orb | Root path; SPA install included |
-| Optional longer bridge-sync interval on Linux | Avoid 5s sysfs forever after #23 |
-| In-app Linux updates | **Out of scope** until packaging is stable |
-| Building QEMU from source for Linux | **Out of scope** |
-| Splitting `build-release.sh` for line count | Only if a step has a real reuse/test boundary |
+| Item | Notes | Status |
+|------|--------|--------|
+| Dockerfile multi-stage reliability | Bun SPA + Swift build + `/usr/local` layout | **This phase** |
+| `install-linux.sh` + systemd dry-run on Orb | `DRY_RUN=1`, SPA → share, `EnvironmentFile` | **This phase** |
+| Bridge-sync interval | macOS managed daemon **15s**; Linux does not schedule sysfs poll | **This phase** |
+| In-app Linux updates | **Out of scope** until packaging is stable | — |
+| Building QEMU from source for Linux | **Out of scope** | — |
+| Splitting `build-release.sh` for line count | Only if a step has a real reuse/test boundary | — |
 
 ---
 

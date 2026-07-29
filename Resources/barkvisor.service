@@ -1,6 +1,7 @@
 [Unit]
 Description=BarkVisor QEMU management daemon
 Documentation=https://github.com/pmdroid/barkvisor
+Documentation=file:///usr/local/share/barkvisor
 After=network-online.target
 Wants=network-online.target
 
@@ -9,7 +10,13 @@ Type=simple
 User=barkvisor
 Group=barkvisor
 WorkingDirectory=/var/lib/barkvisor
+# Defaults; override in /etc/barkvisor/barkvisor.env
 Environment=HOME=/var/lib/barkvisor
+Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
+Environment=BARKVISOR_PORT=7777
+EnvironmentFile=-/etc/barkvisor/barkvisor.env
+# Binary under /usr/local/bin so Config.prefix=/usr/local and SPA is
+# /usr/local/share/barkvisor/frontend/dist (see install-linux.sh).
 ExecStart=/usr/local/bin/barkvisor
 Restart=on-failure
 RestartSec=3
@@ -18,6 +25,8 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor
+# Allow reading the installed SPA + optional custom frontend dir
+ReadOnlyPaths=/usr/local/share/barkvisor
 LimitNOFILE=65536
 
 [Install]

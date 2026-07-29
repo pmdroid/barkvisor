@@ -1,29 +1,60 @@
 # syntax=docker/dockerfile:1
-# Experimental BarkVisor Linux image for local smoke tests.
-# Build:  docker build -t barkvisor:dev .
-# Run:    docker run --rm -it --device /dev/kvm -p 7777:7777 barkvisor:dev
+# BarkVisor Linux image (daemon + SPA) for local smoke / headless deploys.
 #
-# Note: Ubuntu version should match the Swift Linux toolchain release you use.
+# Build:
+#   docker build -t barkvisor:dev .
+# Run (KVM when available):
+#   docker run --rm -it --device /dev/kvm -p 7777:7777 barkvisor:dev
+# Run without KVM (TCG, slow):
+#   docker run --rm -it -p 7777:7777 barkvisor:dev
+#
+# Align Ubuntu major with the official Swift Linux toolchain you use locally
+# (Ubuntu 24.04 / noble recommended). Override tags:
+#   docker build --build-arg SWIFT_VERSION=6.2.3 --build-arg UBUNTU_VERSION=24.04 .
 
 ARG SWIFT_VERSION=6.2.3
 ARG UBUNTU_VERSION=24.04
+ARG BUN_VERSION=1.2.5
 
+# ---------------------------------------------------------------------------
+# Stage 1 — Vue SPA (bun preferred; layout matches install-linux share path)
+# ---------------------------------------------------------------------------
+FROM oven/bun:${BUN_VERSION}-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/bun.lock* frontend/package-lock.json* ./
+# Prefer frozen lock when present; fall back for first-time lockfiles.
+RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then bun install; \
+    else bun install; fi
+COPY frontend/ ./
+RUN bun run build \
+    && test -f dist/index.html
+
+# ---------------------------------------------------------------------------
+# Stage 2 — Swift release binary
+# ---------------------------------------------------------------------------
 FROM swift:${SWIFT_VERSION}-noble AS build
-
 WORKDIR /src
-# Copy only package manifests first for better layer caching
-COPY Package.swift Package.resolved* ./
+# Manifests first for better layer cache
+COPY Package.swift Package.resolved* .swift-version* ./
 COPY Sources ./Sources
 COPY Tests ./Tests
 COPY Resources ./Resources
 COPY repos ./repos
+# Embed SPA for findFrontendDist / Resources probes during build tests if needed
+COPY --from=frontend /frontend/dist ./Sources/BarkVisor/Resources/frontend/dist
+RUN swift build -c release --product BarkVisorApp \
+    && install -d /out \
+    && cp -a .build/release/BarkVisorApp /out/barkvisor
 
-RUN swift build -c release --product BarkVisorApp
-
+# ---------------------------------------------------------------------------
+# Stage 3 — Runtime (matches install-linux layout under /usr/local)
+# ---------------------------------------------------------------------------
 FROM ubuntu:${UBUNTU_VERSION}
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     libcurl4 \
     libxml2 \
     libsqlite3-0 \
@@ -32,21 +63,34 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     libedit2 \
     zlib1g \
     qemu-system-arm \
+    qemu-system-x86 \
     qemu-utils \
+    qemu-efi-aarch64 \
+    ovmf \
+    genisoimage \
     && rm -rf /var/lib/apt/lists/*
 
-# Runtime may need Swift shared libraries for the binary
+# Swift runtime libs (dynamic link from release binary)
 COPY --from=build /usr/lib/swift /usr/lib/swift
-COPY --from=build /src/.build/release/BarkVisorApp /usr/local/bin/barkvisor
 
-ENV BARKVISOR_HOME=/var/lib/barkvisor
-RUN mkdir -p /var/lib/barkvisor /var/run/barkvisor \
+# Install layout: /usr/local/bin/barkvisor + /usr/local/share/barkvisor/frontend/dist
+RUN mkdir -p /usr/local/bin /usr/local/share/barkvisor/frontend/dist \
+    /var/lib/barkvisor /var/run/barkvisor \
     && useradd --system --home /var/lib/barkvisor --shell /usr/sbin/nologin barkvisor \
     && chown -R barkvisor:barkvisor /var/lib/barkvisor /var/run/barkvisor
+
+COPY --from=build /out/barkvisor /usr/local/bin/barkvisor
+COPY --from=frontend /frontend/dist/ /usr/local/share/barkvisor/frontend/dist/
+
+# Daemon defaults (override at run time)
+ENV BARKVISOR_HOME=/var/lib/barkvisor \
+    BARKVISOR_DATA_DIR=/var/lib/barkvisor \
+    BARKVISOR_PORT=7777 \
+    HOME=/var/lib/barkvisor
 
 USER barkvisor
 WORKDIR /var/lib/barkvisor
 EXPOSE 7777
 
-# Binary is BarkVisorApp renamed; process detection uses argv[0] path for prefix.
+# argv[0] under /usr/local/bin so Config.prefix resolves to /usr/local (SPA via Config.frontendDir)
 ENTRYPOINT ["/usr/local/bin/barkvisor"]
