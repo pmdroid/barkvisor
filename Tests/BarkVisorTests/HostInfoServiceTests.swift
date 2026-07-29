@@ -3,13 +3,21 @@ import Testing
 @testable import BarkVisorCore
 
 struct HostInfoServiceTests {
+    /// Loopback iface name: `lo0` on macOS/BSD, `lo` on Linux.
+    private static var loopbackName: String {
+        #if os(Linux)
+            "lo"
+        #else
+            "lo0"
+        #endif
+    }
+
     @Test func `list interfaces returns at least loopback`() {
         let interfaces = HostInfoService.listInterfaces()
-        // On any macOS host, we should get at least lo0
         #expect(!interfaces.isEmpty, "Should find at least one network interface")
 
-        let lo = interfaces.first(where: { $0.name == "lo0" })
-        #expect(lo != nil, "Should find loopback interface")
+        let lo = interfaces.first(where: { $0.name == Self.loopbackName })
+        #expect(lo != nil, "Should find loopback interface \(Self.loopbackName)")
         #expect(lo?.ipAddress == "127.0.0.1")
     }
 
@@ -25,7 +33,10 @@ struct HostInfoServiceTests {
     }
 
     @Test func `interface exists for loopback`() {
-        #expect(HostInfoService.interfaceExists("lo0"), "lo0 should always exist on macOS")
+        #expect(
+            HostInfoService.interfaceExists(Self.loopbackName),
+            "\(Self.loopbackName) should exist on this host",
+        )
     }
 
     @Test func `interface exists for non existent`() {

@@ -115,144 +115,150 @@ final class ImageChecksumTests {
 
     // MARK: - Checksum verification (via downloader)
 
-    @Test func `download with correct SHA 256 succeeds`() async throws {
-        let content = Data("hello world".utf8)
-        let hash = SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
+    // URLSession on Linux rejects file:// URLs (NSURLError unsupported URL). These tests
+    // exercise the download+checksum path with a local file source — macOS only until we
+    // use a local HTTP fixture.
 
-        // Serve a local file via file:// URL
-        let sourceFile = tmpDir.appendingPathComponent("source.iso")
-        try content.write(to: sourceFile)
+    #if os(macOS)
+        @Test func `download with correct SHA 256 succeeds`() async throws {
+            let content = Data("hello world".utf8)
+            let hash = SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
 
-        let now = iso8601.string(from: Date())
-        let imageID = "img-sha256-ok"
-        try await dbPool.write { db in
-            let image = VMImage(
-                id: imageID, name: "Test", imageType: "iso", arch: "arm64",
-                path: nil, sizeBytes: nil, status: "downloading", error: nil,
-                sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
-            )
-            try image.insert(db)
-        }
+            // Serve a local file via file:// URL
+            let sourceFile = tmpDir.appendingPathComponent("source.iso")
+            try content.write(to: sourceFile)
 
-        let dest = tmpDir.appendingPathComponent("dest.iso")
-        await downloader.start(
-            imageID: imageID, url: sourceFile, destination: dest, expectedChecksum: .sha256(hash),
-        )
-
-        // Wait for completion
-        let stream = await downloader.progressStream(imageID: imageID)
-        for await event in stream {
-            if event.status == "ready" || event.status == "error" {
-                break
+            let now = iso8601.string(from: Date())
+            let imageID = "img-sha256-ok"
+            try await dbPool.write { db in
+                let image = VMImage(
+                    id: imageID, name: "Test", imageType: "iso", arch: "arm64",
+                    path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                    sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+                )
+                try image.insert(db)
             }
-        }
 
-        let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        #expect(image?.status == "ready", "Download with correct SHA256 should succeed")
-    }
-
-    @Test func `download with wrong SHA 256 fails`() async throws {
-        let content = Data("hello world".utf8)
-
-        let sourceFile = tmpDir.appendingPathComponent("source2.iso")
-        try content.write(to: sourceFile)
-
-        let now = iso8601.string(from: Date())
-        let imageID = "img-sha256-bad"
-        try await dbPool.write { db in
-            let image = VMImage(
-                id: imageID, name: "Test", imageType: "iso", arch: "arm64",
-                path: nil, sizeBytes: nil, status: "downloading", error: nil,
-                sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+            let dest = tmpDir.appendingPathComponent("dest.iso")
+            await downloader.start(
+                imageID: imageID, url: sourceFile, destination: dest, expectedChecksum: .sha256(hash),
             )
-            try image.insert(db)
-        }
 
-        let dest = tmpDir.appendingPathComponent("dest2.iso")
-        await downloader.start(
-            imageID: imageID, url: sourceFile, destination: dest,
-            expectedChecksum: .sha256("0000000000000000000000000000000000000000000000000000000000000000"),
-        )
-
-        let stream = await downloader.progressStream(imageID: imageID)
-        for await event in stream {
-            if event.status == "ready" || event.status == "error" {
-                break
+            // Wait for completion
+            let stream = await downloader.progressStream(imageID: imageID)
+            for await event in stream {
+                if event.status == "ready" || event.status == "error" {
+                    break
+                }
             }
+
+            let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
+            #expect(image?.status == "ready", "Download with correct SHA256 should succeed")
         }
 
-        let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        #expect(image?.status == "error", "Download with wrong SHA256 should fail")
-        #expect(image?.error?.contains("SHA256 mismatch") ?? false)
-        #expect(
-            !FileManager.default.fileExists(atPath: dest.path),
-            "File should be deleted on checksum mismatch",
-        )
-    }
+        @Test func `download with wrong SHA 256 fails`() async throws {
+            let content = Data("hello world".utf8)
 
-    @Test func `download with correct SHA 512 succeeds`() async throws {
-        let content = Data("hello world".utf8)
-        let hash = SHA512.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
+            let sourceFile = tmpDir.appendingPathComponent("source2.iso")
+            try content.write(to: sourceFile)
 
-        let sourceFile = tmpDir.appendingPathComponent("source3.iso")
-        try content.write(to: sourceFile)
+            let now = iso8601.string(from: Date())
+            let imageID = "img-sha256-bad"
+            try await dbPool.write { db in
+                let image = VMImage(
+                    id: imageID, name: "Test", imageType: "iso", arch: "arm64",
+                    path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                    sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+                )
+                try image.insert(db)
+            }
 
-        let now = iso8601.string(from: Date())
-        let imageID = "img-sha512-ok"
-        try await dbPool.write { db in
-            let image = VMImage(
-                id: imageID, name: "Test", imageType: "iso", arch: "arm64",
-                path: nil, sizeBytes: nil, status: "downloading", error: nil,
-                sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+            let dest = tmpDir.appendingPathComponent("dest2.iso")
+            await downloader.start(
+                imageID: imageID, url: sourceFile, destination: dest,
+                expectedChecksum: .sha256("0000000000000000000000000000000000000000000000000000000000000000"),
             )
-            try image.insert(db)
-        }
 
-        let dest = tmpDir.appendingPathComponent("dest3.iso")
-        await downloader.start(
-            imageID: imageID, url: sourceFile, destination: dest, expectedChecksum: .sha512(hash),
-        )
-
-        let stream = await downloader.progressStream(imageID: imageID)
-        for await event in stream {
-            if event.status == "ready" || event.status == "error" {
-                break
+            let stream = await downloader.progressStream(imageID: imageID)
+            for await event in stream {
+                if event.status == "ready" || event.status == "error" {
+                    break
+                }
             }
-        }
 
-        let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        #expect(image?.status == "ready", "Download with correct SHA512 should succeed")
-    }
-
-    @Test func `download with no checksum succeeds`() async throws {
-        let content = Data("no checksum".utf8)
-        let sourceFile = tmpDir.appendingPathComponent("source4.iso")
-        try content.write(to: sourceFile)
-
-        let now = iso8601.string(from: Date())
-        let imageID = "img-no-checksum"
-        try await dbPool.write { db in
-            let image = VMImage(
-                id: imageID, name: "Test", imageType: "iso", arch: "arm64",
-                path: nil, sizeBytes: nil, status: "downloading", error: nil,
-                sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+            let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
+            #expect(image?.status == "error", "Download with wrong SHA256 should fail")
+            #expect(image?.error?.contains("SHA256 mismatch") ?? false)
+            #expect(
+                !FileManager.default.fileExists(atPath: dest.path),
+                "File should be deleted on checksum mismatch",
             )
-            try image.insert(db)
         }
 
-        let dest = tmpDir.appendingPathComponent("dest4.iso")
-        await downloader.start(
-            imageID: imageID, url: sourceFile, destination: dest, expectedChecksum: nil,
-        )
+        @Test func `download with correct SHA 512 succeeds`() async throws {
+            let content = Data("hello world".utf8)
+            let hash = SHA512.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
 
-        let stream = await downloader.progressStream(imageID: imageID)
-        for await event in stream {
-            if event.status == "ready" || event.status == "error" {
-                break
+            let sourceFile = tmpDir.appendingPathComponent("source3.iso")
+            try content.write(to: sourceFile)
+
+            let now = iso8601.string(from: Date())
+            let imageID = "img-sha512-ok"
+            try await dbPool.write { db in
+                let image = VMImage(
+                    id: imageID, name: "Test", imageType: "iso", arch: "arm64",
+                    path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                    sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+                )
+                try image.insert(db)
             }
+
+            let dest = tmpDir.appendingPathComponent("dest3.iso")
+            await downloader.start(
+                imageID: imageID, url: sourceFile, destination: dest, expectedChecksum: .sha512(hash),
+            )
+
+            let stream = await downloader.progressStream(imageID: imageID)
+            for await event in stream {
+                if event.status == "ready" || event.status == "error" {
+                    break
+                }
+            }
+
+            let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
+            #expect(image?.status == "ready", "Download with correct SHA512 should succeed")
         }
 
-        let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
-        #expect(image?.status == "ready", "Download without checksum should succeed")
-    }
+        @Test func `download with no checksum succeeds`() async throws {
+            let content = Data("no checksum".utf8)
+            let sourceFile = tmpDir.appendingPathComponent("source4.iso")
+            try content.write(to: sourceFile)
+
+            let now = iso8601.string(from: Date())
+            let imageID = "img-no-checksum"
+            try await dbPool.write { db in
+                let image = VMImage(
+                    id: imageID, name: "Test", imageType: "iso", arch: "arm64",
+                    path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                    sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+                )
+                try image.insert(db)
+            }
+
+            let dest = tmpDir.appendingPathComponent("dest4.iso")
+            await downloader.start(
+                imageID: imageID, url: sourceFile, destination: dest, expectedChecksum: nil,
+            )
+
+            let stream = await downloader.progressStream(imageID: imageID)
+            for await event in stream {
+                if event.status == "ready" || event.status == "error" {
+                    break
+                }
+            }
+
+            let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
+            #expect(image?.status == "ready", "Download without checksum should succeed")
+        }
+    #endif
 }
