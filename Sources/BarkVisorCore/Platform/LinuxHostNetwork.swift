@@ -4,7 +4,9 @@ import Foundation
 /// Used for QEMU `-netdev bridge,br=…` (not macOS socket_vmnet).
 public enum LinuxHostNetwork {
     /// Directory listing of `/sys/class/net`.
-    public static var netClassPath: String { "/sys/class/net" }
+    public static var netClassPath: String {
+        "/sys/class/net"
+    }
 
     /// True if `name` exists as a network interface.
     public static func interfaceExists(_ name: String) -> Bool {
