@@ -48,11 +48,7 @@ public enum NetworkService {
             throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
         }
         if params.mode == "bridged" {
-            guard PrivilegeService.isBridgedNetworkingSupported else {
-                throw BarkVisorError.badRequest(
-                    "Bridged networking is not supported on this platform. Use NAT mode.",
-                )
-            }
+            try PlatformCapabilities.requireBridgedNetworking()
             if (params.bridge ?? "").isEmpty {
                 throw BarkVisorError.badRequest("bridge interface required for bridged mode")
             }
@@ -100,10 +96,8 @@ public enum NetworkService {
             guard ["nat", "bridged"].contains(mode) else {
                 throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
             }
-            if mode == "bridged", !PrivilegeService.isBridgedNetworkingSupported {
-                throw BarkVisorError.badRequest(
-                    "Bridged networking is not supported on this platform. Use NAT mode.",
-                )
+            if mode == "bridged" {
+                try PlatformCapabilities.requireBridgedNetworking()
             }
             network.mode = mode
         }

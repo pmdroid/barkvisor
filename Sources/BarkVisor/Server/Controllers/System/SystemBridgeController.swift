@@ -32,12 +32,10 @@ struct SystemBridgeController: RouteCollection {
     /// install/start/stop/remove require the macOS managed bridge daemon (XPC helper).
     /// Product bridged networking on Linux uses host bridges without these lifecycle routes.
     private static func requireManagedBridgeDaemon() throws {
-        guard PrivilegeService.isManagedBridgeDaemonSupported else {
+        guard PlatformCapabilities.supportsManagedBridgeDaemon else {
             throw Abort(
                 .notImplemented,
-                reason: "Managed bridge daemon lifecycle is not supported on this platform. "
-                    + "On Linux, create a host bridge (e.g. br0) with ip/netplan, then attach "
-                    + "VMs via a Bridged network record.",
+                reason: PlatformCapabilities.unsupportedMessage(.managedBridgeDaemon),
             )
         }
     }

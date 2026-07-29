@@ -26,20 +26,7 @@ public enum PrivilegeService {
     /// Platform-selected privilege backend.
     public static let shared: any PrivilegeServicing = makeShared()
 
-    /// Product bridged networking — single source: PlatformCapabilities.
-    public static var isBridgedNetworkingSupported: Bool {
-        PlatformCapabilities.supportsBridgedNetworking
-    }
-
-    /// Managed bridge daemon lifecycle (install/start/stop/sync) — macOS only.
-    public static var isManagedBridgeDaemonSupported: Bool {
-        PlatformCapabilities.supportsManagedBridgeDaemon
-    }
-
-    /// In-app privileged software updates — single source: PlatformCapabilities.
-    public static var isUpdateInstallSupported: Bool {
-        PlatformCapabilities.supportsInAppUpdate
-    }
+    // Capability checks live on PlatformCapabilities (call that type directly).
 
     private static func makeShared() -> any PrivilegeServicing {
         #if os(macOS)
@@ -148,10 +135,7 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
     }
 
     public func installUpdate(packagePath: String, expectedVersion: String) async throws {
-        throw BarkVisorError.updateFailed(
-            "In-app software updates are not supported on Linux yet. "
-                + "Update BarkVisor using your package manager or release artifacts.",
-        )
+        try PlatformCapabilities.requireInAppUpdate()
     }
 }
 
