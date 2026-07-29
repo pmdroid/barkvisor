@@ -63,31 +63,17 @@ struct SystemBridgeController: RouteCollection {
             )
         }
 
-        // Delegate to privilege service (XPC helper on macOS)
+        // Delegate to privilege service (XPC helper on macOS); shared helper owns network row.
         do {
             try await PrivilegeService.shared.installBridge(interface: iface)
-            // Immediate sync so DB reflects the change
             let db = req.db
             Task { await BridgeSyncService.syncOnce(db: db) }
 
-            // Auto-create a bridged network if none exists for this interface
-            let existingNetwork = try await req.db.read { db in
+            let before = try await req.db.read { db in
                 try Network.filter(Column("bridge") == iface).fetchOne(db)
             }
-            if existingNetwork == nil {
-                let network = Network(
-                    id: UUID().uuidString,
-                    name: "Bridged (\(iface))",
-                    mode: "bridged",
-                    bridge: iface,
-                    macAddress: nil,
-                    dnsServer: nil,
-                    autoCreated: true,
-                    isDefault: false,
-                )
-                try await req.db.write { db in
-                    try network.insert(db)
-                }
+            let network = try await NetworkService.ensureBridgedNetwork(for: iface, db: req.db)
+            if before == nil {
                 AuditService.log(
                     action: "network.create", resourceType: "network", resourceId: network.id,
                     resourceName: network.name, req: req,
