@@ -55,14 +55,6 @@ public enum QEMUBuilder {
         x86Types.contains(vmType) ? "q35" : "virt"
     }
 
-    public static func isARM64(_ vmType: String) -> Bool {
-        arm64Types.contains(vmType)
-    }
-
-    public static func isX86(_ vmType: String) -> Bool {
-        x86Types.contains(vmType)
-    }
-
     // MARK: - Input Validation
 
     /// Validates a port number is in range 1-65535

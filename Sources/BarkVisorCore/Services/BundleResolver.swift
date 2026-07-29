@@ -119,12 +119,6 @@ public enum BundleResolver {
         return nil
     }
 
-    /// Alias for `Config.isInstalled` (single source of truth for install layout).
-    @available(*, deprecated, renamed: "Config.isInstalled")
-    public static var isBundle: Bool {
-        Config.isInstalled
-    }
-
     // MARK: - Private
 
     private static func firstExisting(_ paths: [String]) -> String? {

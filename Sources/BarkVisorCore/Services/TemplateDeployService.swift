@@ -260,7 +260,7 @@ public enum TemplateDeployService {
             cloudInitPath: cloudInitPath, vncPort: nil,
             description: "Deployed from template: \(template.name)",
             bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
-            uefi: true, tpmEnabled: vmType == "windows",
+            uefi: true, tpmEnabled: false,
             macAddress: MACAddress.generateQemu(),
             sharedPaths: nil,
             portForwards: portForwardsJSON,

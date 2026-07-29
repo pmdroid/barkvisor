@@ -205,12 +205,6 @@ public actor BackgroundTaskManager {
         }
     }
 
-    /// Cancel a specific periodic task by ID.
-    public func cancelPeriodicTask(id: String) {
-        periodicTasks[id]?.cancel()
-        periodicTasks.removeValue(forKey: id)
-    }
-
     /// Emit a progress update for a running task from within the work closure
     public func reportProgress(_ id: String, progress: Double) {
         guard let event = latestEvents[id], event.status == .running else { return }

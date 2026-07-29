@@ -77,11 +77,6 @@ public enum Config {
         "\(prefix)/share/barkvisor"
     }
 
-    /// Bundled shared libraries (dylibs)
-    public static var libDir: String {
-        "\(prefix)/lib/barkvisor"
-    }
-
     /// Frontend SPA directory
     public static var frontendDir: String {
         "\(shareDir)/frontend/dist"

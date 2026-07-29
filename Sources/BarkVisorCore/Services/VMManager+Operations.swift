@@ -114,20 +114,6 @@ extension VMManager {
         runningVMs
     }
 
-    /// Get VM list for menu bar display
-    public func vmList() async -> [VMInfo] {
-        do {
-            return try await dbPool.read { db in
-                try VM.fetchAll(db).map { vm in
-                    VMInfo(id: vm.id, name: vm.name, state: vm.state)
-                }
-            }
-        } catch {
-            Log.vm.error("Failed to fetch VM list: \(error)")
-            return []
-        }
-    }
-
     // MARK: - State & DB Helpers
 
     public func updateState(vmID: String, state: String, error: String? = nil) async throws {
