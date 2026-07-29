@@ -16,26 +16,45 @@ public func validateVMName(_ name: String) throws {
     }
 }
 
-/// Validate a bridge interface name: alphanumeric only (e.g. "en0", "bridge0").
+/// Validate a host network interface / bridge name.
+/// Linux IFNAMSIZ is 16 including NUL, so max 15 bytes. Allow letters, digits,
+/// `.`, `_`, `-` so real names like `br-lan`, `br0`, Docker `br-<hash>`, and
+/// `ovs-br0` pass; reject whitespace, path separators, and shell metacharacters.
 public func validateBridgeName(_ name: String) throws {
-    guard name.allSatisfy({ $0.isLetter || $0.isNumber }) else {
-        throw BarkVisorError.badRequest("Bridge interface name must be alphanumeric (got '\(name)')")
+    guard !name.isEmpty else {
+        throw BarkVisorError.badRequest("Bridge interface name must not be empty")
     }
-    guard name.count <= 15 else {
-        throw BarkVisorError.badRequest("Bridge interface name too long (max 15 chars)")
+    // Kernel IFNAMSIZ-1 (bytes). Names here are ASCII; count == utf8.count.
+    guard name.utf8.count <= 15 else {
+        throw BarkVisorError.badRequest(
+            "Bridge interface name too long (max 15 characters, IFNAMSIZ-1; got '\(name)')",
+        )
+    }
+    guard name.allSatisfy({ ch in
+        ch.isLetter || ch.isNumber || ch == "." || ch == "_" || ch == "-"
+    })
+    else {
+        throw BarkVisorError.badRequest(
+            "Bridge interface name may only contain letters, numbers, '.', '_', and '-' (got '\(name)')",
+        )
     }
 }
 
 /// Validate a DNS server is a valid IPv4 address.
 public func validateDNS(_ dns: String) throws {
-    let parts = dns.split(separator: ".")
+    try validateIPv4(dns, label: "DNS server")
+}
+
+/// Validate a dotted-quad IPv4 address (no leading zeros).
+public func validateIPv4(_ ip: String, label: String = "IPv4 address") throws {
+    let parts = ip.split(separator: ".")
     guard parts.count == 4,
           parts.allSatisfy({ part in
               guard let n = UInt16(part), n <= 255 else { return false }
               return part == String(n)
           })
     else {
-        throw BarkVisorError.badRequest("DNS server must be a valid IPv4 address (got '\(dns)')")
+        throw BarkVisorError.badRequest("\(label) must be a valid IPv4 address (got '\(ip)')")
     }
 }
 

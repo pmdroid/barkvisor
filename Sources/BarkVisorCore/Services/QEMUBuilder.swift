@@ -65,19 +65,6 @@ public enum QEMUBuilder {
 
     // MARK: - Input Validation
 
-    /// Validates an IPv4 address (digits and dots only, four octets 0-255)
-    public static func validateIPv4(_ ip: String) throws {
-        let parts = ip.split(separator: ".")
-        guard parts.count == 4,
-              parts.allSatisfy({ part in
-                  guard let n = UInt16(part), n <= 255 else { return false }
-                  return part == String(n) // reject leading zeros
-              })
-        else {
-            throw BarkVisorError.invalidArgument("Invalid IPv4 address: \(ip)")
-        }
-    }
-
     /// Validates a port number is in range 1-65535
     public static func validatePort(_ port: Int) throws {
         guard port >= 1, port <= 65_535 else {
@@ -159,18 +146,6 @@ public enum QEMUBuilder {
         let pattern = #/^0x[0-9a-fA-F]{1,4}$/#
         guard hex.wholeMatch(of: pattern) != nil else {
             throw BarkVisorError.invalidArgument("Invalid USB ID: \(hex). Expected format: 0xHHHH (hex)")
-        }
-    }
-
-    /// Validates a MAC address matches the expected format (XX:XX:XX:XX:XX:XX, hex only)
-    public static func validateMAC(_ mac: String) throws {
-        let parts = mac.split(separator: ":")
-        guard parts.count == 6,
-              parts.allSatisfy({ part in
-                  part.count == 2 && part.allSatisfy(\.isHexDigit)
-              })
-        else {
-            throw BarkVisorError.invalidArgument("Invalid MAC address: \(mac)")
         }
     }
 
