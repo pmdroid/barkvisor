@@ -13,7 +13,7 @@ enum SystemCapabilitiesController {
         currentCapabilities()
     }
 
-    /// Host platform feature matrix — single source: PlatformCapabilities.
+    /// Host platform feature matrix — single source: PlatformCapabilities + GuestProfiles.
     static func currentCapabilities() -> SystemCapabilitiesResponse {
         SystemCapabilitiesResponse(
             platform: PlatformHost.platformName,
@@ -23,6 +23,15 @@ enum SystemCapabilitiesController {
             supportsInAppUpdate: PlatformCapabilities.supportsInAppUpdate,
             accelerator: PlatformCapabilities.accelerator,
             hostArch: PlatformCapabilities.hostArch,
+            guestTypes: GuestProfiles.all.map {
+                GuestTypeInfo(
+                    id: $0.id,
+                    arch: $0.arch,
+                    machine: $0.machine,
+                    osFamily: $0.osFamily,
+                    qemuBinary: $0.qemuBinaryName,
+                )
+            },
         )
     }
 }

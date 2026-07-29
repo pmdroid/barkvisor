@@ -63,9 +63,6 @@ public struct QEMUBuildContext {
 
 // swiftlint:disable file_length
 public enum QEMUBuilder {
-    private static let arm64Types: Set<String> = ["linux-arm64", "windows-arm64"]
-    private static let x86Types: Set<String> = ["linux-amd64", "linux-x86_64"]
-
     /// Host accelerator — single source: PlatformCapabilities (KVM if available, else TCG).
     public static var accelerator: String {
         PlatformCapabilities.accelerator
@@ -76,9 +73,9 @@ public enum QEMUBuilder {
         PlatformCapabilities.qemuCPUModel
     }
 
-    /// Machine type for the guest architecture.
+    /// Machine type for the guest architecture (from `GuestProfiles`).
     public static func machineType(for vmType: String) -> String {
-        x86Types.contains(vmType) ? "q35" : "virt"
+        (try? GuestProfiles.require(vmType).machine) ?? "virt"
     }
 
     // MARK: - Input Validation
@@ -168,13 +165,7 @@ public enum QEMUBuilder {
     }
 
     public static func binaryName(for vmType: String) throws -> String {
-        if arm64Types.contains(vmType) {
-            return "qemu-system-aarch64"
-        }
-        if x86Types.contains(vmType) {
-            return "qemu-system-x86_64"
-        }
-        throw BarkVisorError.unknownVMType(vmType)
+        try GuestProfiles.require(vmType).qemuBinaryName
     }
 
     public static func binary(for vmType: String) throws -> URL {
@@ -184,19 +175,16 @@ public enum QEMUBuilder {
     public static func launchConfig(ctx: QEMUBuildContext) throws -> QEMULaunchConfig {
         let vm = ctx.vm
         let disk = ctx.disk
+        let profile = try GuestProfiles.require(vm.vmType)
         let qemuBinary = try binary(for: vm.vmType)
 
         _ = try sanitizeQEMUArg(disk.path, label: "Disk path")
         _ = try sanitizeQEMUArg(disk.format, label: "Disk format")
 
-        guard arm64Types.contains(vm.vmType) || x86Types.contains(vm.vmType) else {
-            throw BarkVisorError.unknownVMType(vm.vmType)
-        }
-
-        let windows = vm.vmType.hasPrefix("windows")
+        let windows = profile.isWindows
         let bootOrder = vm.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
-        let machine = machineType(for: vm.vmType)
+        let machine = profile.machine
 
         var args: [String] = []
         args += ["-machine", machine, "-accel", accelerator, "-cpu", cpuModel]
@@ -316,7 +304,8 @@ public enum QEMUBuilder {
             "--log", "level=20",
         ]
         // aarch64 uses tpm-tis-device; x86_64 uses tpm-tis.
-        let tpmDevice = x86Types.contains(vm.vmType) ? "tpm-tis,tpmdev=tpm0" : "tpm-tis-device,tpmdev=tpm0"
+        let isX86 = (try? GuestProfiles.require(vm.vmType).isX86) == true
+        let tpmDevice = isX86 ? "tpm-tis,tpmdev=tpm0" : "tpm-tis-device,tpmdev=tpm0"
         let args = [
             "-chardev", "socket,id=chrtpm,path=\(tpmSock.path)",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
@@ -451,33 +440,32 @@ public enum QEMUBuilder {
     // MARK: - Firmware
 
     private static func prepareFirmware(vmID: String, vmType: String) throws -> (code: URL, vars: URL) {
+        let profile = try GuestProfiles.require(vmType)
         let fwDir = Config.dataDir.appendingPathComponent("efivars/\(vmID)")
         try FileManager.default.createDirectory(at: fwDir, withIntermediateDirectories: true)
         let varsFile = fwDir.appendingPathComponent("vars.fd")
 
-        switch vmType {
-        case "windows-arm64":
-            // Windows ARM64 needs AAVMF secure boot firmware (extracted from Ubuntu qemu-efi-aarch64 package)
+        switch profile.firmware {
+        case .aavmfSecureBoot:
+            // Windows ARM64 needs AAVMF secure boot firmware.
             let codeFile = try resolveAAVMFSecureBoot()
             if !FileManager.default.fileExists(atPath: varsFile.path) {
                 FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 67_108_864))
             }
             return (codeFile, varsFile)
-        case "linux-arm64":
+        case .edk2ARM64:
             let codeFile = try resolveEDK2ARM64()
             if !FileManager.default.fileExists(atPath: varsFile.path) {
                 FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 67_108_864))
             }
             return (codeFile, varsFile)
-        case "linux-amd64", "linux-x86_64":
+        case .edk2X86:
             let codeFile = try resolveEDK2X86_64()
             if !FileManager.default.fileExists(atPath: varsFile.path) {
                 // OVMF vars is typically 540 KiB; allocate a generous blank file.
                 FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 540_672))
             }
             return (codeFile, varsFile)
-        default:
-            throw BarkVisorError.unknownVMType(vmType)
         }
     }
 

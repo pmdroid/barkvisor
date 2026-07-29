@@ -219,7 +219,7 @@ public enum TemplateDeployService {
             inputs: options.inputs,
         )
 
-        let vmType = localImage.arch == "arm64" ? "linux-arm64" : "linux-\(localImage.arch)"
+        let vmType = GuestProfiles.defaultLinuxID(forImageArch: localImage.arch)
         let cpu = options.cpuCount ?? template.cpuCount
         let mem = options.memoryMB ?? template.memoryMB
         let disk = options.diskSizeGB ?? template.diskSizeGB
