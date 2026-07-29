@@ -76,32 +76,19 @@ struct SystemHostController: RouteCollection {
 
     @Sendable
     func listInterfaces(req: Vapor.Request) async throws -> [HostInterface] {
-        let bridgeRecords = try await req.db.read { db in
-            try BridgeRecord.fetchAll(db)
+        let bridgeStatusByInterface = try await req.db.read { db in
+            try Dictionary(
+                uniqueKeysWithValues: BridgeRecord.fetchAll(db).map { ($0.interface, $0.status) },
+            )
         }
-        let bridgeByInterface = Dictionary(
-            uniqueKeysWithValues: bridgeRecords.map { ($0.interface, $0) },
-        )
-
-        let rawInterfaces = HostInfoService.listInterfaces()
-        return rawInterfaces.map { iface in
-            let displayName: String =
-                if iface.name.hasPrefix("en") {
-                    "\(iface.name) (Ethernet/Wi-Fi)"
-                } else if iface.name.hasPrefix("bridge") {
-                    "\(iface.name) (Bridge)"
-                } else if iface.name == "lo0" {
-                    "lo0 (Loopback)"
-                } else {
-                    iface.name
-                }
-
-            let bridge = bridgeByInterface[iface.name]
-            return HostInterface(
-                name: iface.name,
-                displayName: displayName,
-                ipAddress: iface.ipAddress,
-                bridgeStatus: bridge?.status == "not_configured" ? nil : bridge?.status,
+        return HostInfoService.listInterfaceSnapshots(
+            bridgeStatusByInterface: bridgeStatusByInterface,
+        ).map {
+            HostInterface(
+                name: $0.name,
+                displayName: $0.displayName,
+                ipAddress: $0.ipAddress,
+                bridgeStatus: $0.bridgeStatus,
             )
         }
     }
