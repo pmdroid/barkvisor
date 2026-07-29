@@ -236,8 +236,9 @@ public enum QEMUBuilder {
                     swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
                 )
             #else
+                // Linux uses -netdev bridge without socket_vmnet wrap (useBridged is false).
                 throw BarkVisorError.badRequest(
-                    "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                    "socket_vmnet wrapping is only available on macOS.",
                 )
             #endif
         }
@@ -360,11 +361,25 @@ public enum QEMUBuilder {
         if let net = network {
             if net.mode == "bridged" {
                 #if os(macOS)
+                    // socket_vmnet injects a pre-opened AF_VSOCK/unix fd as netdev fd=3.
                     netdevArgs = "socket,id=net0,fd=3"
                     useBridged = true
+                #elseif os(Linux)
+                    // QEMU native bridge: attaches via qemu-bridge-helper to host bridge
+                    // named in network.bridge (e.g. br0). No socket_vmnet wrap.
+                    let br = net.bridge ?? ""
+                    guard !br.isEmpty else {
+                        throw BarkVisorError.badRequest(
+                            "Bridged network is missing host bridge interface name.",
+                        )
+                    }
+                    try validateBridgeName(br)
+                    let safeBr = try sanitizeQEMUArg(br, label: "Bridge interface")
+                    netdevArgs = "bridge,id=net0,br=\(safeBr)"
+                    useBridged = false
                 #else
                     throw BarkVisorError.badRequest(
-                        "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                        "Bridged networking is not supported on this platform. Use NAT networking.",
                     )
                 #endif
             } else {

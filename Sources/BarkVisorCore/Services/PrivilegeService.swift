@@ -89,52 +89,63 @@ public enum PrivilegeService {
     }
 #endif
 
-// MARK: - Linux / no-op implementation
+// MARK: - Linux implementation
 
-/// No-op privilege backend for Linux (and other non-macOS hosts).
-/// Bridge and update ops throw clear errors; bridge state listing returns empty.
+/// Linux privilege backend.
+/// Bridging uses host Linux bridges + QEMU `bridge` netdev (no XPC helper).
+/// Updates remain package-manager only.
 public struct LinuxPrivilegeService: PrivilegeServicing {
+    /// Bridge registration does not need a privileged helper process.
     public var isAvailable: Bool {
-        false
+        true
     }
 
     public init() {}
 
     public func installBridge(interface: String) async throws {
-        throw Self.bridgedUnsupported
+        try LinuxHostNetwork.requireBridgeableInterface(interface)
+        // QEMU attaches at VM start; nothing daemon-like to install.
     }
 
     public func removeBridge(interface: String) async throws {
-        throw Self.bridgedUnsupported
+        // Host bridges are managed outside BarkVisor (ip/netplan/NetworkManager).
+        // Treat remove as a no-op so the UI can clear bookkeeping records.
+        _ = interface
     }
 
     public func startBridge(interface: String) async throws {
-        throw Self.bridgedUnsupported
+        try LinuxHostNetwork.requireBridgeableInterface(interface)
     }
 
     public func stopBridge(interface: String) async throws {
-        throw Self.bridgedUnsupported
+        // Stopping a system bridge is out of scope; VMs simply detach on stop.
+        _ = interface
     }
 
     public func bridgeStatus(interface: String) async throws -> String {
-        throw Self.bridgedUnsupported
+        if LinuxHostNetwork.interfaceExists(interface) {
+            return "active"
+        }
+        return "inactive"
     }
 
     public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
-        // Empty list keeps bridge sync a quiet no-op on Linux.
-        []
+        // Report all host bridge devices so BridgeSync can mark them active.
+        LinuxHostNetwork.listBridgeInterfaces().map { name in
+            BridgeStateDTO(
+                interface: name,
+                socketPath: nil,
+                plistExists: true,
+                daemonRunning: true,
+                status: "active",
+            )
+        }
     }
 
     public func installUpdate(packagePath: String, expectedVersion: String) async throws {
         throw BarkVisorError.updateFailed(
             "In-app software updates are not supported on Linux yet. "
                 + "Update BarkVisor using your package manager or release artifacts.",
-        )
-    }
-
-    private static var bridgedUnsupported: BarkVisorError {
-        .badRequest(
-            "Bridged networking is not supported on Linux yet. Use NAT networking for the Linux MVP.",
         )
     }
 }

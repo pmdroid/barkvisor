@@ -20,15 +20,82 @@ public struct HostUSBDevice: Codable {
 
 public enum USBDeviceService {
     /// List non-storage USB devices connected to the host.
-    /// On macOS uses `ioreg` (IOKit registry). On Linux returns an empty list
-    /// until a Linux enumeration path is implemented.
+    /// - macOS: `ioreg` (IOKit registry)
+    /// - Linux: `lsusb` (usbutils)
     public static func listDevices() throws -> [HostUSBDevice] {
         #if os(macOS)
             try listDevicesMacOS()
+        #elseif os(Linux)
+            try listDevicesLinux()
         #else
             []
         #endif
     }
+
+    /// Parse `lsusb` lines: `Bus 001 Device 002: ID abcd:1234 Vendor Product`
+    /// Public for unit tests on all platforms.
+    public static func parseLsusbLine(_ line: String) -> HostUSBDevice? {
+        guard let idRange = line.range(
+            of: #"ID\s+([0-9a-fA-F]{4}):([0-9a-fA-F]{4})"#,
+            options: .regularExpression,
+        ) else {
+            return nil
+        }
+        let idToken = String(line[idRange])
+        let hexPart = idToken.split(whereSeparator: { $0 == " " || $0 == "\t" }).last.map(String.init) ?? ""
+        let vp = hexPart.split(separator: ":")
+        guard vp.count == 2 else { return nil }
+        let vid = "0x\(vp[0].lowercased())"
+        let pid = "0x\(vp[1].lowercased())"
+
+        var name = ""
+        if let afterID = line.range(
+            of: #"ID\s+[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\s*"#,
+            options: .regularExpression,
+        ) {
+            name = String(line[afterID.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if name.isEmpty { name = "USB Device" }
+        if name.localizedCaseInsensitiveContains("root hub") { return nil }
+
+        return HostUSBDevice(
+            vendorId: vid, productId: pid, name: name, manufacturer: nil, serialNumber: nil,
+        )
+    }
+
+    #if os(Linux)
+        private static func listDevicesLinux() throws -> [HostUSBDevice] {
+            let lsusbPaths = ["/usr/bin/lsusb", "/bin/lsusb"]
+            guard let exe = lsusbPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+            else {
+                return []
+            }
+
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: exe)
+            proc.arguments = []
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = FileHandle.nullDevice
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return [] }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let text = String(data: data, encoding: .utf8) else { return [] }
+
+            var devices: [HostUSBDevice] = []
+            var seen = Set<String>()
+            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                guard let dev = parseLsusbLine(String(line)) else { continue }
+                let key = "\(dev.vendorId):\(dev.productId):\(dev.name)"
+                if seen.insert(key).inserted {
+                    devices.append(dev)
+                }
+            }
+            return devices
+        }
+    #endif
 
     #if os(macOS)
         /// Uses `ioreg` which is reliable on Apple Silicon, unlike

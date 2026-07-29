@@ -50,7 +50,7 @@ public enum NetworkService {
         if params.mode == "bridged" {
             guard PrivilegeService.isBridgedNetworkingSupported else {
                 throw BarkVisorError.badRequest(
-                    "Bridged networking is not supported on Linux yet. Use NAT mode.",
+                    "Bridged networking is not supported on this platform. Use NAT mode.",
                 )
             }
             if (params.bridge ?? "").isEmpty {
@@ -102,7 +102,7 @@ public enum NetworkService {
             }
             if mode == "bridged", !PrivilegeService.isBridgedNetworkingSupported {
                 throw BarkVisorError.badRequest(
-                    "Bridged networking is not supported on Linux yet. Use NAT mode.",
+                    "Bridged networking is not supported on this platform. Use NAT mode.",
                 )
             }
             network.mode = mode

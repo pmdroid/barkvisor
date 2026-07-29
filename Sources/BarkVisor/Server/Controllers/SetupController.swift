@@ -144,7 +144,7 @@ struct SetupController: RouteCollection {
         guard PrivilegeService.isBridgedNetworkingSupported else {
             throw Abort(
                 .notImplemented,
-                reason: "Bridged networking is not supported on Linux yet. Use NAT networking.",
+                reason: "Bridged networking is not supported on this platform. Use NAT networking.",
             )
         }
         let body = try req.content.decode(BridgeRequest.self)
