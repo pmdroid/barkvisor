@@ -14,6 +14,8 @@ WorkingDirectory=/var/lib/barkvisor
 Environment=HOME=/var/lib/barkvisor
 Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
 Environment=BARKVISOR_PORT=7777
+# SONAME shims for hosts newer than the Swift LTS toolchain (e.g. Ubuntu 26.04).
+Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/compat
 EnvironmentFile=-/etc/barkvisor/barkvisor.env
 # Binary under /usr/local/bin so Config.prefix=/usr/local and SPA is
 # /usr/local/share/barkvisor/frontend/dist (see install-linux.sh).
@@ -25,8 +27,8 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor
-# Allow reading the installed SPA + optional custom frontend dir
-ReadOnlyPaths=/usr/local/share/barkvisor
+# Allow reading the installed SPA + optional custom frontend dir + compat libs
+ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
 LimitNOFILE=65536
 
 [Install]

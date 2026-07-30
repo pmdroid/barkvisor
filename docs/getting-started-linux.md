@@ -12,9 +12,9 @@ first NAT guest.
 
 | Component | Notes |
 |-----------|--------|
-| Host OS | Linux (**Ubuntu 24.04 LTS recommended** — matches official Swift tarballs). Ubuntu 26.04 ships `libxml2.so.16` and breaks the Ubuntu 24.04 Swift package. |
+| Host OS | Linux — **any current Ubuntu** (22.04 / 24.04 / 26.04+). Official Swift packages target an LTS; on newer hosts BarkVisor installs that LTS toolchain plus SONAME shims (`scripts/lib/linux-swift-compat.sh`). |
 | Arch | `aarch64` or `x86_64` (matches guest types you enable) |
-| Swift | 6.2+ toolchain for **ubuntu2404** (see [swift.org](https://www.swift.org/install/linux/)) |
+| Swift | 6.2+ — install with `./scripts/install-swift-linux.sh` (or [swift.org](https://www.swift.org/install/linux/)) |
 | QEMU | Distro package, e.g. `qemu-system-arm` / `qemu-system-x86` + `qemu-utils` |
 | Firmware | **arm64:** `qemu-efi-aarch64 genisoimage` (AAVMF). **x86_64:** `ovmf` |
 | KVM | `/dev/kvm` readable by the barkvisor user (add to `kvm` group) |
@@ -37,25 +37,27 @@ orb -m barkvisor-u24
 ## Quick start (from source)
 
 ```bash
-# 1. Install Swift toolchain (example: extract official tarball into ~/swift)
-export PATH="$HOME/swift/usr/bin:$PATH"
-swift --version
-
-# 2. System packages (or: ./scripts/linux-dev.sh)
-sudo apt-get update
-sudo apt-get install -y build-essential pkg-config git \
-  libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
-  zlib1g-dev libzstd-dev libedit-dev uuid-dev \
-  qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage
-
-# 3. Build + automated smoke (daemon health + capabilities)
 git clone https://github.com/pmdroid/barkvisor.git
 cd barkvisor
+
+# 1. System packages + Swift + SONAME compat (works on Ubuntu 22.04/24.04/26.04+)
+./scripts/linux-dev.sh
+# or only Swift: ./scripts/install-swift-linux.sh
+source scripts/lib/linux-swift-compat.sh && barkvisor_export_swift_env
+swift --version
+
+# 2. Build + automated smoke (daemon health + capabilities)
 ./scripts/linux-smoke.sh
 
-# 4. Run for real (dev data dir: ~/.local/share/barkvisor)
+# 3. Run for real (dev data dir: ~/.local/share/barkvisor)
 swift run BarkVisorApp
 ```
+
+On Ubuntu **26.04+** (and any host newer than the latest Swift-supported LTS),
+the installer still uses the **ubuntu2404** toolchain and adds library shims
+under `/usr/local/lib/barkvisor/compat` (or `~/.local/share/barkvisor/compat`).
+`scripts/linux-smoke.sh`, `install-linux.sh`, and `barkvisor.service` set
+`LD_LIBRARY_PATH` so both `swift build` and the daemon resolve correctly.
 
 Open `http://localhost:7777` and complete the setup wizard (or use the guest
 smoke script below for an API-driven path).
@@ -137,7 +139,8 @@ Layout after install:
 |------|---------|
 | `/usr/local/bin/barkvisor` | Daemon (sets `Config.prefix` → `/usr/local`) |
 | `/usr/local/share/barkvisor/frontend/dist` | SPA (`Config.frontendDir`) |
-| `/etc/barkvisor/barkvisor.env` | Port / data overrides |
+| `/usr/local/lib/barkvisor/compat` | SONAME shims for non-LTS Ubuntu (e.g. `libxml2.so.2` → host lib) |
+| `/etc/barkvisor/barkvisor.env` | Port / data / `LD_LIBRARY_PATH` overrides |
 | `/var/lib/barkvisor` | Data + DB |
 | `barkvisor.service` | systemd unit (`EnvironmentFile=-/etc/barkvisor/barkvisor.env`) |
 
