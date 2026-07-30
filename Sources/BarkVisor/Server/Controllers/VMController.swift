@@ -86,7 +86,11 @@ struct CreateVMRequest: Content, Validatable {
 
     static func validations(_ validations: inout Validations) {
         validations.add("name", as: String.self, is: .count(1 ... 128))
-        validations.add("vmType", as: String.self, is: .in("linux-arm64", "windows-arm64"))
+        validations.add(
+            "vmType",
+            as: String.self,
+            is: .in("linux-arm64", "windows-arm64", "linux-amd64", "linux-x86_64"),
+        )
         validations.add("cpuCount", as: Int.self, is: .range(1 ... 256))
         validations.add("memoryMB", as: Int.self, is: .range(128 ... 1_048_576))
     }
