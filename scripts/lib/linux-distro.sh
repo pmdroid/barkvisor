@@ -157,8 +157,9 @@ barkvisor_install_dev_packages() {
       barkvisor_pkg_install "${pkgs[@]}"
       ;;
     dnf)
+      # Rocky/RHEL/Fedora — include tar (minimal cloud images often omit it).
       local pkgs=(
-        git curl ca-certificates gcc gcc-c++ make pkgconf-pkg-config
+        tar gzip git curl ca-certificates gcc gcc-c++ make pkgconf-pkg-config
         libcurl-devel libxml2-devel sqlite-devel ncurses-devel
         zlib-devel libzstd-devel libedit-devel libuuid-devel
         qemu-img genisoimage swtpm
