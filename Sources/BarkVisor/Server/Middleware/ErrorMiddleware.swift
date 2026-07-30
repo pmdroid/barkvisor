@@ -34,6 +34,18 @@ struct StructuredErrorMiddleware: AsyncMiddleware {
                 reason: bvError.sanitizedDescription,
                 request: request,
             )
+        } catch let abortError as AbortError {
+            // Vapor RouteNotFound and similar: real HTTP status, not internal_error.
+            let status = abortError.status
+            if status.code >= 500 {
+                Log.server.error("HTTP \(status.code): \(abortError.reason)")
+            }
+            return errorResponse(
+                status: status,
+                code: httpErrorCode(status),
+                reason: abortError.reason,
+                request: request,
+            )
         } catch {
             Log.server.error("Unhandled error: \(error)")
 

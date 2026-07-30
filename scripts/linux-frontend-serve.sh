@@ -41,16 +41,19 @@ fi
 
 cd "$FRONTEND"
 
+# Prefer vite build directly: `vue-tsc -b` can fail on some Linux toolchains
+# with "Cannot find module '*.vue'" even when sources are present. Vite alone
+# is enough for a working SPA dist.
 if command -v bun >/dev/null 2>&1; then
   echo "==> bun install"
   bun install
-  echo "==> bun run build"
-  bun run build
+  echo "==> bunx vite build"
+  bunx vite build
 elif command -v npm >/dev/null 2>&1; then
   echo "==> npm install (bun not found)"
   npm install
-  echo "==> npm run build"
-  npm run build
+  echo "==> npx vite build"
+  npx vite build
 else
   echo "error: need bun or npm to build the frontend" >&2
   exit 1
