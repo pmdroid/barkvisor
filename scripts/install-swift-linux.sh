@@ -71,9 +71,20 @@ fi
 
 URL="$(barkvisor_swift_download_url "$SWIFT_VERSION")"
 echo "==> downloading $URL"
-TMP="$(mktemp -d /tmp/swift-install.XXXXXX)"
+# Prefer a large disk-backed temp dir: /tmp is often a small tmpfs on cloud images
+# and a full Swift tarball (~700MB–1GB) can fail curl with "Failure writing output".
+_TMP_BASE="${TMPDIR:-}"
+if [[ -z "$_TMP_BASE" || ! -w "$_TMP_BASE" ]]; then
+  if [[ -d /var/tmp && -w /var/tmp ]]; then
+    _TMP_BASE=/var/tmp
+  else
+    _TMP_BASE="${HOME:-/tmp}"
+  fi
+fi
+TMP="$(mktemp -d "${_TMP_BASE%/}/swift-install.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-curl -fsSL -o "$TMP/swift.tgz" "$URL"
+# -f fail on HTTP errors; --retry for flaky links; write to disk-backed path
+curl -fL --retry 3 --retry-delay 2 -o "$TMP/swift.tgz" "$URL"
 
 echo "==> installing to $PREFIX"
 if [[ -w "$(dirname "$PREFIX")" ]] || [[ "$(id -u)" -eq 0 ]]; then
