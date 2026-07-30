@@ -84,24 +84,34 @@ public enum DiskService {
             }
         }
 
-        // Resize if requested
+        // Grow only if requested size is larger than the cloned image virtual size.
+        // Cloud/OVA images (e.g. HAOS) often ship at 32+ GiB; asking for a smaller
+        // disk would invoke a shrink, which qemu-img refuses without --shrink and
+        // would destroy guest data if forced.
         if let sizeGB, sizeGB > 0 {
-            let resize = try PlatformProcess.run(
-                executable: qemuImg,
-                arguments: ["resize", destPath.path, "\(sizeGB)G"],
-                timeout: 300,
-            )
-            guard resize.succeeded else {
-                throw BarkVisorError.diskCreateFailed(
-                    "qemu-img resize failed: \(resize.stderrString)",
-                )
-            }
+            try growIfNeeded(path: destPath.path, sizeGB: sizeGB, qemuImg: qemuImg)
         }
     }
 
-    /// Resize a disk image to a new size
+    /// Resize a disk image to a new size (grow only — never shrink without an explicit API).
     public static func resize(path: String, sizeGB: Int) throws {
         let qemuImg = try resolveQEMUImg()
+        try growIfNeeded(path: path, sizeGB: sizeGB, qemuImg: qemuImg)
+    }
+
+    /// Expand `path` to at least `sizeGB` GiB. No-op when already large enough.
+    private static func growIfNeeded(path: String, sizeGB: Int, qemuImg: String) throws {
+        let requestedBytes = Int64(sizeGB) * 1_073_741_824
+        let current: Int64
+        do {
+            current = try getVirtualSize(path: path)
+        } catch {
+            // If info fails, attempt resize and surface qemu-img's error.
+            current = 0
+        }
+        if current >= requestedBytes {
+            return
+        }
         let result = try PlatformProcess.run(
             executable: qemuImg,
             arguments: ["resize", path, "\(sizeGB)G"],
