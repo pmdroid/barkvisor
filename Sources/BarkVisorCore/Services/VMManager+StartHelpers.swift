@@ -172,7 +172,12 @@ extension VMManager {
         // Prefer bind probe so we match QEMU's actual hostfwd bind behaviour.
         // Do not set SO_REUSEADDR: we want bind to fail if anything is already listening
         // (matches QEMU hostfwd, which also cannot share the port).
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        #if os(Linux)
+            let sockType = Int32(SOCK_STREAM.rawValue)
+        #else
+            let sockType = SOCK_STREAM
+        #endif
+        let fd = socket(AF_INET, sockType, 0)
         guard fd >= 0 else { return true }
         defer { close(fd) }
         var addr = sockaddr_in()
