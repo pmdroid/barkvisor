@@ -28,8 +28,9 @@ first NAT guest.
 | Debian 12+ | apt | yes | debian12 toolchain channel |
 | Arch | pacman | yes | Ubuntu 24.04 toolchain tarball + compat |
 | Fedora | dnf | yes | fedora39 channel (or distro `swift-lang`) |
-| Rocky / Alma / RHEL | dnf | yes | **fedora39** toolchain (closest official ABI) |
-| Alpine | apk | **no** (musl) | Install QEMU/OVMF with `linux-dev.sh`; run a binary built on glibc or use Docker |
+| Rocky / Alma / RHEL **10** | dnf | yes* | *if glibc ≥ 2.38; use **fedora39** toolchain |
+| Rocky / Alma / RHEL **9** | dnf | **no** (glibc 2.34) | Runtime of a binary built on Fedora 40+/Ubuntu 24.04+, or Docker |
+| Alpine | apk | **no** (musl) | Install QEMU/OVMF with `linux-dev.sh`; run a glibc-built binary or Docker |
 
 ### Environment overrides
 

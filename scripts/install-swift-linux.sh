@@ -41,8 +41,15 @@ fi
 echo "Swift channel: $(barkvisor_swift_channel)"
 
 if ! barkvisor_swift_build_supported; then
-  echo "error: this host cannot use official Swift toolchains (musl/Alpine)." >&2
-  echo "  Build on Ubuntu/Debian/Arch (glibc) or use Docker." >&2
+  local_glibc="$(barkvisor_glibc_version || true)"
+  echo "error: this host cannot use official Swift 6.2+ toolchains." >&2
+  if barkvisor_is_alpine || { command -v ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; }; then
+    echo "  Reason: musl libc (e.g. Alpine)." >&2
+  elif [[ -n "${local_glibc:-}" ]]; then
+    echo "  Reason: glibc ${local_glibc} < 2.38 (Swift 6.2 needs ≥ 2.38)." >&2
+    echo "  Rocky/RHEL 9 and similar: build on Fedora 40+/Ubuntu 24.04+ or use Docker." >&2
+  fi
+  echo "  Runtime: copy a binary built on a supported glibc host." >&2
   exit 1
 fi
 
@@ -117,3 +124,6 @@ if [[ -d "${BARKVISOR_COMPAT_DIR:-}" ]]; then
   echo "  export LD_LIBRARY_PATH=\"${BARKVISOR_COMPAT_DIR}\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\""
 fi
 echo "  # or: source $ROOT/scripts/lib/linux-swift-compat.sh && barkvisor_export_swift_env"
+
+# Avoid `set -u` exploding when LD_LIBRARY_PATH is unset in the check path.
+: "${LD_LIBRARY_PATH:=}"

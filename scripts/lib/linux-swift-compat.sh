@@ -277,7 +277,8 @@ barkvisor_swift_channel() {
       echo "fedora39"
       ;;
     rocky | rhel | almalinux | centos | ol)
-      # RHEL-family: official Fedora toolchain is the closest ABI match.
+      # Prefer Fedora toolchain when host glibc is new enough; otherwise still
+      # report fedora39 (install script refuses on glibc < 2.38).
       echo "fedora39"
       ;;
     arch | manjaro | endeavouros | garuda | "")
