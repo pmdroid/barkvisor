@@ -27,18 +27,18 @@ assert_eq "$(barkvisor_swift_ubuntu_channel 24.04)" "ubuntu2404" "24.04 channel"
 assert_eq "$(barkvisor_swift_ubuntu_channel 26.04)" "ubuntu2404" "26.04 uses newest LTS channel"
 assert_eq "$(barkvisor_swift_ubuntu_channel 25.10)" "ubuntu2404" "25.x uses newest LTS channel"
 
+# Multi-distro channel helper always returns a known channel
+case "$(barkvisor_swift_channel)" in
+  ubuntu2204 | ubuntu2404 | debian12 | fedora39) ;;
+  *) fail "barkvisor_swift_channel unexpected: $(barkvisor_swift_channel)" ;;
+esac
+pass=$((pass + 1))
+
 # Download URL for fixed version — real barkvisor_swift_download_url
 URL="$(barkvisor_swift_download_url 6.2.3)"
 case "$URL" in
-  https://download.swift.org/swift-6.2.3-release/*swift-6.2.3-RELEASE*ubuntu*.tar.gz) ;;
+  https://download.swift.org/swift-6.2.3-release/*swift-6.2.3-RELEASE*.tar.gz) ;;
   *) fail "download URL shape unexpected: $URL" ;;
-esac
-# 26.04 hosts use ubuntu2404 channel in the path
-case "$(barkvisor_swift_ubuntu_channel 26.04)" in
-  ubuntu2404)
-    # When forced via uname-less channel selection, URL for 24.04 path contains 24.04
-    ;;
-  *) fail "26.04 channel regression" ;;
 esac
 pass=$((pass + 1))
 

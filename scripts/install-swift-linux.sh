@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Install an official Swift Linux toolchain + SONAME compatibility for this host.
 #
-# Works on Ubuntu 22.04, 24.04, 26.04 (and similar). On hosts newer than the
-# latest Swift-supported LTS, installs that LTS toolchain and adds compat libs
-# (see scripts/lib/linux-swift-compat.sh).
+# glibc hosts: Ubuntu 22.04/24.04/26.04+, Debian 12+, Arch (Ubuntu toolchain +
+# compat), Fedora. Alpine/musl is not supported for native builds.
+# On hosts newer than the latest supported LTS, installs that LTS toolchain and
+# adds compat libs (see scripts/lib/linux-swift-compat.sh).
 #
 # Usage:
 #   ./scripts/install-swift-linux.sh              # install to /opt/swift
@@ -12,6 +13,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/linux-distro.sh
+source "$ROOT/scripts/lib/linux-distro.sh"
 # shellcheck source=lib/linux-swift-compat.sh
 source "$ROOT/scripts/lib/linux-swift-compat.sh"
 
@@ -23,17 +26,24 @@ for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=1 ;;
     -h | --help)
-      sed -n '2,14p' "$0"
+      sed -n '2,16p' "$0"
       exit 0
       ;;
   esac
 done
 
+barkvisor_detect_distro
 if [[ -f /etc/os-release ]]; then
   # shellcheck source=/dev/null
   . /etc/os-release
   echo "Host: ${PRETTY_NAME:-$NAME $VERSION_ID} ($(uname -m))"
-  echo "Swift channel: $(barkvisor_swift_ubuntu_channel "${VERSION_ID:-}")"
+fi
+echo "Swift channel: $(barkvisor_swift_channel)"
+
+if ! barkvisor_swift_build_supported; then
+  echo "error: this host cannot use official Swift toolchains (musl/Alpine)." >&2
+  echo "  Build on Ubuntu/Debian/Arch (glibc) or use Docker." >&2
+  exit 1
 fi
 
 echo "==> ensuring system packages + SONAME compat"
