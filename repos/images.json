@@ -55,6 +55,16 @@
       "version": "17.2",
       "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/17.2/haos_generic-aarch64-17.2.qcow2.xz",
       "sizeBytes": 314572800
+    },
+    {
+      "slug": "haos-18.1-x86_64",
+      "name": "Home Assistant OS 18.1",
+      "description": "Official HAOS OVA for QEMU/KVM x86_64 (~510 MB compressed). Also available via the dedicated catalog: repos/haos-x86_64.json",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "18.1",
+      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.1/haos_ova-18.1.qcow2.xz",
+      "sizeBytes": 535083320
     }
   ]
 }
