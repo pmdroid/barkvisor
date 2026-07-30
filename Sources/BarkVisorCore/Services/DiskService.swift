@@ -100,14 +100,21 @@ public enum DiskService {
     }
 
     /// Expand `path` to at least `sizeGB` GiB. No-op when already large enough.
+    /// Never shrinks: qemu-img requires `--shrink` and would destroy guest data.
     private static func growIfNeeded(path: String, sizeGB: Int, qemuImg: URL) throws {
         let requestedBytes = Int64(sizeGB) * 1_073_741_824
         let current: Int64
         do {
             current = try getVirtualSize(path: path)
         } catch {
-            // If info fails, attempt resize and surface qemu-img's error.
-            current = 0
+            // Cannot determine size — skip resize rather than risk a shrink.
+            Log.server.warning(
+                "qemu-img info failed for \(path); skipping resize to avoid accidental shrink: \(error)",
+            )
+            return
+        }
+        if current <= 0 {
+            return
         }
         if current >= requestedBytes {
             return
@@ -122,6 +129,21 @@ public enum DiskService {
         }
     }
 
+    /// Coerce qemu-img JSON numbers (Int / Int64 / NSNumber / Double) to Int64.
+    /// JSONSerialization on Linux rarely yields `Int64` directly — casting only
+    /// `as? Int64` made virtual size look like 0/file-size and triggered false shrinks.
+    private static func jsonInt64(_ value: Any?) -> Int64? {
+        switch value {
+        case let v as Int64: return v
+        case let v as Int: return Int64(v)
+        case let v as UInt64: return Int64(clamping: v)
+        case let v as NSNumber: return v.int64Value
+        case let v as Double: return Int64(v)
+        case let v as Float: return Int64(v)
+        default: return nil
+        }
+    }
+
     /// Get virtual size of a disk image in bytes
     public static func getVirtualSize(path: String) throws -> Int64 {
         let qemuImg = try resolveQEMUImg()
@@ -131,10 +153,10 @@ public enum DiskService {
             timeout: 60,
         )
         if let json = try JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
-           let virtualSize = json["virtual-size"] as? Int64 {
+           let virtualSize = jsonInt64(json["virtual-size"]), virtualSize > 0 {
             return virtualSize
         }
-        // Fallback to file size
+        // Fallback to file size (sparse/qcow2 physical size — last resort only)
         let attrs = try FileManager.default.attributesOfItem(atPath: path)
         return attrs[.size] as? Int64 ?? 0
     }
@@ -154,8 +176,8 @@ public enum DiskService {
         else {
             throw BarkVisorError.diskCreateFailed("qemu-img info returned invalid JSON")
         }
-        let virtualSize = (json["virtual-size"] as? Int64) ?? 0
-        let actualSize = (json["actual-size"] as? Int64) ?? 0
+        let virtualSize = jsonInt64(json["virtual-size"]) ?? 0
+        let actualSize = jsonInt64(json["actual-size"]) ?? 0
         return DiskImageInfo(virtualSize: virtualSize, actualSize: actualSize)
     }
 
