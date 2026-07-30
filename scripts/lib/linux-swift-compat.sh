@@ -139,7 +139,7 @@ barkvisor_required_sonames() {
   printf '%s\n' "libxml2.so.2"
 }
 
-# Install base apt packages (best-effort) + SONAME shims.
+# Install base runtime packages (best-effort, multi-distro) + SONAME shims.
 barkvisor_ensure_swift_compat() {
   local soname failed=0
 
@@ -158,6 +158,28 @@ barkvisor_ensure_swift_compat() {
         sudo apt-get install -y -qq "$pkg" 2>/dev/null || true
       fi
     done
+  elif command -v pacman >/dev/null 2>&1; then
+    local packages=(ca-certificates zlib zstd libedit sqlite ncurses libxml2 curl)
+    if [[ "$(id -u)" -eq 0 ]]; then
+      pacman -Sy --noconfirm --needed "${packages[@]}" 2>/dev/null || true
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo pacman -Sy --noconfirm --needed "${packages[@]}" 2>/dev/null || true
+    fi
+  elif command -v apk >/dev/null 2>&1; then
+    # Alpine is musl — SONAME shims rarely help official Swift (glibc) toolchains.
+    local packages=(ca-certificates zlib zstd libedit sqlite-libs ncurses-libs libxml2 curl)
+    if [[ "$(id -u)" -eq 0 ]]; then
+      apk add --no-cache "${packages[@]}" 2>/dev/null || true
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo apk add --no-cache "${packages[@]}" 2>/dev/null || true
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    local packages=(ca-certificates zlib libzstd libedit sqlite-libs ncurses-libs libxml2 libcurl)
+    if [[ "$(id -u)" -eq 0 ]]; then
+      dnf install -y "${packages[@]}" 2>/dev/null || true
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo dnf install -y "${packages[@]}" 2>/dev/null || true
+    fi
   fi
 
   while IFS= read -r soname; do
@@ -201,6 +223,7 @@ barkvisor_export_swift_env() {
 
 # Map host Ubuntu VERSION_ID → official Swift download channel.
 # Hosts newer than the latest supported LTS use that LTS + SONAME compat.
+# Kept for call sites/tests; prefer barkvisor_swift_channel for multi-distro.
 barkvisor_swift_ubuntu_channel() {
   local ver="${1:-}"
   if [[ -z "$ver" && -f /etc/os-release ]]; then
@@ -218,23 +241,76 @@ barkvisor_swift_ubuntu_channel() {
   esac
 }
 
+# Resolve official Swift.org release *channel* for this host.
+# Prints: ubuntu2204 | ubuntu2404 | debian12 | fedora39
+# Arch / unknown glibc → ubuntu2404 + SONAME compat.
+# Alpine/musl is unsupported for builds (caller should refuse).
+barkvisor_swift_channel() {
+  local id="" ver=""
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    . /etc/os-release
+    id="${ID:-}"
+    ver="${VERSION_ID:-}"
+  fi
+  case "$id" in
+    ubuntu | linuxmint | pop)
+      barkvisor_swift_ubuntu_channel "$ver"
+      ;;
+    debian | raspbian)
+      # Official channel is debian12; older/newer still use that tarball + compat.
+      echo "debian12"
+      ;;
+    fedora)
+      echo "fedora39"
+      ;;
+    arch | manjaro | endeavouros | garuda | "")
+      # No official Arch/generic channel — use Ubuntu 24.04 toolchain + compat.
+      echo "ubuntu2404"
+      ;;
+    alpine)
+      # musl — no official toolchain; still return a channel for messaging.
+      echo "ubuntu2404"
+      ;;
+    *)
+      # ID_LIKE=debian/ubuntu
+      if [[ " ${ID_LIKE:-} " == *" debian "* ]] || [[ " ${ID_LIKE:-} " == *" ubuntu "* ]]; then
+        if [[ "${ID_LIKE:-}" == *ubuntu* ]] || [[ "$id" == *ubuntu* ]]; then
+          barkvisor_swift_ubuntu_channel "$ver"
+        else
+          echo "debian12"
+        fi
+      else
+        echo "ubuntu2404"
+      fi
+      ;;
+  esac
+}
+
 # Print official Swift Linux tarball URL for this host.
 # Args: [swift_version]  default 6.2.3
 barkvisor_swift_download_url() {
   local version="${1:-6.2.3}"
-  local channel uver
-  channel="$(barkvisor_swift_ubuntu_channel)"
+  local channel file_tag arch_suffix=""
+  channel="$(barkvisor_swift_channel)"
   case "$channel" in
-    ubuntu2204) uver="22.04" ;;
-    ubuntu2404) uver="24.04" ;;
-    *) uver="24.04" ;;
+    ubuntu2204) file_tag="ubuntu22.04" ;;
+    ubuntu2404) file_tag="ubuntu24.04" ;;
+    debian12) file_tag="debian12" ;;
+    fedora39) file_tag="fedora39" ;;
+    *)
+      channel="ubuntu2404"
+      file_tag="ubuntu24.04"
+      ;;
   esac
   case "$(uname -m)" in
     aarch64 | arm64)
-      echo "https://download.swift.org/swift-${version}-release/${channel}-aarch64/swift-${version}-RELEASE/swift-${version}-RELEASE-ubuntu${uver}-aarch64.tar.gz"
+      arch_suffix="-aarch64"
+      # download path segment uses channel-aarch64
+      echo "https://download.swift.org/swift-${version}-release/${channel}-aarch64/swift-${version}-RELEASE/swift-${version}-RELEASE-${file_tag}-aarch64.tar.gz"
       ;;
     *)
-      echo "https://download.swift.org/swift-${version}-release/${channel}/swift-${version}-RELEASE/swift-${version}-RELEASE-ubuntu${uver}.tar.gz"
+      echo "https://download.swift.org/swift-${version}-release/${channel}/swift-${version}-RELEASE/swift-${version}-RELEASE-${file_tag}.tar.gz"
       ;;
   esac
 }

@@ -12,12 +12,23 @@ first NAT guest.
 
 | Component | Notes |
 |-----------|--------|
-| Host OS | Linux — **any current Ubuntu** (22.04 / 24.04 / 26.04+). Official Swift packages target an LTS; on newer hosts BarkVisor installs that LTS toolchain plus SONAME shims (`scripts/lib/linux-swift-compat.sh`). |
+| Host OS (build) | **glibc** Linux: Ubuntu 22.04/24.04/26.04+, Debian 12+, Arch, Fedora. Official Swift tarballs are glibc; newer distros use the nearest supported channel + SONAME shims (`scripts/lib/linux-swift-compat.sh`). |
+| Host OS (runtime) | Same as build, **plus Alpine** only with a **prebuilt** binary (Alpine is musl — no official Swift toolchain). Prefer Docker or a glibc build host for Alpine deployments. |
 | Arch | `aarch64` or `x86_64` (matches guest types you enable) |
-| Swift | 6.2+ — install with `./scripts/install-swift-linux.sh` (or [swift.org](https://www.swift.org/install/linux/)) |
-| QEMU | Distro package, e.g. `qemu-system-arm` / `qemu-system-x86` + `qemu-utils` |
-| Firmware | **arm64:** `qemu-efi-aarch64 genisoimage` (AAVMF). **x86_64:** `ovmf` |
+| Swift | 6.2+ — `./scripts/install-swift-linux.sh` picks channel (ubuntu2404 / debian12 / fedora39 / …) |
+| QEMU | Distro packages via `./scripts/linux-dev.sh` (apt / pacman / apk / dnf) |
+| Firmware | **x86_64:** OVMF (`ovmf` / `edk2-ovmf`). **arm64:** AAVMF / edk2-armvirt |
 | KVM | `/dev/kvm` readable by the barkvisor user (add to `kvm` group) |
+
+### Distro matrix
+
+| Distro | Package manager | Native `swift build` | Notes |
+|--------|-----------------|----------------------|--------|
+| Ubuntu 22.04–26.04+ | apt | yes | 26.04+ uses ubuntu2404 toolchain + libxml2 SONAME shims |
+| Debian 12+ | apt | yes | debian12 toolchain channel |
+| Arch | pacman | yes | Ubuntu 24.04 toolchain tarball + compat |
+| Fedora | dnf | yes | fedora39 channel (or distro `swift-lang`) |
+| Alpine | apk | **no** (musl) | Install QEMU/OVMF with `linux-dev.sh`; run a binary built on glibc or use Docker |
 
 ### Environment overrides
 
@@ -40,7 +51,7 @@ orb -m barkvisor-u24
 git clone https://github.com/pmdroid/barkvisor.git
 cd barkvisor
 
-# 1. System packages + Swift + SONAME compat (works on Ubuntu 22.04/24.04/26.04+)
+# 1. System packages + Swift + SONAME compat (Ubuntu/Debian/Arch/Fedora)
 ./scripts/linux-dev.sh
 # or only Swift: ./scripts/install-swift-linux.sh
 source scripts/lib/linux-swift-compat.sh && barkvisor_export_swift_env
@@ -53,11 +64,10 @@ swift --version
 swift run BarkVisorApp
 ```
 
-On Ubuntu **26.04+** (and any host newer than the latest Swift-supported LTS),
-the installer still uses the **ubuntu2404** toolchain and adds library shims
-under `/usr/local/lib/barkvisor/compat` (or `~/.local/share/barkvisor/compat`).
-`scripts/linux-smoke.sh`, `install-linux.sh`, and `barkvisor.service` set
-`LD_LIBRARY_PATH` so both `swift build` and the daemon resolve correctly.
+On hosts newer than the latest Swift-supported LTS (e.g. Ubuntu **26.04+**),
+or on Arch (no official channel), the installer uses the nearest official
+toolchain (usually **ubuntu2404** or **debian12**) and adds library shims under
+`/usr/local/lib/barkvisor/compat`. Smoke/install/systemd set `LD_LIBRARY_PATH`.
 
 Open `http://localhost:7777` and complete the setup wizard (or use the guest
 smoke script below for an API-driven path).

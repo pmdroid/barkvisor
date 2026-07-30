@@ -1,36 +1,30 @@
 #!/usr/bin/env bash
-# Prepare a Linux host for BarkVisor development (any current Ubuntu).
-# Installs system packages, Swift toolchain (if missing), and SONAME compat.
+# Prepare a Linux host for BarkVisor development.
+# Supports package managers: apt (Ubuntu/Debian), pacman (Arch), apk (Alpine runtime),
+# dnf (Fedora). Installs QEMU/firmware deps, Swift (glibc hosts), and SONAME compat.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/linux-distro.sh
+source "$ROOT/scripts/lib/linux-distro.sh"
 # shellcheck source=lib/linux-swift-compat.sh
 source "$ROOT/scripts/lib/linux-swift-compat.sh"
 
-if [[ "$(id -u)" -eq 0 ]]; then
-  SUDO=""
-else
-  SUDO="sudo"
+barkvisor_detect_distro
+echo "==> BarkVisor linux-dev on ${BARKVISOR_DISTRO_ID:-?} ${BARKVISOR_DISTRO_VERSION:-} ($(uname -m))"
+
+barkvisor_install_dev_packages || true
+
+if barkvisor_is_alpine || ! barkvisor_swift_build_supported; then
+  echo
+  echo "This host uses musl (Alpine) or is otherwise unsupported for native Swift builds."
+  echo "  • Runtime: install QEMU/OVMF packages (done best-effort above), run a binary"
+  echo "    built on Ubuntu/Debian/Arch (glibc)."
+  echo "  • Build: use Ubuntu 24.04/26.04, Debian 12, or Arch — or Docker (Dockerfile)."
+  exit 0
 fi
 
-export DEBIAN_FRONTEND=noninteractive
-$SUDO apt-get update -qq
-$SUDO apt-get install -y -qq \
-  curl ca-certificates binutils git build-essential pkg-config \
-  libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
-  zlib1g-dev libzstd-dev libedit-dev uuid-dev \
-  qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage \
-  || true
-
-# Optional x86 guests on amd64 hosts
-if [[ "$(uname -m)" = "x86_64" ]]; then
-  $SUDO apt-get install -y -qq qemu-system-x86 ovmf || true
-fi
-
-# Optional TPM
-$SUDO apt-get install -y -qq swtpm || true
-
-# Swift + SONAME shims (works on 22.04 / 24.04 / 26.04)
+echo "==> Swift channel: $(barkvisor_swift_channel)"
 "$ROOT/scripts/install-swift-linux.sh" || true
 barkvisor_ensure_swift_compat || true
 barkvisor_export_swift_env
