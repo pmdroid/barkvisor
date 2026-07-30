@@ -189,6 +189,18 @@ barkvisor_ensure_swift_compat() {
     fi
   done < <(barkvisor_required_sonames)
 
+  # Never keep reverse shims in the compat dir (e.g. libxml2.so.16 -> libxml2.so.2).
+  # Only provide *older* SONAMEs expected by the Swift toolchain.
+  if [[ -d "$BARKVISOR_COMPAT_DIR" ]]; then
+    local f base
+    for f in "$BARKVISOR_COMPAT_DIR"/libxml2.so.*; do
+      [[ -e "$f" || -L "$f" ]] || continue
+      base="$(basename "$f")"
+      [[ "$base" == "libxml2.so.2" ]] && continue
+      rm -f "$f" 2>/dev/null || sudo rm -f "$f" 2>/dev/null || true
+    done
+  fi
+
   if command -v ldconfig >/dev/null 2>&1; then
     local conf=/etc/ld.so.conf.d/barkvisor-compat.conf
     if [[ -d "$BARKVISOR_COMPAT_DIR" && "$BARKVISOR_COMPAT_DIR" == /usr/local/lib/* ]]; then
