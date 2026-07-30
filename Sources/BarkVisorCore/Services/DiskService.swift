@@ -100,7 +100,7 @@ public enum DiskService {
     }
 
     /// Expand `path` to at least `sizeGB` GiB. No-op when already large enough.
-    private static func growIfNeeded(path: String, sizeGB: Int, qemuImg: String) throws {
+    private static func growIfNeeded(path: String, sizeGB: Int, qemuImg: URL) throws {
         let requestedBytes = Int64(sizeGB) * 1_073_741_824
         let current: Int64
         do {
