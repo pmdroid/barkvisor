@@ -99,7 +99,7 @@ gh pr checks <n> --repo pmdroid/barkvisor
   ```
 
 - Distro firmware present: `/usr/share/AAVMF/AAVMF_CODE.fd` (`qemu-efi-aarch64`)  
-- Prefer **Ubuntu 24.04** for Swift toolchains; **26.04** breaks on `libxml2.so.16` vs Swift’s `libxml2.so.2`  
+- Any current Ubuntu works: use `./scripts/install-swift-linux.sh` (LTS toolchain + SONAME shims via `scripts/lib/linux-swift-compat.sh` for 26.04+ `libxml2.so.16` vs `libxml2.so.2`)  
 - `./scripts/linux-smoke.sh` — build + brief start + health + capabilities
 
 ### Architecture decisions already made

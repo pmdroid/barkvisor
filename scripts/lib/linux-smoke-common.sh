@@ -83,6 +83,13 @@ build_barkvisor() {
     log "SKIP_BUILD=1 — reusing binary"
     return 0
   fi
+  # Best-effort SONAME shims for Ubuntu hosts newer than the Swift LTS toolchain.
+  if [[ -f "${root}/scripts/lib/linux-swift-compat.sh" ]]; then
+    # shellcheck source=linux-swift-compat.sh
+    source "${root}/scripts/lib/linux-swift-compat.sh"
+    barkvisor_ensure_swift_compat || true
+    barkvisor_export_swift_env
+  fi
   command -v swift >/dev/null 2>&1 || die "swift not on PATH"
   log "swift build --product BarkVisorApp"
   (cd "$root" && swift build --product BarkVisorApp)
@@ -95,6 +102,13 @@ start_server() {
   [[ -x "$bin" ]] || die "binary not executable: $bin"
   [[ -n "${BARKVISOR_PORT:-}" ]] || die "BARKVISOR_PORT not set"
   [[ -n "${BARKVISOR_DATA_DIR:-}" ]] || die "BARKVISOR_DATA_DIR not set"
+
+  # Runtime may need the same SONAME shims as the toolchain (dynamic link).
+  if [[ -f "${ROOT:-.}/scripts/lib/linux-swift-compat.sh" ]]; then
+    # shellcheck source=linux-swift-compat.sh
+    source "${ROOT:-.}/scripts/lib/linux-swift-compat.sh"
+    barkvisor_export_swift_env
+  fi
 
   export BARKVISOR_PORT BARKVISOR_DATA_DIR
   LOG_FILE="${BARKVISOR_DATA_DIR}/server.log"

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Prepare a Linux host for BarkVisor development (Ubuntu 24.04 recommended).
-# Does not install Swift (use official tarball — see docs/getting-started-linux.md).
+# Prepare a Linux host for BarkVisor development (any current Ubuntu).
+# Installs system packages, Swift toolchain (if missing), and SONAME compat.
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/linux-swift-compat.sh
+source "$ROOT/scripts/lib/linux-swift-compat.sh"
 
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
@@ -26,12 +30,18 @@ fi
 # Optional TPM
 $SUDO apt-get install -y -qq swtpm || true
 
+# Swift + SONAME shims (works on 22.04 / 24.04 / 26.04)
+"$ROOT/scripts/install-swift-linux.sh" || true
+barkvisor_ensure_swift_compat || true
+barkvisor_export_swift_env
+
 echo
 echo "System packages installed (best-effort)."
-if command -v swift >/dev/null 2>&1; then
+if command -v swift >/dev/null 2>&1 && swift build --help >/dev/null 2>&1; then
   swift --version | head -1
+  echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
 else
-  echo "Swift not found. Install Ubuntu 24.04 toolchain from https://www.swift.org/install/linux/"
+  echo "Swift not usable yet. Re-run: ./scripts/install-swift-linux.sh"
 fi
 echo "Next: swift build && ./scripts/linux-smoke.sh"
 echo "      or:   swift run BarkVisorApp"

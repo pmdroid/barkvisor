@@ -7,8 +7,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 # shellcheck source=lib/linux-smoke-common.sh
 source "$ROOT/scripts/lib/linux-smoke-common.sh"
+# shellcheck source=lib/linux-swift-compat.sh
+source "$ROOT/scripts/lib/linux-swift-compat.sh"
 
-command -v swift >/dev/null 2>&1 || die "swift not on PATH. Install Ubuntu 24.04 Swift toolchain first."
+barkvisor_ensure_swift_compat || true
+barkvisor_export_swift_env
+
+command -v swift >/dev/null 2>&1 || die "swift not on PATH. Run: ./scripts/install-swift-linux.sh"
+if ! swift build --help >/dev/null 2>&1; then
+  die "swift not runnable (SONAME mismatch?). Run: ./scripts/install-swift-linux.sh"
+fi
 command -v curl >/dev/null 2>&1 || die "curl is required"
 
 PORT="$(pick_port)"
