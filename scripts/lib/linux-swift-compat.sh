@@ -61,22 +61,23 @@ barkvisor_find_compat_target() {
   case "$soname" in
     libxml2.so.2)
       # Ubuntu 26+ / Debian trixie+: package provides libxml2.so.16
+      # Prefer the real SONAME over the development linker name (libxml2.so).
       for d in $(barkvisor_lib_dirs); do
-        for cand in libxml2.so.16 libxml2.so.2.9.* libxml2.so; do
-          # shellcheck disable=SC2086
-          if compgen -G "${d}/${cand}" >/dev/null 2>&1; then
-            # Resolve first match
-            # shellcheck disable=SC2012
-            ls -1 "${d}"/libxml2.so.16 "${d}"/libxml2.so 2>/dev/null | head -1
-            return 0
-          fi
-        done
         if [[ -e "${d}/libxml2.so.16" ]]; then
           echo "${d}/libxml2.so.16"
           return 0
         fi
+      done
+      for d in $(barkvisor_lib_dirs); do
+        # shellcheck disable=SC2012
+        if compgen -G "${d}/libxml2.so.2.*" >/dev/null 2>&1; then
+          # shellcheck disable=SC2012
+          ls -1 "${d}"/libxml2.so.2.* 2>/dev/null | head -1
+          return 0
+        fi
         if [[ -e "${d}/libxml2.so" ]]; then
-          echo "${d}/libxml2.so"
+          # Resolve symlink to real file when possible
+          readlink -f "${d}/libxml2.so" 2>/dev/null || echo "${d}/libxml2.so"
           return 0
         fi
       done
@@ -143,16 +144,20 @@ barkvisor_ensure_swift_compat() {
   local soname failed=0
 
   if command -v apt-get >/dev/null 2>&1; then
+    # Install one package at a time so renamed Ubuntu packages (libxml2 →
+    # libxml2-16, libcurl4 → libcurl4t64) do not abort the whole set.
     local packages=(
-      libxml2 libsqlite3-0 libncurses6 libcurl4 zlib1g libzstd1 libedit2 ca-certificates
+      ca-certificates zlib1g libzstd1 libedit2 libsqlite3-0 libncurses6
+      libxml2-16 libxml2 libcurl4t64 libcurl4
     )
-    # Ubuntu 26+ may only ship libxml2 via libxml2-16 package name in some spins.
-    packages+=(libxml2-16)
-    if [[ "$(id -u)" -eq 0 ]]; then
-      apt-get install -y -qq "${packages[@]}" 2>/dev/null || true
-    elif command -v sudo >/dev/null 2>&1; then
-      sudo apt-get install -y -qq "${packages[@]}" 2>/dev/null || true
-    fi
+    local pkg
+    for pkg in "${packages[@]}"; do
+      if [[ "$(id -u)" -eq 0 ]]; then
+        apt-get install -y -qq "$pkg" 2>/dev/null || true
+      elif command -v sudo >/dev/null 2>&1; then
+        sudo apt-get install -y -qq "$pkg" 2>/dev/null || true
+      fi
+    done
   fi
 
   while IFS= read -r soname; do
