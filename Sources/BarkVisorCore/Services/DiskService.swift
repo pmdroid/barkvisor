@@ -91,6 +91,31 @@ public enum DiskService {
         if let sizeGB, sizeGB > 0 {
             try growIfNeeded(path: destPath.path, sizeGB: sizeGB, qemuImg: qemuImg)
         }
+
+        // HAOS and some cloud images ship with backup GPT not at the end of a
+        // larger virtual disk; UEFI then fails with BdsDxe "No bootable option".
+        repairGPTBackupHeaderIfPossible(path: destPath.path)
+    }
+
+    /// Relocate GPT secondary header to the end of the image when `sgdisk` exists.
+    /// Best-effort: never fails provision if tools/nbd are unavailable.
+    private static func repairGPTBackupHeaderIfPossible(path: String) {
+        let sgdisk = ["/usr/sbin/sgdisk", "/sbin/sgdisk", "/usr/bin/sgdisk"]
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+        guard let sgdisk else { return }
+
+        // Prefer direct sgdisk on the file (works for some setups); fall back quietly.
+        // `sgdisk -e` moves the backup GPT to the end of the device.
+        let result = try? PlatformProcess.run(
+            executable: URL(fileURLWithPath: sgdisk),
+            arguments: ["-e", path],
+            timeout: 60,
+        )
+        if result?.succeeded == true {
+            return
+        }
+        // qcow2 usually needs nbd; skip without root rather than failing clone.
+        _ = path
     }
 
     /// Resize a disk image to a new size (grow only — never shrink without an explicit API).

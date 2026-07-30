@@ -21,15 +21,36 @@ public enum PlatformQEMU {
     }
 
     /// System paths for x86_64 UEFI firmware (OVMF / EDK2).
+    /// Prefer 4M images first — they pair with `OVMF_VARS_4M.fd` on modern Ubuntu.
     /// Checked after `BundleResolver.qemuResource` for edk2/OVMF names.
     public static var edk2X86Candidates: [String] {
         [
-            "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
+            "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
             "/usr/share/qemu/OVMF.fd",
+        ]
+    }
+
+    /// NVRAM var store templates matching common CODE images (must copy, not zero-fill).
+    public static var edk2X86VarsCandidates: [String] {
+        [
+            "/usr/share/OVMF/OVMF_VARS_4M.fd",
+            "/usr/share/OVMF/OVMF_VARS.fd",
+            "/usr/share/edk2/ovmf/OVMF_VARS.fd",
+            "/usr/share/edk2-ovmf/x64/OVMF_VARS.fd",
+            "/usr/share/qemu/OVMF_VARS.fd",
+        ]
+    }
+
+    /// AAVMF / ARM64 NVRAM templates when available.
+    public static var aavmfVarsCandidates: [String] {
+        [
+            "/usr/share/AAVMF/AAVMF_VARS.fd",
+            "/usr/share/AAVMF/AAVMF_VARS.ms.fd",
+            "/usr/share/qemu-efi-aarch64/QEMU_VARS.fd",
         ]
     }
 
