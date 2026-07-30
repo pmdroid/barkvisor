@@ -174,7 +174,7 @@ barkvisor_ensure_swift_compat() {
       sudo apk add --no-cache "${packages[@]}" 2>/dev/null || true
     fi
   elif command -v dnf >/dev/null 2>&1; then
-    local packages=(ca-certificates zlib libzstd libedit sqlite-libs ncurses-libs libxml2 libcurl)
+    local packages=(ca-certificates zlib libzstd libedit sqlite-libs ncurses-libs libxml2 libcurl tar gzip)
     if [[ "$(id -u)" -eq 0 ]]; then
       dnf install -y "${packages[@]}" 2>/dev/null || true
     elif command -v sudo >/dev/null 2>&1; then
@@ -276,6 +276,10 @@ barkvisor_swift_channel() {
     fedora)
       echo "fedora39"
       ;;
+    rocky | rhel | almalinux | centos | ol)
+      # RHEL-family: official Fedora toolchain is the closest ABI match.
+      echo "fedora39"
+      ;;
     arch | manjaro | endeavouros | garuda | "")
       # No official Arch/generic channel — use Ubuntu 24.04 toolchain + compat.
       echo "ubuntu2404"
@@ -285,13 +289,15 @@ barkvisor_swift_channel() {
       echo "ubuntu2404"
       ;;
     *)
-      # ID_LIKE=debian/ubuntu
+      # ID_LIKE=debian/ubuntu/rhel/fedora
       if [[ " ${ID_LIKE:-} " == *" debian "* ]] || [[ " ${ID_LIKE:-} " == *" ubuntu "* ]]; then
-        if [[ "${ID_LIKE:-}" == *ubuntu* ]] || [[ "$id" == *ubuntu* ]]; then
+        if [[ " ${ID_LIKE:-} " == *" ubuntu "* ]] || [[ "$id" == *ubuntu* ]]; then
           barkvisor_swift_ubuntu_channel "$ver"
         else
           echo "debian12"
         fi
+      elif [[ " ${ID_LIKE:-} " == *" rhel "* ]] || [[ " ${ID_LIKE:-} " == *" fedora "* ]] || [[ " ${ID_LIKE:-} " == *" centos "* ]]; then
+        echo "fedora39"
       else
         echo "ubuntu2404"
       fi
