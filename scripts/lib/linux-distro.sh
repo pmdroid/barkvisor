@@ -174,14 +174,41 @@ barkvisor_install_dev_packages() {
   esac
 }
 
-# True if this host can run official Swift toolchains (glibc).
+# Print host glibc version (e.g. 2.34) or empty if musl/unknown.
+barkvisor_glibc_version() {
+  if command -v ldd >/dev/null 2>&1; then
+    ldd --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1
+  fi
+}
+
+# Compare two dotted versions: 0 if $1 >= $2.
+barkvisor_version_ge() {
+  local a="$1" b="$2"
+  local IFS=.
+  # shellcheck disable=SC2206
+  local -a aa=($a) bb=($b)
+  local i
+  for i in 0 1 2 3; do
+    local x="${aa[i]:-0}" y="${bb[i]:-0}"
+    if ((10#$x > 10#$y)); then return 0; fi
+    if ((10#$x < 10#$y)); then return 1; fi
+  done
+  return 0
+}
+
+# True if this host can run official Swift 6.2+ toolchains (glibc ≥ 2.38).
+# Rocky/RHEL 9 ship glibc 2.34 and cannot run modern Swift.org builds.
 barkvisor_swift_build_supported() {
   if barkvisor_is_alpine; then
     return 1
   fi
-  # musl without being alpine-labelled
   if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
     return 1
   fi
-  return 0
+  local ver
+  ver="$(barkvisor_glibc_version)"
+  if [[ -z "$ver" ]]; then
+    return 0
+  fi
+  barkvisor_version_ge "$ver" "2.38"
 }
