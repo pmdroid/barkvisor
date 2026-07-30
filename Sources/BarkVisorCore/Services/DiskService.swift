@@ -132,7 +132,8 @@ public enum DiskService {
     /// Coerce qemu-img JSON numbers (Int / Int64 / NSNumber / Double) to Int64.
     /// JSONSerialization on Linux rarely yields `Int64` directly — casting only
     /// `as? Int64` made virtual size look like 0/file-size and triggered false shrinks.
-    private static func jsonInt64(_ value: Any?) -> Int64? {
+    /// Package-visible for unit tests.
+    package static func jsonInt64(_ value: Any?) -> Int64? {
         switch value {
         case let v as Int64: return v
         case let v as Int: return Int64(v)
