@@ -211,15 +211,17 @@ Quick wins still available:
 
 ```bash
 orb list
-# barkvisor-u24 = Ubuntu 24.04 arm64 (preferred)
-# barkvisor-linux = Ubuntu 26.04 — avoid for Swift tarball ABI
+# barkvisor-u24 = Ubuntu 24.04 arm64; bare metal may be Ubuntu 26.04+
+# Any Ubuntu: ./scripts/install-swift-linux.sh + SONAME compat
 ```
 
 ### Build + run
 
 ```bash
 orb -m barkvisor-u24
-export PATH="$HOME/swift/usr/bin:$PATH"
+./scripts/install-swift-linux.sh
+# shellcheck source=scripts/lib/linux-swift-compat.sh
+source scripts/lib/linux-swift-compat.sh && barkvisor_export_swift_env
 cd /Users/pascal/orca/workspaces/barkvisor/<worktree>   # or main clone
 swift build --product BarkVisorApp
 export BARKVISOR_PORT=7777
