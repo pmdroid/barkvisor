@@ -86,9 +86,12 @@ barkvisor_pkg_install() {
     apt)
       export DEBIAN_FRONTEND=noninteractive
       barkvisor_sudo apt-get update -qq || true
-      for pkg in "$@"; do
-        barkvisor_sudo apt-get install -y -qq "$pkg" 2>/dev/null || true
-      done
+      # Bulk first (fast); if any name is missing, fall back per-package.
+      if ! barkvisor_sudo apt-get install -y -qq "$@" 2>/dev/null; then
+        for pkg in "$@"; do
+          barkvisor_sudo apt-get install -y -qq "$pkg" 2>/dev/null || true
+        done
+      fi
       ;;
     pacman)
       barkvisor_sudo pacman -Sy --noconfirm --needed "$@" 2>/dev/null || true
@@ -97,7 +100,13 @@ barkvisor_pkg_install() {
       barkvisor_sudo apk add --no-cache "$@" 2>/dev/null || true
       ;;
     dnf)
-      barkvisor_sudo dnf install -y "$@" 2>/dev/null || true
+      # Bulk first; fall back per-package so Fedora vs Rocky name differences
+      # (qemu-system-x86 vs qemu-kvm) do not abort the whole set.
+      if ! barkvisor_sudo dnf install -y "$@" 2>/dev/null; then
+        for pkg in "$@"; do
+          barkvisor_sudo dnf install -y "$pkg" 2>/dev/null || true
+        done
+      fi
       ;;
     zypper)
       barkvisor_sudo zypper --non-interactive install -y "$@" 2>/dev/null || true
@@ -158,14 +167,25 @@ barkvisor_install_dev_packages() {
       ;;
     dnf)
       # Rocky/RHEL/Fedora — include tar (minimal cloud images often omit it).
+      # Package IDs diverge: Fedora has qemu-system-*; EL uses qemu-kvm.
+      # genisoimage is often genisoimage or xorriso (mkisofs-compat).
       local pkgs=(
         tar gzip git curl ca-certificates gcc gcc-c++ make pkgconf-pkg-config
+        glibc-devel binutils
         libcurl-devel libxml2-devel sqlite-devel ncurses-devel
         zlib-devel libzstd-devel libedit-devel libuuid-devel
-        qemu-img genisoimage swtpm
-        qemu-system-x86 edk2-ovmf qemu-system-aarch64 edk2-aarch64
+        qemu-img genisoimage xorriso swtpm edk2-ovmf
+        # Fedora names
+        qemu-system-x86 qemu-system-aarch64 edk2-aarch64
+        # Rocky / Alma / RHEL names
+        qemu-kvm
       )
       barkvisor_pkg_install "${pkgs[@]}"
+      # RHEL-family ships qemu as /usr/libexec/qemu-kvm only.
+      if [[ ! -x /usr/bin/qemu-system-x86_64 ]] && [[ -x /usr/libexec/qemu-kvm ]]; then
+        barkvisor_sudo ln -sfn /usr/libexec/qemu-kvm /usr/local/bin/qemu-system-x86_64 2>/dev/null || true
+        echo "note: linked /usr/local/bin/qemu-system-x86_64 → /usr/libexec/qemu-kvm"
+      fi
       ;;
     *)
       echo "warning: install QEMU, OVMF/AAVMF, build-essential equivalents manually" >&2
@@ -196,8 +216,31 @@ barkvisor_version_ge() {
   return 0
 }
 
-# True if this host can run official Swift 6.2+ toolchains (glibc ≥ 2.38).
-# Rocky/RHEL 9 ship glibc 2.34 and cannot run modern Swift.org builds.
+# Minimum glibc for the official Swift.org channel this distro maps to.
+# - debian12 toolchain: bookworm (2.36)
+# - ubuntu2204: jammy (2.35)
+# - ubuntu2404 / fedora39: need ≥ 2.38 (Rocky/RHEL 9 = 2.34 fails here)
+barkvisor_swift_min_glibc() {
+  barkvisor_detect_distro
+  case "${BARKVISOR_DISTRO_ID:-}" in
+    debian)
+      echo "2.36"
+      ;;
+    ubuntu)
+      case "${BARKVISOR_DISTRO_VERSION:-}" in
+        22.* | 22) echo "2.35" ;;
+        *) echo "2.38" ;;
+      esac
+      ;;
+    *)
+      # Fedora, Rocky/RHEL/Alma, Arch (ubuntu2404 tarball), unknown
+      echo "2.38"
+      ;;
+  esac
+}
+
+# True if this host can run an official Swift 6.2+ toolchain for its channel.
+# Rocky/RHEL 9 (glibc 2.34) cannot; Debian 12 (2.36) can via the debian12 channel.
 barkvisor_swift_build_supported() {
   if barkvisor_is_alpine; then
     return 1
@@ -205,10 +248,11 @@ barkvisor_swift_build_supported() {
   if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
     return 1
   fi
-  local ver
+  local ver min
   ver="$(barkvisor_glibc_version)"
+  min="$(barkvisor_swift_min_glibc)"
   if [[ -z "$ver" ]]; then
     return 0
   fi
-  barkvisor_version_ge "$ver" "2.38"
+  barkvisor_version_ge "$ver" "$min"
 }

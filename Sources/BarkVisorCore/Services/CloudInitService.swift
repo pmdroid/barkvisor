@@ -144,7 +144,9 @@ public enum CloudInitService {
         if let bundled = try? BundleResolver.helper("mkisofs") {
             return bundled
         }
-        let names = ["mkisofs", "genisoimage"]
+        // xorriso -as mkisofs is common on EL when genisoimage is absent;
+        // we only use pure mkisofs-compatible CLIs here (same flags).
+        let names = ["mkisofs", "genisoimage", "xorrisofs"]
         let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")
             .split(separator: ":")
             .map(String.init)
@@ -160,7 +162,7 @@ public enum CloudInitService {
         #if os(macOS)
             let hint = "Reinstall BarkVisor (bundled mkisofs) or: brew install cdrtools"
         #else
-            let hint = "Install via: apt install genisoimage"
+            let hint = "Install via: apt install genisoimage  |  dnf install genisoimage|xorriso"
         #endif
         throw BarkVisorError.cloudInitFailed(
             "mkisofs/genisoimage not found. \(hint)",

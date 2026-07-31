@@ -42,12 +42,13 @@ echo "Swift channel: $(barkvisor_swift_channel)"
 
 if ! barkvisor_swift_build_supported; then
   local_glibc="$(barkvisor_glibc_version || true)"
+  local_min="$(barkvisor_swift_min_glibc || true)"
   echo "error: this host cannot use official Swift 6.2+ toolchains." >&2
   if barkvisor_is_alpine || { command -v ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; }; then
     echo "  Reason: musl libc (e.g. Alpine)." >&2
   elif [[ -n "${local_glibc:-}" ]]; then
-    echo "  Reason: glibc ${local_glibc} < 2.38 (Swift 6.2 needs ≥ 2.38)." >&2
-    echo "  Rocky/RHEL 9 and similar: build on Fedora 40+/Ubuntu 24.04+ or use Docker." >&2
+    echo "  Reason: glibc ${local_glibc} < ${local_min:-2.38} required for this distro's Swift channel." >&2
+    echo "  Rocky/RHEL 9 (glibc 2.34): use Rocky 10+, Fedora 40+/Ubuntu 24.04+, or Docker." >&2
   fi
   echo "  Runtime: copy a binary built on a supported glibc host." >&2
   exit 1

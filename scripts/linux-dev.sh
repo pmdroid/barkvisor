@@ -17,10 +17,15 @@ barkvisor_install_dev_packages || true
 
 if barkvisor_is_alpine || ! barkvisor_swift_build_supported; then
   echo
-  echo "This host uses musl (Alpine) or is otherwise unsupported for native Swift builds."
+  if barkvisor_is_alpine || { command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; }; then
+    echo "This host uses musl (Alpine) — official Swift toolchains are glibc-only."
+  else
+    echo "This host glibc $(barkvisor_glibc_version 2>/dev/null || echo '?') is below the"
+    echo "minimum $(barkvisor_swift_min_glibc) for this distro's Swift channel."
+  fi
   echo "  • Runtime: install QEMU/OVMF packages (done best-effort above), run a binary"
-  echo "    built on Ubuntu/Debian/Arch (glibc)."
-  echo "  • Build: use Ubuntu 24.04/26.04, Debian 12, or Arch — or Docker (Dockerfile)."
+  echo "    built on a supported glibc host (Ubuntu 24.04+/Debian 12+/Fedora/Rocky 10+/Arch)."
+  echo "  • Build: use those distros — or Docker (Dockerfile)."
   exit 0
 fi
 

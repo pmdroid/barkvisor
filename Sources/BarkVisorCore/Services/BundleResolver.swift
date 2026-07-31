@@ -27,6 +27,14 @@ public enum BundleResolver {
                 "/usr/lib/qemu/\(name)",
                 "/usr/libexec/\(name)",
             ]
+            // Rocky/Alma/RHEL: qemu-kvm package ships only /usr/libexec/qemu-kvm
+            // (no qemu-system-x86_64 binary name).
+            if name == "qemu-system-x86_64" {
+                candidates += [
+                    "/usr/libexec/qemu-kvm",
+                    "/usr/bin/qemu-kvm",
+                ]
+            }
         #endif
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)

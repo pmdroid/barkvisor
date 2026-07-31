@@ -82,6 +82,24 @@ barkvisor_find_compat_target() {
         fi
       done
       ;;
+    libncurses.so.6 | libtinfo.so.6)
+      # Arch ships only wide-char SONAMEs (libncursesw / libtinfo.so.6 sometimes).
+      # Ubuntu Swift toolchains link the non-wide libncurses.so.6.
+      for d in $(barkvisor_lib_dirs); do
+        if [[ -e "${d}/libncursesw.so.6" ]]; then
+          echo "${d}/libncursesw.so.6"
+          return 0
+        fi
+        if [[ -e "${d}/libtinfo.so.6" ]]; then
+          echo "${d}/libtinfo.so.6"
+          return 0
+        fi
+        if [[ -e "${d}/libncursesw.so" ]]; then
+          readlink -f "${d}/libncursesw.so" 2>/dev/null || echo "${d}/libncursesw.so"
+          return 0
+        fi
+      done
+      ;;
   esac
   return 1
 }
@@ -136,7 +154,8 @@ barkvisor_install_soname() {
 
 barkvisor_required_sonames() {
   # Extend this list if future Ubuntu bumps break additional Swift deps.
-  printf '%s\n' "libxml2.so.2"
+  # libncurses.so.6: Arch provides only libncursesw.so.6.
+  printf '%s\n' "libxml2.so.2" "libncurses.so.6" "libtinfo.so.6"
 }
 
 # Install base runtime packages (best-effort, multi-distro) + SONAME shims.
@@ -193,11 +212,15 @@ barkvisor_ensure_swift_compat() {
   # Only provide *older* SONAMEs expected by the Swift toolchain.
   if [[ -d "$BARKVISOR_COMPAT_DIR" ]]; then
     local f base
-    for f in "$BARKVISOR_COMPAT_DIR"/libxml2.so.*; do
+    for f in "$BARKVISOR_COMPAT_DIR"/libxml2.so.* "$BARKVISOR_COMPAT_DIR"/libncurses*.so.*; do
       [[ -e "$f" || -L "$f" ]] || continue
       base="$(basename "$f")"
-      [[ "$base" == "libxml2.so.2" ]] && continue
-      rm -f "$f" 2>/dev/null || sudo rm -f "$f" 2>/dev/null || true
+      case "$base" in
+        libxml2.so.2 | libncurses.so.6 | libtinfo.so.6) continue ;;
+        *)
+          rm -f "$f" 2>/dev/null || sudo rm -f "$f" 2>/dev/null || true
+          ;;
+      esac
     done
   fi
 
@@ -281,8 +304,9 @@ barkvisor_swift_channel() {
       # report fedora39 (install script refuses on glibc < 2.38).
       echo "fedora39"
       ;;
-    arch | manjaro | endeavouros | garuda | "")
+    arch | archarm | manjaro | endeavouros | garuda | "")
       # No official Arch/generic channel — use Ubuntu 24.04 toolchain + compat.
+      # Orb/alarm images often use ID=archarm.
       echo "ubuntu2404"
       ;;
     alpine)

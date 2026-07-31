@@ -33,7 +33,9 @@ public enum PlatformQEMU {
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
             "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
+            "/usr/share/OVMF/OVMF_CODE.secboot.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.fd",
+            "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
             "/usr/share/edk2/x64/OVMF_CODE.fd",
             // Arch: edk2-ovmf
@@ -56,6 +58,9 @@ public enum PlatformQEMU {
             "/usr/share/ovmf/x64/OVMF_VARS.fd",
             "/usr/share/qemu/OVMF_VARS.fd",
             "/usr/share/qemu/edk2-x86_64-vars.fd",
+            // Some QEMU packages (Fedora-style firmware.json layouts) ship
+            // x86_64 CODE with the shared i386 vars template.
+            "/usr/share/qemu/edk2-i386-vars.fd",
         ]
     }
 
@@ -88,7 +93,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install qemu"
         #else
-            "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  apk add qemu-system-x86_64"
+            "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  dnf install qemu-kvm|qemu-system-x86  |  apk add qemu-system-x86_64"
         #endif
     }
 
@@ -106,7 +111,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install qemu"
         #else
-            "apt: ovmf  |  pacman: edk2-ovmf  |  apk: ovmf"
+            "apt: ovmf  |  pacman: edk2-ovmf  |  dnf: edk2-ovmf  |  apk: ovmf"
         #endif
     }
 
