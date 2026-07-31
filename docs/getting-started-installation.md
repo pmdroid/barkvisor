@@ -1,9 +1,11 @@
 # Installation
 
-## System Requirements
+This page covers **macOS** package install. For multi-distro **Linux** (source build, systemd, Docker, distro matrix), see **[getting-started-linux.md](getting-started-linux.md)**.
+
+## System Requirements (macOS)
 
 - **macOS 26.0 or later** -- enforced via Swift Package Manager platform minimum.
-- **Apple Silicon (aarch64 only)** -- BarkVisor bundles `qemu-system-aarch64` compiled with HVF (Hypervisor.framework) support. Intel Macs are not supported.
+- **Apple Silicon (aarch64 only)** -- BarkVisor bundles `qemu-system-aarch64` compiled with HVF (Hypervisor.framework) support. Intel Macs are not supported for the macOS product package.
 - **Disk space:** at least 2 GB free for the application itself. Plan for additional space depending on the number and size of VM disk images you intend to create. Each cloud image download is typically 500 MB -- 2 GB, and user-created disks can grow up to the size you allocate.
 - **RAM:** 8 GB minimum; 16 GB or more recommended. Each running VM reserves its configured memory from the host.
 

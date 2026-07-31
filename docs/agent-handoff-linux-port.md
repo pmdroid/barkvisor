@@ -1,11 +1,13 @@
 # Agent handoff: BarkVisor Linux port + simplification
 
-**Last updated:** 2026-07-28  
-**Repo:** `github.com/pmdroid/barkvisor`  
-**Primary host:** macOS (production focus) + OrbStack Ubuntu 24.04 `barkvisor-u24` for Linux proof  
-**Goal:** Linux NAT-only MVP usable on a VM; reduce macOS-only complexity; ship guest boot and follow-up cleanups on `main`.
+> **Product docs supersede this file.** Current multi-distro Linux support (what works, distro matrix, smokes, limits) is in **[getting-started-linux.md](getting-started-linux.md)** and the root **README**. Keep this handoff for **historical PR/merge context** only.
 
-Use this file as the source of truth for the next agent. The Linux foundation stack is **already on main** — do **not** re-land PRs #7–#13 or restart the port from scratch.
+**Last updated:** 2026-07-30 (banner only; historical sections below unchanged)  
+**Repo:** `github.com/pmdroid/barkvisor`  
+**Primary host:** macOS packaging + multi-distro Linux headless hosts  
+**Goal (historical):** Linux NAT MVP → multi-distro first-class support (NAT, bridge, USB, arm64/x86_64).
+
+The Linux foundation stack (#7–#13) is **already on main** — do **not** re-land those PRs or restart the port from scratch.
 
 ---
 

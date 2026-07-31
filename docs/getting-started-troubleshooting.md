@@ -20,12 +20,18 @@ For installed daemon builds, BarkVisor stores all data under:
 /var/lib/barkvisor/
 ```
 
-For development builds (`swift run`), the data directory is `~/Library/Application Support/BarkVisor/`.
+For development builds (`swift run`):
 
-If this directory or its contents have incorrect permissions, the server will fail during initialization. Check permissions:
+| Platform | Default data directory |
+|----------|------------------------|
+| macOS | `~/Library/Application Support/BarkVisor/` |
+| Linux | `~/.local/share/barkvisor/` |
+
+Override with `BARKVISOR_DATA_DIR`. If the directory or its contents have incorrect permissions, the server will fail during initialization:
 
 ```sh
 ls -la /var/lib/barkvisor/
+# or: ls -la ~/.local/share/barkvisor/
 ```
 
 ### Database corruption recovery
@@ -33,8 +39,9 @@ ls -la /var/lib/barkvisor/
 On startup, BarkVisor attempts to open and migrate the SQLite database at:
 
 ```
-/var/lib/barkvisor/db.sqlite          # installed daemon
-~/Library/Application Support/BarkVisor/db.sqlite   # dev builds
+/var/lib/barkvisor/db.sqlite                              # installed daemon
+~/Library/Application Support/BarkVisor/db.sqlite         # macOS dev
+~/.local/share/barkvisor/db.sqlite                        # Linux dev
 ```
 
 If the database fails to open, the server automatically attempts to restore from the most recent backup in the backups directory. If no backup is available, a fresh database is created (all data is lost). Check server logs for messages like `Database failed to open` or `Database restored from backup`.
@@ -42,8 +49,9 @@ If the database fails to open, the server automatically attempts to restore from
 Database backups are enabled by default and run daily. The backup directory defaults to:
 
 ```
-/var/lib/barkvisor/backups/           # installed daemon
-~/Library/Application Support/BarkVisor/backups/     # dev builds
+/var/lib/barkvisor/backups/                           # installed daemon
+~/Library/Application Support/BarkVisor/backups/      # macOS dev
+~/.local/share/barkvisor/backups/                     # Linux dev
 ```
 
 Backup retention is 30 days by default, configurable via the `backupRetentionDays` UserDefaults key.
@@ -53,17 +61,27 @@ Backup retention is 30 days by default, configurable via the `backupRetentionDay
 BarkVisor writes structured JSON logs to:
 
 ```
-/var/lib/barkvisor/logs/              # installed daemon
-~/Library/Application Support/BarkVisor/logs/        # dev builds
+/var/lib/barkvisor/logs/                              # installed daemon
+~/Library/Application Support/BarkVisor/logs/         # macOS dev
+~/.local/share/barkvisor/logs/                        # Linux dev
 ```
 
-This path can be overridden with the `BARKVISOR_LOG_DIR` environment variable. The log system supports five levels: `debug`, `info`, `warn`, `error`, and `fatal`. BarkVisor also logs to the system unified log under the subsystem `dev.barkvisor` with categories `server`, `vm`, `auth`, `images`, `metrics`, `audit`, `sync`, and `app`.
-
-To view system logs:
+Override with `BARKVISOR_LOG_DIR`. Levels: `debug`, `info`, `warn`, `error`, `fatal`. On macOS, BarkVisor also logs to the unified log (subsystem `dev.barkvisor`).
 
 ```sh
+# macOS
 log stream --predicate 'subsystem == "dev.barkvisor"' --level debug
+
+# Linux (systemd install)
+journalctl -u barkvisor.service -f
 ```
+
+### Linux-specific
+
+- **Swift / glibc refused:** Rocky/RHEL 9 and Alpine cannot use official Swift 6.2 toolchains; build on Ubuntu 24.04+ / Debian 12+ / Fedora / Rocky 10+ or run a prebuilt binary. See the [Linux distro matrix](getting-started-linux.md#distro-matrix).
+- **No `qemu-system-x86_64` on Rocky:** install `qemu-kvm`; BarkVisor resolves `/usr/libexec/qemu-kvm`.
+- **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
+- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper`.
 
 ## Onboarding issues
 
