@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { onMounted, onUnmounted, ref, reactive } from 'vue'
+import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
 import { useImageStore } from '../stores/images'
+import { useCapabilitiesStore } from '../stores/capabilities'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -12,13 +13,25 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { formatBytes } from '../utils/format'
+import {
+  detectImageArch,
+  hostArchToImageArch,
+  resolveImageArch,
+  type ImageArch,
+} from '../utils/imageArch'
 
 const store = useImageStore()
+const caps = useCapabilitiesStore()
+
+const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
+
 const showDownload = ref(false)
 const dlName = ref('')
 const dlUrl = ref('')
 const dlType = ref<'iso' | 'cloud-image'>('iso')
-const dlArch = ref<'arm64'>('arm64')
+const dlArch = ref<ImageArch>('arm64')
+const dlArchHint = ref('')
+const dlArchManual = ref(false)
 const dlLoading = ref(false)
 const dlError = ref('')
 
@@ -26,7 +39,9 @@ const dlError = ref('')
 const showUpload = ref(false)
 const uploadName = ref('')
 const uploadType = ref<'iso' | 'cloud-image'>('iso')
-const uploadArch = ref<'arm64'>('arm64')
+const uploadArch = ref<ImageArch>('arm64')
+const uploadArchHint = ref('')
+const uploadArchManual = ref(false)
 const uploadFile = ref<File | null>(null)
 const uploadError = ref('')
 const uploadProgress = ref(0)
@@ -71,7 +86,101 @@ function subscribeDownloading() {
 
 let pollTimer: number
 
+function resetDownloadForm() {
+  dlName.value = ''
+  dlUrl.value = ''
+  dlType.value = 'iso'
+  dlArch.value = defaultArch.value
+  dlArchHint.value = ''
+  dlArchManual.value = false
+  dlError.value = ''
+}
+
+function resetUploadForm() {
+  uploadName.value = ''
+  uploadType.value = 'iso'
+  uploadArch.value = defaultArch.value
+  uploadArchHint.value = ''
+  uploadArchManual.value = false
+  uploadFile.value = null
+  uploadError.value = ''
+  uploadProgress.value = 0
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+function openDownload() {
+  resetDownloadForm()
+  showDownload.value = true
+}
+
+function openUpload() {
+  resetUploadForm()
+  showUpload.value = true
+}
+
+function applyDetectedArch(
+  source: string,
+  target: 'download' | 'upload',
+) {
+  const detected = detectImageArch(source)
+  if (target === 'download') {
+    if (dlArchManual.value) return
+    if (detected.arch) {
+      dlArch.value = detected.arch
+      dlArchHint.value = `Detected ${detected.arch} from “${detected.matched}” in the URL/filename`
+    } else {
+      dlArch.value = defaultArch.value
+      dlArchHint.value = source.trim()
+        ? `Could not detect arch from URL — using host default (${defaultArch.value})`
+        : ''
+    }
+  } else {
+    if (uploadArchManual.value) return
+    if (detected.arch) {
+      uploadArch.value = detected.arch
+      uploadArchHint.value = `Detected ${detected.arch} from “${detected.matched}” in the filename`
+    } else {
+      uploadArch.value = defaultArch.value
+      uploadArchHint.value = source.trim()
+        ? `Could not detect arch from filename — using host default (${defaultArch.value})`
+        : ''
+    }
+  }
+}
+
+function setDlArchManual(value: string) {
+  dlArch.value = value as ImageArch
+  dlArchManual.value = true
+  dlArchHint.value = 'Architecture set manually'
+}
+
+function setUploadArchManual(value: string) {
+  uploadArch.value = value as ImageArch
+  uploadArchManual.value = true
+  uploadArchHint.value = 'Architecture set manually'
+}
+
+watch(dlUrl, (url) => {
+  if (!showDownload.value) return
+  applyDetectedArch(url, 'download')
+  // Soft-fill name from last path segment if empty
+  if (!dlName.value.trim() && url.trim()) {
+    try {
+      const path = new URL(url).pathname
+      const base = path.split('/').pop() || ''
+      if (base) dlName.value = base.replace(/\.(iso|img|qcow2|raw|vmdk)(\.(xz|gz|bz2|zst))?$/i, '')
+    } catch { /* ignore */ }
+  }
+  // Soft-fill type from extension
+  const lower = url.toLowerCase()
+  if (lower.includes('.iso')) dlType.value = 'iso'
+  else if (/\.(img|qcow2|raw|vmdk)(\.|$)/i.test(lower)) dlType.value = 'cloud-image'
+})
+
 onMounted(async () => {
+  await caps.fetchCapabilities().catch(() => {})
+  dlArch.value = defaultArch.value
+  uploadArch.value = defaultArch.value
   await store.fetchAll()
   subscribeDownloading()
   pollTimer = window.setInterval(() => {
@@ -91,14 +200,17 @@ async function startDownload() {
   if (!dlName.value.trim() || !dlUrl.value.trim()) { dlError.value = 'Name and URL required'; return }
   dlLoading.value = true
   try {
+    const arch = dlArchManual.value
+      ? dlArch.value
+      : resolveImageArch(dlUrl.value, caps.hostArch)
     await store.startDownload({
       name: dlName.value.trim(),
       url: dlUrl.value.trim(),
       imageType: dlType.value,
-      arch: dlArch.value,
+      arch,
     })
     showDownload.value = false
-    dlName.value = ''; dlUrl.value = ''
+    resetDownloadForm()
     await store.fetchAll()
     setTimeout(subscribeDownloading, 500)
   } catch (e: any) {
@@ -108,20 +220,32 @@ async function startDownload() {
   }
 }
 
+function applyFileMeta(file: File) {
+  uploadFile.value = file
+  if (!uploadName.value) {
+    uploadName.value = file.name.replace(/\.\w+$/, '')
+  }
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.iso')) {
+    uploadType.value = 'iso'
+  } else {
+    uploadType.value = 'cloud-image'
+  }
+  // Reset manual flag only when picking a new file so detection runs
+  uploadArchManual.value = false
+  applyDetectedArch(file.name, 'upload')
+}
+
 function onFileSelect(e: Event) {
   const input = e.target as HTMLInputElement
   if (input.files?.length) {
-    uploadFile.value = input.files[0]
-    if (!uploadName.value) {
-      uploadName.value = input.files[0].name.replace(/\.\w+$/, '')
-    }
-    // Auto-detect type from extension
-    const name = input.files[0].name.toLowerCase()
-    if (name.endsWith('.iso')) {
-      uploadType.value = 'iso'
-    } else {
-      uploadType.value = 'cloud-image'
-    }
+    applyFileMeta(input.files[0])
+  }
+}
+
+function onFileDrop(e: DragEvent) {
+  if (e.dataTransfer?.files.length) {
+    applyFileMeta(e.dataTransfer.files[0])
   }
 }
 
@@ -134,6 +258,10 @@ function startUpload() {
   uploading.value = true
   uploadProgress.value = 0
 
+  const arch = uploadArchManual.value
+    ? uploadArch.value
+    : resolveImageArch(uploadFile.value.name, caps.hostArch)
+
   const upload = new tus.Upload(uploadFile.value, {
     endpoint: '/api/images/tus',
     retryDelays: [0, 1000, 3000, 5000],
@@ -141,7 +269,7 @@ function startUpload() {
     metadata: {
       name: uploadName.value.trim(),
       imageType: uploadType.value,
-      arch: uploadArch.value,
+      arch,
     },
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -156,10 +284,7 @@ function startUpload() {
     onSuccess() {
       uploading.value = false
       showUpload.value = false
-      uploadFile.value = null
-      uploadName.value = ''
-      uploadProgress.value = 0
-      if (fileInputRef.value) fileInputRef.value.value = ''
+      resetUploadForm()
       store.fetchAll()
     },
   })
@@ -202,8 +327,8 @@ async function doDeleteImage() {
   <div class="page-header">
     <h1>Images</h1>
     <div style="display:flex;gap:8px">
-      <AppButton icon="upload" @click="showUpload = true">Upload Image</AppButton>
-      <AppButton variant="primary" icon="download" @click="showDownload = true">Download Image</AppButton>
+      <AppButton icon="upload" @click="openUpload">Upload Image</AppButton>
+      <AppButton variant="primary" icon="download" @click="openDownload">Download Image</AppButton>
     </div>
   </div>
 
@@ -240,7 +365,12 @@ async function doDeleteImage() {
       <h2>Upload Image</h2>
       <div class="form-group">
         <label>File</label>
-        <div class="file-drop" @click="fileInputRef?.click()" @dragover.prevent @drop.prevent="(e: DragEvent) => { if (e.dataTransfer?.files.length) { uploadFile = e.dataTransfer.files[0]; if (!uploadName) uploadName = uploadFile.name.replace(/\.\w+$/, '') } }">
+        <div
+          class="file-drop"
+          @click="fileInputRef?.click()"
+          @dragover.prevent
+          @drop.prevent="onFileDrop"
+        >
           <input ref="fileInputRef" type="file" accept=".iso,.img,.qcow2,.raw,.vmdk,.xz,.gz" style="display:none" @change="onFileSelect" />
           <div v-if="uploadFile" style="display:flex;align-items:center;gap:8px">
             <span style="font-weight:500">{{ uploadFile.name }}</span>
@@ -255,12 +385,26 @@ async function doDeleteImage() {
         <label>Name</label>
         <input v-model="uploadName" placeholder="My Image" :disabled="uploading" />
       </div>
-      <div class="form-group">
-        <label>Type</label>
-        <AppSelect v-model="uploadType" :disabled="uploading">
-          <option value="iso">ISO</option>
-          <option value="cloud-image">Cloud Image / Disk</option>
-        </AppSelect>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>Type</label>
+          <AppSelect v-model="uploadType" :disabled="uploading">
+            <option value="iso">ISO</option>
+            <option value="cloud-image">Cloud Image / Disk</option>
+          </AppSelect>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Architecture</label>
+          <AppSelect
+            :model-value="uploadArch"
+            :disabled="uploading"
+            @update:model-value="setUploadArchManual"
+          >
+            <option value="arm64">arm64 (AArch64)</option>
+            <option value="x86_64">x86_64 (amd64)</option>
+          </AppSelect>
+          <p v-if="uploadArchHint" class="arch-hint">{{ uploadArchHint }}</p>
+        </div>
       </div>
 
       <div v-if="uploading" style="margin-bottom:12px">
@@ -283,18 +427,28 @@ async function doDeleteImage() {
       <h2>Download Image</h2>
       <div class="form-group">
         <label>Name</label>
-        <input v-model="dlName" placeholder="Alpine Virt 3.21 ARM64" />
+        <input v-model="dlName" placeholder="Ubuntu 24.04 Server" />
       </div>
       <div class="form-group">
         <label>Download URL</label>
-        <input v-model="dlUrl" placeholder="https://..." />
+        <input v-model="dlUrl" placeholder="https://…/Fedora-KDE-Desktop-Live-44-1.7.x86_64.iso" />
       </div>
-      <div class="form-group">
-        <label>Type</label>
-        <AppSelect v-model="dlType">
-          <option value="iso">ISO</option>
-          <option value="cloud-image">Cloud Image</option>
-        </AppSelect>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>Type</label>
+          <AppSelect v-model="dlType">
+            <option value="iso">ISO</option>
+            <option value="cloud-image">Cloud Image</option>
+          </AppSelect>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Architecture</label>
+          <AppSelect :model-value="dlArch" @update:model-value="setDlArchManual">
+            <option value="arm64">arm64 (AArch64)</option>
+            <option value="x86_64">x86_64 (amd64)</option>
+          </AppSelect>
+          <p v-if="dlArchHint" class="arch-hint">{{ dlArchHint }}</p>
+        </div>
       </div>
       <FormError v-if="dlError" :message="dlError" />
       <div class="modal-actions">
@@ -327,5 +481,15 @@ async function doDeleteImage() {
 }
 .file-drop:hover {
   border-color: var(--accent);
+}
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+.arch-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.35;
 }
 </style>
