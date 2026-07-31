@@ -25,7 +25,7 @@ first NAT guest.
 | Distro | Package manager | Native `swift build` | Notes |
 |--------|-----------------|----------------------|--------|
 | Ubuntu 22.04–26.04+ | apt | yes | 26.04+ uses ubuntu2404 toolchain + libxml2 SONAME shims |
-| Debian 12+ | apt | yes | debian12 toolchain channel |
+| Debian 12+ | apt | yes | **debian12** channel (glibc ≥ 2.36; bookworm is 2.36) |
 | Arch | pacman | yes | Ubuntu 24.04 toolchain tarball + compat |
 | Fedora | dnf | yes | fedora39 channel (or distro `swift-lang`) |
 | Rocky / Alma / RHEL **10** | dnf | yes* | *if glibc ≥ 2.38; use **fedora39** toolchain |
