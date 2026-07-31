@@ -1,8 +1,11 @@
+/** Guest / image CPU architecture (API: arm64 | x86_64). */
+export type ImageArch = 'arm64' | 'x86_64'
+
 export interface Image {
   id: string
   name: string
   imageType: 'iso' | 'cloud-image'
-  arch: 'arm64'
+  arch: ImageArch | string
   status: 'uploading' | 'downloading' | 'decompressing' | 'ready' | 'error'
   sizeBytes: number | null
   sourceUrl: string | null
@@ -14,7 +17,7 @@ export interface Image {
 export interface VM {
   id: string
   name: string
-  vmType: 'linux-arm64' | 'windows-arm64'
+  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
   state: 'stopped' | 'starting' | 'running' | 'stopping' | 'error' | 'provisioning' | 'deleting'
   cpuCount: number
   memoryMB: number
@@ -95,7 +98,7 @@ export interface HostUSBDevice {
 
 export interface CreateVMRequest {
   name: string
-  vmType: 'linux-arm64' | 'windows-arm64'
+  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
   cpuCount: number
   memoryMB: number
   diskSizeGB?: number
@@ -118,7 +121,7 @@ export interface DownloadImageRequest {
   name: string
   url: string
   imageType: 'iso' | 'cloud-image'
-  arch: 'arm64'
+  arch: ImageArch
 }
 
 export interface ImageRepository {
