@@ -133,7 +133,43 @@ docker run --rm -it -p 7777:7777 barkvisor:dev
 
 Open `http://localhost:7777` — SPA is served from the image share path.
 
-### systemd install (root)
+### Packages (.deb / .rpm / tarball / Arch)
+
+Preferred install on supported distros is a **built package** (bundles the
+daemon, SPA, Swift runtime libs, and a systemd unit).
+
+| Format | Distros | How to install |
+|--------|---------|----------------|
+| **`.deb`** | Ubuntu, Debian | `sudo dpkg -i barkvisor_*_amd64.deb` (or `*_arm64.deb`) |
+| **`.rpm`** | Fedora, Rocky, Alma, RHEL | `sudo rpm -Uvh barkvisor-*.rpm` or `dnf install ./barkvisor-*.rpm` |
+| **`.tar.gz`** | Any glibc host | extract + `sudo ./install.sh` |
+| **Arch `PKGBUILD`** | Arch / Arch ARM | `makepkg -si` from the package build output |
+
+Build on a Linux host (or via Docker from macOS):
+
+```bash
+# Native (Linux build machine with Swift + dpkg-dev / rpm-build)
+swift build -c release --product BarkVisorApp
+./scripts/linux-frontend-serve.sh
+./scripts/build-linux-packages.sh
+# → build/linux-packages/*.deb *.rpm *.tar.gz
+
+# From macOS / any host with Docker (Ubuntu 24.04 builder):
+./scripts/build-linux-packages.sh --docker
+# or: ./scripts/build-linux-packages-docker.sh
+
+# Subset of formats:
+FORMATS=tar,deb VERSION=1.0.0 ./scripts/build-linux-packages.sh
+```
+
+CI: workflow **Linux Packages** (`.github/workflows/linux-packages.yml`) builds
+artifacts on tag `v*` or manual `workflow_dispatch` (amd64; arm64 when runners
+are available).
+
+Packages install under `/usr/local` (same layout as `install-linux.sh`) and
+enable `barkvisor.service`. QEMU/OVMF remain **distro packages** (Recommends).
+
+### systemd install from source (root)
 
 ```bash
 swift build -c release --product BarkVisorApp
@@ -147,6 +183,7 @@ sudo FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh .build/release/Bar
 |------|---------|
 | `/usr/local/bin/barkvisor` | Daemon (`Config.prefix` → `/usr/local`) |
 | `/usr/local/share/barkvisor/frontend/dist` | SPA |
+| `/usr/local/lib/barkvisor/swift` | Bundled Swift runtime (packages) |
 | `/usr/local/lib/barkvisor/compat` | SONAME shims (libxml2, ncurses, …) |
 | `/etc/barkvisor/barkvisor.env` | Port / data / `LD_LIBRARY_PATH` |
 | `/var/lib/barkvisor` | Data + DB |
@@ -306,9 +343,12 @@ lsusb
 | `scripts/linux-guest-smoke.sh` | Setup + NAT VM create/start |
 | `scripts/linux-real-guest-smoke.sh` | Cloud-image boot + cloud-init + SSH |
 | `scripts/linux-frontend-serve.sh` | Build SPA; `--verify` / `--run` / `--install-dev` |
-| `scripts/install-linux.sh` | systemd install (`Resources/barkvisor.service`) |
+| `scripts/install-linux.sh` | systemd install from a local binary |
+| `scripts/build-linux-packages.sh` | Build `.deb` / `.rpm` / `.tar.gz` / Arch PKGBUILD |
+| `scripts/build-linux-packages-docker.sh` | Same via Docker (macOS-friendly) |
 | `scripts/orb-multi-distro-smoke.sh` | OrbStack multi-distro matrix |
 | `scripts/hetzner-cloud.py` | Ephemeral Cloud VMs for CI-style smokes |
+| `packaging/linux/` | Package metadata (debian control, rpm spec, unit, env) |
 
 ## Agent / historical notes
 

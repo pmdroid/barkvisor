@@ -126,7 +126,10 @@ sudo ./scripts/uninstall.sh --purge  # remove everything
 
 ### Linux
 
-No macOS-style `.pkg` yet. Build from source, install with `scripts/install-linux.sh` + systemd, or run the Docker image — see [docs/getting-started-linux.md](docs/getting-started-linux.md).
+Build **`.deb` / `.rpm` / tarball** packages (arm64 and amd64) with
+`./scripts/build-linux-packages.sh` (or `--docker` from macOS), install from
+source with `scripts/install-linux.sh` + systemd, or run the Docker image — see
+[docs/getting-started-linux.md](docs/getting-started-linux.md).
 
 ## Release Build
 

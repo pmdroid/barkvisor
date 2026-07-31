@@ -1,0 +1,29 @@
+[Unit]
+Description=BarkVisor QEMU management daemon
+Documentation=https://github.com/pmdroid/barkvisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=barkvisor
+Group=barkvisor
+WorkingDirectory=/var/lib/barkvisor
+Environment=HOME=/var/lib/barkvisor
+Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
+Environment=BARKVISOR_PORT=7777
+Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/swift:/usr/local/lib/barkvisor/compat
+EnvironmentFile=-/etc/barkvisor/barkvisor.env
+ExecStart=/usr/local/bin/barkvisor
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor
+ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
