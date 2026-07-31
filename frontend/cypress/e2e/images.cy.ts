@@ -132,7 +132,8 @@ describe('Image Library', () => {
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('h2', 'Upload Image').should('be.visible')
     cy.get('.file-drop').should('exist')
-    cy.get('.modal select').should('have.length', 1) // type (arch removed in newer versions) or 2
+    cy.get('.modal select').should('have.length', 2) // type + architecture
+    cy.get('.modal').should('contain', 'Architecture')
   })
 
   it('upload modal file drop shows instruction text', () => {
