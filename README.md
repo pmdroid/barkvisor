@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** production focus is **macOS**; **Linux** is experimental and **NAT-only** (not full feature parity). See [Linux getting started](docs/getting-started-linux.md).
+**Platforms:** **macOS** (production packaging / HVF) and **Linux** (multi-distro headless: Ubuntu, Debian, Arch, Fedora, Rocky/Alma/RHEL 10+, Alpine runtime). See [Linux getting started](docs/getting-started-linux.md).
 
 ## Features
 
@@ -17,17 +17,18 @@ A headless daemon for managing QEMU virtual machines through a web UI.
 - Cloud-init provisioning with user data templates
 - Deploy VMs from templates, synced from remote catalogs
 - qcow2/raw disk management with hot-plug and online resize
-- NAT networking with port forwarding (bridged networking on **macOS**; Linux is NAT-only for now)
-- OS image library with HTTP download and auto-decompression
+- NAT networking with port forwarding; **bridged networking** on macOS (socket_vmnet) and Linux (host bridge + qemu-bridge-helper)
+- OS image library with HTTP download and auto-decompression (arm64 and x86_64)
 - Live CPU, memory, and disk I/O metrics
 - Serial console (xterm.js) and VNC display (NoVNC) in the browser
 - JWT authentication, API keys, and audit logging
 - SSH key management for VM injection
 - Database backups, log rotation, and diagnostic bundles
+- USB passthrough (macOS and Linux via `usb-host`)
 
 ## Prerequisites
 
-### macOS (primary / production)
+### macOS (primary packaging)
 
 - macOS 26+ (Apple Silicon only for HVF guests today)
 - Xcode with Swift 6 toolchain
@@ -42,17 +43,16 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
   autoconf automake libtool json-glib swiftlint swiftformat
 ```
 
-### Linux (experimental, NAT-only)
+### Linux (multi-distro)
 
-Linux support targets a headless NAT-only MVP (no bridged networking, USB passthrough, or in-app updates yet). It is **not** full macOS parity.
+Headless daemon + SPA on glibc distros with official Swift toolchains; Alpine is **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, and x86_64/arm64 images are supported. In-app updates remain macOS-only.
 
-See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for Ubuntu/OrbStack setup, limitations, Docker, and systemd install. Smoke: `./scripts/linux-smoke.sh`.
+See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for the distro matrix, `linux-dev.sh`, systemd, Docker, and guest smokes.
 
 ```bash
-# After Swift + QEMU packages are installed:
-swift build
-swift run BarkVisorApp
-# → http://localhost:7777
+./scripts/linux-dev.sh          # packages + Swift + compat shims
+./scripts/linux-smoke.sh        # build + health/capabilities
+swift run BarkVisorApp          # → http://localhost:7777
 ```
 
 ## Quick Start
@@ -124,9 +124,9 @@ sudo ./scripts/uninstall.sh          # keep data
 sudo ./scripts/uninstall.sh --purge  # remove everything
 ```
 
-### Linux (experimental)
+### Linux
 
-No production `.pkg` equivalent yet. Use source build, optional `scripts/install-linux.sh` + systemd, or Docker — see [docs/getting-started-linux.md](docs/getting-started-linux.md).
+No macOS-style `.pkg` yet. Build from source, install with `scripts/install-linux.sh` + systemd, or run the Docker image — see [docs/getting-started-linux.md](docs/getting-started-linux.md).
 
 ## Release Build
 
@@ -174,7 +174,7 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 ### Getting Started
 
 - [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory (macOS)
-- [Linux (experimental)](docs/getting-started-linux.md) — Ubuntu/Orb NAT-only MVP, smoke script, systemd/Docker
+- [Linux](docs/getting-started-linux.md) — Multi-distro setup, NAT/bridge, smokes, systemd/Docker
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, helper daemon
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
