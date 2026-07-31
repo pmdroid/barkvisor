@@ -1,0 +1,27 @@
+#!/bin/sh
+set -e
+
+DATA_DIR=/var/lib/barkvisor
+RUN_DIR=/var/run/barkvisor
+
+case "$1" in
+  configure)
+    if ! getent passwd barkvisor >/dev/null 2>&1; then
+      useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin barkvisor 2>/dev/null \
+        || useradd --system --home "$DATA_DIR" --shell /bin/false barkvisor
+    fi
+    if getent group kvm >/dev/null 2>&1; then
+      usermod -aG kvm barkvisor 2>/dev/null || true
+    fi
+    install -d -o barkvisor -g barkvisor -m 0755 "$DATA_DIR" "$RUN_DIR"
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl daemon-reload || true
+      # Enable on install; start only if already enabled (upgrades) or first install with policy
+      if [ -z "${BARKVISOR_SKIP_ENABLE:-}" ]; then
+        systemctl enable barkvisor.service >/dev/null 2>&1 || true
+      fi
+    fi
+    ;;
+esac
+
+exit 0

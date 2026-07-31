@@ -1,0 +1,21 @@
+post_install() {
+  getent passwd barkvisor >/dev/null 2>&1 || \
+    useradd --system --home /var/lib/barkvisor --shell /usr/bin/nologin barkvisor
+  getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor 2>/dev/null || true
+  install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl enable barkvisor.service >/dev/null 2>&1 || true
+}
+
+post_upgrade() {
+  post_install
+}
+
+pre_remove() {
+  systemctl stop barkvisor.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+  systemctl daemon-reload >/dev/null 2>&1 || true
+}
