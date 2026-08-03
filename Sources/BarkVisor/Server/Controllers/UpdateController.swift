@@ -16,11 +16,6 @@ struct UpdateSettingsRequest: Content {
     let updateURL: String?
 }
 
-// TODO: restore `Config.version.contains("dev")` once release versioning is in place
-private var isDevBuild: Bool {
-    true
-}
-
 struct UpdateCheckResponse: Content {
     let currentVersion: String
     let update: UpdateInfo?
@@ -50,7 +45,7 @@ struct UpdateController: RouteCollection {
             return (channel, url)
         }
         let channel = UpdateChannel(rawValue: channelSetting?.value ?? "stable") ?? .stable
-        let urlOverride = isDevBuild ? urlSetting?.value : nil
+        let urlOverride = Config.isDevBuild ? urlSetting?.value : nil
 
         let update = try await updateService.checkForUpdates(channel: channel, urlOverride: urlOverride)
         return UpdateCheckResponse(
@@ -70,7 +65,7 @@ struct UpdateController: RouteCollection {
             return (channel, url)
         }
         let channel = UpdateChannel(rawValue: channelSetting?.value ?? "stable") ?? .stable
-        let urlOverride = isDevBuild ? urlSetting?.value : nil
+        let urlOverride = Config.isDevBuild ? urlSetting?.value : nil
 
         // Look up the release from GitHub instead of trusting URLs from the request
         let release = try await updateService.lookupRelease(
@@ -108,8 +103,8 @@ struct UpdateController: RouteCollection {
         return UpdateSettingsResponse(
             channel: settings.0 ?? "stable",
             autoCheck: settings.1 == "true",
-            isDevBuild: isDevBuild,
-            updateURL: isDevBuild ? settings.2 : nil,
+            isDevBuild: Config.isDevBuild,
+            updateURL: Config.isDevBuild ? settings.2 : nil,
         )
     }
 
@@ -129,7 +124,7 @@ struct UpdateController: RouteCollection {
                 let setting = AppSetting(key: "update_auto_check", value: autoCheck ? "true" : "false")
                 try setting.save(db, onConflict: .replace)
             }
-            if isDevBuild, let url = body.updateURL {
+            if Config.isDevBuild, let url = body.updateURL {
                 let setting = AppSetting(key: "update_url", value: url)
                 try setting.save(db, onConflict: .replace)
             }

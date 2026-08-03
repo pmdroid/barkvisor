@@ -387,13 +387,13 @@ sed -i '' \
     -e 's/kHelperTeamID = "DEVELOPMENT"/kHelperTeamID = "'"$APPLE_TEAM_ID"'"/' \
     "$HELPER_PROTO"
 
-# Inject the release version into Config.swift
+# Inject the release version into Config.swift (any current string → $VERSION)
 CONFIG_SWIFT="$PROJECT_DIR/Sources/BarkVisorCore/Config.swift"
 log_sub "Injecting VERSION ($VERSION) into Config.swift"
+# shellcheck source=lib/inject-version.sh
+source "$PROJECT_DIR/scripts/lib/inject-version.sh"
 cp "$CONFIG_SWIFT" "$CONFIG_SWIFT.bak"
-sed -i '' \
-    -e 's/version = "1.0.0-alpha.2"/version = "'"$VERSION"'"/' \
-    "$CONFIG_SWIFT"
+ROOT="$PROJECT_DIR" barkvisor_inject_config_version "$VERSION" "$CONFIG_SWIFT"
 
 swift build -c release --package-path "$PROJECT_DIR"
 
