@@ -45,7 +45,7 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
 
 ### Linux (multi-distro)
 
-Headless daemon + SPA on glibc distros with official Swift toolchains; Alpine is **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, and x86_64/arm64 images are supported. In-app updates remain macOS-only.
+Headless daemon + SPA on glibc distros with official Swift toolchains; Alpine is **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, and x86_64/arm64 images are supported. Acceleration is **KVM** (or TCG); packaging is distro packages + optional BarkVisor `.deb` / `.rpm` / tarball.
 
 See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for the distro matrix, `linux-dev.sh`, systemd, Docker, and guest smokes.
 
