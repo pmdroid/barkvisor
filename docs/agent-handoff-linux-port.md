@@ -1,11 +1,13 @@
 # Agent handoff: BarkVisor Linux port + simplification
 
-**Last updated:** 2026-07-28  
-**Repo:** `github.com/pmdroid/barkvisor`  
-**Primary host:** macOS (production focus) + OrbStack Ubuntu 24.04 `barkvisor-u24` for Linux proof  
-**Goal:** Linux NAT-only MVP usable on a VM; reduce macOS-only complexity; ship guest boot and follow-up cleanups on `main`.
+> **Product docs supersede this file.** Current multi-distro Linux support (what works, distro matrix, smokes, limits) is in **[getting-started-linux.md](getting-started-linux.md)** and the root **README**. Keep this handoff for **historical PR/merge context** only.
 
-Use this file as the source of truth for the next agent. The Linux foundation stack is **already on main** — do **not** re-land PRs #7–#13 or restart the port from scratch.
+**Last updated:** 2026-07-30 (banner only; historical sections below unchanged)  
+**Repo:** `github.com/pmdroid/barkvisor`  
+**Primary host:** macOS packaging + multi-distro Linux headless hosts  
+**Goal (historical):** Linux NAT MVP → multi-distro first-class support (NAT, bridge, USB, arm64/x86_64).
+
+The Linux foundation stack (#7–#13) is **already on main** — do **not** re-land those PRs or restart the port from scratch.
 
 ---
 
@@ -99,7 +101,7 @@ gh pr checks <n> --repo pmdroid/barkvisor
   ```
 
 - Distro firmware present: `/usr/share/AAVMF/AAVMF_CODE.fd` (`qemu-efi-aarch64`)  
-- Prefer **Ubuntu 24.04** for Swift toolchains; **26.04** breaks on `libxml2.so.16` vs Swift’s `libxml2.so.2`  
+- Any current Ubuntu works: use `./scripts/install-swift-linux.sh` (LTS toolchain + SONAME shims via `scripts/lib/linux-swift-compat.sh` for 26.04+ `libxml2.so.16` vs `libxml2.so.2`)  
 - `./scripts/linux-smoke.sh` — build + brief start + health + capabilities
 
 ### Architecture decisions already made
@@ -211,15 +213,17 @@ Quick wins still available:
 
 ```bash
 orb list
-# barkvisor-u24 = Ubuntu 24.04 arm64 (preferred)
-# barkvisor-linux = Ubuntu 26.04 — avoid for Swift tarball ABI
+# barkvisor-u24 = Ubuntu 24.04 arm64; bare metal may be Ubuntu 26.04+
+# Any Ubuntu: ./scripts/install-swift-linux.sh + SONAME compat
 ```
 
 ### Build + run
 
 ```bash
 orb -m barkvisor-u24
-export PATH="$HOME/swift/usr/bin:$PATH"
+./scripts/install-swift-linux.sh
+# shellcheck source=scripts/lib/linux-swift-compat.sh
+source scripts/lib/linux-swift-compat.sh && barkvisor_export_swift_env
 cd /Users/pascal/orca/workspaces/barkvisor/<worktree>   # or main clone
 swift build --product BarkVisorApp
 export BARKVISOR_PORT=7777

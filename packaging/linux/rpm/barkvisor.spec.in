@@ -1,0 +1,68 @@
+Name:           barkvisor
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Headless QEMU VM manager with web UI
+License:        MIT
+URL:            https://github.com/pmdroid/barkvisor
+# Binary package: payload is prebuilt into the RPM root (no Source0 rebuild).
+BuildArch:      @RPM_ARCH@
+AutoReqProv:    no
+
+Requires:       ca-certificates
+Recommends:      qemu-img
+Recommends:      qemu-kvm
+Recommends:      edk2-ovmf
+Recommends:      genisoimage
+Recommends:      xorriso
+
+%description
+BarkVisor is a headless daemon for managing QEMU virtual machines through a
+browser UI. Supports NAT and bridged networking, cloud images, cloud-init,
+serial console, and VNC on Linux arm64 and amd64 hosts.
+
+This package installs the daemon under /usr/local, a systemd unit, and a
+default environment file. Install QEMU/OVMF from the distro for guests.
+
+%install
+mkdir -p %{buildroot}
+cp -a %{_sourcedir}/root/. %{buildroot}/
+
+%files
+%defattr(-,root,root,-)
+/usr/local/bin/barkvisor
+/usr/local/share/barkvisor
+/usr/local/lib/barkvisor
+/usr/lib/systemd/system/barkvisor.service
+%config(noreplace) /etc/barkvisor/barkvisor.env
+
+%pre
+getent passwd barkvisor >/dev/null 2>&1 || \
+  useradd --system --home /var/lib/barkvisor --shell /sbin/nologin barkvisor 2>/dev/null || \
+  useradd --system --home /var/lib/barkvisor --shell /bin/false barkvisor
+getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor 2>/dev/null || true
+exit 0
+
+%post
+install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl enable barkvisor.service >/dev/null 2>&1 || true
+fi
+exit 0
+
+%preun
+if [ "$1" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
+  systemctl stop barkvisor.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor.service >/dev/null 2>&1 || true
+fi
+exit 0
+
+%postun
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+exit 0
+
+%changelog
+* @CHANGELOG_DATE@ BarkVisor Contributors <noreply@barkvisor.dev> - @VERSION@-1
+- Packaged BarkVisor @VERSION@ for Linux multi-distro hosts.

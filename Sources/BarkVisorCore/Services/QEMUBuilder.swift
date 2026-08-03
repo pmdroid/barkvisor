@@ -449,24 +449,61 @@ public enum QEMUBuilder {
         case .aavmfSecureBoot:
             // Windows ARM64 needs AAVMF secure boot firmware.
             let codeFile = try resolveAAVMFSecureBoot()
-            if !FileManager.default.fileExists(atPath: varsFile.path) {
-                FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 67_108_864))
-            }
+            try ensureVarsStore(
+                at: varsFile,
+                codePath: codeFile.path,
+                templateCandidates: PlatformQEMU.aavmfVarsCandidates,
+                zeroFillBytes: 67_108_864,
+            )
             return (codeFile, varsFile)
         case .edk2ARM64:
             let codeFile = try resolveEDK2ARM64()
-            if !FileManager.default.fileExists(atPath: varsFile.path) {
-                FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 67_108_864))
-            }
+            try ensureVarsStore(
+                at: varsFile,
+                codePath: codeFile.path,
+                templateCandidates: PlatformQEMU.aavmfVarsCandidates,
+                zeroFillBytes: 67_108_864,
+            )
             return (codeFile, varsFile)
         case .edk2X86:
             let codeFile = try resolveEDK2X86_64()
-            if !FileManager.default.fileExists(atPath: varsFile.path) {
-                // OVMF vars is typically 540 KiB; allocate a generous blank file.
-                FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: 540_672))
-            }
+            try ensureVarsStore(
+                at: varsFile,
+                codePath: codeFile.path,
+                templateCandidates: PlatformQEMU.edk2X86VarsCandidates,
+                zeroFillBytes: 540_672,
+            )
             return (codeFile, varsFile)
         }
+    }
+
+    /// Create per-VM NVRAM from the distro OVMF/AAVMF template when possible.
+    /// Zero-filled vars.fd often boots to BdsDxe "No bootable option" even with a valid ESP.
+    private static func ensureVarsStore(
+        at varsFile: URL,
+        codePath: String,
+        templateCandidates: [String],
+        zeroFillBytes: Int,
+    ) throws {
+        guard !FileManager.default.fileExists(atPath: varsFile.path) else { return }
+
+        // Prefer a VARS file that matches the CODE variant (e.g. CODE_4M → VARS_4M).
+        var candidates = templateCandidates
+        if codePath.contains("4M") {
+            let fourM = candidates.filter { $0.contains("4M") }
+            let rest = candidates.filter { !$0.contains("4M") }
+            candidates = fourM + rest
+        } else {
+            let non4M = candidates.filter { !$0.contains("4M") }
+            let fourM = candidates.filter { $0.contains("4M") }
+            candidates = non4M + fourM
+        }
+
+        if let template = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            try FileManager.default.copyItem(atPath: template, toPath: varsFile.path)
+            return
+        }
+        FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: zeroFillBytes))
     }
 
     // MARK: - socket_vmnet resolution

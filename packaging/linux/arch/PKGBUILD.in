@@ -1,0 +1,24 @@
+# Maintainer: BarkVisor Contributors <noreply@barkvisor.dev>
+# Built from a pre-staged install tree (see scripts/build-linux-packages.sh).
+pkgname=barkvisor
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Headless QEMU VM manager with web UI"
+arch=('@ARCH_ARCH@')
+url="https://github.com/pmdroid/barkvisor"
+license=('MIT')
+depends=('glibc' 'curl' 'libxml2' 'sqlite' 'ncurses' 'zstd' 'libedit' 'zlib')
+optdepends=(
+  'qemu-base: run guests'
+  'edk2-ovmf: UEFI firmware (x86_64)'
+  'cdrtools: cloud-init seed ISO (mkisofs)'
+  'usbutils: USB passthrough device list'
+)
+options=('!strip' '!debug')
+install=barkvisor.install
+
+package() {
+  cp -a "${srcdir}/root/." "${pkgdir}/"
+}
+
+# srcdir is filled by the packaging script before makepkg runs.

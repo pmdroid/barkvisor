@@ -1,5 +1,10 @@
 import Foundation
 import GRDB
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 
 /// Canonical owner of per-VM Unix socket paths under `Config.socketDir`.
 ///
@@ -138,6 +143,53 @@ extension VMManager {
         try await Task.sleep(nanoseconds: 500_000_000)
         Log.vm.info("swtpm started for VM \(vmName)", vm: vmID)
         return tpmProc
+    }
+
+    // MARK: - Host port forwards
+
+    /// Ensure NAT `hostfwd` host ports can be bound. QEMU fails with a cryptic
+    /// "Could not set up host forwarding rule" when the port is already taken
+    /// (another VM or orphaned qemu-system still holding it).
+    static func assertHostPortsAvailable(for vm: VM) throws {
+        let rules = vm.decodedPortForwards
+        guard !rules.isEmpty else { return }
+        for rule in rules {
+            try QEMUBuilder.validatePort(rule.hostPort)
+            try QEMUBuilder.validateProtocol(rule.protocol)
+            guard rule.protocol.lowercased() == "tcp" else { continue }
+            if !isTCPPortFree(rule.hostPort) {
+                throw BarkVisorError.conflict(
+                    "Host port \(rule.hostPort) is already in use "
+                        + "(often another VM with the same port forward, e.g. Home Assistant 8123). "
+                        + "Stop the other VM or change this VM's host port.",
+                )
+            }
+        }
+    }
+
+    /// Returns true if nothing is listening on 0.0.0.0:`port` / ::`port` for TCP.
+    private static func isTCPPortFree(_ port: Int) -> Bool {
+        // Prefer bind probe so we match QEMU's actual hostfwd bind behaviour.
+        // Do not set SO_REUSEADDR: we want bind to fail if anything is already listening
+        // (matches QEMU hostfwd, which also cannot share the port).
+        #if os(Linux)
+            let sockType = Int32(SOCK_STREAM.rawValue)
+        #else
+            let sockType = SOCK_STREAM
+        #endif
+        let fd = socket(AF_INET, sockType, 0)
+        guard fd >= 0 else { return true }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(UInt16(port).bigEndian)
+        addr.sin_addr = in_addr(s_addr: INADDR_ANY)
+        let bindResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return bindResult == 0
     }
 
     // MARK: - Logging

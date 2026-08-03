@@ -17,19 +17,61 @@ public enum PlatformQEMU {
             "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
             "/usr/share/edk2/aarch64/QEMU_EFI.fd",
             "/usr/share/edk2-arm/QEMU_EFI.fd",
+            // Arch: edk2-armvirt
+            "/usr/share/edk2/arm/QEMU_EFI.fd",
+            "/usr/share/edk2-armvirt/aarch64/QEMU_EFI.fd",
+            // Alpine
+            "/usr/share/OVMF/QEMU_EFI.fd",
         ]
     }
 
     /// System paths for x86_64 UEFI firmware (OVMF / EDK2).
+    /// Prefer 4M images first — they pair with `OVMF_VARS_4M.fd` on modern Ubuntu.
     /// Checked after `BundleResolver.qemuResource` for edk2/OVMF names.
     public static var edk2X86Candidates: [String] {
         [
-            "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
+            "/usr/share/OVMF/OVMF_CODE.fd",
             "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
+            "/usr/share/OVMF/OVMF_CODE.secboot.fd",
             "/usr/share/edk2/ovmf/OVMF_CODE.fd",
+            "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd",
             "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd",
+            "/usr/share/edk2/x64/OVMF_CODE.fd",
+            // Arch: edk2-ovmf
+            "/usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd",
+            "/usr/share/ovmf/x64/OVMF_CODE.fd",
             "/usr/share/qemu/OVMF.fd",
+            "/usr/share/qemu/edk2-x86_64-code.fd",
+        ]
+    }
+
+    /// NVRAM var store templates matching common CODE images (must copy, not zero-fill).
+    public static var edk2X86VarsCandidates: [String] {
+        [
+            "/usr/share/OVMF/OVMF_VARS_4M.fd",
+            "/usr/share/OVMF/OVMF_VARS.fd",
+            "/usr/share/edk2/ovmf/OVMF_VARS.fd",
+            "/usr/share/edk2-ovmf/x64/OVMF_VARS.fd",
+            "/usr/share/edk2-ovmf/x64/OVMF_VARS.4m.fd",
+            "/usr/share/edk2/x64/OVMF_VARS.fd",
+            "/usr/share/ovmf/x64/OVMF_VARS.fd",
+            "/usr/share/qemu/OVMF_VARS.fd",
+            "/usr/share/qemu/edk2-x86_64-vars.fd",
+            // Some QEMU packages (Fedora-style firmware.json layouts) ship
+            // x86_64 CODE with the shared i386 vars template.
+            "/usr/share/qemu/edk2-i386-vars.fd",
+        ]
+    }
+
+    /// AAVMF / ARM64 NVRAM templates when available.
+    public static var aavmfVarsCandidates: [String] {
+        [
+            "/usr/share/AAVMF/AAVMF_VARS.fd",
+            "/usr/share/AAVMF/AAVMF_VARS.ms.fd",
+            "/usr/share/qemu-efi-aarch64/QEMU_VARS.fd",
+            "/usr/share/edk2-armvirt/aarch64/QEMU_VARS.fd",
+            "/usr/share/edk2/arm/QEMU_VARS.fd",
         ]
     }
 
@@ -40,6 +82,7 @@ public enum PlatformQEMU {
             "/usr/share/AAVMF/AAVMF_CODE.secboot.fd",
             "/usr/share/AAVMF/AAVMF_CODE.ms.fd",
             "/usr/share/AAVMF/AAVMF_CODE.fd",
+            "/usr/share/edk2-armvirt/aarch64/QEMU_EFI.fd",
         ]
     }
 
@@ -50,7 +93,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install qemu"
         #else
-            "install qemu-system (e.g. apt install qemu-system)"
+            "install QEMU: apt install qemu-system  |  pacman -S qemu-base  |  dnf install qemu-kvm|qemu-system-x86  |  apk add qemu-system-x86_64"
         #endif
     }
 
@@ -59,7 +102,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install qemu"
         #else
-            "apt install qemu-efi-aarch64 qemu-system-arm"
+            "apt: qemu-efi-aarch64  |  pacman: edk2-armvirt  |  apk: ovmf"
         #endif
     }
 
@@ -68,7 +111,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install qemu"
         #else
-            "apt install ovmf qemu-system-x86"
+            "apt: ovmf  |  pacman: edk2-ovmf  |  dnf: edk2-ovmf  |  apk: ovmf"
         #endif
     }
 
@@ -77,7 +120,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "Reinstall BarkVisor or run scripts/build-release.sh to bundle firmware."
         #else
-            "Install via: apt install qemu-efi-aarch64"
+            "apt: qemu-efi-aarch64  |  pacman: edk2-armvirt"
         #endif
     }
 
@@ -86,7 +129,7 @@ public enum PlatformQEMU {
         #if os(macOS)
             "brew install swtpm"
         #else
-            "apt install swtpm"
+            "apt/pacman/apk/dnf: swtpm"
         #endif
     }
 }

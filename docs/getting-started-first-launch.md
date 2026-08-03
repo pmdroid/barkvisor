@@ -7,7 +7,7 @@ When BarkVisor starts for the first time:
 1. The data directory is created (see [Installation](getting-started-installation.md) for paths).
 2. The **SQLite database** is created and migrated to the latest schema.
 3. **Default records are seeded** into the database:
-   - A **Default NAT** network, which provides internet access to VMs through your Mac's network stack with no additional configuration.
+   - A **Default NAT** network, which provides internet access to VMs through the host network stack with no additional configuration (macOS and Linux).
    - The **BarkVisor Official** image repository (`images` type), pointing to the official image catalog.
    - The **BarkVisor Templates** repository (`templates` type), pointing to the official VM template catalog.
 4. The HTTP server starts on port **7777** immediately.
@@ -30,7 +30,7 @@ Once the admin account is created, the SetupMiddleware allows all API routes and
 
 ## After Setup
 
-Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native macOS UI -- all management happens through the browser.
+Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI -- all management happens through the browser (macOS and Linux).
 
 On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen.
 

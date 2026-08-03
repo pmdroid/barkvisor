@@ -56,8 +56,10 @@ following steps:
 
 ### Step 1: OS Type and Name
 
-- Choose **Linux** or **Windows**. This sets `vmType` to `linux-arm64` or
-  `windows-arm64`.
+- Choose **Linux** or **Windows**. On Apple Silicon this typically sets
+  `vmType` to `linux-arm64` or `windows-arm64`. On Linux **x86_64** hosts use
+  `linux-amd64` (and matching catalog images); the wizard follows host
+  capabilities from `GET /api/system/capabilities`.
 - Enter a VM name (1--128 characters).
 - Windows selection automatically adjusts defaults: 4 CPUs, 4096 MB RAM,
   64 GB disk, UEFI on, TPM enabled. It also ensures the VirtIO Windows

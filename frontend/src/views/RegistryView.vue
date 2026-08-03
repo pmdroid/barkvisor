@@ -6,6 +6,7 @@ import { useTemplateStore } from '../stores/templates'
 import { useRepositoryStore } from '../stores/repositories'
 import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
+import { useCapabilitiesStore } from '../stores/capabilities'
 import TemplateDeployDrawer from '../components/TemplateDeployDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -25,9 +26,26 @@ const templateStore = useTemplateStore()
 const repoStore = useRepositoryStore()
 const imageStore = useImageStore()
 const toast = useToastStore()
+const caps = useCapabilitiesStore()
 
 // Tab
 const activeTab = ref<'templates' | 'images'>('templates')
+
+/** Guest image arches this host can run (from capabilities); fall back to hostArch. */
+const supportedImageArches = computed(() => {
+  const fromGuests = new Set(
+    (caps.guestTypes ?? [])
+      .map(g => g.arch)
+      .filter((a): a is string => typeof a === 'string' && a.length > 0),
+  )
+  if (fromGuests.size > 0) return fromGuests
+  const host = caps.hostArch || 'arm64'
+  return new Set([host])
+})
+
+function imageArchSupported(arch: string): boolean {
+  return supportedImageArches.value.has(arch)
+}
 
 // Repos filtered by active tab
 const templateRepos = computed(() =>
@@ -47,7 +65,7 @@ const imageTabCount = computed(() => {
   let count = 0
   for (const r of imageRepos.value) {
     const imgs = repoStore.imagesByRepo[r.id]
-    if (imgs) count += imgs.filter(i => i.arch === 'arm64').length
+    if (imgs) count += imgs.filter(i => imageArchSupported(i.arch)).length
   }
   return count
 })
@@ -78,6 +96,7 @@ const categoryLabels: Record<string, string> = {
   'networking': 'Networking',
   'cloud-storage': 'Cloud & Storage',
   'home-automation': 'Home Automation',
+  'smart-home': 'Smart Home',
 }
 
 const iconMap: Record<string, string> = {
@@ -171,7 +190,12 @@ const deletingLocal = ref(false)
 const deletingRepo = ref(false)
 
 onMounted(async () => {
-  await Promise.all([templateStore.fetchAll(), repoStore.fetchAll(), imageStore.fetchAll()])
+  await Promise.all([
+    caps.fetchCapabilities(),
+    templateStore.fetchAll(),
+    repoStore.fetchAll(),
+    imageStore.fetchAll(),
+  ])
   // Eagerly fetch images for all image repos so the tab count is available
   for (const r of imageRepos.value) {
     repoStore.fetchImages(r.id)
@@ -249,7 +273,8 @@ watch(activeTab, (tab) => {
 
 const filteredImages = computed(() => {
   return repoImages.value.filter(img => {
-    if (img.arch !== 'arm64') return false
+    // Hide catalog entries for guest arches this host cannot run (was hard-coded arm64).
+    if (!imageArchSupported(img.arch)) return false
     if (filterType.value && img.imageType !== filterType.value) return false
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase()
