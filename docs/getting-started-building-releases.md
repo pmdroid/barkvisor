@@ -171,3 +171,34 @@ After a successful build, the following artifacts are produced:
 - `build/BarkVisor-VERSION.pkg` -- macOS installer package (unless `--no-pkg` was passed)
 
 The build summary printed at the end includes the app bundle size, bundled helpers, framework count, and firmware file count.
+
+## Linux packages (deb / rpm / tarball / Arch)
+
+macOS `.pkg` builds are separate from **Linux** multi-format packages. On a Linux
+build host (or via Docker from macOS):
+
+```sh
+swift build -c release --product BarkVisorApp
+./scripts/linux-frontend-serve.sh
+./scripts/build-linux-packages.sh
+# → build/linux-packages/*.deb *.rpm *.tar.gz (+ Arch PKGBUILD)
+
+# From macOS / CI with Docker (Ubuntu 24.04 builder):
+./scripts/build-linux-packages.sh --docker
+```
+
+| Format | Typical targets |
+|--------|-----------------|
+| `.deb` | Ubuntu, Debian |
+| `.rpm` | Fedora, Rocky, Alma, RHEL |
+| `.tar.gz` | Any glibc host (+ `install.sh`) |
+| Arch `PKGBUILD` | Arch / Arch ARM |
+
+CI workflow **Linux Packages** (`.github/workflows/linux-packages.yml`) builds on
+tag `v*` or manual dispatch. Full install matrix, layout, and runtime notes:
+[getting-started-linux.md](getting-started-linux.md) and
+[packaging/linux/README.md](../packaging/linux/README.md).
+
+Linux packages ship the daemon, SPA, and Swift runtime. QEMU/OVMF come from the
+distro (Recommends). Bridged networking uses the host bridge path (no separate
+helper binary to bundle).

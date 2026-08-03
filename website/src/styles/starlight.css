@@ -1,0 +1,117 @@
+/*
+ * BarkVisor docs theme — aligned with website/index.html tokens.
+ * Dark default; Starlight light mode overrides below.
+ */
+
+:root,
+::backdrop {
+  --sl-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --sl-font-system: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Accent (BarkVisor blue) */
+  --sl-color-accent-low: #0a2a45;
+  --sl-color-accent: #0090f8;
+  --sl-color-accent-high: #7ec8ff;
+
+  /* Neutrals matching website --bg / --text */
+  --sl-color-white: #e4e4e2;
+  --sl-color-gray-1: #e4e4e2;
+  --sl-color-gray-2: #b8b8b4;
+  --sl-color-gray-3: #8a8a86;
+  --sl-color-gray-4: #6e6e6c;
+  --sl-color-gray-5: #3a3e46;
+  --sl-color-gray-6: #161b24;
+  --sl-color-black: #0a0e14;
+
+  --sl-color-bg: #0a0e14;
+  --sl-color-bg-nav: rgba(10, 14, 20, 0.92);
+  --sl-color-bg-sidebar: #0a0e14;
+  --sl-color-bg-inline-code: rgba(0, 144, 248, 0.1);
+  --sl-color-hairline: rgba(184, 184, 180, 0.12);
+  --sl-color-hairline-light: rgba(184, 184, 180, 0.08);
+
+  --sl-color-text: #e4e4e2;
+  --sl-color-text-accent: #2ea8ff;
+  --sl-color-text-invert: #0a0e14;
+
+  --radius: 2px;
+}
+
+/* Light theme (Starlight data-theme="light") */
+[data-theme='light'] {
+  --sl-color-accent-low: #d6ebff;
+  --sl-color-accent: #0078d4;
+  --sl-color-accent-high: #004c87;
+
+  --sl-color-white: #141618;
+  --sl-color-gray-1: #141618;
+  --sl-color-gray-2: #4a4a48;
+  --sl-color-gray-3: #6e6e6c;
+  --sl-color-gray-4: #8a8a88;
+  --sl-color-gray-5: #d4d4d0;
+  --sl-color-gray-6: #f0f0ee;
+  --sl-color-black: #f6f6f5;
+
+  --sl-color-bg: #f6f6f5;
+  --sl-color-bg-nav: rgba(246, 246, 245, 0.92);
+  --sl-color-bg-sidebar: #f6f6f5;
+  --sl-color-bg-inline-code: rgba(0, 120, 212, 0.08);
+  --sl-color-hairline: rgba(0, 0, 0, 0.1);
+  --sl-color-hairline-light: rgba(0, 0, 0, 0.08);
+
+  --sl-color-text: #141618;
+  --sl-color-text-accent: #0078d4;
+  --sl-color-text-invert: #f6f6f5;
+}
+
+/* Atmospheric glow (matches marketing site) */
+body {
+  background-image:
+    radial-gradient(ellipse 60% 40% at 70% 0%, rgba(0, 144, 248, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 50% at 20% 80%, rgba(184, 184, 180, 0.04) 0%, transparent 70%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-theme='light'] body {
+  background-image:
+    radial-gradient(ellipse 60% 40% at 70% 0%, rgba(0, 144, 248, 0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 50% at 20% 80%, rgba(184, 184, 180, 0.06) 0%, transparent 70%);
+}
+
+/* Tighter radius / glass-adjacent chrome */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+  letter-spacing: -0.02em;
+}
+
+.sl-markdown-content table {
+  font-size: 0.9em;
+}
+
+/* Site header link back to marketing home */
+.site-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Soften Starlight card borders toward website glass cards */
+starlight-file-tree,
+.card,
+.sl-link-card {
+  border-radius: 2px !important;
+}
+
+/* Status callouts */
+.sl-markdown-content .starlight-aside--tip {
+  border-inline-start-color: #34d399;
+}
+
+.sl-markdown-content .starlight-aside--caution {
+  border-inline-start-color: #fbbf24;
+}
+
+/* Footer: link style */
+.right-sidebar,
+.sidebar-pane {
+  backdrop-filter: blur(12px);
+}

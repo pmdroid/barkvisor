@@ -45,7 +45,7 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
 
 ### Linux (multi-distro)
 
-Headless daemon + SPA on glibc distros with official Swift toolchains; Alpine is **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, and x86_64/arm64 images are supported. In-app updates remain macOS-only.
+Headless daemon + SPA on glibc distros with official Swift toolchains; Alpine is **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, and x86_64/arm64 images are supported. Acceleration is **KVM** (or TCG); packaging is distro packages + optional BarkVisor `.deb` / `.rpm` / tarball.
 
 See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for the distro matrix, `linux-dev.sh`, systemd, Docker, and guest smokes.
 
@@ -174,14 +174,16 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 ## Documentation
 
-### Getting Started
+**Website** (landing + docs, one deploy): `cd website && bun install && bun run build` → `website/dist/`. Deploy: `bun run deploy` (Cloudflare Pages). See [website/README.md](website/README.md).
+
+### Getting Started (source Markdown)
 
 - [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory (macOS)
-- [Linux](docs/getting-started-linux.md) — Multi-distro setup, NAT/bridge, smokes, systemd/Docker
-- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, helper daemon
-- [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM
+- [Linux](docs/getting-started-linux.md) — Multi-distro support status, packages, NAT/bridge, smokes, systemd/Docker
+- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, bridge helper (macOS) vs host bridge (Linux)
+- [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
-- [Building Releases](docs/getting-started-building-releases.md) — Release script, code signing, pkg creation
+- [Building Releases](docs/getting-started-building-releases.md) — macOS release script + Linux package builds
 - [Troubleshooting](docs/getting-started-troubleshooting.md) — Common issues and solutions
 
 ## License

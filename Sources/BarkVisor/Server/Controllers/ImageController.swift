@@ -41,7 +41,6 @@ struct DownloadImageRequest: Content, Validatable {
         validations.add("name", as: String.self, is: .count(1 ... 255))
         validations.add("url", as: String.self, is: !.empty)
         validations.add("imageType", as: String.self, is: .in("iso", "cloud-image"))
-        // Host/guest arches BarkVisor supports (see GuestProfiles).
         validations.add("arch", as: String.self, is: .in("arm64", "x86_64"))
     }
 }

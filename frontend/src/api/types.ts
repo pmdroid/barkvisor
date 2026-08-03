@@ -1,13 +1,5 @@
-/** Guest / image CPU architecture (API uses arm64 and x86_64). */
+/** Guest / image CPU architecture (API: arm64 | x86_64). */
 export type ImageArch = 'arm64' | 'x86_64'
-
-/** Stable vmType IDs accepted by the API. */
-export type VMTypeId =
-  | 'linux-arm64'
-  | 'windows-arm64'
-  | 'linux-amd64'
-  | 'linux-x86_64'
-  | string
 
 export interface Image {
   id: string
@@ -25,7 +17,7 @@ export interface Image {
 export interface VM {
   id: string
   name: string
-  vmType: VMTypeId
+  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
   state: 'stopped' | 'starting' | 'running' | 'stopping' | 'error' | 'provisioning' | 'deleting'
   cpuCount: number
   memoryMB: number
@@ -106,7 +98,7 @@ export interface HostUSBDevice {
 
 export interface CreateVMRequest {
   name: string
-  vmType: VMTypeId
+  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
   cpuCount: number
   memoryMB: number
   diskSizeGB?: number
