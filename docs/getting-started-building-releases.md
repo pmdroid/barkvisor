@@ -72,7 +72,9 @@ Runs `bun install` and `bun run build` in the `frontend/` directory to produce t
 
 ### Step 7: Build Swift app (release)
 
-Injects the real `APPLE_TEAM_ID` into `HelperProtocol.swift` (replacing the `DEVELOPMENT` placeholder), then runs `swift build -c release`. The source file is restored to its original state afterward so the working tree stays clean.
+Injects the real `APPLE_TEAM_ID` into `HelperProtocol.swift` (replacing the `DEVELOPMENT` placeholder) and the release version into `Config.version` via `scripts/lib/inject-version.sh` (replacing the in-tree `0.0.0-dev` default, derived from the git tag / `BARKVISOR_VERSION`). Then runs `swift build -c release`. Both source files are restored afterward so the working tree stays clean.
+
+**Linux packages:** the same inject runs before `swift build` in `.github/workflows/linux-packages.yml` and in Docker builds (`BARKVISOR_VERSION` / `VERSION`). Package metadata version alone does not change the binary; inject must happen at compile time.
 
 This produces two executables:
 

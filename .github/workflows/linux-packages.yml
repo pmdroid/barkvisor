@@ -71,20 +71,36 @@ jobs:
           bun run build
           test -f dist/index.html
 
+      - name: Resolve version
+        id: ver
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [ -z "$V" ] && [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "$V" ]; then
+            V="0.0.0+git.$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved VERSION=$V"
+
+      - name: Inject version into Config.swift
+        run: |
+          # shellcheck source=scripts/lib/inject-version.sh
+          source scripts/lib/inject-version.sh
+          barkvisor_inject_config_version "${{ steps.ver.outputs.version }}"
+
       - name: Build release binary
         run: swift build -c release --product BarkVisorApp
 
       - name: Build packages
         env:
-          VERSION: ${{ github.event.inputs.version || '' }}
+          VERSION: ${{ steps.ver.outputs.version }}
           FORMATS: ${{ github.event.inputs.formats || 'tar,deb,rpm' }}
           FRONTEND_DIST: ${{ github.workspace }}/frontend/dist
           OUT_DIR: ${{ github.workspace }}/build/linux-packages
           SWIFT_LINUX_LIBDIR: /opt/swift/usr/lib/swift/linux
         run: |
-          if [ -z "$VERSION" ] && [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            export VERSION="${GITHUB_REF_NAME#v}"
-          fi
           chmod +x scripts/build-linux-packages.sh scripts/lib/linux-package-stage.sh
           chmod +x packaging/linux/debian/postinst packaging/linux/debian/prerm packaging/linux/debian/postrm
           ./scripts/build-linux-packages.sh .build/release/BarkVisorApp
