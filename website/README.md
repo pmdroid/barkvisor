@@ -35,6 +35,10 @@ bun run deploy
 | **Build output directory** | `dist` |
 | **Framework preset** | None |
 
+`wrangler.jsonc` is optional for Pages. If present it must be **Pages-shaped**
+(`pages_build_output_dir` only — do **not** set Workers `assets`). You can also
+set root/build/output entirely in the dashboard and omit the file.
+
 Optional env: `NODE_VERSION=22`. If Bun is not available on Pages, use
 `npm install && npm run build` (after generating a package-lock, or keep using
 Bun via the [Bun install step](https://bun.sh/guides/install/cf-pages)).
