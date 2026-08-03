@@ -34,13 +34,19 @@ Once setup is complete, BarkVisor runs as a **headless daemon** serving the web 
 
 On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen.
 
-## System Helper
+## Bridged networking setup (platform-specific)
 
-BarkVisor includes a **privileged helper** (`dev.barkvisor.helper`) for operations that require elevated privileges:
+### macOS — privileged helper
+
+On **macOS**, BarkVisor includes a **privileged helper** (`dev.barkvisor.helper`) for operations that require elevated privileges:
 
 - **Network bridges** for bridged VM networking (via socket_vmnet)
 
-The helper is installed as a launchd service during package installation. You can manage bridges from the Networks page in the web UI.
+The helper is installed as a launchd service during package installation. You can manage bridges from the Networks page in the web UI. During first-run setup you may be prompted to install or start the helper; this is **macOS-only**.
+
+### Linux — host bridge (no XPC helper)
+
+On **Linux** there is **no** managed bridge helper daemon. Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Linux guide](getting-started-linux.md#bridged-networking-qemu-bridge)). During setup you can **skip** any macOS-style helper install step. Live feature flags: `GET /api/system/capabilities` (`supportsBridgedNetworking` vs `supportsManagedBridgeDaemon`).
 
 ## Catalog Sync
 
@@ -52,8 +58,12 @@ The daemon handles SIGTERM and SIGINT signals for graceful shutdown. When the da
 
 To stop the daemon:
 
-```
+```sh
+# macOS (launchd)
 sudo launchctl bootout system/dev.barkvisor
+
+# Linux (systemd)
+sudo systemctl stop barkvisor.service
 ```
 
 To stop the daemon and shut down all VMs first, use the web UI to stop VMs before stopping the daemon.

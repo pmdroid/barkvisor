@@ -23,3 +23,13 @@ run = "swift build -c release"
 [tasks.test]
 description = "Run the test suite"
 run = "swift test"
+
+[tasks.website]
+description = "Build unified landing + docs site (website/dist)"
+dir = "website"
+run = ["bun install", "bun run build"]
+
+[tasks.website-deploy]
+description = "Build and deploy website to Cloudflare Pages"
+dir = "website"
+run = ["bun install", "bun run deploy"]

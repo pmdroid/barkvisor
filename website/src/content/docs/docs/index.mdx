@@ -1,0 +1,43 @@
+---
+title: Documentation
+description: Open-source QEMU virtualization for macOS and Linux — install, create VMs, and operate the headless daemon.
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a web UI.
+
+## Platforms
+
+| Platform | Packaging | Acceleration | Notes |
+|----------|-----------|--------------|--------|
+| **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | Production packaging, in-app updates, socket_vmnet + XPC helper |
+| **Linux** (multi-distro) | `.deb` / `.rpm` / tarball / Arch | KVM (or TCG) | First-class headless; bridge via host `br*` + qemu-bridge-helper |
+
+See **[Linux support](/docs/linux/)** for the full distro matrix, packages, systemd, Docker, and known limits.
+
+## Get started
+
+<CardGrid>
+  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
+  <LinkCard title="Linux" href="/docs/linux/" description="Multi-distro matrix, packages, NAT/bridge, USB, smokes, systemd/Docker." />
+  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard, admin account, bridge helper vs host bridge." />
+  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Download an image and create your first VM (arm64 / x86_64)." />
+  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS; Linux uses linux-dev.sh." />
+  <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
+</CardGrid>
+
+## Linux support snapshot
+
+<CardGrid>
+  <Card title="Works today" icon="approve-check">
+    Daemon + SPA, JWT auth, NAT + port forwards, bridged networking, USB passthrough, arm64 **and** x86_64 images, cloud-init, serial/VNC, systemd, Docker, multi-format packages.
+  </Card>
+  <Card title="macOS-only for now" icon="warning">
+    In-app package updates, managed bridge helper daemon (socket_vmnet / XPC), HVF-centric release bundling of QEMU.
+  </Card>
+</CardGrid>
+
+Live feature flags on a running host: `GET /api/system/capabilities`.
+
+Markdown source of truth: [`docs/`](https://github.com/pmdroid/barkvisor/tree/main/docs) in the repo. This site is built from `website/` (Astro + Starlight).
