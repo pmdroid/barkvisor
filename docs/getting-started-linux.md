@@ -1,23 +1,51 @@
-# Linux (experimental)
+# Linux
 
-> **Status:** usable for product smoke. Headless daemon + SPA: create VMs,
-> start/stop, console/VNC, images, auth, **bridged networking** (host bridge +
-> qemu-bridge-helper), and **USB passthrough** (`lsusb`). **In-app updates**
-> remain macOS-only. Check `GET /api/system/capabilities` for live flags.
+> **Status:** first-class multi-distro support for headless hosts. Run the daemon + SPA, create and manage VMs (NAT and bridge), use the image library (arm64 and x86_64), serial console / VNC, cloud-init, USB passthrough (`lsusb`), and systemd install. **In-app package updates** remain macOS-only. Live flags: `GET /api/system/capabilities`.
 
-This document covers day-one use: SPA serve, systemd install, Docker, and a
-first NAT guest.
+This guide covers requirements, the distro matrix, day-one source setup, SPA serve, Docker, systemd install, first guest, networking, and known limits.
+
+## What works on Linux
+
+| Area | Support |
+|------|---------|
+| Daemon + JWT auth + API | Yes |
+| Vue SPA (setup wizard, console, VNC) | Yes (`BARKVISOR_FRONTEND_DIR` or install layout) |
+| NAT + port forwards | Yes (default “Default NAT”) |
+| Bridged networking | Yes (host bridge + `qemu-bridge-helper`; not socket_vmnet) |
+| USB passthrough | Yes (`usbutils` / `lsusb`) |
+| Image download (arm64 **and** x86_64) | Yes |
+| HAOS / cloud images / ISOs | Yes (UEFI OVMF or AAVMF; KVM when available) |
+| Cloud-init seed ISO | Yes (`mkisofs` / `genisoimage` / `xorrisofs`) |
+| systemd unit install | Yes (`scripts/install-linux.sh`) |
+| Docker multi-stage image | Yes |
+| In-app updates | No (macOS only) |
+| Managed bridge helper daemon (socket_vmnet / XPC) | No (macOS only) |
 
 ## Requirements
 
 | Component | Notes |
 |-----------|--------|
-| Host OS | Linux (**Ubuntu 24.04 LTS recommended** — matches official Swift tarballs). Ubuntu 26.04 ships `libxml2.so.16` and breaks the Ubuntu 24.04 Swift package. |
-| Arch | `aarch64` or `x86_64` (matches guest types you enable) |
-| Swift | 6.2+ toolchain for **ubuntu2404** (see [swift.org](https://www.swift.org/install/linux/)) |
-| QEMU | Distro package, e.g. `qemu-system-arm` / `qemu-system-x86` + `qemu-utils` |
-| Firmware | **arm64:** `qemu-efi-aarch64 genisoimage` (AAVMF). **x86_64:** `ovmf` |
-| KVM | `/dev/kvm` readable by the barkvisor user (add to `kvm` group) |
+| Host OS (native build) | **glibc** Linux: Ubuntu 22.04+, Debian 12+, Arch, Fedora, Rocky/Alma/RHEL **10+** (see matrix) |
+| Host OS (runtime only) | Same, **plus Alpine** with a **prebuilt** glibc binary (Alpine is musl — no official Swift toolchain) |
+| Arch | `aarch64` or `x86_64` (guest `vmType` should match host capability) |
+| Swift | 6.2+ via `./scripts/install-swift-linux.sh` (channel picked per distro) |
+| QEMU + firmware | Distro packages via `./scripts/linux-dev.sh` (apt / pacman / apk / dnf) |
+| Firmware paths | **x86_64:** OVMF / edk2-ovmf (including Fedora-style `edk2-i386-vars.fd`). **arm64:** AAVMF / edk2-armvirt |
+| KVM | `/dev/kvm` readable by the barkvisor user (group `kvm`) for acceleration; otherwise TCG |
+
+### Distro matrix
+
+| Distro | Packages | Native `swift build` | Notes |
+|--------|----------|----------------------|--------|
+| Ubuntu 22.04–26.04+ | apt | yes | 22.04 → ubuntu2204 channel (glibc ≥ 2.35); 24.04+ → ubuntu2404; 26.04+ adds libxml2 SONAME shims |
+| Debian 12+ | apt | yes | **debian12** channel (glibc ≥ **2.36**; bookworm is fine) |
+| Arch / Arch ARM | pacman | yes | Ubuntu 24.04 tarball + ncurses/libxml2 compat; Orb images often `ID=archarm` |
+| Fedora | dnf | yes | **fedora39** channel (or distro `swift-lang`) |
+| Rocky / Alma / RHEL **10** | dnf | yes* | *glibc ≥ 2.38; **fedora39** toolchain; package names use **qemu-kvm** / xorriso |
+| Rocky / Alma / RHEL **9** | dnf | **no** (glibc 2.34) | Run a binary built on Fedora 40+ / Ubuntu 24.04+, or Docker |
+| Alpine | apk | **no** (musl) | `linux-dev.sh` can install QEMU/OVMF; run a glibc-built binary or Docker |
+
+Swift 6.2 toolchains need a **channel-appropriate** glibc minimum (not a single global 2.38 cut). The installer refuses unsupported hosts with a clear message.
 
 ### Environment overrides
 
@@ -25,7 +53,8 @@ first NAT guest.
 |----------|--------|
 | `BARKVISOR_PORT` | Listen port (default `7777`) |
 | `BARKVISOR_DATA_DIR` | Data directory (default `~/.local/share/barkvisor` in dev) |
-| `BARKVISOR_FRONTEND_DIR` | Absolute path to SPA **`dist/`** directory that contains `index.html` |
+| `BARKVISOR_FRONTEND_DIR` | Absolute path to SPA **`dist/`** that contains `index.html` |
+| `BARKVISOR_LOG_DIR` | Optional log directory override |
 
 ### OrbStack smoke host
 
@@ -34,43 +63,42 @@ orb create -a arm64 ubuntu:24.04 barkvisor-u24
 orb -m barkvisor-u24
 ```
 
+Multi-distro matrix (when Orb machines exist):
+
+```bash
+./scripts/orb-multi-distro-smoke.sh
+# or subset: ./scripts/orb-multi-distro-smoke.sh bv-deb12 bv-rocky10 bv-arch
+```
+
 ## Quick start (from source)
 
 ```bash
-# 1. Install Swift toolchain (example: extract official tarball into ~/swift)
-export PATH="$HOME/swift/usr/bin:$PATH"
-swift --version
-
-# 2. System packages (or: ./scripts/linux-dev.sh)
-sudo apt-get update
-sudo apt-get install -y build-essential pkg-config git \
-  libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
-  zlib1g-dev libzstd-dev libedit-dev uuid-dev \
-  qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage
-
-# 3. Build + automated smoke (daemon health + capabilities)
 git clone https://github.com/pmdroid/barkvisor.git
 cd barkvisor
+
+# 1. System packages + Swift + SONAME compat (all supported distros)
+./scripts/linux-dev.sh
+# or only Swift: ./scripts/install-swift-linux.sh
+source scripts/lib/linux-swift-compat.sh && barkvisor_export_swift_env
+swift --version
+
+# 2. Build + automated smoke (daemon health + capabilities)
 ./scripts/linux-smoke.sh
 
-# 4. Run for real (dev data dir: ~/.local/share/barkvisor)
+# 3. Run (dev data dir: ~/.local/share/barkvisor)
 swift run BarkVisorApp
 ```
 
-Open `http://localhost:7777` and complete the setup wizard (or use the guest
-smoke script below for an API-driven path).
+On hosts newer than the latest Swift-supported LTS (e.g. Ubuntu **26.04+**), Arch, or similar, the installer uses the nearest official channel and adds library shims under `/usr/local/lib/barkvisor/compat`. Smoke, install, and systemd set `LD_LIBRARY_PATH` when needed.
+
+Open `http://localhost:7777` and complete the setup wizard (or use a guest smoke script below for an API-driven path).
 
 ### Frontend SPA (`BARKVISOR_FRONTEND_DIR`)
 
-The API works without a UI, but the setup wizard and VM console need the built
-Vue SPA. Prefer the helper script:
+The API works without a UI, but the setup wizard and VM console need the built Vue SPA:
 
 ```bash
 ./scripts/linux-frontend-serve.sh
-# prints:
-#   SPA dist: /path/to/repo/frontend/dist
-#   export BARKVISOR_FRONTEND_DIR="..."
-
 export BARKVISOR_FRONTEND_DIR="$(pwd)/frontend/dist"
 swift run BarkVisorApp
 ```
@@ -85,11 +113,10 @@ Manual build (bun preferred):
 
 ```bash
 cd frontend && bun install && bun run build
-# dist is frontend/dist — must contain index.html
 export BARKVISOR_FRONTEND_DIR="$PWD/dist"
 ```
 
-Resolution order inside the daemon (`VaporServer.findFrontendDist`):
+Resolution order (`VaporServer.findFrontendDist`):
 
 1. **`BARKVISOR_FRONTEND_DIR`** if it contains `index.html`
 2. Installed share path (`Config.frontendDir`)
@@ -97,106 +124,141 @@ Resolution order inside the daemon (`VaporServer.findFrontendDist`):
 
 ### Optional: Docker (daemon + SPA)
 
-Multi-stage image: Bun builds `frontend/dist`, Swift builds `BarkVisorApp`,
-runtime copies both into the **install layout** (`/usr/local/bin/barkvisor` +
-`/usr/local/share/barkvisor/frontend/dist`).
-
 ```bash
 docker build -t barkvisor:dev -f Dockerfile .
-# Prefer KVM when available
 docker run --rm -it --device /dev/kvm -p 7777:7777 barkvisor:dev
-# TCG fallback (slow) if no /dev/kvm
+# TCG if no KVM:
 docker run --rm -it -p 7777:7777 barkvisor:dev
 ```
 
-Open `http://localhost:7777` — SPA is served from the image share path (no
-`BARKVISOR_FRONTEND_DIR` required). KVM passthrough needs nested virt or bare
-metal; without it the daemon uses TCG when `/dev/kvm` is missing.
+Open `http://localhost:7777` — SPA is served from the image share path.
 
-### systemd install (root)
+### Packages (.deb / .rpm / tarball / Arch)
+
+Preferred install on supported distros is a **built package** (bundles the
+daemon, SPA, Swift runtime libs, and a systemd unit).
+
+| Format | Distros | How to install |
+|--------|---------|----------------|
+| **`.deb`** | Ubuntu, Debian | `sudo dpkg -i barkvisor_*_amd64.deb` (or `*_arm64.deb`) |
+| **`.rpm`** | Fedora, Rocky, Alma, RHEL | `sudo rpm -Uvh barkvisor-*.rpm` or `dnf install ./barkvisor-*.rpm` |
+| **`.tar.gz`** | Any glibc host | extract + `sudo ./install.sh` |
+| **Arch `PKGBUILD`** | Arch / Arch ARM | `makepkg -si` from the package build output |
+
+Build on a Linux host (or via Docker from macOS):
 
 ```bash
-# 1. Release binary
+# Native (Linux build machine with Swift + dpkg-dev / rpm-build)
 swift build -c release --product BarkVisorApp
-
-# 2. SPA (optional but recommended for UI)
 ./scripts/linux-frontend-serve.sh
+./scripts/build-linux-packages.sh
+# → build/linux-packages/*.deb *.rpm *.tar.gz
 
-# 3. Dry-run on Orb (no root / no changes)
-DRY_RUN=1 ./scripts/install-linux.sh .build/release/BarkVisorApp
+# From macOS / any host with Docker (Ubuntu 24.04 builder):
+./scripts/build-linux-packages.sh --docker
+# or: ./scripts/build-linux-packages-docker.sh
 
-# 4. Install + enable
-sudo FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh .build/release/BarkVisorApp
-# Install unit only (do not start yet):
-# sudo SKIP_START=1 FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh ...
+# Subset of formats:
+FORMATS=tar,deb VERSION=1.0.0 ./scripts/build-linux-packages.sh
 ```
 
-Layout after install:
+CI: workflow **Linux Packages** (`.github/workflows/linux-packages.yml`) builds
+artifacts on tag `v*` or manual `workflow_dispatch` (amd64; arm64 when runners
+are available).
+
+Packages install under `/usr/local` (same layout as `install-linux.sh`) and
+enable `barkvisor.service`. QEMU/OVMF remain **distro packages** (Recommends).
+
+### systemd install from source (root)
+
+```bash
+swift build -c release --product BarkVisorApp
+./scripts/linux-frontend-serve.sh
+
+DRY_RUN=1 ./scripts/install-linux.sh .build/release/BarkVisorApp
+sudo FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh .build/release/BarkVisorApp
+```
 
 | Path | Purpose |
 |------|---------|
-| `/usr/local/bin/barkvisor` | Daemon (sets `Config.prefix` → `/usr/local`) |
-| `/usr/local/share/barkvisor/frontend/dist` | SPA (`Config.frontendDir`) |
-| `/etc/barkvisor/barkvisor.env` | Port / data overrides |
+| `/usr/local/bin/barkvisor` | Daemon (`Config.prefix` → `/usr/local`) |
+| `/usr/local/share/barkvisor/frontend/dist` | SPA |
+| `/usr/local/lib/barkvisor/swift` | Bundled Swift runtime (packages) |
+| `/usr/local/lib/barkvisor/compat` | SONAME shims (libxml2, ncurses, …) |
+| `/etc/barkvisor/barkvisor.env` | Port / data / `LD_LIBRARY_PATH` |
 | `/var/lib/barkvisor` | Data + DB |
-| `barkvisor.service` | systemd unit (`EnvironmentFile=-/etc/barkvisor/barkvisor.env`) |
+| `barkvisor.service` | systemd unit |
 
 ```bash
 journalctl -u barkvisor.service -f
 systemctl status barkvisor.service
 ```
 
-## First NAT guest boot
+## First guest
 
-A default NAT network is seeded as **"Default NAT"** (`isDefault: true`) on
-first launch. Bridged mode is available when a host bridge exists (see
-capabilities + Network settings).
+A default NAT network (**Default NAT**) is seeded on first launch. Bridged mode is available when a host bridge exists (see capabilities + Network settings).
 
-### Automated guest smoke
+### Guest smokes
 
 ```bash
-# Structural check only (no server):
+# Structural check only (no server)
 DRY_RUN=1 ./scripts/linux-guest-smoke.sh
 
-# Full API path: build → setup → create NAT VM → start → assert running/starting
+# API path: setup → create NAT VM → start
 ./scripts/linux-guest-smoke.sh
 
-# Bootable guest (recommended): provide a cloud image URL
-BARKVISOR_CLOUD_IMAGE_URL='https://example.com/ubuntu-24.04-server-cloudimg-arm64.img' \
+# With a real cloud image (arm64 or x86_64 URL matching the host)
+BARKVISOR_CLOUD_IMAGE_URL='https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img' \
   ./scripts/linux-guest-smoke.sh
+
+# Full boot + cloud-init + SSH (TCG is slow without KVM)
+SKIP_BUILD=1 ALLOW_SSH_TIMEOUT=1 ./scripts/linux-real-guest-smoke.sh
 ```
 
-What the script does:
+Create requires `isoId`, `cloudImageId`, or `existingDiskId` — bare `diskSizeGB` alone is rejected. Use a cloud image for a real boot.
 
-1. Builds `BarkVisorApp` (or reuses `.build/*/BarkVisorApp` with `SKIP_BUILD=1`)
-2. Starts the server on a free port with a temp `BARKVISOR_DATA_DIR`
-3. Completes setup if needed: `POST /api/setup/admin`, `POST /api/setup/bridge/skip`,
-   `POST /api/setup/complete` (skips bridge — required on Linux)
-4. Logs in via `POST /api/auth/login` when no setup token was returned
-5. `GET /api/networks` and selects the default NAT network
-6. Creates a small VM (`linux-arm64` on aarch64, `linux-amd64` on x86_64):
-   - **With** `BARKVISOR_CLOUD_IMAGE_URL`: `POST /api/images/download` then
-     `POST /api/vms` with `cloudImageId` + ~2 GB disk
-   - **Without**: `POST /api/disks` then `POST /api/vms` with `existingDiskId`
-     (QEMU start still exercises the NAT guest path; the disk has no OS)
-7. `POST /api/vms/:id/start` and checks `GET /api/vms/:id` for `running` or `starting`
-8. On failure, prints the server log tail
+### Manual first guest (UI / API)
 
-Useful env vars: `BARKVISOR_ADMIN_USER`, `BARKVISOR_ADMIN_PASSWORD`,
-`BARKVISOR_VM_TYPE`, `DISK_SIZE_GB`, `CPU_COUNT`, `MEMORY_MB`, `ALLOW_NO_QEMU=1`.
+1. Complete setup (wizard or smoke). On Linux you can **skip** managed bridge helper install.
+2. Confirm `GET /api/networks` shows Default NAT (or create a bridged network).
+3. Import an image (`POST /api/images/download` or Image Library). Use `arch: "arm64"` or `"x86_64"`.
+4. Create a VM with host-matched `vmType` (`linux-arm64` / `linux-amd64`), network, and `cloudImageId` + `diskSizeGB`.
+5. Start the VM; open console/VNC.
 
-**Note:** create requires `isoId`, `cloudImageId`, or `existingDiskId` — a bare
-`diskSizeGB` alone is rejected by `VMLifecycleService`. Use a cloud image URL
-for a real boot, or the blank-disk path for a process/start smoke.
+### Packages by family (if not using `linux-dev.sh`)
 
-### Manual first guest (API / UI)
+**Debian/Ubuntu (example arm64):**
 
-1. Complete setup (wizard or smoke script). Skip bridge install on Linux.
-2. Confirm `GET /api/networks` shows Default NAT.
-3. Import a cloud image (`POST /api/images/download` or Image Library UI).
-4. Create a VM with `vmType: "linux-arm64"` (or host-matched type), NAT
-   `networkId`, and `cloudImageId` + `diskSizeGB`.
-5. Start the VM; open console/VNC from the UI or API.
+```bash
+sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 \
+  jq curl ca-certificates openssh-client genisoimage ovmf
+```
+
+**Debian/Ubuntu (x86_64):**
+
+```bash
+sudo apt-get install -y qemu-system-x86 qemu-utils ovmf \
+  jq curl ca-certificates openssh-client genisoimage
+```
+
+**Fedora:**
+
+```bash
+sudo dnf install -y qemu-system-x86 qemu-img edk2-ovmf genisoimage xorriso
+```
+
+**Rocky / Alma / RHEL:**
+
+```bash
+sudo dnf install -y qemu-kvm qemu-img edk2-ovmf genisoimage xorriso
+# Binary is often only /usr/libexec/qemu-kvm — BarkVisor resolves that path
+```
+
+**Arch:**
+
+```bash
+sudo pacman -S --needed qemu-base edk2-ovmf cdrtools
+```
 
 ## Data directories
 
@@ -204,131 +266,26 @@ for a real boot, or the blank-disk path for a process/start smoke.
 |------|------|
 | Development | `~/.local/share/barkvisor` |
 | Installed | `/var/lib/barkvisor` |
-| Sockets | `/var/run/barkvisor` (installed) or temp dir (dev) |
+| Sockets | `/var/run/barkvisor` (installed) or temp (dev) |
 
 ## Capabilities
 
-`GET /api/system/capabilities` (public) returns flags such as:
-
-- `supportsBridgedNetworking` — `true` (QEMU `-netdev bridge`; host bridge + helper ACL)  
-- `supportsManagedBridgeDaemon` — `false` on Linux (no socket_vmnet XPC lifecycle)  
-- `supportsUSBPassthrough` — `true` (`lsusb` + `usb-host`)  
-- `supportsInAppUpdate` — `false`  
-- `guestTypes` — table of stable `vmType` IDs (linux-arm64, …)  
-
-Managed bridge **daemon** polling runs only on macOS (15s interval). Linux does
-**not** run a 5s sysfs bridge-sync loop.
-- `accelerator` — `kvm` if `/dev/kvm`, else `tcg`  
-- `hostArch` — `arm64` / `x86_64`
-
-## Status on main
-
-The Linux foundation stack (platform helpers, privilege stubs, capabilities UI,
-build fixes, docs/Dockerfile, systemd install, product firmware/env/smoke, and
-complexity cuts) is **merged to `main`**. Branch from `main` for new work; see
-`docs/agent-handoff-linux-port.md` for milestones and follow-up themes.
-
-## Phase A: usable NAT guests
-
-### OrbStack (dev / nested — usually **no** `/dev/kvm`)
-
-```bash
-orb -m barkvisor-u24   # Ubuntu 24.04 arm64 recommended
-export PATH="$HOME/swift/usr/bin:$PATH"
-cd /path/to/barkvisor
-
-# Health + capabilities (accelerator reports tcg without KVM)
-./scripts/linux-smoke.sh
-
-# Blank disk: proves QEMU start path
-SKIP_BUILD=1 ./scripts/linux-guest-smoke.sh
-
-# Real Ubuntu 24.04 minimal cloud image + cloud-init + SSH port-forward
-# TCG boots are slow; ALLOW_SSH_TIMEOUT=1 accepts QEMU running if SSH is late
-SKIP_BUILD=1 ALLOW_SSH_TIMEOUT=1 ./scripts/linux-real-guest-smoke.sh
-```
-
-Default image URL (override with `BARKVISOR_CLOUD_IMAGE_URL`):
-
-`https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img`
-
-### Bare metal / KVM host
-
-```bash
-# ensure /dev/kvm is readable (group kvm)
-ls -l /dev/kvm
-sudo usermod -aG kvm "$USER"   # re-login after
-
-./scripts/linux-real-guest-smoke.sh
-# Expect accelerator: kvm and guest SSH within a few minutes
-```
-
-### Frontend SPA
-
-```bash
-# Build SPA and verify GET / serves HTML
-./scripts/linux-frontend-serve.sh --verify
-
-# Or run the daemon with SPA permanently for the session
-./scripts/linux-frontend-serve.sh --run
-
-# Dev: copy dist into resource search path
-./scripts/linux-frontend-serve.sh --install-dev
-```
-
-Env: `BARKVISOR_FRONTEND_DIR=/path/to/frontend/dist`
-
-### Packages (Ubuntu 24.04 arm64)
-
-```bash
-sudo apt-get install -y qemu-system-arm qemu-utils qemu-efi-aarch64 \
-  jq curl ca-certificates openssh-client genisoimage
-# optional: swtpm for Windows/TPM guests later
-```
-
-### Capabilities
-
-`GET /api/system/capabilities` (public):
+`GET /api/system/capabilities` (public) typically includes:
 
 | Field | Linux typical |
 |-------|----------------|
 | `platform` | `Linux` |
 | `accelerator` | `kvm` if `/dev/kvm`, else `tcg` |
-| `supportsBridgedNetworking` | `true` (host bridge + qemu-bridge-helper) |
-| `supportsUSBPassthrough` | `true` (`lsusb` / `usb-host`) |
+| `hostArch` | `arm64` / `x86_64` |
+| `supportsBridgedNetworking` | `true` (host bridge + helper ACL) |
+| `supportsManagedBridgeDaemon` | `false` (no socket_vmnet XPC) |
+| `supportsUSBPassthrough` | `true` (`lsusb` + `usb-host`) |
 | `supportsInAppUpdate` | `false` |
-
-## Roadmap (after Phase A)
-
-- Deb/tarball + systemd E2E install
-- x86_64 host + guests
-- Managed bridge-daemon lifecycle split (product capability vs macOS XPC)
-- Windows guests
-
-## Limitations (MVP)
-
-- Bridged networking needs a host bridge (`br0`) and qemu-bridge-helper ACL (not socket_vmnet)
-- USB needs `usbutils` + permissions (udev/plugdev)
-- No in-app package updates
-- Not full macOS feature parity (no managed bridge helper daemon on Linux)
-- Firmware/QEMU still resolved via `PATH` / common distro paths
-- Windows guests and TPM may need extra packages (`swtpm`) not covered here
-- Image download API currently validates `arch: "arm64"` only
-
-## Related scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/linux-dev.sh` | Install build + QEMU packages (Ubuntu) |
-| `scripts/linux-smoke.sh` | Build + health/capabilities smoke |
-| `scripts/linux-guest-smoke.sh` | Setup + NAT VM create/start smoke |
-| `scripts/linux-real-guest-smoke.sh` | Cloud-image boot + cloud-init + SSH |
-| `scripts/linux-frontend-serve.sh` | Build SPA; `--verify` / `--run` / `--install-dev` |
-| `scripts/install-linux.sh` | systemd install (`Resources/barkvisor.service`) |
+| `guestTypes` | `linux-arm64`, `linux-amd64`, … |
 
 ## Bridged networking (QEMU bridge)
 
-Linux bridging does **not** use socket_vmnet. BarkVisor launches:
+Linux bridging does **not** use socket_vmnet. QEMU is launched with:
 
 ```text
 -netdev bridge,id=net0,br=<bridge>
@@ -342,7 +299,7 @@ Linux bridging does **not** use socket_vmnet. BarkVisor launches:
 sudo ip link add name br0 type bridge
 sudo ip link set br0 up
 sudo ip link set eth0 master br0
-sudo ip addr add 192.168.1.10/24 dev br0   # or use DHCP on br0
+sudo ip addr add 192.168.1.10/24 dev br0   # or DHCP on br0
 
 # Allow QEMU's helper to attach taps to br0
 echo 'allow br0' | sudo tee /etc/qemu/bridge.conf
@@ -355,11 +312,44 @@ In the UI: create a **bridged** network with bridge interface `br0`, then attach
 ## USB passthrough
 
 - Capability `supportsUSBPassthrough` is **true** on Linux.
-- Device list comes from `lsusb` (`usbutils` package).
-- QEMU uses `-device usb-host,vendorid=…,productid=…` (same as macOS).
-- Grant access: add user to `plugdev` / udev rules, or run with sufficient permissions.
+- Device list from `lsusb` (`usbutils`).
+- QEMU: `-device usb-host,vendorid=…,productid=…`.
+- Grant access via `plugdev` / udev rules, or sufficient permissions.
 
 ```bash
+# Debian/Ubuntu
 sudo apt-get install -y usbutils
 lsusb
 ```
+
+## Limitations
+
+- No in-app package updates (macOS only).
+- No managed bridge **daemon** (socket_vmnet / XPC); bridge uses host `br*` + qemu-bridge-helper.
+- Rocky/RHEL **9** and Alpine cannot **build** with official Swift 6.2 toolchains (runtime of a prebuilt binary is fine).
+- Windows guests / TPM may need extra packages (`swtpm`) not covered in the default smoke path.
+- Nested virt (OrbStack, many cloud VMs) often has no `/dev/kvm` → slow TCG boots.
+- Not every macOS-only helper path is mirrored (e.g. Homebrew-centric release packaging).
+
+## Related scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/linux-dev.sh` | Distro packages + Swift install (multi-distro) |
+| `scripts/install-swift-linux.sh` | Official Swift tarball + channel selection |
+| `scripts/lib/linux-distro.sh` | Distro detect, package install, glibc gates |
+| `scripts/lib/linux-swift-compat.sh` | SONAME shims + `LD_LIBRARY_PATH` |
+| `scripts/linux-smoke.sh` | Build + health / capabilities |
+| `scripts/linux-guest-smoke.sh` | Setup + NAT VM create/start |
+| `scripts/linux-real-guest-smoke.sh` | Cloud-image boot + cloud-init + SSH |
+| `scripts/linux-frontend-serve.sh` | Build SPA; `--verify` / `--run` / `--install-dev` |
+| `scripts/install-linux.sh` | systemd install from a local binary |
+| `scripts/build-linux-packages.sh` | Build `.deb` / `.rpm` / `.tar.gz` / Arch PKGBUILD |
+| `scripts/build-linux-packages-docker.sh` | Same via Docker (macOS-friendly) |
+| `scripts/orb-multi-distro-smoke.sh` | OrbStack multi-distro matrix |
+| `scripts/hetzner-cloud.py` | Ephemeral Cloud VMs for CI-style smokes |
+| `packaging/linux/` | Package metadata (debian control, rpm spec, unit, env) |
+
+## Agent / historical notes
+
+Older port milestones and branch lists live in `docs/agent-handoff-linux-port.md`. Prefer **this guide** and `GET /api/system/capabilities` for current product behavior.

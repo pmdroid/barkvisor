@@ -3,11 +3,13 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, watch, computed } from 'vue'
 import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
+import { useCapabilitiesStore } from '../stores/capabilities'
 import type { RepositoryImage } from '../api/types'
 import AppSelect from './ui/AppSelect.vue'
 
 const props = defineProps<{ repoId: string }>()
 const store = useRepositoryStore()
+const caps = useCapabilitiesStore()
 const images = ref<RepositoryImage[]>([])
 const loading = ref(false)
 const filterType = ref<string>('')
@@ -24,9 +26,20 @@ async function fetchImages() {
 
 watch(() => props.repoId, fetchImages, { immediate: true })
 
+/** Guest image arches this host can run (arm64 and/or x86_64). */
+const supportedImageArches = computed(() => {
+  const fromGuests = new Set(
+    (caps.guestTypes ?? [])
+      .map(g => g.arch)
+      .filter((a): a is string => typeof a === 'string' && a.length > 0),
+  )
+  if (fromGuests.size > 0) return fromGuests
+  return new Set([caps.hostArch || 'arm64'])
+})
+
 const filteredImages = computed(() => {
   return images.value.filter(img => {
-    if (img.arch !== 'arm64') return false
+    if (!supportedImageArches.value.has(img.arch)) return false
     if (filterType.value && img.imageType !== filterType.value) return false
     return true
   })

@@ -1,9 +1,11 @@
 # Development Environment Setup
 
 This guide covers building and running BarkVisor from source for local
-development.
+development on **macOS**. For **Linux** multi-distro hosts, use
+**[getting-started-linux.md](getting-started-linux.md)** (`./scripts/linux-dev.sh`
+installs packages + Swift and runs smoke tests).
 
-## Prerequisites
+## Prerequisites (macOS)
 
 | Requirement      | Minimum version | Notes                                   |
 |------------------|-----------------|-----------------------------------------|

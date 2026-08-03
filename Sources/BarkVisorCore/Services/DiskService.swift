@@ -84,24 +84,66 @@ public enum DiskService {
             }
         }
 
-        // Resize if requested
+        // Grow only if requested size is larger than the cloned image virtual size.
+        // Cloud/OVA images (e.g. HAOS) often ship at 32+ GiB; asking for a smaller
+        // disk would invoke a shrink, which qemu-img refuses without --shrink and
+        // would destroy guest data if forced.
         if let sizeGB, sizeGB > 0 {
-            let resize = try PlatformProcess.run(
-                executable: qemuImg,
-                arguments: ["resize", destPath.path, "\(sizeGB)G"],
-                timeout: 300,
-            )
-            guard resize.succeeded else {
-                throw BarkVisorError.diskCreateFailed(
-                    "qemu-img resize failed: \(resize.stderrString)",
-                )
-            }
+            try growIfNeeded(path: destPath.path, sizeGB: sizeGB, qemuImg: qemuImg)
         }
+
+        // HAOS and some cloud images ship with backup GPT not at the end of a
+        // larger virtual disk; UEFI then fails with BdsDxe "No bootable option".
+        repairGPTBackupHeaderIfPossible(path: destPath.path)
     }
 
-    /// Resize a disk image to a new size
+    /// Relocate GPT secondary header to the end of the image when `sgdisk` exists.
+    /// Best-effort: never fails provision if tools/nbd are unavailable.
+    private static func repairGPTBackupHeaderIfPossible(path: String) {
+        let sgdisk = ["/usr/sbin/sgdisk", "/sbin/sgdisk", "/usr/bin/sgdisk"]
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+        guard let sgdisk else { return }
+
+        // Prefer direct sgdisk on the file (works for some setups); fall back quietly.
+        // `sgdisk -e` moves the backup GPT to the end of the device.
+        let result = try? PlatformProcess.run(
+            executable: URL(fileURLWithPath: sgdisk),
+            arguments: ["-e", path],
+            timeout: 60,
+        )
+        if result?.succeeded == true {
+            return
+        }
+        // qcow2 usually needs nbd; skip without root rather than failing clone.
+        _ = path
+    }
+
+    /// Resize a disk image to a new size (grow only — never shrink without an explicit API).
     public static func resize(path: String, sizeGB: Int) throws {
         let qemuImg = try resolveQEMUImg()
+        try growIfNeeded(path: path, sizeGB: sizeGB, qemuImg: qemuImg)
+    }
+
+    /// Expand `path` to at least `sizeGB` GiB. No-op when already large enough.
+    /// Never shrinks: qemu-img requires `--shrink` and would destroy guest data.
+    private static func growIfNeeded(path: String, sizeGB: Int, qemuImg: URL) throws {
+        let requestedBytes = Int64(sizeGB) * 1_073_741_824
+        let current: Int64
+        do {
+            current = try getVirtualSize(path: path)
+        } catch {
+            // Cannot determine size — skip resize rather than risk a shrink.
+            Log.server.warning(
+                "qemu-img info failed for \(path); skipping resize to avoid accidental shrink: \(error)",
+            )
+            return
+        }
+        if current <= 0 {
+            return
+        }
+        if current >= requestedBytes {
+            return
+        }
         let result = try PlatformProcess.run(
             executable: qemuImg,
             arguments: ["resize", path, "\(sizeGB)G"],
@@ -109,6 +151,22 @@ public enum DiskService {
         )
         guard result.succeeded else {
             throw BarkVisorError.diskCreateFailed("qemu-img resize failed: \(result.stderrString)")
+        }
+    }
+
+    /// Coerce qemu-img JSON numbers (Int / Int64 / NSNumber / Double) to Int64.
+    /// JSONSerialization on Linux rarely yields `Int64` directly — casting only
+    /// `as? Int64` made virtual size look like 0/file-size and triggered false shrinks.
+    /// Package-visible for unit tests.
+    package static func jsonInt64(_ value: Any?) -> Int64? {
+        switch value {
+        case let v as Int64: return v
+        case let v as Int: return Int64(v)
+        case let v as UInt64: return Int64(clamping: v)
+        case let v as NSNumber: return v.int64Value
+        case let v as Double: return Int64(v)
+        case let v as Float: return Int64(v)
+        default: return nil
         }
     }
 
@@ -121,10 +179,10 @@ public enum DiskService {
             timeout: 60,
         )
         if let json = try JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
-           let virtualSize = json["virtual-size"] as? Int64 {
+           let virtualSize = jsonInt64(json["virtual-size"]), virtualSize > 0 {
             return virtualSize
         }
-        // Fallback to file size
+        // Fallback to file size (sparse/qcow2 physical size — last resort only)
         let attrs = try FileManager.default.attributesOfItem(atPath: path)
         return attrs[.size] as? Int64 ?? 0
     }
@@ -144,8 +202,8 @@ public enum DiskService {
         else {
             throw BarkVisorError.diskCreateFailed("qemu-img info returned invalid JSON")
         }
-        let virtualSize = (json["virtual-size"] as? Int64) ?? 0
-        let actualSize = (json["actual-size"] as? Int64) ?? 0
+        let virtualSize = jsonInt64(json["virtual-size"]) ?? 0
+        let actualSize = jsonInt64(json["actual-size"]) ?? 0
         return DiskImageInfo(virtualSize: virtualSize, actualSize: actualSize)
     }
 

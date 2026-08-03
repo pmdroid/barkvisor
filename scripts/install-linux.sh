@@ -20,6 +20,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/linux-swift-compat.sh
+source "$ROOT/scripts/lib/linux-swift-compat.sh"
+
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_START="${SKIP_START:-0}"
 
@@ -27,6 +30,7 @@ PREFIX="${PREFIX:-/usr/local}"
 BIN_DST="${PREFIX}/bin/barkvisor"
 SHARE_DST="${PREFIX}/share/barkvisor"
 FRONTEND_DST="${SHARE_DST}/frontend/dist"
+COMPAT_DST="${PREFIX}/lib/barkvisor/compat"
 UNIT_DST="/usr/local/lib/systemd/system/barkvisor.service"
 ENV_DIR="/etc/barkvisor"
 ENV_FILE="${ENV_DIR}/barkvisor.env"
@@ -96,7 +100,7 @@ fi
 
 need_root
 
-run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR"
+run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR" "$COMPAT_DST"
 run install -m 0755 "$BIN_SRC" "$BIN_DST"
 
 if [[ -n "$FRONTEND_SRC" ]]; then
@@ -114,6 +118,14 @@ if [[ -n "$FRONTEND_SRC" ]]; then
   fi
 fi
 
+# SONAME shims (Ubuntu 26+ libxml2.so.16 → libxml2.so.2, etc.)
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: install SONAME compat under $COMPAT_DST"
+else
+  export BARKVISOR_COMPAT_DIR="$COMPAT_DST"
+  barkvisor_ensure_swift_compat || true
+fi
+
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: create system user barkvisor if missing"
   echo "DRY_RUN: usermod -aG kvm barkvisor (if group exists)"
@@ -124,6 +136,9 @@ else
   chown -R barkvisor:barkvisor "$DATA_DIR" "$RUN_DIR"
   if [[ -d "$SHARE_DST" ]]; then
     chown -R root:root "$SHARE_DST"
+  fi
+  if [[ -d "$COMPAT_DST" ]]; then
+    chown -R root:root "$COMPAT_DST"
   fi
 fi
 
@@ -140,8 +155,15 @@ BARKVISOR_DATA_DIR=${DATA_DIR}
 # Uncomment to force a custom dist path:
 # BARKVISOR_FRONTEND_DIR=${FRONTEND_DST}
 HOME=${DATA_DIR}
+# SONAME shims for hosts newer than the Swift LTS toolchain (see scripts/lib/linux-swift-compat.sh).
+LD_LIBRARY_PATH=${COMPAT_DST}
 EOF
     chmod 0644 "$ENV_FILE"
+  else
+    # Ensure LD_LIBRARY_PATH is present on upgrades of older installs.
+    if ! grep -qE '^LD_LIBRARY_PATH=' "$ENV_FILE" 2>/dev/null; then
+      echo "LD_LIBRARY_PATH=${COMPAT_DST}" >>"$ENV_FILE"
+    fi
   fi
 fi
 

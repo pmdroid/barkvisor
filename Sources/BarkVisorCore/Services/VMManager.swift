@@ -114,6 +114,9 @@ public actor VMManager: VMStateQuerying {
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)
 
+        // Fail fast if hostfwd ports are already bound (another VM, or orphaned QEMU).
+        try Self.assertHostPortsAvailable(for: loaded.vm)
+
         // Update state to starting and clear pending changes
         try await updateState(vmID: vmID, state: "starting")
         try await dbPool.write { db in

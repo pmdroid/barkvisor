@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1
+# Multi-stage: frontend + Swift release binary + package tooling (deb/rpm/tar).
+#
+# Used by scripts/build-linux-packages-docker.sh
+ARG SWIFT_VERSION=6.2.3
+ARG UBUNTU_VERSION=24.04
+ARG BUN_VERSION=1.2.5
+
+# ---------------------------------------------------------------------------
+FROM oven/bun:${BUN_VERSION}-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/bun.lock* frontend/package-lock.json* ./
+RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then bun install; \
+    else bun install; fi
+COPY frontend/ ./
+RUN bun run build && test -f dist/index.html
+
+# ---------------------------------------------------------------------------
+FROM swift:${SWIFT_VERSION}-noble AS build
+WORKDIR /src
+COPY Package.swift Package.resolved* .swift-version* ./
+COPY Sources ./Sources
+COPY Tests ./Tests
+COPY Resources ./Resources
+COPY repos ./repos
+COPY --from=frontend /frontend/dist ./Sources/BarkVisor/Resources/frontend/dist
+RUN swift build -c release --product BarkVisorApp \
+    && install -d /out \
+    && cp -a .build/release/BarkVisorApp /out/BarkVisorApp
+
+# ---------------------------------------------------------------------------
+FROM ubuntu:${UBUNTU_VERSION} AS package
+ARG SWIFT_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl binutils \
+      dpkg-dev fakeroot \
+      rpm \
+      libcurl4 libxml2 libsqlite3-0 libncurses6 libzstd1 libedit2 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+# Swift runtime libs from the official toolchain image
+COPY --from=build /usr/lib/swift /usr/lib/swift
+
+WORKDIR /src
+COPY scripts ./scripts
+COPY packaging ./packaging
+COPY Resources ./Resources
+COPY --from=build /out/BarkVisorApp /src/.build/release/BarkVisorApp
+COPY --from=frontend /frontend/dist /src/frontend/dist
+RUN chmod +x /src/scripts/build-linux-packages.sh \
+    && chmod +x /src/scripts/lib/linux-package-stage.sh \
+    && chmod +x /src/packaging/linux/debian/postinst \
+    && chmod +x /src/packaging/linux/debian/prerm \
+    && chmod +x /src/packaging/linux/debian/postrm
+
+# Default command: produce packages into /out
+ENV FORMATS=tar,deb,rpm \
+    OUT_DIR=/out \
+    FRONTEND_DIST=/src/frontend/dist \
+    BUNDLE_SWIFT=1 \
+    SWIFT_LINUX_LIBDIR=/usr/lib/swift/linux
+ENTRYPOINT ["/bin/bash", "/src/scripts/build-linux-packages.sh"]
+CMD []

@@ -56,8 +56,8 @@ public enum ImageService {
         guard ["iso", "cloud-image"].contains(request.imageType) else {
             throw BarkVisorError.badRequest("imageType must be 'iso' or 'cloud-image'")
         }
-        guard request.arch == "arm64" else {
-            throw BarkVisorError.badRequest("arch must be 'arm64'")
+        guard request.arch == "arm64" || request.arch == "x86_64" else {
+            throw BarkVisorError.badRequest("arch must be 'arm64' or 'x86_64'")
         }
         guard let sourceURL = URL(string: request.url) else {
             throw BarkVisorError.badRequest("Invalid URL")
