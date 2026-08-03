@@ -199,5 +199,6 @@ tag `v*` or manual dispatch. Full install matrix, layout, and runtime notes:
 [getting-started-linux.md](getting-started-linux.md) and
 [packaging/linux/README.md](../packaging/linux/README.md).
 
-**Not included in Linux packages:** in-app update channel (macOS-only), bundled
-QEMU (distro Recommends), or socket_vmnet / XPC helper.
+Linux packages ship the daemon, SPA, and Swift runtime. QEMU/OVMF come from the
+distro (Recommends). Bridged networking uses the host bridge path (no separate
+helper binary to bundle).

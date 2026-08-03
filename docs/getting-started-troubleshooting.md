@@ -83,7 +83,7 @@ Full multi-distro matrix and package install: [getting-started-linux.md](getting
 - **Swift / glibc refused:** Rocky/RHEL 9 and Alpine cannot use official Swift 6.2 toolchains; build on Ubuntu 24.04+ / Debian 12+ / Fedora / Rocky 10+ or run a prebuilt binary / Docker. See the [Linux distro matrix](getting-started-linux.md#distro-matrix).
 - **No `qemu-system-x86_64` on Rocky:** install `qemu-kvm`; BarkVisor resolves `/usr/libexec/qemu-kvm`.
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper`. Linux does **not** use socket_vmnet / XPC.
+- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper` (Linux host-bridge path).
 - **Blank SPA after package install:** confirm `BARKVISOR_FRONTEND_DIR` or `/usr/local/share/barkvisor/frontend/dist` has `index.html`; packages and `install-linux.sh` place the SPA there.
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the service user to group `kvm` when KVM is present.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`.
@@ -209,9 +209,9 @@ Each bridge has a unix socket from the `socket_vmnet` daemon. If a VM cannot con
 
 Bridge state is synced periodically by `BridgeSyncService`. XPC errors (`XPC connection interrupted` / `invalidated`) usually mean a team ID mismatch, missing plist, or helper not approved in System Settings. Timeouts: 5 s general, 15 s for bridge install/remove/start/stop.
 
-### Linux: host bridge (no XPC)
+### Linux: host bridge
 
-On **Linux**, `supportsManagedBridgeDaemon` is **false**. Bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. See [Bridged networking on Linux](getting-started-linux.md#bridged-networking-qemu-bridge). Do not expect socket_vmnet or launchd helper paths to exist.
+On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. See [Bridged networking on Linux](getting-started-linux.md#bridged-networking-qemu-bridge).
 
 ## Frontend
 
