@@ -5,13 +5,15 @@ connecting to it, and managing its lifecycle in BarkVisor.
 
 ## Prerequisites
 
-- BarkVisor is installed and the daemon is running (`sudo launchctl list | grep barkvisor`).
+- BarkVisor is installed and the daemon is running:
+  - **macOS:** `sudo launchctl list | grep barkvisor`
+  - **Linux:** `systemctl status barkvisor.service` (or `swift run BarkVisorApp` in dev)
 - The server is listening on port 7777 (default).
 - At least one OS image is available, or you are ready to download/upload one.
-- QEMU is available. Release builds bundle QEMU under `/usr/local/libexec/barkvisor/`. For
-  development builds (via `swift run`), install it with `brew install qemu` --
-  BarkVisor resolves binaries from the installed prefix first, then Homebrew, then
-  `$PATH`.
+- QEMU is available:
+  - **macOS release:** bundled under `/usr/local/libexec/barkvisor/`
+  - **macOS dev:** `brew install qemu` (Homebrew / `$PATH`)
+  - **Linux:** distro packages via `./scripts/linux-dev.sh` or package Recommends (see [Linux guide](getting-started-linux.md))
 
 ## Getting an OS Image
 
@@ -22,7 +24,7 @@ BarkVisor supports two image types:
 | `iso`         | Installer ISO (manual OS install via VNC)            |
 | `cloud-image` | Pre-built cloud image (automated via cloud-init)    |
 
-Architecture is always `arm64` (Apple Silicon / QEMU aarch64).
+Architecture follows the **host**: `arm64` on Apple Silicon and Linux aarch64; `x86_64` on Linux amd64 hosts. Pick catalog images and `vmType` (`linux-arm64` / `linux-amd64`) that match `GET /api/system/capabilities` (`hostArch`).
 
 ### Downloading from a Repository
 
@@ -42,7 +44,7 @@ protocol. The frontend uses `tus-js-client` to upload images in 50 MB chunks.
 
 1. Go to **Images** and click **Upload**.
 2. Select a local ISO or cloud image file.
-3. Provide a name, image type (`iso` or `cloud-image`), and arch (`arm64`).
+3. Provide a name, image type (`iso` or `cloud-image`), and arch (`arm64` or `x86_64`).
 4. The upload streams to the server in chunks. If the connection drops, resume
    from where it left off -- the server tracks the byte offset.
 5. When the upload completes, the image status transitions to `ready`.

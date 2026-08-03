@@ -1,8 +1,8 @@
 # Linux
 
-> **Status:** first-class multi-distro support for headless hosts. Run the daemon + SPA, create and manage VMs (NAT and bridge), use the image library (arm64 and x86_64), serial console / VNC, cloud-init, USB passthrough (`lsusb`), and systemd install. **In-app package updates** remain macOS-only. Live flags: `GET /api/system/capabilities`.
+> **Status (first-class multi-distro):** headless daemon + SPA on supported glibc distros. Create and manage VMs (NAT and bridge), image library (arm64 and x86_64), serial console / VNC, cloud-init, USB passthrough (`lsusb`), **`.deb` / `.rpm` / tarball / Arch** packages, and systemd install. **In-app package updates** and the **socket_vmnet XPC helper** remain macOS-only. Live flags: `GET /api/system/capabilities`.
 
-This guide covers requirements, the distro matrix, day-one source setup, SPA serve, Docker, systemd install, first guest, networking, and known limits.
+This guide covers requirements, the distro matrix, day-one source setup, SPA serve, Docker, packages, systemd install, first guest, networking, and known limits.
 
 ## What works on Linux
 

@@ -1,6 +1,13 @@
 # Installation
 
-This page covers **macOS** package install. For multi-distro **Linux** (source build, systemd, Docker, distro matrix), see **[getting-started-linux.md](getting-started-linux.md)**.
+This page covers **macOS** package install (Apple Silicon `.pkg` / standalone archive).
+
+| Platform | Guide |
+|----------|--------|
+| **macOS** | This page |
+| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — multi-distro matrix, `.deb` / `.rpm` / tarball packages, systemd, Docker, source build |
+
+**Linux support status (summary):** first-class headless daemon + SPA on Ubuntu, Debian, Arch, Fedora, Rocky/Alma/RHEL **10+** (native Swift build); Alpine and Rocky/RHEL **9** are **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, arm64/x86_64 images work. **In-app updates** and the **socket_vmnet XPC helper** remain macOS-only.
 
 ## System Requirements (macOS)
 
