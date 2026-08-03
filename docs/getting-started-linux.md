@@ -1,8 +1,8 @@
 # Linux
 
-> **Status:** first-class multi-distro support for headless hosts. Run the daemon + SPA, create and manage VMs (NAT and bridge), use the image library (arm64 and x86_64), serial console / VNC, cloud-init, USB passthrough (`lsusb`), and systemd install. **In-app package updates** remain macOS-only. Live flags: `GET /api/system/capabilities`.
+> **Status (first-class multi-distro):** headless daemon + SPA on supported glibc distros. Create and manage VMs (NAT and bridge), image library (arm64 and x86_64), serial console / VNC, cloud-init, USB passthrough (`lsusb`), **`.deb` / `.rpm` / tarball / Arch** packages, and systemd install. Live flags: `GET /api/system/capabilities`.
 
-This guide covers requirements, the distro matrix, day-one source setup, SPA serve, Docker, systemd install, first guest, networking, and known limits.
+This guide covers requirements, the distro matrix, day-one source setup, SPA serve, Docker, packages, systemd install, first guest, networking, and known limits.
 
 ## What works on Linux
 
@@ -11,15 +11,15 @@ This guide covers requirements, the distro matrix, day-one source setup, SPA ser
 | Daemon + JWT auth + API | Yes |
 | Vue SPA (setup wizard, console, VNC) | Yes (`BARKVISOR_FRONTEND_DIR` or install layout) |
 | NAT + port forwards | Yes (default “Default NAT”) |
-| Bridged networking | Yes (host bridge + `qemu-bridge-helper`; not socket_vmnet) |
+| Bridged networking | Yes (host bridge + `qemu-bridge-helper`) |
 | USB passthrough | Yes (`usbutils` / `lsusb`) |
 | Image download (arm64 **and** x86_64) | Yes |
 | HAOS / cloud images / ISOs | Yes (UEFI OVMF or AAVMF; KVM when available) |
 | Cloud-init seed ISO | Yes (`mkisofs` / `genisoimage` / `xorrisofs`) |
+| Acceleration | KVM when `/dev/kvm` is available; otherwise TCG |
 | systemd unit install | Yes (`scripts/install-linux.sh`) |
 | Docker multi-stage image | Yes |
-| In-app updates | No (macOS only) |
-| Managed bridge helper daemon (socket_vmnet / XPC) | No (macOS only) |
+| Packages | `.deb` / `.rpm` / tarball / Arch; QEMU from distro packages |
 
 ## Requirements
 
@@ -219,7 +219,7 @@ Create requires `isoId`, `cloudImageId`, or `existingDiskId` — bare `diskSizeG
 
 ### Manual first guest (UI / API)
 
-1. Complete setup (wizard or smoke). On Linux you can **skip** managed bridge helper install.
+1. Complete setup (wizard or smoke). Bridged networking is optional and uses a host bridge (no separate helper install).
 2. Confirm `GET /api/networks` shows Default NAT (or create a bridged network).
 3. Import an image (`POST /api/images/download` or Image Library). Use `arch: "arm64"` or `"x86_64"`.
 4. Create a VM with host-matched `vmType` (`linux-arm64` / `linux-amd64`), network, and `cloudImageId` + `diskSizeGB`.
@@ -277,15 +277,14 @@ sudo pacman -S --needed qemu-base edk2-ovmf cdrtools
 | `platform` | `Linux` |
 | `accelerator` | `kvm` if `/dev/kvm`, else `tcg` |
 | `hostArch` | `arm64` / `x86_64` |
-| `supportsBridgedNetworking` | `true` (host bridge + helper ACL) |
-| `supportsManagedBridgeDaemon` | `false` (no socket_vmnet XPC) |
+| `supportsBridgedNetworking` | `true` (host bridge + qemu-bridge-helper ACL) |
+| `supportsManagedBridgeDaemon` | `false` (Linux uses the host bridge path; macOS uses a managed helper) |
 | `supportsUSBPassthrough` | `true` (`lsusb` + `usb-host`) |
-| `supportsInAppUpdate` | `false` |
 | `guestTypes` | `linux-arm64`, `linux-amd64`, … |
 
 ## Bridged networking (QEMU bridge)
 
-Linux bridging does **not** use socket_vmnet. QEMU is launched with:
+On Linux, bridged networking uses the standard QEMU bridge path (host `br*` + `qemu-bridge-helper`). QEMU is launched with:
 
 ```text
 -netdev bridge,id=net0,br=<bridge>
@@ -324,12 +323,10 @@ lsusb
 
 ## Limitations
 
-- No in-app package updates (macOS only).
-- No managed bridge **daemon** (socket_vmnet / XPC); bridge uses host `br*` + qemu-bridge-helper.
-- Rocky/RHEL **9** and Alpine cannot **build** with official Swift 6.2 toolchains (runtime of a prebuilt binary is fine).
+- Rocky/RHEL **9** and Alpine cannot **build** with official Swift 6.2 toolchains (runtime of a prebuilt binary or Docker is fine).
 - Windows guests / TPM may need extra packages (`swtpm`) not covered in the default smoke path.
 - Nested virt (OrbStack, many cloud VMs) often has no `/dev/kvm` → slow TCG boots.
-- Not every macOS-only helper path is mirrored (e.g. Homebrew-centric release packaging).
+- QEMU and firmware come from the distro (package Recommends / `linux-dev.sh`), not a bundled release tree.
 
 ## Related scripts
 

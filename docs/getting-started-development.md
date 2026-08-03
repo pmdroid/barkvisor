@@ -5,6 +5,9 @@ development on **macOS**. For **Linux** multi-distro hosts, use
 **[getting-started-linux.md](getting-started-linux.md)** (`./scripts/linux-dev.sh`
 installs packages + Swift and runs smoke tests).
 
+**Website (landing + docs):** unified Astro app in `website/` syncs these Markdown
+files into `/docs/*` (`cd website && bun install && bun run dev`).
+
 ## Prerequisites (macOS)
 
 | Requirement      | Minimum version | Notes                                   |

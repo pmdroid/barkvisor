@@ -1,0 +1,34 @@
+---
+title: Documentation
+description: Open-source QEMU virtualization for macOS and Linux — install, create VMs, and operate the headless daemon.
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a web UI.
+
+**New here?** Start with the shared **[Quickstart](/docs/getting-started/quickstart/)** — download an image and create your first VM (same flow on macOS and Linux).
+
+## Get started
+
+<CardGrid>
+  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS and Linux (arm64 / x86_64)." />
+  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard and admin account — same flow on macOS and Linux." />
+  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
+  <LinkCard title="Linux" href="/docs/linux/" description="Multi-distro matrix, packages, NAT/bridge, USB, smokes, systemd/Docker." />
+  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS; Linux uses linux-dev.sh." />
+  <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
+</CardGrid>
+
+## Platforms
+
+| Platform | Packaging | Acceleration | Bridged networking |
+|----------|-----------|--------------|--------------------|
+| **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | socket_vmnet + privileged helper |
+| **Linux** (multi-distro) | `.deb` / `.rpm` / tarball / Arch | KVM (or TCG) | host bridge + `qemu-bridge-helper` |
+
+Same product surface on both: daemon + SPA, NAT, bridge, USB, image library, cloud-init, console/VNC. Each host uses its native acceleration and packaging — that is by design, not a gap.
+
+See **[Linux support](/docs/linux/)** for the distro matrix, packages, systemd, and Docker. Live flags: `GET /api/system/capabilities`.
+
+Markdown source of truth: [`docs/`](https://github.com/pmdroid/barkvisor/tree/main/docs) in the repo. This site is built from `website/` (Astro + Starlight).

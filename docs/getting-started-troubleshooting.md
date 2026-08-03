@@ -78,10 +78,15 @@ journalctl -u barkvisor.service -f
 
 ### Linux-specific
 
-- **Swift / glibc refused:** Rocky/RHEL 9 and Alpine cannot use official Swift 6.2 toolchains; build on Ubuntu 24.04+ / Debian 12+ / Fedora / Rocky 10+ or run a prebuilt binary. See the [Linux distro matrix](getting-started-linux.md#distro-matrix).
+Full multi-distro matrix and package install: [getting-started-linux.md](getting-started-linux.md).
+
+- **Swift / glibc refused:** Rocky/RHEL 9 and Alpine cannot use official Swift 6.2 toolchains; build on Ubuntu 24.04+ / Debian 12+ / Fedora / Rocky 10+ or run a prebuilt binary / Docker. See the [Linux distro matrix](getting-started-linux.md#distro-matrix).
 - **No `qemu-system-x86_64` on Rocky:** install `qemu-kvm`; BarkVisor resolves `/usr/libexec/qemu-kvm`.
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper`.
+- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper` (Linux host-bridge path).
+- **Blank SPA after package install:** confirm `BARKVISOR_FRONTEND_DIR` or `/usr/local/share/barkvisor/frontend/dist` has `index.html`; packages and `install-linux.sh` place the SPA there.
+- **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the service user to group `kvm` when KVM is present.
+- **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`.
 
 ## Onboarding issues
 
@@ -92,9 +97,15 @@ BarkVisor shows a web-based setup screen on first launch when no admin user exis
 To re-trigger setup, delete the database and restart BarkVisor:
 
 ```sh
+# macOS
 sudo launchctl bootout system/dev.barkvisor
 sudo rm /var/lib/barkvisor/db.sqlite
 sudo launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist
+
+# Linux
+sudo systemctl stop barkvisor.service
+sudo rm /var/lib/barkvisor/db.sqlite
+sudo systemctl start barkvisor.service
 ```
 
 Then open `http://localhost:7777` to go through the setup wizard again.
@@ -116,25 +127,25 @@ https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templa
 
 ### QEMU binary not found
 
-In release installs, BarkVisor looks for `qemu-system-aarch64` and `qemu-img` in `/usr/local/libexec/barkvisor/`. During development (running via `swift run`), it falls back to:
+**macOS** release installs look for `qemu-system-aarch64` and `qemu-img` in `/usr/local/libexec/barkvisor/`. During development (`swift run`), fallback order is:
 
 1. `/opt/homebrew/bin/`
 2. `/usr/local/bin/`
 3. PATH lookup via `which`
 
-If you see an error like `qemu-system-aarch64 not found`, install QEMU via Homebrew:
-
 ```sh
 brew install qemu
 ```
+
+**Linux** uses distro QEMU on `$PATH` (and Rocky/RHEL often only ship `/usr/libexec/qemu-kvm`). Install via `./scripts/linux-dev.sh` or your package manager; see [Linux packages by family](getting-started-linux.md#packages-by-family-if-not-using-linux-devsh).
 
 ### Firmware not found
 
 BarkVisor resolves QEMU firmware (EFI images, VGA BIOS) from:
 
-1. `/usr/local/share/barkvisor/qemu/` (installed daemon)
-2. `/opt/homebrew/share/qemu/`
-3. `/usr/local/share/qemu/`
+1. `/usr/local/share/barkvisor/qemu/` (macOS installed daemon)
+2. `/opt/homebrew/share/qemu/` / `/usr/local/share/qemu/` (macOS Homebrew)
+3. Distro OVMF / AAVMF paths on Linux (edk2 packages)
 
 If VMs fail to boot with firmware errors, verify the firmware files exist at one of these paths.
 
@@ -143,8 +154,9 @@ If VMs fail to boot with firmware errors, verify the firmware files exist at one
 Per-VM stdout/stderr output is captured in:
 
 ```
-/var/lib/barkvisor/logs/vms/          # installed daemon
-~/Library/Application Support/BarkVisor/logs/vms/    # dev builds
+/var/lib/barkvisor/logs/vms/                         # installed (macOS/Linux)
+~/Library/Application Support/BarkVisor/logs/vms/    # macOS dev
+~/.local/share/barkvisor/logs/vms/                   # Linux dev
 ```
 
 Check these logs for QEMU error messages, boot failures, or crash output.
@@ -154,8 +166,9 @@ Check these logs for QEMU error messages, boot failures, or crash output.
 When the BarkVisor daemon stops, running QEMU processes are intentionally left alive. The daemon detaches its monitoring but does not kill the processes. On next launch, `VMProcessMonitor` scans the PID files directory:
 
 ```
-/var/lib/barkvisor/pids/              # installed daemon
-~/Library/Application Support/BarkVisor/pids/        # dev builds
+/var/lib/barkvisor/pids/                             # installed (macOS/Linux)
+~/Library/Application Support/BarkVisor/pids/        # macOS dev
+~/.local/share/barkvisor/pids/                       # Linux dev
 ```
 
 Each `.pid` file contains the QEMU process ID. If the process is still running, BarkVisor reconnects to its QMP and VNC sockets and resumes monitoring. If the process has exited, the stale PID file is cleaned up and the VM state is updated in the database.
@@ -173,45 +186,32 @@ sudo launchctl kickstart system/dev.barkvisor
 
 ## Helper and networking
 
-### Privileged helper approval
+### macOS: privileged helper and socket_vmnet
 
-BarkVisor uses a privileged XPC helper (`BarkVisorHelper`) installed as a LaunchDaemon at `/Library/LaunchDaemons/dev.barkvisor.helper.plist`. The helper binary is located at `/Library/PrivilegedHelperTools/dev.barkvisor.helper` and communicates via the Mach service `dev.barkvisor.helper`.
+On **macOS**, bridged networking uses a privileged XPC helper (`BarkVisorHelper`) plus `socket_vmnet`. The helper is a LaunchDaemon at `/Library/LaunchDaemons/dev.barkvisor.helper.plist` (binary `/Library/PrivilegedHelperTools/dev.barkvisor.helper`, Mach service `dev.barkvisor.helper`).
 
-If the helper is not running, bridge networking operations will fail. Check its status:
+If the helper is not running, managed bridge operations will fail:
 
 ```sh
 sudo launchctl print system/dev.barkvisor.helper
 ```
 
-### socket_vmnet not found
-
-Bridged networking requires `socket_vmnet` from the lima-vm project. In release installs, it is bundled at `/usr/local/libexec/barkvisor/socket_vmnet`. During development, BarkVisor looks for it under `/opt/homebrew/opt/socket_vmnet/bin/` and `/usr/local/opt/socket_vmnet/bin/`.
-
-If bridged networking fails, install it:
+`socket_vmnet` is bundled at `/usr/local/libexec/barkvisor/socket_vmnet` in release installs, or under Homebrew opt prefixes in development:
 
 ```sh
 brew install socket_vmnet
 ```
 
-### Bridge socket missing
+Each bridge has a unix socket from the `socket_vmnet` daemon. If a VM cannot connect:
 
-Each bridge interface has an associated unix socket created by the `socket_vmnet` daemon. If a VM cannot connect to the bridge, check the bridge state via the helper:
-
-- Verify the LaunchDaemon plist exists
-- Verify the daemon is running (`launchctl list | grep barkvisor`)
+- Verify the LaunchDaemon plist exists and the daemon is running
 - Check that the socket file is present at the expected path
 
-Bridge state is synced periodically by `BridgeSyncService`.
+Bridge state is synced periodically by `BridgeSyncService`. XPC errors (`XPC connection interrupted` / `invalidated`) usually mean a team ID mismatch, missing plist, or helper not approved in System Settings. Timeouts: 5 s general, 15 s for bridge install/remove/start/stop.
 
-### XPC connection errors
+### Linux: host bridge
 
-If the privileged helper cannot be reached, you will see log messages like `XPC connection interrupted` or `XPC connection invalidated`. Common causes:
-
-- The helper binary is not code signed with a matching team ID
-- The helper plist is not installed in `/Library/LaunchDaemons/`
-- The helper was not approved in System Settings
-
-The XPC client uses a 5-second timeout for general operations (ping, version, status queries) and a 15-second timeout for bridge operations (install, remove, start, stop).
+On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. See [Bridged networking on Linux](getting-started-linux.md#bridged-networking-qemu-bridge).
 
 ## Frontend
 
@@ -225,11 +225,12 @@ cd frontend && bun install && bun run build
 
 The server searches for the frontend `dist/` directory in several locations:
 
-1. `/usr/local/share/barkvisor/frontend/dist/` (installed daemon)
-2. `Sources/BarkVisor/Resources/frontend/dist/` relative to the project root or current working directory
-3. `frontend/dist/` relative to the project root or current working directory
+1. `BARKVISOR_FRONTEND_DIR` if set and contains `index.html`
+2. `/usr/local/share/barkvisor/frontend/dist/` (installed daemon)
+3. `Sources/BarkVisor/Resources/frontend/dist/` (dev probes)
+4. `frontend/dist/` (dev probes)
 
-If none of these contain an `index.html`, the SPA middleware is not registered and all non-API routes return 404.
+On Linux, `./scripts/linux-frontend-serve.sh` builds the SPA and can start the daemon with the correct env. If none of these paths contain `index.html`, the SPA middleware is not registered and non-API routes return 404.
 
 ### API proxy errors
 
@@ -289,7 +290,7 @@ Disk creation, resizing, and info queries all invoke `qemu-img` as a subprocess.
 
 BarkVisor provides an API endpoint to generate a diagnostic bundle. The bundle is a `.tar.gz` archive containing:
 
-- `system-info.json` -- macOS version, CPU count, physical memory
+- `system-info.json` -- host OS version, CPU count, physical memory
 - `barkvisor-info.json` -- app version, uptime, data directory paths
 - `vm-states.json` -- currently running VMs with their PIDs and VNC socket paths
 - Recent log files
@@ -301,8 +302,9 @@ The bundle is created in the system temp directory and automatically cleaned up 
 Automatic database backups run daily when enabled (on by default). Backups are stored in:
 
 ```
-/var/lib/barkvisor/backups/           # installed daemon
-~/Library/Application Support/BarkVisor/backups/     # dev builds
+/var/lib/barkvisor/backups/                          # installed (macOS/Linux)
+~/Library/Application Support/BarkVisor/backups/     # macOS dev
+~/.local/share/barkvisor/backups/                    # Linux dev
 ```
 
 You can customize the backup directory and retention period (default 30 days) via the settings API or UserDefaults keys `backupDirectory` and `backupRetentionDays`.
