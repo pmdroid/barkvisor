@@ -7,6 +7,19 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a web UI.
 
+**New here?** Start with the shared **[Quickstart](/docs/getting-started/quickstart/)** — download an image and create your first VM (same flow on macOS and Linux).
+
+## Get started
+
+<CardGrid>
+  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS and Linux (arm64 / x86_64)." />
+  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard, admin account, bridge helper vs host bridge." />
+  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
+  <LinkCard title="Linux" href="/docs/linux/" description="Multi-distro matrix, packages, NAT/bridge, USB, smokes, systemd/Docker." />
+  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS; Linux uses linux-dev.sh." />
+  <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
+</CardGrid>
+
 ## Platforms
 
 | Platform | Packaging | Acceleration | Notes |
@@ -15,17 +28,6 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 | **Linux** (multi-distro) | `.deb` / `.rpm` / tarball / Arch | KVM (or TCG) | First-class headless; bridge via host `br*` + qemu-bridge-helper |
 
 See **[Linux support](/docs/linux/)** for the full distro matrix, packages, systemd, Docker, and known limits.
-
-## Get started
-
-<CardGrid>
-  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
-  <LinkCard title="Linux" href="/docs/linux/" description="Multi-distro matrix, packages, NAT/bridge, USB, smokes, systemd/Docker." />
-  <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard, admin account, bridge helper vs host bridge." />
-  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Download an image and create your first VM (arm64 / x86_64)." />
-  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS; Linux uses linux-dev.sh." />
-  <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
-</CardGrid>
 
 ## Linux support snapshot
 

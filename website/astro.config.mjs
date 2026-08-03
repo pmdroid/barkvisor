@@ -35,10 +35,10 @@ export default defineConfig({
           label: 'Start here',
           items: [
             { label: 'Docs home', link: '/docs/' },
-            { label: 'Linux support', link: '/docs/linux/' },
-            { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },
-            { label: 'First launch', link: '/docs/getting-started/first-launch/' },
             { label: 'Quickstart', link: '/docs/getting-started/quickstart/' },
+            { label: 'First launch', link: '/docs/getting-started/first-launch/' },
+            { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },
+            { label: 'Linux support', link: '/docs/linux/' },
           ],
         },
         {
