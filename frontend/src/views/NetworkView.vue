@@ -371,7 +371,7 @@ async function setupBridgeInline() {
         <option v-if="supportsBridgedNetworking" value="bridged">Bridged</option>
       </AppSelect>
       <p v-if="!supportsBridgedNetworking" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-        Bridged networking is not available on this platform yet.
+        Bridged networking is not available on this platform.
       </p>
     </div>
     <div v-if="supportsBridgedNetworking && newMode === 'bridged'" class="form-group">
@@ -383,9 +383,21 @@ async function setupBridgeInline() {
           {{ iface.name }}{{ iface.ipAddress ? ` (${iface.ipAddress})` : '' }}{{ usedBridgeInterfaces.has(iface.name) ? ` — used by "${usedBridgeInterfaces.get(iface.name)}"` : iface.bridgeStatus === 'active' ? ' — active' : iface.bridgeStatus === 'installed' ? ' — installed' : '' }}
         </option>
       </AppSelect>
-      <p v-if="!supportsManagedBridgeDaemon" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-        Use an existing host bridge (e.g. br0). Create it with ip/netplan before starting VMs.
-      </p>
+      <!-- Linux host bridges: allow typing a name not in the dropdown (e.g. no-IP br*). -->
+      <template v-if="!supportsManagedBridgeDaemon">
+        <input
+          v-model="newBridge"
+          class="bridge-custom"
+          style="margin-top:8px;width:100%"
+          placeholder="Or type bridge name (e.g. br0)"
+          spellcheck="false"
+          autocomplete="off"
+        />
+        <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+          Use an existing host bridge (e.g. br0). Create it with ip/netplan before starting VMs.
+          Bridges without an IP still appear when detected; you can also type the name.
+        </p>
+      </template>
       <div v-if="selectedInterfaceNeedsBridge" class="bridge-warning">
         <span style="color:var(--text-secondary);font-size:13px">No bridge configured for this interface.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Setting up..." @click="setupBridgeInline">Setup Bridge</AppButton>
