@@ -4,7 +4,7 @@
 **Baseline:** `main` @ `69e4812` (through PR #13)  
 **Open product stack (merge first):** PRs **#14–#23**  
 **Sources:** Claude simplification audit + OpenCode GPT-5.6-sol audit  
-**Process:** Orca worktrees → stacked draft PRs → review → merge with main CI green after each → Orb `barkvisor-u24` proof for Linux-touching PRs  
+**Process:** Orca worktrees → stacked draft PRs → review → merge with main CI green after each → Linux host smoke for Linux-touching PRs  
 
 This plan is **what to improve next**, ordered so each phase is independently shippable and low-regret. It deliberately does **not** rewrite `VMManager`, QMP, reconnect/adoption, HVF linger workarounds, or release signing.
 
@@ -320,7 +320,7 @@ Order within the table is preferred; 3b/3c/3d/4a can swap based on product press
 1. **Worktrees** under Orca (`/Users/pascal/orca/workspaces/barkvisor/…`); no drive-by edits on unrelated branches.
 2. **Draft PRs for review** — do not auto-merge.
 3. **Main green after every merge.**
-4. **Linux-touching PRs** → Orb `barkvisor-u24` proof (build + relevant smoke).
+4. **Linux-touching PRs** → Linux host proof (`linux-smoke.sh` / guest smoke as relevant).
 5. **macOS-touching PRs** → preserve HVF, socket_vmnet, helper/XPC behavior.
 6. Prefer **deletes and single owners** over new frameworks.
 7. Re-read the dual audit reports if prioritization is contested:
