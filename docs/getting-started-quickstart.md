@@ -13,7 +13,7 @@ connecting to it, and managing its lifecycle in BarkVisor.
 - QEMU is available:
   - **macOS release:** bundled under `/usr/local/libexec/barkvisor/`
   - **macOS dev:** `brew install qemu` (Homebrew / `$PATH`)
-  - **Linux:** distro packages via `./scripts/linux-dev.sh` or package Recommends (see [Linux guide](getting-started-linux.md))
+  - **Linux:** distro QEMU/firmware packages (see [Installation (Linux)](getting-started-linux.md#system-requirements))
 
 ## Getting an OS Image
 

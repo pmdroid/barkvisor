@@ -4,7 +4,7 @@
 
 When BarkVisor starts for the first time:
 
-1. The data directory is created (see [Installation](getting-started-installation.md) for paths).
+1. The data directory is created (see [Installation (macOS)](getting-started-installation.md) or [Installation (Linux)](getting-started-linux.md) for paths).
 2. The **SQLite database** is created and migrated to the latest schema.
 3. **Default records are seeded** into the database:
    - A **Default NAT** network, which provides internet access to VMs through the host network stack with no additional configuration (macOS and Linux).
@@ -44,7 +44,7 @@ A **privileged helper** (`dev.barkvisor.helper`) plus **socket_vmnet** manage br
 
 ### Linux
 
-Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Linux guide](getting-started-linux.md#bridged-networking-optional)). No separate BarkVisor helper install is required.
+Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Installation (Linux)](getting-started-linux.md#bridged-networking-optional)). No separate BarkVisor helper install is required.
 
 ## Catalog Sync
 

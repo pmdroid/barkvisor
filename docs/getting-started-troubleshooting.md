@@ -78,7 +78,7 @@ journalctl -u barkvisor.service -f
 
 ### Linux-specific
 
-Install checklist and packages: [getting-started-linux.md](getting-started-linux.md).
+Linux install guide: [Installation (Linux)](getting-started-linux.md).
 
 - **QEMU not found:** install distro QEMU (see the Linux install checklist). On Rocky/Alma/RHEL the binary is often `/usr/libexec/qemu-kvm` — BarkVisor resolves that path.
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
@@ -136,7 +136,7 @@ https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templa
 brew install qemu
 ```
 
-**Linux** uses distro QEMU on `$PATH` (Rocky/RHEL often ship `/usr/libexec/qemu-kvm`). Install QEMU from the distro using the [Linux install checklist](getting-started-linux.md#2-distro-packages-barkvisor-expects).
+**Linux** uses distro QEMU on `$PATH` (Rocky/RHEL often ship `/usr/libexec/qemu-kvm`). Install QEMU from the distro using [System Requirements](getting-started-linux.md#system-requirements) in the Linux install guide.
 
 ### Firmware not found
 

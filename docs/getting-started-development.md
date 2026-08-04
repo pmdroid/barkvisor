@@ -2,7 +2,7 @@
 
 This guide covers building and running BarkVisor from source for local
 development on **macOS**. For **Linux** multi-distro hosts, use
-**[getting-started-linux.md](getting-started-linux.md)** (`./scripts/linux-dev.sh`
+**[Installation (Linux)](getting-started-linux.md)** (building-from-source section) and `./scripts/linux-dev.sh`
 installs packages + Swift and runs smoke tests).
 
 **Website (landing + docs):** unified Astro app in `website/` syncs these Markdown
