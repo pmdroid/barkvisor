@@ -238,7 +238,7 @@ async function submit() {
         <div>
           <strong>Bridged networking required</strong>
           <p v-if="platformBridgeUnsupported" style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
-            Bridged networking is not available on this platform yet. This template cannot be deployed until NAT support is added for it.
+            Bridged networking is not available on this platform. This template requires a bridged network.
           </p>
           <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.
