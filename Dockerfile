@@ -15,6 +15,8 @@
 ARG SWIFT_VERSION=6.2.3
 ARG UBUNTU_VERSION=24.04
 ARG BUN_VERSION=1.2.5
+# Optional: bake product version into Config.swift (e.g. 1.2.3). Default leaves 0.0.0-dev.
+ARG BARKVISOR_VERSION=
 
 # ---------------------------------------------------------------------------
 # Stage 1 — Vue SPA (bun preferred; layout matches install-linux share path)
@@ -34,6 +36,7 @@ RUN bun run build \
 # Stage 2 — Swift release binary
 # ---------------------------------------------------------------------------
 FROM swift:${SWIFT_VERSION}-noble AS build
+ARG BARKVISOR_VERSION=
 WORKDIR /src
 # Manifests first for better layer cache
 COPY Package.swift Package.resolved* .swift-version* ./
@@ -41,9 +44,15 @@ COPY Sources ./Sources
 COPY Tests ./Tests
 COPY Resources ./Resources
 COPY repos ./repos
+COPY scripts/lib/inject-version.sh ./scripts/lib/inject-version.sh
 # Embed SPA for findFrontendDist / Resources probes during build tests if needed
 COPY --from=frontend /frontend/dist ./Sources/BarkVisor/Resources/frontend/dist
-RUN swift build -c release --product BarkVisorApp \
+RUN set -euo pipefail \
+    && if [ -n "${BARKVISOR_VERSION}" ]; then \
+         . ./scripts/lib/inject-version.sh \
+         && barkvisor_inject_config_version "${BARKVISOR_VERSION}"; \
+       fi \
+    && swift build -c release --product BarkVisorApp \
     && install -d /out \
     && cp -a .build/release/BarkVisorApp /out/barkvisor
 

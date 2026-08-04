@@ -44,7 +44,7 @@ if let sentry {
 }
 
 var serverLogger = Logger(label: "barkvisor.server")
-serverLogger[metadataKey: "version"] = Logger.MetadataValue(stringLiteral: "1.0.0")
+serverLogger[metadataKey: "version"] = Logger.MetadataValue(stringLiteral: Config.version)
 
 let server = VaporServer()
 

@@ -42,8 +42,16 @@ public struct DBLogger: Sendable {
 public nonisolated(unsafe) let iso8601 = ISO8601DateFormatter()
 
 public enum Config {
-    /// INJECT_VERSION (replaced at build time via sed)
+    /// Product version reported by About / updates APIs.
+    /// Release scripts replace this string at build time (`scripts/lib/inject-version.sh`).
+    /// In-tree default marks development builds.
     public static let version = "0.0.0-dev"
+
+    /// True for development / unreleased builds (custom update URL, etc.).
+    /// Release tags like `1.2.3` are not dev; `0.0.0-dev` and `0.0.0+git.*` are.
+    public static var isDevBuild: Bool {
+        version.contains("dev") || version.hasPrefix("0.0.0")
+    }
 
     /// HTTP listen port. Override with `BARKVISOR_PORT` (1–65535).
     public static let port: Int = {

@@ -53,12 +53,23 @@ echo "    swift:    $SWIFT_VERSION (Ubuntu $UBUNTU_VERSION)"
 echo "    formats:  $FORMATS"
 echo "    out:      $OUT_DIR"
 
+# Resolve version for both binary inject (Config.swift) and package metadata.
+if [[ -z "${VERSION:-}" ]]; then
+  if GIT_TAG="$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null)"; then
+    VERSION="${GIT_TAG#v}"
+  else
+    VERSION="0.0.0+git.$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  fi
+fi
+echo "    version:  $VERSION"
+
 DOCKERFILE="$ROOT/packaging/linux/Dockerfile.package"
 docker build \
   --platform "$DOCKER_PLATFORM" \
   -f "$DOCKERFILE" \
   --build-arg "SWIFT_VERSION=$SWIFT_VERSION" \
   --build-arg "UBUNTU_VERSION=$UBUNTU_VERSION" \
+  --build-arg "BARKVISOR_VERSION=$VERSION" \
   -t "$IMAGE_TAG" \
   "$ROOT"
 
