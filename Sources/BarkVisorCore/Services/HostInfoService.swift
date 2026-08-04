@@ -157,17 +157,37 @@ public enum HostInfoService {
     }
 
     /// List host interfaces with display names and optional per-interface bridge status.
+    ///
+    /// On Linux, also includes **bridge devices without an IPv4 address** (from sysfs).
+    /// `listInterfaces()` is IPv4-only, so a bare `br0` would otherwise be missing from the UI.
     /// - Parameter bridgeStatusByInterface: map of interface name → BridgeRecord.status
     public static func listInterfaceSnapshots(
         bridgeStatusByInterface: [String: String] = [:],
     ) -> [HostInterfaceSnapshot] {
-        listInterfaces().map { iface in
-            HostInterfaceSnapshot(
+        var byName: [String: HostInterfaceSnapshot] = [:]
+
+        for iface in listInterfaces() {
+            byName[iface.name] = HostInterfaceSnapshot(
                 name: iface.name,
                 displayName: displayName(for: iface.name),
                 ipAddress: iface.ipAddress,
                 bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[iface.name]),
             )
         }
+
+        #if os(Linux)
+            // Merge bridge-class devices that have no AF_INET address (down / L2-only).
+            for name in LinuxHostNetwork.listBridgeInterfaces() {
+                if byName[name] != nil { continue }
+                byName[name] = HostInterfaceSnapshot(
+                    name: name,
+                    displayName: displayName(for: name),
+                    ipAddress: "",
+                    bridgeStatus: apiBridgeStatus(bridgeStatusByInterface[name]),
+                )
+            }
+        #endif
+
+        return byName.values.sorted { $0.name < $1.name }
     }
 }
