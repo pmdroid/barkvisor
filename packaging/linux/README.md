@@ -42,3 +42,19 @@ swift build -c release --product BarkVisorApp
 ```
 
 See `scripts/build-linux-packages.sh` and `docs/getting-started-linux.md`.
+
+## GitHub Releases
+
+On a version tag (`v*`), the **Linux Packages** workflow builds packages and
+**attaches** `.deb` / `.rpm` / `.tar.gz` / `.sha256` to that tag’s GitHub
+Release (creating the release if needed). Manual `workflow_dispatch` runs only
+upload CI artifacts — they do not mutate Releases.
+
+macOS `.pkg` assets from the separate release process keep different filenames
+and are not removed when Linux assets are re-uploaded (`gh release upload
+--clobber` only replaces matching names).
+
+arm64 package jobs are currently commented out in the workflow matrix (amd64
+GitHub-hosted runners only); build arm64 via
+`./scripts/build-linux-packages.sh --docker` on an arm64 host until runners are
+enabled.
