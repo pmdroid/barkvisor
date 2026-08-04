@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** **macOS** (production packaging / HVF) and **Linux** (multi-distro headless: Ubuntu, Debian, Arch, Fedora, Rocky/Alma/RHEL 10+, Alpine runtime). See [Linux getting started](docs/getting-started-linux.md).
+**Platforms:** **macOS** (`.pkg` / HVF) and **Linux** (packages + systemd / KVM). See [Linux install](docs/getting-started-linux.md).
 
 ## Features
 
@@ -43,16 +43,15 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
   autoconf automake libtool json-glib swiftlint swiftformat
 ```
 
-### Linux (multi-distro)
+### Linux
 
-Headless daemon + SPA on glibc distros with official Swift toolchains; Alpine is **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, and x86_64/arm64 images are supported. Acceleration is **KVM** (or TCG); packaging is distro packages + optional BarkVisor `.deb` / `.rpm` / tarball.
-
-See **[docs/getting-started-linux.md](docs/getting-started-linux.md)** for the distro matrix, `linux-dev.sh`, systemd, Docker, and guest smokes.
+Install a **prebuilt** `.deb` / `.rpm` / tarball from [Releases](https://github.com/pmdroid/barkvisor/releases), plus distro QEMU/firmware. Full steps and host checklist: **[docs/getting-started-linux.md](docs/getting-started-linux.md)**.
 
 ```bash
-./scripts/linux-dev.sh          # packages + Swift + compat shims
-./scripts/linux-smoke.sh        # build + health/capabilities
-swift run BarkVisorApp          # → http://localhost:7777
+# Example (Debian/Ubuntu amd64) after installing QEMU/OVMF from the distro:
+sudo dpkg -i barkvisor_*_amd64.deb
+sudo systemctl enable --now barkvisor.service
+# → http://localhost:7777
 ```
 
 ## Quick Start
@@ -126,10 +125,7 @@ sudo ./scripts/uninstall.sh --purge  # remove everything
 
 ### Linux
 
-Build **`.deb` / `.rpm` / tarball** packages (arm64 and amd64) with
-`./scripts/build-linux-packages.sh` (or `--docker` from macOS), install from
-source with `scripts/install-linux.sh` + systemd, or run the Docker image — see
-[docs/getting-started-linux.md](docs/getting-started-linux.md).
+Download `.deb` / `.rpm` / `.tar.gz` from the [releases page](https://github.com/pmdroid/barkvisor/releases) and follow the **install checklist** in [docs/getting-started-linux.md](docs/getting-started-linux.md). Building packages from source is optional (same guide, development section).
 
 ## Release Build
 
@@ -179,7 +175,7 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 ### Getting Started (source Markdown)
 
 - [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory (macOS)
-- [Linux](docs/getting-started-linux.md) — Multi-distro support status, packages, NAT/bridge, smokes, systemd/Docker
+- [Linux](docs/getting-started-linux.md) — Package install checklist, QEMU deps, systemd
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, bridge helper (macOS) vs host bridge (Linux)
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
