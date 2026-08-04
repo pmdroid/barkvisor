@@ -83,7 +83,7 @@ Full multi-distro matrix and package install: [getting-started-linux.md](getting
 - **Swift / glibc refused:** Rocky/RHEL 9 and Alpine cannot use official Swift 6.2 toolchains; build on Ubuntu 24.04+ / Debian 12+ / Fedora / Rocky 10+ or run a prebuilt binary / Docker. See the [Linux distro matrix](getting-started-linux.md#distro-matrix).
 - **No `qemu-system-x86_64` on Rocky:** install `qemu-kvm`; BarkVisor resolves `/usr/libexec/qemu-kvm`.
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper` (Linux host-bridge path).
+- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper` (Linux host-bridge path). Under **systemd**, the unit must not set `NoNewPrivileges=true` (packaged unit uses `false`) or the helper cannot gain privileges. Check `journalctl -u barkvisor.service` for bridge-helper errors.
 - **Blank SPA after package install:** confirm `BARKVISOR_FRONTEND_DIR` or `/usr/local/share/barkvisor/frontend/dist` has `index.html`; packages and `install-linux.sh` place the SPA there.
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the service user to group `kvm` when KVM is present.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`.
