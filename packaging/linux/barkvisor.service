@@ -17,7 +17,12 @@ EnvironmentFile=-/etc/barkvisor/barkvisor.env
 ExecStart=/usr/local/bin/barkvisor
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
+# QEMU bridged networking launches setuid qemu-bridge-helper. NoNewPrivileges=true
+# blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
+# Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.
+NoNewPrivileges=false
+# Ensure /dev/kvm access when the barkvisor user is in group kvm (postinst adds it).
+SupplementaryGroups=kvm
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
