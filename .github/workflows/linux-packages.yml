@@ -16,7 +16,8 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  # read for checkout/build; write so tag builds can attach assets to the GitHub Release
+  contents: write
 
 jobs:
   package:
@@ -117,3 +118,33 @@ jobs:
             build/linux-packages/MANIFEST.txt
             build/linux-packages/arch/PKGBUILD
           if-no-files-found: error
+
+      # Attach Linux packages to the GitHub Release for this tag.
+      # workflow_dispatch keeps CI artifacts only (no Release mutation).
+      # Uses --clobber so re-running the tag workflow refreshes Linux assets without
+      # removing differently named macOS .pkg files on the same release.
+      - name: Attach packages to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          mapfile -t files < <(
+            find build/linux-packages -maxdepth 1 -type f \
+              \( -name '*.deb' -o -name '*.rpm' -o -name '*.tar.gz' -o -name '*.sha256' \) \
+              | sort
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "error: no package files under build/linux-packages to upload" >&2
+            exit 1
+          fi
+          echo "Uploading ${#files[@]} file(s) to release $TAG:"
+          printf '  %s\n' "${files[@]}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "BarkVisor ${TAG#v}" \
+              --generate-notes \
+              --verify-tag
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
