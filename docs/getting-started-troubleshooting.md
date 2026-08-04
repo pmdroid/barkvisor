@@ -78,14 +78,13 @@ journalctl -u barkvisor.service -f
 
 ### Linux-specific
 
-Full multi-distro matrix and package install: [getting-started-linux.md](getting-started-linux.md).
+Install checklist and packages: [getting-started-linux.md](getting-started-linux.md).
 
-- **Swift / glibc refused:** Rocky/RHEL 9 and Alpine cannot use official Swift 6.2 toolchains; build on Ubuntu 24.04+ / Debian 12+ / Fedora / Rocky 10+ or run a prebuilt binary / Docker. See the [Linux distro matrix](getting-started-linux.md#distro-matrix).
-- **No `qemu-system-x86_64` on Rocky:** install `qemu-kvm`; BarkVisor resolves `/usr/libexec/qemu-kvm`.
+- **QEMU not found:** install distro QEMU (see the Linux install checklist). On Rocky/Alma/RHEL the binary is often `/usr/libexec/qemu-kvm` — BarkVisor resolves that path.
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper` (Linux host-bridge path).
-- **Blank SPA after package install:** confirm `BARKVISOR_FRONTEND_DIR` or `/usr/local/share/barkvisor/frontend/dist` has `index.html`; packages and `install-linux.sh` place the SPA there.
-- **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the service user to group `kvm` when KVM is present.
+- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper`. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
+- **Blank SPA after package install:** confirm `/usr/local/share/barkvisor/frontend/dist` has `index.html` (or `BARKVISOR_FRONTEND_DIR`).
+- **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the `barkvisor` user to group `kvm` when KVM is present, then restart the service.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`.
 
 ## Onboarding issues
@@ -137,7 +136,7 @@ https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templa
 brew install qemu
 ```
 
-**Linux** uses distro QEMU on `$PATH` (and Rocky/RHEL often only ship `/usr/libexec/qemu-kvm`). Install via `./scripts/linux-dev.sh` or your package manager; see [Linux packages by family](getting-started-linux.md#packages-by-family-if-not-using-linux-devsh).
+**Linux** uses distro QEMU on `$PATH` (Rocky/RHEL often ship `/usr/libexec/qemu-kvm`). Install QEMU from the distro using the [Linux install checklist](getting-started-linux.md#2-distro-packages-barkvisor-expects).
 
 ### Firmware not found
 
@@ -211,7 +210,7 @@ Bridge state is synced periodically by `BridgeSyncService`. XPC errors (`XPC con
 
 ### Linux: host bridge
 
-On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. See [Bridged networking on Linux](getting-started-linux.md#bridged-networking-qemu-bridge).
+On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. See [Bridged networking](getting-started-linux.md#bridged-networking-optional).
 
 ## Frontend
 

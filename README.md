@@ -175,7 +175,7 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 ### Getting Started (source Markdown)
 
 - [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory (macOS)
-- [Linux](docs/getting-started-linux.md) — Multi-distro support status, packages, NAT/bridge, smokes, systemd/Docker
+- [Linux](docs/getting-started-linux.md) — Package install checklist, QEMU deps, systemd
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, bridge helper (macOS) vs host bridge (Linux)
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
