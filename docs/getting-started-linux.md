@@ -306,6 +306,10 @@ sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper   # if not already setuid
 
 In the UI: create a **bridged** network with bridge interface `br0`, then attach VMs to it.
 
+The packaged systemd unit sets `NoNewPrivileges=false` so QEMU can run setuid
+`qemu-bridge-helper`. If you harden the unit yourself, do not re-enable
+`NoNewPrivileges=true` unless you only use NAT.
+
 ## USB passthrough
 
 - Capability `supportsUSBPassthrough` is **true** on Linux.
