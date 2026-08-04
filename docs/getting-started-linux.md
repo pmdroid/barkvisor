@@ -56,19 +56,17 @@ Swift 6.2 toolchains need a **channel-appropriate** glibc minimum (not a single 
 | `BARKVISOR_FRONTEND_DIR` | Absolute path to SPA **`dist/`** that contains `index.html` |
 | `BARKVISOR_LOG_DIR` | Optional log directory override |
 
-### OrbStack smoke host
+### Optional nested Linux VM
+
+Any glibc Linux VM or bare metal host works (OrbStack, cloud, etc.). Nested virt often lacks `/dev/kvm` → TCG is slower but fine for smoke:
 
 ```bash
-orb create -a arm64 ubuntu:24.04 barkvisor-u24
-orb -m barkvisor-u24
+# Example OrbStack Ubuntu 24.04 arm64 guest
+orb create -a arm64 ubuntu:24.04 barkvisor-dev
+orb -m barkvisor-dev
 ```
 
-Multi-distro matrix (when Orb machines exist):
-
-```bash
-./scripts/orb-multi-distro-smoke.sh
-# or subset: ./scripts/orb-multi-distro-smoke.sh bv-deb12 bv-rocky10 bv-arch
-```
+Then run `./scripts/linux-dev.sh` and `./scripts/linux-smoke.sh` inside the guest.
 
 ## Quick start (from source)
 
@@ -343,8 +341,6 @@ lsusb
 | `scripts/install-linux.sh` | systemd install from a local binary |
 | `scripts/build-linux-packages.sh` | Build `.deb` / `.rpm` / `.tar.gz` / Arch PKGBUILD |
 | `scripts/build-linux-packages-docker.sh` | Same via Docker (macOS-friendly) |
-| `scripts/orb-multi-distro-smoke.sh` | OrbStack multi-distro matrix |
-| `scripts/hetzner-cloud.py` | Ephemeral Cloud VMs for CI-style smokes |
 | `packaging/linux/` | Package metadata (debian control, rpm spec, unit, env) |
 
 ## Agent / historical notes

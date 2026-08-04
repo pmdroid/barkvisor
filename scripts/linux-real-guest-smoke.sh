@@ -2,7 +2,7 @@
 # Phase A: real Ubuntu cloud-image guest on NAT with cloud-init + SSH probe.
 #
 # Thin wrapper around linux-guest-smoke.sh with REAL_GUEST=1 defaults.
-# Prefer Orb barkvisor-u24 (or any Linux host with QEMU; KVM if /dev/kvm exists).
+# Prefer any Linux host with QEMU (KVM if /dev/kvm exists; TCG works but is slow).
 #
 # Usage:
 #   ./scripts/linux-real-guest-smoke.sh
