@@ -44,7 +44,7 @@ A **privileged helper** (`dev.barkvisor.helper`) plus **socket_vmnet** manage br
 
 ### Linux
 
-Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Linux guide](getting-started-linux.md#bridged-networking-qemu-bridge)). No separate BarkVisor helper install is required. Live flags: `GET /api/system/capabilities`.
+Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Linux guide](getting-started-linux.md#bridged-networking-optional)). No separate BarkVisor helper install is required.
 
 ## Catalog Sync
 
