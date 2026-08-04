@@ -4,10 +4,10 @@ This page covers **macOS** package install (Apple Silicon `.pkg` / standalone ar
 
 | Platform | Guide |
 |----------|--------|
-| **macOS** | This page |
-| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — multi-distro matrix, `.deb` / `.rpm` / tarball packages, systemd, Docker, source build |
+| **macOS** | This page (`.pkg` / standalone archive) |
+| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — package install checklist, QEMU deps, systemd |
 
-**Linux support status (summary):** first-class headless daemon + SPA on Ubuntu, Debian, Arch, Fedora, Rocky/Alma/RHEL **10+** (native Swift build); Alpine and Rocky/RHEL **9** are **runtime-only** (prebuilt binary or Docker). NAT, bridge, USB, arm64/x86_64 images, packages, and systemd are supported — see the [Linux guide](getting-started-linux.md).
+**Linux:** install a prebuilt `.deb` / `.rpm` / tarball from GitHub Releases; install distro QEMU/firmware; enable `barkvisor.service`. No Swift toolchain required on the server. Details: [Linux guide](getting-started-linux.md).
 
 ## System Requirements (macOS)
 
