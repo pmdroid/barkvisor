@@ -1,15 +1,13 @@
-# Installation
+# Installation (macOS)
 
 This page covers **macOS** package install (Apple Silicon `.pkg` / standalone archive).
 
 | Platform | Guide |
 |----------|--------|
-| **macOS** | This page (`.pkg` / standalone archive) |
-| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — package install checklist, QEMU deps, systemd |
+| **macOS** | This page |
+| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — `.deb` / `.rpm` / tarball + systemd |
 
-**Linux:** install a prebuilt `.deb` / `.rpm` / tarball from GitHub Releases; install distro QEMU/firmware; enable `barkvisor.service`. No Swift toolchain required on the server. Details: [Linux guide](getting-started-linux.md).
-
-## System Requirements (macOS)
+## System Requirements
 
 - **macOS 26.0 or later** -- enforced via Swift Package Manager platform minimum.
 - **Apple Silicon (aarch64 only)** -- BarkVisor bundles `qemu-system-aarch64` compiled with HVF (Hypervisor.framework) support. Intel Macs are not supported for the macOS product package.
