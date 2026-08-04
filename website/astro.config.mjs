@@ -38,13 +38,12 @@ export default defineConfig({
             { label: 'Quickstart', link: '/docs/getting-started/quickstart/' },
             { label: 'First launch', link: '/docs/getting-started/first-launch/' },
             { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },
-            { label: 'Linux support', link: '/docs/linux/' },
+            { label: 'Installation (Linux)', link: '/docs/linux/' },
           ],
         },
         {
-          label: 'Platforms',
+          label: 'Build',
           items: [
-            { label: 'Linux (multi-distro)', link: '/docs/linux/' },
             { label: 'Development', link: '/docs/getting-started/development/' },
             { label: 'Building releases', link: '/docs/getting-started/building-releases/' },
           ],
