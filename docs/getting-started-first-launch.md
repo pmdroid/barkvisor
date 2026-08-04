@@ -15,18 +15,36 @@ When BarkVisor starts for the first time:
 
 ## Web-Based Setup
 
-Open your browser and navigate to `http://localhost:7777`. Since no admin account exists yet, the UI presents a setup screen.
+Open your browser and navigate to `http://localhost:7777` (or `http://<host-ip>:7777`). Since no admin account exists yet, the UI presents a setup wizard.
 
-### Create Admin Account
+Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, an extra optional step configures the managed bridge helper; on Linux that step is skipped.
 
-Set up the administrator account for the web interface.
+### 1. Welcome
 
-- **Username** -- defaults to `admin`, but you can choose any name.
-- **Password** -- minimum 10 characters. You must type it twice to confirm.
+![Setup welcome screen](/docs/onboarding/setup-welcome.png)
+
+Click **Get Started** to begin.
+
+### 2. Create admin account
+
+![Create admin account](/docs/onboarding/setup-admin.png)
+
+- **Username** — defaults to `admin`, but you can choose any name.
+- **Password** — minimum 10 characters. You must type it twice to confirm.
 - The password is hashed with **bcrypt** before being stored in the database. The plaintext password is never written to disk.
 - This account is used to log into the web UI. JWT tokens are issued on login, signed with the auto-generated secret stored in `<dataDir>/jwt-secret`.
 
-Once the admin account is created, the SetupMiddleware allows all API routes and redirects you to the login page.
+### 3. Sync image catalog
+
+![Sync image catalog](/docs/onboarding/setup-catalog.png)
+
+Optionally **Sync Catalog** so OS images and templates are available immediately. You can also sync later from the Registry / image library.
+
+### 4. Finish
+
+![Setup complete](/docs/onboarding/setup-ready.png)
+
+Complete the wizard to finish setup. The UI then opens the main application (login or dashboard). SetupMiddleware stops blocking API routes once an admin user exists.
 
 ## After Setup
 
