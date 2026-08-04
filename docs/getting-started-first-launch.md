@@ -34,23 +34,35 @@ Click **Get Started** to begin.
 - The password is hashed with **bcrypt** before being stored in the database. The plaintext password is never written to disk.
 - This account is used to log into the web UI. JWT tokens are issued on login, signed with the auto-generated secret stored in `<dataDir>/jwt-secret`.
 
+![Admin account filled in](/docs/onboarding/setup-admin-filled.png)
+
+Click **Continue**. (If you see “Password already set”, setup was partially completed earlier — stop the daemon, delete the data directory, and start again for a clean wizard.)
+
 ### 3. Sync image catalog
 
 ![Sync image catalog](/docs/onboarding/setup-catalog.png)
 
-Optionally **Sync Catalog** so OS images and templates are available immediately. You can also sync later from the Registry / image library.
+Click **Sync Catalog** so OS images and templates are available immediately (or **Skip** and sync later from the Registry).
 
-### 4. Finish
+![Catalog sync finished](/docs/onboarding/setup-catalog-synced.png)
 
-![Setup complete](/docs/onboarding/setup-ready.png)
+When the sync finishes, click **Continue**.
 
-Complete the wizard to finish setup. The UI then opens the main application (login or dashboard). SetupMiddleware stops blocking API routes once an admin user exists.
+### 4. Finish and open the dashboard
+
+![Setup complete — All Set](/docs/onboarding/setup-ready.png)
+
+Click **Launch Dashboard**. BarkVisor signs you in automatically and opens the main UI.
+
+![Dashboard after setup](/docs/onboarding/setup-dashboard.png)
+
+SetupMiddleware stops blocking API routes once setup is complete.
 
 ## After Setup
 
-Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI -- all management happens through the browser (macOS and Linux).
+Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI — all management happens through the browser (macOS and Linux).
 
-On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen.
+On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen (you land on **Login** instead).
 
 ## Bridged networking (optional)
 
