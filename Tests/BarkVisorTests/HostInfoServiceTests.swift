@@ -82,4 +82,24 @@ struct HostInfoServiceTests {
         #expect(lo?.displayName.contains("Loopback") == true)
         #expect(lo?.bridgeStatus == nil)
     }
+
+    #if os(Linux)
+        @Test func `listInterfaceSnapshots can include bridges without IPv4`() {
+            // When sysfs has bridge devices not present in the IPv4 listInterfaces()
+            // result, snapshots must still surface them (empty ipAddress).
+            let ipv4Names = Set(HostInfoService.listInterfaces().map(\.name))
+            let snaps = HostInfoService.listInterfaceSnapshots()
+            let snapNames = Set(snaps.map(\.name))
+            #expect(snapNames.isSuperset(of: ipv4Names))
+
+            let bridges = LinuxHostNetwork.listBridgeInterfaces()
+            for br in bridges {
+                #expect(snapNames.contains(br), "snapshot list should include bridge \(br)")
+                if !ipv4Names.contains(br) {
+                    let snap = snaps.first(where: { $0.name == br })
+                    #expect(snap?.ipAddress == "")
+                }
+            }
+        }
+    #endif
 }
