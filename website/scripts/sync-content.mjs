@@ -21,9 +21,9 @@ const map = {
   },
   'getting-started-linux.md': {
     out: 'linux.md',
-    title: 'Linux',
+    title: 'Installation (Linux)',
     description:
-      'First-class multi-distro Linux support: packages, systemd, Docker, NAT, bridge, and USB.',
+      'Install BarkVisor on Linux with .deb / .rpm / tarball packages and systemd.',
   },
   'getting-started-first-launch.md': {
     out: 'getting-started/first-launch.md',

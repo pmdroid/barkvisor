@@ -45,7 +45,7 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
 
 ### Linux
 
-Install a **prebuilt** `.deb` / `.rpm` / tarball from [Releases](https://github.com/pmdroid/barkvisor/releases), plus distro QEMU/firmware. Full steps and host checklist: **[docs/getting-started-linux.md](docs/getting-started-linux.md)**.
+Install a **prebuilt** `.deb` / `.rpm` / tarball from [Releases](https://github.com/pmdroid/barkvisor/releases), plus distro QEMU/firmware. Full steps: **[Installation (Linux)](docs/getting-started-linux.md)**.
 
 ```bash
 # Example (Debian/Ubuntu amd64) after installing QEMU/OVMF from the distro:
@@ -125,7 +125,7 @@ sudo ./scripts/uninstall.sh --purge  # remove everything
 
 ### Linux
 
-Download `.deb` / `.rpm` / `.tar.gz` from the [releases page](https://github.com/pmdroid/barkvisor/releases) and follow the **install checklist** in [docs/getting-started-linux.md](docs/getting-started-linux.md). Building packages from source is optional (same guide, development section).
+Download `.deb` / `.rpm` / `.tar.gz` from the [releases page](https://github.com/pmdroid/barkvisor/releases) and follow **[Installation (Linux)](docs/getting-started-linux.md)**. Building packages from source is optional (see that guide or [Development](docs/getting-started-development.md)).
 
 ## Release Build
 
@@ -174,8 +174,8 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 ### Getting Started (source Markdown)
 
-- [Installation](docs/getting-started-installation.md) — System requirements, pkg install, SSH install, data directory (macOS)
-- [Linux](docs/getting-started-linux.md) — Package install checklist, QEMU deps, systemd
+- [Installation (macOS)](docs/getting-started-installation.md) — System requirements, `.pkg` install, SSH install, data directory
+- [Installation (Linux)](docs/getting-started-linux.md) — System requirements, `.deb` / `.rpm` / tarball, systemd, data directory
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, bridge helper (macOS) vs host bridge (Linux)
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing

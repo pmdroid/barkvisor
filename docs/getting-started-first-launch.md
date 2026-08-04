@@ -4,7 +4,7 @@
 
 When BarkVisor starts for the first time:
 
-1. The data directory is created (see [Installation](getting-started-installation.md) for paths).
+1. The data directory is created (see [Installation (macOS)](getting-started-installation.md) or [Installation (Linux)](getting-started-linux.md) for paths).
 2. The **SQLite database** is created and migrated to the latest schema.
 3. **Default records are seeded** into the database:
    - A **Default NAT** network, which provides internet access to VMs through the host network stack with no additional configuration (macOS and Linux).
@@ -15,24 +15,54 @@ When BarkVisor starts for the first time:
 
 ## Web-Based Setup
 
-Open your browser and navigate to `http://localhost:7777`. Since no admin account exists yet, the UI presents a setup screen.
+Open your browser and navigate to `http://localhost:7777` (or `http://<host-ip>:7777`). Since no admin account exists yet, the UI presents a setup wizard.
 
-### Create Admin Account
+Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, an extra optional step configures the managed bridge helper; on Linux that step is skipped.
 
-Set up the administrator account for the web interface.
+### 1. Welcome
 
-- **Username** -- defaults to `admin`, but you can choose any name.
-- **Password** -- minimum 10 characters. You must type it twice to confirm.
+![Setup welcome screen](/docs/onboarding/setup-welcome.png)
+
+Click **Get Started** to begin.
+
+### 2. Create admin account
+
+![Create admin account](/docs/onboarding/setup-admin.png)
+
+- **Username** — defaults to `admin`, but you can choose any name.
+- **Password** — minimum 10 characters. You must type it twice to confirm.
 - The password is hashed with **bcrypt** before being stored in the database. The plaintext password is never written to disk.
 - This account is used to log into the web UI. JWT tokens are issued on login, signed with the auto-generated secret stored in `<dataDir>/jwt-secret`.
 
-Once the admin account is created, the SetupMiddleware allows all API routes and redirects you to the login page.
+![Admin account filled in](/docs/onboarding/setup-admin-filled.png)
+
+Click **Continue**. (If you see “Password already set”, setup was partially completed earlier — stop the daemon, delete the data directory, and start again for a clean wizard.)
+
+### 3. Sync image catalog
+
+![Sync image catalog](/docs/onboarding/setup-catalog.png)
+
+Click **Sync Catalog** so OS images and templates are available immediately (or **Skip** and sync later from the Registry).
+
+![Catalog sync finished](/docs/onboarding/setup-catalog-synced.png)
+
+When the sync finishes, click **Continue**.
+
+### 4. Finish and open the dashboard
+
+![Setup complete — All Set](/docs/onboarding/setup-ready.png)
+
+Click **Launch Dashboard**. BarkVisor signs you in automatically and opens the main UI.
+
+![Dashboard after setup](/docs/onboarding/setup-dashboard.png)
+
+SetupMiddleware stops blocking API routes once setup is complete.
 
 ## After Setup
 
-Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI -- all management happens through the browser (macOS and Linux).
+Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI — all management happens through the browser (macOS and Linux).
 
-On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen.
+On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen (you land on **Login** instead).
 
 ## Bridged networking (optional)
 
@@ -44,7 +74,7 @@ A **privileged helper** (`dev.barkvisor.helper`) plus **socket_vmnet** manage br
 
 ### Linux
 
-Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Linux guide](getting-started-linux.md#bridged-networking-optional)). No separate BarkVisor helper install is required.
+Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Installation (Linux)](getting-started-linux.md#bridged-networking-optional)). No separate BarkVisor helper install is required.
 
 ## Catalog Sync
 
