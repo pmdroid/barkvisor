@@ -15,8 +15,8 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
   <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS and Linux (arm64 / x86_64)." />
   <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard and admin account — same flow on macOS and Linux." />
   <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
-  <LinkCard title="Linux" href="/docs/linux/" description="Multi-distro matrix, packages, NAT/bridge, USB, smokes, systemd/Docker." />
-  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS; Linux uses linux-dev.sh." />
+  <LinkCard title="Linux" href="/docs/linux/" description="Install checklist, packages, QEMU deps, systemd, first guest." />
+  <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS or Linux." />
   <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
 </CardGrid>
 
@@ -25,10 +25,10 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 | Platform | Packaging | Acceleration | Bridged networking |
 |----------|-----------|--------------|--------------------|
 | **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | socket_vmnet + privileged helper |
-| **Linux** (multi-distro) | `.deb` / `.rpm` / tarball / Arch | KVM (or TCG) | host bridge + `qemu-bridge-helper` |
+| **Linux** | `.deb` / `.rpm` / tarball | KVM (or TCG) | host bridge + `qemu-bridge-helper` |
 
-Same product surface on both: daemon + SPA, NAT, bridge, USB, image library, cloud-init, console/VNC. Each host uses its native acceleration and packaging — that is by design, not a gap.
+Same product on both: daemon + SPA, NAT, bridge, USB, images, cloud-init, console/VNC. Host differences (accel, packaging) are by design.
 
-See **[Linux support](/docs/linux/)** for the distro matrix, packages, systemd, and Docker. Live flags: `GET /api/system/capabilities`.
+**[Install on Linux](/docs/linux/)** — prebuilt packages and host checklist. Live flags: `GET /api/system/capabilities`.
 
 Markdown source of truth: [`docs/`](https://github.com/pmdroid/barkvisor/tree/main/docs) in the repo. This site is built from `website/` (Astro + Starlight).

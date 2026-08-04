@@ -11,8 +11,8 @@ Metadata and helpers for multi-format BarkVisor packages (**arm64** and **amd64*
 | `barkvisor-*-linux-{x86_64,aarch64}.tar.gz` | Any glibc host (+ `install.sh`) |
 | `arch/PKGBUILD` | Arch / Arch ARM (`makepkg`) |
 
-Alpine is **not** packaged as `.apk` (musl; no official Swift toolchain). Use a
-glibc binary tarball only if you know what you are doing, or Docker.
+Packages target **glibc** hosts (Debian, Ubuntu, Fedora, RHEL-family, Arch, …).
+Use the tarball + `install.sh` or Docker if your environment is unusual.
 
 ## Layout (all formats)
 
