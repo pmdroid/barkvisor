@@ -28,7 +28,10 @@ struct LinuxGuestScriptsTests {
             "cloudInit",
             "portForwards",
             "sshAuthorizedKeys",
-            "ubuntu-24.04-minimal-cloudimg-arm64",
+            // Host-arch cloud image default (amd64 or arm64 via uname -m)
+            "ubuntu-24.04-minimal-cloudimg-",
+            "_default_cloud_arch",
+            "uname -m",
         ] {
             #expect(body.contains(needle), "smoke script should reference \(needle)")
         }
