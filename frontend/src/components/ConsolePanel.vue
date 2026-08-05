@@ -1,26 +1,35 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import '@xterm/xterm/css/xterm.css'
+import { ref, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
+import { Terminal, type WTerm } from '@wterm/vue'
+import '@wterm/vue/css'
 import { getWSTicket } from '../api/client'
 
 const props = defineProps<{ vmId: string; vmState: string }>()
 
 const isAlive = () => props.vmState === 'running' || props.vmState === 'stopping'
 
-const termEl = ref<HTMLElement>()
+const term = useTemplateRef('term')
 const status = ref('')
-let terminal: Terminal | null = null
-let fitAddon: FitAddon | null = null
+let wt: WTerm | null = null
 let ws: WebSocket | null = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let reconnectDelay = 1000
-let resizeObserver: ResizeObserver | null = null
 const MAX_RECONNECT_DELAY = 30000
 const MAX_RECONNECT_ATTEMPTS = 10
 let reconnectAttempts = 0
+
+function onReady(instance: WTerm) {
+  wt = instance
+}
+
+function onData(data: string) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(data)
+}
+
+function onTermError(err: unknown) {
+  status.value = `Terminal failed: ${err instanceof Error ? err.message : String(err)}`
+}
 
 async function connect() {
   if (!isAlive()) return
@@ -47,22 +56,6 @@ async function connect() {
     status.value = ''
     reconnectDelay = 1000
     reconnectAttempts = 0
-    if (!terminal && termEl.value) {
-      terminal = new Terminal({
-        cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'JetBrains Mono, Menlo, monospace',
-        theme: { background: '#0d0d0d', foreground: '#e8e8e8' },
-      })
-      fitAddon = new FitAddon()
-      terminal.loadAddon(fitAddon)
-      terminal.open(termEl.value)
-      fitAddon.fit()
-      terminal.onData((d) => { if (ws?.readyState === WebSocket.OPEN) ws.send(d) })
-
-      resizeObserver = new ResizeObserver(() => { fitAddon?.fit() })
-      resizeObserver.observe(termEl.value)
-    }
   }
 
   ws.onerror = () => {
@@ -70,7 +63,9 @@ async function connect() {
   }
 
   ws.onmessage = (e) => {
-    if (terminal) terminal.write(new Uint8Array(e.data))
+    const target = wt ?? term.value
+    if (!target) return
+    target.write(new Uint8Array(e.data as ArrayBuffer))
   }
 
   ws.onclose = (e) => {
@@ -101,20 +96,53 @@ watch(() => props.vmState, () => {
 
 onUnmounted(() => {
   if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null }
-  resizeObserver?.disconnect()
-  resizeObserver = null
   ws?.close()
   ws = null
-  terminal?.dispose()
+  wt = null
 })
 </script>
 
 <template>
   <div v-if="vmState !== 'running' && vmState !== 'stopping'" class="empty">VM must be running to use the console</div>
-  <div v-else>
-    <div v-if="status" style="padding: 8px 12px; font-size: 12px; color: var(--text-dim); background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border);">
+  <div v-else class="console-wrap">
+    <div v-if="status" class="console-status">
       {{ status }}
     </div>
-    <div ref="termEl" style="height: 480px; background: #0d0d0d; border-radius: 0; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 4px 24px rgba(0,0,0,0.5);"></div>
+    <Terminal
+      ref="term"
+      class="console-term"
+      cursor-blink
+      auto-resize
+      @ready="onReady"
+      @data="onData"
+      @error="onTermError"
+    />
   </div>
 </template>
+
+<style scoped>
+.console-wrap {
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.console-status {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+}
+
+.console-term {
+  height: 480px;
+  --term-bg: #0d0d0d;
+  --term-fg: #e8e8e8;
+  --term-font-family: 'JetBrains Mono', Menlo, monospace;
+  --term-font-size: 14px;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px;
+}
+</style>
