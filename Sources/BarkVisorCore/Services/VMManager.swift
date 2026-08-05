@@ -237,17 +237,18 @@ public actor VMManager: VMStateQuerying {
             return
         }
 
-        // Send ACPI powerdown via QMP
-        Log.vm.info("Sending ACPI powerdown to VM \(vmID) (PID \(running.pid))", vm: vmID)
+        // Graceful stop: prefer QEMU Guest Agent (reaches guest userspace), then ACPI power button.
         do {
-            let qmp = QMPClient(socketPath: running.qmpSocketPath)
-            try qmp.connect()
-            let response = try qmp.execute("system_powerdown")
-            qmp.disconnect()
-            Log.vm.info("ACPI powerdown sent to VM \(vmID), response: \(response)", vm: vmID)
+            let methodUsed = try requestGracefulShutdown(running: running, vmID: vmID)
+            Log.vm.info(
+                "Graceful shutdown requested for VM \(vmID) via \(methodUsed) (PID \(running.pid))",
+                vm: vmID,
+            )
         } catch {
-            Log.vm.error("ACPI powerdown failed for VM \(vmID): \(error) — hard-killing", vm: vmID)
-            await hardKill(running: running, vmID: vmID, reason: "ACPI QMP failed")
+            Log.vm.error(
+                "Graceful shutdown failed for VM \(vmID): \(error) — hard-killing", vm: vmID,
+            )
+            await hardKill(running: running, vmID: vmID, reason: "graceful shutdown failed")
             return
         }
 
@@ -261,13 +262,73 @@ public actor VMManager: VMStateQuerying {
             }
             if await isProcessAlive(running) {
                 Log.vm.warning(
-                    "VM \(vmID) did not shut down after \(Int(Self.acpiShutdownTimeout))s ACPI, hard-killing",
+                    "VM \(vmID) did not shut down after \(Int(Self.acpiShutdownTimeout))s graceful stop, hard-killing",
                     vm: vmID,
                 )
-                await hardKill(running: running, vmID: vmID, reason: "ACPI timeout")
+                await hardKill(running: running, vmID: vmID, reason: "graceful shutdown timeout")
             } else {
                 await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
             }
+        }
+    }
+
+    /// Ask the guest to power off.
+    /// 1) `guest-shutdown` via QEMU Guest Agent when the agent socket is live (best — systemd sees it).
+    /// 2) QMP `system_powerdown` (ACPI power button) as fallback.
+    /// Returns a short label of which path was used.
+    func requestGracefulShutdown(running: RunningVM, vmID: String) throws -> String {
+        let gaPath = VMSockets(qmpSocketPath: running.qmpSocketPath)?.guestAgent.path
+            ?? VMSockets(vmID: vmID).guestAgent.path
+
+        if FileManager.default.fileExists(atPath: gaPath) {
+            do {
+                try sendGuestAgentShutdown(socketPath: gaPath)
+                return "guest-agent"
+            } catch {
+                Log.vm.info(
+                    "QGA guest-shutdown unavailable for VM \(vmID): \(error) — falling back to ACPI",
+                    vm: vmID,
+                )
+            }
+        } else {
+            Log.vm.info(
+                "No guest-agent socket for VM \(vmID) at \(gaPath) — using ACPI system_powerdown",
+                vm: vmID,
+            )
+        }
+
+        let qmp = QMPClient(socketPath: running.qmpSocketPath)
+        try qmp.connect()
+        defer { qmp.disconnect() }
+        let response = try qmp.execute("system_powerdown")
+        Log.vm.info("ACPI system_powerdown response for VM \(vmID): \(response)", vm: vmID)
+        return "acpi-powerdown"
+    }
+
+    /// Issue `guest-shutdown` over the QEMU Guest Agent channel.
+    /// A closed connection after a successful write is treated as success (guest is dying).
+    private func sendGuestAgentShutdown(socketPath: String) throws {
+        let ga = QMPClient(socketPath: socketPath, timeoutSeconds: 5)
+        try ga.connectRaw(timeoutSeconds: 2)
+        defer { ga.disconnect() }
+
+        let syncId = Int.random(in: 1 ... 999_999)
+        let sync = try ga.executeWithArgs("guest-sync", args: ["id": syncId])
+        // guest-sync echoes the id in "return"
+        if let ret = sync["return"] as? Int, ret != syncId {
+            throw BarkVisorError.monitorError("guest-sync mismatch (expected \(syncId), got \(ret))")
+        }
+
+        do {
+            // mode powerdown: guest should power off (not reboot)
+            _ = try ga.executeWithArgs("guest-shutdown", args: ["mode": "powerdown"])
+        } catch {
+            // Guest often tears down the agent channel before a full reply is delivered.
+            let msg = String(describing: error)
+            if msg.contains("closed") || msg.contains("empty read") || msg.contains("timed out") {
+                return
+            }
+            throw error
         }
     }
 
