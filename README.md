@@ -86,12 +86,14 @@ The built files go into `Sources/BarkVisor/Resources/frontend/` and are served b
 
 ## Development
 
+Use [mise](https://mise.jdx.dev/) (see `mise.toml`) or raw Swift tools:
+
 ```bash
-make build          # swift build
-make test           # swift test
-make lint           # swiftlint
-make format         # swiftformat
-make check          # lint + format check (CI)
+mise run build      # swift build -c release
+mise run test       # swift test
+mise run lint       # swiftlint + swiftformat --lint
+swiftformat Sources/ Tests/   # apply formatting
+# CI equivalent: mise run lint && mise run test
 ```
 
 ### Frontend E2E tests
