@@ -23,6 +23,7 @@ enum SystemCapabilitiesController {
             supportsInAppUpdate: PlatformCapabilities.supportsInAppUpdate,
             accelerator: PlatformCapabilities.accelerator,
             hostArch: PlatformCapabilities.hostArch,
+            hostCpuCount: PlatformHost.cpuCount,
             guestTypes: GuestProfiles.all.map {
                 GuestTypeInfo(
                     id: $0.id,

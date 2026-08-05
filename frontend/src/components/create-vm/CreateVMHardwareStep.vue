@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import AppSelect from '../ui/AppSelect.vue'
+import { useCapabilitiesStore } from '../../stores/capabilities'
 
 defineProps<{
   cpuCount: number
@@ -12,6 +14,16 @@ const emit = defineEmits<{
   'update:memoryMB': [value: number]
   'update:displayResolution': [value: string]
 }>()
+
+const caps = useCapabilitiesStore()
+const maxCpu = computed(() => caps.hostCpuCount)
+
+function onCpuInput(raw: string) {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return
+  const clamped = Math.min(Math.max(1, Math.trunc(n)), maxCpu.value)
+  emit('update:cpuCount', clamped)
+}
 </script>
 
 <template>
@@ -19,13 +31,13 @@ const emit = defineEmits<{
     <h3 class="step-title">Hardware</h3>
     <div style="display:flex;gap:12px">
       <div class="form-group" style="flex:1">
-        <label>CPU Cores</label>
+        <label>CPU Cores <span class="hint">(max {{ maxCpu }})</span></label>
         <input
           :value="cpuCount"
           type="number"
           min="1"
-          max="16"
-          @input="emit('update:cpuCount', Number(($event.target as HTMLInputElement).value))"
+          :max="maxCpu"
+          @input="onCpuInput(($event.target as HTMLInputElement).value)"
         />
       </div>
       <div class="form-group" style="flex:1">
@@ -60,5 +72,10 @@ const emit = defineEmits<{
   font-weight: 600;
   margin-bottom: 16px;
   color: var(--text);
+}
+.hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-dim, var(--text-secondary));
 }
 </style>

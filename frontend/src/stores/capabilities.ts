@@ -11,6 +11,7 @@ const defaultCapabilities: SystemCapabilities = {
   supportsInAppUpdate: true,
   accelerator: 'hvf',
   hostArch: 'arm64',
+  hostCpuCount: 16,
   guestTypes: [],
 }
 
@@ -27,6 +28,11 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   const platform = computed(() => capabilities.value.platform)
   const accelerator = computed(() => capabilities.value.accelerator)
   const hostArch = computed(() => capabilities.value.hostArch)
+  /** Max vCPUs assignable to a VM (= host online logical CPUs). */
+  const hostCpuCount = computed(() => {
+    const n = capabilities.value.hostCpuCount
+    return typeof n === 'number' && n >= 1 ? n : defaultCapabilities.hostCpuCount!
+  })
   const guestTypes = computed(() => capabilities.value.guestTypes ?? [])
 
   async function fetchCapabilities(): Promise<void> {
@@ -49,6 +55,10 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
             supportsInAppUpdate: !!data.supportsInAppUpdate,
             accelerator: data.accelerator ?? defaultCapabilities.accelerator,
             hostArch: data.hostArch ?? defaultCapabilities.hostArch,
+            hostCpuCount:
+              typeof data.hostCpuCount === 'number' && data.hostCpuCount >= 1
+                ? data.hostCpuCount
+                : defaultCapabilities.hostCpuCount,
             guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
           }
         }
@@ -74,6 +84,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     platform,
     accelerator,
     hostArch,
+    hostCpuCount,
     guestTypes,
     fetchCapabilities,
   }
