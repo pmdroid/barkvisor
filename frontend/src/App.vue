@@ -19,7 +19,7 @@ function isActive(path: string) {
 </script>
 
 <template>
-  <div v-if="route.name === 'login' || route.name === 'setup'">
+  <div v-if="route.name === 'login' || route.name === 'setup' || route.name === 'vm-vnc' || route.meta.bare">
     <router-view />
   </div>
   <div v-else class="layout">

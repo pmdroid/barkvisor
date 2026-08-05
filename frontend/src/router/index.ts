@@ -9,6 +9,12 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
     { path: '/vms', name: 'vms', component: () => import('../views/VMListView.vue') },
     { path: '/vms/:id', name: 'vm-detail', component: () => import('../views/VMDetailView.vue') },
+    {
+      path: '/vms/:id/vnc',
+      name: 'vm-vnc',
+      component: () => import('../views/VNCWindowView.vue'),
+      meta: { bare: true },
+    },
     { path: '/images', name: 'images', component: () => import('../views/ImageLibraryView.vue') },
     { path: '/disks', name: 'disks', component: () => import('../views/DiskView.vue') },
     { path: '/networks', name: 'networks', component: () => import('../views/NetworkView.vue') },

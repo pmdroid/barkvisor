@@ -388,7 +388,9 @@ public enum QEMUBuilder {
         return [
             "-chardev", "socket,id=serial0,path=\(s.serial.path),server=on,wait=off",
             "-serial", "chardev:serial0",
-            "-vnc", "unix:\(s.vnc.path)",
+            // lossy=on enables Tight+JPEG in QEMU's VNC server (much less bandwidth/CPU
+            // than raw/hextile for typical desktop sessions; noVNC negotiates JPEG quality).
+            "-vnc", "unix:\(s.vnc.path),lossy=on",
             "-qmp", "unix:\(s.qmp.path),server,nowait",
             "-qmp", "unix:\(s.event.path),server,nowait",
             "-device", "virtio-serial-pci",
