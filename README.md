@@ -20,7 +20,7 @@ A headless daemon for managing QEMU virtual machines through a web UI.
 - NAT networking with port forwarding; **bridged networking** on macOS (socket_vmnet) and Linux (host bridge + qemu-bridge-helper)
 - OS image library with HTTP download and auto-decompression (arm64 and x86_64)
 - Live CPU, memory, and disk I/O metrics
-- Serial console (xterm.js) and VNC display (NoVNC) in the browser
+- Serial console (wterm) and VNC display (NoVNC) in the browser
 - JWT authentication, API keys, and audit logging
 - SSH key management for VM injection
 - Database backups, log rotation, and diagnostic bundles
