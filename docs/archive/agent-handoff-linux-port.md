@@ -1,3 +1,5 @@
+> **Archived (historical only).** Product Linux install docs: [getting-started-linux.md](../getting-started-linux.md). Do not use this file for current behavior or branch lists.
+
 # Agent handoff: BarkVisor Linux port + simplification
 
 > **Product docs supersede this file.** Current multi-distro Linux support (what works, distro matrix, smokes, limits) is in **[getting-started-linux.md](getting-started-linux.md)** and the root **README**. Keep this handoff for **historical PR/merge context** only.
