@@ -1,3 +1,5 @@
+> **Note:** Much of this plan has landed on `main`. Treat as historical prioritization notes, not an open PR list.
+
 # BarkVisor improvement plan (phased)
 
 **Last updated:** 2026-07-28  
