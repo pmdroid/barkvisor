@@ -7,12 +7,19 @@ pkgdesc="Headless QEMU VM manager with web UI"
 arch=('@ARCH_ARCH@')
 url="https://github.com/pmdroid/barkvisor"
 license=('MIT')
-depends=('glibc' 'curl' 'libxml2' 'sqlite' 'ncurses' 'zstd' 'libedit' 'zlib')
-optdepends=(
-  'qemu-base: run guests'
-  'edk2-ovmf: UEFI firmware (x86_64)'
-  'cdrtools: cloud-init seed ISO (mkisofs)'
-  'usbutils: USB passthrough device list'
+depends=(
+  'glibc'
+  'curl'
+  'libxml2'
+  'sqlite'
+  'ncurses'
+  'zstd'
+  'libedit'
+  'zlib'
+  'qemu-base'
+  'edk2-ovmf'
+  'cdrtools'
+  'usbutils'
 )
 options=('!strip' '!debug')
 install=barkvisor.install

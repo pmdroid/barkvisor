@@ -18,58 +18,23 @@ After install, open `http://localhost:7777` (or the host IP) and complete the we
   (A Docker image is an alternative if you do not want to install on the host OS.)
 - **Disk space:** at least 2 GB free for BarkVisor itself. Plan for additional space for VM disk images. Each cloud image download is typically 500 MB–2 GB; guest disks grow up to the size you allocate.
 - **RAM:** 8 GB minimum; 16 GB or more recommended. Each running VM reserves its configured memory from the host.
-- **QEMU and firmware from the distro** — unlike macOS, the Linux package does **not** bundle QEMU. Install the packages in the next section.
+- **QEMU and firmware from the distro** — unlike macOS, the Linux package does **not** bundle QEMU. The `.deb` / `.rpm` / Arch package **depends on** distro QEMU, UEFI firmware, ISO tools, and `usbutils`, so the package manager installs them with BarkVisor.
 - **KVM (recommended)** — `/dev/kvm` readable by the `barkvisor` service user for hardware acceleration. Without KVM, BarkVisor still runs using TCG (slower).
 
-### Distro packages (install before or right after BarkVisor)
+### Distro packages (pulled in by the BarkVisor package)
 
-The BarkVisor package ships the **daemon, web UI (SPA), and Swift runtime**.  
-Install **one** of the following blocks for your distribution:
+The BarkVisor package ships the **daemon, web UI (SPA), and Swift runtime**, and **requires**:
 
-**Debian / Ubuntu (amd64):**
+| Need | Debian / Ubuntu (typical) | Fedora / RHEL-family | Arch |
+|------|---------------------------|----------------------|------|
+| QEMU | `qemu-system-x86` / `qemu-system-arm` / `qemu-utils` (or `qemu-kvm`) | `qemu-kvm`, `qemu-img` | `qemu-base` |
+| UEFI firmware | `ovmf` / `qemu-efi-aarch64` | `edk2-ovmf` | `edk2-ovmf` |
+| Cloud-init seed ISO | `genisoimage` (or `xorriso` / `mkisofs`) | `genisoimage`, `xorriso` | `cdrtools` |
+| USB listing | `usbutils` | `usbutils` | `usbutils` |
 
-```sh
-sudo apt-get update
-sudo apt-get install -y \
-  qemu-system-x86 qemu-utils ovmf \
-  genisoimage ca-certificates curl \
-  usbutils
-```
+Installing `barkvisor` with `dpkg`/`apt`, `dnf`/`rpm`, or `makepkg`/`pacman` should install these automatically. If you use a **tarball** without a distro package, install the same packages by hand first.
 
-**Debian / Ubuntu (arm64):**
-
-```sh
-sudo apt-get update
-sudo apt-get install -y \
-  qemu-system-arm qemu-utils qemu-efi-aarch64 ovmf \
-  genisoimage ca-certificates curl \
-  usbutils
-```
-
-**Fedora:**
-
-```sh
-sudo dnf install -y \
-  qemu-system-x86 qemu-img edk2-ovmf \
-  genisoimage xorriso usbutils
-```
-
-**Rocky / Alma / RHEL:**
-
-```sh
-sudo dnf install -y \
-  qemu-kvm qemu-img edk2-ovmf \
-  genisoimage xorriso usbutils
-```
-
-**Arch:**
-
-```sh
-sudo pacman -S --needed \
-  qemu-base edk2-ovmf cdrtools usbutils
-```
-
-Optional for Windows guests with TPM: install your distro’s **`swtpm`** package.
+Optional for Windows guests with TPM: install your distro’s **`swtpm`** package (not a hard dependency).
 
 KVM group membership (after the package creates the `barkvisor` user):
 
@@ -192,7 +157,7 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
   barkvisor/                          # Short unix socket directory
 ```
 
-**QEMU, OVMF/AAVMF, genisoimage/xorriso, and usbutils** are **not** bundled — install them from the distro (see System Requirements). On Rocky/Alma/RHEL the QEMU binary is often only `/usr/libexec/qemu-kvm`; BarkVisor resolves that path.
+**QEMU, OVMF/AAVMF, ISO tools, and usbutils** are **not** bundled inside the BarkVisor payload; they are **required distro packages** declared in the package metadata (see System Requirements). On Rocky/Alma/RHEL the QEMU binary is often only `/usr/libexec/qemu-kvm`; BarkVisor resolves that path.
 
 ---
 
