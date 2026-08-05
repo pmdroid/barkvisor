@@ -74,15 +74,13 @@ extension VMManager {
             let vmName = await (try? dbPool.read { db in try VM.fetchOne(db, key: vmID)?.name }) ?? vmID
             shutdownNames.append(vmName)
 
-            // Send ACPI powerdown via QMP
-            Log.vm.info("Sending ACPI powerdown to \(vmName) (PID \(running.pid))", vm: vmID)
+            // Prefer guest-agent shutdown, then ACPI power button
+            Log.vm.info("Graceful shutdown for \(vmName) (PID \(running.pid))", vm: vmID)
             do {
-                let qmp = QMPClient(socketPath: running.qmpSocketPath)
-                try qmp.connect()
-                _ = try qmp.execute("system_powerdown")
-                qmp.disconnect()
+                let method = try requestGracefulShutdown(running: running, vmID: vmID)
+                Log.vm.info("Graceful shutdown for \(vmName) via \(method)", vm: vmID)
             } catch {
-                Log.vm.warning("ACPI powerdown failed for \(vmName): \(error)", vm: vmID)
+                Log.vm.warning("Graceful shutdown failed for \(vmName): \(error)", vm: vmID)
             }
         }
 
