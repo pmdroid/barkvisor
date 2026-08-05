@@ -13,9 +13,10 @@ files into `/docs/*` (`cd website && bun install && bun run dev`).
 | Requirement      | Minimum version | Notes                                   |
 |------------------|-----------------|-----------------------------------------|
 | macOS            | 26              | Apple Silicon required (HVF acceleration requires arm64 host for arm64 VMs) |
-| Xcode / Swift    | Swift 6.x       | Project pins Swift 6.2.3 via `.swift-version` |
+| Xcode / Swift    | Swift 6.x       | Local pin: `.swift-version` / `mise.toml` (currently 6.3). Linux CI/Docker package builds use **6.2.3** Ubuntu toolchains — keep that in mind for release binaries. |
 | Bun              | Latest           | JavaScript runtime for the frontend     |
 | Homebrew         | Latest           | For installing build and runtime deps   |
+| mise (optional)  | Latest           | Toolchain + tasks (`mise run build|test|lint`) |
 
 ## Installing Build Dependencies
 
@@ -108,12 +109,7 @@ BarkVisorHelperProtocol
 
 ```sh
 swift build
-```
-
-Or using the Makefile:
-
-```sh
-make build
+# or: mise run build   # release mode, see mise.toml
 ```
 
 ### Frontend
@@ -188,7 +184,8 @@ server: {
 ### Linting
 
 ```sh
-make lint           # Run SwiftLint
+mise run lint       # SwiftLint + SwiftFormat --lint
+# or: swiftlint lint
 ```
 
 SwiftLint is configured in `.swiftlint.yml`. Key settings:
@@ -201,8 +198,8 @@ SwiftLint is configured in `.swiftlint.yml`. Key settings:
 ### Formatting
 
 ```sh
-make format         # Auto-format with SwiftFormat
-make format-check   # Check formatting without modifying files
+swiftformat Sources/ Tests/              # apply formatting
+swiftformat --lint Sources/ Tests/       # check only (also in mise run lint)
 ```
 
 SwiftFormat is configured in `.swiftformat`. Key settings:
@@ -215,7 +212,7 @@ SwiftFormat is configured in `.swiftformat`. Key settings:
 ### Combined Check
 
 ```sh
-make check          # Runs lint + format-check (suitable for CI)
+mise run lint       # suitable for CI (lint + format check)
 ```
 
 ## Testing
@@ -224,12 +221,7 @@ make check          # Runs lint + format-check (suitable for CI)
 
 ```sh
 swift test
-```
-
-Or:
-
-```sh
-make test
+# or: mise run test
 ```
 
 The test suite includes unit tests for services, models, helpers, middleware,
