@@ -40,6 +40,22 @@ const tab = ref((route.query.tab as string) || 'overview')
 watch(tab, (value) => {
   router.replace({ query: { ...route.query, tab: value === 'overview' ? undefined : value } })
 })
+
+/** Prefer a dedicated resizable window for VNC (less UI chrome, better scaling). */
+function openVncTab() {
+  tab.value = 'vnc'
+  if (vm.value?.state !== 'running' && vm.value?.state !== 'stopping') return
+  const w = Math.min(1400, screen.availWidth - 40)
+  const h = Math.min(900, screen.availHeight - 60)
+  const left = Math.max(0, Math.floor((screen.availWidth - w) / 2))
+  const top = Math.max(0, Math.floor((screen.availHeight - h) / 2))
+  window.open(
+    `/vms/${vmId.value}/vnc`,
+    `barkvisor-vnc-${vmId.value}`,
+    `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no`,
+  )
+}
+
 const vm = computed(() => store.vms.find(v => v.id === vmId.value))
 const actionLoading = ref('')
 const showEditModal = ref(false)
@@ -511,7 +527,7 @@ const currentNetwork = computed(() => {
     <div class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
-      <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
+      <div class="tab" :class="{ active: tab === 'vnc' }" @click="openVncTab">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
     </div>
 
