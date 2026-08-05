@@ -23,7 +23,7 @@
 #   BARKVISOR_ADMIN_USER        Default: admin
 #   BARKVISOR_ADMIN_PASSWORD    Default: barkvisor-smoke-pass (must be >= 10 chars)
 #   BARKVISOR_CLOUD_IMAGE_URL   Cloud-image URL (set by REAL_GUEST=1 default)
-#   REAL_GUEST=1                Ubuntu 24.04 arm64 cloud image + cloud-init + SSH probe
+#   REAL_GUEST=1                Ubuntu 24.04 cloud image (host arch) + cloud-init + SSH probe
 #   BARKVISOR_DEFAULT_CLOUD_IMAGE_URL  Override default image when REAL_GUEST=1
 #   BARKVISOR_VM_TYPE           Override vmType (default: host-arch mapping)
 #   DISK_SIZE_GB                Default: 2 (blank) / 8 (REAL_GUEST)
@@ -48,8 +48,21 @@ ADMIN_USER="${BARKVISOR_ADMIN_USER}"
 ADMIN_PASSWORD="${BARKVISOR_ADMIN_PASSWORD}"
 VM_NAME="${VM_NAME:-linux-guest-smoke}"
 
-# Default Ubuntu 24.04 LTS minimal cloud image (arm64) for cloud-init + QEMU virt.
-DEFAULT_CLOUD_IMAGE_URL="${BARKVISOR_DEFAULT_CLOUD_IMAGE_URL:-https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img}"
+# Default Ubuntu 24.04 LTS minimal cloud image matching the host arch (for REAL_GUEST).
+_host_m="$(uname -m)"
+case "${_host_m}" in
+  aarch64 | arm64)
+    _default_cloud_arch="arm64"
+    ;;
+  x86_64 | amd64)
+    _default_cloud_arch="amd64"
+    ;;
+  *)
+    _default_cloud_arch="amd64"
+    echo "warning: unknown host arch '${_host_m}'; defaulting cloud image to amd64" >&2
+    ;;
+esac
+DEFAULT_CLOUD_IMAGE_URL="${BARKVISOR_DEFAULT_CLOUD_IMAGE_URL:-https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-${_default_cloud_arch}.img}"
 
 if [[ "${REAL_GUEST:-0}" == "1" ]]; then
   export BARKVISOR_CLOUD_IMAGE_URL="${BARKVISOR_CLOUD_IMAGE_URL:-$DEFAULT_CLOUD_IMAGE_URL}"
@@ -58,6 +71,7 @@ if [[ "${REAL_GUEST:-0}" == "1" ]]; then
   MEMORY_MB="${MEMORY_MB:-1024}"
   VM_NAME="${VM_NAME:-linux-real-guest}"
   SSH_WAIT_SECS="${SSH_WAIT_SECS:-900}"
+  log "REAL_GUEST default cloud image (${_default_cloud_arch}): ${BARKVISOR_CLOUD_IMAGE_URL}"
 else
   DISK_SIZE_GB="${DISK_SIZE_GB:-2}"
   CPU_COUNT="${CPU_COUNT:-1}"
