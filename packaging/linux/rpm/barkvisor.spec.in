@@ -9,11 +9,13 @@ BuildArch:      @RPM_ARCH@
 AutoReqProv:    no
 
 Requires:       ca-certificates
-Recommends:      qemu-img
-Recommends:      qemu-kvm
-Recommends:      edk2-ovmf
-Recommends:      genisoimage
-Recommends:      xorriso
+# Guest runtime — hard requirements (not optional recommends)
+Requires:       qemu-img
+Requires:       qemu-kvm
+Requires:       edk2-ovmf
+Requires:       genisoimage
+Requires:       xorriso
+Requires:       usbutils
 
 %description
 BarkVisor is a headless daemon for managing QEMU virtual machines through a
@@ -21,7 +23,8 @@ browser UI. Supports NAT and bridged networking, cloud images, cloud-init,
 serial console, and VNC on Linux arm64 and amd64 hosts.
 
 This package installs the daemon under /usr/local, a systemd unit, and a
-default environment file. Install QEMU/OVMF from the distro for guests.
+default environment file. QEMU, UEFI firmware, ISO tools, and usbutils are
+required dependencies from the distro.
 
 %install
 mkdir -p %{buildroot}

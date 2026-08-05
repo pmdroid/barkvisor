@@ -26,8 +26,10 @@ Use the tarball + `install.sh` or Docker if your environment is unusual.
 /var/lib/barkvisor                          # created by maintainer scripts
 ```
 
-QEMU, OVMF/AAVMF, and genisoimage/xorriso are **Recommends / optdepends** — install
-from the distro.
+QEMU, OVMF/AAVMF, ISO tools (genisoimage/xorriso/cdrtools), and **usbutils** are
+**hard dependencies** (`Depends` / `Requires` / `depends`). Installing the BarkVisor
+package pulls them from the distro package manager. They are not bundled inside
+the BarkVisor payload.
 
 ## Build
 
