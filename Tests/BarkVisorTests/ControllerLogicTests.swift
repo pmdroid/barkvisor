@@ -206,6 +206,8 @@ struct ControllerLogicTests {
         #expect(!caps.accelerator.isEmpty)
         #expect(caps.hostArch == "arm64" || caps.hostArch == "x86_64" || !caps.hostArch.isEmpty)
         #expect(caps.accelerator == PlatformCapabilities.accelerator)
+        #expect(caps.hostCpuCount == PlatformHost.cpuCount)
+        #expect(caps.hostCpuCount >= 1)
         #expect(caps.supportsBridgedNetworking == PlatformCapabilities.supportsBridgedNetworking)
         #expect(caps.supportsManagedBridgeDaemon == PlatformCapabilities.supportsManagedBridgeDaemon)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
@@ -216,5 +218,17 @@ struct ControllerLogicTests {
             #expect(caps.supportsBridgedNetworking)
             #expect(!caps.supportsManagedBridgeDaemon)
         #endif
+    }
+
+    @Test func `validateCPUCount rejects more vCPUs than host has`() throws {
+        let host = PlatformHost.cpuCount
+        try VMLifecycleService.validateCPUCount(1)
+        try VMLifecycleService.validateCPUCount(host)
+        #expect(throws: BarkVisorError.self) {
+            try VMLifecycleService.validateCPUCount(host + 1)
+        }
+        #expect(throws: BarkVisorError.self) {
+            try VMLifecycleService.validateCPUCount(0)
+        }
     }
 }
