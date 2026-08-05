@@ -88,7 +88,7 @@ extension VMManager {
             )
         }
 
-        // Wait for process to exit, force-kill after 15s
+        // Wait for process to exit; hard-kill after 15s
         Task { [weak self] in
             guard let self else { return }
             let deadline = Date().addingTimeInterval(15)
@@ -97,28 +97,25 @@ extension VMManager {
                 if Task.isCancelled { return }
             }
             if await isProcessAlive(running) {
-                Log.vm.warning("VM \(vmID) did not exit after guest shutdown + quit, terminating", vm: vmID)
-                await terminateProcess(running)
-            }
-            // For reconnected VMs, the dispatch source handles cleanup.
-            // Only call handleTermination if dispatch source hasn't already cleaned up.
-            if running.reconnected {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if await runningVMs[vmID] != nil, await !isProcessAlive(running) {
-                    await handleTermination(vmID: vmID, status: 0)
-                }
+                await hardKill(running: running, vmID: vmID, reason: "guest shutdown hang")
+            } else {
+                await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
             }
         }
     }
 
     // MARK: - Process Helpers
 
-    public func terminateProcess(_ running: RunningVM) {
-        if let proc = running.process {
+    /// Send a signal to the QEMU process. Prefer PID-based kill so reconnected VMs
+    /// (where `process` is nil) and native Process-owned VMs behave the same.
+    /// Use `SIGKILL` for force-stop — some QEMU builds ignore SIGTERM until guest exit.
+    public func terminateProcess(_ running: RunningVM, signal: Int32 = SIGTERM) {
+        if signal == SIGTERM, let proc = running.process, proc.isRunning {
             proc.terminate()
-        } else {
-            kill(running.pid, SIGTERM)
         }
+        // Always signal by PID as well: Foundation.Process.terminate can be a no-op if the
+        // process was not spawned by this Process instance, and reconnected VMs have process == nil.
+        kill(running.pid, signal)
     }
 
     public func isProcessAlive(_ running: RunningVM) -> Bool {

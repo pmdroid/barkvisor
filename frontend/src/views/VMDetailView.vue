@@ -41,10 +41,12 @@ watch(tab, (value) => {
   router.replace({ query: { ...route.query, tab: value === 'overview' ? undefined : value } })
 })
 
-/** Prefer a dedicated resizable window for VNC (less UI chrome, better scaling). */
-function openVncTab() {
-  tab.value = 'vnc'
-  if (vm.value?.state !== 'running' && vm.value?.state !== 'stopping') return
+/** Open VNC in a dedicated resizable window (toolbar button, not tab side-effect). */
+function openVncWindow() {
+  if (vm.value?.state !== 'running' && vm.value?.state !== 'stopping') {
+    toast.info('VM must be running to open VNC')
+    return
+  }
   const w = Math.min(1400, screen.availWidth - 40)
   const h = Math.min(900, screen.availHeight - 60)
   const left = Math.max(0, Math.floor((screen.availWidth - w) / 2))
@@ -356,10 +358,16 @@ async function confirmStop() {
   if (!stopConfirm.value) return
   const method = stopConfirm.value.method
   stopConfirm.value = null
+  stopLoading.value = true
+  actionLoading.value = method === 'force' ? 'force-stop' : 'stop'
   try {
     await store.stop(vmId.value, { method })
+    await store.fetchOne(vmId.value)
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
+  } finally {
+    stopLoading.value = false
+    actionLoading.value = ''
   }
 }
 
@@ -521,7 +529,13 @@ const currentNetwork = computed(() => {
         <span class="status-pill" :class="vm.state">{{ vm.state }}</span>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="!!actionLoading" @click="action('start', () => store.start(vmId))">Start</AppButton>
-        <StopButtonGroup v-if="vm.state === 'running'" :loading="!!actionLoading" @stop="requestStop($event)" />
+        <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="!!actionLoading || stopLoading" @stop="requestStop($event)" />
+        <AppButton
+          v-if="vm.state === 'running' || vm.state === 'stopping'"
+          title="Open VNC in a new resizable window"
+          :disabled="vm.state !== 'running'"
+          @click="openVncWindow"
+        >VNC</AppButton>
         <AppButton v-if="vm.state === 'running'"
           :disabled="!!actionLoading" @click="action('restart', () => store.restart(vmId))">Restart</AppButton>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="danger" :disabled="!!actionLoading" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
@@ -531,7 +545,7 @@ const currentNetwork = computed(() => {
     <div class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
-      <div class="tab" :class="{ active: tab === 'vnc' }" @click="openVncTab">VNC</div>
+      <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
     </div>
 
