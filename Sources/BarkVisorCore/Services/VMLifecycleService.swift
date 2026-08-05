@@ -416,14 +416,22 @@ extension VMLifecycleService {
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {
         if let name = params.name { try validateVMName(name) }
         if let cpu = params.cpuCount {
-            guard cpu >= 1, cpu <= 256 else {
-                throw BarkVisorError.badRequest("cpuCount must be between 1 and 256")
-            }
+            try validateCPUCount(cpu)
         }
         if let mem = params.memoryMB {
             guard mem >= 128, mem <= 1_048_576 else {
                 throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
             }
+        }
+    }
+
+    /// vCPUs must be at least 1 and at most the host online logical CPU count.
+    static func validateCPUCount(_ cpuCount: Int) throws {
+        let hostCPUs = PlatformHost.cpuCount
+        guard cpuCount >= 1, cpuCount <= hostCPUs else {
+            throw BarkVisorError.badRequest(
+                "cpuCount must be between 1 and \(hostCPUs) (host has \(hostCPUs) logical CPU\(hostCPUs == 1 ? "" : "s"))",
+            )
         }
     }
 

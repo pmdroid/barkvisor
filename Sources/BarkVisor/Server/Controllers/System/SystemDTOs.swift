@@ -75,6 +75,8 @@ struct SystemCapabilitiesResponse: Content {
     let supportsInAppUpdate: Bool
     let accelerator: String
     let hostArch: String
+    /// Online logical CPU count on the host (max assignable vCPUs per VM).
+    let hostCpuCount: Int
     /// Canonical guest profiles (persisted `vmType` IDs).
     let guestTypes: [GuestTypeInfo]
 }

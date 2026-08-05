@@ -412,9 +412,11 @@ async function doRemoveSharedPath() {
 }
 
 function openEditModal() {
+  const maxCpu = caps.hostCpuCount
+  const current = vm.value?.cpuCount || 1
   editDraft.value = {
     description: vm.value?.description || '',
-    cpuCount: vm.value?.cpuCount || 1,
+    cpuCount: Math.min(Math.max(1, current), maxCpu),
     memoryMB: vm.value?.memoryMB || 512,
     bootOrder: vm.value?.bootOrder || 'cd',
     networkId: vm.value?.networkId || defaultNetwork.value?.id || '',
@@ -425,9 +427,11 @@ function openEditModal() {
 async function saveEdit() {
   editSaving.value = true
   try {
+    const maxCpu = caps.hostCpuCount
+    const cpu = Math.min(Math.max(1, Math.trunc(editDraft.value.cpuCount)), maxCpu)
     await store.update(vmId.value, {
       description: editDraft.value.description,
-      cpuCount: editDraft.value.cpuCount,
+      cpuCount: cpu,
       memoryMB: editDraft.value.memoryMB,
       bootOrder: editDraft.value.bootOrder,
       networkId: editDraft.value.networkId,
@@ -900,8 +904,13 @@ const currentNetwork = computed(() => {
           <input v-model="editDraft.description" placeholder="Add a description..." />
         </div>
         <div class="edit-field">
-          <label>CPU Cores</label>
-          <input v-model.number="editDraft.cpuCount" type="number" min="1" max="32" />
+          <label>CPU Cores (max {{ caps.hostCpuCount }})</label>
+          <input
+            v-model.number="editDraft.cpuCount"
+            type="number"
+            min="1"
+            :max="caps.hostCpuCount"
+          />
         </div>
         <div class="edit-field">
           <label>Memory (MB)</label>

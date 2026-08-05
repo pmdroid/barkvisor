@@ -49,14 +49,15 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   function selectOS(os: 'linux' | 'windows') {
     osType.value = os
     selectedImageId.value = ''
+    const maxCpu = caps.hostCpuCount
     if (os === 'windows') {
-      cpuCount.value = 4
+      cpuCount.value = Math.min(4, maxCpu)
       memoryMB.value = 4096
       diskSizeGB.value = 64
       uefi.value = true
       mode.value = 'iso'
     } else {
-      cpuCount.value = 2
+      cpuCount.value = Math.min(2, maxCpu)
       memoryMB.value = 1024
       diskSizeGB.value = 10
     }
