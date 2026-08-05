@@ -213,8 +213,14 @@ public actor VMManager: VMStateQuerying {
 
     // MARK: - Stop
 
+    /// Graceful ACPI wait before escalating to hard kill (seconds).
+    private static let acpiShutdownTimeout: TimeInterval = 60
+    /// How long to wait for QEMU to exit after SIGTERM before SIGKILL.
+    private static let termGraceTimeout: TimeInterval = 2
+
     /// Shutdown methods: "acpi" sends ACPI powerdown, "force" kills immediately.
-    /// Sends the shutdown signal and returns immediately. A background task handles the wait + force-kill timeout.
+    /// ACPI returns after QMP powerdown; a background task escalates to hard kill if needed.
+    /// Force waits until the QEMU process is dead (or a short hard-kill timeout).
     public func stop(vmID: String, force: Bool, method: String = "acpi") async throws {
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
@@ -227,7 +233,7 @@ public actor VMManager: VMStateQuerying {
 
         if force || method == "force" {
             Log.vm.info("Force stopping VM \(vmID) (PID \(running.pid))", vm: vmID)
-            terminateProcess(running)
+            await hardKill(running: running, vmID: vmID, reason: "force stop")
             return
         }
 
@@ -240,37 +246,81 @@ public actor VMManager: VMStateQuerying {
             qmp.disconnect()
             Log.vm.info("ACPI powerdown sent to VM \(vmID), response: \(response)", vm: vmID)
         } catch {
-            Log.vm.error("ACPI powerdown failed for VM \(vmID): \(error)", vm: vmID)
-            terminateProcess(running)
+            Log.vm.error("ACPI powerdown failed for VM \(vmID): \(error) — hard-killing", vm: vmID)
+            await hardKill(running: running, vmID: vmID, reason: "ACPI QMP failed")
             return
         }
 
-        // Wait for graceful shutdown in the background — force kill after 5 minutes
+        // Wait for graceful shutdown in the background — hard kill after acpiShutdownTimeout.
         Task { [weak self] in
             guard let self else { return }
-            let deadline = Date().addingTimeInterval(300)
+            let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout)
             while await isProcessAlive(running), Date() < deadline {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 if Task.isCancelled { return }
             }
             if await isProcessAlive(running) {
                 Log.vm.warning(
-                    "VM \(vmID) did not shut down gracefully after 5 minutes, sending SIGTERM to force termination",
+                    "VM \(vmID) did not shut down after \(Int(Self.acpiShutdownTimeout))s ACPI, hard-killing",
                     vm: vmID,
                 )
-                await terminateProcess(running)
-            }
-            // For reconnected VMs, the dispatch source in VMProcessMonitor handles cleanup.
-            // Only call handleTermination here if the dispatch source won't fire
-            // (i.e., the process already exited before the source was set up).
-            if running.reconnected {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                // Only clean up if the VM is still in our runningVMs (dispatch source hasn't already handled it)
-                if await runningVMs[vmID] != nil, await !isProcessAlive(running) {
-                    await handleTermination(vmID: vmID, status: 0)
-                }
+                await hardKill(running: running, vmID: vmID, reason: "ACPI timeout")
+            } else {
+                await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
             }
         }
+    }
+
+    /// Hard-stop QEMU: prefer QMP `quit`, then SIGTERM, then SIGKILL. Ensures reconnected VMs
+    /// get a clean `handleTermination` if the process monitor does not fire.
+    func hardKill(running: RunningVM, vmID: String, reason: String) async {
+        Log.vm.info("Hard-kill VM \(vmID) (PID \(running.pid)): \(reason)", vm: vmID)
+
+        // 1) QMP quit — cleanest when the monitor socket still works
+        do {
+            let qmp = QMPClient(socketPath: running.qmpSocketPath)
+            try qmp.connect()
+            _ = try qmp.execute("quit")
+            qmp.disconnect()
+            Log.vm.info("QMP quit sent to VM \(vmID)", vm: vmID)
+        } catch {
+            Log.vm.debug("QMP quit failed for VM \(vmID): \(error)", vm: vmID)
+        }
+
+        // 2) SIGTERM (Process.terminate or kill)
+        if isProcessAlive(running) {
+            terminateProcess(running, signal: SIGTERM)
+        }
+
+        let termDeadline = Date().addingTimeInterval(Self.termGraceTimeout)
+        while isProcessAlive(running), Date() < termDeadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        // 3) SIGKILL — QEMU (and some guests) can ignore SIGTERM for a long time
+        if isProcessAlive(running) {
+            Log.vm.warning("VM \(vmID) still alive after TERM, sending SIGKILL", vm: vmID)
+            terminateProcess(running, signal: SIGKILL)
+            let killDeadline = Date().addingTimeInterval(3)
+            while isProcessAlive(running), Date() < killDeadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+
+        if isProcessAlive(running) {
+            Log.vm.error("VM \(vmID) (PID \(running.pid)) still alive after SIGKILL", vm: vmID)
+        } else {
+            await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
+        }
+    }
+
+    /// Record termination if the process monitor has not already cleaned up (esp. reconnected VMs).
+    func ensureTerminationRecorded(vmID: String, running: RunningVM, status: Int32) async {
+        // Brief yield so DispatchSource/poll can win the race when it fires.
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        guard runningVMs[vmID] != nil else { return }
+        guard !isProcessAlive(running) else { return }
+        await handleTermination(vmID: vmID, status: status)
     }
 
     // MARK: - Restart
@@ -278,13 +328,19 @@ public actor VMManager: VMStateQuerying {
     public func restart(vmID: String) async throws {
         if runningVMs[vmID] != nil {
             try await stop(vmID: vmID, force: false)
-            // Wait up to 5 minutes for the guest to shut down gracefully — never force kill on restart.
-            let deadline = Date().addingTimeInterval(300)
+            // Wait for ACPI path (or hard-kill escalation) to finish.
+            let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout + 15)
             while runningVMs[vmID] != nil, Date() < deadline {
                 try await Task.sleep(nanoseconds: 250_000_000)
             }
             if runningVMs[vmID] != nil {
-                throw BarkVisorError.timeout("VM \(vmID) did not stop within 5 minutes — restart aborted")
+                // Last resort for restart
+                if let running = runningVMs[vmID] {
+                    await hardKill(running: running, vmID: vmID, reason: "restart timeout")
+                }
+            }
+            if runningVMs[vmID] != nil {
+                throw BarkVisorError.timeout("VM \(vmID) did not stop — restart aborted")
             }
         }
         try await start(vmID: vmID)
