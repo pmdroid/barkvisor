@@ -113,9 +113,7 @@ extension VMLifecycleService {
             let allowed = GuestProfiles.supportedIDs.joined(separator: "', '")
             throw BarkVisorError.badRequest("vmType must be '\(allowed)'")
         }
-        guard params.cpuCount >= 1, params.cpuCount <= 256 else {
-            throw BarkVisorError.badRequest("cpuCount must be between 1 and 256")
-        }
+        try validateCPUCount(params.cpuCount)
         guard params.memoryMB >= 128, params.memoryMB <= 1_048_576 else {
             throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
         }

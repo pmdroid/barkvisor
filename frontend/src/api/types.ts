@@ -388,6 +388,8 @@ export interface SystemCapabilities {
   supportsInAppUpdate: boolean
   accelerator: 'hvf' | 'kvm' | string
   hostArch: 'arm64' | 'x86_64' | string
+  /** Online logical CPUs on the host (max vCPUs per VM). */
+  hostCpuCount?: number
   /** Canonical guest profiles (persisted vmType IDs). */
   guestTypes?: GuestTypeInfo[]
 }
