@@ -170,7 +170,7 @@ browser -- useful for OS installation and desktop environments.
 
 ### Serial Console
 
-Click the **Console** tab. BarkVisor embeds an xterm.js terminal that
+Click the **Console** tab. BarkVisor embeds a [wterm](https://wterm.dev) terminal that
 connects over a WebSocket to the QEMU serial socket at
 `/api/vms/:id/console`. This is the primary interface for headless Linux
 servers.
