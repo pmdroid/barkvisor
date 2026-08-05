@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="website/hero.png" alt="BarkVisor" width="256">
+  <img src="website/public/hero.png" alt="BarkVisor" width="256">
 </p>
 
 <h1 align="center">BarkVisor</h1>
