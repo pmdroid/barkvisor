@@ -97,7 +97,7 @@ extension VMManager {
         // Force kill any that didn't shut down
         for (vmID, running) in vmsToShutdown {
             if isProcessAlive(running) {
-                Log.vm.warning("VM \(vmID) did not shut down in time, force killing", vm: vmID)
+                Log.vm.warning("VM \(vmID) did not shut down in time, hard-killing", vm: vmID)
                 kill(running.pid, SIGKILL)
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
