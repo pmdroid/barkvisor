@@ -2,8 +2,11 @@ import Foundation
 
 // MARK: - Protocol
 
-/// Abstracts privileged host operations (bridge daemons, software updates)
-/// that require a macOS XPC helper. On Linux these ops are unavailable for MVP.
+/// Abstracts privileged host operations (bridge daemons, in-app updates).
+///
+/// - **macOS:** XPC helper (`HelperXPCClient`) for socket_vmnet lifecycle and PKG updates.
+/// - **Linux:** host-bridge validation only (no XPC); in-app updates are unsupported
+///   (`PlatformCapabilities.supportsInAppUpdate` is false — use the package manager).
 ///
 /// Controllers and other call sites must use `PrivilegeService.shared` only —
 /// never call `HelperXPCClient` directly (enforced by PrivilegeBoundaryTests).
