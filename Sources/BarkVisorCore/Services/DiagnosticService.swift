@@ -24,10 +24,13 @@ public enum DiagnosticService {
         let systemData = try JSONSerialization.data(withJSONObject: systemInfo, options: .prettyPrinted)
         try systemData.write(to: tempDir.appendingPathComponent("system-info.json"))
 
-        // App info
+        // App info — Config.version is inject-able for releases; Bundle.main is empty on Linux headless.
+        let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let bundleBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
         let appInfo: [String: Any] = [
-            "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
-            "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0",
+            "version": Config.version,
+            "build": bundleBuild ?? (bundleVersion ?? Config.version),
+            "isDevBuild": Config.isDevBuild,
             "uptime": ProcessInfo.processInfo.systemUptime,
             "dataDir": Config.dataDir.path,
             "logDir": "database",
