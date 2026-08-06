@@ -1,17 +1,16 @@
 import Foundation
 import Testing
-
 @testable import BarkVisorCore
 
 @Suite("HostInventory")
 struct HostInventoryTests {
-    @Test func snapshotHasSchemaVersionOne() {
+    @Test func `snapshot has schema version one`() {
         let inv = HostInventoryService.snapshot()
         #expect(inv.schemaVersion == 1)
         #expect(inv.schemaVersion == HostInventoryService.currentSchemaVersion)
     }
 
-    @Test func snapshotMatchesPlatformCapabilities() {
+    @Test func `snapshot matches platform capabilities`() {
         let inv = HostInventoryService.snapshot()
         #expect(inv.platform.arch == PlatformCapabilities.hostArch)
         #expect(inv.virtualization.accelerator == PlatformCapabilities.accelerator)
@@ -34,7 +33,7 @@ struct HostInventoryTests {
         )
     }
 
-    @Test func snapshotResourcesMatchPlatformHost() {
+    @Test func `snapshot resources match platform host`() {
         let inv = HostInventoryService.snapshot()
         #expect(inv.resources.cpuCount == PlatformHost.cpuCount)
         #expect(inv.resources.memoryTotalMB == PlatformHost.physicalMemoryMB)
@@ -43,7 +42,7 @@ struct HostInventoryTests {
         #expect(inv.displayName == inv.platform.hostname)
     }
 
-    @Test func snapshotIncludesGuestTypesAndAgent() {
+    @Test func `snapshot includes guest types and agent`() {
         let inv = HostInventoryService.snapshot(version: "1.2.3-test")
         #expect(inv.agent.role == "colocal")
         #expect(inv.agent.version == "1.2.3-test")
@@ -53,14 +52,14 @@ struct HostInventoryTests {
         #expect(inv.storage.contains { $0.kind == "dataDir" })
     }
 
-    @Test func inventoryCodableRoundTrip() throws {
+    @Test func `inventory codable round trip`() throws {
         let inv = HostInventoryService.snapshot()
         let data = try JSONEncoder().encode(inv)
         let decoded = try JSONDecoder().decode(HostInventory.self, from: data)
         #expect(decoded == inv)
     }
 
-    @Test func kvmProbeConsistentWithAcceleratorOnLinux() {
+    @Test func `kvm probe consistent with accelerator on linux`() {
         #if os(Linux)
             let kvm = HostInventoryService.kvmDevicePresent()
             let accel = PlatformCapabilities.accelerator
