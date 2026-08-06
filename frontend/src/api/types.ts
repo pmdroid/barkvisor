@@ -377,7 +377,14 @@ export interface GuestTypeInfo {
   qemuBinary: string
 }
 
-/** Platform feature flags from GET /api/system/capabilities */
+/**
+ * Feature flags and host facts from GET /api/system/capabilities.
+ *
+ * Describes the **current host** (the process serving the SPA) — a projection
+ * of server-side HostInventory. Multi-host UI will select a device inventory;
+ * until then there is only one host (this process). Prefer these fields over
+ * hardcoding platform assumptions in views.
+ */
 export interface SystemCapabilities {
   platform: 'macOS' | 'Linux' | string
   /** VMs may use bridged networking (Linux host bridge or macOS socket_vmnet). */
@@ -393,3 +400,6 @@ export interface SystemCapabilities {
   /** Canonical guest profiles (persisted vmType IDs). */
   guestTypes?: GuestTypeInfo[]
 }
+
+/** Alias: capabilities for the host running this BarkVisor process. */
+export type CurrentHostCapabilities = SystemCapabilities
