@@ -1,9 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { SystemCapabilities } from '../api/types'
+import type { CurrentHostCapabilities, SystemCapabilities } from '../api/types'
 
+/**
+ * Pinia store for the **current host** (process serving this SPA).
+ *
+ * Not multi-host state: when multi-device UI arrives, selected-device inventory
+ * will sit beside this store (or replace it). Gate create-VM / network UI on
+ * these fields instead of hardcoding platform assumptions.
+ */
 /** Safe defaults match macOS full feature set so a failed fetch never hides UI on Mac. */
-const defaultCapabilities: SystemCapabilities = {
+const defaultCapabilities: CurrentHostCapabilities = {
   platform: 'macOS',
   supportsBridgedNetworking: true,
   supportsManagedBridgeDaemon: true,
@@ -16,24 +23,27 @@ const defaultCapabilities: SystemCapabilities = {
 }
 
 export const useCapabilitiesStore = defineStore('capabilities', () => {
-  const capabilities = ref<SystemCapabilities>({ ...defaultCapabilities })
+  /** Inventory projection for the host running this BarkVisor process. */
+  const currentHost = ref<CurrentHostCapabilities>({ ...defaultCapabilities })
+  /** @deprecated Prefer `currentHost` — same ref, legacy name. */
+  const capabilities = currentHost
   const loaded = ref(false)
   const loading = ref(false)
   let loadPromise: Promise<void> | null = null
 
-  const supportsBridgedNetworking = computed(() => capabilities.value.supportsBridgedNetworking)
-  const supportsManagedBridgeDaemon = computed(() => capabilities.value.supportsManagedBridgeDaemon)
-  const supportsUSBPassthrough = computed(() => capabilities.value.supportsUSBPassthrough)
-  const supportsInAppUpdate = computed(() => capabilities.value.supportsInAppUpdate)
-  const platform = computed(() => capabilities.value.platform)
-  const accelerator = computed(() => capabilities.value.accelerator)
-  const hostArch = computed(() => capabilities.value.hostArch)
+  const supportsBridgedNetworking = computed(() => currentHost.value.supportsBridgedNetworking)
+  const supportsManagedBridgeDaemon = computed(() => currentHost.value.supportsManagedBridgeDaemon)
+  const supportsUSBPassthrough = computed(() => currentHost.value.supportsUSBPassthrough)
+  const supportsInAppUpdate = computed(() => currentHost.value.supportsInAppUpdate)
+  const platform = computed(() => currentHost.value.platform)
+  const accelerator = computed(() => currentHost.value.accelerator)
+  const hostArch = computed(() => currentHost.value.hostArch)
   /** Max vCPUs assignable to a VM (= host online logical CPUs). */
   const hostCpuCount = computed(() => {
-    const n = capabilities.value.hostCpuCount
+    const n = currentHost.value.hostCpuCount
     return typeof n === 'number' && n >= 1 ? n : defaultCapabilities.hostCpuCount!
   })
-  const guestTypes = computed(() => capabilities.value.guestTypes ?? [])
+  const guestTypes = computed(() => currentHost.value.guestTypes ?? [])
 
   async function fetchCapabilities(): Promise<void> {
     if (loaded.value) return
@@ -43,10 +53,11 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     loadPromise = (async () => {
       try {
         // Public endpoint — works before login (setup wizard).
+        // Projection of server HostInventory for this process's host.
         const res = await fetch('/api/system/capabilities')
         if (res.ok) {
           const data = (await res.json()) as SystemCapabilities
-          capabilities.value = {
+          currentHost.value = {
             platform: data.platform ?? defaultCapabilities.platform,
             supportsBridgedNetworking: !!data.supportsBridgedNetworking,
             // Older servers omit the field — treat as product-bridge-only platforms.
@@ -74,6 +85,9 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   }
 
   return {
+    /** Current host capabilities (preferred). */
+    currentHost,
+    /** Alias of currentHost for existing callers. */
     capabilities,
     loaded,
     loading,
