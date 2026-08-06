@@ -13,24 +13,26 @@ enum SystemCapabilitiesController {
         currentCapabilities()
     }
 
-    /// Host platform feature matrix — single source: PlatformCapabilities + GuestProfiles.
+    /// Host platform feature matrix — projected from `HostInventoryService.snapshot()`.
+    /// Keeps capabilities aligned with the multi-host-ready inventory document.
     static func currentCapabilities() -> SystemCapabilitiesResponse {
-        SystemCapabilitiesResponse(
-            platform: PlatformHost.platformName,
-            supportsBridgedNetworking: PlatformCapabilities.supportsBridgedNetworking,
-            supportsManagedBridgeDaemon: PlatformCapabilities.supportsManagedBridgeDaemon,
-            supportsUSBPassthrough: PlatformCapabilities.supportsUSBPassthrough,
-            supportsInAppUpdate: PlatformCapabilities.supportsInAppUpdate,
-            accelerator: PlatformCapabilities.accelerator,
-            hostArch: PlatformCapabilities.hostArch,
-            hostCpuCount: PlatformHost.cpuCount,
-            guestTypes: GuestProfiles.all.map {
+        let inv = HostInventoryService.snapshot()
+        return SystemCapabilitiesResponse(
+            platform: inv.platform.os,
+            supportsBridgedNetworking: inv.virtualization.features.bridgedNetworking,
+            supportsManagedBridgeDaemon: inv.virtualization.features.managedBridgeDaemon,
+            supportsUSBPassthrough: inv.virtualization.features.usbPassthrough,
+            supportsInAppUpdate: inv.virtualization.features.inAppUpdate,
+            accelerator: inv.virtualization.accelerator,
+            hostArch: inv.platform.arch,
+            hostCpuCount: inv.resources.cpuCount,
+            guestTypes: inv.guestTypes.map {
                 GuestTypeInfo(
                     id: $0.id,
                     arch: $0.arch,
                     machine: $0.machine,
                     osFamily: $0.osFamily,
-                    qemuBinary: $0.qemuBinaryName,
+                    qemuBinary: $0.qemuBinary,
                 )
             },
         )
