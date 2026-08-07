@@ -1,0 +1,10 @@
+---
+/**
+ * Starlight Head override: keep default head tags and inject PostHog on all docs pages.
+ */
+import Default from '@astrojs/starlight/components/Head.astro'
+import PostHog from './posthog.astro'
+---
+
+<Default {...Astro.props}><slot /></Default>
+<PostHog />
