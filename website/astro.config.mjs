@@ -29,6 +29,10 @@ export default defineConfig({
         },
       ],
       customCss: ['./src/styles/starlight.css'],
+      // Inject PostHog on every docs page (landing uses the same component in index.astro).
+      components: {
+        Head: './src/components/StarlightHead.astro',
+      },
       // Content lives under src/content/docs/docs/ → URLs /docs/...
       sidebar: [
         {
