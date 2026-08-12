@@ -6,6 +6,7 @@ import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
+import UnsupportedHint from './ui/UnsupportedHint.vue'
 import type { VMTemplate, DeployTemplateRequest, BridgeInfo, DeployTemplateResponse } from '../api/types'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { storeToRefs } from 'pinia'
@@ -237,9 +238,10 @@ async function submit() {
         </svg>
         <div>
           <strong>Bridged networking required</strong>
-          <p v-if="platformBridgeUnsupported" style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
-            {{ caps.explanationFor('bridgedNetworking') || 'Bridged networking is not available on this host. This template requires a bridged network.' }}
-          </p>
+          <UnsupportedHint
+            v-if="platformBridgeUnsupported"
+            :text="caps.explanationFor('bridgedNetworking')"
+          />
           <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.
             Install the BarkVisor Helper and enable a bridge under <strong>Settings &rarr; Network</strong>.
