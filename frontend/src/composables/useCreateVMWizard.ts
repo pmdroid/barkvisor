@@ -5,6 +5,7 @@ import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { networksUsableOnHost, useFeature } from './useFeature'
 import api from '../api/client'
 import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
@@ -21,8 +22,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const caps = useCapabilitiesStore()
   const networkStore = useNetworkStore()
   const diskStore = useDiskStore()
-  const { supportsUSBPassthrough, hostArch, guestTypes } = storeToRefs(caps)
-  const { networks } = storeToRefs(networkStore)
+  const { hostArch, guestTypes } = storeToRefs(caps)
+  const usb = useFeature('usbPassthrough')
+  const bridged = useFeature('bridgedNetworking')
+  const { networks: allNetworks } = storeToRefs(networkStore)
+  const networks = computed(() => networksUsableOnHost(allNetworks.value, bridged.available))
   const { unattached: availableDisks } = storeToRefs(diskStore)
 
   // Wizard step
@@ -246,8 +250,19 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   const isNAT = computed(() => {
     if (!selectedNetworkId.value) return false
-    const net = networks.value.find((n) => n.id === selectedNetworkId.value)
+    const net = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
     return net?.mode === 'nat'
+  })
+
+  watch([() => bridged.available, allNetworks], () => {
+    const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
+    if (current && current.mode === 'bridged' && !bridged.available) {
+      const fallback =
+        networkStore.defaultNAT
+        ?? allNetworks.value.find((n) => n.mode === 'nat')
+        ?? null
+      selectedNetworkId.value = fallback?.id ?? ''
+    }
   })
 
   // State
@@ -305,7 +320,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   const selectedNetwork = computed(() => {
     if (!selectedNetworkId.value) return null
-    return networks.value.find((n) => n.id === selectedNetworkId.value) || null
+    return allNetworks.value.find((n) => n.id === selectedNetworkId.value) || null
   })
 
   function canProceed(): boolean {
@@ -345,6 +360,10 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       error.value = 'Windows VMs are not available on this host architecture.'
       return
     }
+    if (selectedNetwork.value?.mode === 'bridged' && !bridged.available) {
+      error.value = bridged.explanation || 'Bridged networking is not available on this host.'
+      return
+    }
     loading.value = true
     try {
       const req: any = {
@@ -378,7 +397,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       if (selectedNetworkId.value) req.networkId = selectedNetworkId.value
       if (portForwards.value.length > 0) req.portForwards = portForwards.value
       if (sharedPaths.value.length > 0) req.sharedPaths = sharedPaths.value
-      if (supportsUSBPassthrough.value && selectedUSBDevices.value.length > 0) {
+      if (usb.available && selectedUSBDevices.value.length > 0) {
         req.usbDevices = selectedUSBDevices.value
       }
 
@@ -405,7 +424,6 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   return {
     // stores exposed for steps that need lists
     sshKeyStore,
-    supportsUSBPassthrough,
     hostArch,
     archLabel,
 

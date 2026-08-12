@@ -25,6 +25,7 @@ import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
+import { useFeature } from '../composables/useFeature'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,7 +33,9 @@ const store = useVMStore()
 const caps = useCapabilitiesStore()
 const diskStore = useDiskStore()
 const networkStore = useNetworkStore()
-const { supportsUSBPassthrough, supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
+const usb = useFeature('usbPassthrough')
+const bridged = useFeature('bridgedNetworking')
+const managedBridge = useFeature('managedBridgeDaemon')
 const { disks: allDisks, usages: diskUsages } = storeToRefs(diskStore)
 const { networks: allNetworks } = storeToRefs(networkStore)
 const vmId = computed(() => route.params.id as string)
@@ -148,8 +151,8 @@ async function fetchBridges() {
 
 /** macOS only: socket_vmnet daemon must be active before start. Linux uses host bridges. */
 const bridgeNotReady = computed(() => {
-  if (!supportsManagedBridgeDaemon.value) return false
-  if (!supportsBridgedNetworking.value) return false
+  if (!managedBridge.available) return false
+  if (!bridged.available) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
   const info = bridges.value.find(b => b.interface === currentNetwork.value!.bridge)
   return !info || info.status !== 'active'
@@ -292,7 +295,7 @@ async function loadVMDetail() {
       store.fetchOne(vmId.value),
       fetchNetworks(),
       fetchImages(),
-      ...(supportsManagedBridgeDaemon.value ? [fetchBridges()] : []),
+      ...(managedBridge.available ? [fetchBridges()] : []),
     ])
     if (loadVersion !== detailLoadVersion) return
 
@@ -305,7 +308,7 @@ async function loadVMDetail() {
     connectStateSSE()
     pollInterval = window.setInterval(() => {
       store.fetchOne(vmId.value).then(fetchGuestInfo).catch(() => {})
-      if (supportsManagedBridgeDaemon.value) fetchBridges()
+      if (managedBridge.available) fetchBridges()
     }, 15000)
   } catch (e: any) {
     if (loadVersion === detailLoadVersion) {
@@ -819,12 +822,12 @@ const currentNetwork = computed(() => {
           <AppButton
             size="sm"
             icon="plus"
-            :disabled="!supportsUSBPassthrough"
-            :title="supportsUSBPassthrough ? undefined : caps.explanationFor('usbPassthrough')"
+            :disabled="!usb.available"
+            :title="usb.available ? undefined : usb.explanation"
             @click="showAttachUSB = true; fetchUSBDevices()"
           >Attach USB Device</AppButton>
         </div>
-        <UnsupportedHint v-if="!supportsUSBPassthrough" :text="caps.explanationFor('usbPassthrough')" />
+        <UnsupportedHint v-if="!usb.available" :text="usb.explanation" />
         <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor ID' }, { key: 'product', label: 'Product ID' }, { key: 'actions', label: '' }]">
               <tr v-for="dev in (vm.usbDevices || [])" :key="`${dev.vendorId}:${dev.productId}`">
                 <td style="font-weight:500">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</td>
@@ -847,7 +850,7 @@ const currentNetwork = computed(() => {
     <MetricsPanel v-if="tab === 'metrics' && vm.state === 'running'" :key="`metrics-${vmId}`" :vm-id="vmId" />
 
     <!-- Attach USB Device Modal -->
-    <div v-if="supportsUSBPassthrough && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
+    <div v-if="usb.available && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
       <div class="modal">
         <h2>Attach USB Device</h2>
         <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on the host." />

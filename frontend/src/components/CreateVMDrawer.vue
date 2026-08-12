@@ -65,7 +65,6 @@ const {
   addPortForward,
   removePortForward,
   isNAT,
-  supportsUSBPassthrough,
   archLabel,
   error,
   loading,
@@ -172,7 +171,6 @@ function openUSBPicker() {
         :newPFProto="newPFProto"
         :newPFHostPort="newPFHostPort"
         :newPFGuestPort="newPFGuestPort"
-        :supportsUSBPassthrough="supportsUSBPassthrough"
         :selectedUSBDevices="selectedUSBDevices"
         :showUSBPicker="showUSBPicker"
         :hostUSBDevices="hostUSBDevices"
@@ -205,7 +203,6 @@ function openUSBPicker() {
         :existingDiskId="existingDiskId"
         :availableDisks="availableDisks"
         :sharedPaths="sharedPaths"
-        :supportsUSBPassthrough="supportsUSBPassthrough"
         :selectedUSBDevices="selectedUSBDevices"
         :selectedNetwork="selectedNetwork"
       />

@@ -27,7 +27,7 @@ async function fetchImages() {
 
 watch(() => props.repoId, fetchImages, { immediate: true })
 
-/** Catalog arch gate (PAS-37 fail-closed). Unknown host → not runnable. */
+/** Catalog arch gate (PAS-37 fail-closed, current host only). Unknown host → not runnable. */
 function imageArchSupported(arch: string | null | undefined): boolean {
   return caps.isArchRunnable(arch)
 }

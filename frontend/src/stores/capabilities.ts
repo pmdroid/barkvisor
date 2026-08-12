@@ -80,6 +80,25 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     return details.value.find((d) => d.code === code)
   }
 
+  /**
+   * Current-host feature flag (PAS-38). Fail-closed: unknown codes are false
+   * unless a capabilities `details` row explicitly says supported.
+   */
+  function isSupported(code: string): boolean {
+    switch (code) {
+      case 'bridgedNetworking':
+        return currentHost.value.supportsBridgedNetworking
+      case 'managedBridgeDaemon':
+        return currentHost.value.supportsManagedBridgeDaemon
+      case 'usbPassthrough':
+        return currentHost.value.supportsUSBPassthrough
+      case 'inAppUpdate':
+        return currentHost.value.supportsInAppUpdate
+      default:
+        return detailFor(code)?.supported === true
+    }
+  }
+
   function isArchRunnable(arch: string | null | undefined): boolean {
     const img = normalizeImageArch(arch)
     if (!img) return false
@@ -168,6 +187,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     details,
     runnableArches,
     detailFor,
+    isSupported,
     isArchRunnable,
     explanationFor,
     fetchCapabilities,

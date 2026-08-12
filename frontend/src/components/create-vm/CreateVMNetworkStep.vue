@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import AppSelect from '../ui/AppSelect.vue'
-import UnsupportedHint from '../ui/UnsupportedHint.vue'
-import { useCapabilitiesStore } from '../../stores/capabilities'
+import CapabilityGate from '../ui/CapabilityGate.vue'
 import type { Network, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../../api/types'
+import { useFeature } from '../../composables/useFeature'
 
-const caps = useCapabilitiesStore()
+const usb = useFeature('usbPassthrough')
 
 defineProps<{
   networks: Network[]
@@ -15,7 +15,6 @@ defineProps<{
   newPFProto: 'tcp' | 'udp'
   newPFHostPort: number | null
   newPFGuestPort: number | null
-  supportsUSBPassthrough: boolean
   selectedUSBDevices: USBPassthroughDevice[]
   showUSBPicker: boolean
   hostUSBDevices: HostUSBDevice[]
@@ -124,17 +123,16 @@ const emit = defineEmits<{
     </div>
 
     <!-- USB Passthrough -->
-    <div style="margin-top:16px">
+    <CapabilityGate feature="usbPassthrough" v-slot="{ available }" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <label style="margin:0">USB Passthrough</label>
-        <button class="btn-ghost btn-sm" :disabled="!supportsUSBPassthrough" @click="emit('openUSBPicker')">
+        <button class="btn-ghost btn-sm" :disabled="!available" @click="emit('openUSBPicker')">
           <span style="display:flex;align-items:center;gap:4px">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add
           </span>
         </button>
       </div>
-      <UnsupportedHint v-if="!supportsUSBPassthrough" :text="caps.explanationFor('usbPassthrough')" />
       <div v-if="selectedUSBDevices.length > 0" style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px">
         <div
           v-for="dev in selectedUSBDevices"
@@ -145,14 +143,14 @@ const emit = defineEmits<{
           <button class="btn-ghost btn-sm" style="color:var(--red);flex-shrink:0;margin-left:8px" @click="emit('removeUSBDevice', dev)">Remove</button>
         </div>
       </div>
-      <span v-else-if="supportsUSBPassthrough" style="font-size:11px;color:var(--text-dim);display:block">
+      <span v-else-if="available" style="font-size:11px;color:var(--text-dim);display:block">
         No USB devices selected. Pass physical USB devices from the host to the VM.
       </span>
-    </div>
+    </CapabilityGate>
 
     <!-- USB Device Picker Modal -->
     <div
-      v-if="supportsUSBPassthrough && showUSBPicker"
+      v-if="usb.available && showUSBPicker"
       class="modal-overlay"
       style="z-index:1100"
       @click.self="emit('update:showUSBPicker', false)"
