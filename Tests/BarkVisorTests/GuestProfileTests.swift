@@ -53,6 +53,34 @@ struct GuestProfileTests {
         #expect(GuestProfiles.defaultWindowsID(forImageArch: "amd64") == nil)
     }
 
+    @Test func `defaultID uses host linux when family omitted`() throws {
+        let id = try GuestProfiles.defaultID(osFamily: nil)
+        #expect(id == GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch))
+        #expect(try GuestProfiles.defaultID(osFamily: "LINUX") == id)
+        #expect(try GuestProfiles.defaultID(osFamily: " linux ") == id)
+    }
+
+    @Test func `defaultID windows follows supported host arch`() throws {
+        let host = PlatformCapabilities.hostArch
+        if host == "arm64" {
+            #expect(try GuestProfiles.defaultID(osFamily: "windows") == "windows-arm64")
+            #expect(
+                try GuestProfiles.defaultID(osFamily: "Windows", imageArch: "aarch64")
+                    == "windows-arm64",
+            )
+        } else {
+            #expect(throws: BarkVisorError.self) {
+                try GuestProfiles.defaultID(osFamily: "windows")
+            }
+        }
+        #expect(throws: BarkVisorError.self) {
+            try GuestProfiles.defaultID(osFamily: "windows", imageArch: "x86_64")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try GuestProfiles.defaultID(osFamily: "solaris")
+        }
+    }
+
     @Test func `profilesCompatible filters to host arch`() {
         let arm = GuestProfiles.profilesCompatible(withHostArch: "arm64")
         #expect(!arm.isEmpty)

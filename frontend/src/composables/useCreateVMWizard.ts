@@ -7,12 +7,20 @@ import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { networksUsableOnHost, useFeature } from './useFeature'
 import api from '../api/client'
-import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
+import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice, CreateVMRequest } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { hostArchToImageArch } from '../utils/imageArch'
+import {
+  architectureIsProblem,
+  architectureLabel,
+  defaultMachineType,
+  readAlwaysShowArchitectureDetails,
+  shouldRevealArchitectureDetails,
+  writeAlwaysShowArchitectureDetails,
+} from '../utils/architectureDetails'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -22,7 +30,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const caps = useCapabilitiesStore()
   const networkStore = useNetworkStore()
   const diskStore = useDiskStore()
-  const { hostArch, guestTypes } = storeToRefs(caps)
+  const { hostArch, guestTypes, accelerator } = storeToRefs(caps)
   const usb = useFeature('usbPassthrough')
   const bridged = useFeature('bridgedNetworking')
   const { networks: allNetworks } = storeToRefs(networkStore)
@@ -49,8 +57,15 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       (g) => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'),
     )
   })
+  /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
+  const guestArchOverride = ref<string | null>(null)
+
+  const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
+
+  const effectiveGuestArch = computed(() => guestArchOverride.value ?? hostImageArch.value)
+
   const vmType = computed(() => {
-    const arch = hostArchToImageArch(hostArch.value)
+    const arch = effectiveGuestArch.value
     const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
       // Never silently map Windows → Linux. Submit/canProceed require supportsWindows.
@@ -71,12 +86,82 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const memoryMB = ref(1024)
   const displayResolution = ref('1280x800')
   const uefi = ref(true)
-  const tpmEnabled = computed(() => osType.value === 'windows')
+  const tpmOverride = ref<boolean | null>(null)
+  const tpmEnabled = computed(() => tpmOverride.value ?? osType.value === 'windows')
+  const alwaysShowArchDetails = ref(readAlwaysShowArchitectureDetails())
+
+  const archCustomized = computed(() => {
+    const override = guestArchOverride.value
+    return !!override && override !== hostImageArch.value
+  })
+  const uefiCustomized = computed(() => uefi.value !== true)
+  const tpmCustomized = computed(() => tpmOverride.value !== null)
+  const archRunnable = computed(() => caps.isArchRunnable(effectiveGuestArch.value))
+  const archIsProblem = computed(() => {
+    if (!caps.hostArchKnown) return false
+    return architectureIsProblem(effectiveGuestArch.value, archRunnable.value)
+  })
+  const archProblemText = computed(() => {
+    if (!archIsProblem.value) return null
+    const guest = effectiveGuestArch.value || 'selected'
+    const host = hostImageArch.value || 'this host'
+    if (osType.value === 'windows' && guest !== 'arm64') {
+      return `Windows guests are not available on ${guest}. This host runs ${host}.`
+    }
+    return `VM architecture (${guest}) is not compatible with this host (${host}). Cross-architecture VMs are not supported.`
+  })
+  const revealArchOnSummary = computed(() =>
+    shouldRevealArchitectureDetails({
+      alwaysShow: alwaysShowArchDetails.value,
+      customized: archCustomized.value || uefiCustomized.value || tpmCustomized.value,
+      problem: archIsProblem.value,
+    }),
+  )
+  const archOptions = computed(() => {
+    const host = hostImageArch.value
+    return [
+      {
+        value: 'arm64',
+        label: host === 'arm64' ? 'ARM64 (this host)' : 'ARM64',
+      },
+      {
+        value: 'x86_64',
+        label: host === 'x86_64' ? 'x86_64 (this host)' : 'x86_64',
+        disabled: osType.value === 'windows',
+      },
+    ]
+  })
+  const machineType = computed(() => {
+    const fromCaps = (guestTypes.value ?? []).find((g) => g.id === vmType.value)?.machine
+    return fromCaps || defaultMachineType(vmType.value)
+  })
+  const cpuModel = computed(() => {
+    const accel = accelerator.value
+    return accel === 'hvf' || accel === 'kvm' ? 'host' : accel ? 'max' : 'host default'
+  })
+  const archLabel = computed(() => architectureLabel(effectiveGuestArch.value))
+
+  function setGuestArch(arch: string) {
+    guestArchOverride.value = arch || null
+  }
+
+  function setAlwaysShowArchDetails(on: boolean) {
+    alwaysShowArchDetails.value = on
+    writeAlwaysShowArchitectureDetails(on)
+  }
+
+  function setTpmEnabled(on: boolean) {
+    tpmOverride.value = on
+  }
 
   function selectOS(os: 'linux' | 'windows') {
     if (os === 'windows' && !supportsWindows.value) return
     osType.value = os
     selectedImageId.value = ''
+    tpmOverride.value = null
+    if (os === 'windows' && guestArchOverride.value === 'x86_64') {
+      guestArchOverride.value = null
+    }
     const maxCpu = caps.hostCpuCount
     if (os === 'windows') {
       cpuCount.value = Math.min(4, maxCpu)
@@ -284,8 +369,6 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     if (defaultNet) selectedNetworkId.value = defaultNet.id
   })
 
-  const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
-
   /** Local ready images of the current mode, unfiltered by arch. */
   function readyImagesForMode(imageType: 'iso' | 'cloud-image') {
     return imageStore.images.filter((i) => i.imageType === imageType && i.status === 'ready')
@@ -330,7 +413,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       case 'OS':
         return !!name.value.trim()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value
       case 'Image':
         return !!selectedImageId.value
       case 'Drivers':
@@ -340,7 +423,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       case 'Network':
         return true
       case 'Summary':
-        return true
+        return !archIsProblem.value
       default:
         return false
     }
@@ -364,16 +447,22 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       error.value = bridged.explanation || 'Bridged networking is not available on this host.'
       return
     }
+    if (archIsProblem.value) {
+      error.value = archProblemText.value || 'This architecture is not supported on this host.'
+      return
+    }
     loading.value = true
     try {
-      const req: any = {
+      // Simple path omits vmType / firmware so the server applies host defaults (PAS-93).
+      const req: CreateVMRequest = {
         name: name.value.trim(),
-        vmType: vmType.value,
+        osFamily: osType.value,
         cpuCount: cpuCount.value,
         memoryMB: memoryMB.value,
-        uefi: uefi.value,
-        tpmEnabled: tpmEnabled.value,
       }
+      if (archCustomized.value) req.vmType = vmType.value
+      if (uefiCustomized.value) req.uefi = uefi.value
+      if (tpmCustomized.value) req.tpmEnabled = tpmEnabled.value
       if (diskSource.value === 'existing') {
         req.existingDiskId = existingDiskId.value
       } else {
@@ -419,13 +508,13 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     return b + ' B'
   }
 
-  const archLabel = computed(() => (hostArch.value === 'x86_64' ? 'x86_64' : 'ARM64'))
-
   return {
     // stores exposed for steps that need lists
     sshKeyStore,
     hostArch,
     archLabel,
+    revealArchOnSummary,
+    archProblemText,
 
     // navigation
     step,
@@ -450,6 +539,15 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     displayResolution,
     uefi,
     tpmEnabled,
+    effectiveGuestArch,
+    archOptions,
+    machineType,
+    accelerator,
+    cpuModel,
+    alwaysShowArchDetails,
+    setGuestArch,
+    setAlwaysShowArchDetails,
+    setTpmEnabled,
 
     // Image
     mode,
