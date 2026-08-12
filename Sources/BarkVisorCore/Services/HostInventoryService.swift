@@ -33,13 +33,18 @@ public enum HostInventoryService {
 
         let storage = [dataDirStorage(at: dataDir)]
 
+        let qemuBridgeHelper = qemuBridgeHelperPresent()
         let features = VirtualizationFeatures(
-            bridgedNetworking: PlatformCapabilities.supportsBridgedNetworking,
+            bridgedNetworking: bridgedNetworkingSupported(
+                platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                qemuBridgeHelper: qemuBridgeHelper,
+                os: PlatformHost.platformName,
+            ),
             managedBridgeDaemon: PlatformCapabilities.supportsManagedBridgeDaemon,
             usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
             inAppUpdate: PlatformCapabilities.supportsInAppUpdate,
             kvmDevice: kvmDevicePresent(),
-            qemuBridgeHelper: qemuBridgeHelperPresent(),
+            qemuBridgeHelper: qemuBridgeHelper,
         )
 
         // Only advertise guest types this host can run natively (PAS-48).
@@ -108,6 +113,21 @@ public enum HostInventoryService {
         #else
             false
         #endif
+    }
+
+    /// Product flag for inventory / capabilities.
+    ///
+    /// Compile-time `PlatformCapabilities.supportsBridgedNetworking` is always true on
+    /// Linux; actual `-netdev bridge` attach also needs qemu-bridge-helper.
+    public static func bridgedNetworkingSupported(
+        platformSupports: Bool,
+        qemuBridgeHelper: Bool,
+        os: String,
+    ) -> Bool {
+        if os.caseInsensitiveCompare("Linux") == .orderedSame {
+            return platformSupports && qemuBridgeHelper
+        }
+        return platformSupports
     }
 
     private static func dataDirStorage(at dataDir: URL) -> StorageEntry {
