@@ -146,6 +146,48 @@ export function imageArchSupportedOnHost(
 }
 
 /**
+ * Arches a template can target (PAS-33). Prefer explicit `architectures`,
+ * then `imageByArch` keys, then infer from `imageSlug`.
+ */
+export function templateDeclaredArches(t: {
+  architectures?: string[] | null
+  imageByArch?: Record<string, string> | null
+  imageSlug?: string | null
+  compatible?: boolean
+}): ImageArch[] {
+  const out: ImageArch[] = []
+  const add = (raw: string | null | undefined) => {
+    const n = normalizeImageArch(raw)
+    if (n && !out.includes(n)) out.push(n)
+  }
+  for (const a of t.architectures ?? []) add(a)
+  if (out.length === 0) {
+    for (const key of Object.keys(t.imageByArch ?? {})) add(key)
+  }
+  if (out.length === 0) add(detectImageArch(t.imageSlug).arch)
+  return out
+}
+
+/** Whether this host can run any of the template's declared arches. */
+export function templateArchSupportedOnHost(
+  t: {
+    architectures?: string[] | null
+    imageByArch?: Record<string, string> | null
+    imageSlug?: string | null
+    compatible?: boolean
+  },
+  hostArch: string | null | undefined,
+): boolean {
+  if (typeof t.compatible === 'boolean') return t.compatible
+  const arches = templateDeclaredArches(t)
+  if (arches.length === 0) {
+    // Unknown template arch on a known host: keep visible; backend still blocks.
+    return !!normalizeImageArch(hostArch)
+  }
+  return arches.some((a) => imageArchSupportedOnHost(a, hostArch))
+}
+
+/**
  * Choose arch for a form: filename/URL detection first, else host default.
  */
 export function resolveImageArch(

@@ -68,7 +68,6 @@ packageTargets.append(contentsOf: [
         exclude: [
             "Resources/frontend/dist",
             "Resources/AppIcon.icns",
-            "Server/Resources",
         ],
     ),
     // Headless daemon entry point (no AppKit/SwiftUI)

@@ -131,6 +131,8 @@ struct ModelCodableTests {
         #expect(decoded.templates[0].slug == "ubuntu-server")
         #expect(decoded.templates[0].portForwards.count == 1)
         #expect(decoded.templates[0].portForwards[0].guestPort == 22)
+        #expect(decoded.templates[0].architectures == nil)
+        #expect(decoded.templates[0].imageByArch == nil)
     }
 
     // MARK: - MetricSample
