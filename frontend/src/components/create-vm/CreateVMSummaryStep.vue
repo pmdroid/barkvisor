@@ -12,6 +12,9 @@ defineProps<{
   memoryMB: number
   displayResolution: string
   tpmEnabled: boolean
+  uefi: boolean
+  revealArchDetails: boolean
+  archProblem: string | null
   mode: 'iso' | 'cloud'
   selectedImage: Image | null | undefined
   diskSource: 'new' | 'existing'
@@ -36,9 +39,12 @@ defineProps<{
         <span class="summary-label">OS</span>
         <span>{{ osType === 'linux' ? 'Linux' : 'Windows' }}</span>
       </div>
-      <div class="summary-row">
+      <div v-if="revealArchDetails" class="summary-row">
         <span class="summary-label">Architecture</span>
-        <span>{{ archLabel }}</span>
+        <span>
+          {{ archLabel }}
+          <span v-if="archProblem" class="arch-warn">{{ archProblem }}</span>
+        </span>
       </div>
       <div class="summary-row">
         <span class="summary-label">CPU</span>
@@ -52,13 +58,13 @@ defineProps<{
         <span class="summary-label">Display</span>
         <span>{{ displayResolution }}</span>
       </div>
-      <div class="summary-row">
+      <div v-if="revealArchDetails" class="summary-row">
         <span class="summary-label">Firmware</span>
-        <span>UEFI</span>
+        <span>{{ uefi ? 'UEFI' : 'Off' }}</span>
       </div>
-      <div v-if="tpmEnabled" class="summary-row">
+      <div v-if="revealArchDetails" class="summary-row">
         <span class="summary-label">TPM</span>
-        <span>TPM 2.0 (swtpm)</span>
+        <span>{{ tpmEnabled ? 'TPM 2.0' : 'Off' }}</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Image</span>
@@ -114,5 +120,14 @@ defineProps<{
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+.arch-warn {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--amber);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
 }
 </style>

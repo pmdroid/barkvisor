@@ -206,15 +206,7 @@ public enum WorkloadSpecProjector {
         let qemuArch = spec.spec.arch.flatMap { Self.normalizeQEMUArch($0) }
             ?? PlatformCapabilities.defaultGuestArch
         let imageArch = qemuArch == "aarch64" ? "arm64" : "x86_64"
-        if spec.spec.osFamily == "windows" {
-            guard let windows = GuestProfiles.defaultWindowsID(forImageArch: imageArch) else {
-                throw BarkVisorError.badRequest(
-                    "No Windows guest type for arch \(qemuArch)",
-                )
-            }
-            return windows
-        }
-        return GuestProfiles.defaultLinuxID(forImageArch: imageArch)
+        return try GuestProfiles.defaultID(osFamily: spec.spec.osFamily, imageArch: imageArch)
     }
 
     public static func normalizeQEMUArch(_ raw: String) -> String? {

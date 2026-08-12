@@ -135,6 +135,7 @@ struct WorkloadSpecProjectorTests {
         let body = CreateVMRequest(
             name: "flat",
             vmType: "linux-arm64",
+            osFamily: nil,
             cpuCount: 2,
             memoryMB: 1_024,
             diskSizeGB: 20,
@@ -155,8 +156,99 @@ struct WorkloadSpecProjectorTests {
         )
         let params = try VMController.createParams(from: body)
         #expect(params.name == "flat")
+        #expect(params.vmType == "linux-arm64")
         #expect(params.cpuCount == 2)
         #expect(params.memoryMB == 1_024)
+    }
+
+    @Test func `create params defaults omitted vmType from host`() throws {
+        let body = CreateVMRequest(
+            name: "simple",
+            vmType: nil,
+            osFamily: nil,
+            cpuCount: 2,
+            memoryMB: 1_024,
+            diskSizeGB: 10,
+            isoId: nil,
+            cloudImageId: nil,
+            cloudInit: nil,
+            networkId: nil,
+            existingDiskId: nil,
+            sharedPaths: nil,
+            portForwards: nil,
+            usbDevices: nil,
+            description: nil,
+            bootOrder: nil,
+            displayResolution: nil,
+            uefi: nil,
+            tpmEnabled: nil,
+            spec: nil,
+        )
+        let params = try VMController.createParams(from: body)
+        #expect(params.vmType == GuestProfiles.defaultLinuxID(
+            forImageArch: PlatformCapabilities.hostArch,
+        ))
+    }
+
+    @Test func `create params osFamily windows defaults or rejects`() {
+        let body = CreateVMRequest(
+            name: "win",
+            vmType: nil,
+            osFamily: "windows",
+            cpuCount: 2,
+            memoryMB: 4_096,
+            diskSizeGB: 64,
+            isoId: nil,
+            cloudImageId: nil,
+            cloudInit: nil,
+            networkId: nil,
+            existingDiskId: nil,
+            sharedPaths: nil,
+            portForwards: nil,
+            usbDevices: nil,
+            description: nil,
+            bootOrder: nil,
+            displayResolution: nil,
+            uefi: nil,
+            tpmEnabled: nil,
+            spec: nil,
+        )
+        if PlatformCapabilities.hostArch == "arm64" {
+            let params = try? VMController.createParams(from: body)
+            #expect(params?.vmType == "windows-arm64")
+        } else {
+            #expect(throws: BarkVisorError.self) {
+                try VMController.createParams(from: body)
+            }
+        }
+    }
+
+    @Test func `create params explicit vmType wins over osFamily`() throws {
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let body = CreateVMRequest(
+            name: "named",
+            vmType: hostLinux,
+            osFamily: "windows",
+            cpuCount: 2,
+            memoryMB: 1_024,
+            diskSizeGB: 10,
+            isoId: nil,
+            cloudImageId: nil,
+            cloudInit: nil,
+            networkId: nil,
+            existingDiskId: nil,
+            sharedPaths: nil,
+            portForwards: nil,
+            usbDevices: nil,
+            description: nil,
+            bootOrder: nil,
+            displayResolution: nil,
+            uefi: nil,
+            tpmEnabled: nil,
+            spec: nil,
+        )
+        let params = try VMController.createParams(from: body)
+        #expect(params.vmType == hostLinux)
     }
 
     @Test func `create params from spec document`() throws {
@@ -169,7 +261,7 @@ struct WorkloadSpecProjectorTests {
             ),
         )
         let body = CreateVMRequest(
-            name: nil, vmType: nil, cpuCount: nil, memoryMB: nil,
+            name: nil, vmType: nil, osFamily: nil, cpuCount: nil, memoryMB: nil,
             diskSizeGB: 40, isoId: nil, cloudImageId: "img-1", cloudInit: nil,
             networkId: nil, existingDiskId: nil, sharedPaths: nil,
             portForwards: nil, usbDevices: nil, description: nil,
@@ -276,7 +368,7 @@ struct WorkloadSpecProjectorTests {
             ),
         )
         let body = CreateVMRequest(
-            name: nil, vmType: nil, cpuCount: nil, memoryMB: nil,
+            name: nil, vmType: nil, osFamily: nil, cpuCount: nil, memoryMB: nil,
             diskSizeGB: 20, isoId: nil, cloudImageId: nil, cloudInit: nil,
             networkId: nil, existingDiskId: nil, sharedPaths: nil,
             portForwards: nil, usbDevices: nil, description: nil,
@@ -297,7 +389,7 @@ struct WorkloadSpecProjectorTests {
             ),
         )
         let body = CreateVMRequest(
-            name: nil, vmType: nil, cpuCount: nil, memoryMB: nil,
+            name: nil, vmType: nil, osFamily: nil, cpuCount: nil, memoryMB: nil,
             diskSizeGB: 20, isoId: nil, cloudImageId: nil,
             cloudInit: CloudInitConfig(sshAuthorizedKeys: nil, userData: "runcmd:\n  - echo hi\n"),
             networkId: nil, existingDiskId: nil, sharedPaths: nil,
