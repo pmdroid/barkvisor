@@ -11,7 +11,7 @@ import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
-import { hostArchToImageArch, normalizeImageArch } from '../utils/imageArch'
+import { hostArchToImageArch } from '../utils/imageArch'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -33,10 +33,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const osType = ref<'linux' | 'windows'>('linux')
   /**
    * Windows guest profile exists only for arm64 today (`windows-arm64`).
-   * Until hostArch is known, do not offer Windows — store defaults are arm64 and
-   * would otherwise allow a stale selection on x86_64 hosts (PAS-48).
-   * Use hostArchKnown (not loaded): loaded is true even when the capabilities
-   * fetch fails, while hostArch stays at the arm64 default.
+   * Until hostArch is known, do not offer Windows (PAS-48 / PAS-37 fail-closed).
    */
   const supportsWindows = computed(() => {
     if (!caps.hostArchKnown) return false
@@ -279,13 +276,10 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     return imageStore.images.filter((i) => i.imageType === imageType && i.status === 'ready')
   }
 
-  /** Match host arch once known; empty arch allowed (e.g. virtio drivers). */
+  /** Match host-runnable arch; empty arch allowed (e.g. virtio drivers). */
   function localImageMatchesHost(arch: string | null | undefined): boolean {
-    if (!caps.hostArchKnown) return true
     if (!arch) return true
-    const img = normalizeImageArch(arch)
-    if (!img) return false
-    return img === hostImageArch.value
+    return caps.isArchRunnable(arch)
   }
 
   const isoImages = computed(() =>

@@ -22,7 +22,6 @@ import { formatBytes } from '../utils/format'
 import {
   detectImageArch,
   hostArchToImageArch,
-  imageArchSupportedOnHost,
 } from '../utils/imageArch'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
@@ -37,24 +36,23 @@ const caps = useCapabilitiesStore()
 const activeTab = ref<'templates' | 'images'>('templates')
 
 /**
- * Catalog arch gate (PAS-48). Fail open until hostArch is known so a failed
- * capabilities fetch does not empty catalogs on x86_64 hosts.
+ * Catalog arch gate (PAS-37 fail-closed). Unknown host → not runnable.
+ * Do not infer from guestTypes.
  */
 function imageArchSupported(arch: string | null | undefined): boolean {
-  if (!caps.hostArchKnown) return true
-  return imageArchSupportedOnHost(arch, caps.hostArch)
+  return caps.isArchRunnable(arch)
 }
 
 /** Resolve a template's guest arch from catalog image or imageSlug. */
 function templateArchSupported(t: VMTemplate): boolean {
-  if (!caps.hostArchKnown) return true
+  if (!caps.hostArchKnown) return false
   for (const imgs of Object.values(repoStore.imagesByRepo)) {
     const match = imgs.find((i) => i.slug === t.imageSlug)
     if (match) return imageArchSupported(match.arch)
   }
   const fromSlug = detectImageArch(t.imageSlug).arch
-  if (fromSlug) return fromSlug === hostArchToImageArch(caps.hostArch)
-  // Unknown arch: keep visible; backend deploy still blocks foreign arch.
+  if (fromSlug) return caps.isArchRunnable(fromSlug)
+  // Unknown template arch on a known host: keep visible; backend still blocks.
   return true
 }
 
