@@ -230,4 +230,26 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(store.explanationFor('usbPassthrough')).toBeUndefined()
     expect(store.explanationFor('bridgedNetworking')).toBeUndefined()
   })
+
+  test('isSupported is fail-closed for unknown codes and matches flags', async () => {
+    const store = useCapabilitiesStore()
+    expect(store.isSupported('usbPassthrough')).toBe(false)
+    expect(store.isSupported('bridgedNetworking')).toBe(false)
+    expect(store.isSupported('unknownFeature')).toBe(false)
+
+    globalThis.fetch = mock().mockResolvedValue(jsonResponse({
+      ...arm64Caps,
+      supportsUSBPassthrough: true,
+      supportsBridgedNetworking: false,
+      details: [
+        { code: 'kvmDevice', supported: true },
+        { code: 'bridgedNetworking', supported: false },
+      ],
+    })) as unknown as typeof fetch
+    await store.fetchCapabilities()
+    expect(store.isSupported('usbPassthrough')).toBe(true)
+    expect(store.isSupported('bridgedNetworking')).toBe(false)
+    expect(store.isSupported('kvmDevice')).toBe(true)
+    expect(store.isSupported('unknownFeature')).toBe(false)
+  })
 })

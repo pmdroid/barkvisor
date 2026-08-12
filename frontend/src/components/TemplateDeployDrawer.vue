@@ -8,8 +8,7 @@ import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
 import UnsupportedHint from './ui/UnsupportedHint.vue'
 import type { VMTemplate, DeployTemplateRequest, BridgeInfo, DeployTemplateResponse } from '../api/types'
-import { useCapabilitiesStore } from '../stores/capabilities'
-import { storeToRefs } from 'pinia'
+import { useFeature } from '../composables/useFeature'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 
@@ -19,8 +18,7 @@ const emit = defineEmits(['close', 'deployed'])
 const templateStore = useTemplateStore()
 const vmStore = useVMStore()
 const sshKeyStore = useSSHKeyStore()
-const caps = useCapabilitiesStore()
-const { supportsBridgedNetworking } = storeToRefs(caps)
+const bridged = useFeature('bridgedNetworking')
 
 const selectedSSHKeyId = ref('')
 
@@ -28,14 +26,14 @@ const selectedSSHKeyId = ref('')
 const bridgeAvailable = ref<boolean | null>(null) // null = loading
 const bridgeChecked = ref(false)
 const platformBridgeUnsupported = computed(
-  () => props.template.networkMode === 'bridged' && !supportsBridgedNetworking.value,
+  () => props.template.networkMode === 'bridged' && !bridged.available,
 )
 
 onMounted(async () => {
   sshKeyStore.fetchAll().then(() => {
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
   })
-  if (props.template.networkMode === 'bridged' && supportsBridgedNetworking.value) {
+  if (props.template.networkMode === 'bridged' && bridged.available) {
     try {
       const { data } = await api.get<BridgeInfo[]>('/system/bridges')
       bridgeAvailable.value = data.some(b => b.status === 'active')
@@ -213,6 +211,10 @@ async function doDeploy() {
 
 async function submit() {
   error.value = ''
+  if (platformBridgeUnsupported.value) {
+    error.value = bridged.explanation || 'Bridged networking is not available on this host.'
+    return
+  }
   loading.value = true
   try {
     const result = await templateStore.deploy(buildRequest())
@@ -240,7 +242,7 @@ async function submit() {
           <strong>Bridged networking required</strong>
           <UnsupportedHint
             v-if="platformBridgeUnsupported"
-            :text="caps.explanationFor('bridgedNetworking')"
+            :text="bridged.explanation"
           />
           <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.

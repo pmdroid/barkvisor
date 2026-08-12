@@ -15,11 +15,13 @@ import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
+import { useFeature } from '../composables/useFeature'
 
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
 const networkStore = useNetworkStore()
-const { supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
+const bridged = useFeature('bridgedNetworking')
+const managedBridge = useFeature('managedBridgeDaemon')
 const { networks } = storeToRefs(networkStore)
 
 // Host-only data (not shared via network store)
@@ -85,7 +87,7 @@ const usedBridgeInterfaces = computed(() => {
 
 /** Show "setup bridge daemon" only when the host manages socket_vmnet (macOS). */
 const selectedInterfaceNeedsBridge = computed(() => {
-  if (!supportsManagedBridgeDaemon.value) return false
+  if (!managedBridge.available) return false
   if (!newBridge.value) return false
   const info = selectedInterfaceBridge.value
   return !info || info.status === 'not_configured'
@@ -112,7 +114,7 @@ async function fetchBridges() {
 
 async function fetchAll() {
   const tasks: Promise<void>[] = [networkStore.fetchAll(), fetchInterfaces()]
-  if (supportsBridgedNetworking.value) tasks.push(fetchBridges())
+  if (bridged.available) tasks.push(fetchBridges())
   await Promise.all(tasks)
 }
 
@@ -123,7 +125,7 @@ onMounted(() => {
 })
 
 watch(showBridges, (open) => {
-  if (open && supportsManagedBridgeDaemon.value) {
+  if (open && managedBridge.available) {
     fetchInterfaces()
     fetchBridges()
     bridgePoll = window.setInterval(fetchBridges, 7000)
@@ -151,25 +153,29 @@ function openCreate() {
   resetForm()
   showCreate.value = true
   fetchInterfaces()
-  if (supportsBridgedNetworking.value) fetchBridges()
+  if (bridged.available) fetchBridges()
 }
 
 function openEdit(n: Network) {
   editingId.value = n.id
   newName.value = n.name
   // Fall back to NAT if bridged is unsupported on this platform
-  newMode.value = supportsBridgedNetworking.value ? n.mode : 'nat'
-  newBridge.value = supportsBridgedNetworking.value ? (n.bridge || '') : ''
+  newMode.value = bridged.available ? n.mode : 'nat'
+  newBridge.value = bridged.available ? (n.bridge || '') : ''
   newDns.value = n.dnsServer || ''
   error.value = ''
   showCreate.value = true
   fetchInterfaces()
-  if (supportsBridgedNetworking.value) fetchBridges()
+  if (bridged.available) fetchBridges()
 }
 
 async function saveNetwork() {
   error.value = ''
   if (!newName.value.trim()) { error.value = 'Name required'; return }
+  if (newMode.value === 'bridged' && !bridged.available) {
+    error.value = bridged.explanation || 'Bridged networking is not available on this host.'
+    return
+  }
   if (newMode.value === 'bridged' && !newBridge.value) { error.value = 'Bridge interface required for bridged mode'; return }
   loading.value = true
   try {
@@ -278,10 +284,10 @@ async function setupBridgeInline() {
   <div class="page-header">
     <h1>Networks</h1>
     <div style="display:flex;gap:8px;align-items:center">
-      <span :title="supportsManagedBridgeDaemon ? undefined : caps.explanationFor('managedBridgeDaemon')">
+      <span :title="managedBridge.available ? undefined : managedBridge.explanation">
         <AppButton
           icon="settings"
-          :disabled="!supportsManagedBridgeDaemon"
+          :disabled="!managedBridge.available"
           @click="showBridges = true"
         >Manage Bridges</AppButton>
       </span>
@@ -375,11 +381,11 @@ async function setupBridgeInline() {
       <label>Mode</label>
       <AppSelect v-model="newMode">
         <option value="nat">NAT</option>
-        <option value="bridged" :disabled="!supportsBridgedNetworking">Bridged</option>
+        <option value="bridged" :disabled="!bridged.available">Bridged</option>
       </AppSelect>
-      <UnsupportedHint v-if="!supportsBridgedNetworking" :text="caps.explanationFor('bridgedNetworking')" />
+      <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />
     </div>
-    <div v-if="supportsBridgedNetworking && newMode === 'bridged'" class="form-group">
+    <div v-if="bridged.available && newMode === 'bridged'" class="form-group">
       <label>Bridge Interface</label>
       <AppSelect v-model="newBridge">
         <option value="" disabled>Select interface...</option>
@@ -389,7 +395,7 @@ async function setupBridgeInline() {
         </option>
       </AppSelect>
       <!-- Linux host bridges: allow typing a name not in the dropdown (e.g. no-IP br*). -->
-      <template v-if="!supportsManagedBridgeDaemon">
+      <template v-if="!managedBridge.available">
         <input
           v-model="newBridge"
           class="bridge-custom"
@@ -407,7 +413,7 @@ async function setupBridgeInline() {
         <span style="color:var(--text-secondary);font-size:13px">No bridge configured for this interface.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Setting up..." @click="setupBridgeInline">Setup Bridge</AppButton>
       </div>
-      <div v-else-if="supportsManagedBridgeDaemon && selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
+      <div v-else-if="managedBridge.available && selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
         <span style="color:var(--text-secondary);font-size:13px">Bridge is installed but not currently running.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Starting..." @click="startBridge(newBridge)">Start Bridge</AppButton>
       </div>

@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import type { Disk, Network, USBPassthroughDevice, Image } from '../../api/types'
+import { useFeature } from '../../composables/useFeature'
+
+const usb = useFeature('usbPassthrough')
 
 defineProps<{
   name: string
@@ -16,7 +19,6 @@ defineProps<{
   existingDiskId: string
   availableDisks: Disk[]
   sharedPaths: string[]
-  supportsUSBPassthrough: boolean
   selectedUSBDevices: USBPassthroughDevice[]
   selectedNetwork: Network | null
 }>()
@@ -74,7 +76,7 @@ defineProps<{
         <span class="summary-label">Shared</span>
         <span style="font-family:var(--font-mono);font-size:12px">{{ sharedPaths.join(', ') }}</span>
       </div>
-      <div v-if="supportsUSBPassthrough && selectedUSBDevices.length" class="summary-row">
+      <div v-if="usb.available && selectedUSBDevices.length" class="summary-row">
         <span class="summary-label">USB</span>
         <span style="font-size:12px">{{ selectedUSBDevices.map(d => d.label || `${d.vendorId}:${d.productId}`).join(', ') }}</span>
       </div>
