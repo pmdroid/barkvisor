@@ -112,4 +112,62 @@ struct HostMetricsTests {
             #expect(PlatformHost.temperatureCelsius == nil)
         #endif
     }
+
+    @Test func `metrics slice ttl matches stats poll interval`() {
+        #expect(
+            Int(HostInventoryService.metricsSliceTTL)
+                == MetricsCollector.systemStatsPollIntervalSeconds,
+        )
+    }
+
+    @Test func `live projection matches inventory stable fields`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "host-metrics-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        HostInventoryService.resetMetricsSliceCache()
+
+        let capture = HostMetricsCapture(temperatureC: nil, uptimeSeconds: 7, agentHealthy: true)
+        let inv = HostInventoryService.snapshot(dataDir: dir, hostId: Self.testHostId)
+        let live = HostMetrics.live(dataDir: dir, hostId: Self.testHostId, capture: capture)
+
+        #expect(live.hostId == inv.hostId)
+        #expect(live.memoryTotalMB == inv.resources.memoryTotalMB)
+        #expect(live.memoryTotalMB == PlatformHost.physicalMemoryMB)
+        #expect(live.storage.map(\.kind) == inv.storage.map(\.kind))
+        #expect(live.storage.map(\.path) == inv.storage.map(\.path))
+        #expect(live.storage.contains { $0.kind == "dataDir" })
+        #expect(live.uptimeSeconds == 7)
+        #expect(live.temperatureC == nil)
+    }
+
+    @Test func `metrics slice caches host id and storage within ttl`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "host-metrics-cache-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        HostInventoryService.resetMetricsSliceCache()
+
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        let first = HostInventoryService.metricsSlice(now: t0, dataDir: dir)
+        let withinTTL = HostInventoryService.metricsSlice(
+            now: t0.addingTimeInterval(HostInventoryService.metricsSliceTTL - 0.1),
+            dataDir: dir,
+        )
+        #expect(first.hostId == withinTTL.hostId)
+        #expect(UUID(uuidString: first.hostId) != nil)
+        #expect(first.storage == withinTTL.storage)
+        #expect(first.resources.memoryTotalMB == PlatformHost.physicalMemoryMB)
+        #expect(first.resources.cpuCount == PlatformHost.cpuCount)
+
+        let expired = HostInventoryService.metricsSlice(
+            now: t0.addingTimeInterval(HostInventoryService.metricsSliceTTL + 0.1),
+            dataDir: dir,
+        )
+        #expect(expired.hostId == first.hostId)
+        #expect(expired.storage.map(\.kind) == first.storage.map(\.kind))
+        #expect(expired.storage.map(\.path) == first.storage.map(\.path))
+    }
 }

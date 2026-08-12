@@ -1,14 +1,33 @@
 import Foundation
 
+/// Inventory fields needed to build `HostMetrics` without a full snapshot.
+public struct HostMetricsSlice: Sendable, Equatable {
+    public let hostId: String
+    public let collectedAt: String
+    public let resources: ResourcesInfo
+    public let storage: [StorageEntry]
+
+    public init(
+        hostId: String,
+        collectedAt: String,
+        resources: ResourcesInfo,
+        storage: [StorageEntry],
+    ) {
+        self.hostId = hostId
+        self.collectedAt = collectedAt
+        self.resources = resources
+        self.storage = storage
+    }
+}
+
 /// Normalized host metrics for `/api/system/stats` (PAS-85).
 ///
 /// Wave 0 is **local** only. Heartbeat embedding and `/api/home/devices/:id/metrics`
 /// are Wave 1.
 ///
-/// Field parity with `HostInventory`:
-/// - `hostId` / `collectedAt` ← inventory
-/// - `cpuLoadPercent` / `memoryTotalMB` / `memoryUsedMB` ← `inventory.resources`
-/// - `storage` ← `inventory.storage` (dataDir volume; not a full mount list)
+/// Field sources (do not call `HostInventoryService.snapshot()` on the 5s poll):
+/// - `hostId` / `collectedAt` / `storage` ← `HostInventoryService.metricsSlice`
+/// - `cpuLoadPercent` / `memoryTotalMB` / `memoryUsedMB` ← live `PlatformHost`
 ///
 /// `temperatureC` is best-effort: **null when no sensor is readable**. Never
 /// substitute `0` for a missing reading — the UI must not render that as 0°C.
@@ -47,16 +66,43 @@ public struct HostMetrics: Sendable, Equatable {
 
     /// Project host metrics from an inventory snapshot plus live probes.
     public static func from(inventory: HostInventory, capture: HostMetricsCapture) -> HostMetrics {
+        from(
+            slice: HostMetricsSlice(
+                hostId: inventory.hostId,
+                collectedAt: inventory.collectedAt,
+                resources: inventory.resources,
+                storage: inventory.storage,
+            ),
+            capture: capture,
+        )
+    }
+
+    /// Project from the lightweight stats slice (no interface / guest / kvm walk).
+    public static func from(slice: HostMetricsSlice, capture: HostMetricsCapture) -> HostMetrics {
         HostMetrics(
-            hostId: inventory.hostId,
-            collectedAt: inventory.collectedAt,
-            cpuLoadPercent: inventory.resources.cpuLoadPercent,
-            memoryTotalMB: inventory.resources.memoryTotalMB,
-            memoryUsedMB: inventory.resources.memoryUsedMB,
-            storage: inventory.storage,
+            hostId: slice.hostId,
+            collectedAt: slice.collectedAt,
+            cpuLoadPercent: slice.resources.cpuLoadPercent,
+            memoryTotalMB: slice.resources.memoryTotalMB,
+            memoryUsedMB: slice.resources.memoryUsedMB,
+            storage: slice.storage,
             temperatureC: capture.temperatureC,
             uptimeSeconds: capture.uptimeSeconds,
             agentHealthy: capture.agentHealthy,
+        )
+    }
+
+    /// Live `/api/system/stats` projection. CPU/mem are sampled every call;
+    /// hostId, dataDir storage, and temperature refresh on the poll interval.
+    public static func live(
+        now: Date = Date(),
+        dataDir: URL = Config.dataDir,
+        hostId: String? = nil,
+        capture: HostMetricsCapture = .live(),
+    ) -> HostMetrics {
+        from(
+            slice: HostInventoryService.metricsSlice(now: now, dataDir: dataDir, hostId: hostId),
+            capture: capture,
         )
     }
 }
@@ -75,12 +121,48 @@ public struct HostMetricsCapture: Sendable, Equatable {
 
     /// Temperature is nil when no sensor is readable. `agentHealthy` is true
     /// for this colocated process (Wave 0 has no remote agent heartbeat).
-    public static func live() -> HostMetricsCapture {
+    /// Linux thermal sysfs is cached for `HostInventoryService.metricsSliceTTL`.
+    public static func live(now: Date = Date()) -> HostMetricsCapture {
         HostMetricsCapture(
-            temperatureC: PlatformHost.temperatureCelsius,
+            temperatureC: temperatureCache.reading(now: now, ttl: HostInventoryService.metricsSliceTTL) {
+                PlatformHost.temperatureCelsius
+            },
             uptimeSeconds: Int(ProcessInfo.processInfo.systemUptime.rounded(.down)),
             agentHealthy: true,
         )
+    }
+
+    static func resetTemperatureCache() {
+        temperatureCache.reset()
+    }
+}
+
+private let temperatureCache = TemperatureCache()
+
+/// Poll-interval cache for Linux `/sys/class/thermal` (nil on macOS).
+private final class TemperatureCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: (value: Double?, expiresAt: Date)?
+
+    func reading(now: Date, ttl: TimeInterval, load: () -> Double?) -> Double? {
+        lock.lock()
+        if let cached, cached.expiresAt > now {
+            let value = cached.value
+            lock.unlock()
+            return value
+        }
+        lock.unlock()
+        let value = load()
+        lock.lock()
+        cached = (value, now.addingTimeInterval(ttl))
+        lock.unlock()
+        return value
+    }
+
+    func reset() {
+        lock.lock()
+        cached = nil
+        lock.unlock()
     }
 }
 
