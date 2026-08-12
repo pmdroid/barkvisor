@@ -9,8 +9,8 @@ extension HostMetrics: Content {}
 ///
 /// Existing SPA fields (`hostCpuPercent`, memory, VM aggregates) stay put.
 /// `metrics` is the unified `HostMetrics` DTO; CPU/mem there are the same
-/// inventory probes as the top-level host* fields. Disk/net rate samples are
-/// not included (optional later).
+/// live `PlatformHost` probes as the top-level host* fields (not a full
+/// inventory snapshot). Disk/net rate samples are not included (optional later).
 struct SystemStatsResponse: Content {
     let hostCpuPercent: Double
     let hostMemoryTotalMB: Int
@@ -52,8 +52,7 @@ struct MetricsController: RouteCollection {
         let totalVMs = try await req.db.read { db in try VM.fetchCount(db) }
         let runningVMs = await vmState.allRunningVMs().count
 
-        let inventory = HostInventoryService.snapshot()
-        let metrics = HostMetrics.from(inventory: inventory, capture: .live())
+        let metrics = HostMetrics.live()
 
         return SystemStatsResponse(
             hostCpuPercent: metrics.cpuLoadPercent,
