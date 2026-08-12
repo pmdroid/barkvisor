@@ -79,12 +79,17 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
             guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
           }
           hostArchKnown.value = typeof data.hostArch === 'string' && data.hostArch.length > 0
+          // Only a 2xx response counts as loaded. A boot-time 502/network blip
+          // must not permanently disable the PAS-48 arch gate (or Windows).
+          loaded.value = true
         }
       } catch {
         // Keep defaults on network/server errors; hostArchKnown stays false.
       } finally {
-        loaded.value = true
         loading.value = false
+        if (!loaded.value) {
+          loadPromise = null
+        }
       }
     })()
 
