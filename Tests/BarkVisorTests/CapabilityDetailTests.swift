@@ -158,6 +158,21 @@ struct CapabilityDetailTests {
         #endif
     }
 
+    @Test func `network mode capability is json-codable`() throws {
+        let row = NetworkModeCapability(
+            mode: "bridged",
+            supported: false,
+            reasonCode: CapabilityReasonCode.helperMissing.rawValue,
+            remediation: "Install qemu-bridge-helper.",
+        )
+        let data = try JSONEncoder().encode(row)
+        let decoded = try JSONDecoder().decode(NetworkModeCapability.self, from: data)
+        #expect(decoded == row)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(object?["mode"] as? String == "bridged")
+        #expect(object?["reasonCode"] as? String == "helper_missing")
+    }
+
     @Test func `capability detail is json-codable`() throws {
         let row = CapabilityDetail(
             code: .kvmDevice,

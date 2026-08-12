@@ -15,13 +15,19 @@ public enum NetworkCapability {
 
     /// Fail closed before persist or QEMU (PAS-57).
     ///
-    /// Checks product bridged capability, IFNAMSIZ-safe name, and that the
-    /// host interface exists (`HostInfoService.interfaceExists`).
+    /// Checks product bridged capability, IFNAMSIZ-safe name, that the host
+    /// interface exists (`HostInfoService.interfaceExists`), and (Linux) that
+    /// a readable qemu-bridge-helper ACL allows the name.
     public static func requireBridgedInterface(_ name: String) throws {
         try PlatformCapabilities.requireBridgedNetworking()
         try validateBridgeName(name)
         guard HostInfoService.interfaceExists(name) else {
             throw BarkVisorError.interfaceMissing(name)
         }
+        #if os(Linux)
+            if let allowed = LinuxHostNetwork.bridgeACLDecision(name), !allowed {
+                throw BarkVisorError.bridgeHelperDenied(name)
+            }
+        #endif
     }
 }

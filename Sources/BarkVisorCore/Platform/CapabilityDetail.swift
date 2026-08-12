@@ -21,6 +21,7 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case kvmMissing = "kvm_missing"
     case helperMissing = "helper_missing"
     case interfaceMissing = "interface_missing"
+    case aclDenied = "acl_denied"
     case linuxOsManaged = "linux_os_managed"
     case linuxPkgUpdate = "linux_pkg_update"
 }

@@ -52,7 +52,35 @@ struct NetworkCapabilityTests {
             let iface = "lo"
         #endif
         guard HostInfoService.interfaceExists(iface) else { return }
+        #if os(Linux)
+            if let allowed = LinuxHostNetwork.bridgeACLDecision(iface), !allowed {
+                let err = #expect(throws: BarkVisorError.self) {
+                    try NetworkCapability.requireBridgedInterface(iface)
+                }
+                #expect(err?.code == "bridge_acl")
+                #expect(err?.httpStatus == 422)
+                return
+            }
+        #endif
         try NetworkCapability.requireBridgedInterface(iface)
+    }
+
+    @Test func `bridge ACL parser allow all and named entries`() throws {
+        #expect(LinuxHostNetwork.bridgeACLAllows("br0", fileContents: "allow br0\n"))
+        #expect(LinuxHostNetwork.bridgeACLAllows("br0", fileContents: "# comment\nallow all\n"))
+        #expect(!LinuxHostNetwork.bridgeACLAllows("br0", fileContents: "allow virbr0 # other\n"))
+        #expect(!LinuxHostNetwork.bridgeACLAllows("br0", fileContents: ""))
+        #expect(!LinuxHostNetwork.bridgeACLAllows("", fileContents: "allow all"))
+        let missing = LinuxHostNetwork.bridgeACLDecision("br0", at: "/no/such/qemu-bridge.conf")
+        #expect(missing == nil)
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("bridge.conf").path
+        try "allow br0\n".write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(LinuxHostNetwork.bridgeACLDecision("br0", at: path) == true)
+        #expect(LinuxHostNetwork.bridgeACLDecision("docker0", at: path) == false)
     }
 
     @Test func `networkModes projects nat always and bridged from inventory`() {

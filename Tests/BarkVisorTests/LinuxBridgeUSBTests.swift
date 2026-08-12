@@ -81,4 +81,16 @@ struct LinuxBridgeUSBTests {
             #expect(err?.code == "interface_missing")
         #endif
     }
+
+    @Test func `bridge ACL comments and allow all`() {
+        let contents = """
+        # qemu-bridge-helper
+        allow virbr0
+        allow br0 # lab
+        """
+        #expect(LinuxHostNetwork.bridgeACLAllows("br0", fileContents: contents))
+        #expect(LinuxHostNetwork.bridgeACLAllows("virbr0", fileContents: contents))
+        #expect(!LinuxHostNetwork.bridgeACLAllows("docker0", fileContents: contents))
+        #expect(LinuxHostNetwork.bridgeACLAllows("docker0", fileContents: "allow all\n"))
+    }
 }

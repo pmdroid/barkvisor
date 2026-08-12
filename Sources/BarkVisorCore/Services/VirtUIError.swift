@@ -20,6 +20,8 @@ public enum BarkVisorError: Error, LocalizedError {
     case bridgeNotReady(String)
     /// Host interface does not exist (PAS-57 preflight). HTTP 422 + `interface_missing`.
     case interfaceMissing(String)
+    /// qemu-bridge-helper ACL denies this iface. HTTP 422 + `bridge_acl`.
+    case bridgeHelperDenied(String)
     /// Bridge / iface name failed IFNAMSIZ or charset checks. HTTP 400 + `invalid_bridge`.
     case invalidBridgeName(String)
     case updateFailed(String)
@@ -59,10 +61,14 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .interfaceMissing(name):
             if PlatformHost.platformName.caseInsensitiveCompare("Linux") == .orderedSame {
                 return "Host interface '\(name)' does not exist. Create a Linux bridge first "
-                    + "(e.g. `sudo ip link add name \(name) type bridge && sudo ip link set \(name) up`) "
-                    + "and allow it in /etc/qemu/bridge.conf. Use NAT if bridging is unavailable."
+                    + "(ip link add name \(name) type bridge; ip link set \(name) up) "
+                    + "and allow it in the qemu-bridge-helper ACL (bridge.conf). "
+                    + "Use NAT if bridging is unavailable."
             }
             return "Host interface '\(name)' does not exist. Choose an existing interface or create it first."
+        case let .bridgeHelperDenied(name):
+            return "Host bridge '\(name)' is not allowed by the qemu-bridge-helper ACL (bridge.conf). "
+                + "Add `allow \(name)` (or `allow all`) and retry, or use NAT."
         case let .invalidBridgeName(msg): return msg
         case let .updateFailed(msg): return msg
         case let .invalidArgument(msg): return msg
@@ -99,6 +105,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .downloadFailed: return "download_failed"
         case .bridgeNotReady: return "bridge_not_ready"
         case .interfaceMissing: return "interface_missing"
+        case .bridgeHelperDenied: return "bridge_acl"
         case .invalidBridgeName: return "invalid_bridge"
         case .updateFailed: return "update_failed"
         case .invalidArgument: return "invalid_argument"
@@ -129,7 +136,7 @@ public enum BarkVisorError: Error, LocalizedError {
             return 409
         case .preconditionFailed:
             return 412
-        case .unsupportedFeature, .interfaceMissing, .bridgeNotReady:
+        case .unsupportedFeature, .interfaceMissing, .bridgeHelperDenied, .bridgeNotReady:
             return 422
         default:
             return 500
