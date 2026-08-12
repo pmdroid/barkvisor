@@ -100,39 +100,46 @@ export function detectImageArch(input: string | null | undefined): ArchDetectRes
   return { arch: null }
 }
 
-/** Normalize host capability arch to an ImageArch when possible. */
-export function hostArchToImageArch(hostArch: string | null | undefined): ImageArch {
-  const h = (hostArch || '').toLowerCase()
+/**
+ * Strict normalize of free-form image/catalog arch labels.
+ * Returns null for unknown values (unlike hostArchToImageArch, which defaults).
+ */
+export function normalizeImageArch(arch: string | null | undefined): ImageArch | null {
+  if (!arch || !String(arch).trim()) return null
+  const h = String(arch).toLowerCase().trim()
   if (h === 'x86_64' || h === 'amd64' || h === 'x64') return 'x86_64'
   if (h === 'arm64' || h === 'aarch64') return 'arm64'
+  return null
+}
+
+/** Normalize host capability arch to an ImageArch when possible. */
+export function hostArchToImageArch(hostArch: string | null | undefined): ImageArch {
+  const strict = normalizeImageArch(hostArch)
+  if (strict) return strict
   // Unknown → arm64 (historical BarkVisor default on Apple Silicon)
   return 'arm64'
 }
 
 /**
  * Image arches this host can run natively (PAS-48).
- *
- * Prefer hostArch over guestTypes: guestTypes historically listed every
- * static profile (both arches), which made catalog filters a no-op.
- * Optionally intersect with guestType arches when the API already filters
- * to host-runnable profiles.
+ * Host arch only — do not expand from guestTypes (static dual-arch lists
+ * historically made catalog filters a no-op).
  */
-export function runnableImageArches(
+export function runnableImageArches(hostArch: string | null | undefined): Set<ImageArch> {
+  return new Set([hostArchToImageArch(hostArch)])
+}
+
+/**
+ * Whether a catalog/local image arch is runnable on this host.
+ * Unknown image arches are unsupported (never coerce to arm64).
+ */
+export function imageArchSupportedOnHost(
+  imageArch: string | null | undefined,
   hostArch: string | null | undefined,
-  guestTypeArches?: Array<string | null | undefined> | null,
-): Set<ImageArch> {
-  const host = hostArchToImageArch(hostArch)
-  if (!guestTypeArches || guestTypeArches.length === 0) {
-    return new Set([host])
-  }
-  const fromGuests = new Set<ImageArch>()
-  for (const raw of guestTypeArches) {
-    if (!raw) continue
-    const a = hostArchToImageArch(raw)
-    // Only keep arches that match the host (never re-expand to foreign arch).
-    if (a === host) fromGuests.add(a)
-  }
-  return fromGuests.size > 0 ? fromGuests : new Set([host])
+): boolean {
+  const img = normalizeImageArch(imageArch)
+  if (!img) return false
+  return img === hostArchToImageArch(hostArch)
 }
 
 /**

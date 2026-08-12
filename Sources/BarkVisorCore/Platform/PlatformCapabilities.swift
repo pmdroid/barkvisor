@@ -176,8 +176,10 @@ public enum PlatformCapabilities {
     /// Whether a guest/workload arch label is compatible with this host.
     ///
     /// Labels are normalized the same way as ``hostArch`` (`arm64` / `x86_64`).
-    /// Cross-arch VMs are blocked by default: QEMU is launched with host
-    /// acceleration (`hvf`/`kvm`) and `-cpu host`, which fails badly on mismatch.
+    /// Wave 0 policy: **block** cross-arch by default (no force flag yet), on both
+    /// HVF/KVM (`-cpu host` fails badly) and TCG hosts. Emulation may work on TCG
+    /// with a foreign `qemu-system-*` binary, but that path is intentionally
+    /// unsupported until an advanced override exists.
     public static func isCompatibleGuestArch(_ guestArch: String) -> Bool {
         normalizedArch(guestArch) == hostArch
     }

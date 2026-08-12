@@ -31,6 +31,8 @@ const {
   showCloudInit,
   cloudUserData,
   filteredImages,
+  foreignArchImageCount,
+  hostImageArch,
   selectedImage,
   formatBytes,
   sshKeyStore,
@@ -123,6 +125,8 @@ function openUSBPicker() {
         :showCloudInit="showCloudInit"
         :cloudUserData="cloudUserData"
         :filteredImages="filteredImages"
+        :foreignArchImageCount="foreignArchImageCount"
+        :hostImageArch="hostImageArch"
         :sshKeys="sshKeyStore.keys"
         :formatBytes="formatBytes"
         @update:mode="mode = $event"

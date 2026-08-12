@@ -125,6 +125,16 @@ struct CrossArchCompatibilityTests {
         }
     }
 
+
+    /// Template deploy calls requireCompatibleGuestArch on repoImage.arch before download (PAS-48 P1).
+    @Test func `template deploy early gate uses same host arch check`() throws {
+        let host = PlatformCapabilities.hostArch
+        let foreign = host == "arm64" ? "x86_64" : "arm64"
+        #expect(throws: BarkVisorError.self) {
+            try PlatformCapabilities.requireCompatibleGuestArch(foreign)
+        }
+    }
+
     /// Symmetric guard on x86_64 CI/dev hosts.
     @Test(.enabled(if: PlatformCapabilities.hostArch == "x86_64"))
     func `arm64 workload blocked on x86_64 host`() throws {

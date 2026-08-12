@@ -11,7 +11,7 @@ import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
-import { hostArchToImageArch } from '../utils/imageArch'
+import { hostArchToImageArch, normalizeImageArch } from '../utils/imageArch'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -271,25 +271,36 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   })
 
   const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
+
+  /** Local ready images of the current mode, unfiltered by arch. */
+  function readyImagesForMode(imageType: 'iso' | 'cloud-image') {
+    return imageStore.images.filter((i) => i.imageType === imageType && i.status === 'ready')
+  }
+
+  /** Match host arch once known; empty arch allowed (e.g. virtio drivers). */
+  function localImageMatchesHost(arch: string | null | undefined): boolean {
+    if (!caps.hostArchKnown) return true
+    if (!arch) return true
+    const img = normalizeImageArch(arch)
+    if (!img) return false
+    return img === hostImageArch.value
+  }
+
   const isoImages = computed(() =>
-    imageStore.images.filter(
-      (i) =>
-        i.imageType === 'iso' &&
-        i.status === 'ready' &&
-        (!i.arch || hostArchToImageArch(i.arch) === hostImageArch.value),
-    ),
+    readyImagesForMode('iso').filter((i) => localImageMatchesHost(i.arch)),
   )
   const cloudImages = computed(() =>
-    imageStore.images.filter(
-      (i) =>
-        i.imageType === 'cloud-image' &&
-        i.status === 'ready' &&
-        (!i.arch || hostArchToImageArch(i.arch) === hostImageArch.value),
-    ),
+    readyImagesForMode('cloud-image').filter((i) => localImageMatchesHost(i.arch)),
   )
   const filteredImages = computed(() =>
     mode.value === 'iso' ? isoImages.value : cloudImages.value,
   )
+  /** Ready images hidden solely because of host arch mismatch (PAS-48 empty-state copy). */
+  const foreignArchImageCount = computed(() => {
+    if (!caps.hostArchKnown) return 0
+    const type = mode.value === 'iso' ? 'iso' : 'cloud-image'
+    return readyImagesForMode(type).filter((i) => i.arch && !localImageMatchesHost(i.arch)).length
+  })
 
   const selectedImage = computed(() => {
     if (!selectedImageId.value) return null
@@ -433,6 +444,8 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     showCloudInit,
     cloudUserData,
     filteredImages,
+    foreignArchImageCount,
+    hostImageArch,
     selectedImage,
     formatBytes,
 
