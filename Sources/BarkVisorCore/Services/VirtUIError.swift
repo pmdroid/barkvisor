@@ -21,6 +21,8 @@ public enum BarkVisorError: Error, LocalizedError {
     case updateFailed(String)
     case invalidArgument(String)
     case timeout(String)
+    /// Capability block: HTTP 422 + feature `errorCode` (PAS-94).
+    case unsupportedFeature(PlatformCapabilities.Feature)
 
     // HTTP-semantic errors (used by services to signal status without importing Vapor)
     case badRequest(String)
@@ -53,6 +55,8 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .updateFailed(msg): return msg
         case let .invalidArgument(msg): return msg
         case let .timeout(msg): return msg
+        case let .unsupportedFeature(feature):
+            return PlatformCapabilities.unsupportedMessage(feature)
         case let .badRequest(msg): return msg
         case let .notFound(msg): return msg ?? "Not found"
         case let .unauthorized(msg): return msg ?? "Unauthorized"
@@ -85,6 +89,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .updateFailed: return "update_failed"
         case .invalidArgument: return "invalid_argument"
         case .timeout: return "timeout"
+        case let .unsupportedFeature(feature): return feature.errorCode
         case .badRequest: return "bad_request"
         case .notFound: return "not_found"
         case .unauthorized: return "unauthorized"
@@ -110,6 +115,8 @@ public enum BarkVisorError: Error, LocalizedError {
             return 409
         case .preconditionFailed:
             return 412
+        case .unsupportedFeature:
+            return 422
         default:
             return 500
         }

@@ -377,7 +377,7 @@ export interface GuestTypeInfo {
   qemuBinary: string
 }
 
-/** Per-feature support + reason from GET /api/system/capabilities (PAS-37). */
+/** Per-feature support + reason from GET /api/system/capabilities (PAS-37 / PAS-94). */
 export interface CapabilityDetail {
   code: string
   supported: boolean
@@ -410,7 +410,7 @@ export interface SystemCapabilities {
    * Filtered to host arch — not the full static GuestProfiles table.
    */
   guestTypes?: GuestTypeInfo[]
-  /** Per-feature reason/remediation catalog (PAS-37). */
+  /** Per-feature reason/remediation catalog (PAS-37 / PAS-94). */
   details?: CapabilityDetail[]
   inventorySchemaVersion?: number
   /**

@@ -11,9 +11,11 @@ struct LinuxBridgeUSBTests {
         #if os(Linux)
             // Linux uses host bridges + QEMU -netdev bridge — not a managed daemon.
             #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
-            #expect(throws: BarkVisorError.self) {
+            let err = #expect(throws: BarkVisorError.self) {
                 try PlatformCapabilities.requireManagedBridgeDaemon()
             }
+            #expect(err?.httpStatus == 422)
+            #expect(err?.code == "managed_bridge_daemon")
         #elseif os(macOS)
             #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
             #expect(throws: Never.self) {

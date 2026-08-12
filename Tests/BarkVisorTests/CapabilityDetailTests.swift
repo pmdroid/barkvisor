@@ -3,7 +3,7 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite("CapabilityDetail (PAS-37)")
+@Suite("CapabilityDetail (PAS-37 / PAS-94)")
 struct CapabilityDetailTests {
     @Test func `builder emits one row per capability code`() {
         let details = CapabilityDetailBuilder.from(inventory: linuxTCGInventory())
@@ -48,6 +48,7 @@ struct CapabilityDetailTests {
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
         #expect(!update.supported)
         #expect(update.reasonCode == CapabilityReasonCode.linuxPkgUpdate.rawValue)
+        #expect(update.remediation?.localizedCaseInsensitiveContains("package manager") == true)
 
         let helper = CapabilityDetailBuilder.detail(for: .qemuBridgeHelper, inventory: inv)
         #expect(!helper.supported)
@@ -66,6 +67,52 @@ struct CapabilityDetailTests {
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
         #expect(update.supported)
         #expect(update.reasonCode == nil)
+        #expect(update.remediation == nil)
+
+        let usb = CapabilityDetailBuilder.detail(for: .usbPassthrough, inventory: inv)
+        #expect(usb.supported)
+        #expect(usb.reasonCode == nil)
+    }
+
+    @Test func `unsupported bridged networking on linux uses helper_missing`() {
+        let features = linuxKVMInventory().virtualization.features
+        let inv = makeInventory(
+            os: "Linux",
+            arch: "x86_64",
+            accelerator: "kvm",
+            features: VirtualizationFeatures(
+                bridgedNetworking: false,
+                managedBridgeDaemon: features.managedBridgeDaemon,
+                usbPassthrough: features.usbPassthrough,
+                inAppUpdate: features.inAppUpdate,
+                kvmDevice: features.kvmDevice,
+                qemuBridgeHelper: features.qemuBridgeHelper,
+            ),
+        )
+        let bridged = CapabilityDetailBuilder.detail(for: .bridgedNetworking, inventory: inv)
+        #expect(!bridged.supported)
+        #expect(bridged.reasonCode == CapabilityReasonCode.helperMissing.rawValue)
+        #expect(bridged.remediation?.contains("qemu-bridge-helper") == true)
+    }
+
+    @Test func `unsupported usb uses os_unsupported`() {
+        let inv = makeInventory(
+            os: "unknown",
+            arch: "x86_64",
+            accelerator: "tcg",
+            features: VirtualizationFeatures(
+                bridgedNetworking: false,
+                managedBridgeDaemon: false,
+                usbPassthrough: false,
+                inAppUpdate: false,
+                kvmDevice: false,
+                qemuBridgeHelper: false,
+            ),
+        )
+        let usb = CapabilityDetailBuilder.detail(for: .usbPassthrough, inventory: inv)
+        #expect(!usb.supported)
+        #expect(usb.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+        #expect(usb.remediation?.isEmpty == false)
     }
 
     @Test func `currentCapabilities projects details and runnable arches`() {
@@ -84,11 +131,18 @@ struct CapabilityDetailTests {
         #expect(byCode[.tcgOnly]?.supported == (caps.accelerator == "tcg"))
 
         #if os(Linux)
+            #expect(byCode[.managedBridgeDaemon]?.supported == false)
+            #expect(byCode[.managedBridgeDaemon]?.reasonCode == CapabilityReasonCode.linuxOsManaged.rawValue)
+            #expect(byCode[.inAppUpdate]?.supported == false)
+            #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.linuxPkgUpdate.rawValue)
             if caps.accelerator == "tcg" {
                 #expect(byCode[.kvmDevice]?.supported == false)
                 #expect(byCode[.kvmDevice]?.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
                 #expect(byCode[.tcgOnly]?.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
             }
+        #elseif os(macOS)
+            #expect(byCode[.managedBridgeDaemon]?.supported == true)
+            #expect(byCode[.inAppUpdate]?.supported == true)
         #endif
     }
 
@@ -105,6 +159,17 @@ struct CapabilityDetailTests {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(object?["code"] as? String == "kvmDevice")
         #expect(object?["reasonCode"] as? String == "kvm_missing")
+    }
+
+    @Test func `unsupported feature error uses 422 and snake_case code`() {
+        let err = BarkVisorError.unsupportedFeature(.bridgedNetworking)
+        #expect(err.code == "bridged_networking")
+        #expect(err.httpStatus == 422)
+        #expect(err.errorDescription == PlatformCapabilities.unsupportedMessage(.bridgedNetworking))
+
+        #expect(PlatformCapabilities.Feature.inAppUpdate.errorCode == "in_app_update")
+        #expect(PlatformCapabilities.Feature.usbPassthrough.errorCode == "usb_passthrough")
+        #expect(PlatformCapabilities.Feature.managedBridgeDaemon.errorCode == "managed_bridge_daemon")
     }
 }
 

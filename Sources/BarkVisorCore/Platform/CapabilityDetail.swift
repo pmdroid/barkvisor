@@ -15,7 +15,7 @@ public enum CapabilityCode: String, Codable, Sendable, CaseIterable {
     case tcgOnly
 }
 
-/// Stable reason tokens for unsupported / degraded capabilities (shared with PAS-94).
+/// Stable reason tokens for unsupported / degraded capabilities (PAS-37 / PAS-94).
 public enum CapabilityReasonCode: String, Codable, Sendable {
     case osUnsupported = "os_unsupported"
     case kvmMissing = "kvm_missing"
@@ -86,6 +86,20 @@ public enum CapabilityDetailBuilder {
             return qemuBridgeHelper(os: os, supported: features.qemuBridgeHelper)
         case .tcgOnly:
             return tcgOnly(os: os, accelerator: accel, kvmPresent: features.kvmDevice)
+        }
+    }
+
+    /// Platform-correct remediation (also used when throwing `unsupportedFeature`).
+    public static func remediation(for feature: PlatformCapabilities.Feature, os: String) -> String {
+        switch feature {
+        case .bridgedNetworking:
+            return bridgedNetworking(os: os, supported: false).remediation ?? ""
+        case .managedBridgeDaemon:
+            return managedBridgeDaemon(os: os, supported: false).remediation ?? ""
+        case .usbPassthrough:
+            return usbPassthrough(os: os, supported: false).remediation ?? ""
+        case .inAppUpdate:
+            return inAppUpdate(os: os, supported: false).remediation ?? ""
         }
     }
 
