@@ -406,7 +406,7 @@ struct VMController: RouteCollection {
                 diskSizeGB: body.diskSizeGB,
                 isoId: body.isoId ?? isoFromSpec,
                 cloudImageId: body.cloudImageId,
-                cloudInit: body.cloudInit,
+                cloudInit: body.cloudInit ?? Self.cloudInitConfig(from: spec.spec.cloudInit),
                 networkId: body.networkId ?? spec.spec.networks.first?.networkId,
                 existingDiskId: body.existingDiskId ?? bootDiskId,
                 sharedPaths: body.sharedPaths ?? spec.spec.sharedPaths,
@@ -437,6 +437,15 @@ struct VMController: RouteCollection {
             displayResolution: body.displayResolution, uefi: body.uefi,
             tpmEnabled: body.tpmEnabled,
         )
+    }
+
+    /// `spec.cloudInit.inline` is user-data for ISO generation. `userDataRef` is a
+    /// host ISO path and is applied on spec update, not create.
+    static func cloudInitConfig(from cloud: WorkloadCloudInit?) -> CloudInitConfig? {
+        guard let inline = cloud?.inline,
+              !inline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return CloudInitConfig(sshAuthorizedKeys: nil, userData: inline)
     }
 
     // MARK: - Guest Info

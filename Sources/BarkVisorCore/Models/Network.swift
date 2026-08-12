@@ -34,7 +34,7 @@ public struct Network: Codable, Sendable, FetchableRecord, PersistableRecord, Ta
     }
 }
 
-public struct PortForwardRule: Codable, Sendable {
+public struct PortForwardRule: Codable, Equatable, Sendable {
     public let `protocol`: String
     public let hostPort: Int
     public let guestPort: Int

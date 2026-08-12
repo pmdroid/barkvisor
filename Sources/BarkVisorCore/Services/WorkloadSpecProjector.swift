@@ -117,10 +117,13 @@ public enum WorkloadSpecProjector {
         if let bootId = spec.spec.disks.first(where: { $0.role == "boot" })?.diskId {
             vm.bootDiskId = bootId
         }
-        let dataIds = spec.spec.disks.compactMap { $0.role == "data" ? $0.diskId : nil }
-        vm.setAdditionalDiskIds(dataIds.isEmpty ? nil : dataIds)
-        let isoIds = spec.spec.disks.compactMap { $0.role == "cdrom" ? ($0.imageId ?? $0.diskId) : nil }
-        vm.setISOIds(isoIds.isEmpty ? nil : isoIds)
+        // Empty disks (JSON omit / default []) preserve attachments, matching networks.
+        if spec.spec.disks.isEmpty == false {
+            let dataIds = spec.spec.disks.compactMap { $0.role == "data" ? $0.diskId : nil }
+            vm.setAdditionalDiskIds(dataIds.isEmpty ? nil : dataIds)
+            let isoIds = spec.spec.disks.compactMap { $0.role == "cdrom" ? ($0.imageId ?? $0.diskId) : nil }
+            vm.setISOIds(isoIds.isEmpty ? nil : isoIds)
+        }
 
         let net = spec.spec.networks.first
         if spec.spec.networks.isEmpty == false {
