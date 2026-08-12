@@ -125,8 +125,16 @@ public enum PlatformCapabilities {
     }
 
     /// Throw `BarkVisorError.unsupportedFeature` when product bridged networking is unavailable.
+    ///
+    /// Matches `/api/system/capabilities` (inventory), not the compile-time platform flag.
+    /// On Linux that means qemu-bridge-helper must be present.
     public static func requireBridgedNetworking() throws {
-        guard supportsBridgedNetworking else {
+        let supported = HostInventoryService.bridgedNetworkingSupported(
+            platformSupports: supportsBridgedNetworking,
+            qemuBridgeHelper: HostInventoryService.qemuBridgeHelperPresent(),
+            os: PlatformHost.platformName,
+        )
+        guard supported else {
             throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
         }
     }

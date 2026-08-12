@@ -48,7 +48,26 @@ final class NetworkServiceTests {
                 db: self.dbPool,
             )
         }
-        #expect(error?.httpStatus == 400)
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        if advertised {
+            #expect(error?.httpStatus == 400)
+        } else {
+            #expect(error?.httpStatus == 422)
+            #expect(error?.code == "bridged_networking")
+        }
+    }
+
+    @Test func `create bridged network returns 422 when product flag is off`() async {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard !advertised else { return }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(name: "test-bridged", mode: "bridged", bridge: "br0", macAddress: nil, dnsServer: nil),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 422)
+        #expect(error?.code == "bridged_networking")
     }
 
     @Test func `create invalid mode rejected`() async {
