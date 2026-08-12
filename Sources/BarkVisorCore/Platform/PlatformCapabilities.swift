@@ -102,74 +102,53 @@ public enum PlatformCapabilities {
 
     // MARK: - Unsupported feature messages
 
-    public enum Feature: String, Sendable {
+    public enum Feature: String, Sendable, Equatable, CaseIterable {
         case bridgedNetworking
         case managedBridgeDaemon
         case usbPassthrough
         case inAppUpdate
+
+        /// Snake_case API error `code` (ErrorMiddleware envelope).
+        public var errorCode: String {
+            switch self {
+            case .bridgedNetworking: return "bridged_networking"
+            case .managedBridgeDaemon: return "managed_bridge_daemon"
+            case .usbPassthrough: return "usb_passthrough"
+            case .inAppUpdate: return "in_app_update"
+            }
+        }
     }
 
     /// Platform-correct remediation text for an unsupported feature.
     public static func unsupportedMessage(_ feature: Feature) -> String {
-        switch feature {
-        case .bridgedNetworking:
-            #if os(Linux)
-                return "Bridged networking requires a host bridge and qemu-bridge-helper "
-                    + "(e.g. br0 + /etc/qemu/bridge.conf). Use NAT if bridging is unavailable."
-            #elseif os(macOS)
-                return "Bridged networking is not supported on this host. Use NAT networking."
-            #else
-                return "Bridged networking is not supported on this platform. Use NAT networking."
-            #endif
-        case .managedBridgeDaemon:
-            #if os(Linux)
-                return "Managed bridge daemon lifecycle is not supported on Linux. "
-                    + "Create a host bridge with ip/netplan (e.g. br0), then attach VMs "
-                    + "via a Bridged network record."
-            #else
-                return "Managed bridge daemon lifecycle is not supported on this platform."
-            #endif
-        case .usbPassthrough:
-            #if os(Linux)
-                return "USB passthrough is not available (install usbutils / check udev permissions)."
-            #else
-                return "USB passthrough is not supported on this platform."
-            #endif
-        case .inAppUpdate:
-            #if os(Linux)
-                return "In-app software updates are not supported on Linux yet. "
-                    + "Update BarkVisor using your package manager or release artifacts."
-            #else
-                return "In-app software updates are not supported on this platform."
-            #endif
-        }
+        CapabilityDetailBuilder.remediation(for: feature, os: PlatformHost.platformName)
     }
 
-    /// Throw `BarkVisorError.badRequest` when product bridged networking is unavailable.
+    /// Throw `BarkVisorError.unsupportedFeature` when product bridged networking is unavailable.
     public static func requireBridgedNetworking() throws {
         guard supportsBridgedNetworking else {
-            throw BarkVisorError.badRequest(unsupportedMessage(.bridgedNetworking))
+            throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
         }
     }
 
     /// Throw when managed bridge daemon ops are unavailable.
     public static func requireManagedBridgeDaemon() throws {
         guard supportsManagedBridgeDaemon else {
-            throw BarkVisorError.badRequest(unsupportedMessage(.managedBridgeDaemon))
+            throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
         }
     }
 
     /// Throw when USB passthrough is unavailable.
     public static func requireUSBPassthrough() throws {
         guard supportsUSBPassthrough else {
-            throw BarkVisorError.badRequest(unsupportedMessage(.usbPassthrough))
+            throw BarkVisorError.unsupportedFeature(.usbPassthrough)
         }
     }
 
     /// Throw when in-app updates are unavailable.
     public static func requireInAppUpdate() throws {
         guard supportsInAppUpdate else {
-            throw BarkVisorError.updateFailed(unsupportedMessage(.inAppUpdate))
+            throw BarkVisorError.unsupportedFeature(.inAppUpdate)
         }
     }
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { CurrentHostCapabilities, SystemCapabilities } from '../api/types'
+import type { CapabilityDetail, CurrentHostCapabilities, SystemCapabilities } from '../api/types'
 
 /**
  * Pinia store for the **current host** (process serving this SPA).
@@ -24,6 +24,7 @@ const defaultCapabilities: CurrentHostCapabilities = {
   hostArch: 'arm64',
   hostCpuCount: 16,
   guestTypes: [],
+  details: [],
 }
 
 export const useCapabilitiesStore = defineStore('capabilities', () => {
@@ -50,6 +51,18 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     return typeof n === 'number' && n >= 1 ? n : defaultCapabilities.hostCpuCount!
   })
   const guestTypes = computed(() => currentHost.value.guestTypes ?? [])
+  const details = computed(() => currentHost.value.details ?? [])
+
+  function detailFor(code: string): CapabilityDetail | undefined {
+    return details.value.find((d) => d.code === code)
+  }
+
+  /** Server remediation for an unsupported feature. Does not invent copy. */
+  function explanationFor(code: string): string | undefined {
+    const row = detailFor(code)
+    if (!row || row.supported) return undefined
+    return row.remediation || undefined
+  }
 
   async function fetchCapabilities(): Promise<void> {
     if (loaded.value) return
@@ -77,6 +90,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
                 ? data.hostCpuCount
                 : defaultCapabilities.hostCpuCount,
             guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
+            details: Array.isArray(data.details) ? data.details : [],
           }
           hostArchKnown.value = typeof data.hostArch === 'string' && data.hostArch.length > 0
           // Only a 2xx response counts as loaded. A boot-time 502/network blip
@@ -113,6 +127,9 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     hostArch,
     hostCpuCount,
     guestTypes,
+    details,
+    detailFor,
+    explanationFor,
     fetchCapabilities,
   }
 })

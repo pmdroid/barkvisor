@@ -35,6 +35,7 @@ enum SystemCapabilitiesController {
                     qemuBinary: $0.qemuBinary,
                 )
             },
+            details: CapabilityDetailBuilder.from(inventory: inv),
         )
     }
 }

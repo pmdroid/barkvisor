@@ -421,6 +421,9 @@ extension VMLifecycleService {
                 throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
             }
         }
+        if let usb = params.usbDevices, !usb.isEmpty {
+            try PlatformCapabilities.requireUSBPassthrough()
+        }
     }
 
     /// vCPUs must be at least 1 and at most the host online logical CPU count.

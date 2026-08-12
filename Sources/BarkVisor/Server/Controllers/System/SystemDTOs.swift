@@ -1,3 +1,4 @@
+import BarkVisorCore
 import Vapor
 
 struct HostInterface: Content {
@@ -79,7 +80,11 @@ struct SystemCapabilitiesResponse: Content {
     let hostCpuCount: Int
     /// Canonical guest profiles (persisted `vmType` IDs).
     let guestTypes: [GuestTypeInfo]
+    /// Per-feature support + reason/remediation (PAS-94). Booleans stay for older clients.
+    let details: [CapabilityDetail]
 }
+
+extension CapabilityDetail: Content {}
 
 struct HostUSBDeviceResponse: Content {
     let vendorId: String

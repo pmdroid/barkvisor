@@ -238,7 +238,7 @@ async function submit() {
         <div>
           <strong>Bridged networking required</strong>
           <p v-if="platformBridgeUnsupported" style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
-            Bridged networking is not available on this platform. This template requires a bridged network.
+            {{ caps.explanationFor('bridgedNetworking') || 'Bridged networking is not available on this host. This template requires a bridged network.' }}
           </p>
           <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.

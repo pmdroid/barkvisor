@@ -156,5 +156,9 @@ extension VMLifecycleService {
                 try CloudInitService.validateUserData(userData)
             }
         }
+
+        if let usb = params.usbDevices, !usb.isEmpty {
+            try PlatformCapabilities.requireUSBPassthrough()
+        }
     }
 }

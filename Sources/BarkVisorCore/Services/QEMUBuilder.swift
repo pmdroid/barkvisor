@@ -359,9 +359,7 @@ public enum QEMUBuilder {
                     netdevArgs = "bridge,id=net0,br=\(safeBr)"
                     needsSocketVmnetWrap = false
                 #else
-                    throw BarkVisorError.badRequest(
-                        PlatformCapabilities.unsupportedMessage(.bridgedNetworking),
-                    )
+                    throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
                 #endif
             } else {
                 netdevArgs = "user,id=net0"
@@ -413,6 +411,7 @@ public enum QEMUBuilder {
     private static func usbPassthroughArgs(vm: VM) throws -> [String] {
         let usbDevs = vm.decodedUSBDevices
         guard !usbDevs.isEmpty else { return [] }
+        try PlatformCapabilities.requireUSBPassthrough()
         var args: [String] = []
         for (i, dev) in usbDevs.enumerated() {
             try validateUSBId(dev.vendorId)
@@ -544,9 +543,7 @@ public enum QEMUBuilder {
 
             return (clientBin, socketPath)
         #else
-            throw BarkVisorError.badRequest(
-                PlatformCapabilities.unsupportedMessage(.managedBridgeDaemon),
-            )
+            throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
         #endif
     }
 

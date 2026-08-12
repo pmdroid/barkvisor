@@ -114,3 +114,42 @@ describe('fetchCapabilities (PAS-48)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('capability details (PAS-94)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test('stores details and exposes explanationFor unsupported features only', async () => {
+    const body = {
+      ...arm64Caps,
+      supportsInAppUpdate: false,
+      details: [
+        { code: 'kvmDevice', supported: false, reasonCode: 'os_unsupported', remediation: 'HVF host' },
+        { code: 'inAppUpdate', supported: false, reasonCode: 'linux_pkg_update', remediation: 'Use the package manager.' },
+        { code: 'usbPassthrough', supported: true, reasonCode: null, remediation: null },
+      ],
+    }
+    globalThis.fetch = mock().mockResolvedValue(jsonResponse(body)) as unknown as typeof fetch
+
+    const store = useCapabilitiesStore()
+    await store.fetchCapabilities()
+    expect(store.detailFor('kvmDevice')?.reasonCode).toBe('os_unsupported')
+    expect(store.explanationFor('inAppUpdate')).toBe('Use the package manager.')
+    expect(store.explanationFor('usbPassthrough')).toBeUndefined()
+    expect(store.explanationFor('bridgedNetworking')).toBeUndefined()
+  })
+
+  test('older server without details does not invent remediation', async () => {
+    globalThis.fetch = mock().mockResolvedValue(jsonResponse(arm64Caps)) as unknown as typeof fetch
+
+    const store = useCapabilitiesStore()
+    await store.fetchCapabilities()
+    expect(store.details).toEqual([])
+    expect(store.explanationFor('inAppUpdate')).toBeUndefined()
+  })
+})

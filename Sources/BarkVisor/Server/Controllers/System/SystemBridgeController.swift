@@ -32,12 +32,7 @@ struct SystemBridgeController: RouteCollection {
     /// install/start/stop/remove require the macOS managed bridge daemon (XPC helper).
     /// Product bridged networking on Linux uses host bridges without these lifecycle routes.
     private static func requireManagedBridgeDaemon() throws {
-        guard PlatformCapabilities.supportsManagedBridgeDaemon else {
-            throw Abort(
-                .notImplemented,
-                reason: PlatformCapabilities.unsupportedMessage(.managedBridgeDaemon),
-            )
-        }
+        try PlatformCapabilities.requireManagedBridgeDaemon()
     }
 
     @Sendable
