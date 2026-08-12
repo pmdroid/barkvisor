@@ -184,4 +184,57 @@ struct WorkloadSpecProjectorTests {
         spec.spec.resources = WorkloadResources(cpu: 12, memoryMb: 1_536)
         #expect(QEMUBuilder.specResourceArgs(spec) == ["-smp", "12", "-m", "1536M"])
     }
+
+    @Test func `apply rejects boot disk change`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        for index in spec.spec.disks.indices where spec.spec.disks[index].role == "boot" {
+            spec.spec.disks[index].diskId = "disk-other-vm"
+        }
+        #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(vm.bootDiskId == "disk-boot")
+    }
+
+    @Test func `apply rejects arbitrary cloud-init host path`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.cloudInit = WorkloadCloudInit(userDataRef: "/etc/passwd")
+        #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+        }
+        #expect(vm.cloudInitPath == "/data/cidata.iso")
+    }
+
+    @Test func `apply accepts service-generated cloud-init ISO`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        let generated = CloudInitService.generatedISOURL(vmID: vm.id).path
+        spec.spec.cloudInit = WorkloadCloudInit(userDataRef: generated)
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.cloudInitPath == generated)
+    }
+
+    @Test func `validate rejects more vCPUs than the host has`() {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "n"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: PlatformHost.cpuCount + 1, memoryMb: 512),
+            ),
+        )
+        #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
+    }
+
+    @Test func `validate accepts host logical CPU count`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "n"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: PlatformHost.cpuCount, memoryMb: 512),
+            ),
+        )
+        try WorkloadSpecProjector.validate(spec)
+    }
 }
