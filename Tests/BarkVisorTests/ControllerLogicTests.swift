@@ -208,14 +208,21 @@ struct ControllerLogicTests {
         #expect(caps.accelerator == PlatformCapabilities.accelerator)
         #expect(caps.hostCpuCount == PlatformHost.cpuCount)
         #expect(caps.hostCpuCount >= 1)
-        #expect(caps.supportsBridgedNetworking == PlatformCapabilities.supportsBridgedNetworking)
+        #expect(
+            caps.supportsBridgedNetworking
+                == HostInventoryService.bridgedNetworkingSupported(
+                    platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                    qemuBridgeHelper: HostInventoryService.qemuBridgeHelperPresent(),
+                    os: PlatformHost.platformName,
+                ),
+        )
         #expect(caps.supportsManagedBridgeDaemon == PlatformCapabilities.supportsManagedBridgeDaemon)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
         #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
         #if os(macOS)
             #expect(caps.supportsManagedBridgeDaemon)
         #elseif os(Linux)
-            #expect(caps.supportsBridgedNetworking)
+            #expect(caps.supportsBridgedNetworking == HostInventoryService.qemuBridgeHelperPresent())
             #expect(!caps.supportsManagedBridgeDaemon)
         #endif
     }
