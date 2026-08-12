@@ -165,10 +165,12 @@ export interface StorageSummary {
   volumeAvailableBytes: number
 }
 
+export type NetworkModeName = 'nat' | 'bridged' | 'isolated'
+
 export interface Network {
   id: string
   name: string
-  mode: 'nat' | 'bridged'
+  mode: NetworkModeName
   bridge?: string
   dnsServer?: string | null
   isDefault: boolean
@@ -381,7 +383,7 @@ export interface VMTemplate {
   memoryMB: number
   diskSizeGB: number
   portForwards: PortForwardRule[] | null
-  networkMode: 'nat' | 'bridged'
+  networkMode: NetworkModeName
   inputs: TemplateInput[]
   userDataTemplate: string
   isBuiltIn: boolean
@@ -513,12 +515,14 @@ export interface CapabilityDetail {
   remediation?: string | null
 }
 
-/** Per-mode support from GET /api/system/capabilities (PAS-57). Isolated is PAS-67. */
+/** Per-mode support from GET /api/system/capabilities and GET /api/networks/modes. */
 export interface NetworkModeCapability {
-  mode: 'nat' | 'bridged' | string
+  mode: NetworkModeName | string
   supported: boolean
   reasonCode?: string | null
   remediation?: string | null
+  label?: string | null
+  description?: string | null
 }
 
 /**
@@ -554,7 +558,7 @@ export interface SystemCapabilities {
    * Wave 0: host arch only. Do not infer from `guestTypes`.
    */
   runnableArches?: string[]
-  /** Per-mode support (PAS-57). Isolated is not listed until PAS-67. */
+  /** Per-mode support (PAS-57 / PAS-67): nat, bridged, isolated. */
   networkModes?: NetworkModeCapability[]
 }
 

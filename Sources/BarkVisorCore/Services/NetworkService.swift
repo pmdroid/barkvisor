@@ -44,19 +44,22 @@ public enum NetworkService {
         _ params: CreateNetworkParams,
         db: DatabasePool,
     ) async throws -> Network {
+        let mode = try NetworkCapability.parse(params.mode)
         try NetworkCapability.requireMode(params.mode)
-        if params.mode == "bridged" {
+        if mode == .bridged {
             guard let bridge = params.bridge, !bridge.isEmpty else {
                 throw BarkVisorError.badRequest("bridge interface required for bridged mode")
             }
             try NetworkCapability.requireBridgedInterface(bridge)
+        } else if let bridge = params.bridge, !bridge.isEmpty {
+            throw BarkVisorError.badRequest("bridge is only valid for bridged mode")
         }
 
         if let bridge = params.bridge, !bridge.isEmpty { try validateBridgeName(bridge) }
         if let dns = params.dnsServer, !dns.isEmpty { try validateDNS(dns) }
         if let mac = params.macAddress, !mac.isEmpty { try validateMAC(mac) }
 
-        if params.mode == "bridged", let bridge = params.bridge, !bridge.isEmpty {
+        if mode == .bridged, let bridge = params.bridge, !bridge.isEmpty {
             let conflict = try await db.read { db in
                 try Network.filter(Column("bridge") == bridge).fetchOne(db)
             }
@@ -67,8 +70,9 @@ public enum NetworkService {
             }
         }
 
+        let storedBridge = mode == .bridged ? params.bridge : nil
         let network = Network(
-            id: UUID().uuidString, name: params.name, mode: params.mode, bridge: params.bridge,
+            id: UUID().uuidString, name: params.name, mode: params.mode, bridge: storedBridge,
             macAddress: params.macAddress, dnsServer: params.dnsServer, autoCreated: false,
             isDefault: false,
         )
@@ -140,15 +144,21 @@ public enum NetworkService {
             network.dnsServer = dns
         }
 
-        if network.mode == "bridged" {
+        let mode = try NetworkCapability.parse(network.mode)
+        if mode == .bridged {
             let bridge = network.bridge ?? ""
             if bridge.isEmpty {
                 throw BarkVisorError.badRequest("bridge interface required for bridged mode")
             }
             try NetworkCapability.requireBridgedInterface(bridge)
+        } else {
+            if let requested = params.bridge, !requested.isEmpty {
+                throw BarkVisorError.badRequest("bridge is only valid for bridged mode")
+            }
+            network.bridge = nil
         }
 
-        if network.mode == "bridged", let bridge = network.bridge, !bridge.isEmpty {
+        if mode == .bridged, let bridge = network.bridge, !bridge.isEmpty {
             let conflict = try await db.read { db in
                 try Network
                     .filter(Column("bridge") == bridge)
