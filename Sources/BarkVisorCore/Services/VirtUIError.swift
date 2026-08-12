@@ -36,6 +36,8 @@ public enum BarkVisorError: Error, LocalizedError {
     case unauthorized(String? = nil)
     case forbidden(String)
     case conflict(String)
+    /// Config-vs-config or bind-probe host port collision (PAS-64). HTTP 409 + `port_in_use`.
+    case portInUse(String)
     case preconditionFailed(String)
     case internalError(String)
 
@@ -80,6 +82,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .unauthorized(msg): return msg ?? "Unauthorized"
         case let .forbidden(msg): return msg
         case let .conflict(msg): return msg
+        case let .portInUse(msg): return msg
         case let .preconditionFailed(msg): return msg
         case let .internalError(msg): return msg
         }
@@ -116,6 +119,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .unauthorized: return "unauthorized"
         case .forbidden: return "forbidden"
         case .conflict: return "conflict"
+        case .portInUse: return "port_in_use"
         case .preconditionFailed: return "precondition_failed"
         case .internalError: return "internal_error"
         }
@@ -132,7 +136,7 @@ public enum BarkVisorError: Error, LocalizedError {
             return 403
         case .notFound, .repositoryNotFound:
             return 404
-        case .conflict, .vmAlreadyRunning:
+        case .conflict, .vmAlreadyRunning, .portInUse:
             return 409
         case .preconditionFailed:
             return 412
