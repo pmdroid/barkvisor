@@ -31,23 +31,36 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   // Step 1: OS & Name
   const name = ref('')
   const osType = ref<'linux' | 'windows'>('linux')
-  /** Windows guest profile exists only for arm64 today (windows-arm64). */
+  /**
+   * Windows guest profile exists only for arm64 today (`windows-arm64`).
+   * Until capabilities load, do not offer Windows — store defaults are arm64 and
+   * would otherwise allow a stale selection on x86_64 hosts (PAS-48).
+   */
   const supportsWindows = computed(() => {
+    if (!caps.loaded) return false
     const host = hostArchToImageArch(hostArch.value)
     if (host !== 'arm64') return false
     const types = guestTypes.value ?? []
-    if (types.length === 0) return true // capability not loaded yet; arm64 default
-    return types.some(g => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'))
+    if (types.length === 0) return true
+    return types.some(
+      (g) => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'),
+    )
   })
   const vmType = computed(() => {
     const arch = hostArchToImageArch(hostArch.value)
     const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
-      // Never hard-code windows-arm64 on x86_64 hosts (PAS-48).
-      if (arch === 'arm64') return 'windows-arm64'
-      return `linux-${archSuffix}` as const
+      // Never silently map Windows → Linux. Submit/canProceed require supportsWindows.
+      return 'windows-arm64'
     }
     return `linux-${archSuffix}` as const
+  })
+
+  // If host turns out not to support Windows, drop a stale selection.
+  watch(supportsWindows, (ok) => {
+    if (!ok && osType.value === 'windows') {
+      selectOS('linux')
+    }
   })
 
   // Step 2: Hardware
@@ -243,6 +256,8 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const loading = ref(false)
 
   onMounted(async () => {
+    // Resolve host arch before OS selection can enable Windows (PAS-48).
+    await caps.fetchCapabilities().catch(() => {})
     imageStore.fetchAll()
     sshKeyStore.fetchAll().then(() => {
       if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
@@ -287,6 +302,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   })
 
   function canProceed(): boolean {
+    if (osType.value === 'windows' && !supportsWindows.value) return false
     const content = stepContent(step.value)
     switch (content) {
       case 'OS':
@@ -318,6 +334,10 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   async function submit() {
     error.value = ''
+    if (osType.value === 'windows' && !supportsWindows.value) {
+      error.value = 'Windows VMs are not available on this host architecture.'
+      return
+    }
     loading.value = true
     try {
       const req: any = {
