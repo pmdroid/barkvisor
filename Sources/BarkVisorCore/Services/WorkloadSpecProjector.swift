@@ -96,6 +96,13 @@ public enum WorkloadSpecProjector {
     /// Apply spec fields onto an existing VM. Preserves host-only columns.
     public static func apply(_ spec: WorkloadSpec, to vm: inout VM) throws {
         try validate(spec, existingID: vm.id)
+        if let bootId = spec.spec.disks.first(where: { $0.role == "boot" })?.diskId,
+           bootId != vm.bootDiskId {
+            throw BarkVisorError.badRequest("spec update cannot change the boot disk")
+        }
+        if let ref = spec.spec.cloudInit?.userDataRef {
+            try CloudInitService.validateUserDataRef(ref, vmID: vm.id, current: vm.cloudInitPath)
+        }
         let guestType = try resolveGuestType(spec)
         vm.name = spec.metadata.name
         vm.description = spec.metadata.description
@@ -155,9 +162,7 @@ public enum WorkloadSpecProjector {
         if let existingID, let specID = spec.metadata.id, specID != existingID {
             throw BarkVisorError.badRequest("metadata.id does not match VM \(existingID)")
         }
-        guard (1 ... 256).contains(spec.spec.resources.cpu) else {
-            throw BarkVisorError.badRequest("spec.resources.cpu must be 1...256")
-        }
+        try VMLifecycleService.validateCPUCount(spec.spec.resources.cpu)
         guard (128 ... 1_048_576).contains(spec.spec.resources.memoryMb) else {
             throw BarkVisorError.badRequest("spec.resources.memoryMb must be 128...1048576")
         }
