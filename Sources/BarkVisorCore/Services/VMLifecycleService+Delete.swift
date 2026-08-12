@@ -133,6 +133,9 @@ extension VMLifecycleService {
             count: params.portForwards?.count ?? 0,
             network: network,
         )
+        if let rules = params.portForwards {
+            try await PortRegistry.assertAvailable(rules, db: db)
+        }
 
         let hasISO = params.isoId != nil
         let hasCloudImage = params.cloudImageId != nil
