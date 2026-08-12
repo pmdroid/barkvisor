@@ -51,6 +51,9 @@ jobs:
       - name: Run tests
         run: mise run test
 
+      - name: Run frontend tests
+        run: mise run frontend-test
+
   # Experimental: compile Core/App on Linux (Ubuntu 24.04 matches official Swift packages).
   linux-build:
     name: Linux Build

@@ -106,12 +106,12 @@ public enum GuestProfiles {
         byID[id]
     }
 
-    /// Map host/image arch (`arm64` / `x86_64` / `amd64`) to default Linux guest ID.
+    /// Map host/image arch (`arm64` / `x86_64` / aliases) to default Linux guest ID.
     public static func defaultLinuxID(forImageArch arch: String) -> String {
-        switch arch {
-        case "arm64", "aarch64":
+        switch PlatformCapabilities.normalizedArch(arch) {
+        case "arm64":
             return "linux-arm64"
-        case "x86_64", "amd64":
+        case "x86_64":
             return "linux-amd64"
         default:
             return "linux-\(arch)"

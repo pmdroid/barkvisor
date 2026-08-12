@@ -231,6 +231,88 @@ struct CrossArchCompatibilityTests {
         #expect(imageCount == 0, "download must not start for foreign-arch template deploy")
     }
 
+    /// `VMManager.start` rejects pre-existing foreign-arch rows before QEMU / state flip (PAS-48).
+    @Test func `start rejects foreign guest arch before qemu`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        var migrator = DatabaseMigrator()
+        migrator.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        try migrator.migrate(pool)
+
+        let host = PlatformCapabilities.hostArch
+        let foreignType = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        let now = iso8601.string(from: Date())
+        let vmID = UUID().uuidString
+        let diskID = UUID().uuidString
+        let diskPath = tmp.appendingPathComponent("\(diskID).qcow2")
+        FileManager.default.createFile(atPath: diskPath.path, contents: Data())
+
+        try await pool.write { db in
+            try Disk(
+                id: diskID,
+                name: "boot",
+                path: diskPath.path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: vmID,
+                autoCreated: false,
+                status: "ready",
+                createdAt: now,
+            ).insert(db)
+
+            try VM(
+                id: vmID,
+                name: "cross-arch-start",
+                vmType: foreignType,
+                state: "stopped",
+                cpuCount: 1,
+                memoryMb: 512,
+                bootDiskId: diskID,
+                isoId: nil,
+                isoIds: nil,
+                networkId: nil,
+                cloudInitPath: nil,
+                vncPort: nil,
+                description: nil,
+                bootOrder: "cd",
+                displayResolution: "1280x800",
+                additionalDiskIds: nil,
+                uefi: true,
+                tpmEnabled: false,
+                macAddress: nil,
+                sharedPaths: nil,
+                portForwards: nil,
+                usbDevices: nil,
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: now,
+                updatedAt: now,
+            ).insert(db)
+        }
+
+        let manager = VMManager(dbPool: pool)
+        do {
+            try await manager.start(vmID: vmID)
+            Issue.record("expected start to reject \(foreignType) on \(host)")
+        } catch let BarkVisorError.badRequest(message) {
+            #expect(message.lowercased().contains("not compatible")
+                || message.lowercased().contains("cross-architecture"))
+            #expect(message.contains(host))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+
+        let vm = try await pool.read { db in
+            try VM.fetchOne(db, key: vmID)
+        }
+        #expect(vm?.state == "stopped", "start must not flip state when the arch guard fires")
+    }
+
     /// Symmetric guard on x86_64 CI/dev hosts.
     @Test(.enabled(if: PlatformCapabilities.hostArch == "x86_64"))
     func `arm64 workload blocked on x86_64 host`() throws {

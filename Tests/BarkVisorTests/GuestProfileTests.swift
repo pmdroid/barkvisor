@@ -41,6 +41,9 @@ struct GuestProfileTests {
         #expect(GuestProfiles.defaultLinuxID(forImageArch: "aarch64") == "linux-arm64")
         #expect(GuestProfiles.defaultLinuxID(forImageArch: "x86_64") == "linux-amd64")
         #expect(GuestProfiles.defaultLinuxID(forImageArch: "amd64") == "linux-amd64")
+        #expect(GuestProfiles.defaultLinuxID(forImageArch: "x64") == "linux-amd64")
+        #expect(GuestProfiles.defaultLinuxID(forImageArch: "X86_64") == "linux-amd64")
+        #expect(GuestProfiles.defaultLinuxID(forImageArch: " AArch64 ") == "linux-arm64")
     }
 
     @Test func `default windows id only for arm64`() {
