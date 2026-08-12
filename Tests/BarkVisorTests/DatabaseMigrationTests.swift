@@ -6,11 +6,7 @@ import Testing
 
 struct DatabaseMigrationTests {
     private func makeInMemoryMigrator() -> DatabaseMigrator {
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
-        return migrator
+        return AppDatabase.makeMigrator()
     }
 
     private func migratedQueue() throws -> DatabaseQueue {
@@ -44,8 +40,7 @@ struct DatabaseMigrationTests {
 
         let vm = VM(
             id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1",
-            isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: "cd", displayResolution: "1280x800",
             additionalDiskIds: nil, uefi: true, tpmEnabled: false,
             macAddress: "52:54:00:12:34:56", sharedPaths: nil,
@@ -100,6 +95,65 @@ struct DatabaseMigrationTests {
         #expect(fetched?.mode == "nat")
         #expect(fetched?.dnsServer == "8.8.8.8")
         #expect(fetched?.isDefault == true)
+    }
+
+    // MARK: - PAS-35 M002
+
+    @Test func `m002 folds isoId drops vncPort and backfills specJson`() throws {
+        let queue = try DatabaseQueue()
+        var m001 = DatabaseMigrator()
+        m001.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        try m001.migrate(queue)
+
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO images (id, name, imageType, arch, status, createdAt, updatedAt)
+                VALUES (
+                    'iso-legacy', 'legacy.iso', 'iso', 'arm64', 'ready',
+                    '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'
+                )
+                """,
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO disks (id, name, path, sizeBytes, format, autoCreated, status, createdAt)
+                VALUES ('d1', 'boot', '/tmp/d.qcow2', 1, 'qcow2', 0, 'ready', '2025-01-01T00:00:00Z')
+                """,
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO vms (
+                    id, name, vmType, state, cpuCount, memoryMb, bootDiskId,
+                    isoId, vncPort, uefi, tpmEnabled, autoCreated, pendingChanges,
+                    createdAt, updatedAt
+                ) VALUES (
+                    'vm-1', 'legacy', 'linux-arm64', 'stopped', 2, 1024, 'd1',
+                    'iso-legacy', 5900, 1, 0, 0, 0,
+                    '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'
+                )
+                """,
+            )
+        }
+
+        try AppDatabase.makeMigrator().migrate(queue)
+
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(!columns.contains("isoId"))
+            #expect(!columns.contains("vncPort"))
+            #expect(columns.contains("specJson"))
+            #expect(columns.contains("specGeneration"))
+            let vm = try VM.fetchOne(db, key: "vm-1")
+            #expect(vm?.decodedISOIds == ["iso-legacy"])
+            #expect(vm?.specJson != nil)
+            #expect(vm?.specGeneration == 1)
+            let spec = WorkloadSpecJSON.decode(vm?.specJson)
+            #expect(spec?.metadata.name == "legacy")
+            #expect(spec?.spec.disks.contains { $0.role == "cdrom" && $0.imageId == "iso-legacy" } == true)
+        }
     }
 
     // MARK: - Tables Exist

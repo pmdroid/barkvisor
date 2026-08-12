@@ -10,8 +10,7 @@ struct DTOTests {
     @Test func `vm response from VM`() {
         let vm = VM(
             id: "vm-1", name: "test-vm", vmType: "linux-arm64", state: "running",
-            cpuCount: 4, memoryMb: 2_048, bootDiskId: "disk-1",
-            isoId: nil, networkId: "net-1", cloudInitPath: nil, vncPort: nil,
+            cpuCount: 4, memoryMb: 2_048, bootDiskId: "disk-1", networkId: "net-1", cloudInitPath: nil,
             description: "A VM", bootOrder: "cd", displayResolution: "1920x1080",
             additionalDiskIds: "[\"disk-2\",\"disk-3\"]",
             uefi: true, tpmEnabled: false,
@@ -42,13 +41,17 @@ struct DTOTests {
         #expect(response.portForwards?.count == 1)
         #expect(response.portForwards?.first?.guestPort == 22)
         #expect(response.portForwards?.first?.hostPort == 2_222)
+        #expect(response.spec.metadata.name == "test-vm")
+        #expect(response.spec.spec.resources.cpu == 4)
+        #expect(response.spec.spec.guestType == "linux-arm64")
+        #expect(response.status.state == .running)
+        #expect(response.status.pendingChanges)
     }
 
     @Test func `vm response nil optionals`() {
         let vm = VM(
             id: "vm-1", name: "minimal", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
-            isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
@@ -71,9 +74,8 @@ struct DTOTests {
     @Test func `vm response iso id backwards compat`() {
         let vm = VM(
             id: "vm-1", name: "iso-test", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
-            isoId: nil, isoIds: "[\"iso-1\",\"iso-2\"]",
-            networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1", isoIds: "[\"iso-1\",\"iso-2\"]",
+            networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
@@ -86,22 +88,24 @@ struct DTOTests {
         #expect(response.isoIds == ["iso-1", "iso-2"])
     }
 
-    @Test func `vm response legacy iso id`() {
+    @Test func `vm response encodes spec and status`() throws {
         let vm = VM(
-            id: "vm-1", name: "legacy-iso", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
-            isoId: "legacy-iso-1", isoIds: nil,
-            networkId: nil, cloudInitPath: nil, vncPort: nil,
+            id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
-            uefi: false, tpmEnabled: false,
+            uefi: true, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
             autoCreated: false, pendingChanges: false,
             createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
-
         let response = VMResponse(from: vm)
-        #expect(response.isoId == "legacy-iso-1")
-        #expect(response.isoIds == ["legacy-iso-1"])
+        let data = try JSONEncoder().encode(response)
+        let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(dict?["spec"] is [String: Any])
+        #expect(dict?["status"] is [String: Any])
+        let status = dict?["status"] as? [String: Any]
+        #expect(status?["state"] as? String == "stopped")
+        #expect(status?["generation"] as? Int == 1)
     }
 
     // MARK: - VMResponse Encodable
@@ -109,8 +113,7 @@ struct DTOTests {
     @Test func `vm response encodes to JSON`() throws {
         let vm = VM(
             id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1",
-            isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: true, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,

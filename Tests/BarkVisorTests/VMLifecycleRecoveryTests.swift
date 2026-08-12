@@ -14,10 +14,7 @@ final class VMLifecycleRecoveryTests {
 
         let dbPath = tmp.appendingPathComponent("test.sqlite").path
         let pool = try DatabasePool(path: dbPath)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
         dbPool = pool
     }
@@ -52,11 +49,9 @@ final class VMLifecycleRecoveryTests {
                 cpuCount: 2,
                 memoryMb: 2_048,
                 bootDiskId: "disk-1",
-                isoId: nil,
                 isoIds: nil,
                 networkId: nil,
                 cloudInitPath: "/tmp/cloud-init/vm-1/cidata.iso",
-                vncPort: nil,
                 description: nil,
                 bootOrder: "cd",
                 displayResolution: "1280x800",
@@ -121,11 +116,9 @@ final class VMLifecycleRecoveryTests {
                 cpuCount: 2,
                 memoryMb: 2_048,
                 bootDiskId: "disk-2",
-                isoId: nil,
                 isoIds: nil,
                 networkId: nil,
                 cloudInitPath: nil,
-                vncPort: nil,
                 description: nil,
                 bootOrder: "cd",
                 displayResolution: "1280x800",

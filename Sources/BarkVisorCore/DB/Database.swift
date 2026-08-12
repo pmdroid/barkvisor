@@ -22,13 +22,22 @@ public final class AppDatabase: Sendable {
     }
 
     public func migrate() throws {
-        var migrator = DatabaseMigrator()
+        try AppDatabase.makeMigrator().migrate(pool)
+    }
 
+    public static func makeMigrator() -> DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+        registerMigrations(&migrator)
+        return migrator
+    }
+
+    public static func registerMigrations(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration(M001_CreateSchema.identifier) { db in
             try M001_CreateSchema.migrate(db)
         }
-
-        try migrator.migrate(pool)
+        migrator.registerMigration(M002_WorkloadSpec.identifier) { db in
+            try M002_WorkloadSpec.migrate(db)
+        }
     }
 }
 

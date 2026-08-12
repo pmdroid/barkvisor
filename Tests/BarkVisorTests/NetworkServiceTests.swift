@@ -14,10 +14,7 @@ final class NetworkServiceTests {
 
         let dbPath = tmp.appendingPathComponent("test.sqlite").path
         let pool = try DatabasePool(path: dbPath)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
         dbPool = pool
     }
@@ -160,8 +157,8 @@ final class NetworkServiceTests {
 
             let vm = VM(
                 id: "vm1", name: "test", vmType: "linux-arm64", state: "stopped",
-                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1", isoId: nil,
-                networkId: network.id, cloudInitPath: nil, vncPort: nil,
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1",
+                networkId: network.id, cloudInitPath: nil,
                 description: nil, bootOrder: "cd", displayResolution: "1280x800",
                 additionalDiskIds: nil, uefi: true, tpmEnabled: false,
                 macAddress: "52:54:00:12:34:56", sharedPaths: nil, portForwards: nil,

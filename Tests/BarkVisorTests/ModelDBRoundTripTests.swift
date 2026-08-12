@@ -9,10 +9,7 @@ final class ModelDBRoundTripTests {
 
     init() throws {
         let queue = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(queue)
         dbPool = queue
     }
@@ -256,8 +253,8 @@ final class ModelDBRoundTripTests {
             ).insert(db)
             try VM(
                 id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
-                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1", isoId: nil, networkId: nil,
-                cloudInitPath: nil, vncPort: nil, description: nil, bootOrder: "cd",
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1", networkId: nil,
+                cloudInitPath: nil, description: nil, bootOrder: "cd",
                 displayResolution: "1280x800", additionalDiskIds: nil, uefi: true,
                 tpmEnabled: false, macAddress: "52:54:00:12:34:56", sharedPaths: nil,
                 portForwards: nil, autoCreated: false, pendingChanges: false,
@@ -294,8 +291,8 @@ final class ModelDBRoundTripTests {
             ).insert(db)
             try VM(
                 id: "vm-1", name: "test2", vmType: "linux-arm64", state: "stopped",
-                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1", isoId: nil, networkId: nil,
-                cloudInitPath: nil, vncPort: nil, description: nil, bootOrder: "cd",
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1", networkId: nil,
+                cloudInitPath: nil, description: nil, bootOrder: "cd",
                 displayResolution: "1280x800", additionalDiskIds: nil, uefi: true,
                 tpmEnabled: false, macAddress: "52:54:00:12:34:57", sharedPaths: nil,
                 portForwards: nil, autoCreated: false, pendingChanges: false,

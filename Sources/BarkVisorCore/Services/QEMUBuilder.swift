@@ -25,6 +25,8 @@ public struct QEMULaunchConfig {
 
 public struct QEMUBuildContext {
     public let vm: VM
+    /// Canonical launch input. QEMUBuilder reads hardware only from this spec.
+    public let spec: WorkloadSpec
     public let disk: Disk
     public let isos: [VMImage]
     public let network: Network?
@@ -50,8 +52,10 @@ public struct QEMUBuildContext {
         additionalDisks: [Disk],
         sockets: VMSockets,
         bridgeSocketPath: String?,
+        spec: WorkloadSpec? = nil,
     ) {
         self.vm = vm
+        self.spec = spec ?? WorkloadSpecProjector.fromVM(vm)
         self.disk = disk
         self.isos = isos
         self.network = network
@@ -173,37 +177,39 @@ public enum QEMUBuilder {
     }
 
     public static func launchConfig(ctx: QEMUBuildContext) throws -> QEMULaunchConfig {
-        let vm = ctx.vm
+        let spec = ctx.spec
         let disk = ctx.disk
-        let profile = try GuestProfiles.require(vm.vmType)
-        let qemuBinary = try binary(for: vm.vmType)
+        let guestType = try WorkloadSpecProjector.resolveGuestType(spec)
+        let profile = try GuestProfiles.require(guestType)
+        let qemuBinary = try binary(for: guestType)
+        let vmID = spec.metadata.id ?? ctx.vm.id
 
         _ = try sanitizeQEMUArg(disk.path, label: "Disk path")
         _ = try sanitizeQEMUArg(disk.format, label: "Disk format")
 
         let windows = profile.isWindows
-        let bootOrder = vm.bootOrder ?? "cd"
+        let bootOrder = spec.spec.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
-        let machine = profile.machine
+        let machine = spec.spec.machine ?? profile.machine
 
         var args: [String] = []
         args += ["-machine", machine, "-accel", accelerator, "-cpu", cpuModel]
-        args += ["-smp", "\(vm.cpuCount)", "-m", "\(vm.memoryMb)M"]
-        args += try firmwareArgs(vmID: vm.id, vmType: vm.vmType)
+        args += specResourceArgs(spec)
+        args += try firmwareArgs(vmID: vmID, vmType: guestType)
         args += ["-device", "qemu-xhci"]
         args += bootDiskArgs(disk: disk, windows: windows, diskFirst: diskFirst)
         args += try isoArgs(isos: ctx.isos, windows: windows, diskFirst: diskFirst)
-        args += try cloudInitArgs(vm: vm)
-        args += try sharedFolderArgs(vm: vm)
-        let tpm = try tpmArgs(vm: vm)
+        args += try cloudInitArgs(spec: spec)
+        args += try sharedFolderArgs(spec: spec)
+        let tpm = try tpmArgs(spec: spec, vmID: vmID, guestType: guestType)
         args += tpm.args
         args += try additionalDiskArgs(ctx.additionalDisks)
-        let (netArgs, needsSocketVmnetWrap) = try networkArgs(vm: vm, network: ctx.network)
+        let (netArgs, needsSocketVmnetWrap) = try networkArgs(spec: spec, network: ctx.network)
         args += netArgs
         args += socketArgs(ctx: ctx)
-        args += displayAndInputArgs(vm: vm)
-        args += try usbPassthroughArgs(vm: vm)
-        args += try miscArgs(vm: vm)
+        args += displayAndInputArgs(spec: spec)
+        args += try usbPassthroughArgs(spec: spec)
+        args += try miscArgs(spec: spec, vmID: vmID)
 
         // socket_vmnet wrap is macOS-only (not the same as "bridged networking is in use").
         if needsSocketVmnetWrap {
@@ -231,6 +237,14 @@ public enum QEMUBuilder {
     }
 
     // MARK: - Argument Builders
+
+    /// CPU/memory from WorkloadSpec only (PAS-35 — no parallel VM-column parse).
+    static func specResourceArgs(_ spec: WorkloadSpec) -> [String] {
+        [
+            "-smp", "\(spec.spec.resources.cpu)",
+            "-m", "\(spec.spec.resources.memoryMb)M",
+        ]
+    }
 
     private static func firmwareArgs(vmID: String, vmType: String) throws -> [String] {
         let (codeImage, varsImage) = try prepareFirmware(vmID: vmID, vmType: vmType)
@@ -270,14 +284,14 @@ public enum QEMUBuilder {
         return args
     }
 
-    private static func cloudInitArgs(vm: VM) throws -> [String] {
-        guard let ciPath = vm.cloudInitPath else { return [] }
+    private static func cloudInitArgs(spec: WorkloadSpec) throws -> [String] {
+        guard let ciPath = spec.spec.cloudInit?.userDataRef else { return [] }
         let sanitizedCIPath = try sanitizeQEMUArg(ciPath, label: "Cloud-init ISO path")
         return ["-drive", "file=\(sanitizedCIPath),format=raw,if=virtio,readonly=on,media=cdrom"]
     }
 
-    private static func sharedFolderArgs(vm: VM) throws -> [String] {
-        let paths = vm.decodedSharedPaths
+    private static func sharedFolderArgs(spec: WorkloadSpec) throws -> [String] {
+        let paths = spec.spec.sharedPaths ?? []
         guard !paths.isEmpty else { return [] }
         var args: [String] = []
         for (i, path) in paths.enumerated() {
@@ -289,10 +303,10 @@ public enum QEMUBuilder {
         return args
     }
 
-    private static func tpmArgs(vm: VM) throws
+    private static func tpmArgs(spec: WorkloadSpec, vmID: String, guestType: String) throws
         -> (args: [String], exe: URL?, swtpmArgs: [String]?, dir: URL?) {
-        guard vm.tpmEnabled else { return ([], nil, nil, nil) }
-        let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vm.id)")
+        guard spec.spec.firmware?.tpm == true else { return ([], nil, nil, nil) }
+        let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vmID)")
         try FileManager.default.createDirectory(at: tpmStateDir, withIntermediateDirectories: true)
         let tpmSock = tpmStateDir.appendingPathComponent("swtpm.sock")
         let exe = try resolveSwtpm()
@@ -304,7 +318,7 @@ public enum QEMUBuilder {
             "--log", "level=20",
         ]
         // aarch64 uses tpm-tis-device; x86_64 uses tpm-tis.
-        let isX86 = (try? GuestProfiles.require(vm.vmType).isX86) == true
+        let isX86 = (try? GuestProfiles.require(guestType).isX86) == true
         let tpmDevice = isX86 ? "tpm-tis,tpmdev=tpm0" : "tpm-tis-device,tpmdev=tpm0"
         let args = [
             "-chardev", "socket,id=chrtpm,path=\(tpmSock.path)",
@@ -327,14 +341,15 @@ public enum QEMUBuilder {
         return args
     }
 
-    private static func networkArgs(vm: VM, network: Network?) throws
+    private static func networkArgs(spec: WorkloadSpec, network: Network?) throws
         -> (args: [String], needsSocketVmnetWrap: Bool) {
         var netdevArgs = ""
         var deviceArgs = "virtio-net-pci,netdev=net0"
         // True only when QEMU must be exec'd under socket_vmnet_client (macOS bridged).
         var needsSocketVmnetWrap = false
+        let specNet = spec.spec.networks.first
 
-        if let mac = vm.macAddress, !mac.isEmpty {
+        if let mac = specNet?.mac, !mac.isEmpty {
             try validateMAC(mac)
             deviceArgs += ",mac=\(mac)"
         }
@@ -367,11 +382,11 @@ public enum QEMUBuilder {
                     try validateIPv4(dns)
                     netdevArgs += ",dns=\(dns)"
                 }
-                for rule in vm.decodedPortForwards {
-                    try validateProtocol(rule.protocol)
+                for rule in specNet?.portForwards ?? [] {
+                    try validateProtocol(rule.proto)
                     try validatePort(rule.hostPort)
                     try validatePort(rule.guestPort)
-                    netdevArgs += ",hostfwd=\(rule.protocol)::\(rule.hostPort)-:\(rule.guestPort)"
+                    netdevArgs += ",hostfwd=\(rule.proto)::\(rule.hostPort)-:\(rule.guestPort)"
                 }
             }
         } else {
@@ -397,8 +412,8 @@ public enum QEMUBuilder {
         ]
     }
 
-    private static func displayAndInputArgs(vm: VM) -> [String] {
-        let resolution = vm.displayResolution ?? "1280x800"
+    private static func displayAndInputArgs(spec: WorkloadSpec) -> [String] {
+        let resolution = spec.spec.display?.resolution ?? "1280x800"
         var args = ["-device", "ramfb"]
         if let (w, h) = try? validateResolution(resolution) {
             args += ["-device", "virtio-gpu-pci,xres=\(w),yres=\(h)"]
@@ -408,8 +423,8 @@ public enum QEMUBuilder {
         return args + ["-device", "usb-kbd", "-device", "usb-tablet"]
     }
 
-    private static func usbPassthroughArgs(vm: VM) throws -> [String] {
-        let usbDevs = vm.decodedUSBDevices
+    private static func usbPassthroughArgs(spec: WorkloadSpec) throws -> [String] {
+        let usbDevs = spec.spec.usb
         guard !usbDevs.isEmpty else { return [] }
         try PlatformCapabilities.requireUSBPassthrough()
         var args: [String] = []
@@ -424,12 +439,12 @@ public enum QEMUBuilder {
         return args
     }
 
-    private static func miscArgs(vm: VM) throws -> [String] {
-        let sanitizedName = try sanitizeQEMUArg(vm.name, label: "VM name")
+    private static func miscArgs(spec: WorkloadSpec, vmID: String) throws -> [String] {
+        let sanitizedName = try sanitizeQEMUArg(spec.metadata.name, label: "VM name")
         var args: [String] = [
             "-device", "virtio-balloon-pci",
             "-device", "virtio-rng-pci",
-            "-name", sanitizedName, "-uuid", vm.id,
+            "-name", sanitizedName, "-uuid", vmID,
         ]
         if let dataDir = BundleResolver.qemuDataDir() {
             args += ["-L", dataDir.path]
