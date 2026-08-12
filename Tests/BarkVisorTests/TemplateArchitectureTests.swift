@@ -112,6 +112,29 @@ struct TemplateArchitectureTests {
         #expect(missing.reasons.contains { $0.code == "feature_missing" })
     }
 
+    @Test func `compatibility honors requested memory override`() {
+        let template = VMTemplate(
+            id: "t1", slug: "ubuntu-cloud", name: "Ubuntu Cloud", description: nil,
+            category: "linux", icon: "ubuntu",
+            imageSlug: "ubuntu-24.04-x86_64", cpuCount: 2, memoryMB: 2_048, diskSizeGB: 20,
+            portForwards: "[]", networkMode: "nat", inputs: "[]",
+            userDataTemplate: "", isBuiltIn: true, repositoryId: nil,
+            createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+            architecturesJson: #"["x86_64"]"#,
+            minMemoryMB: 512,
+            imageByArchJson: #"{"x86_64":"ubuntu-24.04-x86_64"}"#,
+        )
+        let host = makeTemplateHost(arch: "x86_64", bridged: false)
+        let ok = TemplateCompatibility.evaluate(template: template, host: host)
+        #expect(ok.compatible)
+
+        let low = TemplateCompatibility.evaluate(
+            template: template, host: host, requestedMemoryMB: 128,
+        )
+        #expect(!low.compatible)
+        #expect(low.reasons.contains { $0.code == "min_memory" })
+    }
+
     @Test func `deploy resolves host-arch image slug`() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

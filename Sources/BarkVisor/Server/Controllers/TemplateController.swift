@@ -29,7 +29,7 @@ struct TemplateResponse: Content {
     let resolvedImageSlug: String?
     let compatible: Bool
 
-    init(from t: VMTemplate, hostArch: String? = nil) {
+    init(from t: VMTemplate, host: HostInventory? = nil) {
         self.id = t.id
         self.slug = t.slug
         self.name = t.name
@@ -46,14 +46,15 @@ struct TemplateResponse: Content {
         self.repositoryId = t.repositoryId
         self.portForwards = JSONColumnCoding.decodeArray(PortForwardRule.self, from: t.portForwards)
         self.inputs = JSONColumnCoding.decodeArray(TemplateInput.self, from: t.inputs) ?? []
-        let arches = t.declaredArchitectures
-        self.architectures = arches
+        self.architectures = t.declaredArchitectures
         self.imageByArch = t.imageByArch
         self.minMemoryMB = t.minMemoryMB
         self.requiredFeatures = t.requiredFeatures
-        if let hostArch {
-            self.resolvedImageSlug = t.resolvedImageSlug(forArch: hostArch)
-            self.compatible = TemplateArchitecture.supports(architectures: arches, arch: hostArch)
+        if let host {
+            // Same checks as dry-run/deploy: arch, image, requiredFeatures, minMemoryMB.
+            let report = TemplateCompatibility.evaluate(template: t, host: host)
+            self.resolvedImageSlug = report.resolvedImageSlug
+            self.compatible = report.compatible
         } else {
             self.resolvedImageSlug = nil
             self.compatible = true
@@ -85,6 +86,7 @@ struct DeployTemplateResponse: Content {
 
 struct DeployDryRunRequest: Content {
     var targetHostId: String?
+    var memoryMB: Int?
 }
 
 // MARK: - Controller
@@ -111,7 +113,6 @@ struct TemplateController: RouteCollection {
         )
         let filterArch = req.query[String.self, at: "arch"]
             ?? (req.query[String.self, at: "hostId"] != nil ? inventory.platform.arch : nil)
-        let hostArch = inventory.platform.arch
 
         var templates = try await req.db.read { db in
             try VMTemplate.fetchAll(db)
@@ -123,7 +124,7 @@ struct TemplateController: RouteCollection {
                 )
             }
         }
-        return templates.map { TemplateResponse(from: $0, hostArch: hostArch) }
+        return templates.map { TemplateResponse(from: $0, host: inventory) }
     }
 
     @Sendable
@@ -135,7 +136,7 @@ struct TemplateController: RouteCollection {
         else {
             throw Abort(.notFound)
         }
-        return TemplateResponse(from: template, hostArch: PlatformCapabilities.hostArch)
+        return TemplateResponse(from: template, host: HostInventoryService.snapshot())
     }
 
     @Sendable
@@ -152,7 +153,9 @@ struct TemplateController: RouteCollection {
         try TemplateCompatibility.requireLocalHost(
             requestedHostId: body?.targetHostId, inventory: inventory,
         )
-        return TemplateCompatibility.evaluate(template: template, host: inventory)
+        return TemplateCompatibility.evaluate(
+            template: template, host: inventory, requestedMemoryMB: body?.memoryMB,
+        )
     }
 
     @Sendable
