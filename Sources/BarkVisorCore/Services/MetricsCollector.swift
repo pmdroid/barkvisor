@@ -55,9 +55,26 @@ struct QMPPollResult {
 /// Per-VM metrics polling via QMP, stores samples in a ring buffer (30 min history at 5s interval = 360 samples)
 /// Also collects host-level CPU/memory stats on a separate timer for the dashboard history.
 /// Guest agent info is persisted to the guest_info DB table.
+///
+/// Host history (`GET /api/system/stats/history`) is this in-memory ring only
+/// (PAS-85). There is no TSDB. `minutes` is clamped to
+/// `systemStatsRetentionMinutes` (30) — the API used to accept 1440 but the
+/// buffer cannot retain that long.
 public actor MetricsCollector {
-    private static let maxSamples = 360
-    private static let pollInterval: UInt64 = 5_000_000_000 // 5 seconds
+    public static let systemStatsMaxSamples = 360
+    public static let systemStatsPollIntervalSeconds = 5
+    /// 360 samples × 5s = 30 minutes. Clients must not assume a longer window.
+    public static let systemStatsRetentionMinutes =
+        (systemStatsMaxSamples * systemStatsPollIntervalSeconds) / 60
+
+    /// Clamp `?minutes=` for host history. Default and ceiling are the ring
+    /// length; values below 1 become 1.
+    public static func clampSystemStatsMinutes(_ requested: Int) -> Int {
+        min(max(requested, 1), systemStatsRetentionMinutes)
+    }
+
+    private static let maxSamples = systemStatsMaxSamples
+    private static let pollInterval = UInt64(systemStatsPollIntervalSeconds) * 1_000_000_000
 
     private let dbPool: DatabasePool
 
