@@ -124,6 +124,9 @@ struct CapabilityDetailTests {
         #expect(caps.runnableArches == [caps.hostArch])
         #expect(caps.runnableArches.count == 1)
         #expect(PlatformCapabilities.isCompatibleGuestArch(caps.runnableArches[0]))
+        #expect(caps.networkModes.map(\.mode) == ["nat", "bridged"])
+        #expect(caps.networkModes.first { $0.mode == "nat" }?.supported == true)
+        #expect(caps.networkModes.first { $0.mode == "bridged" }?.supported == caps.supportsBridgedNetworking)
 
         let byCode = Dictionary(uniqueKeysWithValues: caps.details.map { ($0.code, $0) })
         #expect(byCode[.bridgedNetworking]?.supported == caps.supportsBridgedNetworking)

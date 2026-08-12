@@ -87,10 +87,13 @@ struct SystemCapabilitiesResponse: Content {
     /// Architectures this host can run natively (Wave 0: host arch only).
     /// Clients must not infer runnable arches from `guestTypes`.
     let runnableArches: [String]
+    /// Per-mode support (PAS-57). Isolated is not projected until PAS-67.
+    let networkModes: [NetworkModeCapability]
 }
 
 extension CapabilityDetail: Content {}
 extension CapabilityCode: Content {}
+extension NetworkModeCapability: Content {}
 
 struct HostUSBDeviceResponse: Content {
     let vendorId: String

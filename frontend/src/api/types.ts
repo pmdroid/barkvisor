@@ -513,6 +513,14 @@ export interface CapabilityDetail {
   remediation?: string | null
 }
 
+/** Per-mode support from GET /api/system/capabilities (PAS-57). Isolated is PAS-67. */
+export interface NetworkModeCapability {
+  mode: 'nat' | 'bridged' | string
+  supported: boolean
+  reasonCode?: string | null
+  remediation?: string | null
+}
+
 /**
  * Feature flags and host facts from GET /api/system/capabilities.
  *
@@ -546,6 +554,8 @@ export interface SystemCapabilities {
    * Wave 0: host arch only. Do not infer from `guestTypes`.
    */
   runnableArches?: string[]
+  /** Per-mode support (PAS-57). Isolated is not listed until PAS-67. */
+  networkModes?: NetworkModeCapability[]
 }
 
 /** Alias: capabilities for the host running this BarkVisor process. */

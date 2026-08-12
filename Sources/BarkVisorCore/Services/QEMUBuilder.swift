@@ -371,7 +371,7 @@ public enum QEMUBuilder {
                             "Bridged network is missing host bridge interface name.",
                         )
                     }
-                    try validateBridgeName(br)
+                    try NetworkCapability.requireBridgedInterface(br)
                     let safeBr = try sanitizeQEMUArg(br, label: "Bridge interface")
                     netdevArgs = "bridge,id=net0,br=\(safeBr)"
                     needsSocketVmnetWrap = false

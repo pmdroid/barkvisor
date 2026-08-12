@@ -41,14 +41,7 @@ public enum LinuxHostNetwork {
     /// Prefer real bridge devices; allow any existing iface (helper can attach).
     public static func requireBridgeableInterface(_ name: String) throws {
         guard interfaceExists(name) else {
-            throw BarkVisorError.bridgeNotReady(
-                "Host interface '\(name)' not found under \(netClassPath). "
-                    + "Create a Linux bridge first, e.g.:\n"
-                    + "  sudo ip link add name \(name) type bridge\n"
-                    + "  sudo ip link set \(name) up\n"
-                    + "  sudo ip link set <phys> master \(name)\n"
-                    + "And allow QEMU: echo 'allow \(name)' | sudo tee -a /etc/qemu/bridge.conf",
-            )
+            throw BarkVisorError.interfaceMissing(name)
         }
     }
 }

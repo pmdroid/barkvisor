@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { CapabilityDetail, CurrentHostCapabilities, SystemCapabilities } from '../api/types'
+import type { CapabilityDetail, CurrentHostCapabilities, NetworkModeCapability, SystemCapabilities } from '../api/types'
 import { normalizeImageArch, type ImageArch } from '../utils/imageArch'
 
 /**
@@ -28,6 +28,10 @@ const defaultCapabilities: CurrentHostCapabilities = {
   details: [],
   inventorySchemaVersion: undefined,
   runnableArches: [],
+  networkModes: [
+    { mode: 'nat', supported: true },
+    { mode: 'bridged', supported: false },
+  ],
 }
 
 export const useCapabilitiesStore = defineStore('capabilities', () => {
@@ -55,6 +59,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   })
   const guestTypes = computed(() => currentHost.value.guestTypes ?? [])
   const details = computed(() => currentHost.value.details ?? [])
+  const networkModes = computed(() => currentHost.value.networkModes ?? defaultCapabilities.networkModes!)
   /**
    * Host-runnable arches from the capabilities document.
    * Empty until a successful fetch — do not infer from guestTypes.
@@ -148,6 +153,13 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
               : typeof data.hostArch === 'string' && data.hostArch.length > 0
                 ? [data.hostArch]
                 : [],
+            networkModes: normalizeNetworkModes(
+              data.networkModes,
+              !!data.supportsBridgedNetworking,
+              Array.isArray(data.details)
+                ? data.details.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
+                : undefined,
+            ),
           }
           hostArchKnown.value = typeof data.hostArch === 'string' && data.hostArch.length > 0
           // Only a 2xx response counts as loaded. A boot-time 502/network blip
@@ -185,6 +197,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     hostCpuCount,
     guestTypes,
     details,
+    networkModes,
     runnableArches,
     detailFor,
     isSupported,
@@ -193,3 +206,21 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     fetchCapabilities,
   }
 })
+
+function normalizeNetworkModes(
+  raw: NetworkModeCapability[] | undefined,
+  bridgedOk: boolean,
+  bridgedRemediation?: string | null,
+): NetworkModeCapability[] {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.filter((m) => typeof m?.mode === 'string')
+  }
+  return [
+    { mode: 'nat', supported: true },
+    {
+      mode: 'bridged',
+      supported: bridgedOk,
+      remediation: bridgedOk ? undefined : bridgedRemediation || undefined,
+    },
+  ]
+}
