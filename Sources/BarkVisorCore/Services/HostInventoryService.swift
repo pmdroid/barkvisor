@@ -37,7 +37,10 @@ public enum HostInventoryService {
             qemuBridgeHelper: qemuBridgeHelperPresent(),
         )
 
-        let guestTypes = GuestProfiles.all.map {
+        // Only advertise guest types this host can run natively (PAS-48).
+        // Catalog UIs filter by these arches; including both arches made the
+        // filter a no-op and offered failing wrong-arch images as runnable.
+        let guestTypes = GuestProfiles.profilesCompatible(withHostArch: arch).map {
             GuestTypeSnapshot(
                 id: $0.id,
                 arch: $0.arch,

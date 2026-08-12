@@ -110,6 +110,32 @@ export function hostArchToImageArch(hostArch: string | null | undefined): ImageA
 }
 
 /**
+ * Image arches this host can run natively (PAS-48).
+ *
+ * Prefer hostArch over guestTypes: guestTypes historically listed every
+ * static profile (both arches), which made catalog filters a no-op.
+ * Optionally intersect with guestType arches when the API already filters
+ * to host-runnable profiles.
+ */
+export function runnableImageArches(
+  hostArch: string | null | undefined,
+  guestTypeArches?: Array<string | null | undefined> | null,
+): Set<ImageArch> {
+  const host = hostArchToImageArch(hostArch)
+  if (!guestTypeArches || guestTypeArches.length === 0) {
+    return new Set([host])
+  }
+  const fromGuests = new Set<ImageArch>()
+  for (const raw of guestTypeArches) {
+    if (!raw) continue
+    const a = hostArchToImageArch(raw)
+    // Only keep arches that match the host (never re-expand to foreign arch).
+    if (a === host) fromGuests.add(a)
+  }
+  return fromGuests.size > 0 ? fromGuests : new Set([host])
+}
+
+/**
  * Choose arch for a form: filename/URL detection first, else host default.
  */
 export function resolveImageArch(
