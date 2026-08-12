@@ -195,7 +195,7 @@ public enum QEMUBuilder {
         var args: [String] = []
         args += ["-machine", machine, "-accel", accelerator, "-cpu", cpuModel]
         args += specResourceArgs(spec)
-        args += try firmwareArgs(vmID: vmID, vmType: guestType)
+        args += try firmwareArgs(spec: spec, vmID: vmID, vmType: guestType)
         args += ["-device", "qemu-xhci"]
         args += bootDiskArgs(disk: disk, windows: windows, diskFirst: diskFirst)
         args += try isoArgs(isos: ctx.isos, windows: windows, diskFirst: diskFirst)
@@ -246,7 +246,9 @@ public enum QEMUBuilder {
         ]
     }
 
-    private static func firmwareArgs(vmID: String, vmType: String) throws -> [String] {
+    /// pflash drives when spec.firmware.uefi is on (default true; PAS-93).
+    static func firmwareArgs(spec: WorkloadSpec, vmID: String, vmType: String) throws -> [String] {
+        guard spec.spec.firmware?.uefi ?? true else { return [] }
         let (codeImage, varsImage) = try prepareFirmware(vmID: vmID, vmType: vmType)
         return [
             "-drive", "if=pflash,format=raw,readonly=on,file=\(codeImage.path)",

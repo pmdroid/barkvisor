@@ -159,4 +159,22 @@ struct QEMUBuilderValidationTests {
         #expect(QEMUBuilder.accelerator == PlatformCapabilities.accelerator)
         #expect(QEMUBuilder.cpuModel == PlatformCapabilities.qemuCPUModel)
     }
+
+    // MARK: - Firmware
+
+    @Test func `firmwareArgs omits pflash when UEFI is disabled`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(id: "vm-uefi-off", name: "off"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 1, memoryMb: 512),
+                firmware: WorkloadFirmware(uefi: false, tpm: false),
+            ),
+        )
+        let args = try QEMUBuilder.firmwareArgs(
+            spec: spec,
+            vmID: "vm-uefi-off",
+            vmType: "linux-arm64",
+        )
+        #expect(args.isEmpty)
+    }
 }
