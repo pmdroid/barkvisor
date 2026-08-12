@@ -2,14 +2,65 @@
   "version": 1,
   "templates": [
     {
+      "slug": "ubuntu-cloud",
+      "name": "Ubuntu Server",
+      "description": "Minimal Ubuntu 24.04 cloud image with cloud-init. Deploys the matching image for this host.",
+      "category": "general",
+      "icon": "terminal",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 512,
+      "diskSizeGB": 16,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "ubuntu",
+          "required": true,
+          "placeholder": "ubuntu"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
       "slug": "pi-hole",
       "name": "Pi-hole",
       "description": "Network-wide DNS ad blocker. Lightweight and effective.",
       "category": "networking",
       "icon": "shield",
       "imageSlug": "ubuntu-24.04-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
       "cpuCount": 1,
       "memoryMB": 512,
+      "minMemoryMB": 512,
       "diskSizeGB": 8,
       "portForwards": [
         {
@@ -21,6 +72,7 @@
         { "protocol": "udp", "hostPort": 53, "guestPort": 53 }
       ],
       "networkMode": "bridged",
+      "requiredFeatures": ["bridgedNetworking"],
       "inputs": [
         {
           "id": "username",

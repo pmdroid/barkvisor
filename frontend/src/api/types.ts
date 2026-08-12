@@ -381,6 +381,28 @@ export interface VMTemplate {
   userDataTemplate: string
   isBuiltIn: boolean
   repositoryId: string | null
+  architectures?: string[]
+  imageByArch?: Record<string, string>
+  minMemoryMB?: number | null
+  requiredFeatures?: string[]
+  resolvedImageSlug?: string | null
+  compatible?: boolean
+}
+
+export interface TemplateCompatibilityReason {
+  code: string
+  message: string
+}
+
+export interface TemplateCompatibilityReport {
+  compatible: boolean
+  hostId: string
+  hostArch: string
+  resolvedImageSlug: string | null
+  resolvedArch: string | null
+  reasons: TemplateCompatibilityReason[]
+  missingFeatures: string[]
+  minMemoryMB: number | null
 }
 
 export interface DeployTemplateRequest {

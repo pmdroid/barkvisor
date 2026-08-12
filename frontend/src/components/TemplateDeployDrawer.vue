@@ -7,7 +7,13 @@ import { useSSHKeyStore } from '../stores/sshKeys'
 import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
 import UnsupportedHint from './ui/UnsupportedHint.vue'
-import type { VMTemplate, DeployTemplateRequest, BridgeInfo, DeployTemplateResponse } from '../api/types'
+import type {
+  VMTemplate,
+  DeployTemplateRequest,
+  BridgeInfo,
+  DeployTemplateResponse,
+  TemplateCompatibilityReport,
+} from '../api/types'
 import { useFeature } from '../composables/useFeature'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useImageProgress } from '../composables/useTicketedEventSource'
@@ -29,10 +35,17 @@ const platformBridgeUnsupported = computed(
   () => props.template.networkMode === 'bridged' && !bridged.available,
 )
 
+const compatibility = ref<TemplateCompatibilityReport | null>(null)
+
 onMounted(async () => {
   sshKeyStore.fetchAll().then(() => {
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
   })
+  try {
+    compatibility.value = await templateStore.dryRun(props.template.id)
+  } catch {
+    compatibility.value = null
+  }
   if (props.template.networkMode === 'bridged' && bridged.available) {
     try {
       const { data } = await api.get<BridgeInfo[]>('/system/bridges')
@@ -232,6 +245,28 @@ async function submit() {
     <div class="modal" style="max-width:520px">
       <h2>Deploy {{ template.name }}</h2>
       <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">{{ template.description }}</p>
+      <p
+        v-if="compatibility?.resolvedImageSlug"
+        style="color:var(--text-dim);font-size:12px;margin:-8px 0 16px"
+      >
+        Image for this host: {{ compatibility.resolvedImageSlug }}
+      </p>
+      <div
+        v-if="compatibility && !compatibility.compatible"
+        class="bridge-error"
+        style="margin-bottom:16px"
+      >
+        <div>
+          <strong>Not compatible with this host</strong>
+          <p
+            v-for="reason in compatibility.reasons"
+            :key="reason.code + reason.message"
+            style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)"
+          >
+            {{ reason.message }}
+          </p>
+        </div>
+      </div>
 
       <!-- Bridge not available warning -->
       <div v-if="template.networkMode === 'bridged' && bridgeChecked && !bridgeAvailable" class="bridge-error">
@@ -373,7 +408,7 @@ async function submit() {
             <div><strong>Disk:</strong> {{ diskSizeGB }} GB</div>
             <div><strong>Network:</strong> {{ template.networkMode === 'bridged' ? 'Bridged' : 'NAT' }}</div>
             <div><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
-            <div><strong>Image:</strong> {{ template.imageSlug }}</div>
+            <div><strong>Image:</strong> {{ compatibility?.resolvedImageSlug || template.imageSlug }}</div>
           </div>
         </div>
 
@@ -385,7 +420,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable)" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>

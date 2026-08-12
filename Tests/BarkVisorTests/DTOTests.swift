@@ -186,7 +186,7 @@ struct DTOTests {
             createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
-        let response = TemplateResponse(from: template)
+        let response = TemplateResponse(from: template, hostArch: "arm64")
 
         #expect(response.id == "tpl-1")
         #expect(response.slug == "ubuntu-server")
@@ -200,6 +200,7 @@ struct DTOTests {
         #expect(response.portForwards?.count == 1)
         #expect(response.inputs.count == 1)
         #expect(response.inputs.first?.id == "hostname")
+        #expect(response.architectures.isEmpty || response.compatible)
     }
 
     // MARK: - RepositoryResponse

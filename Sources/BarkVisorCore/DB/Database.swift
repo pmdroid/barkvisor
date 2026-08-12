@@ -38,6 +38,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M002_WorkloadSpec.identifier) { db in
             try M002_WorkloadSpec.migrate(db)
         }
+        migrator.registerMigration(M003_ArchitectureAwareTemplates.identifier) { db in
+            try M003_ArchitectureAwareTemplates.migrate(db)
+        }
     }
 }
 
