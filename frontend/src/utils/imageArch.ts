@@ -121,25 +121,28 @@ export function hostArchToImageArch(hostArch: string | null | undefined): ImageA
 }
 
 /**
- * Image arches this host can run natively (PAS-48).
+ * Image arches this host can run natively (PAS-48 / PAS-37).
  * Host arch only — do not expand from guestTypes (static dual-arch lists
- * historically made catalog filters a no-op).
+ * historically made catalog filters a no-op). Unknown/empty host → empty set
+ * (fail-closed; do not invent arm64).
  */
 export function runnableImageArches(hostArch: string | null | undefined): Set<ImageArch> {
-  return new Set([hostArchToImageArch(hostArch)])
+  const host = normalizeImageArch(hostArch)
+  return host ? new Set([host]) : new Set()
 }
 
 /**
  * Whether a catalog/local image arch is runnable on this host.
- * Unknown image arches are unsupported (never coerce to arm64).
+ * Unknown image arches and unknown hosts are unsupported (never coerce to arm64).
  */
 export function imageArchSupportedOnHost(
   imageArch: string | null | undefined,
   hostArch: string | null | undefined,
 ): boolean {
   const img = normalizeImageArch(imageArch)
-  if (!img) return false
-  return img === hostArchToImageArch(hostArch)
+  const host = normalizeImageArch(hostArch)
+  if (!img || !host) return false
+  return img === host
 }
 
 /**

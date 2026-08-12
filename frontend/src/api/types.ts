@@ -377,6 +377,14 @@ export interface GuestTypeInfo {
   qemuBinary: string
 }
 
+/** Per-feature support + reason from GET /api/system/capabilities (PAS-37). */
+export interface CapabilityDetail {
+  code: string
+  supported: boolean
+  reasonCode?: string | null
+  remediation?: string | null
+}
+
 /**
  * Feature flags and host facts from GET /api/system/capabilities.
  *
@@ -402,6 +410,14 @@ export interface SystemCapabilities {
    * Filtered to host arch — not the full static GuestProfiles table.
    */
   guestTypes?: GuestTypeInfo[]
+  /** Per-feature reason/remediation catalog (PAS-37). */
+  details?: CapabilityDetail[]
+  inventorySchemaVersion?: number
+  /**
+   * Architectures this host can run natively (PAS-37).
+   * Wave 0: host arch only. Do not infer from `guestTypes`.
+   */
+  runnableArches?: string[]
 }
 
 /** Alias: capabilities for the host running this BarkVisor process. */

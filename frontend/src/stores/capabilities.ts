@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { CurrentHostCapabilities, SystemCapabilities } from '../api/types'
+import type { CapabilityDetail, CurrentHostCapabilities, SystemCapabilities } from '../api/types'
+import { normalizeImageArch, type ImageArch } from '../utils/imageArch'
 
 /**
  * Pinia store for the **current host** (process serving this SPA).
@@ -10,20 +11,23 @@ import type { CurrentHostCapabilities, SystemCapabilities } from '../api/types'
  * these fields instead of hardcoding platform assumptions.
  */
 /**
- * Safe defaults match macOS full feature set so a failed fetch never hides
- * feature toggles on Mac. Arch-gated catalogs must use `hostArchKnown` so a
- * failed fetch does not silently filter everything to arm64 (PAS-48).
+ * Fail-closed defaults (PAS-37). A failed / not-yet-loaded fetch must not invent
+ * macOS feature flags or a runnable arch. Catalogs and USB/bridge/update UI stay
+ * hidden until a real capabilities document arrives.
  */
 const defaultCapabilities: CurrentHostCapabilities = {
-  platform: 'macOS',
-  supportsBridgedNetworking: true,
-  supportsManagedBridgeDaemon: true,
-  supportsUSBPassthrough: true,
-  supportsInAppUpdate: true,
-  accelerator: 'hvf',
-  hostArch: 'arm64',
-  hostCpuCount: 16,
+  platform: '',
+  supportsBridgedNetworking: false,
+  supportsManagedBridgeDaemon: false,
+  supportsUSBPassthrough: false,
+  supportsInAppUpdate: false,
+  accelerator: '',
+  hostArch: '',
+  hostCpuCount: 1,
   guestTypes: [],
+  details: [],
+  inventorySchemaVersion: undefined,
+  runnableArches: [],
 }
 
 export const useCapabilitiesStore = defineStore('capabilities', () => {
@@ -50,6 +54,37 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     return typeof n === 'number' && n >= 1 ? n : defaultCapabilities.hostCpuCount!
   })
   const guestTypes = computed(() => currentHost.value.guestTypes ?? [])
+  const details = computed(() => currentHost.value.details ?? [])
+  /**
+   * Host-runnable arches from the capabilities document.
+   * Empty until a successful fetch — do not infer from guestTypes.
+   */
+  const runnableArches = computed<ImageArch[]>(() => {
+    const listed = currentHost.value.runnableArches
+    if (Array.isArray(listed) && listed.length > 0) {
+      const out: ImageArch[] = []
+      for (const raw of listed) {
+        const n = normalizeImageArch(raw)
+        if (n && !out.includes(n)) out.push(n)
+      }
+      if (out.length > 0) return out
+    }
+    if (hostArchKnown.value) {
+      const n = normalizeImageArch(currentHost.value.hostArch)
+      return n ? [n] : []
+    }
+    return []
+  })
+
+  function detailFor(code: string): CapabilityDetail | undefined {
+    return details.value.find((d) => d.code === code)
+  }
+
+  function isArchRunnable(arch: string | null | undefined): boolean {
+    const img = normalizeImageArch(arch)
+    if (!img) return false
+    return runnableArches.value.includes(img)
+  }
 
   async function fetchCapabilities(): Promise<void> {
     if (loaded.value) return
@@ -77,6 +112,16 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
                 ? data.hostCpuCount
                 : defaultCapabilities.hostCpuCount,
             guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
+            details: Array.isArray(data.details) ? data.details : [],
+            inventorySchemaVersion:
+              typeof data.inventorySchemaVersion === 'number'
+                ? data.inventorySchemaVersion
+                : undefined,
+            runnableArches: Array.isArray(data.runnableArches)
+              ? data.runnableArches.filter((a): a is string => typeof a === 'string' && a.length > 0)
+              : typeof data.hostArch === 'string' && data.hostArch.length > 0
+                ? [data.hostArch]
+                : [],
           }
           hostArchKnown.value = typeof data.hostArch === 'string' && data.hostArch.length > 0
           // Only a 2xx response counts as loaded. A boot-time 502/network blip
@@ -113,6 +158,10 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     hostArch,
     hostCpuCount,
     guestTypes,
+    details,
+    runnableArches,
+    detailFor,
+    isArchRunnable,
     fetchCapabilities,
   }
 })

@@ -115,12 +115,25 @@ describe('normalizeImageArch / imageArchSupportedOnHost (PAS-48)', () => {
     expect(imageArchSupportedOnHost('armhf', 'arm64')).toBe(false)
     expect(imageArchSupportedOnHost('', 'arm64')).toBe(false)
   })
+
+  test('unknown host is fail-closed (PAS-37)', () => {
+    expect(imageArchSupportedOnHost('arm64', '')).toBe(false)
+    expect(imageArchSupportedOnHost('arm64', null)).toBe(false)
+    expect(imageArchSupportedOnHost('x86_64', undefined)).toBe(false)
+    expect(imageArchSupportedOnHost('arm64', 'riscv64')).toBe(false)
+  })
 })
 
-describe('runnableImageArches (PAS-48)', () => {
+describe('runnableImageArches (PAS-48 / PAS-37)', () => {
   test('is host arch only', () => {
     expect([...runnableImageArches('arm64')]).toEqual(['arm64'])
     expect([...runnableImageArches('x86_64')]).toEqual(['x86_64'])
     expect([...runnableImageArches('amd64')]).toEqual(['x86_64'])
+  })
+
+  test('unknown host yields no runnable arches', () => {
+    expect([...runnableImageArches('')]).toEqual([])
+    expect([...runnableImageArches(null)]).toEqual([])
+    expect([...runnableImageArches('riscv64')]).toEqual([])
   })
 })

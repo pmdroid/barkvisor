@@ -1,3 +1,4 @@
+import BarkVisorCore
 import Vapor
 
 struct HostInterface: Content {
@@ -77,9 +78,19 @@ struct SystemCapabilitiesResponse: Content {
     let hostArch: String
     /// Online logical CPU count on the host (max assignable vCPUs per VM).
     let hostCpuCount: Int
-    /// Canonical guest profiles (persisted `vmType` IDs).
+    /// Guest profiles this host can run natively (host-arch filtered).
     let guestTypes: [GuestTypeInfo]
+    /// Per-feature support + reason/remediation (PAS-37). Booleans stay for older clients.
+    let details: [CapabilityDetail]
+    /// Inventory schema the booleans/details were projected from.
+    let inventorySchemaVersion: Int
+    /// Architectures this host can run natively (Wave 0: host arch only).
+    /// Clients must not infer runnable arches from `guestTypes`.
+    let runnableArches: [String]
 }
+
+extension CapabilityDetail: Content {}
+extension CapabilityCode: Content {}
 
 struct HostUSBDeviceResponse: Content {
     let vendorId: String

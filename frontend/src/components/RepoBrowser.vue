@@ -5,7 +5,7 @@ import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import type { RepositoryImage } from '../api/types'
-import { imageArchSupportedOnHost } from '../utils/imageArch'
+
 import AppSelect from './ui/AppSelect.vue'
 
 const props = defineProps<{ repoId: string }>()
@@ -27,13 +27,9 @@ async function fetchImages() {
 
 watch(() => props.repoId, fetchImages, { immediate: true })
 
-/**
- * Catalog arch gate (PAS-48). Fail open until hostArch is known so a failed
- * capabilities fetch does not empty catalogs on x86_64 hosts.
- */
+/** Catalog arch gate (PAS-37 fail-closed). Unknown host → not runnable. */
 function imageArchSupported(arch: string | null | undefined): boolean {
-  if (!caps.hostArchKnown) return true
-  return imageArchSupportedOnHost(arch, caps.hostArch)
+  return caps.isArchRunnable(arch)
 }
 
 const filteredImages = computed(() => {
