@@ -11,6 +11,7 @@ import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
+import { hostArchToImageArch } from '../utils/imageArch'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -20,7 +21,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const caps = useCapabilitiesStore()
   const networkStore = useNetworkStore()
   const diskStore = useDiskStore()
-  const { supportsUSBPassthrough, hostArch } = storeToRefs(caps)
+  const { supportsUSBPassthrough, hostArch, guestTypes } = storeToRefs(caps)
   const { networks } = storeToRefs(networkStore)
   const { unattached: availableDisks } = storeToRefs(diskStore)
 
@@ -30,11 +31,21 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   // Step 1: OS & Name
   const name = ref('')
   const osType = ref<'linux' | 'windows'>('linux')
+  /** Windows guest profile exists only for arm64 today (windows-arm64). */
+  const supportsWindows = computed(() => {
+    const host = hostArchToImageArch(hostArch.value)
+    if (host !== 'arm64') return false
+    const types = guestTypes.value ?? []
+    if (types.length === 0) return true // capability not loaded yet; arm64 default
+    return types.some(g => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'))
+  })
   const vmType = computed(() => {
-    const archSuffix = hostArch.value === 'x86_64' ? 'amd64' : 'arm64'
+    const arch = hostArchToImageArch(hostArch.value)
+    const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
-      // Backend currently supports windows-arm64 only
-      return 'windows-arm64'
+      // Never hard-code windows-arm64 on x86_64 hosts (PAS-48).
+      if (arch === 'arm64') return 'windows-arm64'
+      return `linux-${archSuffix}` as const
     }
     return `linux-${archSuffix}` as const
   })
@@ -47,6 +58,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const tpmEnabled = computed(() => osType.value === 'windows')
 
   function selectOS(os: 'linux' | 'windows') {
+    if (os === 'windows' && !supportsWindows.value) return
     osType.value = os
     selectedImageId.value = ''
     const maxCpu = caps.hostCpuCount
@@ -243,11 +255,22 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     if (defaultNet) selectedNetworkId.value = defaultNet.id
   })
 
+  const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
   const isoImages = computed(() =>
-    imageStore.images.filter((i) => i.imageType === 'iso' && i.status === 'ready'),
+    imageStore.images.filter(
+      (i) =>
+        i.imageType === 'iso' &&
+        i.status === 'ready' &&
+        (!i.arch || hostArchToImageArch(i.arch) === hostImageArch.value),
+    ),
   )
   const cloudImages = computed(() =>
-    imageStore.images.filter((i) => i.imageType === 'cloud-image' && i.status === 'ready'),
+    imageStore.images.filter(
+      (i) =>
+        i.imageType === 'cloud-image' &&
+        i.status === 'ready' &&
+        (!i.arch || hostArchToImageArch(i.arch) === hostImageArch.value),
+    ),
   )
   const filteredImages = computed(() =>
     mode.value === 'iso' ? isoImages.value : cloudImages.value,
@@ -373,6 +396,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     name,
     osType,
     vmType,
+    supportsWindows,
     selectOS,
 
     // Hardware

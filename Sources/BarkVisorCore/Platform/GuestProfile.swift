@@ -117,4 +117,21 @@ public enum GuestProfiles {
             return "linux-\(arch)"
         }
     }
+
+    /// Guest profiles that can run natively on the given host arch (PAS-48).
+    public static func profilesCompatible(withHostArch hostArch: String) -> [GuestProfile] {
+        let host = PlatformCapabilities.normalizedArch(hostArch)
+        return all.filter { PlatformCapabilities.normalizedArch($0.arch) == host }
+    }
+
+    /// Default Windows guest ID for a host/image arch, if supported.
+    /// Only `windows-arm64` exists today; x86_64 Windows is not a guest profile yet.
+    public static func defaultWindowsID(forImageArch arch: String) -> String? {
+        switch PlatformCapabilities.normalizedArch(arch) {
+        case "arm64":
+            return "windows-arm64"
+        default:
+            return nil
+        }
+    }
 }

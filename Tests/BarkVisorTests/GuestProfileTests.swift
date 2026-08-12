@@ -42,4 +42,26 @@ struct GuestProfileTests {
         #expect(GuestProfiles.defaultLinuxID(forImageArch: "x86_64") == "linux-amd64")
         #expect(GuestProfiles.defaultLinuxID(forImageArch: "amd64") == "linux-amd64")
     }
+
+    @Test func `default windows id only for arm64`() {
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "arm64") == "windows-arm64")
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "aarch64") == "windows-arm64")
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "x86_64") == nil)
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "amd64") == nil)
+    }
+
+    @Test func `profilesCompatible filters to host arch`() {
+        let arm = GuestProfiles.profilesCompatible(withHostArch: "arm64")
+        #expect(!arm.isEmpty)
+        #expect(arm.allSatisfy { $0.arch == "arm64" })
+        #expect(arm.contains { $0.id == "linux-arm64" })
+        #expect(arm.contains { $0.id == "windows-arm64" })
+        #expect(!arm.contains { $0.id == "linux-amd64" })
+
+        let x86 = GuestProfiles.profilesCompatible(withHostArch: "x86_64")
+        #expect(!x86.isEmpty)
+        #expect(x86.allSatisfy { $0.arch == "x86_64" })
+        #expect(x86.contains { $0.id == "linux-amd64" })
+        #expect(!x86.contains { $0.id == "windows-arm64" })
+    }
 }

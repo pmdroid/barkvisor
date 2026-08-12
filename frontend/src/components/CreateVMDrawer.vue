@@ -19,6 +19,7 @@ const {
   prev,
   name,
   osType,
+  supportsWindows,
   selectOS,
   cpuCount,
   memoryMB,
@@ -97,6 +98,7 @@ function openUSBPicker() {
         v-if="currentStepLabel === 'OS'"
         :name="name"
         :osType="osType"
+        :supportsWindows="supportsWindows"
         @update:name="name = $event"
         @selectOS="selectOS"
         @next="next"
