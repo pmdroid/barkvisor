@@ -4,13 +4,17 @@ import Testing
 @testable import BarkVisorCore
 
 struct WorkloadSpecProjectorTests {
+    /// CI macOS runners have 3 logical CPUs; Linux runners have 4.
+    /// Keep fixtures at or below that so apply/validate do not host-cap.
+    private var fixtureCPUCount: Int { min(2, max(1, PlatformHost.cpuCount)) }
+
     private func makeVM() -> VM {
         VM(
             id: "vm-1",
             name: "media",
             vmType: "linux-arm64",
             state: "running",
-            cpuCount: 4,
+            cpuCount: fixtureCPUCount,
             memoryMb: 8_192,
             bootDiskId: "disk-boot",
             isoIds: #"["iso-1"]"#,
@@ -41,7 +45,7 @@ struct WorkloadSpecProjectorTests {
         #expect(spec.metadata.id == "vm-1")
         #expect(spec.metadata.name == "media")
         #expect(spec.metadata.description == "HTPC")
-        #expect(spec.spec.resources.cpu == 4)
+        #expect(spec.spec.resources.cpu == fixtureCPUCount)
         #expect(spec.spec.resources.memoryMb == 8_192)
         #expect(spec.spec.arch == "aarch64")
         #expect(spec.spec.guestType == "linux-arm64")
@@ -69,7 +73,7 @@ struct WorkloadSpecProjectorTests {
 
         #expect(vm.name == "media")
         #expect(vm.vmType == "linux-arm64")
-        #expect(vm.cpuCount == 4)
+        #expect(vm.cpuCount == fixtureCPUCount)
         #expect(vm.memoryMb == 8_192)
         #expect(vm.bootDiskId == "disk-boot")
         #expect(vm.decodedISOIds == ["iso-1"])
@@ -157,7 +161,7 @@ struct WorkloadSpecProjectorTests {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(name: "from-spec", description: "d"),
             spec: WorkloadSpecBody(
-                resources: WorkloadResources(cpu: 8, memoryMb: 4_096),
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 4_096),
                 guestType: "linux-amd64",
                 firmware: WorkloadFirmware(uefi: true, tpm: false),
             ),
@@ -173,7 +177,7 @@ struct WorkloadSpecProjectorTests {
         let params = try VMController.createParams(from: body)
         #expect(params.name == "from-spec")
         #expect(params.vmType == "linux-amd64")
-        #expect(params.cpuCount == 8)
+        #expect(params.cpuCount == fixtureCPUCount)
         #expect(params.memoryMB == 4_096)
         #expect(params.diskSizeGB == 40)
         #expect(params.cloudImageId == "img-1")
@@ -319,8 +323,9 @@ struct WorkloadSpecProjectorTests {
         let before = makeVM()
         var after = makeVM()
         var spec = WorkloadSpecProjector.fromVM(after)
-        spec.spec.resources.cpu = 1
+        spec.spec.resources.cpu = fixtureCPUCount == 1 ? min(2, PlatformHost.cpuCount) : 1
         try WorkloadSpecProjector.apply(spec, to: &after)
+        #expect(after.cpuCount != before.cpuCount)
         #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
     }
 }
