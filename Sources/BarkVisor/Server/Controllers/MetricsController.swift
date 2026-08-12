@@ -3,7 +3,14 @@ import Foundation
 import Vapor
 
 extension SystemStatsSample: Content {}
+extension HostMetrics: Content {}
 
+/// Compatible `/api/system/stats` payload (PAS-85).
+///
+/// Existing SPA fields (`hostCpuPercent`, memory, VM aggregates) stay put.
+/// `metrics` is the unified `HostMetrics` DTO; CPU/mem there are the same
+/// inventory probes as the top-level host* fields. Disk/net rate samples are
+/// not included (optional later).
 struct SystemStatsResponse: Content {
     let hostCpuPercent: Double
     let hostMemoryTotalMB: Int
@@ -12,6 +19,9 @@ struct SystemStatsResponse: Content {
     let totalVMs: Int
     let vmCpuPercent: Double
     let vmMemoryMB: Int
+    let metrics: HostMetrics
+    let historyRetentionMinutes: Int
+    let historySampleIntervalSeconds: Int
 }
 
 struct MetricsController: RouteCollection {
@@ -42,20 +52,28 @@ struct MetricsController: RouteCollection {
         let totalVMs = try await req.db.read { db in try VM.fetchCount(db) }
         let runningVMs = await vmState.allRunningVMs().count
 
+        let inventory = HostInventoryService.snapshot()
+        let metrics = HostMetrics.from(inventory: inventory, capture: .live())
+
         return SystemStatsResponse(
-            hostCpuPercent: PlatformHost.cpuLoadPercent,
-            hostMemoryTotalMB: PlatformHost.physicalMemoryMB,
-            hostMemoryUsedMB: PlatformHost.memoryUsedMB,
+            hostCpuPercent: metrics.cpuLoadPercent,
+            hostMemoryTotalMB: metrics.memoryTotalMB,
+            hostMemoryUsedMB: metrics.memoryUsedMB,
             runningVMs: runningVMs,
             totalVMs: totalVMs,
             vmCpuPercent: vmCpu,
             vmMemoryMB: vmMem,
+            metrics: metrics,
+            historyRetentionMinutes: MetricsCollector.systemStatsRetentionMinutes,
+            historySampleIntervalSeconds: MetricsCollector.systemStatsPollIntervalSeconds,
         )
     }
 
     @Sendable
     func getSystemStatsHistory(req: Vapor.Request) async throws -> [SystemStatsSample] {
-        let minutes = min((try? req.query.get(Int.self, at: "minutes")) ?? 30, 1_440)
+        let requested =
+            (try? req.query.get(Int.self, at: "minutes")) ?? MetricsCollector.systemStatsRetentionMinutes
+        let minutes = MetricsCollector.clampSystemStatsMinutes(requested)
         return await metricsCollector.recentSystemStats(minutes: minutes)
     }
 

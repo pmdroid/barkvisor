@@ -61,6 +61,13 @@ struct ControllerLogicTests {
         #expect(clampMinutes(-5) == -5)
     }
 
+    @Test func `system stats history minutes clamp to ring retention`() {
+        let requested = 1_440
+        let minutes = MetricsCollector.clampSystemStatsMinutes(requested)
+        #expect(minutes == MetricsCollector.systemStatsRetentionMinutes)
+        #expect(minutes < 1_440)
+    }
+
     // MARK: - Log Query Limit Clamping
 
     @Test func `log query limit clamping`() {
