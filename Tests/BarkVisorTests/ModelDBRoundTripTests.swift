@@ -327,5 +327,7 @@ final class ModelDBRoundTripTests {
         #expect(fetched?.slug == "ubuntu-server")
         #expect(fetched?.cpuCount == 4)
         #expect(fetched?.memoryMB == 4_096)
+        #expect(fetched?.architecturesJson == nil)
+        #expect(fetched?.imageByArchJson == nil)
     }
 }

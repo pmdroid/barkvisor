@@ -25,6 +25,17 @@
       "sha256": "c7eff9b3ee6e7b212882e680a9e06cac939107fbf5298384340a0ad1c667a38a"
     },
     {
+      "slug": "ubuntu-24.04-x86_64",
+      "name": "Ubuntu 24.04 LTS",
+      "description": "Minimal cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "24.04",
+      "downloadUrl": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
+      "sizeBytes": 624239616,
+      "sha256": "0533b0655c32e68b31d792ecd6ccfca95abdbc536c4446874fe0513bd4140ffe"
+    },
+    {
       "slug": "debian-12-arm64",
       "name": "Debian 12 Bookworm",
       "description": "Generic cloud image for ARM64",

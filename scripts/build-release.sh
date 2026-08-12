@@ -496,8 +496,8 @@ fi
 # Frontend dist → /usr/local/share/barkvisor/frontend/dist/
 cp -r "$PROJECT_DIR/Sources/BarkVisor/Resources/frontend/dist/"* "$STAGE_FRONTEND/"
 
-# Server resources
-cp "$PROJECT_DIR/Sources/BarkVisor/Server/Resources/templates.json" "$STAGE_SHARE/templates.json"
+# Live template catalog (repos/templates.json). Server/Resources/templates.json is unused.
+cp "$PROJECT_DIR/repos/templates.json" "$STAGE_SHARE/templates.json"
 
 # =============================================================================
 # Step 9: Bundle shared libraries with dylibbundler

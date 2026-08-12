@@ -22,6 +22,7 @@ import { formatBytes } from '../utils/format'
 import {
   detectImageArch,
   hostArchToImageArch,
+  templateArchSupportedOnHost,
 } from '../utils/imageArch'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
@@ -43,14 +44,18 @@ function imageArchSupported(arch: string | null | undefined): boolean {
   return caps.isArchRunnable(arch)
 }
 
-/** Resolve a template's guest arch from catalog image or imageSlug. */
+/** Resolve a template's guest arch from declared arches, catalog image, or slug. */
 function templateArchSupported(t: VMTemplate): boolean {
   if (!caps.hostArchKnown) return false
+  if (typeof t.compatible === 'boolean') return t.compatible
+  if ((t.architectures && t.architectures.length > 0) || t.imageByArch) {
+    return templateArchSupportedOnHost(t, caps.hostArch)
+  }
   for (const imgs of Object.values(repoStore.imagesByRepo)) {
-    const match = imgs.find((i) => i.slug === t.imageSlug)
+    const match = imgs.find((i) => i.slug === t.imageSlug || i.slug === t.resolvedImageSlug)
     if (match) return imageArchSupported(match.arch)
   }
-  const fromSlug = detectImageArch(t.imageSlug).arch
+  const fromSlug = detectImageArch(t.resolvedImageSlug || t.imageSlug).arch
   if (fromSlug) return caps.isArchRunnable(fromSlug)
   // Unknown template arch on a known host: keep visible; backend still blocks.
   return true

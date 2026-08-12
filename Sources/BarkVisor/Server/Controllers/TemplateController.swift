@@ -22,8 +22,14 @@ struct TemplateResponse: Content {
     let userDataTemplate: String
     let isBuiltIn: Bool
     let repositoryId: String?
+    let architectures: [String]
+    let imageByArch: [String: String]
+    let minMemoryMB: Int?
+    let requiredFeatures: [String]
+    let resolvedImageSlug: String?
+    let compatible: Bool
 
-    init(from t: VMTemplate) {
+    init(from t: VMTemplate, hostArch: String? = nil) {
         self.id = t.id
         self.slug = t.slug
         self.name = t.name
@@ -40,6 +46,18 @@ struct TemplateResponse: Content {
         self.repositoryId = t.repositoryId
         self.portForwards = JSONColumnCoding.decodeArray(PortForwardRule.self, from: t.portForwards)
         self.inputs = JSONColumnCoding.decodeArray(TemplateInput.self, from: t.inputs) ?? []
+        let arches = t.declaredArchitectures
+        self.architectures = arches
+        self.imageByArch = t.imageByArch
+        self.minMemoryMB = t.minMemoryMB
+        self.requiredFeatures = t.requiredFeatures
+        if let hostArch {
+            self.resolvedImageSlug = t.resolvedImageSlug(forArch: hostArch)
+            self.compatible = TemplateArchitecture.supports(architectures: arches, arch: hostArch)
+        } else {
+            self.resolvedImageSlug = nil
+            self.compatible = true
+        }
     }
 }
 
@@ -65,6 +83,10 @@ struct DeployTemplateResponse: Content {
     let vm: VMResponse? // set when status == "created" | "provisioning"
 }
 
+struct DeployDryRunRequest: Content {
+    var targetHostId: String?
+}
+
 // MARK: - Controller
 
 struct TemplateController: RouteCollection {
@@ -76,15 +98,32 @@ struct TemplateController: RouteCollection {
         let templates = routes.grouped("api", "templates")
         templates.get(use: list)
         templates.get(":id", use: get)
+        templates.post(":id", "deploy", "dry-run", use: dryRun)
         templates.post("deploy", use: deploy)
     }
 
     @Sendable
     func list(req: Vapor.Request) async throws -> [TemplateResponse] {
-        let templates = try await req.db.read { db in
+        let inventory = HostInventoryService.snapshot()
+        try TemplateCompatibility.requireLocalHost(
+            requestedHostId: req.query[String.self, at: "hostId"],
+            inventory: inventory,
+        )
+        let filterArch = req.query[String.self, at: "arch"]
+            ?? (req.query[String.self, at: "hostId"] != nil ? inventory.platform.arch : nil)
+        let hostArch = inventory.platform.arch
+
+        var templates = try await req.db.read { db in
             try VMTemplate.fetchAll(db)
         }
-        return templates.map { TemplateResponse(from: $0) }
+        if let filterArch {
+            templates = templates.filter {
+                TemplateArchitecture.supports(
+                    architectures: $0.declaredArchitectures, arch: filterArch,
+                )
+            }
+        }
+        return templates.map { TemplateResponse(from: $0, hostArch: hostArch) }
     }
 
     @Sendable
@@ -96,7 +135,24 @@ struct TemplateController: RouteCollection {
         else {
             throw Abort(.notFound)
         }
-        return TemplateResponse(from: template)
+        return TemplateResponse(from: template, hostArch: PlatformCapabilities.hostArch)
+    }
+
+    @Sendable
+    func dryRun(req: Vapor.Request) async throws -> TemplateCompatibilityReport {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let template = try await req.db.read({ db in
+            try VMTemplate.fetchOne(db, key: id)
+        })
+        else {
+            throw Abort(.notFound)
+        }
+        let body = try? req.content.decode(DeployDryRunRequest.self)
+        let inventory = HostInventoryService.snapshot()
+        try TemplateCompatibility.requireLocalHost(
+            requestedHostId: body?.targetHostId, inventory: inventory,
+        )
+        return TemplateCompatibility.evaluate(template: template, host: inventory)
     }
 
     @Sendable
