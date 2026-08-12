@@ -37,6 +37,38 @@ public enum LinuxHostNetwork {
         return entries.filter { isBridgeInterface($0) }.sorted()
     }
 
+    /// Default qemu-bridge-helper ACL (`allow br0` / `allow all`).
+    public static let defaultBridgeACLPath = "/etc/qemu/bridge.conf"
+
+    /// Parse qemu-bridge-helper ACL contents. Comments (`#`) and blank lines ignored.
+    public static func bridgeACLAllows(_ name: String, fileContents: String) -> Bool {
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return false
+        }
+        for raw in fileContents.split(whereSeparator: \.isNewline) {
+            var line = String(raw).trimmingCharacters(in: .whitespaces)
+            if let hash = line.firstIndex(of: "#") {
+                line = String(line[..<hash]).trimmingCharacters(in: .whitespaces)
+            }
+            if line == "allow all" || line == "allow \(name)" {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// `true`/`false` when `path` is readable; `nil` if the file is missing or unreadable
+    /// (fail open — do not invent a denial).
+    public static func bridgeACLDecision(_ name: String, at path: String = defaultBridgeACLPath)
+        -> Bool? {
+        guard FileManager.default.isReadableFile(atPath: path),
+              let contents = try? String(contentsOfFile: path, encoding: .utf8)
+        else {
+            return nil
+        }
+        return bridgeACLAllows(name, fileContents: contents)
+    }
+
     /// Validate that `name` is usable as QEMU bridge backend target.
     /// Prefer real bridge devices; allow any existing iface (helper can attach).
     public static func requireBridgeableInterface(_ name: String) throws {
