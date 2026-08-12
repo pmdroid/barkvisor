@@ -343,56 +343,67 @@ public enum QEMUBuilder {
         return args
     }
 
-    private static func networkArgs(spec: WorkloadSpec, network: Network?) throws
+    /// Internal for tests (PAS-67). Missing `network` is implicit NAT.
+    static func networkArgs(spec: WorkloadSpec, network: Network?) throws
         -> (args: [String], needsSocketVmnetWrap: Bool) {
         var netdevArgs = ""
         var deviceArgs = "virtio-net-pci,netdev=net0"
         // True only when QEMU must be exec'd under socket_vmnet_client (macOS bridged).
         var needsSocketVmnetWrap = false
         let specNet = spec.spec.networks.first
+        let forwards = specNet?.portForwards ?? []
+        let mode = try NetworkCapability.effectiveMode(of: network)
+        try NetworkCapability.requirePortForwardsAllowed(count: forwards.count, mode: mode)
 
         if let mac = specNet?.mac, !mac.isEmpty {
             try validateMAC(mac)
             deviceArgs += ",mac=\(mac)"
         }
 
-        if let net = network {
-            if net.mode == "bridged" {
-                #if os(macOS)
-                    // socket_vmnet injects a pre-opened AF_VSOCK/unix fd as netdev fd=3.
-                    netdevArgs = "socket,id=net0,fd=3"
-                    needsSocketVmnetWrap = true
-                #elseif os(Linux)
-                    // QEMU native bridge: attaches via qemu-bridge-helper to host bridge
-                    // named in network.bridge (e.g. br0). No socket_vmnet wrap.
-                    let br = net.bridge ?? ""
-                    guard !br.isEmpty else {
-                        throw BarkVisorError.badRequest(
-                            "Bridged network is missing host bridge interface name.",
-                        )
-                    }
-                    try NetworkCapability.requireBridgedInterface(br)
-                    let safeBr = try sanitizeQEMUArg(br, label: "Bridge interface")
-                    netdevArgs = "bridge,id=net0,br=\(safeBr)"
-                    needsSocketVmnetWrap = false
-                #else
-                    throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
-                #endif
-            } else {
-                netdevArgs = "user,id=net0"
-                if let dns = net.dnsServer, !dns.isEmpty {
-                    try validateIPv4(dns)
-                    netdevArgs += ",dns=\(dns)"
-                }
-                for rule in specNet?.portForwards ?? [] {
-                    try validateProtocol(rule.proto)
-                    try validatePort(rule.hostPort)
-                    try validatePort(rule.guestPort)
-                    netdevArgs += ",hostfwd=\(rule.proto)::\(rule.hostPort)-:\(rule.guestPort)"
-                }
+        switch mode {
+        case .bridged:
+            guard let net = network else {
+                throw BarkVisorError.badRequest("Bridged mode requires a Network record")
             }
-        } else {
+            #if os(macOS)
+                // socket_vmnet injects a pre-opened AF_VSOCK/unix fd as netdev fd=3.
+                netdevArgs = "socket,id=net0,fd=3"
+                needsSocketVmnetWrap = true
+            #elseif os(Linux)
+                // QEMU native bridge: attaches via qemu-bridge-helper to host bridge
+                // named in network.bridge (e.g. br0). No socket_vmnet wrap.
+                let br = net.bridge ?? ""
+                guard !br.isEmpty else {
+                    throw BarkVisorError.badRequest(
+                        "Bridged network is missing host bridge interface name.",
+                    )
+                }
+                try NetworkCapability.requireBridgedInterface(br)
+                let safeBr = try sanitizeQEMUArg(br, label: "Bridge interface")
+                netdevArgs = "bridge,id=net0,br=\(safeBr)"
+                needsSocketVmnetWrap = false
+            #else
+                throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
+            #endif
+        case .isolated:
+            // Private: slirp with restrict=on — no host, LAN, or internet.
+            netdevArgs = "user,id=net0,restrict=on"
+            if let dns = network?.dnsServer, !dns.isEmpty {
+                try validateIPv4(dns)
+                netdevArgs += ",dns=\(dns)"
+            }
+        case .nat:
             netdevArgs = "user,id=net0"
+            if let dns = network?.dnsServer, !dns.isEmpty {
+                try validateIPv4(dns)
+                netdevArgs += ",dns=\(dns)"
+            }
+            for rule in forwards {
+                try validateProtocol(rule.proto)
+                try validatePort(rule.hostPort)
+                try validatePort(rule.guestPort)
+                netdevArgs += ",hostfwd=\(rule.proto)::\(rule.hostPort)-:\(rule.guestPort)"
+            }
         }
 
         return (["-netdev", netdevArgs, "-device", deviceArgs], needsSocketVmnetWrap)

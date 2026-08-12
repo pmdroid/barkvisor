@@ -58,11 +58,12 @@ describe('Network Management', () => {
     cy.contains('DNS Server').should('exist')
   })
 
-  it('create network modal has NAT and Bridged mode options', () => {
+  it('create network modal has NAT, Bridged, and Isolated mode options', () => {
     cy.contains('button', 'Create Network').click()
     cy.get('.modal select').first().within(() => {
       cy.get('option').should('contain', 'NAT')
       cy.get('option').should('contain', 'Bridged')
+      cy.get('option').should('contain', 'Isolated')
     })
     cy.get('.modal').contains('button', 'Cancel').click()
   })

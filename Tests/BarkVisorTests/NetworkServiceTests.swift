@@ -99,6 +99,76 @@ final class NetworkServiceTests {
         #expect(error?.code == "invalid_bridge")
     }
 
+    @Test func `create VM port forwards on isolated rejected`() async throws {
+        let isolated = try await NetworkService.create(
+            CreateNetworkParams(
+                name: "private", mode: "isolated", bridge: nil, macAddress: nil, dnsServer: nil,
+            ),
+            db: dbPool,
+        )
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await VMLifecycleService.validateCreateVMInputs(
+                params: CreateVMParams(
+                    name: "pf-iso",
+                    vmType: hostLinux,
+                    cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+                    memoryMB: 512,
+                    isoId: "iso-1",
+                    networkId: isolated.id,
+                    portForwards: [
+                        PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
+                    ],
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.code == "invalid_port_forward")
+    }
+
+    @Test func `create VM port forwards on implicit NAT allowed`() async throws {
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        try await VMLifecycleService.validateCreateVMInputs(
+            params: CreateVMParams(
+                name: "pf-nat",
+                vmType: hostLinux,
+                cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+                memoryMB: 512,
+                isoId: "iso-1",
+                networkId: nil,
+                portForwards: [
+                    PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
+                ],
+            ),
+            db: dbPool,
+        )
+    }
+
+    @Test func `create isolated network`() async throws {
+        let network = try await NetworkService.create(
+            CreateNetworkParams(
+                name: "private", mode: "isolated", bridge: nil, macAddress: nil, dnsServer: nil,
+            ),
+            db: dbPool,
+        )
+        #expect(network.mode == "isolated")
+        #expect(network.bridge == nil)
+    }
+
+    @Test func `create isolated rejects bridge field`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "private", mode: "isolated", bridge: "br0", macAddress: nil, dnsServer: nil,
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.errorDescription?.contains("bridge") == true)
+    }
+
     @Test func `create invalid mode rejected`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(

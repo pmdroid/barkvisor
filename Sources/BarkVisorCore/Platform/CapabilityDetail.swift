@@ -26,23 +26,45 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case linuxPkgUpdate = "linux_pkg_update"
 }
 
-/// Per-mode support + PAS-94 reason/remediation (PAS-57). Isolated waits for PAS-67.
+/// Per-mode support + PAS-94 reason/remediation (PAS-57 / PAS-67).
 public struct NetworkModeCapability: Codable, Sendable, Equatable {
     public var mode: String
     public var supported: Bool
     public var reasonCode: String?
     public var remediation: String?
+    public var label: String?
+    public var description: String?
 
     public init(
         mode: String,
         supported: Bool,
         reasonCode: String? = nil,
         remediation: String? = nil,
+        label: String? = nil,
+        description: String? = nil,
     ) {
         self.mode = mode
         self.supported = supported
         self.reasonCode = reasonCode
         self.remediation = remediation
+        self.label = label
+        self.description = description
+    }
+
+    public init(
+        mode: NetworkMode,
+        supported: Bool,
+        reasonCode: String? = nil,
+        remediation: String? = nil,
+    ) {
+        self.init(
+            mode: mode.rawValue,
+            supported: supported,
+            reasonCode: reasonCode,
+            remediation: remediation,
+            label: mode.label,
+            description: mode.intentDescription,
+        )
     }
 }
 
@@ -89,17 +111,18 @@ public enum CapabilityDetailBuilder {
         CapabilityCode.allCases.map { detail(for: $0, inventory: inventory) }
     }
 
-    /// NAT is always available. Bridged reuses the PAS-94 `bridgedNetworking` row.
+    /// NAT and isolated are always available. Bridged reuses the PAS-94 row.
     public static func networkModes(from inventory: HostInventory) -> [NetworkModeCapability] {
         let bridged = detail(for: .bridgedNetworking, inventory: inventory)
         return [
-            NetworkModeCapability(mode: "nat", supported: true),
+            NetworkModeCapability(mode: .nat, supported: true),
             NetworkModeCapability(
-                mode: "bridged",
+                mode: .bridged,
                 supported: bridged.supported,
                 reasonCode: bridged.reasonCode,
                 remediation: bridged.remediation,
             ),
+            NetworkModeCapability(mode: .isolated, supported: true),
         ]
     }
 

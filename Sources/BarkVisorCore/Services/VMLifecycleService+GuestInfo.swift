@@ -131,7 +131,7 @@ extension VMLifecycleService {
                 nil
             }
 
-        if network == nil || network?.mode == "nat" {
+        if (try? NetworkCapability.effectiveMode(of: network)) == .nat {
             return .unavailable(ipAddresses: ["10.0.2.15"], ipSource: "nat-default")
         }
 

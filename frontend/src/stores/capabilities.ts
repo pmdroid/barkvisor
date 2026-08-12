@@ -31,6 +31,7 @@ const defaultCapabilities: CurrentHostCapabilities = {
   networkModes: [
     { mode: 'nat', supported: true },
     { mode: 'bridged', supported: false },
+    { mode: 'isolated', supported: true },
   ],
 }
 
@@ -222,5 +223,6 @@ function normalizeNetworkModes(
       supported: bridgedOk,
       remediation: bridgedOk ? undefined : bridgedRemediation || undefined,
     },
+    { mode: 'isolated', supported: true },
   ]
 }

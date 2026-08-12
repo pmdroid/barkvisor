@@ -330,7 +330,30 @@ public enum TemplateDeployService {
                 throw BarkVisorError.badRequest("Network not found")
             }
             return userNetId
-        } else if templateMode == "bridged" {
+        }
+
+        let mode = try NetworkCapability.parse(
+            templateMode.isEmpty ? NetworkMode.nat.rawValue : templateMode,
+        )
+        try NetworkCapability.requireMode(mode.rawValue)
+
+        if mode == .isolated {
+            if let existing = try await db.read({ db in
+                try Network.filter(Column("mode") == NetworkMode.isolated.rawValue).fetchOne(db)
+            }) {
+                return existing.id
+            }
+            return try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "Isolated",
+                    mode: NetworkMode.isolated.rawValue,
+                    bridge: nil,
+                    macAddress: nil,
+                    dnsServer: nil,
+                ),
+                db: db,
+            ).id
+        } else if mode == .bridged {
             try PlatformCapabilities.requireBridgedNetworking()
             let activeBridge = try await db.read { db in
                 try BridgeRecord.filter(Column("status") == "active").fetchOne(db)

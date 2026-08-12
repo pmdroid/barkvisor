@@ -46,7 +46,9 @@ public enum WorkloadSpecProjector {
             WorkloadPortForward(hostPort: $0.hostPort, guestPort: $0.guestPort, proto: $0.protocol)
         }
         let network = WorkloadNetwork(
-            mode: nil,
+            // Implicit NAT when no networkId. Attached records project mode from
+            // the Network row at apply/start time (fromVM has no DB).
+            mode: vm.networkId == nil ? NetworkMode.nat.rawValue : nil,
             networkId: vm.networkId,
             mac: vm.macAddress,
             portForwards: forwards,
@@ -176,6 +178,13 @@ public enum WorkloadSpecProjector {
             }
         }
         for net in spec.spec.networks {
+            if let raw = net.mode, !raw.isEmpty {
+                let mode = try NetworkCapability.parse(raw)
+                try NetworkCapability.requirePortForwardsAllowed(
+                    count: net.portForwards.count,
+                    mode: mode,
+                )
+            }
             for rule in net.portForwards {
                 guard rule.proto == "tcp" || rule.proto == "udp" else {
                     throw BarkVisorError.badRequest("portForwards.proto must be tcp or udp")

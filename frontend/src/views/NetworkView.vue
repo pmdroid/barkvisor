@@ -32,7 +32,7 @@ const bridges = ref<BridgeInfo[]>([])
 const showCreate = ref(false)
 const editingId = ref<string | null>(null)
 const newName = ref('')
-const newMode = ref<'nat' | 'bridged'>('nat')
+const newMode = ref<'nat' | 'bridged' | 'isolated'>('nat')
 const { networkModes } = storeToRefs(caps)
 const newBridge = ref('')
 const newDns = ref('')
@@ -87,9 +87,18 @@ const usedBridgeInterfaces = computed(() => {
 })
 
 function modeLabel(mode: string): string {
+  const row = networkModes.value.find((m) => m.mode === mode)
+  if (row?.label) return row.label
   if (mode === 'nat') return 'NAT'
-  if (mode === 'bridged') return 'Bridged'
+  if (mode === 'bridged') return 'Bridged (Home Network)'
+  if (mode === 'isolated') return 'Isolated (Private)'
   return mode
+}
+
+function modeBadgeClass(mode: string): string {
+  if (mode === 'nat') return 'badge-accent'
+  if (mode === 'isolated') return 'badge-gray'
+  return 'badge-blue'
 }
 
 const selectedModeRow = computed(() => networkModes.value.find((m) => m.mode === newMode.value))
@@ -176,8 +185,8 @@ function openEdit(n: Network) {
   editingId.value = n.id
   newName.value = n.name
   // Fall back to NAT if bridged is unsupported on this platform
-  newMode.value = bridged.available ? n.mode : 'nat'
-  newBridge.value = bridged.available ? (n.bridge || '') : ''
+  newMode.value = n.mode === 'bridged' && !bridged.available ? 'nat' : n.mode
+  newBridge.value = n.mode === 'bridged' && bridged.available ? (n.bridge || '') : ''
   newDns.value = n.dnsServer || ''
   error.value = ''
   showCreate.value = true
@@ -198,8 +207,10 @@ async function saveNetwork() {
     const body: any = {
       name: newName.value.trim(),
       mode: newMode.value,
-      bridge: newMode.value === 'bridged' ? newBridge.value : undefined,
-      dnsServer: newMode.value === 'nat' ? (newDns.value || (editingId.value ? '' : undefined)) : undefined,
+      bridge: newMode.value === 'bridged' ? newBridge.value : '',
+      dnsServer: (newMode.value === 'nat' || newMode.value === 'isolated')
+        ? (newDns.value || (editingId.value ? '' : undefined))
+        : undefined,
     }
     if (editingId.value) {
       await networkStore.update(editingId.value, body)
@@ -322,7 +333,7 @@ async function setupBridgeInline() {
   ]">
     <tr v-for="n in networks" :key="n.id">
       <td style="font-weight:500">{{ n.name }}</td>
-      <td><span class="badge" :class="n.mode === 'nat' ? 'badge-accent' : 'badge-blue'">{{ n.mode }}</span></td>
+      <td><span class="badge" :class="modeBadgeClass(n.mode)">{{ n.mode }}</span></td>
       <td>
         <template v-if="n.bridge">
           <span style="display:flex;align-items:center;gap:6px">
@@ -405,10 +416,19 @@ async function setupBridgeInline() {
           {{ modeLabel(m.mode) }}
         </option>
       </AppSelect>
+      <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
+        Same names on Mac and Linux. Isolated is Private (no host/LAN/internet).
+        Publish a service with NAT plus VM port forwards — not a fourth mode.
+        A VM with no network selected uses NAT implicitly.
+      </p>
       <UnsupportedHint
         v-if="selectedModeRow && !selectedModeRow.supported"
-        :text="selectedModeRow.remediation || bridged.explanation"
+        :text="selectedModeRow.remediation || selectedModeRow.description || bridged.explanation"
       />
+      <p
+        v-else-if="selectedModeRow?.description"
+        style="color:var(--text-dim);font-size:12px;margin:6px 0 0"
+      >{{ selectedModeRow.description }}</p>
       <UnsupportedHint v-else-if="!bridged.available" :text="bridged.explanation" />
     </div>
     <div v-if="bridged.available && newMode === 'bridged'" class="form-group">
@@ -448,7 +468,7 @@ async function setupBridgeInline() {
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Starting..." @click="startBridge(newBridge)">Start Bridge</AppButton>
       </div>
     </div>
-    <div v-if="newMode === 'nat'" class="form-group">
+    <div v-if="newMode === 'nat' || newMode === 'isolated'" class="form-group">
       <label>DNS Server</label>
       <input v-model="newDns" placeholder="8.8.8.8 (optional)" />
     </div>
