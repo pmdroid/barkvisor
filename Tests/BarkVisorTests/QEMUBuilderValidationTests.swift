@@ -78,6 +78,65 @@ struct QEMUBuilderValidationTests {
         #expect(throws: (any Error).self) { try QEMUBuilder.validateResolution("") }
     }
 
+    // MARK: - Network modes (PAS-67)
+
+    private func netSpec(
+        mode: String?,
+        forwards: [WorkloadPortForward] = [],
+    ) -> WorkloadSpec {
+        WorkloadSpec(
+            metadata: WorkloadMetadata(name: "net-test"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: min(2, max(1, PlatformHost.cpuCount)), memoryMb: 512),
+                networks: [WorkloadNetwork(mode: mode, portForwards: forwards)],
+            ),
+        )
+    }
+
+    @Test func `implicit NAT is user slirp`() throws {
+        let (args, wrap) = try QEMUBuilder.networkArgs(spec: netSpec(mode: nil), network: nil)
+        #expect(!wrap)
+        #expect(args.contains("-netdev"))
+        #expect(args.contains { $0.hasPrefix("user,id=net0") && !$0.contains("restrict=on") })
+    }
+
+    @Test func `isolated is restrict-on slirp`() throws {
+        let net = Network(
+            id: "iso-1", name: "Private", mode: "isolated",
+            bridge: nil, macAddress: nil, dnsServer: nil,
+            autoCreated: false, isDefault: false,
+        )
+        let (args, wrap) = try QEMUBuilder.networkArgs(spec: netSpec(mode: "isolated"), network: net)
+        #expect(!wrap)
+        #expect(args.contains { $0 == "user,id=net0,restrict=on" })
+    }
+
+    @Test func `hostfwd on isolated is 400`() {
+        let net = Network(
+            id: "iso-1", name: "Private", mode: "isolated",
+            bridge: nil, macAddress: nil, dnsServer: nil,
+            autoCreated: false, isDefault: false,
+        )
+        let spec = netSpec(
+            mode: "isolated",
+            forwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp")],
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.networkArgs(spec: spec, network: net)
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.code == "invalid_port_forward")
+    }
+
+    @Test func `hostfwd on implicit NAT is applied`() throws {
+        let spec = netSpec(
+            mode: "nat",
+            forwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp")],
+        )
+        let (args, _) = try QEMUBuilder.networkArgs(spec: spec, network: nil)
+        #expect(args.contains { $0.contains("hostfwd=tcp::8080-:80") })
+    }
+
     // MARK: - MAC Address Validation
 
     @Test func `valid MAC`() {

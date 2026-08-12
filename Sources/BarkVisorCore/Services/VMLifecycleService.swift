@@ -61,7 +61,7 @@ public enum VMLifecycleService {
                 throw BarkVisorError.notFound()
             }
 
-            try validateUpdateReferences(params: params, db: db)
+            try validateUpdateReferences(params: params, vm: vm, db: db)
 
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let hardwareChanged = detectHardwareChanges(params: params, encoded: encodedFields, vm: vm)
@@ -91,6 +91,23 @@ public enum VMLifecycleService {
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let before = vm
             try WorkloadSpecProjector.apply(spec, to: &vm)
+            let appliedNetwork: Network? =
+                if let netId = vm.networkId {
+                    try Network.fetchOne(db, key: netId)
+                } else {
+                    nil
+                }
+            if vm.networkId != nil, appliedNetwork == nil {
+                throw BarkVisorError.notFound("Network not found")
+            }
+            if let specNet = spec.spec.networks.first {
+                try NetworkCapability.requireSpecNetwork(specNet, record: appliedNetwork)
+            } else {
+                try NetworkCapability.requirePortForwardsAllowed(
+                    count: vm.decodedPortForwards.count,
+                    network: appliedNetwork,
+                )
+            }
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
@@ -463,12 +480,24 @@ extension VMLifecycleService {
         }
     }
 
-    fileprivate static func validateUpdateReferences(params: UpdateVMParams, db: Database) throws {
-        if let net = params.networkId {
-            guard try Network.fetchOne(db, key: net) != nil else {
-                throw BarkVisorError.notFound("Network not found")
+    fileprivate static func validateUpdateReferences(
+        params: UpdateVMParams,
+        vm: VM,
+        db: Database,
+    ) throws {
+        let networkId = params.networkId ?? vm.networkId
+        let network: Network? =
+            if let networkId {
+                try Network.fetchOne(db, key: networkId)
+            } else {
+                nil
             }
+        if networkId != nil, network == nil {
+            throw BarkVisorError.notFound("Network not found")
         }
+        let forwardCount =
+            params.portForwards?.count ?? vm.decodedPortForwards.count
+        try NetworkCapability.requirePortForwardsAllowed(count: forwardCount, network: network)
         if let diskIds = params.additionalDiskIds, !diskIds.isEmpty {
             let existingDisks = try Disk.filter(keys: diskIds).fetchAll(db)
             let existingIds = Set(existingDisks.map(\.id))

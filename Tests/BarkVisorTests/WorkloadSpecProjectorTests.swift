@@ -60,6 +60,7 @@ struct WorkloadSpecProjectorTests {
         #expect(spec.spec.disks.contains { $0.role == "data" && $0.diskId == "disk-data" })
         #expect(spec.spec.disks.contains { $0.role == "cdrom" && $0.imageId == "iso-1" })
         #expect(spec.spec.networks.first?.networkId == "net-1")
+        #expect(spec.spec.networks.first?.mode == nil)
         #expect(spec.spec.networks.first?.mac == "52:54:00:12:34:56")
         #expect(spec.spec.networks.first?.portForwards.first?.proto == "tcp")
         #expect(spec.spec.cloudInit?.userDataRef == "/data/cidata.iso")
@@ -421,5 +422,33 @@ struct WorkloadSpecProjectorTests {
         try WorkloadSpecProjector.apply(spec, to: &after)
         #expect(after.cpuCount != before.cpuCount)
         #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
+    }
+
+    @Test func `fromVM projects implicit NAT when networkId is nil`() {
+        var vm = makeVM()
+        vm.networkId = nil
+        let spec = WorkloadSpecProjector.fromVM(vm)
+        #expect(spec.spec.networks.first?.mode == "nat")
+        #expect(spec.spec.networks.first?.networkId == nil)
+    }
+
+    @Test func `validate rejects port forwards on isolated spec mode`() {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "n"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                networks: [
+                    WorkloadNetwork(
+                        mode: "isolated",
+                        portForwards: [WorkloadPortForward(hostPort: 8_080, guestPort: 80, proto: "tcp")],
+                    ),
+                ],
+            ),
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
+        #expect(err?.code == "invalid_port_forward")
+        #expect(err?.httpStatus == 400)
     }
 }

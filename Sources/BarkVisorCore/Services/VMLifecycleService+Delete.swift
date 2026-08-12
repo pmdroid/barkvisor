@@ -120,12 +120,19 @@ extension VMLifecycleService {
             throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
         }
 
-        if let networkId = params.networkId {
-            let network = try await db.read { db in try Network.fetchOne(db, key: networkId) }
-            guard network != nil else {
-                throw BarkVisorError.notFound("Network not found")
+        let network: Network? =
+            if let networkId = params.networkId {
+                try await db.read { db in try Network.fetchOne(db, key: networkId) }
+            } else {
+                nil
             }
+        if params.networkId != nil, network == nil {
+            throw BarkVisorError.notFound("Network not found")
         }
+        try NetworkCapability.requirePortForwardsAllowed(
+            count: params.portForwards?.count ?? 0,
+            network: network,
+        )
 
         let hasISO = params.isoId != nil
         let hasCloudImage = params.cloudImageId != nil

@@ -2,23 +2,52 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite("NetworkCapability (PAS-57)")
+@Suite("NetworkCapability (PAS-57 / PAS-67)")
 struct NetworkCapabilityTests {
-    @Test func `modes are nat and bridged only`() {
-        #expect(NetworkCapability.modes == ["nat", "bridged"])
+    @Test func `modes are nat bridged isolated — tailnet deferred`() {
+        #expect(NetworkCapability.modes == ["nat", "bridged", "isolated"])
+        #expect(NetworkMode(rawValue: "tailnet") == nil)
+        #expect(NetworkMode(rawValue: "none") == nil)
     }
 
     @Test func `requireMode rejects unknown modes`() {
         let err = #expect(throws: BarkVisorError.self) {
-            try NetworkCapability.requireMode("isolated")
+            try NetworkCapability.requireMode("tailnet")
         }
         #expect(err?.httpStatus == 400)
         #expect(err?.code == "bad_request")
+        #expect(err?.errorDescription?.contains("isolated") == true)
     }
 
-    @Test func `requireMode nat always succeeds`() {
+    @Test func `requireMode nat and isolated always succeed`() {
         #expect(throws: Never.self) {
             try NetworkCapability.requireMode("nat")
+        }
+        #expect(throws: Never.self) {
+            try NetworkCapability.requireMode("isolated")
+        }
+    }
+
+    @Test func `missing network is implicit NAT`() throws {
+        #expect(try NetworkCapability.effectiveMode(of: nil) == .nat)
+    }
+
+    @Test func `port forwards require NAT`() {
+        #expect(throws: Never.self) {
+            try NetworkCapability.requirePortForwardsAllowed(count: 1, mode: .nat)
+        }
+        let isolated = #expect(throws: BarkVisorError.self) {
+            try NetworkCapability.requirePortForwardsAllowed(count: 1, mode: .isolated)
+        }
+        #expect(isolated?.httpStatus == 400)
+        #expect(isolated?.code == "invalid_port_forward")
+        let bridged = #expect(throws: BarkVisorError.self) {
+            try NetworkCapability.requirePortForwardsAllowed(count: 1, mode: .bridged)
+        }
+        #expect(bridged?.httpStatus == 400)
+        #expect(bridged?.code == "invalid_port_forward")
+        #expect(throws: Never.self) {
+            try NetworkCapability.requirePortForwardsAllowed(count: 0, mode: .isolated)
         }
     }
 
@@ -115,5 +144,8 @@ struct NetworkCapabilityTests {
         #expect(!modes[1].supported)
         #expect(modes[1].reasonCode == CapabilityReasonCode.helperMissing.rawValue)
         #expect(modes[1].remediation?.contains("qemu-bridge-helper") == true)
+        #expect(modes[2].mode == "isolated")
+        #expect(modes[2].supported)
+        #expect(modes[2].label == NetworkMode.isolated.label)
     }
 }

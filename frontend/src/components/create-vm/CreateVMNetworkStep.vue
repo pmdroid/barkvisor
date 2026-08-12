@@ -51,7 +51,10 @@ const emit = defineEmits<{
         </option>
       </AppSelect>
       <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:block">
-        NAT provides internet access via the host. Bridged networks give the VM its own IP on the local network.
+        NAT: internet via the host (also used when no network is selected).
+        Bridged (Home Network): LAN IP.
+        Isolated (Private): no host, LAN, or internet.
+        Publish a service with NAT plus port forwards — not a separate mode.
         Manage networks under <strong>Settings &rarr; Network</strong>.
       </span>
       <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />

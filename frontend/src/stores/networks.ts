@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../api/client'
-import type { Network } from '../api/types'
+import type { Network, NetworkModeName } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 
 export type NetworkWriteBody = {
   name: string
-  mode: 'nat' | 'bridged'
+  mode: NetworkModeName
   bridge?: string
   dnsServer?: string
 }

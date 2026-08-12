@@ -21,6 +21,12 @@ import { useImageProgress } from '../composables/useTicketedEventSource'
 const props = defineProps<{ template: VMTemplate }>()
 const emit = defineEmits(['close', 'deployed'])
 
+function networkModeLabel(mode: string): string {
+  if (mode === 'bridged') return 'Bridged (Home Network)'
+  if (mode === 'isolated') return 'Isolated (Private)'
+  return 'NAT'
+}
+
 const templateStore = useTemplateStore()
 const vmStore = useVMStore()
 const sshKeyStore = useSSHKeyStore()
@@ -374,10 +380,11 @@ async function submit() {
               <path v-if="template.networkMode === 'bridged'" d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6m12-2H9m12 0v12a2 2 0 01-2 2H9m12-14H9m0 14H5a2 2 0 01-2-2V8m6 14V8m0 0H3" />
               <path v-else d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
             </svg>
-            Network: <strong>{{ template.networkMode === 'bridged' ? 'Bridged' : 'NAT' }}</strong>
+            Network: <strong>{{ networkModeLabel(template.networkMode) }}</strong>
             <span v-if="template.networkMode === 'bridged'" style="color:var(--text-dim)">(gets its own IP on your LAN)</span>
+            <span v-else-if="template.networkMode === 'isolated'" style="color:var(--text-dim)">(Private — no host/LAN/internet)</span>
           </div>
-          <div v-if="template.portForwards && template.portForwards.length > 0 && template.networkMode !== 'bridged'" style="margin-top:12px">
+          <div v-if="template.portForwards && template.portForwards.length > 0 && template.networkMode === 'nat'" style="margin-top:12px">
             <label style="font-size:12px;color:var(--text-dim)">Port Forwards (auto-configured)</label>
             <div v-for="pf in template.portForwards" :key="`${pf.hostPort}-${pf.guestPort}`"
               style="font-size:12px;color:var(--text-dim);padding:2px 0">
@@ -421,7 +428,7 @@ async function submit() {
             <div><strong>CPU:</strong> {{ cpuCount }} cores</div>
             <div><strong>Memory:</strong> {{ memoryMB }} MB</div>
             <div><strong>Disk:</strong> {{ diskSizeGB }} GB</div>
-            <div><strong>Network:</strong> {{ template.networkMode === 'bridged' ? 'Bridged' : 'NAT' }}</div>
+            <div><strong>Network:</strong> {{ networkModeLabel(template.networkMode) }}</div>
             <div><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
             <div><strong>Image:</strong> {{ compatibility?.resolvedImageSlug || template.imageSlug }}</div>
           </div>

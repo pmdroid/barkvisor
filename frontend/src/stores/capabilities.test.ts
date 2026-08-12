@@ -158,6 +158,7 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(store.networkModes).toEqual([
       { mode: 'nat', supported: true },
       { mode: 'bridged', supported: false },
+      { mode: 'isolated', supported: true },
     ])
     expect(store.runnableArches).toEqual([])
     expect(store.isArchRunnable('arm64')).toBe(false)
@@ -292,6 +293,7 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(fallback.networkModes).toEqual([
       { mode: 'nat', supported: true },
       { mode: 'bridged', supported: false, remediation: 'Use NAT.' },
+      { mode: 'isolated', supported: true },
     ])
   })
 })

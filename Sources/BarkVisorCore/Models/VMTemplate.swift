@@ -15,7 +15,7 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
     public var memoryMB: Int
     public var diskSizeGB: Int
     public var portForwards: String? // JSON-encoded [PortForwardRule]
-    public var networkMode: String // "nat" or "bridged"
+    public var networkMode: String // "nat" | "bridged" | "isolated"
     public var inputs: String // JSON-encoded [TemplateInput]
     public var userDataTemplate: String
     public var isBuiltIn: Bool
@@ -159,7 +159,7 @@ public struct TemplateCatalogEntry: Codable, Sendable {
     public let memoryMB: Int
     public let diskSizeGB: Int
     public let portForwards: [PortForwardRule]
-    public let networkMode: String? // "nat" (default) or "bridged"
+    public let networkMode: String? // "nat" (default), "bridged", or "isolated"
     public let inputs: [TemplateInput]
     public let userDataTemplate: String
     public let architectures: [String]?

@@ -334,9 +334,14 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   }
 
   const isNAT = computed(() => {
-    if (!selectedNetworkId.value) return false
+    // Missing selection is implicit NAT (PAS-67).
+    if (!selectedNetworkId.value) return true
     const net = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
-    return net?.mode === 'nat'
+    return !net || net.mode === 'nat'
+  })
+
+  watch(isNAT, (nat) => {
+    if (!nat) portForwards.value = []
   })
 
   watch([() => bridged.available, allNetworks], () => {

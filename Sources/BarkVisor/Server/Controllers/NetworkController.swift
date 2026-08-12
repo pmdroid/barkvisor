@@ -12,7 +12,7 @@ struct CreateNetworkRequest: Content, Validatable {
 
     static func validations(_ validations: inout Validations) {
         validations.add("name", as: String.self, is: !.empty)
-        validations.add("mode", as: String.self, is: .in("nat", "bridged"))
+        validations.add("mode", as: String.self, is: .in("nat", "bridged", "isolated"))
     }
 }
 
@@ -27,10 +27,18 @@ struct UpdateNetworkRequest: Content {
 struct NetworkController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let networks = routes.grouped("api", "networks")
+        networks.get("modes", use: modes)
         networks.get(use: list)
         networks.post(use: create)
         networks.patch(":id", use: update)
         networks.delete(":id", use: delete)
+    }
+
+    /// Capability-aware mode list (PAS-67). Same names on Mac and Linux.
+    /// Missing VM `networkId` is implicit NAT — not a separate mode.
+    @Sendable
+    func modes(req _: Vapor.Request) async throws -> [NetworkModeCapability] {
+        CapabilityDetailBuilder.networkModes(from: HostInventoryService.snapshot())
     }
 
     @Sendable
