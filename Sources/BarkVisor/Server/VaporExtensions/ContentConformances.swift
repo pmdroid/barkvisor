@@ -28,3 +28,4 @@ extension BridgeRecord: Content {}
 extension LogEntry: Content {}
 extension ImageProgressEvent: Content {}
 extension DiskImageInfo: Content {}
+extension HostInventory: Content {}

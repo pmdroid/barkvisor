@@ -150,6 +150,11 @@ public enum Config {
         PlatformPaths.dataDir(isInstalled: isInstalled)
     }
 
+    /// Durable host UUID persisted at `dataDir/host-id` (PAS-42).
+    public static var hostId: String {
+        HostIdentity.loadOrCreate(dataDir: dataDir).uuidString
+    }
+
     /// Short path for unix sockets (must be < 104 bytes)
     public static var socketDir: URL {
         PlatformPaths.socketDir(isInstalled: isInstalled)
