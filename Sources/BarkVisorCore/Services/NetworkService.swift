@@ -44,14 +44,12 @@ public enum NetworkService {
         _ params: CreateNetworkParams,
         db: DatabasePool,
     ) async throws -> Network {
-        guard ["nat", "bridged"].contains(params.mode) else {
-            throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
-        }
+        try NetworkCapability.requireMode(params.mode)
         if params.mode == "bridged" {
-            try PlatformCapabilities.requireBridgedNetworking()
-            if (params.bridge ?? "").isEmpty {
+            guard let bridge = params.bridge, !bridge.isEmpty else {
                 throw BarkVisorError.badRequest("bridge interface required for bridged mode")
             }
+            try NetworkCapability.requireBridgedInterface(bridge)
         }
 
         if let bridge = params.bridge, !bridge.isEmpty { try validateBridgeName(bridge) }
@@ -95,8 +93,7 @@ public enum NetworkService {
             return existing
         }
 
-        try PlatformCapabilities.requireBridgedNetworking()
-        try validateBridgeName(interface)
+        try NetworkCapability.requireBridgedInterface(interface)
 
         let network = Network(
             id: UUID().uuidString,
@@ -127,12 +124,7 @@ public enum NetworkService {
 
         if let name = params.name { network.name = name }
         if let mode = params.mode {
-            guard ["nat", "bridged"].contains(mode) else {
-                throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
-            }
-            if mode == "bridged" {
-                try PlatformCapabilities.requireBridgedNetworking()
-            }
+            try NetworkCapability.requireMode(mode)
             network.mode = mode
         }
         if let bridge = params.bridge {
@@ -146,6 +138,14 @@ public enum NetworkService {
         if let dns = params.dnsServer {
             if !dns.isEmpty { try validateDNS(dns) }
             network.dnsServer = dns
+        }
+
+        if network.mode == "bridged" {
+            let bridge = network.bridge ?? ""
+            if bridge.isEmpty {
+                throw BarkVisorError.badRequest("bridge interface required for bridged mode")
+            }
+            try NetworkCapability.requireBridgedInterface(bridge)
         }
 
         if network.mode == "bridged", let bridge = network.bridge, !bridge.isEmpty {

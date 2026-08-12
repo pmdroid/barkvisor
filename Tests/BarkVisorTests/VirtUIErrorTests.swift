@@ -23,6 +23,8 @@ struct VirtUIErrorTests {
             .decompressFailed("failed"),
             .downloadFailed("failed"),
             .bridgeNotReady("not ready"),
+            .interfaceMissing("br0"),
+            .invalidBridgeName("bad name"),
             .invalidArgument("bad"),
             .timeout("timed out"),
             .unsupportedFeature(.bridgedNetworking),
@@ -83,6 +85,12 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.vmAlreadyRunning("").httpStatus == 409)
         #expect(BarkVisorError.preconditionFailed("").httpStatus == 412)
         #expect(BarkVisorError.unsupportedFeature(.usbPassthrough).httpStatus == 422)
+        #expect(BarkVisorError.interfaceMissing("br0").httpStatus == 422)
+        #expect(BarkVisorError.interfaceMissing("br0").code == "interface_missing")
+        #expect(BarkVisorError.invalidBridgeName("x").httpStatus == 400)
+        #expect(BarkVisorError.invalidBridgeName("x").code == "invalid_bridge")
+        #expect(BarkVisorError.bridgeNotReady("not ready").httpStatus == 422)
+        #expect(BarkVisorError.bridgeNotReady("not ready").code == "bridge_not_ready")
 
         // Domain errors default to 500
         #expect(BarkVisorError.qemuNotFound("").httpStatus == 500)

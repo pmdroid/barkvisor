@@ -18,6 +18,10 @@ public enum BarkVisorError: Error, LocalizedError {
     case decompressFailed(String)
     case downloadFailed(String)
     case bridgeNotReady(String)
+    /// Host interface does not exist (PAS-57 preflight). HTTP 422 + `interface_missing`.
+    case interfaceMissing(String)
+    /// Bridge / iface name failed IFNAMSIZ or charset checks. HTTP 400 + `invalid_bridge`.
+    case invalidBridgeName(String)
     case updateFailed(String)
     case invalidArgument(String)
     case timeout(String)
@@ -52,6 +56,14 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .decompressFailed(msg): return msg
         case let .downloadFailed(msg): return msg
         case let .bridgeNotReady(msg): return msg
+        case let .interfaceMissing(name):
+            if PlatformHost.platformName.caseInsensitiveCompare("Linux") == .orderedSame {
+                return "Host interface '\(name)' does not exist. Create a Linux bridge first "
+                    + "(e.g. `sudo ip link add name \(name) type bridge && sudo ip link set \(name) up`) "
+                    + "and allow it in /etc/qemu/bridge.conf. Use NAT if bridging is unavailable."
+            }
+            return "Host interface '\(name)' does not exist. Choose an existing interface or create it first."
+        case let .invalidBridgeName(msg): return msg
         case let .updateFailed(msg): return msg
         case let .invalidArgument(msg): return msg
         case let .timeout(msg): return msg
@@ -86,6 +98,8 @@ public enum BarkVisorError: Error, LocalizedError {
         case .decompressFailed: return "decompress_failed"
         case .downloadFailed: return "download_failed"
         case .bridgeNotReady: return "bridge_not_ready"
+        case .interfaceMissing: return "interface_missing"
+        case .invalidBridgeName: return "invalid_bridge"
         case .updateFailed: return "update_failed"
         case .invalidArgument: return "invalid_argument"
         case .timeout: return "timeout"
@@ -103,7 +117,7 @@ public enum BarkVisorError: Error, LocalizedError {
     /// HTTP status code for the error middleware to use.
     public var httpStatus: UInt {
         switch self {
-        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType:
+        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType, .invalidBridgeName:
             return 400
         case .unauthorized:
             return 401
@@ -115,7 +129,7 @@ public enum BarkVisorError: Error, LocalizedError {
             return 409
         case .preconditionFailed:
             return 412
-        case .unsupportedFeature:
+        case .unsupportedFeature, .interfaceMissing, .bridgeNotReady:
             return 422
         default:
             return 500

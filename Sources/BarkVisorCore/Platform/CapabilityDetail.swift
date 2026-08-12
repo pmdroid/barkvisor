@@ -20,8 +20,29 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case osUnsupported = "os_unsupported"
     case kvmMissing = "kvm_missing"
     case helperMissing = "helper_missing"
+    case interfaceMissing = "interface_missing"
     case linuxOsManaged = "linux_os_managed"
     case linuxPkgUpdate = "linux_pkg_update"
+}
+
+/// Per-mode support + PAS-94 reason/remediation (PAS-57). Isolated waits for PAS-67.
+public struct NetworkModeCapability: Codable, Sendable, Equatable {
+    public var mode: String
+    public var supported: Bool
+    public var reasonCode: String?
+    public var remediation: String?
+
+    public init(
+        mode: String,
+        supported: Bool,
+        reasonCode: String? = nil,
+        remediation: String? = nil,
+    ) {
+        self.mode = mode
+        self.supported = supported
+        self.reasonCode = reasonCode
+        self.remediation = remediation
+    }
 }
 
 /// Per-feature support + optional reason/remediation.
@@ -65,6 +86,20 @@ public struct CapabilityDetail: Codable, Sendable, Equatable {
 public enum CapabilityDetailBuilder {
     public static func from(inventory: HostInventory) -> [CapabilityDetail] {
         CapabilityCode.allCases.map { detail(for: $0, inventory: inventory) }
+    }
+
+    /// NAT is always available. Bridged reuses the PAS-94 `bridgedNetworking` row.
+    public static func networkModes(from inventory: HostInventory) -> [NetworkModeCapability] {
+        let bridged = detail(for: .bridgedNetworking, inventory: inventory)
+        return [
+            NetworkModeCapability(mode: "nat", supported: true),
+            NetworkModeCapability(
+                mode: "bridged",
+                supported: bridged.supported,
+                reasonCode: bridged.reasonCode,
+                remediation: bridged.remediation,
+            ),
+        ]
     }
 
     public static func detail(for code: CapabilityCode, inventory: HostInventory) -> CapabilityDetail {

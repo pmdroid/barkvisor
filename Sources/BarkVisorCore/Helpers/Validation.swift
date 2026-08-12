@@ -22,11 +22,11 @@ public func validateVMName(_ name: String) throws {
 /// `ovs-br0` pass; reject whitespace, path separators, and shell metacharacters.
 public func validateBridgeName(_ name: String) throws {
     guard !name.isEmpty else {
-        throw BarkVisorError.badRequest("Bridge interface name must not be empty")
+        throw BarkVisorError.invalidBridgeName("Bridge interface name must not be empty")
     }
     // Kernel IFNAMSIZ-1 (bytes). Names here are ASCII; count == utf8.count.
     guard name.utf8.count <= 15 else {
-        throw BarkVisorError.badRequest(
+        throw BarkVisorError.invalidBridgeName(
             "Bridge interface name too long (max 15 characters, IFNAMSIZ-1; got '\(name)')",
         )
     }
@@ -34,7 +34,7 @@ public func validateBridgeName(_ name: String) throws {
         ch.isLetter || ch.isNumber || ch == "." || ch == "_" || ch == "-"
     })
     else {
-        throw BarkVisorError.badRequest(
+        throw BarkVisorError.invalidBridgeName(
             "Bridge interface name may only contain letters, numbers, '.', '_', and '-' (got '\(name)')",
         )
     }
