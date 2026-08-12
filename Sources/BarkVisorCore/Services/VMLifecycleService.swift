@@ -108,6 +108,9 @@ public enum VMLifecycleService {
                     network: appliedNetwork,
                 )
             }
+            try PortRegistry.assertAvailable(
+                vm.decodedPortForwards, excludingVM: id, db: db,
+            )
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
@@ -498,6 +501,8 @@ extension VMLifecycleService {
         let forwardCount =
             params.portForwards?.count ?? vm.decodedPortForwards.count
         try NetworkCapability.requirePortForwardsAllowed(count: forwardCount, network: network)
+        let rules = params.portForwards ?? vm.decodedPortForwards
+        try PortRegistry.assertAvailable(rules, excludingVM: vm.id, db: db)
         if let diskIds = params.additionalDiskIds, !diskIds.isEmpty {
             let existingDisks = try Disk.filter(keys: diskIds).fetchAll(db)
             let existingIds = Set(existingDisks.map(\.id))

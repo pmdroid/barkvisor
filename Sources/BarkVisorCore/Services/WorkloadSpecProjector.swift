@@ -194,6 +194,9 @@ public enum WorkloadSpecProjector {
                     throw BarkVisorError.badRequest("portForwards ports must be 1...65535")
                 }
             }
+            try PortRegistry.assertUnique(net.portForwards.map {
+                PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
+            })
         }
         if let resolution = spec.spec.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)

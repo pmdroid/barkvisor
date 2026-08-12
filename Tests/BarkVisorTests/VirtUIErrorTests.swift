@@ -36,6 +36,7 @@ struct VirtUIErrorTests {
             .unauthorized(),
             .forbidden("forbidden"),
             .conflict("conflict"),
+            .portInUse("port in use"),
             .preconditionFailed("precondition"),
             .internalError("internal"),
         ]
@@ -62,6 +63,7 @@ struct VirtUIErrorTests {
             (.unauthorized(), "unauthorized"),
             (.forbidden(""), "forbidden"),
             (.conflict(""), "conflict"),
+            (.portInUse(""), "port_in_use"),
             (.timeout(""), "timeout"),
             (.unsupportedFeature(.inAppUpdate), "in_app_update"),
         ]
@@ -84,6 +86,8 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.repositoryNotFound("").httpStatus == 404)
         #expect(BarkVisorError.conflict("").httpStatus == 409)
         #expect(BarkVisorError.vmAlreadyRunning("").httpStatus == 409)
+        #expect(BarkVisorError.portInUse("").httpStatus == 409)
+        #expect(BarkVisorError.portInUse("").code == "port_in_use")
         #expect(BarkVisorError.preconditionFailed("").httpStatus == 412)
         #expect(BarkVisorError.unsupportedFeature(.usbPassthrough).httpStatus == 422)
         #expect(BarkVisorError.interfaceMissing("br0").httpStatus == 422)
