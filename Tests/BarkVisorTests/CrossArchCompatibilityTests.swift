@@ -1,3 +1,5 @@
+import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
@@ -9,6 +11,43 @@ struct CrossArchCompatibilityTests {
         #expect(PlatformCapabilities.normalizedArch("aarch64") == "arm64")
         #expect(PlatformCapabilities.normalizedArch("x86_64") == "x86_64")
         #expect(PlatformCapabilities.normalizedArch("amd64") == "x86_64")
+    }
+
+    // MARK: - Create/deploy validation wiring
+
+    /// `validateCreateVMInputs` is shared by create + template deploy.
+    @Test func `validateCreateVMInputs blocks foreign guest arch`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        var migrator = DatabaseMigrator()
+        migrator.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        try migrator.migrate(pool)
+
+        let host = PlatformCapabilities.hostArch
+        let foreignType = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        let params = CreateVMParams(
+            name: "cross-arch-guard",
+            vmType: foreignType,
+            cpuCount: 1,
+            memoryMB: 512,
+            cloudImageId: "img-unused",
+        )
+
+        do {
+            try await VMLifecycleService.validateCreateVMInputs(params: params, db: pool)
+            Issue.record("expected validateCreateVMInputs to reject \(foreignType) on \(host)")
+        } catch let BarkVisorError.badRequest(message) {
+            #expect(message.lowercased().contains("not compatible")
+                || message.lowercased().contains("cross-architecture"))
+            #expect(message.contains(host))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
     }
 
     // MARK: - Host ↔ guest compatibility
@@ -73,9 +112,9 @@ struct CrossArchCompatibilityTests {
         }
     }
 
-    /// Document the acceptance-criteria direction explicitly when running on arm64.
-    @Test func `x86_64 workload blocked on arm64 host`() throws {
-        try #require(PlatformCapabilities.hostArch == "arm64")
+    /// Acceptance-criteria direction (PAS-48): x86_64 workload on arm64 host.
+    @Test(.enabled(if: PlatformCapabilities.hostArch == "arm64"))
+    func `x86_64 workload blocked on arm64 host`() throws {
         #expect(throws: BarkVisorError.self) {
             try PlatformCapabilities.requireCompatibleGuestArch("x86_64")
         }
@@ -86,9 +125,9 @@ struct CrossArchCompatibilityTests {
         }
     }
 
-    /// Symmetric guard when CI/dev hosts are x86_64 (this environment).
-    @Test func `arm64 workload blocked on x86_64 host`() throws {
-        try #require(PlatformCapabilities.hostArch == "x86_64")
+    /// Symmetric guard on x86_64 CI/dev hosts.
+    @Test(.enabled(if: PlatformCapabilities.hostArch == "x86_64"))
+    func `arm64 workload blocked on x86_64 host`() throws {
         #expect(throws: BarkVisorError.self) {
             try PlatformCapabilities.requireCompatibleGuestArch("arm64")
         }
