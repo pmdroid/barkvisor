@@ -120,7 +120,7 @@ struct CrossArchCompatibilityTests {
         }
         #expect(throws: BarkVisorError.self) {
             try PlatformCapabilities.requireCompatibleGuestArch(
-                try GuestProfiles.require("linux-amd64").arch,
+                GuestProfiles.require("linux-amd64").arch,
             )
         }
     }
@@ -133,12 +133,12 @@ struct CrossArchCompatibilityTests {
         }
         #expect(throws: BarkVisorError.self) {
             try PlatformCapabilities.requireCompatibleGuestArch(
-                try GuestProfiles.require("linux-arm64").arch,
+                GuestProfiles.require("linux-arm64").arch,
             )
         }
         #expect(throws: BarkVisorError.self) {
             try PlatformCapabilities.requireCompatibleGuestArch(
-                try GuestProfiles.require("windows-arm64").arch,
+                GuestProfiles.require("windows-arm64").arch,
             )
         }
     }
