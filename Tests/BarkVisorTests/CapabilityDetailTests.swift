@@ -166,6 +166,7 @@ private func makeInventory(
 ) -> HostInventory {
     HostInventory(
         schemaVersion: 1,
+        hostId: "test-host-id",
         displayName: "test-host",
         agent: AgentInfo(version: "test"),
         platform: PlatformInfo(os: os, osVersion: "test", arch: arch, hostname: "test-host"),
