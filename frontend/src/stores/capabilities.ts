@@ -9,7 +9,11 @@ import type { CurrentHostCapabilities, SystemCapabilities } from '../api/types'
  * will sit beside this store (or replace it). Gate create-VM / network UI on
  * these fields instead of hardcoding platform assumptions.
  */
-/** Safe defaults match macOS full feature set so a failed fetch never hides UI on Mac. */
+/**
+ * Safe defaults match macOS full feature set so a failed fetch never hides
+ * feature toggles on Mac. Arch-gated catalogs must use `hostArchKnown` so a
+ * failed fetch does not silently filter everything to arm64 (PAS-48).
+ */
 const defaultCapabilities: CurrentHostCapabilities = {
   platform: 'macOS',
   supportsBridgedNetworking: true,
@@ -29,6 +33,8 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   const capabilities = currentHost
   const loaded = ref(false)
   const loading = ref(false)
+  /** True only after a successful capabilities response with hostArch. */
+  const hostArchKnown = ref(false)
   let loadPromise: Promise<void> | null = null
 
   const supportsBridgedNetworking = computed(() => currentHost.value.supportsBridgedNetworking)
@@ -72,9 +78,10 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
                 : defaultCapabilities.hostCpuCount,
             guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
           }
+          hostArchKnown.value = typeof data.hostArch === 'string' && data.hostArch.length > 0
         }
       } catch {
-        // Keep defaults on network/server errors
+        // Keep defaults on network/server errors; hostArchKnown stays false.
       } finally {
         loaded.value = true
         loading.value = false
@@ -91,6 +98,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     capabilities,
     loaded,
     loading,
+    hostArchKnown,
     supportsBridgedNetworking,
     supportsManagedBridgeDaemon,
     supportsUSBPassthrough,

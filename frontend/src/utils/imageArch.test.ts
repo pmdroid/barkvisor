@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   detectImageArch,
   hostArchToImageArch,
+  imageArchSupportedOnHost,
+  normalizeImageArch,
   resolveImageArch,
   runnableImageArches,
 } from './imageArch'
@@ -93,21 +95,28 @@ describe('hostArchToImageArch / resolveImageArch', () => {
   })
 })
 
+describe('normalizeImageArch / imageArchSupportedOnHost (PAS-48)', () => {
+  test('strict normalize does not coerce unknown to arm64', () => {
+    expect(normalizeImageArch('amd64')).toBe('x86_64')
+    expect(normalizeImageArch('aarch64')).toBe('arm64')
+    expect(normalizeImageArch('armhf')).toBeNull()
+    expect(normalizeImageArch('riscv64')).toBeNull()
+    expect(normalizeImageArch('')).toBeNull()
+    expect(normalizeImageArch(null)).toBeNull()
+  })
+
+  test('catalog support uses strict image labels', () => {
+    expect(imageArchSupportedOnHost('amd64', 'x86_64')).toBe(true)
+    expect(imageArchSupportedOnHost('x86_64', 'arm64')).toBe(false)
+    expect(imageArchSupportedOnHost('armhf', 'arm64')).toBe(false)
+    expect(imageArchSupportedOnHost('', 'arm64')).toBe(false)
+  })
+})
+
 describe('runnableImageArches (PAS-48)', () => {
-  test('defaults to host arch when guestTypes empty', () => {
+  test('is host arch only', () => {
     expect([...runnableImageArches('arm64')]).toEqual(['arm64'])
     expect([...runnableImageArches('x86_64')]).toEqual(['x86_64'])
-  })
-
-  test('ignores foreign guestType arches (static table no-op bug)', () => {
-    // Old API listed every profile (both arches) → must not re-open x86 on arm host.
-    const arches = runnableImageArches('arm64', ['arm64', 'x86_64', 'arm64', 'x86_64'])
-    expect([...arches]).toEqual(['arm64'])
-    expect(arches.has('x86_64')).toBe(false)
-  })
-
-  test('keeps host arch when guestTypes only list foreign', () => {
-    const arches = runnableImageArches('x86_64', ['arm64'])
-    expect([...arches]).toEqual(['x86_64'])
+    expect([...runnableImageArches('amd64')]).toEqual(['x86_64'])
   })
 })

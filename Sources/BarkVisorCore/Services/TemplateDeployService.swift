@@ -48,6 +48,9 @@ public enum TemplateDeployService {
         let template = try await fetchTemplate(id: options.templateId, db: db)
         try validateInputs(template: template, inputs: options.inputs)
         let repoImage = try await resolveRepoImage(template: template, db: db)
+        // PAS-48: reject before downloading a multi-hundred-MB foreign-arch image.
+        // createVM also guards via validateCreateVMInputs; this is the early gate.
+        try PlatformCapabilities.requireCompatibleGuestArch(repoImage.arch)
 
         let localImage = try await db.read { db in
             try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl)

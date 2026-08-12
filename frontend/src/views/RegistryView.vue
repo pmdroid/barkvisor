@@ -19,7 +19,11 @@ import AppModal from '../components/ui/AppModal.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
-import { runnableImageArches } from '../utils/imageArch'
+import {
+  detectImageArch,
+  hostArchToImageArch,
+  imageArchSupportedOnHost,
+} from '../utils/imageArch'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
 const router = useRouter()
@@ -32,16 +36,26 @@ const caps = useCapabilitiesStore()
 // Tab
 const activeTab = ref<'templates' | 'images'>('templates')
 
-/** Guest image arches this host can run natively (PAS-48). */
-const supportedImageArches = computed(() =>
-  runnableImageArches(
-    caps.hostArch,
-    (caps.guestTypes ?? []).map(g => g.arch),
-  ),
-)
+/**
+ * Catalog arch gate (PAS-48). Fail open until hostArch is known so a failed
+ * capabilities fetch does not empty catalogs on x86_64 hosts.
+ */
+function imageArchSupported(arch: string | null | undefined): boolean {
+  if (!caps.hostArchKnown) return true
+  return imageArchSupportedOnHost(arch, caps.hostArch)
+}
 
-function imageArchSupported(arch: string): boolean {
-  return (supportedImageArches.value as Set<string>).has(arch)
+/** Resolve a template's guest arch from catalog image or imageSlug. */
+function templateArchSupported(t: VMTemplate): boolean {
+  if (!caps.hostArchKnown) return true
+  for (const imgs of Object.values(repoStore.imagesByRepo)) {
+    const match = imgs.find((i) => i.slug === t.imageSlug)
+    if (match) return imageArchSupported(match.arch)
+  }
+  const fromSlug = detectImageArch(t.imageSlug).arch
+  if (fromSlug) return fromSlug === hostArchToImageArch(caps.hostArch)
+  // Unknown arch: keep visible; backend deploy still blocks foreign arch.
+  return true
 }
 
 // Repos filtered by active tab
@@ -56,7 +70,9 @@ const activeRepos = computed(() => activeTab.value === 'templates' ? templateRep
 // Tab counts — independent of selectedRepoId so they stay stable when switching tabs
 const templateTabCount = computed(() => {
   const repoIds = new Set(templateRepos.value.map(r => r.id))
-  return templateStore.templates.filter(t => t.repositoryId && repoIds.has(t.repositoryId)).length
+  return templateStore.templates.filter(
+    (t) => t.repositoryId && repoIds.has(t.repositoryId) && templateArchSupported(t),
+  ).length
 })
 const imageTabCount = computed(() => {
   let count = 0
@@ -106,9 +122,18 @@ const iconMap: Record<string, string> = {
 }
 
 const repoTemplates = computed(() => {
-  if (selectedRepoId.value === '__all__') return templateStore.templates.filter(t => templateRepos.value.some(r => r.id === t.repositoryId))
-  if (!selectedRepoId.value) return []
-  return templateStore.templates.filter(t => t.repositoryId === selectedRepoId.value)
+  let list: VMTemplate[]
+  if (selectedRepoId.value === '__all__') {
+    list = templateStore.templates.filter((t) =>
+      templateRepos.value.some((r) => r.id === t.repositoryId),
+    )
+  } else if (!selectedRepoId.value) {
+    list = []
+  } else {
+    list = templateStore.templates.filter((t) => t.repositoryId === selectedRepoId.value)
+  }
+  // Hide templates whose catalog image cannot run on this host (PAS-48).
+  return list.filter(templateArchSupported)
 })
 
 const availableCategories = computed(() => {
