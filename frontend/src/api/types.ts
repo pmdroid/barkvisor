@@ -344,6 +344,26 @@ export interface MetricSample {
   diskWriteBytes: number
 }
 
+export interface HostStorageMetric {
+  path: string
+  totalBytes: number | null
+  freeBytes: number | null
+  kind?: string
+}
+
+/** Unified host metrics (PAS-85). temperatureC is null when no sensor is readable. */
+export interface HostMetrics {
+  hostId: string
+  collectedAt: string
+  cpuLoadPercent: number
+  memoryTotalMB: number
+  memoryUsedMB: number
+  storage: HostStorageMetric[]
+  temperatureC: number | null
+  uptimeSeconds: number
+  agentHealthy: boolean
+}
+
 export interface SystemStats {
   hostCpuPercent: number
   hostMemoryTotalMB: number
@@ -352,6 +372,9 @@ export interface SystemStats {
   totalVMs: number
   vmCpuPercent: number
   vmMemoryMB: number
+  metrics?: HostMetrics
+  historyRetentionMinutes?: number
+  historySampleIntervalSeconds?: number
 }
 
 export interface SystemStatsSample {

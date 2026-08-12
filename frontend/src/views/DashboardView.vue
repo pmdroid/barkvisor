@@ -7,6 +7,7 @@ import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample } from '../api/types'
+import { formatTemperatureC } from '../utils/format'
 import { storeToRefs } from 'pinia'
 import { Line } from 'vue-chartjs'
 import {
@@ -198,6 +199,21 @@ const memSparkData = computed(() => ({
           <div class="dash-stat-bar" v-if="storageSummary"><div class="dash-stat-bar-fill" :style="{ width: Math.min(storageSummary.totalActualBytes / storageSummary.volumeTotalBytes * 100, 100) + '%', background: 'var(--blue)' }" /></div>
         </div>
       </div>
+
+      <div class="dash-stat" style="border-left: 3px solid var(--amber)">
+        <div class="dash-stat-content">
+          <div class="dash-stat-top">
+            <span class="dash-stat-number">{{ formatTemperatureC(stats.metrics?.temperatureC) ?? '—' }}</span>
+            <span class="dash-stat-trend" :class="stats.metrics?.temperatureC == null ? '' : 'up'">
+              {{ stats.metrics?.temperatureC == null ? 'unavailable' : 'host' }}
+            </span>
+          </div>
+          <div class="dash-stat-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+            Temperature
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Recent VMs -->
@@ -254,7 +270,7 @@ const memSparkData = computed(() => ({
 /* Stat Cards */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 40px;
 }
