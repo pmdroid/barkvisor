@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import AppSelect from '../ui/AppSelect.vue'
 import CapabilityGate from '../ui/CapabilityGate.vue'
+import UnsupportedHint from '../ui/UnsupportedHint.vue'
 import type { Network, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../../api/types'
 import { useFeature } from '../../composables/useFeature'
 
 const usb = useFeature('usbPassthrough')
+const bridged = useFeature('bridgedNetworking')
 
 defineProps<{
   networks: Network[]
@@ -52,6 +54,7 @@ const emit = defineEmits<{
         NAT provides internet access via the host. Bridged networks give the VM its own IP on the local network.
         Manage networks under <strong>Settings &rarr; Network</strong>.
       </span>
+      <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />
     </div>
     <div v-if="selectedNetworkId && selectedNetwork" style="margin-top:12px;font-size:12px;color:var(--text-secondary)">
       <div style="margin-bottom:4px;font-weight:500">{{ selectedNetwork.name }} &mdash; {{ selectedNetwork.mode }}</div>

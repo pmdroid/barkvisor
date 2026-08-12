@@ -77,7 +77,8 @@ struct LinuxBridgeUSBTests {
             let err = #expect(throws: BarkVisorError.self) {
                 try LinuxHostNetwork.requireBridgeableInterface("no_such_iface_xyz")
             }
-            #expect(err?.httpStatus == 503 || err?.httpStatus == 400 || err?.httpStatus == 500)
+            #expect(err?.httpStatus == 422)
+            #expect(err?.code == "interface_missing")
         #endif
     }
 }

@@ -155,6 +155,10 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(store.supportsInAppUpdate).toBe(false)
     expect(store.guestTypes).toEqual([])
     expect(store.details).toEqual([])
+    expect(store.networkModes).toEqual([
+      { mode: 'nat', supported: true },
+      { mode: 'bridged', supported: false },
+    ])
     expect(store.runnableArches).toEqual([])
     expect(store.isArchRunnable('arm64')).toBe(false)
     expect(store.isArchRunnable('x86_64')).toBe(false)
@@ -251,5 +255,43 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(store.isSupported('bridgedNetworking')).toBe(false)
     expect(store.isSupported('kvmDevice')).toBe(true)
     expect(store.isSupported('unknownFeature')).toBe(false)
+  })
+
+  test('uses server networkModes and falls back when omitted', async () => {
+    const withModes = {
+      ...arm64Caps,
+      supportsBridgedNetworking: false,
+      networkModes: [
+        { mode: 'nat', supported: true },
+        {
+          mode: 'bridged',
+          supported: false,
+          reasonCode: 'helper_missing',
+          remediation: 'Install qemu-bridge-helper.',
+        },
+      ],
+    }
+    globalThis.fetch = mock().mockResolvedValue(jsonResponse(withModes)) as unknown as typeof fetch
+    const store = useCapabilitiesStore()
+    await store.fetchCapabilities()
+    expect(store.networkModes.map((m) => m.mode)).toEqual(['nat', 'bridged'])
+    expect(store.networkModes.find((m) => m.mode === 'bridged')?.reasonCode).toBe('helper_missing')
+
+    setActivePinia(createPinia())
+    const legacy = {
+      ...arm64Caps,
+      supportsBridgedNetworking: false,
+      networkModes: undefined,
+      details: [
+        { code: 'bridgedNetworking', supported: false, remediation: 'Use NAT.' },
+      ],
+    }
+    globalThis.fetch = mock().mockResolvedValue(jsonResponse(legacy)) as unknown as typeof fetch
+    const fallback = useCapabilitiesStore()
+    await fallback.fetchCapabilities()
+    expect(fallback.networkModes).toEqual([
+      { mode: 'nat', supported: true },
+      { mode: 'bridged', supported: false, remediation: 'Use NAT.' },
+    ])
   })
 })

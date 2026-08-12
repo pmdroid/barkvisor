@@ -33,6 +33,7 @@ const showCreate = ref(false)
 const editingId = ref<string | null>(null)
 const newName = ref('')
 const newMode = ref<'nat' | 'bridged'>('nat')
+const { networkModes } = storeToRefs(caps)
 const newBridge = ref('')
 const newDns = ref('')
 const loading = ref(false)
@@ -83,6 +84,19 @@ const usedBridgeInterfaces = computed(() => {
     }
   }
   return used
+})
+
+function modeLabel(mode: string): string {
+  if (mode === 'nat') return 'NAT'
+  if (mode === 'bridged') return 'Bridged'
+  return mode
+}
+
+const selectedModeRow = computed(() => networkModes.value.find((m) => m.mode === newMode.value))
+
+const typedBridgeMissing = computed(() => {
+  if (newMode.value !== 'bridged' || !newBridge.value) return false
+  return !hostInterfaces.value.some((i) => i.name === newBridge.value)
 })
 
 /** Show "setup bridge daemon" only when the host manages socket_vmnet (macOS). */
@@ -380,10 +394,20 @@ async function setupBridgeInline() {
     <div class="form-group">
       <label>Mode</label>
       <AppSelect v-model="newMode">
-        <option value="nat">NAT</option>
-        <option value="bridged" :disabled="!bridged.available">Bridged</option>
+        <option
+          v-for="m in networkModes"
+          :key="m.mode"
+          :value="m.mode"
+          :disabled="!m.supported"
+        >
+          {{ modeLabel(m.mode) }}
+        </option>
       </AppSelect>
-      <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />
+      <UnsupportedHint
+        v-if="selectedModeRow && !selectedModeRow.supported"
+        :text="selectedModeRow.remediation || bridged.explanation"
+      />
+      <UnsupportedHint v-else-if="!bridged.available" :text="bridged.explanation" />
     </div>
     <div v-if="bridged.available && newMode === 'bridged'" class="form-group">
       <label>Bridge Interface</label>
@@ -407,6 +431,10 @@ async function setupBridgeInline() {
         <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
           Use an existing host bridge (e.g. br0). Create it with ip/netplan before starting VMs.
           Bridges without an IP still appear when detected; you can also type the name.
+        </p>
+        <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
+          Interface "{{ newBridge }}" is not on this host. Create it first — save and VM start will
+          fail closed with a structured error instead of a QEMU log.
         </p>
       </template>
       <div v-if="selectedInterfaceNeedsBridge" class="bridge-warning">

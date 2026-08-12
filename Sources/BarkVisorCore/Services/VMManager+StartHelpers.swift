@@ -75,8 +75,6 @@ extension VMManager {
     func validateBridgeIfNeeded(network: Network?) async throws -> String? {
         guard let network, network.mode == "bridged" else { return nil }
 
-        try PlatformCapabilities.requireBridgedNetworking()
-
         let iface = network.bridge ?? {
             #if os(macOS)
                 "en0"
@@ -85,9 +83,10 @@ extension VMManager {
             #endif
         }()
 
+        try NetworkCapability.requireBridgedInterface(iface)
+
         #if os(Linux)
             // QEMU `-netdev bridge` only needs a live host bridge + qemu-bridge-helper ACL.
-            try LinuxHostNetwork.requireBridgeableInterface(iface)
             return nil
         #else
             let bridge = try await dbPool.read { db in

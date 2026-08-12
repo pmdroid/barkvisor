@@ -67,6 +67,38 @@ final class NetworkServiceTests {
         #expect(error?.code == "bridged_networking")
     }
 
+    @Test func `create bridged missing interface is 422 when advertised`() async {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard advertised else { return }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "ghost-br", mode: "bridged", bridge: "bv-missing-if",
+                    macAddress: nil, dnsServer: nil,
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 422)
+        #expect(error?.code == "interface_missing")
+    }
+
+    @Test func `create bridged invalid name is invalid_bridge when advertised`() async {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard advertised else { return }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "bad-br", mode: "bridged", bridge: "bad name!",
+                    macAddress: nil, dnsServer: nil,
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.code == "invalid_bridge")
+    }
+
     @Test func `create invalid mode rejected`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             try await NetworkService.create(
