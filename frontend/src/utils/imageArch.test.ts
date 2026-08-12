@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { detectImageArch, hostArchToImageArch, resolveImageArch } from './imageArch'
+import {
+  detectImageArch,
+  hostArchToImageArch,
+  resolveImageArch,
+  runnableImageArches,
+} from './imageArch'
 
 describe('detectImageArch', () => {
   const x86 = [
@@ -85,5 +90,24 @@ describe('hostArchToImageArch / resolveImageArch', () => {
     expect(resolveImageArch('ubuntu-24.04-arm64.iso', 'x86_64')).toBe('arm64')
     expect(resolveImageArch('mystery.iso', 'x86_64')).toBe('x86_64')
     expect(resolveImageArch('mystery.iso', 'arm64')).toBe('arm64')
+  })
+})
+
+describe('runnableImageArches (PAS-48)', () => {
+  test('defaults to host arch when guestTypes empty', () => {
+    expect([...runnableImageArches('arm64')]).toEqual(['arm64'])
+    expect([...runnableImageArches('x86_64')]).toEqual(['x86_64'])
+  })
+
+  test('ignores foreign guestType arches (static table no-op bug)', () => {
+    // Old API listed every profile (both arches) → must not re-open x86 on arm host.
+    const arches = runnableImageArches('arm64', ['arm64', 'x86_64', 'arm64', 'x86_64'])
+    expect([...arches]).toEqual(['arm64'])
+    expect(arches.has('x86_64')).toBe(false)
+  })
+
+  test('keeps host arch when guestTypes only list foreign', () => {
+    const arches = runnableImageArches('x86_64', ['arm64'])
+    expect([...arches]).toEqual(['x86_64'])
   })
 })

@@ -19,6 +19,7 @@ import AppModal from '../components/ui/AppModal.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
+import { runnableImageArches } from '../utils/imageArch'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
 const router = useRouter()
@@ -31,20 +32,16 @@ const caps = useCapabilitiesStore()
 // Tab
 const activeTab = ref<'templates' | 'images'>('templates')
 
-/** Guest image arches this host can run (from capabilities); fall back to hostArch. */
-const supportedImageArches = computed(() => {
-  const fromGuests = new Set(
-    (caps.guestTypes ?? [])
-      .map(g => g.arch)
-      .filter((a): a is string => typeof a === 'string' && a.length > 0),
-  )
-  if (fromGuests.size > 0) return fromGuests
-  const host = caps.hostArch || 'arm64'
-  return new Set([host])
-})
+/** Guest image arches this host can run natively (PAS-48). */
+const supportedImageArches = computed(() =>
+  runnableImageArches(
+    caps.hostArch,
+    (caps.guestTypes ?? []).map(g => g.arch),
+  ),
+)
 
 function imageArchSupported(arch: string): boolean {
-  return supportedImageArches.value.has(arch)
+  return (supportedImageArches.value as Set<string>).has(arch)
 }
 
 // Repos filtered by active tab

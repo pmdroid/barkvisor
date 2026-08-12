@@ -5,6 +5,7 @@ import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import type { RepositoryImage } from '../api/types'
+import { runnableImageArches } from '../utils/imageArch'
 import AppSelect from './ui/AppSelect.vue'
 
 const props = defineProps<{ repoId: string }>()
@@ -26,20 +27,21 @@ async function fetchImages() {
 
 watch(() => props.repoId, fetchImages, { immediate: true })
 
-/** Guest image arches this host can run (arm64 and/or x86_64). */
-const supportedImageArches = computed(() => {
-  const fromGuests = new Set(
-    (caps.guestTypes ?? [])
-      .map(g => g.arch)
-      .filter((a): a is string => typeof a === 'string' && a.length > 0),
-  )
-  if (fromGuests.size > 0) return fromGuests
-  return new Set([caps.hostArch || 'arm64'])
-})
+/** Guest image arches this host can run natively (PAS-48). */
+const supportedImageArches = computed(() =>
+  runnableImageArches(
+    caps.hostArch,
+    (caps.guestTypes ?? []).map(g => g.arch),
+  ),
+)
+
+function imageArchSupported(arch: string): boolean {
+  return (supportedImageArches.value as Set<string>).has(arch)
+}
 
 const filteredImages = computed(() => {
   return images.value.filter(img => {
-    if (!supportedImageArches.value.has(img.arch)) return false
+    if (!imageArchSupported(img.arch)) return false
     if (filterType.value && img.imageType !== filterType.value) return false
     return true
   })
