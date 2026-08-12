@@ -180,6 +180,21 @@ struct CapabilityDetailTests {
         #expect(PlatformCapabilities.Feature.usbPassthrough.errorCode == "usb_passthrough")
         #expect(PlatformCapabilities.Feature.managedBridgeDaemon.errorCode == "managed_bridge_daemon")
     }
+
+    @Test func `requireBridgedNetworking matches capabilities product flag`() {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        if advertised {
+            #expect(throws: Never.self) {
+                try PlatformCapabilities.requireBridgedNetworking()
+            }
+        } else {
+            let err = #expect(throws: BarkVisorError.self) {
+                try PlatformCapabilities.requireBridgedNetworking()
+            }
+            #expect(err?.code == "bridged_networking")
+            #expect(err?.httpStatus == 422)
+        }
+    }
 }
 
 // MARK: - Fixtures

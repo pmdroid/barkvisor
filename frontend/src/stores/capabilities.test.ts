@@ -192,9 +192,11 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(store.isArchRunnable('arm64')).toBe(false)
     expect(store.detailFor('kvmDevice')?.reasonCode).toBe('kvm_missing')
     expect(store.detailFor('tcgOnly')?.supported).toBe(true)
+    expect(store.detailFor('tcgOnly')?.remediation).toBe('Guests run under TCG.')
     expect(store.detailFor('inAppUpdate')?.reasonCode).toBe('linux_pkg_update')
     expect(store.explanationFor('inAppUpdate')).toBe('Use the package manager.')
-    expect(store.explanationFor('tcgOnly')).toBe('Guests run under TCG.')
+    // tcgOnly is supported (degraded); explanationFor is for unsupported actions only.
+    expect(store.explanationFor('tcgOnly')).toBeUndefined()
   })
 
   test('older server without runnableArches derives from hostArch only', async () => {
