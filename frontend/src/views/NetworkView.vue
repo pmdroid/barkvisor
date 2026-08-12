@@ -99,6 +99,8 @@ const typedBridgeMissing = computed(() => {
   return !hostInterfaces.value.some((i) => i.name === newBridge.value)
 })
 
+const cannotSaveBridged = computed(() => newMode.value === 'bridged' && !bridged.available)
+
 /** Show "setup bridge daemon" only when the host manages socket_vmnet (macOS). */
 const selectedInterfaceNeedsBridge = computed(() => {
   if (!managedBridge.available) return false
@@ -453,7 +455,7 @@ async function setupBridgeInline() {
     <FormError v-if="error" :message="error" />
     <template #actions>
       <AppButton @click="showCreate = false">Cancel</AppButton>
-      <AppButton variant="primary" :loading="loading" :loading-text="'Saving...'" @click="saveNetwork">{{ editingId ? 'Save' : 'Create' }}</AppButton>
+      <AppButton variant="primary" :loading="loading" :disabled="cannotSaveBridged" :loading-text="'Saving...'" @click="saveNetwork">{{ editingId ? 'Save' : 'Create' }}</AppButton>
     </template>
   </AppModal>
 
