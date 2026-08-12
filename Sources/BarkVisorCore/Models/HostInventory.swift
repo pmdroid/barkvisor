@@ -3,11 +3,13 @@ import Foundation
 /// Versioned host inventory snapshot (schemaVersion 1).
 ///
 /// Single source of truth for "what is this machine?" — projected into
-/// `/api/system/capabilities`, diagnostics, and later `/api/agent/inventory`.
+/// `/api/system/capabilities`, diagnostics, and `GET /api/agent/inventory`.
 ///
 /// **Boundary:** one BarkVisor process ↔ one host ↔ one inventory.
 public struct HostInventory: Codable, Sendable, Equatable {
     public let schemaVersion: Int
+    /// Durable UUID from `dataDir/host-id` (PAS-42). Survives restart.
+    public let hostId: String
     public let displayName: String
     public let agent: AgentInfo
     public let platform: PlatformInfo
@@ -20,6 +22,7 @@ public struct HostInventory: Codable, Sendable, Equatable {
 
     public init(
         schemaVersion: Int = 1,
+        hostId: String,
         displayName: String,
         agent: AgentInfo,
         platform: PlatformInfo,
@@ -31,6 +34,7 @@ public struct HostInventory: Codable, Sendable, Equatable {
         collectedAt: String,
     ) {
         self.schemaVersion = schemaVersion
+        self.hostId = hostId
         self.displayName = displayName
         self.agent = agent
         self.platform = platform

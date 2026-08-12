@@ -2,17 +2,22 @@ import Foundation
 
 /// Assembles a complete `HostInventory` from platform helpers.
 ///
-/// Callers (capabilities API, diagnostics, future agent API) **project** from this
-/// snapshot rather than re-querying `PlatformHost` / `PlatformCapabilities` ad hoc.
+/// Callers (capabilities API, diagnostics, `/api/agent/inventory`) **project**
+/// from this snapshot rather than re-querying `PlatformHost` / `PlatformCapabilities` ad hoc.
 public enum HostInventoryService {
     public static let currentSchemaVersion = 1
 
     /// Build a fresh inventory for this process's host.
+    ///
+    /// `hostId` defaults to the durable UUID at `dataDir/host-id`. Pass an
+    /// explicit value in tests to avoid touching the real data directory.
     public static func snapshot(
         now: Date = Date(),
         dataDir: URL = Config.dataDir,
         version: String = Config.version,
+        hostId: String? = nil,
     ) -> HostInventory {
+        let resolvedHostId = hostId ?? HostIdentity.loadOrCreate(dataDir: dataDir).uuidString
         let hostname = ProcessInfo.processInfo.hostName
         let arch = PlatformCapabilities.hostArch
         let accelerator = PlatformCapabilities.accelerator
@@ -52,6 +57,7 @@ public enum HostInventoryService {
 
         return HostInventory(
             schemaVersion: currentSchemaVersion,
+            hostId: resolvedHostId,
             displayName: hostname,
             agent: AgentInfo(version: version),
             platform: PlatformInfo(
