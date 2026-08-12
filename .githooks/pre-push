@@ -1,0 +1,17 @@
+#!/bin/sh
+# Refuse to push unless the same checks CI runs locally are green.
+# Bypass only with SKIP_PREPUSH=1 (EVE agents must never set this).
+set -eu
+
+if [ "${SKIP_PREPUSH:-}" = "1" ]; then
+  echo "pre-push: SKIP_PREPUSH=1, skipping local CI gate" >&2
+  exit 0
+fi
+
+if ! command -v mise >/dev/null 2>&1; then
+  echo "pre-push: mise not found; install mise or set SKIP_PREPUSH=1" >&2
+  exit 1
+fi
+
+echo "pre-push: mise run prepush (lint + swift test + frontend test)" >&2
+exec mise run prepush

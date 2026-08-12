@@ -30,6 +30,10 @@ description = "Run frontend unit tests"
 dir = "frontend"
 run = ["bun install", "bun test"]
 
+[tasks.prepush]
+description = "Local CI gate: lint + Swift tests + frontend tests (must pass before push)"
+depends = ["lint", "test", "frontend-test"]
+
 [tasks.website]
 description = "Build unified landing + docs site (website/dist)"
 dir = "website"

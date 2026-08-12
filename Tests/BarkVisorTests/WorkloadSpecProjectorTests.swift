@@ -6,7 +6,9 @@ import Testing
 struct WorkloadSpecProjectorTests {
     /// CI macOS runners have 3 logical CPUs; Linux runners have 4.
     /// Keep fixtures at or below that so apply/validate do not host-cap.
-    private var fixtureCPUCount: Int { min(2, max(1, PlatformHost.cpuCount)) }
+    private var fixtureCPUCount: Int {
+        min(2, max(1, PlatformHost.cpuCount))
+    }
 
     private func makeVM() -> VM {
         VM(
