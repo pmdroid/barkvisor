@@ -30,8 +30,13 @@ struct HostInventoryTests {
         #expect(inv.virtualization.defaultGuestArch == PlatformCapabilities.defaultGuestArch)
         #expect(
             inv.virtualization.features.bridgedNetworking
-                == PlatformCapabilities.supportsBridgedNetworking,
+                == HostInventoryService.bridgedNetworkingSupported(
+                    platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                    qemuBridgeHelper: inv.virtualization.features.qemuBridgeHelper,
+                    os: inv.platform.os,
+                ),
         )
+        #expect(inv.virtualization.features.qemuBridgeHelper == HostInventoryService.qemuBridgeHelperPresent())
         #expect(
             inv.virtualization.features.managedBridgeDaemon
                 == PlatformCapabilities.supportsManagedBridgeDaemon,
@@ -113,5 +118,43 @@ struct HostInventoryTests {
             #expect(HostInventoryService.kvmDevicePresent() == false)
             #expect(snapshot().virtualization.features.kvmDevice == false)
         #endif
+    }
+
+    @Test func `bridged product flag requires qemu-bridge-helper on linux`() {
+        #expect(
+            HostInventoryService.bridgedNetworkingSupported(
+                platformSupports: true,
+                qemuBridgeHelper: true,
+                os: "Linux",
+            ),
+        )
+        #expect(
+            !HostInventoryService.bridgedNetworkingSupported(
+                platformSupports: true,
+                qemuBridgeHelper: false,
+                os: "Linux",
+            ),
+        )
+        #expect(
+            !HostInventoryService.bridgedNetworkingSupported(
+                platformSupports: false,
+                qemuBridgeHelper: true,
+                os: "Linux",
+            ),
+        )
+        #expect(
+            HostInventoryService.bridgedNetworkingSupported(
+                platformSupports: true,
+                qemuBridgeHelper: false,
+                os: "macOS",
+            ),
+        )
+        #expect(
+            !HostInventoryService.bridgedNetworkingSupported(
+                platformSupports: false,
+                qemuBridgeHelper: false,
+                os: "macOS",
+            ),
+        )
     }
 }

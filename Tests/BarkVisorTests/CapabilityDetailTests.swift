@@ -75,20 +75,22 @@ struct CapabilityDetailTests {
     }
 
     @Test func `unsupported bridged networking on linux uses helper_missing`() {
-        let features = linuxKVMInventory().virtualization.features
-        let inv = makeInventory(
-            os: "Linux",
-            arch: "x86_64",
-            accelerator: "kvm",
-            features: VirtualizationFeatures(
-                bridgedNetworking: false,
-                managedBridgeDaemon: features.managedBridgeDaemon,
-                usbPassthrough: features.usbPassthrough,
-                inAppUpdate: features.inAppUpdate,
-                kvmDevice: features.kvmDevice,
-                qemuBridgeHelper: features.qemuBridgeHelper,
+        let helperMissing = false
+        let base = linuxKVMInventory().virtualization.features
+        let features = VirtualizationFeatures(
+            bridgedNetworking: HostInventoryService.bridgedNetworkingSupported(
+                platformSupports: true,
+                qemuBridgeHelper: helperMissing,
+                os: "Linux",
             ),
+            managedBridgeDaemon: base.managedBridgeDaemon,
+            usbPassthrough: base.usbPassthrough,
+            inAppUpdate: base.inAppUpdate,
+            kvmDevice: base.kvmDevice,
+            qemuBridgeHelper: helperMissing,
         )
+        #expect(!features.bridgedNetworking)
+        let inv = makeInventory(os: "Linux", arch: "x86_64", accelerator: "kvm", features: features)
         let bridged = CapabilityDetailBuilder.detail(for: .bridgedNetworking, inventory: inv)
         #expect(!bridged.supported)
         #expect(bridged.reasonCode == CapabilityReasonCode.helperMissing.rawValue)
@@ -140,9 +142,16 @@ struct CapabilityDetailTests {
                 #expect(byCode[.kvmDevice]?.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
                 #expect(byCode[.tcgOnly]?.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
             }
+            let helperPresent = HostInventoryService.qemuBridgeHelperPresent()
+            #expect(byCode[.bridgedNetworking]?.supported == helperPresent)
+            if !helperPresent {
+                #expect(byCode[.bridgedNetworking]?.reasonCode == CapabilityReasonCode.helperMissing.rawValue)
+                #expect(byCode[.bridgedNetworking]?.remediation?.contains("qemu-bridge-helper") == true)
+            }
         #elseif os(macOS)
             #expect(byCode[.managedBridgeDaemon]?.supported == true)
             #expect(byCode[.inAppUpdate]?.supported == true)
+            #expect(byCode[.bridgedNetworking]?.supported == true)
         #endif
     }
 

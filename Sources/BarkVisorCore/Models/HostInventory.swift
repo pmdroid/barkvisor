@@ -144,6 +144,7 @@ public struct VirtualizationInfo: Codable, Sendable, Equatable {
 }
 
 public struct VirtualizationFeatures: Codable, Sendable, Equatable {
+    /// Product bridged attach. Linux is true only when qemu-bridge-helper is present.
     public let bridgedNetworking: Bool
     public let managedBridgeDaemon: Bool
     public let usbPassthrough: Bool
