@@ -91,11 +91,8 @@ public enum PlatformCapabilities {
                 String(cString: $0)
             }
         }
-        switch machine {
-        case "arm64", "aarch64": return "arm64"
-        case "x86_64", "amd64": return "x86_64"
-        default: return machine.isEmpty ? "x86_64" : machine
-        }
+        let normalized = normalizedArch(machine)
+        return normalized.isEmpty ? "x86_64" : normalized
     }
 
     /// Default QEMU guest architecture for this host (`aarch64` / `x86_64`).
@@ -173,6 +170,36 @@ public enum PlatformCapabilities {
     public static func requireInAppUpdate() throws {
         guard supportsInAppUpdate else {
             throw BarkVisorError.updateFailed(unsupportedMessage(.inAppUpdate))
+        }
+    }
+
+    /// Whether a guest/workload arch label is compatible with this host.
+    ///
+    /// Labels are normalized the same way as ``hostArch`` (`arm64` / `x86_64`).
+    /// Cross-arch VMs are blocked by default: QEMU is launched with host
+    /// acceleration (`hvf`/`kvm`) and `-cpu host`, which fails badly on mismatch.
+    public static func isCompatibleGuestArch(_ guestArch: String) -> Bool {
+        normalizedArch(guestArch) == hostArch
+    }
+
+    /// Throw `BarkVisorError.badRequest` when guest arch ≠ host arch.
+    public static func requireCompatibleGuestArch(_ guestArch: String) throws {
+        let guest = normalizedArch(guestArch)
+        let host = hostArch
+        guard guest == host else {
+            throw BarkVisorError.badRequest(
+                "VM architecture (\(guest)) is not compatible with this host (\(host)). "
+                    + "Cross-architecture VMs are not supported.",
+            )
+        }
+    }
+
+    /// Normalize common arch aliases to API labels (`arm64` / `x86_64`).
+    public static func normalizedArch(_ arch: String) -> String {
+        switch arch {
+        case "arm64", "aarch64": return "arm64"
+        case "x86_64", "amd64": return "x86_64"
+        default: return arch
         }
     }
 }
