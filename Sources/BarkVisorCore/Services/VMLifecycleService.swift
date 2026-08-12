@@ -179,8 +179,7 @@ extension VMLifecycleService {
             throw BarkVisorError.badRequest("Cloud image not found or not ready")
         }
         if let profile = GuestProfiles.profile(for: params.vmType) {
-            let imageArch = cloudImage.arch == "amd64" ? "x86_64" : cloudImage.arch
-            let imageArchNorm = imageArch == "aarch64" ? "arm64" : imageArch
+            let imageArchNorm = PlatformCapabilities.normalizedArch(cloudImage.arch)
             guard imageArchNorm == profile.arch else {
                 throw BarkVisorError.badRequest(
                     "Image arch (\(cloudImage.arch)) does not match VM type (\(params.vmType))",
@@ -222,8 +221,7 @@ extension VMLifecycleService {
                 throw BarkVisorError.badRequest("ISO image not found or not ready")
             }
             if let profile = GuestProfiles.profile(for: params.vmType) {
-                let imageArch = iso.arch == "amd64" ? "x86_64" : iso.arch
-                let imageArchNorm = imageArch == "aarch64" ? "arm64" : imageArch
+                let imageArchNorm = PlatformCapabilities.normalizedArch(iso.arch)
                 guard imageArchNorm == profile.arch else {
                     throw BarkVisorError.badRequest(
                         "ISO arch (\(iso.arch)) does not match VM type (\(params.vmType))",
