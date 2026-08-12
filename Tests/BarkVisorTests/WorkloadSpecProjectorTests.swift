@@ -237,4 +237,90 @@ struct WorkloadSpecProjectorTests {
         )
         try WorkloadSpecProjector.validate(spec)
     }
+
+    @Test func `apply with empty disks preserves iso and data disks`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.metadata.description = "updated"
+        spec.spec.disks = []
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.bootDiskId == "disk-boot")
+        #expect(vm.decodedISOIds == ["iso-1"])
+        #expect(vm.decodedAdditionalDiskIds == ["disk-data"])
+        #expect(vm.description == "updated")
+    }
+
+    @Test func `apply with explicit disks replaces data and iso attachments`() throws {
+        var vm = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.disks = [WorkloadDisk(role: "boot", diskId: "disk-boot")]
+        try WorkloadSpecProjector.apply(spec, to: &vm)
+        #expect(vm.bootDiskId == "disk-boot")
+        #expect(vm.decodedISOIds.isEmpty)
+        #expect(vm.decodedAdditionalDiskIds.isEmpty)
+    }
+
+    @Test func `create params from spec uses spec cloudInit inline`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "from-spec"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 2, memoryMb: 1_024),
+                guestType: "linux-amd64",
+                cloudInit: WorkloadCloudInit(inline: "packages:\n  - vim\n"),
+            ),
+        )
+        let body = CreateVMRequest(
+            name: nil, vmType: nil, cpuCount: nil, memoryMB: nil,
+            diskSizeGB: 20, isoId: nil, cloudImageId: nil, cloudInit: nil,
+            networkId: nil, existingDiskId: nil, sharedPaths: nil,
+            portForwards: nil, usbDevices: nil, description: nil,
+            bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
+            spec: spec,
+        )
+        let params = try VMController.createParams(from: body)
+        #expect(params.cloudInit?.userData == "packages:\n  - vim\n")
+    }
+
+    @Test func `create params prefers flat cloudInit over spec inline`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "from-spec"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: 2, memoryMb: 1_024),
+                guestType: "linux-amd64",
+                cloudInit: WorkloadCloudInit(inline: "packages:\n  - vim\n"),
+            ),
+        )
+        let body = CreateVMRequest(
+            name: nil, vmType: nil, cpuCount: nil, memoryMB: nil,
+            diskSizeGB: 20, isoId: nil, cloudImageId: nil,
+            cloudInit: CloudInitConfig(sshAuthorizedKeys: nil, userData: "runcmd:\n  - echo hi\n"),
+            networkId: nil, existingDiskId: nil, sharedPaths: nil,
+            portForwards: nil, usbDevices: nil, description: nil,
+            bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
+            spec: spec,
+        )
+        let params = try VMController.createParams(from: body)
+        #expect(params.cloudInit?.userData == "runcmd:\n  - echo hi\n")
+    }
+
+    @Test func `metadata-only spec apply is not a hardware change`() throws {
+        let before = makeVM()
+        var after = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(after)
+        spec.metadata.name = "renamed"
+        spec.metadata.description = "only metadata"
+        try WorkloadSpecProjector.apply(spec, to: &after)
+        #expect(after.name == "renamed")
+        #expect(after.description == "only metadata")
+        #expect(!VMLifecycleService.detectHardwareChanges(before: before, after: after))
+    }
+
+    @Test func `cpu change on spec apply is a hardware change`() throws {
+        let before = makeVM()
+        var after = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(after)
+        spec.spec.resources.cpu = 1
+        try WorkloadSpecProjector.apply(spec, to: &after)
+        #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
+    }
 }

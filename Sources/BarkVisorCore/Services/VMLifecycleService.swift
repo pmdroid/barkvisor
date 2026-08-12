@@ -89,8 +89,11 @@ public enum VMLifecycleService {
                 throw BarkVisorError.notFound()
             }
             let isRunning = vm.state != "stopped" && vm.state != "error"
+            let before = vm
             try WorkloadSpecProjector.apply(spec, to: &vm)
-            if isRunning { vm.pendingChanges = true }
+            if isRunning, detectHardwareChanges(before: before, after: vm) {
+                vm.pendingChanges = true
+            }
             vm.updatedAt = iso8601.string(from: Date())
             vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
