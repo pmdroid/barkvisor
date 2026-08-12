@@ -112,6 +112,11 @@ public actor VMManager: VMStateQuerying {
             throw BarkVisorError.vmAlreadyRunning(vmID)
         }
 
+        // PAS-48: block pre-existing foreign-arch rows before QEMU launch / state flip.
+        try PlatformCapabilities.requireCompatibleGuestArch(
+            GuestProfiles.require(loaded.vm.vmType).arch,
+        )
+
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)
 
         // Fail fast if hostfwd ports are already bound (another VM, or orphaned QEMU).

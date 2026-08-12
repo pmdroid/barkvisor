@@ -11,6 +11,11 @@ struct CrossArchCompatibilityTests {
         #expect(PlatformCapabilities.normalizedArch("aarch64") == "arm64")
         #expect(PlatformCapabilities.normalizedArch("x86_64") == "x86_64")
         #expect(PlatformCapabilities.normalizedArch("amd64") == "x86_64")
+        // Align with frontend normalizeImageArch (case, trim, x64).
+        #expect(PlatformCapabilities.normalizedArch("x64") == "x86_64")
+        #expect(PlatformCapabilities.normalizedArch("X86_64") == "x86_64")
+        #expect(PlatformCapabilities.normalizedArch("AMD64") == "x86_64")
+        #expect(PlatformCapabilities.normalizedArch(" AArch64 ") == "arm64")
     }
 
     // MARK: - Create/deploy validation wiring
@@ -125,14 +130,105 @@ struct CrossArchCompatibilityTests {
         }
     }
 
+    /// Template deploy rejects foreign-arch catalog images before download starts (PAS-48 P1).
+    /// Exercises `TemplateDeployService.deploy` so removing the gate at resolve time fails this test.
+    @Test func `template deploy rejects foreign arch before download`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
 
-    /// Template deploy calls requireCompatibleGuestArch on repoImage.arch before download (PAS-48 P1).
-    @Test func `template deploy early gate uses same host arch check`() throws {
-        let host = PlatformCapabilities.hostArch
-        let foreign = host == "arm64" ? "x86_64" : "arm64"
-        #expect(throws: BarkVisorError.self) {
-            try PlatformCapabilities.requireCompatibleGuestArch(foreign)
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        var migrator = DatabaseMigrator()
+        migrator.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
         }
+        try migrator.migrate(pool)
+
+        let host = PlatformCapabilities.hostArch
+        let foreignArch = host == "arm64" ? "x86_64" : "arm64"
+        let now = iso8601.string(from: Date())
+        let repoId = UUID().uuidString
+        let templateId = UUID().uuidString
+        let imageSlug = "foreign-cloud-\(foreignArch)"
+
+        try await pool.write { db in
+            try ImageRepository(
+                id: repoId,
+                name: "test-templates",
+                url: "https://example.com/catalog.json",
+                isBuiltIn: false,
+                repoType: "templates",
+                lastSyncedAt: nil,
+                lastError: nil,
+                syncStatus: "idle",
+                createdAt: now,
+                updatedAt: now,
+            ).insert(db)
+
+            try RepositoryImage(
+                id: UUID().uuidString,
+                repositoryId: repoId,
+                slug: imageSlug,
+                name: "Foreign Cloud",
+                description: nil,
+                imageType: "cloud",
+                arch: foreignArch,
+                version: "1",
+                downloadUrl: "https://example.com/\(imageSlug).qcow2",
+                sizeBytes: 1_024,
+            ).insert(db)
+
+            try VMTemplate(
+                id: templateId,
+                slug: "foreign-tmpl",
+                name: "Foreign Template",
+                description: nil,
+                category: "general",
+                icon: "terminal",
+                imageSlug: imageSlug,
+                cpuCount: 1,
+                memoryMB: 512,
+                diskSizeGB: 8,
+                portForwards: "[]",
+                networkMode: "nat",
+                inputs: "[]",
+                userDataTemplate: "",
+                isBuiltIn: false,
+                repositoryId: repoId,
+                createdAt: now,
+                updatedAt: now,
+            ).insert(db)
+        }
+
+        // Stub downloader: start must never run when the arch gate fires first.
+        let downloader = StubImageDownloader()
+        let backgroundTasks = BackgroundTaskManager()
+
+        do {
+            _ = try await TemplateDeployService.deploy(
+                options: DeployOptions(
+                    templateId: templateId,
+                    vmName: "cross-arch-deploy",
+                    inputs: [:],
+                ),
+                imageDownloader: downloader,
+                backgroundTasks: backgroundTasks,
+                db: pool,
+            )
+            Issue.record("expected deploy to reject foreign arch \(foreignArch) on \(host)")
+        } catch let BarkVisorError.badRequest(message) {
+            #expect(message.lowercased().contains("not compatible")
+                || message.lowercased().contains("cross-architecture"))
+            #expect(message.contains(host))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+
+        #expect(await downloader.startCallCount == 0)
+        let imageCount = try await pool.read { db in
+            try VMImage.fetchCount(db)
+        }
+        #expect(imageCount == 0, "download must not start for foreign-arch template deploy")
     }
 
     /// Symmetric guard on x86_64 CI/dev hosts.
@@ -151,5 +247,16 @@ struct CrossArchCompatibilityTests {
                 GuestProfiles.require("windows-arm64").arch,
             )
         }
+    }
+}
+
+/// Test double for `ImageDownloadStarting` — records whether `start` was invoked.
+private actor StubImageDownloader: ImageDownloadStarting {
+    private(set) var startCallCount = 0
+
+    func start(
+        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+    ) {
+        startCallCount += 1
     }
 }
