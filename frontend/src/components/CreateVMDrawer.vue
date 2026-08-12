@@ -25,6 +25,16 @@ const {
   memoryMB,
   displayResolution,
   tpmEnabled,
+  uefi,
+  effectiveGuestArch,
+  archOptions,
+  machineType,
+  accelerator,
+  cpuModel,
+  alwaysShowArchDetails,
+  setGuestArch,
+  setAlwaysShowArchDetails,
+  setTpmEnabled,
   mode,
   selectedImageId,
   selectedSSHKeyId,
@@ -66,6 +76,8 @@ const {
   removePortForward,
   isNAT,
   archLabel,
+  revealArchOnSummary,
+  archProblemText,
   error,
   loading,
   submit,
@@ -110,9 +122,22 @@ function openUSBPicker() {
         :cpuCount="cpuCount"
         :memoryMB="memoryMB"
         :displayResolution="displayResolution"
+        :guestArch="effectiveGuestArch"
+        :archOptions="archOptions"
+        :machineType="machineType"
+        :accelerator="accelerator"
+        :cpuModel="cpuModel"
+        :uefi="uefi"
+        :tpmEnabled="tpmEnabled"
+        :alwaysShowArchDetails="alwaysShowArchDetails"
+        :archProblem="archProblemText"
         @update:cpuCount="cpuCount = $event"
         @update:memoryMB="memoryMB = $event"
         @update:displayResolution="displayResolution = $event"
+        @update:guestArch="setGuestArch"
+        @update:uefi="uefi = $event"
+        @update:tpmEnabled="setTpmEnabled"
+        @update:alwaysShowArchDetails="setAlwaysShowArchDetails"
       />
 
       <CreateVMImageStep
@@ -196,6 +221,9 @@ function openUSBPicker() {
         :memoryMB="memoryMB"
         :displayResolution="displayResolution"
         :tpmEnabled="tpmEnabled"
+        :uefi="uefi"
+        :revealArchDetails="revealArchOnSummary"
+        :archProblem="archProblemText"
         :mode="mode"
         :selectedImage="selectedImage"
         :diskSource="diskSource"

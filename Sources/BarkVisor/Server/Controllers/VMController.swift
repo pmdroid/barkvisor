@@ -73,6 +73,8 @@ struct VMResponse: Content {
 struct CreateVMRequest: Content, Validatable {
     let name: String?
     let vmType: String?
+    /// Used when `vmType` is omitted so the server can pick a host-native guest (PAS-93).
+    let osFamily: String?
     let cpuCount: Int?
     let memoryMB: Int?
     let diskSizeGB: Int?
@@ -386,6 +388,14 @@ struct VMController: RouteCollection {
         return WorkloadSpecProjector.fromVM(vm)
     }
 
+    /// Flat create: honor an explicit `vmType`, otherwise pick a host-native guest.
+    static func resolveFlatGuestType(vmType: String?, osFamily: String?) throws -> String {
+        if let vmType, !vmType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return try GuestProfiles.require(vmType).id
+        }
+        return try GuestProfiles.defaultID(osFamily: osFamily)
+    }
+
     static func createParams(from body: CreateVMRequest) throws -> CreateVMParams {
         if let spec = body.spec {
             try WorkloadSpecProjector.validate(spec)
@@ -419,13 +429,14 @@ struct VMController: RouteCollection {
                 tpmEnabled: body.tpmEnabled ?? spec.spec.firmware?.tpm,
             )
         }
-        guard let name = body.name, let vmType = body.vmType,
+        guard let name = body.name,
               let cpuCount = body.cpuCount, let memoryMB = body.memoryMB
         else {
             throw BarkVisorError.badRequest(
-                "name, vmType, cpuCount, and memoryMB are required when spec is omitted",
+                "name, cpuCount, and memoryMB are required when spec is omitted",
             )
         }
+        let vmType = try Self.resolveFlatGuestType(vmType: body.vmType, osFamily: body.osFamily)
         return CreateVMParams(
             name: name, vmType: vmType, cpuCount: cpuCount,
             memoryMB: memoryMB, diskSizeGB: body.diskSizeGB, isoId: body.isoId,

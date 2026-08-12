@@ -199,9 +199,12 @@ export interface HostUSBDevice {
 export interface CreateVMRequest {
   name?: string
   vmType?: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
+  /** Used when vmType is omitted so the server can pick a host-native guest (PAS-93). */
+  osFamily?: 'linux' | 'windows' | string
   cpuCount?: number
   memoryMB?: number
   diskSizeGB?: number
+  existingDiskId?: string
   isoId?: string
   cloudImageId?: string
   networkId?: string
@@ -210,6 +213,8 @@ export interface CreateVMRequest {
     userData?: string
   }
   usbDevices?: USBPassthroughDevice[]
+  sharedPaths?: string[]
+  portForwards?: PortForwardRule[]
   description?: string
   bootOrder?: string
   displayResolution?: string

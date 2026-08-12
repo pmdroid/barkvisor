@@ -134,4 +134,27 @@ public enum GuestProfiles {
             return nil
         }
     }
+
+    /// Default persisted guest ID when the client omits `vmType` / `guestType`.
+    ///
+    /// `osFamily` is `linux` (default) or `windows`. Arch defaults to the host.
+    public static func defaultID(
+        osFamily: String?,
+        imageArch: String = PlatformCapabilities.hostArch,
+    ) throws -> String {
+        let family = (osFamily ?? "linux")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if family == "windows" {
+            guard let id = defaultWindowsID(forImageArch: imageArch) else {
+                let arch = PlatformCapabilities.normalizedArch(imageArch)
+                throw BarkVisorError.badRequest("No Windows guest type for arch \(arch)")
+            }
+            return id
+        }
+        if !family.isEmpty, family != "linux" {
+            throw BarkVisorError.badRequest("osFamily must be linux or windows")
+        }
+        return defaultLinuxID(forImageArch: imageArch)
+    }
 }
