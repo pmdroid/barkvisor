@@ -25,6 +25,7 @@ struct VirtUIErrorTests {
             .bridgeNotReady("not ready"),
             .invalidArgument("bad"),
             .timeout("timed out"),
+            .unsupportedFeature(.bridgedNetworking),
             .badRequest("bad request"),
             .notFound("not found"),
             .notFound(),
@@ -59,6 +60,7 @@ struct VirtUIErrorTests {
             (.forbidden(""), "forbidden"),
             (.conflict(""), "conflict"),
             (.timeout(""), "timeout"),
+            (.unsupportedFeature(.inAppUpdate), "in_app_update"),
         ]
 
         for (error, expectedCode) in expectations {
@@ -80,6 +82,7 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.conflict("").httpStatus == 409)
         #expect(BarkVisorError.vmAlreadyRunning("").httpStatus == 409)
         #expect(BarkVisorError.preconditionFailed("").httpStatus == 412)
+        #expect(BarkVisorError.unsupportedFeature(.usbPassthrough).httpStatus == 422)
 
         // Domain errors default to 500
         #expect(BarkVisorError.qemuNotFound("").httpStatus == 500)

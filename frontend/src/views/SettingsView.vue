@@ -13,12 +13,21 @@ import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
 const caps = useCapabilitiesStore()
 const { supportsInAppUpdate } = storeToRefs(caps)
 const tab = ref<'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+
+function openUpdatesTab() {
+  tab.value = 'updates'
+  if (supportsInAppUpdate.value) {
+    fetchUpdateSettings()
+    checkForUpdates()
+  }
+}
 
 // API Keys
 const apiKeys = ref<APIKeyResponse[]>([])
@@ -351,9 +360,8 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
     <button
-      v-if="supportsInAppUpdate"
       :class="{ active: tab === 'updates' }"
-      @click="tab = 'updates'; fetchUpdateSettings(); checkForUpdates()"
+      @click="openUpdatesTab"
     >Updates</button>
   </div>
 
@@ -530,7 +538,11 @@ onUnmounted(() => {
   </div>
 
   <!-- Updates Tab -->
-  <div v-if="supportsInAppUpdate && tab === 'updates'">
+  <div v-if="tab === 'updates' && !supportsInAppUpdate" class="update-status-card">
+    <div style="font-size:20px;margin-bottom:8px">In-app updates unavailable</div>
+    <UnsupportedHint :text="caps.explanationFor('inAppUpdate')" />
+  </div>
+  <div v-else-if="supportsInAppUpdate && tab === 'updates'">
     <!-- Success state -->
     <div v-if="updatePhase === 'success'" class="update-status-card update-success">
       <div style="font-size:20px;margin-bottom:8px">Updated successfully</div>

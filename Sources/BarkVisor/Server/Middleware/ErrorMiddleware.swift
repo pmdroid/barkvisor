@@ -96,6 +96,7 @@ struct StructuredErrorMiddleware: AsyncMiddleware {
         case .notFound: return "not_found"
         case .conflict: return "conflict"
         case .tooManyRequests: return "rate_limited"
+        case .unprocessableEntity: return "unprocessable_entity"
         case .serviceUnavailable: return "service_unavailable"
         default: return "http_\(status.code)"
         }

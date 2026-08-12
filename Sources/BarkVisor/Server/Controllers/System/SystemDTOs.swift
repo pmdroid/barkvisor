@@ -80,7 +80,7 @@ struct SystemCapabilitiesResponse: Content {
     let hostCpuCount: Int
     /// Guest profiles this host can run natively (host-arch filtered).
     let guestTypes: [GuestTypeInfo]
-    /// Per-feature support + reason/remediation (PAS-37). Booleans stay for older clients.
+    /// Per-feature support + reason/remediation (PAS-37 / PAS-94). Booleans stay for older clients.
     let details: [CapabilityDetail]
     /// Inventory schema the booleans/details were projected from.
     let inventorySchemaVersion: Int

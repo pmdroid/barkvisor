@@ -69,6 +69,7 @@ struct ErrorMiddlewareTests {
         case 404: return "not_found"
         case 409: return "conflict"
         case 429: return "rate_limited"
+        case 422: return "unprocessable_entity"
         case 503: return "service_unavailable"
         default: return "http_\(statusCode)"
         }
@@ -81,6 +82,7 @@ struct ErrorMiddlewareTests {
         #expect(httpErrorCode(404) == "not_found")
         #expect(httpErrorCode(409) == "conflict")
         #expect(httpErrorCode(429) == "rate_limited")
+        #expect(httpErrorCode(422) == "unprocessable_entity")
         #expect(httpErrorCode(503) == "service_unavailable")
     }
 

@@ -86,6 +86,13 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     return runnableArches.value.includes(img)
   }
 
+  /** Server remediation for an unsupported feature. Does not invent copy. */
+  function explanationFor(code: string): string | undefined {
+    const row = detailFor(code)
+    if (!row || row.supported) return undefined
+    return row.remediation || undefined
+  }
+
   async function fetchCapabilities(): Promise<void> {
     if (loaded.value) return
     if (loadPromise) return loadPromise
@@ -162,6 +169,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     runnableArches,
     detailFor,
     isArchRunnable,
+    explanationFor,
     fetchCapabilities,
   }
 })

@@ -10,6 +10,7 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import AppModal from '../components/ui/AppModal.vue'
+import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useNetworkStore } from '../stores/networks'
@@ -277,7 +278,13 @@ async function setupBridgeInline() {
   <div class="page-header">
     <h1>Networks</h1>
     <div style="display:flex;gap:8px;align-items:center">
-      <AppButton v-if="supportsManagedBridgeDaemon" icon="settings" @click="showBridges = true">Manage Bridges</AppButton>
+      <span :title="supportsManagedBridgeDaemon ? undefined : caps.explanationFor('managedBridgeDaemon')">
+        <AppButton
+          icon="settings"
+          :disabled="!supportsManagedBridgeDaemon"
+          @click="showBridges = true"
+        >Manage Bridges</AppButton>
+      </span>
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
   </div>
@@ -368,11 +375,9 @@ async function setupBridgeInline() {
       <label>Mode</label>
       <AppSelect v-model="newMode">
         <option value="nat">NAT</option>
-        <option v-if="supportsBridgedNetworking" value="bridged">Bridged</option>
+        <option value="bridged" :disabled="!supportsBridgedNetworking">Bridged</option>
       </AppSelect>
-      <p v-if="!supportsBridgedNetworking" style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-        Bridged networking is not available on this platform.
-      </p>
+      <UnsupportedHint v-if="!supportsBridgedNetworking" :text="caps.explanationFor('bridgedNetworking')" />
     </div>
     <div v-if="supportsBridgedNetworking && newMode === 'bridged'" class="form-group">
       <label>Bridge Interface</label>

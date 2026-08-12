@@ -18,6 +18,7 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
 import { useCapabilitiesStore } from '../stores/capabilities'
@@ -812,12 +813,19 @@ const currentNetwork = computed(() => {
       </div>
 
       <!-- USB Devices Section -->
-      <div v-if="supportsUSBPassthrough" style="margin-top:20px">
+      <div style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
-          <AppButton size="sm" icon="plus" @click="showAttachUSB = true; fetchUSBDevices()">Attach USB Device</AppButton>
+          <AppButton
+            size="sm"
+            icon="plus"
+            :disabled="!supportsUSBPassthrough"
+            :title="supportsUSBPassthrough ? undefined : caps.explanationFor('usbPassthrough')"
+            @click="showAttachUSB = true; fetchUSBDevices()"
+          >Attach USB Device</AppButton>
         </div>
-        <DataTable :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor ID' }, { key: 'product', label: 'Product ID' }, { key: 'actions', label: '' }]">
+        <UnsupportedHint v-if="!supportsUSBPassthrough" :text="caps.explanationFor('usbPassthrough')" />
+        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor ID' }, { key: 'product', label: 'Product ID' }, { key: 'actions', label: '' }]">
               <tr v-for="dev in (vm.usbDevices || [])" :key="`${dev.vendorId}:${dev.productId}`">
                 <td style="font-weight:500">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</td>
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ dev.vendorId }}</span></td>
