@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTemplateStore } from '../stores/templates'
 import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
@@ -41,11 +41,6 @@ onMounted(async () => {
   sshKeyStore.fetchAll().then(() => {
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
   })
-  try {
-    compatibility.value = await templateStore.dryRun(props.template.id)
-  } catch {
-    compatibility.value = null
-  }
   if (props.template.networkMode === 'bridged' && bridged.available) {
     try {
       const { data } = await api.get<BridgeInfo[]>('/system/bridges')
@@ -71,6 +66,26 @@ const vmName = ref('')
 const cpuCount = ref(props.template.cpuCount)
 const memoryMB = ref(props.template.memoryMB)
 const diskSizeGB = ref(props.template.diskSizeGB)
+const memoryFloor = computed(() => props.template.minMemoryMB ?? 128)
+const memoryBelowMinimum = computed(() => {
+  const planned = Number(memoryMB.value)
+  return Number.isFinite(planned) && planned < memoryFloor.value
+})
+
+async function refreshCompatibility() {
+  try {
+    const planned = Number(memoryMB.value)
+    compatibility.value = await templateStore.dryRun(props.template.id, {
+      memoryMB: Number.isFinite(planned) ? planned : undefined,
+    })
+  } catch {
+    compatibility.value = null
+  }
+}
+
+watch(memoryMB, () => {
+  void refreshCompatibility()
+}, { immediate: true })
 
 // Step 2: Template inputs (dynamic) — ssh_keys is handled by the dedicated SSH key selector
 const visibleInputs = computed(() => props.template.inputs.filter(i => i.id !== 'ssh_keys'))
@@ -335,7 +350,7 @@ async function submit() {
             </div>
             <div class="form-group" style="flex:1">
               <label>Memory (MB)</label>
-              <input v-model.number="memoryMB" type="number" min="128" step="256" />
+              <input v-model.number="memoryMB" type="number" :min="memoryFloor" step="256" />
             </div>
           </div>
           <div class="form-group">
@@ -420,7 +435,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>

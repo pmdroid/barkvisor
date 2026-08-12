@@ -186,7 +186,7 @@ struct DTOTests {
             createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
-        let response = TemplateResponse(from: template, hostArch: "arm64")
+        let response = TemplateResponse(from: template)
 
         #expect(response.id == "tpl-1")
         #expect(response.slug == "ubuntu-server")
@@ -201,6 +201,39 @@ struct DTOTests {
         #expect(response.inputs.count == 1)
         #expect(response.inputs.first?.id == "hostname")
         #expect(response.architectures.isEmpty || response.compatible)
+    }
+
+    @Test func `template response compatible uses features and min memory`() {
+        let template = VMTemplate(
+            id: "tpl-pi", slug: "pi-hole", name: "Pi-hole", description: nil,
+            category: "networking", icon: "shield",
+            imageSlug: "ubuntu-24.04-x86_64",
+            cpuCount: 1, memoryMB: 512, diskSizeGB: 8,
+            portForwards: "[]", networkMode: "bridged", inputs: "[]",
+            userDataTemplate: "", isBuiltIn: true, repositoryId: nil,
+            createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+            architecturesJson: #"["x86_64"]"#,
+            minMemoryMB: 512,
+            requiredFeaturesJson: #"["bridgedNetworking"]"#,
+            imageByArchJson: #"{"x86_64":"ubuntu-24.04-x86_64"}"#,
+        )
+
+        let matching = TemplateResponse(
+            from: template, host: dtoTemplateHost(arch: "x86_64", bridged: true),
+        )
+        #expect(matching.compatible)
+        #expect(matching.resolvedImageSlug == "ubuntu-24.04-x86_64")
+
+        let missingBridge = TemplateResponse(
+            from: template, host: dtoTemplateHost(arch: "x86_64", bridged: false),
+        )
+        #expect(!missingBridge.compatible)
+
+        let lowHostRAM = TemplateResponse(
+            from: template,
+            host: dtoTemplateHost(arch: "x86_64", bridged: true, memoryTotalMB: 256),
+        )
+        #expect(!lowHostRAM.compatible)
     }
 
     // MARK: - RepositoryResponse
@@ -283,4 +316,36 @@ struct DTOTests {
         #expect(response.ipAddresses.isEmpty)
         #expect(response.hostname == nil)
     }
+}
+
+private func dtoTemplateHost(
+    arch: String, bridged: Bool, memoryTotalMB: Int = 8_192,
+) -> HostInventory {
+    HostInventory(
+        schemaVersion: 1,
+        hostId: "test-host-id",
+        displayName: "test-host",
+        agent: AgentInfo(version: "test"),
+        platform: PlatformInfo(os: "macOS", osVersion: "test", arch: arch, hostname: "test-host"),
+        resources: ResourcesInfo(
+            cpuCount: 4, memoryTotalMB: memoryTotalMB, memoryUsedMB: 1_024, cpuLoadPercent: 1,
+        ),
+        storage: [],
+        networking: NetworkingInfo(interfaces: []),
+        virtualization: VirtualizationInfo(
+            accelerator: "hvf",
+            qemuCPUModel: "host",
+            defaultGuestArch: arch == "arm64" ? "aarch64" : "x86_64",
+            features: VirtualizationFeatures(
+                bridgedNetworking: bridged,
+                managedBridgeDaemon: bridged,
+                usbPassthrough: true,
+                inAppUpdate: true,
+                kvmDevice: false,
+                qemuBridgeHelper: false,
+            ),
+        ),
+        guestTypes: [],
+        collectedAt: "2026-08-12T00:00:00Z",
+    )
 }

@@ -35,11 +35,11 @@ export const useTemplateStore = defineStore('templates', () => {
 
   async function dryRun(
     templateId: string,
-    targetHostId?: string,
+    body: { targetHostId?: string; memoryMB?: number } = {},
   ): Promise<TemplateCompatibilityReport> {
     const { data } = await api.post<TemplateCompatibilityReport>(
       `/templates/${templateId}/deploy/dry-run`,
-      targetHostId ? { targetHostId } : {},
+      body,
     )
     return data
   }
