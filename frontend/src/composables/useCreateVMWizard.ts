@@ -33,11 +33,13 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const osType = ref<'linux' | 'windows'>('linux')
   /**
    * Windows guest profile exists only for arm64 today (`windows-arm64`).
-   * Until capabilities load, do not offer Windows — store defaults are arm64 and
+   * Until hostArch is known, do not offer Windows — store defaults are arm64 and
    * would otherwise allow a stale selection on x86_64 hosts (PAS-48).
+   * Use hostArchKnown (not loaded): loaded is true even when the capabilities
+   * fetch fails, while hostArch stays at the arm64 default.
    */
   const supportsWindows = computed(() => {
-    if (!caps.loaded) return false
+    if (!caps.hostArchKnown) return false
     const host = hostArchToImageArch(hostArch.value)
     if (host !== 'arm64') return false
     const types = guestTypes.value ?? []

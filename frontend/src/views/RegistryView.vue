@@ -121,20 +121,31 @@ const iconMap: Record<string, string> = {
   cloud: 'M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z',
 }
 
-const repoTemplates = computed(() => {
-  let list: VMTemplate[]
+/** Templates in the selected repo(s), before host-arch filtering. */
+const repoTemplatesUnfiltered = computed(() => {
   if (selectedRepoId.value === '__all__') {
-    list = templateStore.templates.filter((t) =>
+    return templateStore.templates.filter((t) =>
       templateRepos.value.some((r) => r.id === t.repositoryId),
     )
-  } else if (!selectedRepoId.value) {
-    list = []
-  } else {
-    list = templateStore.templates.filter((t) => t.repositoryId === selectedRepoId.value)
   }
-  // Hide templates whose catalog image cannot run on this host (PAS-48).
-  return list.filter(templateArchSupported)
+  if (!selectedRepoId.value) return []
+  return templateStore.templates.filter((t) => t.repositoryId === selectedRepoId.value)
 })
+
+const repoTemplates = computed(() => {
+  // Hide templates whose catalog image cannot run on this host (PAS-48).
+  return repoTemplatesUnfiltered.value.filter(templateArchSupported)
+})
+
+/** Count hidden solely by host-arch filter (PAS-48 empty-state messaging). */
+const foreignArchTemplateCount = computed(() => {
+  if (!caps.hostArchKnown) return 0
+  return repoTemplatesUnfiltered.value.filter((t) => !templateArchSupported(t)).length
+})
+
+const hostImageArchLabel = computed(() =>
+  caps.hostArchKnown ? hostArchToImageArch(caps.hostArch) : null,
+)
 
 const availableCategories = computed(() => {
   const cats = new Set(repoTemplates.value.map(t => t.category))
@@ -152,6 +163,24 @@ const filteredTemplates = computed(() => {
     list = list.filter(t => t.name.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
   }
   return list
+})
+
+const templatesEmptyTitle = computed(() => {
+  if (
+    foreignArchTemplateCount.value > 0 &&
+    repoTemplates.value.length === 0 &&
+    !templateSearch.value &&
+    activeCategory.value === 'all'
+  ) {
+    return 'No templates for this host architecture'
+  }
+  return 'No templates in this category'
+})
+
+const templatesEmptySubtitle = computed(() => {
+  if (foreignArchTemplateCount.value <= 0 || !hostImageArchLabel.value) return undefined
+  const n = foreignArchTemplateCount.value
+  return `${n} template${n === 1 ? '' : 's'} hidden — this host only runs ${hostImageArchLabel.value} guests.`
 })
 
 const templateTotalPages = computed(() => Math.max(1, Math.ceil(filteredTemplates.value.length / templatePerPage)))
@@ -293,6 +322,12 @@ watch(activeTab, (tab) => {
   if (tab === 'images' && repoImages.value.length === 0) loadRepoImages()
 })
 
+/** Catalog images hidden by host-arch filter (PAS-48 empty-state messaging). */
+const foreignArchImageCount = computed(() => {
+  if (!caps.hostArchKnown) return 0
+  return repoImages.value.filter((img) => !imageArchSupported(img.arch)).length
+})
+
 const filteredImages = computed(() => {
   return repoImages.value.filter(img => {
     // Hide catalog entries for guest arches this host cannot run (was hard-coded arm64).
@@ -313,6 +348,28 @@ const paginatedImages = computed(() => {
 })
 
 const types = computed(() => [...new Set(repoImages.value.map(i => i.imageType))])
+
+const imagesEmptyTitle = computed(() => {
+  if (repoImages.value.length === 0) return 'Repository is empty'
+  if (
+    foreignArchImageCount.value > 0 &&
+    filteredImages.value.length === 0 &&
+    !filterType.value &&
+    !searchQuery.value
+  ) {
+    return 'No images for this host architecture'
+  }
+  return 'No images match the current filters'
+})
+
+const imagesEmptySubtitle = computed(() => {
+  if (repoImages.value.length === 0) return 'Click Manage > Sync to fetch the catalog.'
+  if (foreignArchImageCount.value > 0 && hostImageArchLabel.value) {
+    const n = foreignArchImageCount.value
+    return `${n} image${n === 1 ? '' : 's'} hidden — this host only runs ${hostImageArchLabel.value} guests.`
+  }
+  return undefined
+})
 
 watch([filterType, searchQuery], () => { imagePage.value = 1 })
 
@@ -484,7 +541,11 @@ async function addRepo() {
 
     <EmptyState v-if="templateStore.loading" title="Loading templates..." />
 
-    <EmptyState v-else-if="filteredTemplates.length === 0" title="No templates in this category" />
+    <EmptyState
+      v-else-if="filteredTemplates.length === 0"
+      :title="templatesEmptyTitle"
+      :subtitle="templatesEmptySubtitle"
+    />
 
     <DataTable v-else :columns="[
       { key: 'icon', label: '', width: '40px' },
@@ -550,7 +611,12 @@ async function addRepo() {
 
     <EmptyState v-if="imagesLoading" title="Loading catalog..." style="padding:48px" />
     <EmptyState v-else-if="!selectedRepoId" title="No repository selected" subtitle="Add one via the Manage button." style="padding:48px" />
-    <EmptyState v-else-if="filteredImages.length === 0" :title="repoImages.length === 0 ? 'Repository is empty' : 'No images match the current filters'" :subtitle="repoImages.length === 0 ? 'Click Manage > Sync to fetch the catalog.' : undefined" style="padding:48px" />
+    <EmptyState
+      v-else-if="filteredImages.length === 0"
+      :title="imagesEmptyTitle"
+      :subtitle="imagesEmptySubtitle"
+      style="padding:48px"
+    />
     <div v-else>
       <DataTable :columns="[
         { key: 'name', label: 'Name' },

@@ -197,10 +197,11 @@ public enum PlatformCapabilities {
     }
 
     /// Normalize common arch aliases to API labels (`arm64` / `x86_64`).
+    /// Matches frontend `normalizeImageArch` (lowercase, trim, `x64` → `x86_64`).
     public static func normalizedArch(_ arch: String) -> String {
-        switch arch {
+        switch arch.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) {
         case "arm64", "aarch64": return "arm64"
-        case "x86_64", "amd64": return "x86_64"
+        case "x86_64", "amd64", "x64": return "x86_64"
         default: return arch
         }
     }

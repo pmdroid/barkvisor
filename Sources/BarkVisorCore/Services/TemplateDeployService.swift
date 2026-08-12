@@ -41,7 +41,7 @@ public enum TemplateDeployService {
     /// Deploy a VM from a template via the shared `VMLifecycleService.createVM` path.
     public static func deploy(
         options: DeployOptions,
-        imageDownloader: ImageDownloader,
+        imageDownloader: any ImageDownloadStarting,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
     ) async throws -> DeployResult {
@@ -160,7 +160,7 @@ public enum TemplateDeployService {
 
     private static func startOrDetectDownload(
         repoImage: RepositoryImage,
-        imageDownloader: ImageDownloader,
+        imageDownloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> DeployResult {
         guard let sourceURL = URL(string: repoImage.downloadUrl) else {

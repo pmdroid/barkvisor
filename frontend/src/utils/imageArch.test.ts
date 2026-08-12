@@ -99,6 +99,10 @@ describe('normalizeImageArch / imageArchSupportedOnHost (PAS-48)', () => {
   test('strict normalize does not coerce unknown to arm64', () => {
     expect(normalizeImageArch('amd64')).toBe('x86_64')
     expect(normalizeImageArch('aarch64')).toBe('arm64')
+    expect(normalizeImageArch('x64')).toBe('x86_64')
+    expect(normalizeImageArch('X86_64')).toBe('x86_64')
+    expect(normalizeImageArch('AMD64')).toBe('x86_64')
+    expect(normalizeImageArch(' AArch64 ')).toBe('arm64')
     expect(normalizeImageArch('armhf')).toBeNull()
     expect(normalizeImageArch('riscv64')).toBeNull()
     expect(normalizeImageArch('')).toBeNull()
