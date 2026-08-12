@@ -14,11 +14,111 @@ export interface Image {
   updatedAt: string
 }
 
+export type VMState =
+  | 'stopped'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'error'
+  | 'provisioning'
+  | 'deleting'
+
+export interface WorkloadResources {
+  cpu: number
+  memoryMb: number
+}
+
+export interface WorkloadFirmware {
+  uefi: boolean
+  tpm: boolean
+}
+
+export interface WorkloadDisk {
+  role: 'boot' | 'data' | 'cdrom' | string
+  diskId?: string | null
+  imageId?: string | null
+  bus?: string | null
+}
+
+export interface WorkloadPortForward {
+  hostPort: number
+  guestPort: number
+  proto: string
+}
+
+export interface WorkloadNetwork {
+  mode?: string | null
+  networkId?: string | null
+  mac?: string | null
+  portForwards?: WorkloadPortForward[]
+}
+
+export interface WorkloadCloudInit {
+  userDataRef?: string | null
+  inline?: string | null
+}
+
+export interface WorkloadUSBDevice {
+  vendorId: string
+  productId: string
+  label?: string | null
+}
+
+export interface WorkloadDisplay {
+  resolution?: string | null
+}
+
+export interface WorkloadMetadata {
+  id?: string | null
+  name: string
+  description?: string | null
+  labels?: Record<string, string> | null
+}
+
+export interface WorkloadSpecBody {
+  resources: WorkloadResources
+  arch?: string | null
+  guestType?: string | null
+  osFamily?: string | null
+  machine?: string | null
+  firmware?: WorkloadFirmware | null
+  bootOrder?: string | null
+  disks?: WorkloadDisk[]
+  networks?: WorkloadNetwork[]
+  cloudInit?: WorkloadCloudInit | null
+  usb?: WorkloadUSBDevice[]
+  display?: WorkloadDisplay | null
+  sharedPaths?: string[] | null
+}
+
+export interface WorkloadOverrides {
+  linux?: Record<string, string> | null
+  macos?: Record<string, string> | null
+}
+
+export interface WorkloadSpec {
+  apiVersion: string
+  kind: string
+  metadata: WorkloadMetadata
+  spec: WorkloadSpecBody
+  overrides?: WorkloadOverrides | null
+}
+
+export interface VMRuntimeStatus {
+  state: VMState
+  pendingChanges: boolean
+  generation: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface VM {
+  spec?: WorkloadSpec
+  status?: VMRuntimeStatus
   id: string
   name: string
   vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
-  state: 'stopped' | 'starting' | 'running' | 'stopping' | 'error' | 'provisioning' | 'deleting'
+  state: VMState | string
   cpuCount: number
   memoryMB: number
   bootDiskId: string
@@ -97,10 +197,10 @@ export interface HostUSBDevice {
 }
 
 export interface CreateVMRequest {
-  name: string
-  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
-  cpuCount: number
-  memoryMB: number
+  name?: string
+  vmType?: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
+  cpuCount?: number
+  memoryMB?: number
   diskSizeGB?: number
   isoId?: string
   cloudImageId?: string
@@ -115,6 +215,7 @@ export interface CreateVMRequest {
   displayResolution?: string
   uefi?: boolean
   tpmEnabled?: boolean
+  spec?: WorkloadSpec
 }
 
 export interface DownloadImageRequest {
@@ -152,7 +253,7 @@ export type UpdateVMRequest = Partial<Pick<VM,
   'name' | 'cpuCount' | 'memoryMB' | 'networkId' | 'description' |
   'bootOrder' | 'displayResolution' | 'uefi' | 'tpmEnabled' |
   'sharedPaths' | 'additionalDiskIds' | 'portForwards' | 'usbDevices'
->>
+>> & { spec?: WorkloadSpec }
 
 export interface TaskAcceptedResponse {
   taskID: string

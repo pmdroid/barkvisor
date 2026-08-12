@@ -14,6 +14,8 @@ extension APIKeyCreateResponse: Content {}
 extension BackupInfo: Content {}
 extension BackupSettings: Content {}
 extension VM: Content {}
+extension WorkloadSpec: Content {}
+extension VMRuntimeStatus: Content {}
 extension VMImage: Content {}
 extension VMTemplate: Content {}
 extension User: Content {}

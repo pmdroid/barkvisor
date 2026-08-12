@@ -27,10 +27,7 @@ struct CrossArchCompatibilityTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
 
         let host = PlatformCapabilities.hostArch
@@ -138,10 +135,7 @@ struct CrossArchCompatibilityTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
 
         let host = PlatformCapabilities.hostArch
@@ -238,10 +232,7 @@ struct CrossArchCompatibilityTests {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
 
         let host = PlatformCapabilities.hostArch
@@ -273,11 +264,9 @@ struct CrossArchCompatibilityTests {
                 cpuCount: 1,
                 memoryMb: 512,
                 bootDiskId: diskID,
-                isoId: nil,
                 isoIds: nil,
                 networkId: nil,
                 cloudInitPath: nil,
-                vncPort: nil,
                 description: nil,
                 bootOrder: "cd",
                 displayResolution: "1280x800",

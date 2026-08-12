@@ -23,19 +23,10 @@ extension VMManager {
                 updated.setISOIds(nil)
             }
 
-            let isoIdsJSON = updated.isoIds
-            if isRunning {
-                try db.execute(
-                    sql:
-                    "UPDATE vms SET isoId = NULL, isoIds = ?, pendingChanges = 1, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            } else {
-                try db.execute(
-                    sql: "UPDATE vms SET isoId = NULL, isoIds = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            }
+            updated.updatedAt = now
+            if isRunning { updated.pendingChanges = true }
+            updated.syncSpecProjection(bumpGeneration: true)
+            try updated.update(db)
         }
 
         if isRunning {
@@ -66,18 +57,10 @@ extension VMManager {
             updated.setISOIds(ids)
 
             let now = iso8601.string(from: Date())
-            let isoIdsJSON = updated.isoIds
-            if isRunning {
-                try db.execute(
-                    sql: "UPDATE vms SET isoIds = ?, pendingChanges = 1, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            } else {
-                try db.execute(
-                    sql: "UPDATE vms SET isoIds = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            }
+            updated.updatedAt = now
+            if isRunning { updated.pendingChanges = true }
+            updated.syncSpecProjection(bumpGeneration: true)
+            try updated.update(db)
         }
 
         if isRunning {

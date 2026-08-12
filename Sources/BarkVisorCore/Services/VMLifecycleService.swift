@@ -70,7 +70,29 @@ public enum VMLifecycleService {
 
             if isRunning, hardwareChanged { vm.pendingChanges = true }
             vm.updatedAt = iso8601.string(from: Date())
+            vm.syncSpecProjection(bumpGeneration: true)
 
+            try vm.update(db)
+            return vm
+        }
+    }
+
+    /// Replace VM columns from a WorkloadSpec (PAS-35). Dual-writes `specJson`.
+    public static func updateVMSpec(
+        id: String,
+        spec: WorkloadSpec,
+        db: DatabasePool,
+    ) async throws -> VM {
+        try WorkloadSpecProjector.validate(spec, existingID: id)
+        return try await db.write { db -> VM in
+            guard var vm = try VM.fetchOne(db, key: id) else {
+                throw BarkVisorError.notFound()
+            }
+            let isRunning = vm.state != "stopped" && vm.state != "error"
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+            if isRunning { vm.pendingChanges = true }
+            vm.updatedAt = iso8601.string(from: Date())
+            vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
             return vm
         }
@@ -292,13 +314,13 @@ extension VMLifecycleService {
         cloudInitPath: String?,
         isoIdsJSON: String?,
     ) -> VM {
-        VM(
+        var vm = VM(
             id: id, name: params.name, vmType: params.vmType,
             state: bootDisk.isCloudImageMode ? "provisioning" : "stopped",
             cpuCount: params.cpuCount, memoryMb: params.memoryMB,
-            bootDiskId: bootDisk.diskID, isoId: nil, isoIds: isoIdsJSON,
+            bootDiskId: bootDisk.diskID, isoIds: isoIdsJSON,
             networkId: params.networkId,
-            cloudInitPath: cloudInitPath, vncPort: nil,
+            cloudInitPath: cloudInitPath,
             description: params.description, bootOrder: params.bootOrder,
             displayResolution: params.displayResolution, additionalDiskIds: nil,
             uefi: params.uefi ?? true,
@@ -311,6 +333,8 @@ extension VMLifecycleService {
             pendingChanges: false,
             createdAt: now, updatedAt: now,
         )
+        vm.syncSpecProjection(bumpGeneration: false)
+        return vm
     }
 
     fileprivate static func insertVMAndDisk(

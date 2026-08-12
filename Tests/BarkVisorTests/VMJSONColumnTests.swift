@@ -4,7 +4,6 @@ import Testing
 
 struct VMJSONColumnTests {
     private func makeVM(
-        isoId: String? = nil,
         isoIds: String? = nil,
         additionalDiskIds: String? = nil,
         sharedPaths: String? = nil,
@@ -19,11 +18,9 @@ struct VMJSONColumnTests {
             cpuCount: 2,
             memoryMb: 2_048,
             bootDiskId: "disk-1",
-            isoId: isoId,
             isoIds: isoIds,
             networkId: nil,
             cloudInitPath: nil,
-            vncPort: nil,
             description: nil,
             bootOrder: nil,
             displayResolution: nil,
@@ -41,12 +38,9 @@ struct VMJSONColumnTests {
         )
     }
 
-    @Test func `decodedISOIds uses array and legacy fallback`() {
+    @Test func `decodedISOIds uses array`() {
         var vm = makeVM(isoIds: #"["a","b"]"#)
         #expect(vm.decodedISOIds == ["a", "b"])
-
-        vm = makeVM(isoId: "legacy-only")
-        #expect(vm.decodedISOIds == ["legacy-only"])
 
         vm = makeVM()
         #expect(vm.decodedISOIds.isEmpty)
@@ -71,7 +65,6 @@ struct VMJSONColumnTests {
         var vm = makeVM()
         vm.setISOIds(["x", "y"])
         #expect(vm.isoIds != nil)
-        #expect(vm.isoId == nil)
         #expect(vm.decodedISOIds == ["x", "y"])
 
         vm.setISOIds([])
