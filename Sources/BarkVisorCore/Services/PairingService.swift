@@ -120,7 +120,8 @@ public enum PairingService {
                 "Home CA is unavailable; local runtime continues: \(error.localizedDescription)",
             )
         }
-        let host = input.advertisedHost ?? input.advertisedHosts.first
+        let host = input.advertisedHost.flatMap(PairingPayload.sanitizeHost)
+            ?? input.advertisedHosts.first
         let payload = PairingPayload(
             code: offer.codeDisplay,
             host: host,
@@ -206,7 +207,12 @@ public enum PairingService {
             now: input.now,
         )
 
-        try validateCSR(req.csrPEM)
+        let csr = try validateCSR(req.csrPEM)
+        guard Array(csr.publicKey.subjectPublicKeyInfoBytes) == presented.spki else {
+            throw PairingError.invalidCSR(
+                "CSR public key does not match Device certificate",
+            )
+        }
 
         let material: HomeCertificateMaterial
         do {
@@ -220,9 +226,6 @@ public enum PairingService {
                 "Home CA is unavailable; local runtime continues: \(error.localizedDescription)",
             )
         }
-
-        let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
-        _ = try store.consume(code: req.code, now: input.now)
 
         let issued: IssuedDeviceCertificate
         do {
@@ -255,6 +258,9 @@ public enum PairingService {
             )
         }
 
+        let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
+        _ = try store.consume(code: req.code, now: input.now)
+
         return PairingRedeemResponse(
             hostId: input.issuerHostId,
             deviceCertificatePEM: material.deviceCertificatePEM,
@@ -269,14 +275,10 @@ public enum PairingService {
 
     public static func resolveJoinPayload(_ request: PairingJoinRequest) throws -> PairingPayload {
         if let raw = request.qrPayload?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-            var parsed = try PairingPayload.parse(raw)
-            if let host = request.host.flatMap(PairingPayload.sanitizeHost) {
-                parsed.host = host
-            }
-            if let port = request.port {
-                parsed.port = port
-            }
-            return parsed
+            // QR host/port are the out-of-band redeem target. Request
+            // overrides would let an unauthenticated join caller redirect
+            // redeem at an attacker while keeping the legitimate fingerprint.
+            return try PairingPayload.parse(raw)
         }
         guard let code = request.code, PairingCode.isValid(code) else {
             throw PairingError.invalidPayload("Pairing code or QR payload is required")
@@ -308,9 +310,10 @@ public enum PairingService {
 
     private struct PresentedCertificate {
         let fingerprint: String
+        let spki: [UInt8]
     }
 
-    private static func validateCSR(_ pem: String) throws {
+    private static func validateCSR(_ pem: String) throws -> CertificateSigningRequest {
         let csr: CertificateSigningRequest
         do {
             csr = try CertificateSigningRequest(pemEncoded: pem)
@@ -320,6 +323,7 @@ public enum PairingService {
         guard csr.publicKey.isValidSignature(csr.signature, for: csr) else {
             throw PairingError.invalidCSR("CSR signature is invalid")
         }
+        return csr
     }
 
     private static func parsePresentedCertificate(
@@ -348,6 +352,9 @@ public enum PairingService {
         } catch {
             throw PairingError.invalidDeviceCertificate("Unable to fingerprint certificate")
         }
-        return PresentedCertificate(fingerprint: fingerprint)
+        return PresentedCertificate(
+            fingerprint: fingerprint,
+            spki: Array(cert.publicKey.subjectPublicKeyInfoBytes),
+        )
     }
 }

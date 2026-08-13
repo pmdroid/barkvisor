@@ -185,6 +185,89 @@ struct PairingTests {
         #expect(try offers.load()?.consumedAt != nil)
     }
 
+    @Test func `csr for a different key than the presented cert is rejected`() throws {
+        let dir = try isolatedDir()
+        let otherDir = try isolatedDir("other-key")
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: otherDir)
+        }
+        let issuerId = UUID().uuidString
+        let joiner = try HomeCAService.loadOrCreate(dataDir: isolatedDir("j-key"), hostId: UUID().uuidString)
+        let other = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: UUID().uuidString)
+        let offers = PairingOfferStore(dataDir: dir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(dataDir: dir, hostId: issuerId),
+            offers: offers,
+        )
+        let foreignCSR = try HomeCAService.makeDeviceCSR(hostId: joiner.hostId, keyPEM: other.deviceKeyPEM)
+        #expect(throws: PairingError.self) {
+            try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: dir,
+                    issuerHostId: issuerId,
+                    request: PairingRedeemRequest(
+                        code: issued.code,
+                        hostId: joiner.hostId,
+                        csrPEM: foreignCSR,
+                        deviceCertificatePEM: joiner.deviceCertificatePEM,
+                    ),
+                ),
+                offers: offers,
+            )
+        }
+        #expect(try offers.load()?.consumedAt == nil)
+    }
+
+    @Test func `pin persist failure does not consume the code`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let issuerId = UUID().uuidString
+        let joiner = try HomeCAService.loadOrCreate(dataDir: isolatedDir("j-pin"), hostId: UUID().uuidString)
+        let offers = PairingOfferStore(dataDir: dir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(dataDir: dir, hostId: issuerId),
+            offers: offers,
+        )
+        let blocked = dir.appendingPathComponent("blocked-pins")
+        try Data("not-a-directory".utf8).write(to: blocked, options: [.atomic])
+        let pins = PeerPinStore(fileURL: blocked.appendingPathComponent("pins.json"))
+        let csr = try HomeCAService.makeDeviceCSR(hostId: joiner.hostId, keyPEM: joiner.deviceKeyPEM)
+        #expect(throws: PairingError.self) {
+            try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: dir,
+                    issuerHostId: issuerId,
+                    request: PairingRedeemRequest(
+                        code: issued.code,
+                        hostId: joiner.hostId,
+                        csrPEM: csr,
+                        deviceCertificatePEM: joiner.deviceCertificatePEM,
+                    ),
+                ),
+                offers: offers,
+                pins: pins,
+            )
+        }
+        #expect(try offers.load()?.consumedAt == nil)
+        let retryPins = PeerPinStore(dataDir: dir)
+        _ = try PairingService.redeem(
+            PairingService.RedeemInput(
+                dataDir: dir,
+                issuerHostId: issuerId,
+                request: PairingRedeemRequest(
+                    code: issued.code,
+                    hostId: joiner.hostId,
+                    csrPEM: csr,
+                    deviceCertificatePEM: joiner.deviceCertificatePEM,
+                ),
+            ),
+            offers: offers,
+            pins: retryPins,
+        )
+        #expect(try offers.load()?.consumedAt != nil)
+    }
+
     @Test func `self pair and api version mismatch are rejected`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -242,6 +325,7 @@ struct PairingTests {
         let issuerId = UUID().uuidString
         let joinerId = UUID().uuidString
         let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         let attacker = try HomeCAService.loadOrCreate(dataDir: attackerDir, hostId: UUID().uuidString)
         let payload = PairingPayload(
             code: "ABCD-EFGH",
@@ -250,15 +334,11 @@ struct PairingTests {
             hostId: issuerId,
             fingerprint: issuer.deviceFingerprint,
         )
-        let honest = PairingRedeemResponse(
-            hostId: issuerId,
-            deviceCertificatePEM: issuer.deviceCertificatePEM,
-            deviceFingerprint: issuer.deviceFingerprint,
-            caCertificatePEM: issuer.caCertificatePEM,
-            caFingerprint: issuer.caFingerprint,
-            issuedCertificatePEM: issuer.deviceCertificatePEM,
-            issuedFingerprint: issuer.deviceFingerprint,
-            agentPort: 7_778,
+        let honest = try honestRedeemResponse(
+            issuer: issuer,
+            issuerId: issuerId,
+            joiner: joiner,
+            joinerId: joinerId,
         )
         let joined = try PairingService.applyTrust(
             response: honest,
@@ -293,6 +373,96 @@ struct PairingTests {
         }
         #expect(try PeerPinStore(dataDir: otherDir).load().isEmpty)
         #expect(try PairingService.loadReceipt(dataDir: otherDir) == nil)
+    }
+
+    @Test func `join apply rejects attacker CA with matching QR fingerprint`() throws {
+        let issuerDir = try isolatedDir("iss-mitm")
+        let joinerDir = try isolatedDir("join-mitm")
+        let attackerDir = try isolatedDir("atk-mitm")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+            try? FileManager.default.removeItem(at: attackerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let attacker = try HomeCAService.loadOrCreate(dataDir: attackerDir, hostId: UUID().uuidString)
+        let attackerIssued = try HomeCAService.issueDeviceCert(
+            hostId: joinerId,
+            csrPEM: HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM),
+            material: attacker,
+        )
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.0.2.9",
+            port: 7_777,
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+        let mitm = PairingRedeemResponse(
+            hostId: issuerId,
+            deviceCertificatePEM: issuer.deviceCertificatePEM,
+            deviceFingerprint: issuer.deviceFingerprint,
+            caCertificatePEM: attacker.caCertificatePEM,
+            caFingerprint: attacker.caFingerprint,
+            issuedCertificatePEM: attackerIssued.certificatePEM,
+            issuedFingerprint: attackerIssued.fingerprint,
+            agentPort: 7_778,
+        )
+        #expect(throws: PairingError.self) {
+            try PairingService.applyTrust(
+                response: mitm,
+                expected: payload,
+                dataDir: joinerDir,
+                localHostId: joinerId,
+            )
+        }
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
+    }
+
+    @Test func `join apply rejects issued cert whose SAN is not the joiner`() throws {
+        let issuerDir = try isolatedDir("iss-san")
+        let joinerDir = try isolatedDir("join-san")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let otherIssued = try HomeCAService.issueDeviceCert(
+            hostId: UUID().uuidString,
+            material: issuer,
+        )
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.0.2.9",
+            port: 7_777,
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+        let wrongSAN = PairingRedeemResponse(
+            hostId: issuerId,
+            deviceCertificatePEM: issuer.deviceCertificatePEM,
+            deviceFingerprint: issuer.deviceFingerprint,
+            caCertificatePEM: issuer.caCertificatePEM,
+            caFingerprint: issuer.caFingerprint,
+            issuedCertificatePEM: otherIssued.certificatePEM,
+            issuedFingerprint: otherIssued.fingerprint,
+            agentPort: 7_778,
+        )
+        #expect(throws: PairingError.self) {
+            try PairingService.applyTrust(
+                response: wrongSAN,
+                expected: payload,
+                dataDir: joinerDir,
+                localHostId: joinerId,
+            )
+        }
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
     }
 
     @Test func `join via mock client records pin without sqlite`() async throws {
@@ -402,6 +572,77 @@ struct PairingTests {
             try PairingService.currentOffer(input, offers: offers)
         }
     }
+
+    @Test func `current offer sanitizes advertised host like issue`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let offers = PairingOfferStore(dataDir: dir)
+        _ = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: hostId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
+            offers: offers,
+        )
+        let current = try PairingService.currentOffer(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: hostId,
+                advertisedHost: "http://evil.example",
+                advertisedHosts: ["192.0.2.8"],
+            ),
+            offers: offers,
+        )
+        #expect(!current.qrPayload.contains("evil"))
+        #expect(current.qrPayload.contains("192.0.2.8"))
+    }
+
+    @Test func `qr join path ignores host and port overrides`() throws {
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.0.2.10",
+            port: 7_777,
+            hostId: "host-a",
+            fingerprint: "abcd",
+        )
+        let resolved = try PairingService.resolveJoinPayload(
+            PairingJoinRequest(
+                qrPayload: payload.uri,
+                host: "198.51.100.1",
+                port: 0,
+            ),
+        )
+        #expect(resolved.host == "192.0.2.10")
+        #expect(resolved.port == 7_777)
+        #expect(resolved.fingerprint == "abcd")
+    }
+}
+
+private func honestRedeemResponse(
+    issuer: HomeCertificateMaterial,
+    issuerId: String,
+    joiner: HomeCertificateMaterial,
+    joinerId: String,
+) throws -> PairingRedeemResponse {
+    let csr = try HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM)
+    let issued = try HomeCAService.issueDeviceCert(
+        hostId: joinerId,
+        csrPEM: csr,
+        material: issuer,
+    )
+    return PairingRedeemResponse(
+        hostId: issuerId,
+        deviceCertificatePEM: issuer.deviceCertificatePEM,
+        deviceFingerprint: issuer.deviceFingerprint,
+        caCertificatePEM: issuer.caCertificatePEM,
+        caFingerprint: issuer.caFingerprint,
+        issuedCertificatePEM: issued.certificatePEM,
+        issuedFingerprint: issued.fingerprint,
+        agentPort: 7_778,
+    )
 }
 
 private struct InMemoryRedeemClient: PairingHTTPClient {
