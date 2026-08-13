@@ -31,6 +31,10 @@ struct LinuxBridgeUSBTests {
         #expect(dev?.vendorId == "0x046d")
         #expect(dev?.productId == "0xc52b")
         #expect(dev?.name.contains("Logitech") == true)
+        #expect(dev?.bus == 1)
+        #expect(dev?.address == 4)
+        #expect(dev?.id == "bus:001.004")
+        #expect(dev?.idUnstable == true)
     }
 
     @Test func `parse lsusb skips root hubs`() {

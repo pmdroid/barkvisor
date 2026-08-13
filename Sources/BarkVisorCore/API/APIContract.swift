@@ -61,6 +61,8 @@ public enum APIContract {
         Route(method: "POST", path: "/api/vms/{id}/restart", stability: .stable),
         Route(method: "POST", path: "/api/vms/{id}/attach-iso", stability: .stable),
         Route(method: "POST", path: "/api/vms/{id}/detach-iso", stability: .stable),
+        Route(method: "POST", path: "/api/vms/{id}/usb", stability: .stable),
+        Route(method: "DELETE", path: "/api/vms/{id}/usb/{deviceId}", stability: .stable),
         Route(method: "GET", path: "/api/vms/{id}/spec", stability: .stable),
         Route(method: "PUT", path: "/api/vms/{id}/spec", stability: .stable),
         Route(method: "POST", path: "/api/workloads/apply", stability: .stable),
@@ -88,6 +90,8 @@ public enum APIContract {
 
         // Evolving — same schema on every host, may still change before 1.0
         Route(method: "GET", path: "/api/system/capabilities", stability: .evolving),
+        Route(method: "GET", path: "/api/system/usb-devices", stability: .evolving),
+        Route(method: "GET", path: "/api/system/usb", stability: .evolving),
         Route(method: "GET", path: "/api/system/about", stability: .evolving),
         Route(method: "GET", path: "/api/agent/inventory", stability: .evolving),
         Route(method: "GET", path: "/api/vms/{id}/guest-info", stability: .evolving),

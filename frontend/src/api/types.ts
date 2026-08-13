@@ -100,6 +100,8 @@ export interface WorkloadUSBDevice {
   vendorId: string
   productId: string
   label?: string | null
+  serialNumber?: string | null
+  deviceId?: string | null
 }
 
 export interface WorkloadDisplay {
@@ -260,14 +262,26 @@ export interface USBPassthroughDevice {
   vendorId: string
   productId: string
   label?: string | null
+  serialNumber?: string | null
+  deviceId?: string | null
 }
 
 export interface HostUSBDevice {
+  id: string
   vendorId: string
   productId: string
   name: string
+  productName?: string
   manufacturer: string | null
+  serial?: string | null
   serialNumber: string | null
+  bus?: number | null
+  address?: number | null
+  idUnstable?: boolean
+  attachable?: boolean
+  excludedReason?: string | null
+  busy?: boolean
+  attachedToVmId?: string | null
   claimedByVMId: string | null
   claimedByVMName: string | null
 }

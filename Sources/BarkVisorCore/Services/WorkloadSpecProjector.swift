@@ -56,9 +56,7 @@ public enum WorkloadSpecProjector {
         )
         let cloudInit: WorkloadCloudInit? =
             vm.cloudInitPath.map { WorkloadCloudInit(userDataRef: $0) }
-        let usb = vm.decodedUSBDevices.map {
-            WorkloadUSBDevice(vendorId: $0.vendorId, productId: $0.productId, label: $0.label)
-        }
+        let usb = vm.decodedUSBDevices.map { USBPassthroughService.workload(from: $0) }
         let shared = vm.decodedSharedPaths
         return WorkloadSpec(
             metadata: WorkloadMetadata(
@@ -153,9 +151,7 @@ public enum WorkloadSpecProjector {
         if let cloud = spec.spec.cloudInit {
             vm.cloudInitPath = cloud.userDataRef
         }
-        let usb = spec.spec.usb.map {
-            USBPassthroughDevice(vendorId: $0.vendorId, productId: $0.productId, label: $0.label)
-        }
+        let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
         vm.setUSBDevices(usb.isEmpty ? nil : usb)
         if let shared = spec.spec.sharedPaths {
             vm.setSharedPaths(shared.isEmpty ? nil : shared)

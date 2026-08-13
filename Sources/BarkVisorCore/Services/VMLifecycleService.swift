@@ -53,21 +53,40 @@ public enum VMLifecycleService {
         params: UpdateVMParams,
         db: DatabasePool,
     ) async throws -> VM {
-        try validateUpdateVMInputs(params: params)
+        let usbDevices = try persistableUSBDevices(params.usbDevices)
+        let normalized = UpdateVMParams(
+            name: params.name,
+            cpuCount: params.cpuCount,
+            memoryMB: params.memoryMB,
+            networkId: params.networkId,
+            portForwards: params.portForwards,
+            usbDevices: usbDevices,
+            description: params.description,
+            bootOrder: params.bootOrder,
+            displayResolution: params.displayResolution,
+            additionalDiskIds: params.additionalDiskIds,
+            sharedPaths: params.sharedPaths,
+            uefi: params.uefi,
+            tpmEnabled: params.tpmEnabled,
+        )
+        try validateUpdateVMInputs(params: normalized)
 
-        let encodedFields = encodeUpdateFields(params: params)
+        let encodedFields = encodeUpdateFields(params: normalized)
 
         return try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
 
-            try validateUpdateReferences(params: params, vm: vm, db: db)
+            try validateUpdateReferences(params: normalized, vm: vm, db: db)
+            try assertUSBUnclaimed(normalized.usbDevices, excludingVMId: id, db: db)
 
             let isRunning = vm.state != "stopped" && vm.state != "error"
-            let hardwareChanged = detectHardwareChanges(params: params, encoded: encodedFields, vm: vm)
+            let hardwareChanged = detectHardwareChanges(
+                params: normalized, encoded: encodedFields, vm: vm,
+            )
 
-            applyUpdates(params: params, encoded: encodedFields, to: &vm)
+            applyUpdates(params: normalized, encoded: encodedFields, to: &vm)
 
             if isRunning, hardwareChanged { vm.pendingChanges = true }
             vm.updatedAt = iso8601.string(from: Date())
@@ -83,8 +102,18 @@ public enum VMLifecycleService {
         id: String,
         spec: WorkloadSpec,
         db: DatabasePool,
+        hostDevices: [HostUSBDevice]? = nil,
     ) async throws -> VM {
         try WorkloadSpecProjector.validate(spec, existingID: id)
+        var normalized = spec
+        if !normalized.spec.usb.isEmpty {
+            let usbDevices = try persistableUSBDevices(
+                normalized.spec.usb.map { USBPassthroughService.passthrough(from: $0) },
+                hostDevices: hostDevices,
+            ) ?? []
+            normalized.spec.usb = usbDevices.map { USBPassthroughService.workload(from: $0) }
+        }
+        let spec = normalized
         return try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
@@ -93,6 +122,7 @@ public enum VMLifecycleService {
             let before = vm
             try WorkloadSpecProjector.apply(spec, to: &vm)
             try validateAppliedVMSpec(spec: spec, vm: vm, db: db)
+            try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: id, db: db)
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
@@ -333,7 +363,9 @@ extension VMLifecycleService {
             macAddress: MACAddress.generateQemu(),
             sharedPaths: JSONColumnCoding.encode(params.sharedPaths),
             portForwards: JSONColumnCoding.encode(params.portForwards),
-            usbDevices: JSONColumnCoding.encode(params.usbDevices),
+            usbDevices: JSONColumnCoding.encode(
+                (try? persistableUSBDevices(params.usbDevices)) ?? params.usbDevices,
+            ),
             autoCreated: false,
             pendingChanges: false,
             createdAt: now, updatedAt: now,
@@ -351,6 +383,7 @@ extension VMLifecycleService {
     ) async throws {
         do {
             try await db.write { db in
+                try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
                 if let d = disk {
                     try d.insert(db)
                 }
@@ -464,6 +497,7 @@ extension VMLifecycleService {
         try PortRegistry.assertAvailable(
             vm.decodedPortForwards, excludingVM: vm.id, db: db,
         )
+        try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
     }
 
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {

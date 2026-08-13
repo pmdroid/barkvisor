@@ -304,6 +304,52 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/vms/{id}/usb:
+    post:
+      tags: [vms]
+      operationId: attachUSB
+      x-barkvisor-stability: stable
+      summary: Attach a host USB device by stable id
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachUSBRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/usb/{deviceId}:
+    delete:
+      tags: [vms]
+      operationId: detachUSB
+      x-barkvisor-stability: stable
+      summary: Detach a USB device by stable id
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stable USB id (`vendorId:productId:serial` or `bus:BBB.AAA`)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms/{id}/spec:
     parameters:
       - $ref: "#/components/parameters/id"
@@ -660,6 +706,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemCapabilities"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/usb-devices:
+    get:
+      tags: [evolving]
+      operationId: listUSBDevices
+      x-barkvisor-stability: evolving
+      summary: Host USB devices with product names and occupancy
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostUSBDevice"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/usb:
+    get:
+      tags: [evolving]
+      operationId: listUSBDevicesAlias
+      x-barkvisor-stability: evolving
+      summary: Alias of /api/system/usb-devices
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostUSBDevice"
         default:
           $ref: "#/components/responses/Error"
 
@@ -1211,7 +1291,7 @@ components:
         usb:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/USBDevice"
         display:
           type: object
           nullable: true
@@ -1489,6 +1569,69 @@ components:
         productId:
           type: string
         label:
+          type: string
+          nullable: true
+        serialNumber:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+          description: Stable id. Prefer vendorId:productId:serial when serial is present.
+
+    AttachUSBRequest:
+      type: object
+      required: [deviceId]
+      properties:
+        deviceId:
+          type: string
+
+    HostUSBDevice:
+      type: object
+      required: [id, vendorId, productId, name]
+      properties:
+        id:
+          type: string
+          description: vendorId:productId:serial, or bus:BBB.AAA when serial is missing
+        vendorId:
+          type: string
+        productId:
+          type: string
+        name:
+          type: string
+        productName:
+          type: string
+        manufacturer:
+          type: string
+          nullable: true
+        serial:
+          type: string
+          nullable: true
+        serialNumber:
+          type: string
+          nullable: true
+        bus:
+          type: integer
+          nullable: true
+        address:
+          type: integer
+          nullable: true
+        idUnstable:
+          type: boolean
+        attachable:
+          type: boolean
+        excludedReason:
+          type: string
+          nullable: true
+        busy:
+          type: boolean
+        attachedToVmId:
+          type: string
+          nullable: true
+        claimedByVMId:
+          type: string
+          nullable: true
+        claimedByVMName:
           type: string
           nullable: true
 
