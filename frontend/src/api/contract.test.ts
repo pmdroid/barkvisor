@@ -48,6 +48,8 @@ describe('API contract (PAS-78)', () => {
       '/api/health',
       '/api/openapi.yaml',
       '/api/contract',
+      '/api/workloads/apply',
+      '/api/workloadspec.schema.json',
     ]) {
       expect(yaml).toContain(`  ${path}:`)
     }

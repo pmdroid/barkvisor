@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://barkvisor.dev/schemas/workloadspec.schema.json",
+  "title": "WorkloadSpec",
+  "description": "Portable BarkVisor VM document (apiVersion barkvisor.dev/v1). Published with the OpenAPI contract (PAS-80).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "barkvisor.dev/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "VirtualMachine"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "type": ["string", "null"] },
+        "labels": {
+          "type": ["object", "null"],
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resources"],
+      "properties": {
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu", "memoryMb"],
+          "properties": {
+            "cpu": { "type": "integer", "minimum": 1, "maximum": 256 },
+            "memoryMb": { "type": "integer", "minimum": 128, "maximum": 1048576 }
+          }
+        },
+        "arch": { "type": ["string", "null"] },
+        "guestType": { "type": ["string", "null"] },
+        "osFamily": { "type": ["string", "null"] },
+        "machine": { "type": ["string", "null"] },
+        "firmware": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "uefi": { "type": "boolean" },
+            "tpm": { "type": "boolean" }
+          }
+        },
+        "bootOrder": { "type": ["string", "null"] },
+        "disks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role"],
+            "properties": {
+              "role": { "type": "string", "enum": ["boot", "data", "cdrom"] },
+              "diskId": { "type": ["string", "null"] },
+              "imageId": { "type": ["string", "null"] },
+              "bus": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "networks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mode": { "type": ["string", "null"] },
+              "networkId": { "type": ["string", "null"] },
+              "mac": { "type": ["string", "null"] },
+              "portForwards": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["hostPort", "guestPort", "proto"],
+                  "properties": {
+                    "hostPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "guestPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "proto": { "type": "string", "enum": ["tcp", "udp"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cloudInit": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "userDataRef": { "type": ["string", "null"] },
+            "inline": { "type": ["string", "null"] }
+          }
+        },
+        "usb": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["vendorId", "productId"],
+            "properties": {
+              "vendorId": { "type": "string" },
+              "productId": { "type": "string" },
+              "label": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "display": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "resolution": { "type": ["string", "null"] }
+          }
+        },
+        "sharedPaths": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "overrides": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "linux": { "$ref": "#/$defs/overlay" },
+        "macos": { "$ref": "#/$defs/overlay" }
+      }
+    }
+  },
+  "$defs": {
+    "overlay": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "resources": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "cpu": { "type": "integer" },
+            "memoryMb": { "type": "integer" }
+          }
+        },
+        "arch": { "type": ["string", "null"] },
+        "guestType": { "type": ["string", "null"] },
+        "osFamily": { "type": ["string", "null"] },
+        "machine": { "type": ["string", "null"] },
+        "firmware": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "uefi": { "type": "boolean" },
+            "tpm": { "type": "boolean" }
+          }
+        },
+        "bootOrder": { "type": ["string", "null"] },
+        "display": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "resolution": { "type": ["string", "null"] }
+          }
+        },
+        "accelerator": { "type": ["string", "null"] },
+        "hugepages": { "type": ["boolean", "null"] }
+      }
+    }
+  }
+}

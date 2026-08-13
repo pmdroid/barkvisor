@@ -58,6 +58,7 @@ packageTargets.append(contentsOf: [
         path: "Sources/BarkVisorCore",
         resources: [
             .copy("API/openapi.yaml"),
+            .copy("API/workloadspec.schema.json"),
         ],
     ),
     // Vapor HTTP layer: controllers, middleware, server

@@ -94,6 +94,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/APIContractSummary"
 
+  /api/workloadspec.schema.json:
+    get:
+      tags: [meta]
+      operationId: getWorkloadSpecSchema
+      security: []
+      x-barkvisor-stability: stable
+      summary: JSON Schema for WorkloadSpec (PAS-80)
+      responses:
+        "200":
+          description: JSON Schema 2020-12
+          content:
+            application/schema+json:
+              schema:
+                type: object
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/auth/login:
     post:
       tags: [auth]
@@ -318,6 +335,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workloads/apply:
+    post:
+      tags: [vms]
+      operationId: applyWorkload
+      x-barkvisor-stability: stable
+      summary: Server-side apply a WorkloadSpec (create or update)
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Validate and return the planned op without writing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadSpec"
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/WorkloadSpec"
+      responses:
+        "200":
+          description: Apply result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadApplyResult"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workloads/{id}/spec:
+    get:
+      tags: [vms]
+      operationId: getWorkloadSpec
+      x-barkvisor-stability: stable
+      summary: Export the live WorkloadSpec for a workload
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadSpec"
         default:
           $ref: "#/components/responses/Error"
 
@@ -972,6 +1038,29 @@ components:
         warning:
           type: string
           nullable: true
+
+    WorkloadApplyResult:
+      type: object
+      required: [op, id, generation]
+      properties:
+        op:
+          type: string
+          enum: [created, updated, unchanged]
+        id:
+          type: string
+        generation:
+          type: integer
+        diff:
+          $ref: "#/components/schemas/WorkloadApplyDiff"
+
+    WorkloadApplyDiff:
+      type: object
+      required: [after]
+      properties:
+        before:
+          $ref: "#/components/schemas/WorkloadSpec"
+        after:
+          $ref: "#/components/schemas/WorkloadSpec"
 
     WorkloadSpec:
       type: object

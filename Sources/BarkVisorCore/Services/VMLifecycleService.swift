@@ -14,7 +14,8 @@ public enum VMLifecycleService {
         try await validateCreateVMInputs(params: params, db: db)
 
         let now = iso8601.string(from: Date())
-        let vmID = UUID().uuidString
+        let requestedID = params.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let vmID = requestedID.isEmpty ? UUID().uuidString : requestedID
 
         let bootDisk = try await resolveBootDisk(
             params: params, vmID: vmID, vmName: params.name, now: now, db: db,

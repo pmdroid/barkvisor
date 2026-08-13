@@ -42,6 +42,18 @@ struct APIContractTests {
         #expect(docs == bundled)
     }
 
+    @Test func `docs workloadspec schema matches published file`() throws {
+        let docsURL = repoRoot().appendingPathComponent("docs/api/workloadspec.schema.json")
+        #expect(FileManager.default.fileExists(atPath: docsURL.path))
+        let docs = try String(contentsOf: docsURL, encoding: .utf8)
+        let object = try JSONSerialization.jsonObject(with: Data(docs.utf8)) as? [String: Any]
+        #expect(object?["title"] as? String == "WorkloadSpec")
+        #expect(object?["$schema"] as? String == "https://json-schema.org/draft/2020-12/schema")
+        if let bundled = try? APIContract.workloadSpecSchemaJSON() {
+            #expect(docs == bundled)
+        }
+    }
+
     @Test func `openapi paths match route inventory`() throws {
         let yaml = try loadSpecYAML()
         let root = try parseYAML(yaml)
