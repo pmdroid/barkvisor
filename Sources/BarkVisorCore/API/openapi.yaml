@@ -785,6 +785,76 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/vms/{id}/health:
+    get:
+      tags: [evolving]
+      operationId: getVMHealth
+      x-barkvisor-stability: evolving
+      summary: Workload health rollup and checks
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadHealthStatus"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: putVMHealth
+      x-barkvisor-stability: evolving
+      summary: Replace VM HTTP/TCP health-check config
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadHealthSpec"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadHealthStatus"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/health/probe:
+    post:
+      tags: [evolving]
+      operationId: probeVMHealth
+      x-barkvisor-stability: evolving
+      summary: Run configured HTTP/TCP probes once now
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadHealthStatus"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workloads/health-summary:
+    get:
+      tags: [evolving]
+      operationId: getWorkloadHealthSummary
+      x-barkvisor-stability: evolving
+      summary: Per-workload health rollup
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadHealthSummary"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms/{id}/state:
     get:
       tags: [out-of-band]
@@ -1081,6 +1151,98 @@ components:
       type: string
       enum: [unknown, stopped, starting, running, guest_ready, degraded, failed]
 
+    WorkloadHealthStatus:
+      type: object
+      required: [health, checks, updatedAt]
+      properties:
+        health:
+          $ref: "#/components/schemas/WorkloadHealth"
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/HealthCheck"
+        updatedAt:
+          type: string
+        lastError:
+          type: string
+          nullable: true
+
+    WorkloadHealthSummary:
+      type: object
+      required: [counts, items, updatedAt]
+      properties:
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkloadHealthSummaryItem"
+        updatedAt:
+          type: string
+
+    WorkloadHealthSummaryItem:
+      type: object
+      required: [id, name, kind, health]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        health:
+          $ref: "#/components/schemas/WorkloadHealth"
+        lastError:
+          type: string
+          nullable: true
+
+    WorkloadHealthSpec:
+      type: object
+      description: >
+        Optional VM HTTP/TCP probes (PAS-65). Omitted or empty means process-state
+        health only. `exec` is App-only and rejected on VirtualMachine.
+      properties:
+        intervalSec:
+          type: integer
+          minimum: 5
+          maximum: 3600
+        timeoutSec:
+          type: integer
+          minimum: 1
+          maximum: 60
+        healthyThreshold:
+          type: integer
+          minimum: 1
+          maximum: 20
+        unhealthyThreshold:
+          type: integer
+          minimum: 1
+          maximum: 20
+        http:
+          type: object
+          required: [path, port]
+          properties:
+            path:
+              type: string
+            port:
+              type: integer
+              minimum: 1
+              maximum: 65535
+            expectedStatus:
+              type: integer
+              minimum: 100
+              maximum: 599
+        tcp:
+          type: object
+          required: [port]
+          properties:
+            port:
+              type: integer
+              minimum: 1
+              maximum: 65535
+
     VMRuntimeStatus:
       type: object
       required: [state, pendingChanges, generation, createdAt, updatedAt, health, backend]
@@ -1300,6 +1462,8 @@ components:
           nullable: true
           items:
             type: string
+        health:
+          $ref: "#/components/schemas/WorkloadHealthSpec"
 
     CreateVMRequest:
       type: object

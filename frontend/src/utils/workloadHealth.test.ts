@@ -104,5 +104,6 @@ describe('healthLabel', () => {
   test('guest_ready is humanized', () => {
     expect(healthLabel('guest_ready')).toBe('Guest ready')
     expect(healthLabel('failed')).toBe('Failed')
+    expect(vmHealth(vm({ state: 'running', health: 'guest_ready' }))).toBe('guest_ready')
   })
 })

@@ -371,6 +371,7 @@ extension VMLifecycleService {
             createdAt: now, updatedAt: now,
         )
         vm.setOverrides(params.overrides)
+        vm.setHealth(params.health)
         vm.syncSpecProjection(bumpGeneration: false)
         return vm
     }

@@ -128,6 +128,38 @@
         "sharedPaths": {
           "type": ["array", "null"],
           "items": { "type": "string" }
+        },
+        "health": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "intervalSec": { "type": "integer", "minimum": 5, "maximum": 3600 },
+            "timeoutSec": { "type": "integer", "minimum": 1, "maximum": 60 },
+            "healthyThreshold": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "unhealthyThreshold": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "http": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["path", "port"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "expectedStatus": { "type": "integer", "minimum": 100, "maximum": 599 }
+              }
+            },
+            "tcp": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["port"],
+              "properties": {
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            },
+            "exec": {
+              "type": ["object", "null"],
+              "description": "App-only. Rejected on VirtualMachine."
+            }
+          }
         }
       }
     },

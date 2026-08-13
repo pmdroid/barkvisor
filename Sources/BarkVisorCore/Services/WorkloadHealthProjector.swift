@@ -2,19 +2,25 @@ import Foundation
 
 /// Derives `WorkloadHealth` from VM state plus optional live signals.
 ///
-/// Wave 0 rules (multi-reviewer synthesis, 2026-08-12):
-/// - Running without guest agent is **running**, not failed / not `guest_ready`.
-/// - Failed QEMU (`error` state or dead process while marked running) is `failed`
-///   with a last-error string.
-/// - `guest_ready` is never emitted here (PAS-65).
+/// Rules (Wave 0 + PAS-65):
+/// - No HTTP/TCP check and no fresh guest agent → process state only (`running`).
+/// - Failed QEMU (`error` state or dead process while marked running) is `failed`.
+/// - Fresh guest agent (`lastSeenAt` within `guestAgentStaleAfter`) or passing
+///   HTTP/TCP probes promote `running` to `guest_ready`.
+/// - A configured probe that has failed is `degraded`. Missing guest agent is
+///   never a failure.
 public enum WorkloadHealthProjector {
+    /// Guest-info older than this is not `guest_ready`. Metrics poll every 5s.
+    public static let guestAgentStaleAfter: TimeInterval = 90
+
     public static func project(
         state: VMState,
         signals: WorkloadHealthSignals = .unobserved,
         updatedAt: String,
+        now: Date = Date(),
     ) -> WorkloadHealthStatus {
-        let checks = makeChecks(state: state, signals: signals)
-        let (health, lastError) = rollup(state: state, signals: signals)
+        let checks = makeChecks(state: state, signals: signals, now: now)
+        let (health, lastError) = rollup(state: state, signals: signals, now: now)
         return WorkloadHealthStatus(
             health: health,
             checks: checks,
@@ -54,6 +60,7 @@ public enum WorkloadHealthProjector {
     private static func rollup(
         state: VMState,
         signals: WorkloadHealthSignals,
+        now: Date,
     ) -> (WorkloadHealth, String?) {
         switch state {
         case .error:
@@ -74,7 +81,12 @@ public enum WorkloadHealthProjector {
             if signals.qmp == false {
                 return (.degraded, signals.lastError ?? "QMP unreachable")
             }
-            // guestAgent / lastSeenAt are informational only until PAS-65.
+            if signals.probesFailed {
+                return (.degraded, probeFailMessage(signals))
+            }
+            if isGuestAgentFresh(signals, now: now) || signals.probesPassed {
+                return (.guestReady, nil)
+            }
             return (.running, nil)
         }
     }
@@ -82,6 +94,7 @@ public enum WorkloadHealthProjector {
     private static func makeChecks(
         state: VMState,
         signals: WorkloadHealthSignals,
+        now: Date,
     ) -> [WorkloadHealthCheck] {
         let active = state == .running || state == .starting || state == .stopping
         return [
@@ -99,19 +112,85 @@ public enum WorkloadHealthProjector {
                 failMessage: "QMP socket unreachable",
                 passMessage: "QMP socket present",
             ),
-            guestAgentCheck(signals: signals),
+            guestAgentCheck(signals: signals, now: now),
+            probeCheck(
+                name: "http",
+                configured: signals.httpConfigured,
+                observed: signals.http,
+                failMessage: "HTTP probe failed",
+                passMessage: "HTTP probe passed",
+            ),
+            probeCheck(
+                name: "tcp",
+                configured: signals.tcpConfigured,
+                observed: signals.tcp,
+                failMessage: "TCP probe failed",
+                passMessage: "TCP probe passed",
+            ),
         ]
     }
 
-    private static func guestAgentCheck(signals: WorkloadHealthSignals) -> WorkloadHealthCheck {
-        if signals.guestAgent == true {
-            let message = signals.lastSeenAt.map { "lastSeenAt \($0)" } ?? "guest agent reporting"
-            return WorkloadHealthCheck(name: "guestAgent", status: .pass, message: message)
+    private static func guestAgentCheck(
+        signals: WorkloadHealthSignals,
+        now: Date,
+    ) -> WorkloadHealthCheck {
+        guard let lastSeenAt = signals.lastSeenAt, signals.guestAgent == true else {
+            return WorkloadHealthCheck(
+                name: "guestAgent",
+                status: .skip,
+                message: "guest agent not required",
+            )
         }
-        // Missing guest agent is not a failure (Wave 0 / PAS-65).
-        let message = signals.lastSeenAt.map { "lastSeenAt \($0)" }
-            ?? "guest agent not required"
-        return WorkloadHealthCheck(name: "guestAgent", status: .skip, message: message)
+        if isGuestAgentFresh(signals, now: now) {
+            return WorkloadHealthCheck(
+                name: "guestAgent",
+                status: .pass,
+                message: "lastSeenAt \(lastSeenAt)",
+            )
+        }
+        return WorkloadHealthCheck(
+            name: "guestAgent",
+            status: .skip,
+            message: "lastSeenAt stale \(lastSeenAt)",
+        )
+    }
+
+    private static func probeCheck(
+        name: String,
+        configured: Bool,
+        observed: Bool?,
+        failMessage: String,
+        passMessage: String,
+    ) -> WorkloadHealthCheck {
+        if !configured {
+            return WorkloadHealthCheck(name: name, status: .skip, message: "not configured")
+        }
+        return check(
+            name: name,
+            observed: observed,
+            skipWhen: observed == nil,
+            failMessage: failMessage,
+            passMessage: passMessage,
+        )
+    }
+
+    public static func isGuestAgentFresh(
+        _ signals: WorkloadHealthSignals,
+        now: Date = Date(),
+        staleAfter: TimeInterval = guestAgentStaleAfter,
+    ) -> Bool {
+        guard signals.guestAgent == true, let raw = signals.lastSeenAt else { return false }
+        guard let seen = iso8601.date(from: raw) else { return false }
+        return now.timeIntervalSince(seen) <= staleAfter
+    }
+
+    private static func probeFailMessage(_ signals: WorkloadHealthSignals) -> String {
+        if signals.http == false, signals.tcp == false {
+            return "HTTP and TCP probes failed"
+        }
+        if signals.http == false { return "HTTP probe failed" }
+        if signals.tcp == false { return "TCP probe failed" }
+        return "probe failed"
     }
 
     private static func check(

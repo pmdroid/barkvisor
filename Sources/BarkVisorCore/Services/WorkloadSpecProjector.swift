@@ -27,6 +27,7 @@ import Foundation
 /// | spec.cloudInit.userDataRef | cloudInitPath |
 /// | spec.usb | usbDevices |
 /// | spec.sharedPaths | sharedPaths |
+/// | spec.health | healthJson |
 /// | overrides | overridesJson |
 ///
 /// Host-only (status, not required on spec): state, pendingChanges, autoCreated,
@@ -78,6 +79,7 @@ public enum WorkloadSpecProjector {
                 usb: usb,
                 display: WorkloadDisplay(resolution: vm.displayResolution),
                 sharedPaths: shared.isEmpty ? nil : shared,
+                health: vm.decodedHealth,
             ),
             overrides: vm.decodedOverrides,
         )
@@ -157,6 +159,10 @@ public enum WorkloadSpecProjector {
             vm.setSharedPaths(shared.isEmpty ? nil : shared)
         }
         vm.setOverrides(spec.overrides)
+        if let health = spec.spec.health {
+            try WorkloadHealthSpec.validate(health)
+            vm.setHealth(health)
+        }
     }
 
     public static func validate(_ spec: WorkloadSpec, existingID: String? = nil) throws {
@@ -212,6 +218,9 @@ public enum WorkloadSpecProjector {
         }
         if let resolution = resolved.spec.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)
+        }
+        if let health = spec.spec.health {
+            try WorkloadHealthSpec.validate(health)
         }
     }
 

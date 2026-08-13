@@ -189,6 +189,7 @@ struct VMController: RouteCollection {
     let metricsCollector: MetricsCollector
     let stateStreamService: VMStateStreamService
     let backgroundTasks: BackgroundTaskManager
+    let healthProbes: HealthProbeService
 
     func boot(routes: any RoutesBuilder) throws {
         let vms = routes.grouped("api", "vms")
@@ -207,6 +208,8 @@ struct VMController: RouteCollection {
         vms.get(":id", "state", use: stateStream)
         vms.get(":id", "guest-info", use: getGuestInfo)
         vms.get(":id", "health", use: getHealth)
+        vms.put(":id", "health", use: putHealth)
+        vms.post(":id", "health", "probe", use: probeHealth)
         vms.get(":id", "spec", use: getSpec)
         vms.put(":id", "spec", use: putSpec)
     }
@@ -229,21 +232,6 @@ struct VMController: RouteCollection {
             throw Abort(.notFound)
         }
         return try await respond(vm, db: req.db)
-    }
-
-    @Sendable
-    func getHealth(req: Vapor.Request) async throws -> WorkloadHealthStatus {
-        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
-            throw Abort(.notFound)
-        }
-        let lastSeen = try await guestLastSeen(ids: [vm.id], db: req.db)
-        let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
-        return WorkloadHealthProjector.project(
-            state: VMState.parse(vm.state),
-            signals: signals,
-            updatedAt: vm.updatedAt,
-        )
     }
 
     @Sendable
@@ -531,37 +519,5 @@ struct VMController: RouteCollection {
 
         let stream = await stateStreamService.stateStream(vmID: id)
         return SSEResponse.stream(from: stream, keepaliveSeconds: 15)
-    }
-
-    // MARK: - Health signals
-
-    private func respond(_ vm: VM, db: DatabasePool) async throws -> VMResponse {
-        let lastSeen = try await guestLastSeen(ids: [vm.id], db: db)
-        let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
-        return VMResponse(from: vm, signals: signals)
-    }
-
-    private func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
-        let lastSeen = try await guestLastSeen(ids: vms.map(\.id), db: db)
-        var responses: [VMResponse] = []
-        responses.reserveCapacity(vms.count)
-        for vm in vms {
-            let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
-            responses.append(VMResponse(from: vm, signals: signals))
-        }
-        return responses
-    }
-
-    private func guestLastSeen(ids: [String], db: DatabasePool) async throws -> [String: String] {
-        guard !ids.isEmpty else { return [:] }
-        let idSet = Set(ids)
-        let records = try await db.read { db in
-            try GuestInfoRecord.fetchAll(db)
-        }
-        var seen: [String: String] = [:]
-        for record in records where idSet.contains(record.vmId) {
-            seen[record.vmId] = record.updatedAt
-        }
-        return seen
     }
 }

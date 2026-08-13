@@ -109,8 +109,12 @@ extension VMManager {
         lastHealthErrors[vmID]
     }
 
-    /// Live PAS-79 signals from the process table, QMP socket, and guest_info.
-    public func healthSignals(for vm: VM, lastSeenAt: String?) -> WorkloadHealthSignals {
+    /// Live PAS-79/65 signals from the process table, QMP socket, guest_info, and probes.
+    public func healthSignals(
+        for vm: VM,
+        lastSeenAt: String?,
+        probes: HealthProbeResults = .unobserved,
+    ) -> WorkloadHealthSignals {
         let state = VMState.parse(vm.state)
         let lastError = lastHealthErrors[vm.id]
         if let running = runningVMs[vm.id] {
@@ -120,6 +124,10 @@ extension VMManager {
                 guestAgent: lastSeenAt != nil,
                 lastSeenAt: lastSeenAt,
                 lastError: lastError,
+                http: probes.http,
+                tcp: probes.tcp,
+                httpConfigured: probes.httpConfigured,
+                tcpConfigured: probes.tcpConfigured,
             )
         }
         if state == .running {
@@ -129,12 +137,20 @@ extension VMManager {
                 guestAgent: lastSeenAt != nil,
                 lastSeenAt: lastSeenAt,
                 lastError: lastError ?? "QEMU process not running",
+                http: probes.http,
+                tcp: probes.tcp,
+                httpConfigured: probes.httpConfigured,
+                tcpConfigured: probes.tcpConfigured,
             )
         }
         return WorkloadHealthSignals(
             guestAgent: lastSeenAt != nil,
             lastSeenAt: lastSeenAt,
             lastError: lastError,
+            http: probes.http,
+            tcp: probes.tcp,
+            httpConfigured: probes.httpConfigured,
+            tcpConfigured: probes.tcpConfigured,
         )
     }
 

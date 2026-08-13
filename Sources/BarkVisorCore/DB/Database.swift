@@ -44,6 +44,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M004_WorkloadOverrides.identifier) { db in
             try M004_WorkloadOverrides.migrate(db)
         }
+        migrator.registerMigration(M005_WorkloadHealth.identifier) { db in
+            try M005_WorkloadHealth.migrate(db)
+        }
     }
 }
 
