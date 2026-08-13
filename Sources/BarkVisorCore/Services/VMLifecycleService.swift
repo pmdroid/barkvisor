@@ -78,6 +78,7 @@ public enum VMLifecycleService {
             }
 
             try validateUpdateReferences(params: normalized, vm: vm, db: db)
+            try assertUSBUnclaimed(normalized.usbDevices, excludingVMId: id, db: db)
 
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let hardwareChanged = detectHardwareChanges(
@@ -129,6 +130,7 @@ public enum VMLifecycleService {
             try PortRegistry.assertAvailable(
                 vm.decodedPortForwards, excludingVM: id, db: db,
             )
+            try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: id, db: db)
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
@@ -388,6 +390,7 @@ extension VMLifecycleService {
     ) async throws {
         do {
             try await db.write { db in
+                try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
                 if let d = disk {
                     try d.insert(db)
                 }

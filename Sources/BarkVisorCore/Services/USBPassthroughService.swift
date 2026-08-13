@@ -126,6 +126,22 @@ public enum USBPassthroughService {
         return nil
     }
 
+    /// Reject devices already attached to another VM. Used on every persist
+    /// path (create / update / spec / attach) so occupancy is not attach-only.
+    public static func assertUnclaimed(
+        devices: [USBPassthroughDevice],
+        vms: [VM],
+        excludingVMId: String? = nil,
+        hostDevices: [HostUSBDevice] = [],
+    ) throws {
+        for device in devices {
+            let host = resolvedOrSyntheticHost(device, hostDevices: hostDevices)
+            if let claim = claimedBy(host: host, vms: vms, excludingVMId: excludingVMId) {
+                throw BarkVisorError.conflict("USB device is attached to \(claim.name)")
+            }
+        }
+    }
+
     public static func contains(_ devices: [USBPassthroughDevice], host: HostUSBDevice) -> Bool {
         devices.contains { matches($0, host: host) || legacyVIDPIDEquals($0, host: host) }
     }
@@ -262,6 +278,34 @@ public enum USBPassthroughService {
             && USBDeviceIdentity.normalizeHexId(device.productId) == host.productId
             && device.serialNumber == nil
             && host.serialNumber == nil
+    }
+
+    private static func resolvedOrSyntheticHost(
+        _ device: USBPassthroughDevice,
+        hostDevices: [HostUSBDevice],
+    ) -> HostUSBDevice {
+        if let deviceId = device.deviceId,
+           let host = try? resolve(deviceId: deviceId, hostDevices: hostDevices) {
+            return host
+        }
+        if let serial = USBDeviceIdentity.normalizedSerial(device.serialNumber) {
+            let ref = USBDeviceIdentity.make(
+                vendorId: device.vendorId, productId: device.productId, serial: serial,
+            )
+            if let host = try? resolve(deviceId: ref.id, hostDevices: hostDevices) {
+                return host
+            }
+        }
+        if let deviceId = device.deviceId, let parsed = USBDeviceIdentity.parse(deviceId) {
+            return syntheticHost(from: parsed, fallback: device)
+        }
+        return HostUSBDevice(
+            vendorId: device.vendorId,
+            productId: device.productId,
+            name: device.label ?? "USB Device",
+            manufacturer: nil,
+            serialNumber: device.serialNumber,
+        )
     }
 
     private static func syntheticHost(
