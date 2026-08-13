@@ -5,11 +5,26 @@ public struct USBPassthroughDevice: Codable, Equatable, Sendable {
     public let vendorId: String
     public let productId: String
     public let label: String?
+    public let serialNumber: String?
+    public let deviceId: String?
 
-    public init(vendorId: String, productId: String, label: String? = nil) {
-        self.vendorId = vendorId
-        self.productId = productId
+    public init(
+        vendorId: String,
+        productId: String,
+        label: String? = nil,
+        serialNumber: String? = nil,
+        deviceId: String? = nil,
+    ) {
+        let ref = USBDeviceIdentity.make(
+            vendorId: vendorId,
+            productId: productId,
+            serial: serialNumber,
+        )
+        self.vendorId = ref.vendorId
+        self.productId = ref.productId
         self.label = label
+        self.serialNumber = USBDeviceIdentity.normalizedSerial(serialNumber)
+        self.deviceId = deviceId ?? (ref.serial != nil ? ref.id : nil)
     }
 }
 

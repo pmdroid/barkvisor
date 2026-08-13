@@ -202,6 +202,8 @@ struct VMController: RouteCollection {
         vms.post(":id", "restart", use: restart)
         vms.post(":id", "detach-iso", use: detachISO)
         vms.post(":id", "attach-iso", use: attachISO)
+        vms.post(":id", "usb", use: attachUSB)
+        vms.delete(":id", "usb", ":deviceId", use: detachUSB)
         vms.get(":id", "state", use: stateStream)
         vms.get(":id", "guest-info", use: getGuestInfo)
         vms.get(":id", "health", use: getHealth)
@@ -384,6 +386,35 @@ struct VMController: RouteCollection {
         return try await respond(vm, db: req.db)
     }
 
+    struct AttachUSBRequest: Content {
+        let deviceId: String
+    }
+
+    @Sendable
+    func attachUSB(req: Vapor.Request) async throws -> VMResponse {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        let body = try req.content.decode(AttachUSBRequest.self)
+        let vm = try await VMLifecycleService.attachUSB(vmID: id, deviceId: body.deviceId, db: req.db)
+        AuditService.log(
+            action: "vm.usb.attach", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
+            req: req,
+        )
+        return try await respond(vm, db: req.db)
+    }
+
+    @Sendable
+    func detachUSB(req: Vapor.Request) async throws -> VMResponse {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let deviceId = req.parameters.get("deviceId") else { throw Abort(.badRequest) }
+        let decoded = deviceId.removingPercentEncoding ?? deviceId
+        let vm = try await VMLifecycleService.detachUSB(vmID: id, deviceId: decoded, db: req.db)
+        AuditService.log(
+            action: "vm.usb.detach", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
+            req: req,
+        )
+        return try await respond(vm, db: req.db)
+    }
+
     // MARK: - WorkloadSpec
 
     @Sendable
@@ -424,9 +455,7 @@ struct VMController: RouteCollection {
             let forwards = spec.spec.networks.first?.portForwards.map {
                 PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
             }
-            let usb = spec.spec.usb.map {
-                USBPassthroughDevice(vendorId: $0.vendorId, productId: $0.productId, label: $0.label)
-            }
+            let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
             return CreateVMParams(
                 name: spec.metadata.name,
                 vmType: guestType,

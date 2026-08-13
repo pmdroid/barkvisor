@@ -48,6 +48,8 @@ describe('API contract (PAS-78)', () => {
       '/api/health',
       '/api/openapi.yaml',
       '/api/contract',
+      '/api/system/usb-devices',
+      '/api/vms/{id}/usb',
     ]) {
       expect(yaml).toContain(`  ${path}:`)
     }

@@ -284,31 +284,37 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     }
   }
 
+  function usbDeviceKey(dev: { deviceId?: string | null; vendorId: string; productId: string; serialNumber?: string | null; id?: string }) {
+    if ('id' in dev && dev.id) return dev.id
+    return dev.deviceId
+      || (dev.serialNumber ? `${dev.vendorId}:${dev.productId}:${dev.serialNumber}` : `${dev.vendorId}:${dev.productId}`)
+  }
+
   function toggleUSBDevice(dev: HostUSBDevice) {
-    const idx = selectedUSBDevices.value.findIndex(
-      (d) => d.vendorId === dev.vendorId && d.productId === dev.productId,
-    )
+    if (dev.attachable === false || dev.claimedByVMId) return
+    const key = usbDeviceKey(dev)
+    const idx = selectedUSBDevices.value.findIndex((d) => usbDeviceKey(d) === key)
     if (idx >= 0) {
       selectedUSBDevices.value.splice(idx, 1)
     } else {
       selectedUSBDevices.value.push({
         vendorId: dev.vendorId,
         productId: dev.productId,
-        label: dev.name,
+        label: dev.productName || dev.name,
+        serialNumber: dev.serialNumber,
+        deviceId: usbDeviceKey(dev),
       })
     }
   }
 
   function isUSBSelected(dev: HostUSBDevice): boolean {
-    return selectedUSBDevices.value.some(
-      (d) => d.vendorId === dev.vendorId && d.productId === dev.productId,
-    )
+    const key = usbDeviceKey(dev)
+    return selectedUSBDevices.value.some((d) => usbDeviceKey(d) === key)
   }
 
   function removeUSBDevice(dev: USBPassthroughDevice) {
-    selectedUSBDevices.value = selectedUSBDevices.value.filter(
-      (d) => !(d.vendorId === dev.vendorId && d.productId === dev.productId),
-    )
+    const key = usbDeviceKey(dev)
+    selectedUSBDevices.value = selectedUSBDevices.value.filter((d) => usbDeviceKey(d) !== key)
   }
 
   // Step 5/6: Network (list from shared store)

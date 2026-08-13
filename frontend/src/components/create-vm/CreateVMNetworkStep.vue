@@ -142,10 +142,10 @@ const emit = defineEmits<{
       <div v-if="selectedUSBDevices.length > 0" style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px">
         <div
           v-for="dev in selectedUSBDevices"
-          :key="`${dev.vendorId}:${dev.productId}`"
+          :key="dev.deviceId || `${dev.vendorId}:${dev.productId}:${dev.serialNumber || ''}`"
           style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--border-subtle)"
         >
-          <span>{{ dev.label || `${dev.vendorId}:${dev.productId}` }} <span class="badge badge-gray" style="font-size:10px;margin-left:4px">{{ dev.vendorId }}:{{ dev.productId }}</span></span>
+          <span>{{ dev.label || `${dev.vendorId}:${dev.productId}` }} <span class="badge badge-gray" style="font-size:10px;margin-left:4px">{{ dev.deviceId || `${dev.vendorId}:${dev.productId}` }}</span></span>
           <button class="btn-ghost btn-sm" style="color:var(--red);flex-shrink:0;margin-left:8px" @click="emit('removeUSBDevice', dev)">Remove</button>
         </div>
       </div>
@@ -172,24 +172,26 @@ const emit = defineEmits<{
             <tbody>
               <tr
                 v-for="dev in hostUSBDevices"
-                :key="`${dev.vendorId}:${dev.productId}`"
-                :style="dev.claimedByVMId ? 'opacity:0.5' : 'cursor:pointer'"
-                @click="!dev.claimedByVMId && emit('toggleUSBDevice', dev)"
+                :key="dev.id || `${dev.vendorId}:${dev.productId}:${dev.serialNumber || ''}`"
+                :style="dev.claimedByVMId || dev.attachable === false ? 'opacity:0.5' : 'cursor:pointer'"
+                @click="!dev.claimedByVMId && dev.attachable !== false && emit('toggleUSBDevice', dev)"
               >
                 <td style="width:32px;text-align:center">
                   <input
                     type="checkbox"
                     :checked="isUSBSelected(dev)"
-                    :disabled="!!dev.claimedByVMId"
-                    @click.stop="!dev.claimedByVMId && emit('toggleUSBDevice', dev)"
+                    :disabled="!!dev.claimedByVMId || dev.attachable === false"
+                    @click.stop="!dev.claimedByVMId && dev.attachable !== false && emit('toggleUSBDevice', dev)"
                   />
                 </td>
                 <td>
-                  <div style="font-weight:500">{{ dev.name }}</div>
+                  <div style="font-weight:500">{{ dev.productName || dev.name }}</div>
                   <div v-if="dev.manufacturer" style="font-size:11px;color:var(--text-dim)">{{ dev.manufacturer }}</div>
                   <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
+                  <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
+                  <div v-else-if="dev.idUnstable" style="font-size:11px;color:var(--text-dim)">ID may change if the device is replugged</div>
                 </td>
-                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:10px">{{ dev.vendorId }}:{{ dev.productId }}</span></td>
+                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:10px">{{ dev.id || `${dev.vendorId}:${dev.productId}` }}</span></td>
               </tr>
             </tbody>
           </table>

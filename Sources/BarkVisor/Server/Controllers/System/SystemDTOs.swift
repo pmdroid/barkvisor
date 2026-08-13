@@ -100,11 +100,21 @@ extension CapabilityCode: Content {}
 extension NetworkModeCapability: Content {}
 
 struct HostUSBDeviceResponse: Content {
+    let id: String
     let vendorId: String
     let productId: String
     let name: String
+    let productName: String
     let manufacturer: String?
+    let serial: String?
     let serialNumber: String?
+    let bus: Int?
+    let address: Int?
+    let idUnstable: Bool
+    let attachable: Bool
+    let excludedReason: String?
+    let busy: Bool
+    let attachedToVmId: String?
     let claimedByVMId: String?
     let claimedByVMName: String?
 }
