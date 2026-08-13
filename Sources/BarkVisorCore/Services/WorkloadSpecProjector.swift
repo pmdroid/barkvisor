@@ -83,13 +83,23 @@ public enum WorkloadSpecProjector {
         )
     }
 
-    public static func status(from vm: VM) -> VMRuntimeStatus {
-        VMRuntimeStatus(
+    public static func status(
+        from vm: VM,
+        signals: WorkloadHealthSignals = .unobserved,
+    ) -> VMRuntimeStatus {
+        let health = WorkloadHealthProjector.project(
+            state: VMState.parse(vm.state),
+            signals: signals,
+            updatedAt: vm.updatedAt,
+        )
+        return VMRuntimeStatus(
             state: VMState.parse(vm.state),
             pendingChanges: vm.pendingChanges,
             generation: vm.specGeneration,
             createdAt: vm.createdAt,
             updatedAt: vm.updatedAt,
+            health: health.health,
+            healthError: health.lastError,
         )
     }
 

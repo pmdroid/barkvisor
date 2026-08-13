@@ -135,6 +135,7 @@ public actor QMPEventListener {
                     )
                 }
                 let event = VMStateEvent(id: vmID, state: "error", error: "Kernel panic")
+                await vmManager?.recordHealthError("Kernel panic", for: vmID)
                 await stateStreamService?.broadcast(event: event)
             } catch {
                 Log.vm.error("Failed to update DB for panicked VM \(vmID): \(error)", vm: vmID)
