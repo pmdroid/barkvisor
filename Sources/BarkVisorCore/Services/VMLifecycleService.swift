@@ -497,6 +497,7 @@ extension VMLifecycleService {
         try PortRegistry.assertAvailable(
             vm.decodedPortForwards, excludingVM: vm.id, db: db,
         )
+        try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
     }
 
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {
