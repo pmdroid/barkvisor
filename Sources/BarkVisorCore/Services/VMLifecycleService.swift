@@ -102,8 +102,18 @@ public enum VMLifecycleService {
         id: String,
         spec: WorkloadSpec,
         db: DatabasePool,
+        hostDevices: [HostUSBDevice]? = nil,
     ) async throws -> VM {
         try WorkloadSpecProjector.validate(spec, existingID: id)
+        var normalized = spec
+        if !normalized.spec.usb.isEmpty {
+            let usbDevices = try persistableUSBDevices(
+                normalized.spec.usb.map { USBPassthroughService.passthrough(from: $0) },
+                hostDevices: hostDevices,
+            ) ?? []
+            normalized.spec.usb = usbDevices.map { USBPassthroughService.workload(from: $0) }
+        }
+        let spec = normalized
         return try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
