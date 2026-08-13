@@ -129,9 +129,33 @@ export interface WorkloadSpecBody {
   sharedPaths?: string[] | null
 }
 
+export interface WorkloadResourcesOverlay {
+  cpu?: number | null
+  memoryMb?: number | null
+}
+
+export interface WorkloadFirmwareOverlay {
+  uefi?: boolean | null
+  tpm?: boolean | null
+}
+
+/** Platform-specific spec overlay (PAS-41). Deep-merged for the host OS. */
+export interface WorkloadSpecOverlay {
+  resources?: WorkloadResourcesOverlay | null
+  arch?: string | null
+  guestType?: string | null
+  osFamily?: string | null
+  machine?: string | null
+  firmware?: WorkloadFirmwareOverlay | null
+  bootOrder?: string | null
+  display?: WorkloadDisplay | null
+  accelerator?: string | null
+  hugepages?: boolean | null
+}
+
 export interface WorkloadOverrides {
-  linux?: Record<string, string> | null
-  macos?: Record<string, string> | null
+  linux?: WorkloadSpecOverlay | null
+  macos?: WorkloadSpecOverlay | null
 }
 
 export interface WorkloadSpec {
