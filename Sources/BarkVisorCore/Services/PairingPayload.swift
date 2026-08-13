@@ -95,9 +95,18 @@ public struct PairingPayload: Sendable, Equatable {
         } else {
             agentPort = Config.agentPort
         }
+        let host: String?
+        if let rawHost = query["host"] {
+            guard let clean = sanitizeHost(rawHost) else {
+                throw PairingError.invalidPayload("Pairing URI has an invalid host")
+            }
+            host = clean
+        } else {
+            host = nil
+        }
         return PairingPayload(
             code: code,
-            host: query["host"],
+            host: host,
             port: port,
             agentPort: agentPort,
             hostId: hostId,
@@ -112,7 +121,35 @@ public struct PairingPayload: Sendable, Equatable {
             return nil
         }
         if trimmed.contains("://") { return nil }
+        if isBlockedJoinHost(trimmed) { return nil }
         return trimmed
+    }
+
+    /// Loopback, link-local, and cloud-metadata targets are not valid
+    /// pairing hosts. RFC1918 LAN addresses stay allowed.
+    public static func isBlockedJoinHost(_ raw: String) -> Bool {
+        let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        if host == "localhost" || host.hasPrefix("localhost.") { return true }
+        if host == "metadata" || host == "metadata.google.internal" { return true }
+        if host.hasSuffix(".internal") { return true }
+
+        let dotted = host.split(separator: ".")
+        let parts = dotted.compactMap { UInt8($0) }
+        if parts.count == 4, dotted.count == 4 {
+            let (a, b) = (parts[0], parts[1])
+            if a == 0 { return true }
+            if a == 127 { return true }
+            if a == 169, b == 254 { return true }
+        }
+
+        if host == "::1" || host == "0:0:0:0:0:0:0:1" || host == "::" { return true }
+        if host.hasPrefix("::ffff:") {
+            return isBlockedJoinHost(String(host.dropFirst(7)))
+        }
+        if host == "fd00:ec2::254" || host.hasPrefix("fd00:ec2:") { return true }
+        let firstGroup = host.split(separator: ":").first.map(String.init) ?? ""
+        if firstGroup == "fe80" { return true }
+        return false
     }
 
     public static func redeemURL(host: String, port: Int) throws -> URL {

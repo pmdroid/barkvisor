@@ -844,9 +844,10 @@ paths:
       summary: Redeem a pairing code on the issuer
       description: |
         Public, rate-limited. The joining Device presents the short code, its
-        Device certificate, and a CSR. The issuer consumes the code, pins the
-        presented certificate, issues a Home-CA cert, and returns trust material.
-        Does not touch local SQLite / QEMU.
+        Home-CA-issued Device certificate, the issuing Home CA, and a CSR.
+        The issuer consumes the code, pins the presented certificate, issues
+        a Home-CA cert, and returns trust material including the issued
+        agentPort. Does not touch local SQLite / QEMU.
       security: []
       requestBody:
         required: true
@@ -2020,7 +2021,7 @@ components:
 
     PairingRedeemRequest:
       type: object
-      required: [code, hostId, csrPEM, deviceCertificatePEM]
+      required: [code, hostId, csrPEM, deviceCertificatePEM, caCertificatePEM]
       properties:
         code:
           type: string
@@ -2029,6 +2030,8 @@ components:
         csrPEM:
           type: string
         deviceCertificatePEM:
+          type: string
+        caCertificatePEM:
           type: string
         apiVersion:
           type: integer

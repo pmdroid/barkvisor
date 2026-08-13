@@ -51,6 +51,7 @@ struct PairingTests {
                     hostId: joinerId,
                     csrPEM: csr,
                     deviceCertificatePEM: joiner.deviceCertificatePEM,
+                    caCertificatePEM: joiner.caCertificatePEM,
                 ),
             ),
             offers: offers,
@@ -94,7 +95,14 @@ struct PairingTests {
         let offers = PairingOfferStore(dataDir: dir)
         let now = Date()
         let issued = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: issuerId, ttl: 60, now: now),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+                ttl: 60,
+                now: now,
+            ),
             offers: offers,
         )
         let csr = try HomeCAService.makeDeviceCSR(hostId: joiner.hostId, keyPEM: joiner.deviceKeyPEM)
@@ -103,6 +111,7 @@ struct PairingTests {
             hostId: joiner.hostId,
             csrPEM: csr,
             deviceCertificatePEM: joiner.deviceCertificatePEM,
+            caCertificatePEM: joiner.caCertificatePEM,
         )
         _ = try PairingService.redeem(
             PairingService.RedeemInput(
@@ -120,7 +129,14 @@ struct PairingTests {
         }
 
         let short = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: issuerId, ttl: 30, now: now),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+                ttl: 30,
+                now: now,
+            ),
             offers: offers,
         )
         let later = now.addingTimeInterval(31)
@@ -134,6 +150,7 @@ struct PairingTests {
                         hostId: joiner.hostId,
                         csrPEM: csr,
                         deviceCertificatePEM: joiner.deviceCertificatePEM,
+                        caCertificatePEM: joiner.caCertificatePEM,
                     ),
                     now: later,
                 ),
@@ -149,7 +166,12 @@ struct PairingTests {
         let joiner = try HomeCAService.loadOrCreate(dataDir: isolatedDir("j2"), hostId: UUID().uuidString)
         let offers = PairingOfferStore(dataDir: dir)
         let issued = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: issuerId),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
             offers: offers,
         )
         #expect(throws: PairingError.self) {
@@ -162,6 +184,7 @@ struct PairingTests {
                         hostId: joiner.hostId,
                         csrPEM: "not-a-csr",
                         deviceCertificatePEM: joiner.deviceCertificatePEM,
+                        caCertificatePEM: joiner.caCertificatePEM,
                     ),
                 ),
                 offers: offers,
@@ -178,6 +201,7 @@ struct PairingTests {
                     hostId: joiner.hostId,
                     csrPEM: csr,
                     deviceCertificatePEM: joiner.deviceCertificatePEM,
+                    caCertificatePEM: joiner.caCertificatePEM,
                 ),
             ),
             offers: offers,
@@ -197,7 +221,12 @@ struct PairingTests {
         let other = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: UUID().uuidString)
         let offers = PairingOfferStore(dataDir: dir)
         let issued = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: issuerId),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
             offers: offers,
         )
         let foreignCSR = try HomeCAService.makeDeviceCSR(hostId: joiner.hostId, keyPEM: other.deviceKeyPEM)
@@ -211,6 +240,7 @@ struct PairingTests {
                         hostId: joiner.hostId,
                         csrPEM: foreignCSR,
                         deviceCertificatePEM: joiner.deviceCertificatePEM,
+                        caCertificatePEM: joiner.caCertificatePEM,
                     ),
                 ),
                 offers: offers,
@@ -226,7 +256,12 @@ struct PairingTests {
         let joiner = try HomeCAService.loadOrCreate(dataDir: isolatedDir("j-pin"), hostId: UUID().uuidString)
         let offers = PairingOfferStore(dataDir: dir)
         let issued = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: issuerId),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
             offers: offers,
         )
         let blocked = dir.appendingPathComponent("blocked-pins")
@@ -243,6 +278,7 @@ struct PairingTests {
                         hostId: joiner.hostId,
                         csrPEM: csr,
                         deviceCertificatePEM: joiner.deviceCertificatePEM,
+                        caCertificatePEM: joiner.caCertificatePEM,
                     ),
                 ),
                 offers: offers,
@@ -260,6 +296,7 @@ struct PairingTests {
                     hostId: joiner.hostId,
                     csrPEM: csr,
                     deviceCertificatePEM: joiner.deviceCertificatePEM,
+                    caCertificatePEM: joiner.caCertificatePEM,
                 ),
             ),
             offers: offers,
@@ -275,7 +312,12 @@ struct PairingTests {
         let material = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
         let offers = PairingOfferStore(dataDir: dir)
         let issued = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: hostId),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: hostId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
             offers: offers,
         )
         let csr = try HomeCAService.makeDeviceCSR(hostId: hostId, keyPEM: material.deviceKeyPEM)
@@ -289,6 +331,7 @@ struct PairingTests {
                         hostId: hostId,
                         csrPEM: csr,
                         deviceCertificatePEM: material.deviceCertificatePEM,
+                        caCertificatePEM: material.caCertificatePEM,
                     ),
                 ),
                 offers: offers,
@@ -304,6 +347,7 @@ struct PairingTests {
                         hostId: UUID().uuidString,
                         csrPEM: csr,
                         deviceCertificatePEM: material.deviceCertificatePEM,
+                        caCertificatePEM: material.caCertificatePEM,
                         apiVersion: APIContract.version + 1,
                     ),
                 ),
@@ -517,7 +561,12 @@ struct PairingTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let offers = PairingOfferStore(dataDir: dir)
         _ = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: UUID().uuidString),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: UUID().uuidString,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
             offers: offers,
         )
         let before = try Data(contentsOf: offers.fileURL)
@@ -534,7 +583,12 @@ struct PairingTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let offers = PairingOfferStore(dataDir: dir)
         _ = try PairingService.issue(
-            PairingService.IssueInput(dataDir: dir, hostId: UUID().uuidString),
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: UUID().uuidString,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
             offers: offers,
         )
         let attrs = try FileManager.default.attributesOfItem(atPath: offers.fileURL.path)
@@ -564,7 +618,12 @@ struct PairingTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let hostId = UUID().uuidString
         let offers = PairingOfferStore(dataDir: dir)
-        let input = PairingService.IssueInput(dataDir: dir, hostId: hostId)
+        let input = PairingService.IssueInput(
+            dataDir: dir,
+            hostId: hostId,
+            advertisedHost: "192.0.2.8",
+            advertisedHosts: ["192.0.2.8"],
+        )
         _ = try PairingService.issue(input, offers: offers)
         #expect(try PairingService.currentOffer(input, offers: offers).code.isEmpty == false)
         try PairingService.revoke(dataDir: dir, offers: offers)

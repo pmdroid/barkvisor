@@ -46,6 +46,7 @@ public enum PairingService {
         _ input: IssueInput,
         offers: PairingOfferStore? = nil,
     ) throws -> PairingIssueResponse {
+        let host = try advertisedHost(from: input)
         let material: HomeCertificateMaterial
         do {
             material = try HomeCAService.loadOrCreate(dataDir: input.dataDir, hostId: input.hostId)
@@ -62,6 +63,7 @@ public enum PairingService {
             codeDisplay: code,
             createdAt: iso8601.string(from: input.now),
             expiresAt: iso8601.string(from: expires),
+            agentPort: input.agentPort,
         )
         let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
         do {
@@ -74,8 +76,6 @@ public enum PairingService {
             )
         }
 
-        let host = input.advertisedHost.flatMap(PairingPayload.sanitizeHost)
-            ?? input.advertisedHosts.first
         let payload = PairingPayload(
             code: code,
             host: host,
@@ -112,6 +112,7 @@ public enum PairingService {
         if let expires = iso8601.date(from: offer.expiresAt), input.now >= expires {
             throw PairingError.noActiveOffer
         }
+        let host = try advertisedHost(from: input)
         let material: HomeCertificateMaterial
         do {
             material = try HomeCAService.loadOrCreate(dataDir: input.dataDir, hostId: input.hostId)
@@ -120,13 +121,11 @@ public enum PairingService {
                 "Home CA is unavailable; local runtime continues: \(error.localizedDescription)",
             )
         }
-        let host = input.advertisedHost.flatMap(PairingPayload.sanitizeHost)
-            ?? input.advertisedHosts.first
         let payload = PairingPayload(
             code: offer.codeDisplay,
             host: host,
             port: input.port,
-            agentPort: input.agentPort,
+            agentPort: offer.agentPort,
             hostId: input.hostId,
             fingerprint: material.deviceFingerprint,
         )
@@ -144,7 +143,7 @@ public enum PairingService {
             fingerprint: material.deviceFingerprint,
             caFingerprint: material.caFingerprint,
             port: input.port,
-            agentPort: input.agentPort,
+            agentPort: offer.agentPort,
             advertisedHosts: input.advertisedHosts,
         )
     }
@@ -203,6 +202,7 @@ public enum PairingService {
 
         let presented = try parsePresentedCertificate(
             pem: req.deviceCertificatePEM,
+            caPEM: req.caCertificatePEM,
             expectedHostId: joinerHostId,
             now: input.now,
         )
@@ -227,40 +227,24 @@ public enum PairingService {
             )
         }
 
-        let issued: IssuedDeviceCertificate
-        do {
-            issued = try HomeCAService.issueDeviceCert(
-                hostId: joinerHostId,
-                csrPEM: req.csrPEM,
-                material: material,
-                now: input.now,
-            )
-        } catch let error as HomeCAError {
-            throw PairingError.invalidCSR(error.localizedDescription)
-        } catch {
-            throw PairingError.unavailable(
-                "Unable to issue Device certificate: \(error.localizedDescription)",
-            )
-        }
-
-        let pinStore = pins ?? PeerPinStore(dataDir: input.dataDir)
-        do {
-            try pinStore.pin(
-                hostId: joinerHostId,
-                fingerprint: presented.fingerprint,
-                now: input.now,
-            )
-        } catch let error as PairingError {
-            throw error
-        } catch {
-            throw PairingError.unavailable(
-                "Unable to persist peer pin: \(error.localizedDescription)",
-            )
-        }
-
         let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
-        _ = try store.consume(code: req.code, now: input.now)
-
+        let consumed = try store.consume(code: req.code, now: input.now)
+        var committed = false
+        defer {
+            if !committed {
+                try? store.restore(consumed)
+            }
+        }
+        let issued = try issueAndPin(
+            joinerHostId: joinerHostId,
+            csrPEM: req.csrPEM,
+            fingerprint: presented.fingerprint,
+            material: material,
+            dataDir: input.dataDir,
+            now: input.now,
+            pins: pins,
+        )
+        committed = true
         return PairingRedeemResponse(
             hostId: input.issuerHostId,
             deviceCertificatePEM: material.deviceCertificatePEM,
@@ -269,7 +253,7 @@ public enum PairingService {
             caFingerprint: material.caFingerprint,
             issuedCertificatePEM: issued.certificatePEM,
             issuedFingerprint: issued.fingerprint,
-            agentPort: Config.agentPort,
+            agentPort: consumed.agentPort,
         )
     }
 
@@ -308,6 +292,43 @@ public enum PairingService {
 
     // MARK: - Private
 
+    private static func issueAndPin(
+        joinerHostId: String,
+        csrPEM: String,
+        fingerprint: String,
+        material: HomeCertificateMaterial,
+        dataDir: URL,
+        now: Date,
+        pins: PeerPinStore?,
+    ) throws -> IssuedDeviceCertificate {
+        let issued: IssuedDeviceCertificate
+        do {
+            issued = try HomeCAService.issueDeviceCert(
+                hostId: joinerHostId,
+                csrPEM: csrPEM,
+                material: material,
+                now: now,
+            )
+        } catch let error as HomeCAError {
+            throw PairingError.invalidCSR(error.localizedDescription)
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to issue Device certificate: \(error.localizedDescription)",
+            )
+        }
+        let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
+        do {
+            try pinStore.pin(hostId: joinerHostId, fingerprint: fingerprint, now: now)
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to persist peer pin: \(error.localizedDescription)",
+            )
+        }
+        return issued
+    }
+
     private struct PresentedCertificate {
         let fingerprint: String
         let spki: [UInt8]
@@ -328,6 +349,7 @@ public enum PairingService {
 
     private static func parsePresentedCertificate(
         pem: String,
+        caPEM: String,
         expectedHostId: String,
         now: Date,
     ) throws -> PresentedCertificate {
@@ -346,6 +368,15 @@ public enum PairingService {
         guard sanHostId == expectedHostId else {
             throw PairingError.invalidDeviceCertificate("SAN hostId does not match request")
         }
+        let ca = try parsePresentedCA(caPEM, now: now)
+        guard !isCertificateAuthority(cert) else {
+            throw PairingError.invalidDeviceCertificate("Device certificate must not be a CA")
+        }
+        guard DeviceTrust.isIssuedByHomeCA(leaf: cert, ca: ca) else {
+            throw PairingError.invalidDeviceCertificate(
+                "Device certificate is not signed by the joiner Home CA",
+            )
+        }
         let fingerprint: String
         do {
             fingerprint = try DeviceTrust.fingerprint(certificate: cert)
@@ -355,6 +386,52 @@ public enum PairingService {
         return PresentedCertificate(
             fingerprint: fingerprint,
             spki: Array(cert.publicKey.subjectPublicKeyInfoBytes),
+        )
+    }
+
+    private static func parsePresentedCA(_ pem: String, now: Date) throws -> Certificate {
+        let ca: Certificate
+        do {
+            ca = try Certificate(pemEncoded: pem)
+        } catch {
+            throw PairingError.invalidDeviceCertificate("Unable to parse Home CA certificate")
+        }
+        if now < ca.notValidBefore || now > ca.notValidAfter {
+            throw PairingError.invalidDeviceCertificate("Home CA certificate is expired")
+        }
+        guard isCertificateAuthority(ca) else {
+            throw PairingError.invalidDeviceCertificate("Presented CA is not a Home CA")
+        }
+        guard ca.publicKey.isValidSignature(ca.signature, for: ca) else {
+            throw PairingError.invalidDeviceCertificate("Home CA certificate is not self-signed")
+        }
+        return ca
+    }
+
+    private static func isCertificateAuthority(_ certificate: Certificate) -> Bool {
+        let constraints: BasicConstraints?
+        do {
+            constraints = try certificate.extensions.basicConstraints
+        } catch {
+            return false
+        }
+        guard let constraints, case .isCertificateAuthority = constraints else {
+            return false
+        }
+        return true
+    }
+
+    private static func advertisedHost(from input: IssueInput) throws -> String {
+        var candidates: [String] = []
+        if let host = input.advertisedHost {
+            candidates.append(host)
+        }
+        candidates.append(contentsOf: input.advertisedHosts)
+        if let host = candidates.compactMap(PairingPayload.sanitizeHost).first {
+            return host
+        }
+        throw PairingError.invalidPayload(
+            "No advertisable host; set advertisedHost or connect to a network",
         )
     }
 }
