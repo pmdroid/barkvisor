@@ -19,6 +19,7 @@ BarkVisor is moving toward multi-device homes (Mac + Linux + boards), but multi-
 | Host identity | Durable UUID at `dataDir/host-id` (0600, created on first start; same pattern as `jwt-secret`) |
 | Inventory | `HostInventoryService.snapshot()` describes *this* host only, including `hostId` |
 | Inventory API | `GET /api/agent/inventory` (JWT / API key) returns the snapshot JSON |
+| HTTP API | Unversioned `/api` is v1 (`X-BarkVisor-API-Version` + `AgentInfo.apiVersion`). Spec: `docs/api/openapi.yaml` / `GET /api/openapi.yaml` |
 | Workloads | VMs and disks live under this host’s data dir; they keep running without a remote controller |
 
 ## Optional HostContext

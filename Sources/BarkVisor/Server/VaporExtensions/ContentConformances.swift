@@ -19,6 +19,7 @@ extension VMRuntimeStatus: Content {}
 extension WorkloadHealthStatus: Content {}
 extension WorkloadHealthSummary: Content {}
 extension ProcessHealthStatus: Content {}
+extension APIContractSummary: Content {}
 extension VMImage: Content {}
 extension VMTemplate: Content {}
 extension User: Content {}

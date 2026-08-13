@@ -63,7 +63,7 @@ struct HostInventoryTests {
         let inv = snapshot(version: "1.2.3-test")
         #expect(inv.agent.role == "colocal")
         #expect(inv.agent.version == "1.2.3-test")
-        #expect(inv.agent.apiVersion == 1)
+        #expect(inv.agent.apiVersion == APIContract.version)
         // PAS-48: only host-runnable guest profiles (not the full static table).
         let expected = GuestProfiles.profilesCompatible(withHostArch: PlatformCapabilities.hostArch)
         #expect(inv.guestTypes.count == expected.count)
