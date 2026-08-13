@@ -400,6 +400,36 @@ final class USBClaimWriteTests {
         #expect(updated.decodedUSBDevices.first?.deviceId == device.deviceId)
     }
 
+    @Test func `updateVMSpec rejects ambiguous vid pid without serial`() async throws {
+        let hosts = [
+            HostUSBDevice(
+                vendorId: "0x046d", productId: "0xc52b", name: "A",
+                manufacturer: nil, serialNumber: "AAA", bus: 1, address: 4,
+            ),
+            HostUSBDevice(
+                vendorId: "0x046d", productId: "0xc52b", name: "B",
+                manufacturer: nil, serialNumber: "BBB", bus: 1, address: 5,
+            ),
+        ]
+        try await insertVM(id: "vm-spec", name: "spec-vm", usb: nil)
+        let existing = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-spec") }
+        let vm = try #require(existing)
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.guestType = hostLinux
+        spec.spec.usb = [
+            WorkloadUSBDevice(vendorId: "0x046d", productId: "0xc52b", label: "recv"),
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVMSpec(
+                id: "vm-spec", spec: spec, db: self.dbPool, hostDevices: hosts,
+            )
+        }
+        #expect(error?.code == "conflict")
+        #expect(error?.errorDescription?.contains("Multiple USB devices") == true)
+        let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-spec") }
+        #expect(stored?.decodedUSBDevices.isEmpty == true)
+    }
+
     @Test func `updateVMSpec rejects USB claimed by another VM`() async throws {
         let device = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
