@@ -61,6 +61,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProcessHealth"
+        default:
+          $ref: "#/components/responses/Error"
 
   /api/openapi.yaml:
     get:
