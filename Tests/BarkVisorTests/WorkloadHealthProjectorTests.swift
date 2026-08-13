@@ -114,6 +114,7 @@ struct WorkloadHealthProjectorTests {
             updatedAt: now,
         )
         #expect(status.status == "error")
+        #expect(status.apiVersion == APIContract.version)
     }
 
     @Test func `process health extra failure is degraded`() {
@@ -136,6 +137,7 @@ struct WorkloadHealthProjectorTests {
             updatedAt: now,
         )
         #expect(status.status == "ok")
+        #expect(status.apiVersion == APIContract.version)
     }
 
     @Test func `health enum encodes guest_ready snake case`() throws {

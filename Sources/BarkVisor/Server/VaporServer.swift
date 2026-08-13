@@ -127,14 +127,18 @@ public final class VaporServer: @unchecked Sendable {
         app.middleware.use(StructuredErrorMiddleware())
 
         let allowedOrigin: CORSMiddleware.AllowOriginSetting = .all
+        let apiVersionHeader = HTTPHeaders.Name(APIContract.versionHeaderName)
         let cors = CORSMiddleware(
             configuration: .init(
                 allowedOrigin: allowedOrigin,
                 allowedMethods: [.GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS],
                 allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith],
+                exposedHeaders: [apiVersionHeader, HTTPHeaders.Name("X-Request-Id")],
             ),
         )
         app.middleware.use(cors, at: .beginning)
+        // Outermost after CORS so error responses also carry the version header.
+        app.middleware.use(APIVersionMiddleware(), at: .beginning)
 
         let distPath = Self.findFrontendDist()
         if let distPath {
