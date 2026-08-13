@@ -1,27 +1,59 @@
 import Foundation
 
-public struct HostUSBDevice: Codable {
+public struct HostUSBDevice: Codable, Equatable, Sendable {
+    public let id: String
     public let vendorId: String
     public let productId: String
     public let name: String
     public let manufacturer: String?
     public let serialNumber: String?
+    public let bus: Int?
+    public let address: Int?
+    public let idUnstable: Bool
+    public let attachable: Bool
+    public let excludedReason: String?
+
+    public var productName: String {
+        name
+    }
 
     public init(
-        vendorId: String, productId: String, name: String, manufacturer: String?, serialNumber: String?,
+        vendorId: String,
+        productId: String,
+        name: String,
+        manufacturer: String?,
+        serialNumber: String?,
+        bus: Int? = nil,
+        address: Int? = nil,
+        attachable: Bool = true,
+        excludedReason: String? = nil,
     ) {
-        self.vendorId = vendorId
-        self.productId = productId
+        let ref = USBDeviceIdentity.make(
+            vendorId: vendorId,
+            productId: productId,
+            serial: serialNumber,
+            bus: bus,
+            address: address,
+        )
+        self.id = ref.id
+        self.vendorId = ref.vendorId.isEmpty ? USBDeviceIdentity.normalizeHexId(vendorId) : ref.vendorId
+        self.productId = ref.productId.isEmpty
+            ? USBDeviceIdentity.normalizeHexId(productId) : ref.productId
         self.name = name
         self.manufacturer = manufacturer
-        self.serialNumber = serialNumber
+        self.serialNumber = USBDeviceIdentity.normalizedSerial(serialNumber)
+        self.bus = bus
+        self.address = address
+        self.idUnstable = ref.unstable
+        self.attachable = attachable
+        self.excludedReason = excludedReason
     }
 }
 
 public enum USBDeviceService {
-    /// List non-storage USB devices connected to the host.
+    /// List USB devices connected to the host, including excluded mass-storage entries.
     /// - macOS: `ioreg` (IOKit registry)
-    /// - Linux: `lsusb` (usbutils)
+    /// - Linux: sysfs (`/sys/bus/usb/devices`), falling back to `lsusb`
     public static func listDevices() throws -> [HostUSBDevice] {
         #if os(macOS)
             try listDevicesMacOS()
@@ -48,6 +80,16 @@ public enum USBDeviceService {
         let vid = "0x\(vp[0].lowercased())"
         let pid = "0x\(vp[1].lowercased())"
 
+        var bus: Int?
+        var address: Int?
+        if let busRange = line.range(of: #"Bus\s+(\d+)\s+Device\s+(\d+)"#, options: .regularExpression) {
+            let nums = String(line[busRange]).split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+            if nums.count >= 2 {
+                bus = nums[0]
+                address = nums[1]
+            }
+        }
+
         var name = ""
         if let afterID = line.range(
             of: #"ID\s+[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\s*"#,
@@ -59,12 +101,94 @@ public enum USBDeviceService {
         if name.localizedCaseInsensitiveContains("root hub") { return nil }
 
         return HostUSBDevice(
-            vendorId: vid, productId: pid, name: name, manufacturer: nil, serialNumber: nil,
+            vendorId: vid,
+            productId: pid,
+            name: name,
+            manufacturer: nil,
+            serialNumber: nil,
+            bus: bus,
+            address: address,
         )
+    }
+
+    /// Enumerate a sysfs USB tree (`/sys/bus/usb/devices` layout). Public for tests.
+    public static func listSysfsDevices(root: URL) -> [HostUSBDevice] {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: root.path) else { return [] }
+        var devices: [HostUSBDevice] = []
+        var seen = Set<String>()
+        for name in names.sorted() {
+            // Device nodes are `1-1` / `2-3.1`. Skip root hubs (`usb1`) and interfaces (`1-1:1.0`).
+            if name.hasPrefix("usb") || name.contains(":") { continue }
+            let dir = root.appendingPathComponent(name)
+            guard let dev = parseSysfsDevice(at: dir) else { continue }
+            if seen.insert(dev.id).inserted {
+                devices.append(dev)
+            }
+        }
+        return devices
+    }
+
+    /// Parse one sysfs device directory. Public for tests.
+    public static func parseSysfsDevice(at directory: URL) -> HostUSBDevice? {
+        let fm = FileManager.default
+        func read(_ name: String) -> String? {
+            let path = directory.appendingPathComponent(name).path
+            guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        guard let vendorHex = read("idVendor"), let productHex = read("idProduct") else {
+            return nil
+        }
+        if read("bDeviceClass") == "09" { return nil }
+
+        let bus = read("busnum").flatMap(Int.init)
+        let address = read("devnum").flatMap(Int.init)
+        let serial = read("serial")
+        let product = read("product") ?? "USB Device"
+        let manufacturer = read("manufacturer")
+        let vid = USBDeviceIdentity.normalizeHexId(vendorHex)
+        let pid = USBDeviceIdentity.normalizeHexId(productHex)
+
+        let massStorage = isSysfsMassStorage(at: directory, fileManager: fm)
+        return HostUSBDevice(
+            vendorId: vid,
+            productId: pid,
+            name: product,
+            manufacturer: manufacturer,
+            serialNumber: serial,
+            bus: bus,
+            address: address,
+            attachable: !massStorage,
+            excludedReason: massStorage ? USBDeviceIdentity.massStorageExclusionReason : nil,
+        )
+    }
+
+    private static func isSysfsMassStorage(at directory: URL, fileManager fm: FileManager) -> Bool {
+        guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return false }
+        for name in names where name.contains(":") {
+            let classPath = directory.appendingPathComponent(name).appendingPathComponent("bInterfaceClass")
+            if let raw = try? String(contentsOfFile: classPath.path, encoding: .utf8),
+               raw.trimmingCharacters(in: .whitespacesAndNewlines) == "08" {
+                return true
+            }
+        }
+        return false
     }
 
     #if os(Linux)
         private static func listDevicesLinux() throws -> [HostUSBDevice] {
+            let sysRoot = URL(fileURLWithPath: "/sys/bus/usb/devices")
+            if FileManager.default.fileExists(atPath: sysRoot.path) {
+                let fromSys = listSysfsDevices(root: sysRoot)
+                if !fromSys.isEmpty { return fromSys }
+            }
+            return listDevicesLsusb()
+        }
+
+        private static func listDevicesLsusb() -> [HostUSBDevice] {
             let lsusbPaths = ["/usr/bin/lsusb", "/bin/lsusb"]
             guard let exe = lsusbPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
             else {
@@ -82,8 +206,7 @@ public enum USBDeviceService {
             var seen = Set<String>()
             for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
                 guard let dev = parseLsusbLine(String(line)) else { continue }
-                let key = "\(dev.vendorId):\(dev.productId):\(dev.name)"
-                if seen.insert(key).inserted {
+                if seen.insert(dev.id).inserted {
                     devices.append(dev)
                 }
             }
@@ -94,8 +217,7 @@ public enum USBDeviceService {
     #if os(macOS)
         /// Uses `ioreg` which is reliable on Apple Silicon, unlike
         /// `system_profiler SPUSBDataType` which can return empty results.
-        /// USB mass storage devices are excluded — they require macOS to release
-        /// the device first and are unreliable for passthrough on macOS.
+        /// USB mass storage devices are listed as not attachable.
         private static func listDevicesMacOS() throws -> [HostUSBDevice] {
             let result = (try? PlatformProcess.run(
                 path: "/usr/sbin/ioreg",
@@ -111,15 +233,13 @@ public enum USBDeviceService {
                 return []
             }
 
-            // Recursively collect all entries from the tree structure
-            // USB devices can be nested under hubs, so we need to traverse IORegistryEntryChildren
             var allEntries: [[String: Any]] = []
             collectUSBHostDevices(from: plist, into: &allEntries)
 
-            // Collect product names of USB storage devices so we can exclude them
             let storageNames = findUSBStorageProductNames()
 
             var devices: [HostUSBDevice] = []
+            var seen = Set<String>()
             for entry in allEntries {
                 guard let vendorInt = entry["idVendor"] as? Int,
                       let productInt = entry["idProduct"] as? Int
@@ -129,7 +249,6 @@ public enum USBDeviceService {
 
                 // Skip Apple internal peripherals (vendor 0x05ac) but allow
                 // iPhones, iPads, and iPods which use the same vendor ID.
-                // Apple mobile device product IDs fall in the 0x12a0–0x12ff range.
                 if vendorInt == 0x05AC {
                     let isMobileDevice = (0x12A0 ... 0x12FF).contains(productInt)
                     if !isMobileDevice { continue }
@@ -141,23 +260,37 @@ public enum USBDeviceService {
                         ?? "Unknown USB Device"
                 let manufacturer = entry["USB Vendor Name"] as? String
                 let serial = entry["USB Serial Number"] as? String
-
-                // Skip USB mass storage devices — they need macOS to release them
-                // and cause STALL errors in the guest firmware
-                if storageNames.contains(name) { continue }
+                let bus = intValue(entry["Bus Number"] as Any?)
+                let address = intValue(entry["USB Address"] as Any?)
+                    ?? intValue(entry["PortNum"] as Any?)
 
                 let vid = String(format: "0x%04x", vendorInt)
                 let pid = String(format: "0x%04x", productInt)
+                let isStorage = storageNames.contains(name)
 
-                devices.append(
-                    HostUSBDevice(
-                        vendorId: vid, productId: pid,
-                        name: name, manufacturer: manufacturer, serialNumber: serial,
-                    ),
+                let device = HostUSBDevice(
+                    vendorId: vid,
+                    productId: pid,
+                    name: name,
+                    manufacturer: manufacturer,
+                    serialNumber: serial,
+                    bus: bus,
+                    address: address,
+                    attachable: !isStorage,
+                    excludedReason: isStorage ? USBDeviceIdentity.massStorageExclusionReason : nil,
                 )
+                if seen.insert(device.id).inserted {
+                    devices.append(device)
+                }
             }
 
             return devices
+        }
+
+        private static func intValue(_ raw: Any?) -> Int? {
+            if let value = raw as? Int { return value }
+            if let value = raw as? NSNumber { return value.intValue }
+            return nil
         }
 
         /// Find product names of USB devices that are registered as external physical disks.
@@ -202,18 +335,15 @@ public enum USBDeviceService {
         /// Devices are nested under parent hubs in IORegistryEntryChildren arrays.
         private static func collectUSBHostDevices(from node: Any, into collection: inout [[String: Any]]) {
             if let entry = node as? [String: Any] {
-                // If this entry has idVendor and idProduct, it's a USB device
                 if entry["idVendor"] is Int, entry["idProduct"] is Int {
                     collection.append(entry)
                 }
-                // Recursively check children
                 if let children = entry["IORegistryEntryChildren"] as? [Any] {
                     for child in children {
                         collectUSBHostDevices(from: child, into: &collection)
                     }
                 }
             } else if let array = node as? [Any] {
-                // Handle case where root is an array
                 for element in array {
                     collectUSBHostDevices(from: element, into: &collection)
                 }

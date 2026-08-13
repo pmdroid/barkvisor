@@ -50,6 +50,8 @@ describe('API contract (PAS-78)', () => {
       '/api/contract',
       '/api/workloads/apply',
       '/api/workloadspec.schema.json',
+      '/api/system/usb-devices',
+      '/api/vms/{id}/usb',
     ]) {
       expect(yaml).toContain(`  ${path}:`)
     }
