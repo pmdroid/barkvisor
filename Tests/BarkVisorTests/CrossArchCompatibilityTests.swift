@@ -302,6 +302,91 @@ struct CrossArchCompatibilityTests {
         #expect(vm?.state == "stopped", "start must not flip state when the arch guard fires")
     }
 
+    /// Overlay guestType is what QEMU launches; start must not trust portable vm.vmType.
+    @Test func `start rejects foreign overlay guestType before qemu`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        let migrator = AppDatabase.makeMigrator()
+        try migrator.migrate(pool)
+
+        let host = PlatformCapabilities.hostArch
+        let nativeType = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let foreignType = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        let now = iso8601.string(from: Date())
+        let vmID = UUID().uuidString
+        let diskID = UUID().uuidString
+        let diskPath = tmp.appendingPathComponent("\(diskID).qcow2")
+        FileManager.default.createFile(atPath: diskPath.path, contents: Data())
+
+        try await pool.write { db in
+            try Disk(
+                id: diskID,
+                name: "boot",
+                path: diskPath.path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: vmID,
+                autoCreated: false,
+                status: "ready",
+                createdAt: now,
+            ).insert(db)
+
+            var vm = VM(
+                id: vmID,
+                name: "overlay-cross-arch-start",
+                vmType: nativeType,
+                state: "stopped",
+                cpuCount: 1,
+                memoryMb: 512,
+                bootDiskId: diskID,
+                isoIds: nil,
+                networkId: nil,
+                cloudInitPath: nil,
+                description: nil,
+                bootOrder: "cd",
+                displayResolution: "1280x800",
+                additionalDiskIds: nil,
+                uefi: true,
+                tpmEnabled: false,
+                macAddress: nil,
+                sharedPaths: nil,
+                portForwards: nil,
+                usbDevices: nil,
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: now,
+                updatedAt: now,
+            )
+            let overlay = WorkloadSpecOverlay(guestType: foreignType)
+            vm.setOverrides(
+                WorkloadSpecResolver.HostPlatform.current == .linux
+                    ? WorkloadOverrides(linux: overlay)
+                    : WorkloadOverrides(macos: overlay),
+            )
+            try vm.insert(db)
+        }
+
+        let manager = VMManager(dbPool: pool)
+        do {
+            try await manager.start(vmID: vmID)
+            Issue.record("expected start to reject overlay guestType \(foreignType) on \(host)")
+        } catch let BarkVisorError.badRequest(message) {
+            #expect(message.lowercased().contains("not compatible")
+                || message.lowercased().contains("cross-architecture"))
+            #expect(message.contains(host))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+
+        let vm = try await pool.read { db in
+            try VM.fetchOne(db, key: vmID)
+        }
+        #expect(vm?.state == "stopped", "start must not flip state when the overlay arch guard fires")
+    }
+
     /// Symmetric guard on x86_64 CI/dev hosts.
     @Test(.enabled(if: PlatformCapabilities.hostArch == "x86_64"))
     func `arm64 workload blocked on x86_64 host`() throws {

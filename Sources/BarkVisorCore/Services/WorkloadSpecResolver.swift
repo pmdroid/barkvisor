@@ -172,6 +172,24 @@ public enum WorkloadSpecResolver {
                 "\(path).hugepages is not available: /dev/hugepages is missing",
             )
         }
+        // PAS-48: overlay guestType/arch is what QEMU launches, not the portable vm.vmType.
+        try requireCompatibleMergedGuestArch(spec, overlay: overlay, path: path)
+    }
+
+    /// Guest type QEMU will launch after applying the host overlay.
+    ///
+    /// `fromVM` stamps `spec.arch` from the portable `vm.vmType`. An overlay
+    /// `guestType` is still the intended launch guest (QEMUBuilder resolves
+    /// overrides independently of the persisted column).
+    public static func launchGuestType(
+        _ spec: WorkloadSpec,
+        host: HostPlatform = .current,
+    ) throws -> String {
+        if let overlay = hostOverlay(spec, host: host),
+           let guestType = overlay.guestType, !guestType.isEmpty {
+            return try GuestProfiles.require(guestType).id
+        }
+        return try WorkloadSpecProjector.resolveGuestType(resolve(spec, host: host).spec)
     }
 
     public static func cpuModel(for accelerator: String) -> String {
@@ -180,6 +198,44 @@ public enum WorkloadSpecResolver {
             return "host"
         default:
             return "max"
+        }
+    }
+
+    private static func requireCompatibleMergedGuestArch(
+        _ spec: WorkloadSpec,
+        overlay: WorkloadSpecOverlay,
+        path: String,
+    ) throws {
+        // Overlay guestType/arch is the launch guest. Do not go through
+        // resolveGuestType here: fromVM stamps portable spec.arch, which would
+        // throw a mismatch and skip the PAS-48 host-arch block.
+        if let guestType = overlay.guestType, !guestType.isEmpty {
+            try requireCompatibleGuestArch(
+                GuestProfiles.require(guestType).arch,
+                field: "\(path).guestType",
+            )
+            return
+        }
+        if let arch = overlay.arch {
+            try requireCompatibleGuestArch(arch, field: "\(path).arch")
+            return
+        }
+        var trial = spec
+        trial.spec = merge(spec.spec, with: overlay)
+        let portableGuest = try WorkloadSpecProjector.resolveGuestType(spec)
+        let mergedGuest = try WorkloadSpecProjector.resolveGuestType(trial)
+        guard mergedGuest != portableGuest else { return }
+        try requireCompatibleGuestArch(
+            GuestProfiles.require(mergedGuest).arch,
+            field: path,
+        )
+    }
+
+    private static func requireCompatibleGuestArch(_ guestArch: String, field: String) throws {
+        do {
+            try PlatformCapabilities.requireCompatibleGuestArch(guestArch)
+        } catch let error as BarkVisorError {
+            throw BarkVisorError.badRequest("\(field): \(error.localizedDescription)")
         }
     }
 
