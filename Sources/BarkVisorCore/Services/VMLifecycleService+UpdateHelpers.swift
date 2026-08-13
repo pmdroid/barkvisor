@@ -54,7 +54,9 @@ extension VMLifecycleService {
 
     /// Hardware columns that require a restart when changed on a running VM.
     /// Matches `detectHardwareChanges(params:encoded:vm:)` plus spec-only fields
-    /// (`vmType`, ISO attachments, MAC, cloud-init ISO) that apply() can rewrite.
+    /// (`vmType`, ISO attachments, MAC, cloud-init ISO, overrides) that apply()
+    /// can rewrite. Overrides stay out of flat hardware columns, but they change
+    /// resolved QEMU launch values (CPU, memory, accelerator, hugepages).
     static func detectHardwareChanges(before: VM, after: VM) -> Bool {
         if before.cpuCount != after.cpuCount { return true }
         if before.memoryMb != after.memoryMb { return true }
@@ -71,6 +73,7 @@ extension VMLifecycleService {
         if before.decodedISOIds != after.decodedISOIds { return true }
         if before.macAddress != after.macAddress { return true }
         if before.cloudInitPath != after.cloudInitPath { return true }
+        if before.decodedOverrides != after.decodedOverrides { return true }
         return false
     }
 
