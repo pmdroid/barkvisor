@@ -1,4 +1,5 @@
 import Foundation
+import X509
 
 extension PairingService {
     public static func applyTrust(
@@ -24,6 +25,8 @@ extension PairingService {
                 expected: APIContract.version,
             )
         }
+
+        try validateRedeemMaterial(response, localHostId: localHostId)
 
         let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
         do {
@@ -178,5 +181,75 @@ extension PairingService {
             var reason: String?
         }
         return (try? JSONDecoder().decode(Envelope.self, from: data))?.reason
+    }
+
+    /// Bind redeem PEMs to the QR fingerprint and check the issuer / issued
+    /// chain before persisting attacker-controlled CA or leaf material.
+    static func validateRedeemMaterial(
+        _ response: PairingRedeemResponse,
+        localHostId: String,
+    ) throws {
+        let deviceCert = try parseTrustCertificate(
+            response.deviceCertificatePEM,
+            reason: "Unable to parse issuer Device certificate",
+        )
+        let deviceFingerprint = try fingerprintOrThrow(deviceCert)
+        if deviceFingerprint != response.deviceFingerprint.lowercased() {
+            throw PairingError.fingerprintMismatch
+        }
+        guard DeviceTrust.hostId(from: deviceCert) == response.hostId else {
+            throw PairingError.invalidDeviceCertificate(
+                "Issuer Device certificate SAN does not match hostId",
+            )
+        }
+
+        let caCert = try parseTrustCertificate(
+            response.caCertificatePEM,
+            reason: "Unable to parse Home CA certificate",
+        )
+        let caFingerprint = try fingerprintOrThrow(caCert)
+        if caFingerprint != response.caFingerprint.lowercased() {
+            throw PairingError.fingerprintMismatch
+        }
+        guard DeviceTrust.isIssuedByHomeCA(leaf: deviceCert, ca: caCert) else {
+            throw PairingError.invalidDeviceCertificate(
+                "Issuer Device certificate is not signed by the returned CA",
+            )
+        }
+
+        let issuedCert = try parseTrustCertificate(
+            response.issuedCertificatePEM,
+            reason: "Unable to parse issued Device certificate",
+        )
+        let issuedFingerprint = try fingerprintOrThrow(issuedCert)
+        if issuedFingerprint != response.issuedFingerprint.lowercased() {
+            throw PairingError.fingerprintMismatch
+        }
+        guard DeviceTrust.isIssuedByHomeCA(leaf: issuedCert, ca: caCert) else {
+            throw PairingError.invalidDeviceCertificate(
+                "Issued Device certificate is not signed by the returned CA",
+            )
+        }
+        guard DeviceTrust.hostId(from: issuedCert) == localHostId else {
+            throw PairingError.invalidDeviceCertificate(
+                "Issued certificate SAN does not match this Device",
+            )
+        }
+    }
+
+    private static func parseTrustCertificate(_ pem: String, reason: String) throws -> Certificate {
+        do {
+            return try Certificate(pemEncoded: pem)
+        } catch {
+            throw PairingError.invalidDeviceCertificate(reason)
+        }
+    }
+
+    private static func fingerprintOrThrow(_ certificate: Certificate) throws -> String {
+        do {
+            return try DeviceTrust.fingerprint(certificate: certificate)
+        } catch {
+            throw PairingError.invalidDeviceCertificate("Unable to fingerprint certificate")
+        }
     }
 }
