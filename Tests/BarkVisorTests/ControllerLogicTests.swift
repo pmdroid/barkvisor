@@ -61,6 +61,13 @@ struct ControllerLogicTests {
         #expect(clampMinutes(-5) == -5)
     }
 
+    @Test func `system stats history minutes clamp to ring retention`() {
+        let requested = 1_440
+        let minutes = MetricsCollector.clampSystemStatsMinutes(requested)
+        #expect(minutes == MetricsCollector.systemStatsRetentionMinutes)
+        #expect(minutes < 1_440)
+    }
+
     // MARK: - Log Query Limit Clamping
 
     @Test func `log query limit clamping`() {
@@ -208,14 +215,27 @@ struct ControllerLogicTests {
         #expect(caps.accelerator == PlatformCapabilities.accelerator)
         #expect(caps.hostCpuCount == PlatformHost.cpuCount)
         #expect(caps.hostCpuCount >= 1)
-        #expect(caps.supportsBridgedNetworking == PlatformCapabilities.supportsBridgedNetworking)
+        #expect(
+            caps.supportsBridgedNetworking
+                == HostInventoryService.bridgedNetworkingSupported(
+                    platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                    qemuBridgeHelper: HostInventoryService.qemuBridgeHelperPresent(),
+                    os: PlatformHost.platformName,
+                ),
+        )
         #expect(caps.supportsManagedBridgeDaemon == PlatformCapabilities.supportsManagedBridgeDaemon)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
         #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
+        #expect(caps.details.count == CapabilityCode.allCases.count)
+        #expect(caps.networkModes.map(\.mode) == ["nat", "bridged", "isolated"])
+        #expect(caps.networkModes.first { $0.mode == "nat" }?.supported == true)
+        #expect(caps.networkModes.first { $0.mode == "isolated" }?.supported == true)
+        #expect(caps.runnableArches == [caps.hostArch])
+        #expect(caps.inventorySchemaVersion == HostInventoryService.currentSchemaVersion)
         #if os(macOS)
             #expect(caps.supportsManagedBridgeDaemon)
         #elseif os(Linux)
-            #expect(caps.supportsBridgedNetworking)
+            #expect(caps.supportsBridgedNetworking == HostInventoryService.qemuBridgeHelperPresent())
             #expect(!caps.supportsManagedBridgeDaemon)
         #endif
     }

@@ -19,17 +19,30 @@ const {
   prev,
   name,
   osType,
+  supportsWindows,
   selectOS,
   cpuCount,
   memoryMB,
   displayResolution,
   tpmEnabled,
+  uefi,
+  effectiveGuestArch,
+  archOptions,
+  machineType,
+  accelerator,
+  cpuModel,
+  alwaysShowArchDetails,
+  setGuestArch,
+  setAlwaysShowArchDetails,
+  setTpmEnabled,
   mode,
   selectedImageId,
   selectedSSHKeyId,
   showCloudInit,
   cloudUserData,
   filteredImages,
+  foreignArchImageCount,
+  hostImageArch,
   selectedImage,
   formatBytes,
   sshKeyStore,
@@ -62,8 +75,9 @@ const {
   addPortForward,
   removePortForward,
   isNAT,
-  supportsUSBPassthrough,
   archLabel,
+  revealArchOnSummary,
+  archProblemText,
   error,
   loading,
   submit,
@@ -97,6 +111,7 @@ function openUSBPicker() {
         v-if="currentStepLabel === 'OS'"
         :name="name"
         :osType="osType"
+        :supportsWindows="supportsWindows"
         @update:name="name = $event"
         @selectOS="selectOS"
         @next="next"
@@ -107,9 +122,22 @@ function openUSBPicker() {
         :cpuCount="cpuCount"
         :memoryMB="memoryMB"
         :displayResolution="displayResolution"
+        :guestArch="effectiveGuestArch"
+        :archOptions="archOptions"
+        :machineType="machineType"
+        :accelerator="accelerator"
+        :cpuModel="cpuModel"
+        :uefi="uefi"
+        :tpmEnabled="tpmEnabled"
+        :alwaysShowArchDetails="alwaysShowArchDetails"
+        :archProblem="archProblemText"
         @update:cpuCount="cpuCount = $event"
         @update:memoryMB="memoryMB = $event"
         @update:displayResolution="displayResolution = $event"
+        @update:guestArch="setGuestArch"
+        @update:uefi="uefi = $event"
+        @update:tpmEnabled="setTpmEnabled"
+        @update:alwaysShowArchDetails="setAlwaysShowArchDetails"
       />
 
       <CreateVMImageStep
@@ -121,6 +149,8 @@ function openUSBPicker() {
         :showCloudInit="showCloudInit"
         :cloudUserData="cloudUserData"
         :filteredImages="filteredImages"
+        :foreignArchImageCount="foreignArchImageCount"
+        :hostImageArch="hostImageArch"
         :sshKeys="sshKeyStore.keys"
         :formatBytes="formatBytes"
         @update:mode="mode = $event"
@@ -166,7 +196,6 @@ function openUSBPicker() {
         :newPFProto="newPFProto"
         :newPFHostPort="newPFHostPort"
         :newPFGuestPort="newPFGuestPort"
-        :supportsUSBPassthrough="supportsUSBPassthrough"
         :selectedUSBDevices="selectedUSBDevices"
         :showUSBPicker="showUSBPicker"
         :hostUSBDevices="hostUSBDevices"
@@ -192,6 +221,9 @@ function openUSBPicker() {
         :memoryMB="memoryMB"
         :displayResolution="displayResolution"
         :tpmEnabled="tpmEnabled"
+        :uefi="uefi"
+        :revealArchDetails="revealArchOnSummary"
+        :archProblem="archProblemText"
         :mode="mode"
         :selectedImage="selectedImage"
         :diskSource="diskSource"
@@ -199,7 +231,6 @@ function openUSBPicker() {
         :existingDiskId="existingDiskId"
         :availableDisks="availableDisks"
         :sharedPaths="sharedPaths"
-        :supportsUSBPassthrough="supportsUSBPassthrough"
         :selectedUSBDevices="selectedUSBDevices"
         :selectedNetwork="selectedNetwork"
       />

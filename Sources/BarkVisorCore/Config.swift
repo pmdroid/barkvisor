@@ -41,6 +41,10 @@ public struct DBLogger: Sendable {
 /// Shared ISO 8601 date formatter — thread-safe, avoids repeated allocation.
 public nonisolated(unsafe) let iso8601 = ISO8601DateFormatter()
 
+/// Host `systemUptime` when BarkVisorCore first loaded. Subtracted from later
+/// readings so diagnostics report **daemon** uptime, not host/OS uptime.
+private let processStartSystemUptime = ProcessInfo.processInfo.systemUptime
+
 public enum Config {
     /// Product version reported by About / updates APIs.
     /// Release scripts replace this string at build time (`scripts/lib/inject-version.sh`).
@@ -51,6 +55,11 @@ public enum Config {
     /// Release tags like `1.2.3` are not dev; `0.0.0-dev` and `0.0.0+git.*` are.
     public static var isDevBuild: Bool {
         version.contains("dev") || version.hasPrefix("0.0.0")
+    }
+
+    /// Seconds this BarkVisor process has been running (not host/OS uptime).
+    public static var processUptimeSeconds: TimeInterval {
+        max(0, ProcessInfo.processInfo.systemUptime - processStartSystemUptime)
     }
 
     /// HTTP listen port. Override with `BARKVISOR_PORT` (1–65535).
@@ -148,6 +157,11 @@ public enum Config {
 
     public static var dataDir: URL {
         PlatformPaths.dataDir(isInstalled: isInstalled)
+    }
+
+    /// Durable host UUID persisted at `dataDir/host-id` (PAS-42).
+    public static var hostId: String {
+        HostIdentity.loadOrCreate(dataDir: dataDir).uuidString
     }
 
     /// Short path for unix sockets (must be < 104 bytes)

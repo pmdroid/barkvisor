@@ -41,13 +41,20 @@ public enum TemplateDeployService {
     /// Deploy a VM from a template via the shared `VMLifecycleService.createVM` path.
     public static func deploy(
         options: DeployOptions,
-        imageDownloader: ImageDownloader,
+        imageDownloader: any ImageDownloadStarting,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
     ) async throws -> DeployResult {
         let template = try await fetchTemplate(id: options.templateId, db: db)
         try validateInputs(template: template, inputs: options.inputs)
-        let repoImage = try await resolveRepoImage(template: template, db: db)
+        let inventory = HostInventoryService.snapshot()
+        try enforceCompatibility(template: template, inventory: inventory, options: options)
+        let repoImage = try await resolveRepoImage(
+            template: template, hostArch: inventory.platform.arch, db: db,
+        )
+        // PAS-48: reject before downloading a multi-hundred-MB foreign-arch image.
+        // createVM also guards via validateCreateVMInputs; this is the early gate.
+        try PlatformCapabilities.requireCompatibleGuestArch(repoImage.arch)
 
         let localImage = try await db.read { db in
             try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl)
@@ -118,24 +125,44 @@ public enum TemplateDeployService {
         }
     }
 
+    private static func enforceCompatibility(
+        template: VMTemplate, inventory: HostInventory, options: DeployOptions,
+    ) throws {
+        let report = TemplateCompatibility.evaluate(
+            template: template,
+            host: inventory,
+            requestedMemoryMB: options.memoryMB,
+        )
+        guard report.compatible else {
+            let message = report.reasons.first?.message
+                ?? "Template is not compatible with this host."
+            throw BarkVisorError.badRequest(message)
+        }
+    }
+
     private static func resolveRepoImage(
-        template: VMTemplate, db: DatabasePool,
+        template: VMTemplate, hostArch: String, db: DatabasePool,
     ) async throws -> RepositoryImage {
+        guard let slug = template.resolvedImageSlug(forArch: hostArch) else {
+            throw BarkVisorError.badRequest(
+                "Template '\(template.slug)' has no image for host architecture \(PlatformCapabilities.normalizedArch(hostArch)).",
+            )
+        }
         let repoImage: RepositoryImage? = try await db.read { db in
             if let repoId = template.repositoryId {
                 if let img =
                     try RepositoryImage
                         .filter(Column("repositoryId") == repoId)
-                        .filter(Column("slug") == template.imageSlug)
+                        .filter(Column("slug") == slug)
                         .fetchOne(db) {
                     return img
                 }
             }
-            return try RepositoryImage.filter(Column("slug") == template.imageSlug).fetchOne(db)
+            return try RepositoryImage.filter(Column("slug") == slug).fetchOne(db)
         }
         guard let repoImage else {
             throw BarkVisorError.badRequest(
-                "Image \(template.imageSlug) not found in any repository. Please sync your repositories first.",
+                "Image \(slug) not found in any repository. Please sync your repositories first.",
             )
         }
         return repoImage
@@ -157,7 +184,7 @@ public enum TemplateDeployService {
 
     private static func startOrDetectDownload(
         repoImage: RepositoryImage,
-        imageDownloader: ImageDownloader,
+        imageDownloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> DeployResult {
         guard let sourceURL = URL(string: repoImage.downloadUrl) else {
@@ -303,7 +330,30 @@ public enum TemplateDeployService {
                 throw BarkVisorError.badRequest("Network not found")
             }
             return userNetId
-        } else if templateMode == "bridged" {
+        }
+
+        let mode = try NetworkCapability.parse(
+            templateMode.isEmpty ? NetworkMode.nat.rawValue : templateMode,
+        )
+        try NetworkCapability.requireMode(mode.rawValue)
+
+        if mode == .isolated {
+            if let existing = try await db.read({ db in
+                try Network.filter(Column("mode") == NetworkMode.isolated.rawValue).fetchOne(db)
+            }) {
+                return existing.id
+            }
+            return try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "Isolated",
+                    mode: NetworkMode.isolated.rawValue,
+                    bridge: nil,
+                    macAddress: nil,
+                    dnsServer: nil,
+                ),
+                db: db,
+            ).id
+        } else if mode == .bridged {
             try PlatformCapabilities.requireBridgedNetworking()
             let activeBridge = try await db.read { db in
                 try BridgeRecord.filter(Column("status") == "active").fetchOne(db)

@@ -58,6 +58,10 @@ Click **Launch Dashboard**. BarkVisor signs you in automatically and opens the m
 
 SetupMiddleware stops blocking API routes once setup is complete.
 
+## Words we use
+
+This Device is already a **Home** of one. Later, more Devices join that Home — not a cluster, datacenter, or quorum. See [Product terminology](product-terminology.md).
+
 ## After Setup
 
 Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI — all management happens through the browser (macOS and Linux).

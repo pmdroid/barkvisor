@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import AppSelect from '../ui/AppSelect.vue'
+import CapabilityGate from '../ui/CapabilityGate.vue'
+import UnsupportedHint from '../ui/UnsupportedHint.vue'
 import type { Network, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../../api/types'
+import { useFeature } from '../../composables/useFeature'
+
+const usb = useFeature('usbPassthrough')
+const bridged = useFeature('bridgedNetworking')
 
 defineProps<{
   networks: Network[]
@@ -11,7 +17,6 @@ defineProps<{
   newPFProto: 'tcp' | 'udp'
   newPFHostPort: number | null
   newPFGuestPort: number | null
-  supportsUSBPassthrough: boolean
   selectedUSBDevices: USBPassthroughDevice[]
   showUSBPicker: boolean
   hostUSBDevices: HostUSBDevice[]
@@ -46,9 +51,13 @@ const emit = defineEmits<{
         </option>
       </AppSelect>
       <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:block">
-        NAT provides internet access via the host. Bridged networks give the VM its own IP on the local network.
-        Manage networks under <strong>Settings &rarr; Network</strong>.
+        NAT: internet via this device (also used when no network is selected).
+        Bridged (Home Network): LAN IP.
+        Isolated (Private): no host, LAN, or internet.
+        Publish a service with NAT plus port forwards — not a separate mode.
+        Manage networks under <router-link to="/networks"><strong>Networks</strong></router-link>.
       </span>
+      <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />
     </div>
     <div v-if="selectedNetworkId && selectedNetwork" style="margin-top:12px;font-size:12px;color:var(--text-secondary)">
       <div style="margin-bottom:4px;font-weight:500">{{ selectedNetwork.name }} &mdash; {{ selectedNetwork.mode }}</div>
@@ -120,10 +129,10 @@ const emit = defineEmits<{
     </div>
 
     <!-- USB Passthrough -->
-    <div v-if="supportsUSBPassthrough" style="margin-top:16px">
+    <CapabilityGate feature="usbPassthrough" v-slot="{ available }" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <label style="margin:0">USB Passthrough</label>
-        <button class="btn-ghost btn-sm" @click="emit('openUSBPicker')">
+        <button class="btn-ghost btn-sm" :disabled="!available" @click="emit('openUSBPicker')">
           <span style="display:flex;align-items:center;gap:4px">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add
@@ -140,14 +149,14 @@ const emit = defineEmits<{
           <button class="btn-ghost btn-sm" style="color:var(--red);flex-shrink:0;margin-left:8px" @click="emit('removeUSBDevice', dev)">Remove</button>
         </div>
       </div>
-      <span v-else style="font-size:11px;color:var(--text-dim);display:block">
-        No USB devices selected. Pass physical USB devices from your Mac to the VM.
+      <span v-else-if="available" style="font-size:11px;color:var(--text-dim);display:block">
+        No USB devices selected. Pass physical USB devices from this device to the VM.
       </span>
-    </div>
+    </CapabilityGate>
 
     <!-- USB Device Picker Modal -->
     <div
-      v-if="supportsUSBPassthrough && showUSBPicker"
+      v-if="usb.available && showUSBPicker"
       class="modal-overlay"
       style="z-index:1100"
       @click.self="emit('update:showUSBPicker', false)"
@@ -155,7 +164,7 @@ const emit = defineEmits<{
       <div class="modal" style="max-width:480px">
         <h2>Select USB Devices</h2>
         <div v-if="hostUSBDevices.length === 0" class="empty" style="padding:24px 0">
-          <p>No USB devices detected on the host.</p>
+          <p>No USB devices detected on this device.</p>
         </div>
         <div v-else style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
           <table>

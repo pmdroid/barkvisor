@@ -2,14 +2,65 @@
   "version": 1,
   "templates": [
     {
+      "slug": "ubuntu-cloud",
+      "name": "Ubuntu Server",
+      "description": "Minimal Ubuntu 24.04 cloud image with cloud-init. Deploys the matching image for this host.",
+      "category": "general",
+      "icon": "terminal",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 512,
+      "diskSizeGB": 16,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "ubuntu",
+          "required": true,
+          "placeholder": "ubuntu"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
       "slug": "pi-hole",
       "name": "Pi-hole",
       "description": "Network-wide DNS ad blocker. Lightweight and effective.",
       "category": "networking",
       "icon": "shield",
       "imageSlug": "ubuntu-24.04-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
       "cpuCount": 1,
       "memoryMB": 512,
+      "minMemoryMB": 512,
       "diskSizeGB": 8,
       "portForwards": [
         {
@@ -21,6 +72,7 @@
         { "protocol": "udp", "hostPort": 53, "guestPort": 53 }
       ],
       "networkMode": "bridged",
+      "requiredFeatures": ["bridgedNetworking"],
       "inputs": [
         {
           "id": "username",
@@ -40,6 +92,124 @@
         }
       ],
       "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackage_upgrade: true\npackages:\n  - qemu-guest-agent\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - mkdir -p /etc/pihole\n  - |\n    cat > /etc/pihole/setupVars.conf <<PVEOF\n    PIHOLE_INTERFACE=eth0\n    QUERY_LOGGING=true\n    INSTALL_WEB_SERVER=true\n    INSTALL_WEB_INTERFACE=true\n    LIGHTTPD_ENABLED=true\n    WEBPASSWORD=$(echo -n {{password}} | sha256sum | awk '{print $1}' | sha256sum | awk '{print $1}')\n    BLOCKING_ENABLED=true\n    PIHOLE_DNS_1=1.1.1.1\n    PIHOLE_DNS_2=8.8.8.8\n    PVEOF\n  - curl -sSL https://install.pi-hole.net | bash /dev/stdin --unattended\n"
+    },
+    {
+      "slug": "debian-cloud",
+      "name": "Debian 12",
+      "description": "Debian Bookworm cloud image with cloud-init. Deploys the matching image for this host.",
+      "category": "general",
+      "icon": "terminal",
+      "imageSlug": "debian-12-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "debian-12-arm64",
+        "x86_64": "debian-12-x86_64"
+      },
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 512,
+      "diskSizeGB": 16,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "debian",
+          "required": true,
+          "placeholder": "debian"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "rocky-cloud",
+      "name": "Rocky Linux 9",
+      "description": "Rocky Linux 9 generic cloud image with cloud-init. Deploys the matching image for this host.",
+      "category": "general",
+      "icon": "terminal",
+      "imageSlug": "rocky-9-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "rocky-9-arm64",
+        "x86_64": "rocky-9-x86_64"
+      },
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "rocky",
+          "required": true,
+          "placeholder": "rocky"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "home-assistant",
+      "name": "Home Assistant OS",
+      "description": "Official HAOS for this host. UEFI guest; web UI on port 8123.",
+      "category": "smart-home",
+      "icon": "home",
+      "imageSlug": "haos-18.1-x86_64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "haos-18.1-arm64",
+        "x86_64": "haos-18.1-x86_64"
+      },
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 32,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 8123,
+          "guestPort": 8123,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": ""
     }
   ]
 }

@@ -5,12 +5,22 @@ import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { networksUsableOnHost, useFeature } from './useFeature'
 import api from '../api/client'
-import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../api/types'
+import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice, CreateVMRequest } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
+import { hostArchToImageArch } from '../utils/imageArch'
+import {
+  architectureIsProblem,
+  architectureLabel,
+  defaultMachineType,
+  readAlwaysShowArchitectureDetails,
+  shouldRevealArchitectureDetails,
+  writeAlwaysShowArchitectureDetails,
+} from '../utils/architectureDetails'
 
 export function useCreateVMWizard(emit: (e: 'created') => void) {
   const vmStore = useVMStore()
@@ -20,8 +30,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const caps = useCapabilitiesStore()
   const networkStore = useNetworkStore()
   const diskStore = useDiskStore()
-  const { supportsUSBPassthrough, hostArch } = storeToRefs(caps)
-  const { networks } = storeToRefs(networkStore)
+  const { hostArch, guestTypes, accelerator } = storeToRefs(caps)
+  const usb = useFeature('usbPassthrough')
+  const bridged = useFeature('bridgedNetworking')
+  const { networks: allNetworks } = storeToRefs(networkStore)
+  const networks = computed(() => networksUsableOnHost(allNetworks.value, bridged.available))
   const { unattached: availableDisks } = storeToRefs(diskStore)
 
   // Wizard step
@@ -30,13 +43,42 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   // Step 1: OS & Name
   const name = ref('')
   const osType = ref<'linux' | 'windows'>('linux')
+  /**
+   * Windows guest profile exists only for arm64 today (`windows-arm64`).
+   * Until hostArch is known, do not offer Windows (PAS-48 / PAS-37 fail-closed).
+   */
+  const supportsWindows = computed(() => {
+    if (!caps.hostArchKnown) return false
+    const host = hostArchToImageArch(hostArch.value)
+    if (host !== 'arm64') return false
+    const types = guestTypes.value ?? []
+    if (types.length === 0) return true
+    return types.some(
+      (g) => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'),
+    )
+  })
+  /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
+  const guestArchOverride = ref<string | null>(null)
+
+  const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
+
+  const effectiveGuestArch = computed(() => guestArchOverride.value ?? hostImageArch.value)
+
   const vmType = computed(() => {
-    const archSuffix = hostArch.value === 'x86_64' ? 'amd64' : 'arm64'
+    const arch = effectiveGuestArch.value
+    const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
-      // Backend currently supports windows-arm64 only
+      // Never silently map Windows → Linux. Submit/canProceed require supportsWindows.
       return 'windows-arm64'
     }
     return `linux-${archSuffix}` as const
+  })
+
+  // If host turns out not to support Windows, drop a stale selection.
+  watch(supportsWindows, (ok) => {
+    if (!ok && osType.value === 'windows') {
+      selectOS('linux')
+    }
   })
 
   // Step 2: Hardware
@@ -44,11 +86,82 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const memoryMB = ref(1024)
   const displayResolution = ref('1280x800')
   const uefi = ref(true)
-  const tpmEnabled = computed(() => osType.value === 'windows')
+  const tpmOverride = ref<boolean | null>(null)
+  const tpmEnabled = computed(() => tpmOverride.value ?? osType.value === 'windows')
+  const alwaysShowArchDetails = ref(readAlwaysShowArchitectureDetails())
+
+  const archCustomized = computed(() => {
+    const override = guestArchOverride.value
+    return !!override && override !== hostImageArch.value
+  })
+  const uefiCustomized = computed(() => uefi.value !== true)
+  const tpmCustomized = computed(() => tpmOverride.value !== null)
+  const archRunnable = computed(() => caps.isArchRunnable(effectiveGuestArch.value))
+  const archIsProblem = computed(() => {
+    if (!caps.hostArchKnown) return false
+    return architectureIsProblem(effectiveGuestArch.value, archRunnable.value)
+  })
+  const archProblemText = computed(() => {
+    if (!archIsProblem.value) return null
+    const guest = effectiveGuestArch.value || 'selected'
+    const host = hostImageArch.value || 'this device'
+    if (osType.value === 'windows' && guest !== 'arm64') {
+      return `Windows guests are not available on ${guest}. This device runs ${host}.`
+    }
+    return `VM architecture (${guest}) is not compatible with this device (${host}). Cross-architecture VMs are not supported.`
+  })
+  const revealArchOnSummary = computed(() =>
+    shouldRevealArchitectureDetails({
+      alwaysShow: alwaysShowArchDetails.value,
+      customized: archCustomized.value || uefiCustomized.value || tpmCustomized.value,
+      problem: archIsProblem.value,
+    }),
+  )
+  const archOptions = computed(() => {
+    const host = hostImageArch.value
+    return [
+      {
+        value: 'arm64',
+        label: host === 'arm64' ? 'ARM64 (this device)' : 'ARM64',
+      },
+      {
+        value: 'x86_64',
+        label: host === 'x86_64' ? 'x86_64 (this device)' : 'x86_64',
+        disabled: osType.value === 'windows',
+      },
+    ]
+  })
+  const machineType = computed(() => {
+    const fromCaps = (guestTypes.value ?? []).find((g) => g.id === vmType.value)?.machine
+    return fromCaps || defaultMachineType(vmType.value)
+  })
+  const cpuModel = computed(() => {
+    const accel = accelerator.value
+    return accel === 'hvf' || accel === 'kvm' ? 'host' : accel ? 'max' : 'host default'
+  })
+  const archLabel = computed(() => architectureLabel(effectiveGuestArch.value))
+
+  function setGuestArch(arch: string) {
+    guestArchOverride.value = arch || null
+  }
+
+  function setAlwaysShowArchDetails(on: boolean) {
+    alwaysShowArchDetails.value = on
+    writeAlwaysShowArchitectureDetails(on)
+  }
+
+  function setTpmEnabled(on: boolean) {
+    tpmOverride.value = on
+  }
 
   function selectOS(os: 'linux' | 'windows') {
+    if (os === 'windows' && !supportsWindows.value) return
     osType.value = os
     selectedImageId.value = ''
+    tpmOverride.value = null
+    if (os === 'windows' && guestArchOverride.value === 'x86_64') {
+      guestArchOverride.value = null
+    }
     const maxCpu = caps.hostCpuCount
     if (os === 'windows') {
       cpuCount.value = Math.min(4, maxCpu)
@@ -221,9 +334,25 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   }
 
   const isNAT = computed(() => {
-    if (!selectedNetworkId.value) return false
-    const net = networks.value.find((n) => n.id === selectedNetworkId.value)
-    return net?.mode === 'nat'
+    // Missing selection is implicit NAT (PAS-67).
+    if (!selectedNetworkId.value) return true
+    const net = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
+    return !net || net.mode === 'nat'
+  })
+
+  watch(isNAT, (nat) => {
+    if (!nat) portForwards.value = []
+  })
+
+  watch([() => bridged.available, allNetworks], () => {
+    const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
+    if (current && current.mode === 'bridged' && !bridged.available) {
+      const fallback =
+        networkStore.defaultNAT
+        ?? allNetworks.value.find((n) => n.mode === 'nat')
+        ?? null
+      selectedNetworkId.value = fallback?.id ?? ''
+    }
   })
 
   // State
@@ -231,6 +360,8 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const loading = ref(false)
 
   onMounted(async () => {
+    // Resolve host arch before OS selection can enable Windows (PAS-48).
+    await caps.fetchCapabilities().catch(() => {})
     imageStore.fetchAll()
     sshKeyStore.fetchAll().then(() => {
       if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
@@ -243,15 +374,32 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     if (defaultNet) selectedNetworkId.value = defaultNet.id
   })
 
+  /** Local ready images of the current mode, unfiltered by arch. */
+  function readyImagesForMode(imageType: 'iso' | 'cloud-image') {
+    return imageStore.images.filter((i) => i.imageType === imageType && i.status === 'ready')
+  }
+
+  /** Match host-runnable arch; empty arch allowed (e.g. virtio drivers). */
+  function localImageMatchesHost(arch: string | null | undefined): boolean {
+    if (!arch) return true
+    return caps.isArchRunnable(arch)
+  }
+
   const isoImages = computed(() =>
-    imageStore.images.filter((i) => i.imageType === 'iso' && i.status === 'ready'),
+    readyImagesForMode('iso').filter((i) => localImageMatchesHost(i.arch)),
   )
   const cloudImages = computed(() =>
-    imageStore.images.filter((i) => i.imageType === 'cloud-image' && i.status === 'ready'),
+    readyImagesForMode('cloud-image').filter((i) => localImageMatchesHost(i.arch)),
   )
   const filteredImages = computed(() =>
     mode.value === 'iso' ? isoImages.value : cloudImages.value,
   )
+  /** Ready images hidden solely because of host arch mismatch (PAS-48 empty-state copy). */
+  const foreignArchImageCount = computed(() => {
+    if (!caps.hostArchKnown) return 0
+    const type = mode.value === 'iso' ? 'iso' : 'cloud-image'
+    return readyImagesForMode(type).filter((i) => i.arch && !localImageMatchesHost(i.arch)).length
+  })
 
   const selectedImage = computed(() => {
     if (!selectedImageId.value) return null
@@ -260,16 +408,17 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   const selectedNetwork = computed(() => {
     if (!selectedNetworkId.value) return null
-    return networks.value.find((n) => n.id === selectedNetworkId.value) || null
+    return allNetworks.value.find((n) => n.id === selectedNetworkId.value) || null
   })
 
   function canProceed(): boolean {
+    if (osType.value === 'windows' && !supportsWindows.value) return false
     const content = stepContent(step.value)
     switch (content) {
       case 'OS':
         return !!name.value.trim()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value
       case 'Image':
         return !!selectedImageId.value
       case 'Drivers':
@@ -279,7 +428,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       case 'Network':
         return true
       case 'Summary':
-        return true
+        return !archIsProblem.value
       default:
         return false
     }
@@ -295,16 +444,30 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   async function submit() {
     error.value = ''
+    if (osType.value === 'windows' && !supportsWindows.value) {
+      error.value = 'Windows VMs are not available on this device architecture.'
+      return
+    }
+    if (selectedNetwork.value?.mode === 'bridged' && !bridged.available) {
+      error.value = bridged.explanation || 'Bridged networking is not available on this device.'
+      return
+    }
+    if (archIsProblem.value) {
+      error.value = archProblemText.value || 'This architecture is not supported on this device.'
+      return
+    }
     loading.value = true
     try {
-      const req: any = {
+      // Simple path omits vmType / firmware so the server applies host defaults (PAS-93).
+      const req: CreateVMRequest = {
         name: name.value.trim(),
-        vmType: vmType.value,
+        osFamily: osType.value,
         cpuCount: cpuCount.value,
         memoryMB: memoryMB.value,
-        uefi: uefi.value,
-        tpmEnabled: tpmEnabled.value,
       }
+      if (archCustomized.value) req.vmType = vmType.value
+      if (uefiCustomized.value) req.uefi = uefi.value
+      if (tpmCustomized.value) req.tpmEnabled = tpmEnabled.value
       if (diskSource.value === 'existing') {
         req.existingDiskId = existingDiskId.value
       } else {
@@ -328,7 +491,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       if (selectedNetworkId.value) req.networkId = selectedNetworkId.value
       if (portForwards.value.length > 0) req.portForwards = portForwards.value
       if (sharedPaths.value.length > 0) req.sharedPaths = sharedPaths.value
-      if (supportsUSBPassthrough.value && selectedUSBDevices.value.length > 0) {
+      if (usb.available && selectedUSBDevices.value.length > 0) {
         req.usbDevices = selectedUSBDevices.value
       }
 
@@ -350,14 +513,13 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     return b + ' B'
   }
 
-  const archLabel = computed(() => (hostArch.value === 'x86_64' ? 'x86_64' : 'ARM64'))
-
   return {
     // stores exposed for steps that need lists
     sshKeyStore,
-    supportsUSBPassthrough,
     hostArch,
     archLabel,
+    revealArchOnSummary,
+    archProblemText,
 
     // navigation
     step,
@@ -373,6 +535,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     name,
     osType,
     vmType,
+    supportsWindows,
     selectOS,
 
     // Hardware
@@ -381,6 +544,15 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     displayResolution,
     uefi,
     tpmEnabled,
+    effectiveGuestArch,
+    archOptions,
+    machineType,
+    accelerator,
+    cpuModel,
+    alwaysShowArchDetails,
+    setGuestArch,
+    setAlwaysShowArchDetails,
+    setTpmEnabled,
 
     // Image
     mode,
@@ -389,6 +561,8 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     showCloudInit,
     cloudUserData,
     filteredImages,
+    foreignArchImageCount,
+    hostImageArch,
     selectedImage,
     formatBytes,
 

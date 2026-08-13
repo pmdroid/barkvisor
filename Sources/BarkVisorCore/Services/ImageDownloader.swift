@@ -39,7 +39,17 @@ public enum ExpectedChecksum: Sendable {
     case sha512(String)
 }
 
-public actor ImageDownloader {
+/// Starts catalog/image downloads. Extracted so tests can assert `start` is never called.
+public protocol ImageDownloadStarting: Actor {
+    func start(
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum?,
+    )
+}
+
+public actor ImageDownloader: ImageDownloadStarting {
     private var tasks: [String: Task<Void, Never>] = [:]
     private var continuations: [String: [UUID: AsyncStream<ImageProgressEvent>.Continuation]] = [:]
     private let dbPool: () -> GRDB.DatabasePool

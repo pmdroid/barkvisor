@@ -35,6 +35,10 @@ enum SystemCapabilitiesController {
                     qemuBinary: $0.qemuBinary,
                 )
             },
+            details: CapabilityDetailBuilder.from(inventory: inv),
+            inventorySchemaVersion: inv.schemaVersion,
+            runnableArches: [inv.platform.arch],
+            networkModes: CapabilityDetailBuilder.networkModes(from: inv),
         )
     }
 }

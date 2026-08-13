@@ -75,8 +75,6 @@ extension VMManager {
     func validateBridgeIfNeeded(network: Network?) async throws -> String? {
         guard let network, network.mode == "bridged" else { return nil }
 
-        try PlatformCapabilities.requireBridgedNetworking()
-
         let iface = network.bridge ?? {
             #if os(macOS)
                 "en0"
@@ -85,9 +83,10 @@ extension VMManager {
             #endif
         }()
 
+        try NetworkCapability.requireBridgedInterface(iface)
+
         #if os(Linux)
             // QEMU `-netdev bridge` only needs a live host bridge + qemu-bridge-helper ACL.
-            try LinuxHostNetwork.requireBridgeableInterface(iface)
             return nil
         #else
             let bridge = try await dbPool.read { db in
@@ -156,40 +155,15 @@ extension VMManager {
         for rule in rules {
             try QEMUBuilder.validatePort(rule.hostPort)
             try QEMUBuilder.validateProtocol(rule.protocol)
-            guard rule.protocol.lowercased() == "tcp" else { continue }
-            if !isTCPPortFree(rule.hostPort) {
-                throw BarkVisorError.conflict(
+            guard PortRegistry.normalizedProtocol(rule.protocol) == "tcp" else { continue }
+            if !PortRegistry.probeListen(port: rule.hostPort, proto: rule.protocol) {
+                throw BarkVisorError.portInUse(
                     "Host port \(rule.hostPort) is already in use "
                         + "(often another VM with the same port forward, e.g. Home Assistant 8123). "
                         + "Stop the other VM or change this VM's host port.",
                 )
             }
         }
-    }
-
-    /// Returns true if nothing is listening on 0.0.0.0:`port` / ::`port` for TCP.
-    private static func isTCPPortFree(_ port: Int) -> Bool {
-        // Prefer bind probe so we match QEMU's actual hostfwd bind behaviour.
-        // Do not set SO_REUSEADDR: we want bind to fail if anything is already listening
-        // (matches QEMU hostfwd, which also cannot share the port).
-        #if os(Linux)
-            let sockType = Int32(SOCK_STREAM.rawValue)
-        #else
-            let sockType = SOCK_STREAM
-        #endif
-        let fd = socket(AF_INET, sockType, 0)
-        guard fd >= 0 else { return true }
-        defer { close(fd) }
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(UInt16(port).bigEndian)
-        addr.sin_addr = in_addr(s_addr: INADDR_ANY)
-        let bindResult = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        return bindResult == 0
     }
 
     // MARK: - Logging

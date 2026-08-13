@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
-import type { VM, CreateVMRequest, UpdateVMRequest } from '../api/types'
+import type { VM, CreateVMRequest, UpdateVMRequest, WorkloadSpec } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 
 export const useVMStore = defineStore('vms', () => {
@@ -87,5 +87,19 @@ export const useVMStore = defineStore('vms', () => {
     return data
   }
 
-  return { vms, loading, error, fetchAll, fetchOne, create, start, stop, restart, detachISO, attachISO, remove, update }
+  async function fetchSpec(id: string): Promise<WorkloadSpec> {
+    const { data } = await api.get(`/vms/${id}/spec`)
+    return data
+  }
+
+  async function putSpec(id: string, spec: WorkloadSpec): Promise<WorkloadSpec> {
+    const { data } = await api.put(`/vms/${id}/spec`, spec)
+    await fetchOne(id)
+    return data
+  }
+
+  return {
+    vms, loading, error, fetchAll, fetchOne, create, start, stop, restart,
+    detachISO, attachISO, remove, update, fetchSpec, putSpec,
+  }
 })

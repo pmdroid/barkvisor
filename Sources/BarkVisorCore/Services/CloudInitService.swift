@@ -50,7 +50,7 @@ public enum CloudInitService {
 
     public static func generateISO(vmID: String, vmName: String, sshKeys: [String], userData: String?)
         throws -> URL {
-        let dir = Config.dataDir.appendingPathComponent("cloud-init/\(vmID)")
+        let dir = generatedISOURL(vmID: vmID).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         // meta-data — sanitize vmName for YAML (replace problematic chars)
@@ -112,7 +112,7 @@ public enum CloudInitService {
         try ud.write(to: dir.appendingPathComponent("user-data"), atomically: true, encoding: .utf8)
 
         // Generate ISO using mkisofs / genisoimage (same as Ubuntu's cloud-localds)
-        let isoURL = dir.appendingPathComponent("cidata.iso")
+        let isoURL = generatedISOURL(vmID: vmID)
         try? FileManager.default.removeItem(at: isoURL)
 
         let tool = try resolveCloudInitISOTool()
@@ -136,6 +136,31 @@ public enum CloudInitService {
         }
 
         return isoURL
+    }
+
+    /// Canonical service-generated cloud-init ISO path for a VM.
+    public static func generatedISOURL(vmID: String) -> URL {
+        Config.dataDir.appendingPathComponent("cloud-init/\(vmID)/cidata.iso")
+    }
+
+    /// Accept the VM's current path (no change) or the service-generated ISO only.
+    public static func validateUserDataRef(
+        _ ref: String,
+        vmID: String,
+        current: String? = nil,
+    ) throws {
+        let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw BarkVisorError.badRequest("spec.cloudInit.userDataRef must not be empty")
+        }
+        if trimmed == current { return }
+        let resolved = (trimmed as NSString).resolvingSymlinksInPath
+        let expected = (generatedISOURL(vmID: vmID).path as NSString).resolvingSymlinksInPath
+        guard resolved == expected else {
+            throw BarkVisorError.badRequest(
+                "spec.cloudInit.userDataRef must be the service-generated cloud-init ISO for this VM",
+            )
+        }
     }
 
     /// Resolve mkisofs-compatible tooling: bundled helper first, then distro PATH.

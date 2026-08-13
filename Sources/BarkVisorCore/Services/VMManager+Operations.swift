@@ -23,19 +23,10 @@ extension VMManager {
                 updated.setISOIds(nil)
             }
 
-            let isoIdsJSON = updated.isoIds
-            if isRunning {
-                try db.execute(
-                    sql:
-                    "UPDATE vms SET isoId = NULL, isoIds = ?, pendingChanges = 1, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            } else {
-                try db.execute(
-                    sql: "UPDATE vms SET isoId = NULL, isoIds = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            }
+            updated.updatedAt = now
+            if isRunning { updated.pendingChanges = true }
+            updated.syncSpecProjection(bumpGeneration: true)
+            try updated.update(db)
         }
 
         if isRunning {
@@ -66,18 +57,10 @@ extension VMManager {
             updated.setISOIds(ids)
 
             let now = iso8601.string(from: Date())
-            let isoIdsJSON = updated.isoIds
-            if isRunning {
-                try db.execute(
-                    sql: "UPDATE vms SET isoIds = ?, pendingChanges = 1, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            } else {
-                try db.execute(
-                    sql: "UPDATE vms SET isoIds = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [isoIdsJSON, now, vmID],
-                )
-            }
+            updated.updatedAt = now
+            if isRunning { updated.pendingChanges = true }
+            updated.syncSpecProjection(bumpGeneration: true)
+            try updated.update(db)
         }
 
         if isRunning {
@@ -112,6 +95,47 @@ extension VMManager {
 
     public func allRunningVMs() -> [String: RunningVM] {
         runningVMs
+    }
+
+    public func recordHealthError(_ message: String, for vmID: String) {
+        lastHealthErrors[vmID] = message
+    }
+
+    public func clearHealthError(for vmID: String) {
+        lastHealthErrors.removeValue(forKey: vmID)
+    }
+
+    public func healthError(for vmID: String) -> String? {
+        lastHealthErrors[vmID]
+    }
+
+    /// Live PAS-79 signals from the process table, QMP socket, and guest_info.
+    public func healthSignals(for vm: VM, lastSeenAt: String?) -> WorkloadHealthSignals {
+        let state = VMState.parse(vm.state)
+        let lastError = lastHealthErrors[vm.id]
+        if let running = runningVMs[vm.id] {
+            return WorkloadHealthSignals(
+                qemuProcess: isProcessAlive(running),
+                qmp: FileManager.default.fileExists(atPath: running.qmpSocketPath),
+                guestAgent: lastSeenAt != nil,
+                lastSeenAt: lastSeenAt,
+                lastError: lastError,
+            )
+        }
+        if state == .running {
+            return WorkloadHealthSignals(
+                qemuProcess: false,
+                qmp: false,
+                guestAgent: lastSeenAt != nil,
+                lastSeenAt: lastSeenAt,
+                lastError: lastError ?? "QEMU process not running",
+            )
+        }
+        return WorkloadHealthSignals(
+            guestAgent: lastSeenAt != nil,
+            lastSeenAt: lastSeenAt,
+            lastError: lastError,
+        )
     }
 
     // MARK: - State & DB Helpers

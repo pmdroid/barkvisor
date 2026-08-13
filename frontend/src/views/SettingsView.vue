@@ -5,20 +5,27 @@ import api from '../api/client'
 import type { APIKeyResponse, AuditEntry, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
-import { useCapabilitiesStore } from '../stores/capabilities'
 import { useTaskPoller } from '../composables/useTaskPoller'
-import { storeToRefs } from 'pinia'
+import { useFeature } from '../composables/useFeature'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
-const caps = useCapabilitiesStore()
-const { supportsInAppUpdate } = storeToRefs(caps)
+const inAppUpdate = useFeature('inAppUpdate')
 const tab = ref<'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+
+function openUpdatesTab() {
+  tab.value = 'updates'
+  if (inAppUpdate.available) {
+    fetchUpdateSettings()
+    checkForUpdates()
+  }
+}
 
 // API Keys
 const apiKeys = ref<APIKeyResponse[]>([])
@@ -351,9 +358,8 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
     <button
-      v-if="supportsInAppUpdate"
       :class="{ active: tab === 'updates' }"
-      @click="tab = 'updates'; fetchUpdateSettings(); checkForUpdates()"
+      @click="openUpdatesTab"
     >Updates</button>
   </div>
 
@@ -530,7 +536,11 @@ onUnmounted(() => {
   </div>
 
   <!-- Updates Tab -->
-  <div v-if="supportsInAppUpdate && tab === 'updates'">
+  <div v-if="tab === 'updates' && !inAppUpdate.available" class="update-status-card">
+    <div style="font-size:20px;margin-bottom:8px">In-app updates unavailable</div>
+    <UnsupportedHint :text="inAppUpdate.explanation" />
+  </div>
+  <div v-else-if="inAppUpdate.available && tab === 'updates'">
     <!-- Success state -->
     <div v-if="updatePhase === 'success'" class="update-status-card update-success">
       <div style="font-size:20px;margin-bottom:8px">Updated successfully</div>

@@ -1,0 +1,1593 @@
+openapi: "3.1.0"
+info:
+  title: BarkVisor HTTP API
+  version: "1"
+  summary: Stable cross-platform host API
+  description: |
+    One JSON API on macOS and Linux. Resource schemas do not fork by host OS.
+
+    **Versioning:** unversioned `/api` is v1. Every `/api` response includes
+    `X-BarkVisor-API-Version: 1`. `AgentInfo.apiVersion` matches. Breaking
+    changes bump both after a deprecation window; prefer additive fields.
+
+    **Errors:** `{ "error": true, "code": "...", "reason": "...", "status": 400 }`.
+    Same envelope on every host (StructuredErrorMiddleware). Do not invent a
+    parallel shape.
+
+    **Platform differences:** expressed as `/api/system/capabilities` plus
+    structured unsupported errors — never as missing fields or different VM/disk
+    schemas.
+
+    **SSE / WebSocket** are out-of-band (see `x-barkvisor-transport`). They are
+    documented here so clients know they exist; they are not part of the JSON
+    compatibility promise.
+
+    **Tiers:**
+    - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
+    - evolving — `/api/agent/*`, `/api/home/*`, `/api/apps` (home/apps reserved)
+    - internal — `/api/home/devices/{id}/v1/*` proxy (reserved, not public)
+  x-barkvisor-api-version: 1
+  x-barkvisor-version-header: X-BarkVisor-API-Version
+
+servers:
+  - url: /
+    description: Same origin as the SPA / daemon
+
+tags:
+  - name: meta
+  - name: auth
+  - name: vms
+  - name: disks
+  - name: networks
+  - name: images
+  - name: evolving
+  - name: out-of-band
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/health:
+    get:
+      tags: [meta]
+      operationId: getHealth
+      security: []
+      x-barkvisor-stability: stable
+      summary: Process health probe
+      responses:
+        "200":
+          description: Probe result. `status` is `ok` when required checks pass.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessHealth"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/openapi.yaml:
+    get:
+      tags: [meta]
+      operationId: getOpenAPI
+      security: []
+      x-barkvisor-stability: stable
+      summary: This OpenAPI document
+      responses:
+        "200":
+          description: OpenAPI 3 YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/contract:
+    get:
+      tags: [meta]
+      operationId: getContract
+      security: []
+      x-barkvisor-stability: stable
+      summary: Version, stability tiers, and error envelope
+      responses:
+        "200":
+          description: Contract summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIContractSummary"
+
+  /api/workloadspec.schema.json:
+    get:
+      tags: [meta]
+      operationId: getWorkloadSpecSchema
+      security: []
+      x-barkvisor-stability: stable
+      summary: JSON Schema for WorkloadSpec (PAS-80)
+      responses:
+        "200":
+          description: JSON Schema 2020-12
+          content:
+            application/schema+json:
+              schema:
+                type: object
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      x-barkvisor-stability: stable
+      summary: Exchange username/password for a JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms:
+    get:
+      tags: [vms]
+      operationId: listVMs
+      x-barkvisor-stability: stable
+      summary: List workloads
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: VM list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [vms]
+      operationId: createVM
+      x-barkvisor-stability: stable
+      summary: Create a VM (optionally via WorkloadSpec)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVMRequest"
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        "202":
+          description: Provisioning in background
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMTaskAccepted"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      tags: [vms]
+      operationId: getVM
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [vms]
+      operationId: updateVM
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVMRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [vms]
+      operationId: deleteVM
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          description: Deleted
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/start:
+    post:
+      tags: [vms]
+      operationId: startVM
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/stop:
+    post:
+      tags: [vms]
+      operationId: stopVM
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/restart:
+    post:
+      tags: [vms]
+      operationId: restartVM
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/attach-iso:
+    post:
+      tags: [vms]
+      operationId: attachISO
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/detach-iso:
+    post:
+      tags: [vms]
+      operationId: detachISO
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/spec:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      tags: [vms]
+      operationId: getVMSpec
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadSpec"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [vms]
+      operationId: putVMSpec
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadSpec"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workloads/apply:
+    post:
+      tags: [vms]
+      operationId: applyWorkload
+      x-barkvisor-stability: stable
+      summary: Server-side apply a WorkloadSpec (create or update)
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Validate and return the planned op without writing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadSpec"
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/WorkloadSpec"
+      responses:
+        "200":
+          description: Apply result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadApplyResult"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/workloads/{id}/spec:
+    get:
+      tags: [vms]
+      operationId: getWorkloadSpec
+      x-barkvisor-stability: stable
+      summary: Export the live WorkloadSpec for a workload
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadSpec"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/disks:
+    get:
+      tags: [disks]
+      operationId: listDisks
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Disk"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [disks]
+      operationId: createDisk
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDiskRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Disk"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/disks/summary:
+    get:
+      tags: [disks]
+      operationId: diskSummary
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageSummary"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/disks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      tags: [disks]
+      operationId: getDisk
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Disk"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [disks]
+      operationId: deleteDisk
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          description: Deleted
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/disks/{id}/usage:
+    get:
+      tags: [disks]
+      operationId: diskUsage
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiskUsage"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/disks/{id}/resize:
+    post:
+      tags: [disks]
+      operationId: resizeDisk
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResizeDiskRequest"
+      responses:
+        "200":
+          description: Accepted or resized
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/networks:
+    get:
+      tags: [networks]
+      operationId: listNetworks
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Network"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [networks]
+      operationId: createNetwork
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNetworkRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/networks/modes:
+    get:
+      tags: [networks]
+      operationId: listNetworkModes
+      x-barkvisor-stability: stable
+      summary: Closed mode list with per-host support reasons
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NetworkModeCapability"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/networks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    patch:
+      tags: [networks]
+      operationId: updateNetwork
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNetworkRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [networks]
+      operationId: deleteNetwork
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          description: Deleted
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/images:
+    get:
+      tags: [images]
+      operationId: listImages
+      x-barkvisor-stability: stable
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Image"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/images/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      tags: [images]
+      operationId: getImage
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [images]
+      operationId: deleteImage
+      x-barkvisor-stability: stable
+      responses:
+        "200":
+          description: Deleted
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/images/download:
+    post:
+      tags: [images]
+      operationId: downloadImage
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DownloadImageRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/capabilities:
+    get:
+      tags: [evolving]
+      operationId: getCapabilities
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Host feature matrix (same schema on every OS)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemCapabilities"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/about:
+    get:
+      tags: [evolving]
+      operationId: getAbout
+      x-barkvisor-stability: evolving
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppInfo"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/agent/inventory:
+    get:
+      tags: [evolving]
+      operationId: getInventory
+      x-barkvisor-stability: evolving
+      summary: Host inventory snapshot (JWT)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostInventory"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/guest-info:
+    get:
+      tags: [evolving]
+      operationId: getGuestInfo
+      x-barkvisor-stability: evolving
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: Guest agent snapshot
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/state:
+    get:
+      tags: [out-of-band]
+      operationId: streamVMState
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: sse
+      summary: SSE state stream (not a JSON compatibility surface)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: text/event-stream
+
+  /api/auth/ws-ticket:
+    post:
+      tags: [out-of-band]
+      operationId: createWSTicket
+      x-barkvisor-stability: out-of-band
+      summary: Short-lived ticket for WebSocket / SSE query params
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket]
+                properties:
+                  ticket:
+                    type: string
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/console:
+    get:
+      tags: [out-of-band]
+      operationId: vmConsole
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Serial console WebSocket (`?ticket=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/vms/{id}/vnc:
+    get:
+      tags: [out-of-band]
+      operationId: vmVNC
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: VNC WebSocket (`?ticket=` or `?token=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "101":
+          description: Switching Protocols
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+
+  responses:
+    Error:
+      description: Structured error envelope (same on every host)
+      headers:
+        X-BarkVisor-API-Version:
+          schema:
+            type: string
+            example: "1"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error, code, reason, status]
+      properties:
+        error:
+          type: boolean
+          const: true
+        code:
+          type: string
+          description: Stable token (`bad_request`, `vm_not_running`, …)
+        reason:
+          type: string
+          description: Human-readable message (safe to show in UI)
+        status:
+          type: integer
+          description: HTTP status repeated in the body
+
+    APIContractSummary:
+      type: object
+      required: [apiVersion, versionHeader, urlVersioning, openapi, errorEnvelope, tiers]
+      properties:
+        apiVersion:
+          type: integer
+        versionHeader:
+          type: string
+        urlVersioning:
+          type: string
+        openapi:
+          type: string
+        errorEnvelope:
+          type: array
+          items:
+            type: string
+        tiers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        reserved:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    ProcessHealth:
+      type: object
+      required: [status, apiVersion, checks, updatedAt]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        apiVersion:
+          type: integer
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/HealthCheck"
+        updatedAt:
+          type: string
+
+    HealthCheck:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pass, fail, skip]
+        message:
+          type: string
+          nullable: true
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    VM:
+      type: object
+      description: Dual-read document — `spec`/`status` plus flat fields (PAS-35).
+      required:
+        - spec
+        - status
+        - id
+        - name
+        - vmType
+        - state
+        - health
+        - cpuCount
+        - memoryMB
+        - bootDiskId
+        - uefi
+        - tpmEnabled
+        - pendingChanges
+        - createdAt
+        - updatedAt
+      properties:
+        spec:
+          $ref: "#/components/schemas/WorkloadSpec"
+        status:
+          $ref: "#/components/schemas/VMRuntimeStatus"
+        id:
+          type: string
+        name:
+          type: string
+        vmType:
+          type: string
+        state:
+          $ref: "#/components/schemas/VMState"
+        health:
+          $ref: "#/components/schemas/WorkloadHealth"
+        cpuCount:
+          type: integer
+        memoryMB:
+          type: integer
+        bootDiskId:
+          type: string
+        isoId:
+          type: string
+          nullable: true
+        isoIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+        networkId:
+          type: string
+          nullable: true
+        cloudInitPath:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        bootOrder:
+          type: string
+          nullable: true
+        displayResolution:
+          type: string
+          nullable: true
+        additionalDiskIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+        uefi:
+          type: boolean
+        tpmEnabled:
+          type: boolean
+        macAddress:
+          type: string
+          nullable: true
+        sharedPaths:
+          type: array
+          nullable: true
+          items:
+            type: string
+        portForwards:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/PortForwardRule"
+        usbDevices:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/USBDevice"
+        pendingChanges:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    VMState:
+      type: string
+      enum: [stopped, starting, running, stopping, error, provisioning, deleting]
+
+    WorkloadHealth:
+      type: string
+      enum: [unknown, stopped, starting, running, guest_ready, degraded, failed]
+
+    VMRuntimeStatus:
+      type: object
+      required: [state, pendingChanges, generation, createdAt, updatedAt, health, backend]
+      properties:
+        state:
+          $ref: "#/components/schemas/VMState"
+        pendingChanges:
+          type: boolean
+        generation:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        health:
+          $ref: "#/components/schemas/WorkloadHealth"
+        healthError:
+          type: string
+          nullable: true
+        backend:
+          $ref: "#/components/schemas/VMRuntimeBackend"
+
+    VMRuntimeBackend:
+      type: object
+      required: [accelerator, guestArch, qemuBinary, emulated]
+      properties:
+        accelerator:
+          type: string
+        guestArch:
+          type: string
+        qemuBinary:
+          type: string
+        emulated:
+          type: boolean
+        warning:
+          type: string
+          nullable: true
+
+    WorkloadApplyResult:
+      type: object
+      required: [op, id, generation]
+      properties:
+        op:
+          type: string
+          enum: [created, updated, unchanged]
+        id:
+          type: string
+        generation:
+          type: integer
+        diff:
+          $ref: "#/components/schemas/WorkloadApplyDiff"
+
+    WorkloadApplyDiff:
+      type: object
+      required: [after]
+      properties:
+        before:
+          $ref: "#/components/schemas/WorkloadSpec"
+        after:
+          $ref: "#/components/schemas/WorkloadSpec"
+
+    WorkloadSpec:
+      type: object
+      required: [apiVersion, kind, metadata, spec]
+      properties:
+        apiVersion:
+          type: string
+          example: barkvisor.dev/v1
+        kind:
+          type: string
+          example: VirtualMachine
+        metadata:
+          $ref: "#/components/schemas/WorkloadMetadata"
+        spec:
+          $ref: "#/components/schemas/WorkloadSpecBody"
+        overrides:
+          $ref: "#/components/schemas/WorkloadOverrides"
+
+    WorkloadOverrides:
+      type: object
+      nullable: true
+      description: >
+        Platform-specific spec overlays (PAS-41). The bag matching the target
+        host OS is deep-merged onto spec at validate/launch. Raw QEMU argv is
+        not accepted.
+      properties:
+        linux:
+          $ref: "#/components/schemas/WorkloadSpecOverlay"
+        macos:
+          $ref: "#/components/schemas/WorkloadSpecOverlay"
+
+    WorkloadSpecOverlay:
+      type: object
+      additionalProperties: false
+      nullable: true
+      properties:
+        resources:
+          type: object
+          nullable: true
+          properties:
+            cpu:
+              type: integer
+            memoryMb:
+              type: integer
+        arch:
+          type: string
+          nullable: true
+        guestType:
+          type: string
+          nullable: true
+        osFamily:
+          type: string
+          nullable: true
+        machine:
+          type: string
+          nullable: true
+        firmware:
+          type: object
+          nullable: true
+          properties:
+            uefi:
+              type: boolean
+            tpm:
+              type: boolean
+        bootOrder:
+          type: string
+          nullable: true
+        display:
+          type: object
+          nullable: true
+          properties:
+            resolution:
+              type: string
+              nullable: true
+        accelerator:
+          type: string
+          nullable: true
+          description: Host-local QEMU accelerator (kvm/hvf/tcg). Capability-gated.
+        hugepages:
+          type: boolean
+          nullable: true
+          description: Linux-only huge-page backing (-mem-path /dev/hugepages).
+
+    WorkloadMetadata:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+          nullable: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    WorkloadSpecBody:
+      type: object
+      required: [resources]
+      properties:
+        resources:
+          type: object
+          required: [cpu, memoryMb]
+          properties:
+            cpu:
+              type: integer
+            memoryMb:
+              type: integer
+        arch:
+          type: string
+          nullable: true
+        guestType:
+          type: string
+          nullable: true
+        osFamily:
+          type: string
+          nullable: true
+        machine:
+          type: string
+          nullable: true
+        firmware:
+          type: object
+          nullable: true
+          properties:
+            uefi:
+              type: boolean
+            tpm:
+              type: boolean
+        bootOrder:
+          type: string
+          nullable: true
+        disks:
+          type: array
+          items:
+            type: object
+        networks:
+          type: array
+          items:
+            type: object
+        cloudInit:
+          type: object
+          nullable: true
+        usb:
+          type: array
+          items:
+            type: object
+        display:
+          type: object
+          nullable: true
+        sharedPaths:
+          type: array
+          nullable: true
+          items:
+            type: string
+
+    CreateVMRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        vmType:
+          type: string
+        osFamily:
+          type: string
+        cpuCount:
+          type: integer
+        memoryMB:
+          type: integer
+        diskSizeGB:
+          type: integer
+        isoId:
+          type: string
+        cloudImageId:
+          type: string
+        networkId:
+          type: string
+        spec:
+          $ref: "#/components/schemas/WorkloadSpec"
+
+    UpdateVMRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        cpuCount:
+          type: integer
+        memoryMB:
+          type: integer
+        networkId:
+          type: string
+        spec:
+          $ref: "#/components/schemas/WorkloadSpec"
+
+    VMTaskAccepted:
+      type: object
+      required: [taskID, vm]
+      properties:
+        taskID:
+          type: string
+        vm:
+          $ref: "#/components/schemas/VM"
+
+    Disk:
+      type: object
+      required: [id, name, path, sizeBytes, format, status, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        format:
+          type: string
+        vmId:
+          type: string
+          nullable: true
+        autoCreated:
+          type: boolean
+        status:
+          type: string
+        createdAt:
+          type: string
+
+    CreateDiskRequest:
+      type: object
+      required: [name, sizeGB]
+      properties:
+        name:
+          type: string
+        sizeGB:
+          type: integer
+        format:
+          type: string
+
+    ResizeDiskRequest:
+      type: object
+      required: [sizeGB]
+      properties:
+        sizeGB:
+          type: integer
+
+    DiskUsage:
+      type: object
+      required: [virtualSizeBytes, actualSizeBytes]
+      properties:
+        virtualSizeBytes:
+          type: integer
+          format: int64
+        actualSizeBytes:
+          type: integer
+          format: int64
+
+    StorageSummary:
+      type: object
+      required:
+        - totalVirtualBytes
+        - totalActualBytes
+        - diskCount
+        - volumeTotalBytes
+        - volumeAvailableBytes
+      properties:
+        totalVirtualBytes:
+          type: integer
+          format: int64
+        totalActualBytes:
+          type: integer
+          format: int64
+        diskCount:
+          type: integer
+        volumeTotalBytes:
+          type: integer
+          format: int64
+        volumeAvailableBytes:
+          type: integer
+          format: int64
+
+    Network:
+      type: object
+      required: [id, name, mode, isDefault]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [nat, bridged, isolated]
+        bridge:
+          type: string
+          nullable: true
+        macAddress:
+          type: string
+          nullable: true
+        dnsServer:
+          type: string
+          nullable: true
+        autoCreated:
+          type: boolean
+        isDefault:
+          type: boolean
+
+    CreateNetworkRequest:
+      type: object
+      required: [name, mode]
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+        bridge:
+          type: string
+        macAddress:
+          type: string
+        dnsServer:
+          type: string
+
+    UpdateNetworkRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+        bridge:
+          type: string
+        macAddress:
+          type: string
+        dnsServer:
+          type: string
+
+    NetworkModeCapability:
+      type: object
+      required: [mode, supported]
+      properties:
+        mode:
+          type: string
+        supported:
+          type: boolean
+        reasonCode:
+          type: string
+          nullable: true
+        remediation:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    Image:
+      type: object
+      required: [id, name, imageType, arch, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        imageType:
+          type: string
+        arch:
+          type: string
+          description: Guest image arch (`arm64` | `x86_64`). Same tokens on every host.
+        status:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+          nullable: true
+        sourceUrl:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    DownloadImageRequest:
+      type: object
+      required: [name, url, imageType, arch]
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        imageType:
+          type: string
+          enum: [iso, cloud-image]
+        arch:
+          type: string
+          enum: [arm64, x86_64]
+
+    PortForwardRule:
+      type: object
+      required: [protocol, hostPort, guestPort]
+      properties:
+        protocol:
+          type: string
+        hostPort:
+          type: integer
+        guestPort:
+          type: integer
+        httpPath:
+          type: string
+          nullable: true
+
+    USBDevice:
+      type: object
+      required: [vendorId, productId]
+      properties:
+        vendorId:
+          type: string
+        productId:
+          type: string
+        label:
+          type: string
+          nullable: true
+
+    SystemCapabilities:
+      type: object
+      required:
+        - platform
+        - supportsBridgedNetworking
+        - supportsUSBPassthrough
+        - accelerator
+        - hostArch
+        - hostCpuCount
+        - guestTypes
+      properties:
+        platform:
+          type: string
+        supportsBridgedNetworking:
+          type: boolean
+        supportsManagedBridgeDaemon:
+          type: boolean
+        supportsUSBPassthrough:
+          type: boolean
+        supportsInAppUpdate:
+          type: boolean
+        accelerator:
+          type: string
+        hostArch:
+          type: string
+        hostCpuCount:
+          type: integer
+        guestTypes:
+          type: array
+          items:
+            type: object
+        details:
+          type: array
+          items:
+            type: object
+        inventorySchemaVersion:
+          type: integer
+        runnableArches:
+          type: array
+          items:
+            type: string
+        networkModes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkModeCapability"
+
+    AppInfo:
+      type: object
+      required: [version, platform, hostArch, accelerator]
+      properties:
+        version:
+          type: string
+        platform:
+          type: string
+        hostArch:
+          type: string
+        accelerator:
+          type: string
+        processUptimeSeconds:
+          type: integer
+
+    HostInventory:
+      type: object
+      required: [schemaVersion, hostId, displayName, agent, platform, collectedAt]
+      properties:
+        schemaVersion:
+          type: integer
+        hostId:
+          type: string
+        displayName:
+          type: string
+        agent:
+          $ref: "#/components/schemas/AgentInfo"
+        platform:
+          type: object
+          required: [os, osVersion, arch, hostname]
+          properties:
+            os:
+              type: string
+            osVersion:
+              type: string
+            arch:
+              type: string
+            hostname:
+              type: string
+        collectedAt:
+          type: string
+
+    AgentInfo:
+      type: object
+      required: [role, version, apiVersion]
+      properties:
+        role:
+          type: string
+        version:
+          type: string
+        apiVersion:
+          type: integer
+          description: Matches X-BarkVisor-API-Version

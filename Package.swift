@@ -56,6 +56,10 @@ packageTargets.append(contentsOf: [
         name: "BarkVisorCore",
         dependencies: coreDependencies,
         path: "Sources/BarkVisorCore",
+        resources: [
+            .copy("API/openapi.yaml"),
+            .copy("API/workloadspec.schema.json"),
+        ],
     ),
     // Vapor HTTP layer: controllers, middleware, server
     .target(
@@ -68,7 +72,6 @@ packageTargets.append(contentsOf: [
         exclude: [
             "Resources/frontend/dist",
             "Resources/AppIcon.icns",
-            "Server/Resources",
         ],
     ),
     // Headless daemon entry point (no AppKit/SwiftUI)

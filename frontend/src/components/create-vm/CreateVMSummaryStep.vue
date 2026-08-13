@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import type { Disk, Network, USBPassthroughDevice, Image } from '../../api/types'
+import { useFeature } from '../../composables/useFeature'
+
+const usb = useFeature('usbPassthrough')
 
 defineProps<{
   name: string
@@ -9,6 +12,9 @@ defineProps<{
   memoryMB: number
   displayResolution: string
   tpmEnabled: boolean
+  uefi: boolean
+  revealArchDetails: boolean
+  archProblem: string | null
   mode: 'iso' | 'cloud'
   selectedImage: Image | null | undefined
   diskSource: 'new' | 'existing'
@@ -16,7 +22,6 @@ defineProps<{
   existingDiskId: string
   availableDisks: Disk[]
   sharedPaths: string[]
-  supportsUSBPassthrough: boolean
   selectedUSBDevices: USBPassthroughDevice[]
   selectedNetwork: Network | null
 }>()
@@ -34,9 +39,12 @@ defineProps<{
         <span class="summary-label">OS</span>
         <span>{{ osType === 'linux' ? 'Linux' : 'Windows' }}</span>
       </div>
-      <div class="summary-row">
+      <div v-if="revealArchDetails" class="summary-row">
         <span class="summary-label">Architecture</span>
-        <span>{{ archLabel }}</span>
+        <span>
+          {{ archLabel }}
+          <span v-if="archProblem" class="arch-warn">{{ archProblem }}</span>
+        </span>
       </div>
       <div class="summary-row">
         <span class="summary-label">CPU</span>
@@ -50,13 +58,13 @@ defineProps<{
         <span class="summary-label">Display</span>
         <span>{{ displayResolution }}</span>
       </div>
-      <div class="summary-row">
+      <div v-if="revealArchDetails" class="summary-row">
         <span class="summary-label">Firmware</span>
-        <span>UEFI</span>
+        <span>{{ uefi ? 'UEFI' : 'Off' }}</span>
       </div>
-      <div v-if="tpmEnabled" class="summary-row">
+      <div v-if="revealArchDetails" class="summary-row">
         <span class="summary-label">TPM</span>
-        <span>TPM 2.0 (swtpm)</span>
+        <span>{{ tpmEnabled ? 'TPM 2.0' : 'Off' }}</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Image</span>
@@ -74,7 +82,7 @@ defineProps<{
         <span class="summary-label">Shared</span>
         <span style="font-family:var(--font-mono);font-size:12px">{{ sharedPaths.join(', ') }}</span>
       </div>
-      <div v-if="supportsUSBPassthrough && selectedUSBDevices.length" class="summary-row">
+      <div v-if="usb.available && selectedUSBDevices.length" class="summary-row">
         <span class="summary-label">USB</span>
         <span style="font-size:12px">{{ selectedUSBDevices.map(d => d.label || `${d.vendorId}:${d.productId}`).join(', ') }}</span>
       </div>
@@ -112,5 +120,14 @@ defineProps<{
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+.arch-warn {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--amber);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
 }
 </style>

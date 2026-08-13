@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { detectImageArch, hostArchToImageArch, resolveImageArch } from './imageArch'
+import {
+  detectImageArch,
+  hostArchToImageArch,
+  imageArchSupportedOnHost,
+  normalizeImageArch,
+  resolveImageArch,
+  runnableImageArches,
+  templateArchSupportedOnHost,
+  templateDeclaredArches,
+} from './imageArch'
 
 describe('detectImageArch', () => {
   const x86 = [
@@ -85,5 +94,83 @@ describe('hostArchToImageArch / resolveImageArch', () => {
     expect(resolveImageArch('ubuntu-24.04-arm64.iso', 'x86_64')).toBe('arm64')
     expect(resolveImageArch('mystery.iso', 'x86_64')).toBe('x86_64')
     expect(resolveImageArch('mystery.iso', 'arm64')).toBe('arm64')
+  })
+})
+
+describe('normalizeImageArch / imageArchSupportedOnHost (PAS-48)', () => {
+  test('strict normalize does not coerce unknown to arm64', () => {
+    expect(normalizeImageArch('amd64')).toBe('x86_64')
+    expect(normalizeImageArch('aarch64')).toBe('arm64')
+    expect(normalizeImageArch('x64')).toBe('x86_64')
+    expect(normalizeImageArch('X86_64')).toBe('x86_64')
+    expect(normalizeImageArch('AMD64')).toBe('x86_64')
+    expect(normalizeImageArch(' AArch64 ')).toBe('arm64')
+    expect(normalizeImageArch('armhf')).toBeNull()
+    expect(normalizeImageArch('riscv64')).toBeNull()
+    expect(normalizeImageArch('')).toBeNull()
+    expect(normalizeImageArch(null)).toBeNull()
+  })
+
+  test('catalog support uses strict image labels', () => {
+    expect(imageArchSupportedOnHost('amd64', 'x86_64')).toBe(true)
+    expect(imageArchSupportedOnHost('x86_64', 'arm64')).toBe(false)
+    expect(imageArchSupportedOnHost('armhf', 'arm64')).toBe(false)
+    expect(imageArchSupportedOnHost('', 'arm64')).toBe(false)
+  })
+
+  test('unknown host is fail-closed (PAS-37)', () => {
+    expect(imageArchSupportedOnHost('arm64', '')).toBe(false)
+    expect(imageArchSupportedOnHost('arm64', null)).toBe(false)
+    expect(imageArchSupportedOnHost('x86_64', undefined)).toBe(false)
+    expect(imageArchSupportedOnHost('arm64', 'riscv64')).toBe(false)
+  })
+})
+
+describe('runnableImageArches (PAS-48 / PAS-37)', () => {
+  test('is host arch only', () => {
+    expect([...runnableImageArches('arm64')]).toEqual(['arm64'])
+    expect([...runnableImageArches('x86_64')]).toEqual(['x86_64'])
+    expect([...runnableImageArches('amd64')]).toEqual(['x86_64'])
+  })
+
+  test('unknown host yields no runnable arches', () => {
+    expect([...runnableImageArches('')]).toEqual([])
+    expect([...runnableImageArches(null)]).toEqual([])
+    expect([...runnableImageArches('riscv64')]).toEqual([])
+  })
+})
+
+describe('templateDeclaredArches', () => {
+  test('prefers explicit architectures', () => {
+    expect(
+      templateDeclaredArches({
+        architectures: ['arm64', 'amd64'],
+        imageSlug: 'ubuntu-24.04-x86_64',
+      }),
+    ).toEqual(['arm64', 'x86_64'])
+  })
+
+  test('falls back to imageByArch keys then slug', () => {
+    expect(
+      templateDeclaredArches({
+        imageByArch: { aarch64: 'ubuntu-24.04-arm64' },
+        imageSlug: 'ubuntu-24.04-x86_64',
+      }),
+    ).toEqual(['arm64'])
+    expect(templateDeclaredArches({ imageSlug: 'ubuntu-24.04-x86_64' })).toEqual(['x86_64'])
+  })
+})
+
+describe('templateArchSupportedOnHost', () => {
+  test('uses server compatible flag when present', () => {
+    expect(templateArchSupportedOnHost({ compatible: false, imageSlug: 'ubuntu-24.04-arm64' }, 'arm64')).toBe(false)
+    expect(templateArchSupportedOnHost({ compatible: true, imageSlug: 'ubuntu-24.04-x86_64' }, 'arm64')).toBe(true)
+  })
+
+  test('multi-arch template is runnable on either host', () => {
+    const t = { architectures: ['arm64', 'x86_64'], imageSlug: 'ubuntu-24.04-arm64' }
+    expect(templateArchSupportedOnHost(t, 'arm64')).toBe(true)
+    expect(templateArchSupportedOnHost(t, 'x86_64')).toBe(true)
+    expect(templateArchSupportedOnHost(t, 'riscv64')).toBe(false)
   })
 })

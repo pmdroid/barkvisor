@@ -18,9 +18,17 @@ public enum BarkVisorError: Error, LocalizedError {
     case decompressFailed(String)
     case downloadFailed(String)
     case bridgeNotReady(String)
+    /// Host interface does not exist (PAS-57 preflight). HTTP 422 + `interface_missing`.
+    case interfaceMissing(String)
+    /// qemu-bridge-helper ACL denies this iface. HTTP 422 + `bridge_acl`.
+    case bridgeHelperDenied(String)
+    /// Bridge / iface name failed IFNAMSIZ or charset checks. HTTP 400 + `invalid_bridge`.
+    case invalidBridgeName(String)
     case updateFailed(String)
     case invalidArgument(String)
     case timeout(String)
+    /// Capability block: HTTP 422 + feature `errorCode` (PAS-94).
+    case unsupportedFeature(PlatformCapabilities.Feature)
 
     // HTTP-semantic errors (used by services to signal status without importing Vapor)
     case badRequest(String)
@@ -28,6 +36,8 @@ public enum BarkVisorError: Error, LocalizedError {
     case unauthorized(String? = nil)
     case forbidden(String)
     case conflict(String)
+    /// Config-vs-config or bind-probe host port collision (PAS-64). HTTP 409 + `port_in_use`.
+    case portInUse(String)
     case preconditionFailed(String)
     case internalError(String)
 
@@ -50,14 +60,29 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .decompressFailed(msg): return msg
         case let .downloadFailed(msg): return msg
         case let .bridgeNotReady(msg): return msg
+        case let .interfaceMissing(name):
+            if PlatformHost.platformName.caseInsensitiveCompare("Linux") == .orderedSame {
+                return "Host interface '\(name)' does not exist. Create a Linux bridge first "
+                    + "(ip link add name \(name) type bridge; ip link set \(name) up) "
+                    + "and allow it in the qemu-bridge-helper ACL (bridge.conf). "
+                    + "Use NAT if bridging is unavailable."
+            }
+            return "Host interface '\(name)' does not exist. Choose an existing interface or create it first."
+        case let .bridgeHelperDenied(name):
+            return "Host bridge '\(name)' is not allowed by the qemu-bridge-helper ACL (bridge.conf). "
+                + "Add `allow \(name)` (or `allow all`) and retry, or use NAT."
+        case let .invalidBridgeName(msg): return msg
         case let .updateFailed(msg): return msg
         case let .invalidArgument(msg): return msg
         case let .timeout(msg): return msg
+        case let .unsupportedFeature(feature):
+            return PlatformCapabilities.unsupportedMessage(feature)
         case let .badRequest(msg): return msg
         case let .notFound(msg): return msg ?? "Not found"
         case let .unauthorized(msg): return msg ?? "Unauthorized"
         case let .forbidden(msg): return msg
         case let .conflict(msg): return msg
+        case let .portInUse(msg): return msg
         case let .preconditionFailed(msg): return msg
         case let .internalError(msg): return msg
         }
@@ -82,14 +107,19 @@ public enum BarkVisorError: Error, LocalizedError {
         case .decompressFailed: return "decompress_failed"
         case .downloadFailed: return "download_failed"
         case .bridgeNotReady: return "bridge_not_ready"
+        case .interfaceMissing: return "interface_missing"
+        case .bridgeHelperDenied: return "bridge_acl"
+        case .invalidBridgeName: return "invalid_bridge"
         case .updateFailed: return "update_failed"
         case .invalidArgument: return "invalid_argument"
         case .timeout: return "timeout"
+        case let .unsupportedFeature(feature): return feature.errorCode
         case .badRequest: return "bad_request"
         case .notFound: return "not_found"
         case .unauthorized: return "unauthorized"
         case .forbidden: return "forbidden"
         case .conflict: return "conflict"
+        case .portInUse: return "port_in_use"
         case .preconditionFailed: return "precondition_failed"
         case .internalError: return "internal_error"
         }
@@ -98,7 +128,7 @@ public enum BarkVisorError: Error, LocalizedError {
     /// HTTP status code for the error middleware to use.
     public var httpStatus: UInt {
         switch self {
-        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType:
+        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType, .invalidBridgeName:
             return 400
         case .unauthorized:
             return 401
@@ -106,10 +136,12 @@ public enum BarkVisorError: Error, LocalizedError {
             return 403
         case .notFound, .repositoryNotFound:
             return 404
-        case .conflict, .vmAlreadyRunning:
+        case .conflict, .vmAlreadyRunning, .portInUse:
             return 409
         case .preconditionFailed:
             return 412
+        case .unsupportedFeature, .interfaceMissing, .bridgeHelperDenied, .bridgeNotReady:
+            return 422
         default:
             return 500
         }

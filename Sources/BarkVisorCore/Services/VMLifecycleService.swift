@@ -14,7 +14,8 @@ public enum VMLifecycleService {
         try await validateCreateVMInputs(params: params, db: db)
 
         let now = iso8601.string(from: Date())
-        let vmID = UUID().uuidString
+        let requestedID = params.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let vmID = requestedID.isEmpty ? UUID().uuidString : requestedID
 
         let bootDisk = try await resolveBootDisk(
             params: params, vmID: vmID, vmName: params.name, now: now, db: db,
@@ -61,7 +62,7 @@ public enum VMLifecycleService {
                 throw BarkVisorError.notFound()
             }
 
-            try validateUpdateReferences(params: params, db: db)
+            try validateUpdateReferences(params: params, vm: vm, db: db)
 
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let hardwareChanged = detectHardwareChanges(params: params, encoded: encodedFields, vm: vm)
@@ -70,7 +71,33 @@ public enum VMLifecycleService {
 
             if isRunning, hardwareChanged { vm.pendingChanges = true }
             vm.updatedAt = iso8601.string(from: Date())
+            vm.syncSpecProjection(bumpGeneration: true)
 
+            try vm.update(db)
+            return vm
+        }
+    }
+
+    /// Replace VM columns from a WorkloadSpec (PAS-35). Dual-writes `specJson`.
+    public static func updateVMSpec(
+        id: String,
+        spec: WorkloadSpec,
+        db: DatabasePool,
+    ) async throws -> VM {
+        try WorkloadSpecProjector.validate(spec, existingID: id)
+        return try await db.write { db -> VM in
+            guard var vm = try VM.fetchOne(db, key: id) else {
+                throw BarkVisorError.notFound()
+            }
+            let isRunning = vm.state != "stopped" && vm.state != "error"
+            let before = vm
+            try WorkloadSpecProjector.apply(spec, to: &vm)
+            try validateAppliedVMSpec(spec: spec, vm: vm, db: db)
+            if isRunning, detectHardwareChanges(before: before, after: vm) {
+                vm.pendingChanges = true
+            }
+            vm.updatedAt = iso8601.string(from: Date())
+            vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
             return vm
         }
@@ -179,8 +206,7 @@ extension VMLifecycleService {
             throw BarkVisorError.badRequest("Cloud image not found or not ready")
         }
         if let profile = GuestProfiles.profile(for: params.vmType) {
-            let imageArch = cloudImage.arch == "amd64" ? "x86_64" : cloudImage.arch
-            let imageArchNorm = imageArch == "aarch64" ? "arm64" : imageArch
+            let imageArchNorm = PlatformCapabilities.normalizedArch(cloudImage.arch)
             guard imageArchNorm == profile.arch else {
                 throw BarkVisorError.badRequest(
                     "Image arch (\(cloudImage.arch)) does not match VM type (\(params.vmType))",
@@ -222,8 +248,7 @@ extension VMLifecycleService {
                 throw BarkVisorError.badRequest("ISO image not found or not ready")
             }
             if let profile = GuestProfiles.profile(for: params.vmType) {
-                let imageArch = iso.arch == "amd64" ? "x86_64" : iso.arch
-                let imageArchNorm = imageArch == "aarch64" ? "arm64" : imageArch
+                let imageArchNorm = PlatformCapabilities.normalizedArch(iso.arch)
                 guard imageArchNorm == profile.arch else {
                     throw BarkVisorError.badRequest(
                         "ISO arch (\(iso.arch)) does not match VM type (\(params.vmType))",
@@ -294,13 +319,13 @@ extension VMLifecycleService {
         cloudInitPath: String?,
         isoIdsJSON: String?,
     ) -> VM {
-        VM(
+        var vm = VM(
             id: id, name: params.name, vmType: params.vmType,
             state: bootDisk.isCloudImageMode ? "provisioning" : "stopped",
             cpuCount: params.cpuCount, memoryMb: params.memoryMB,
-            bootDiskId: bootDisk.diskID, isoId: nil, isoIds: isoIdsJSON,
+            bootDiskId: bootDisk.diskID, isoIds: isoIdsJSON,
             networkId: params.networkId,
-            cloudInitPath: cloudInitPath, vncPort: nil,
+            cloudInitPath: cloudInitPath,
             description: params.description, bootOrder: params.bootOrder,
             displayResolution: params.displayResolution, additionalDiskIds: nil,
             uefi: params.uefi ?? true,
@@ -313,6 +338,9 @@ extension VMLifecycleService {
             pendingChanges: false,
             createdAt: now, updatedAt: now,
         )
+        vm.setOverrides(params.overrides)
+        vm.syncSpecProjection(bumpGeneration: false)
+        return vm
     }
 
     fileprivate static func insertVMAndDisk(
@@ -413,6 +441,31 @@ extension VMLifecycleService {
 // MARK: - Update VM Helpers
 
 extension VMLifecycleService {
+    /// Network existence, spec/record mode, and port occupancy after a spec is projected.
+    /// Shared by `updateVMSpec` and PAS-80 dry-run apply.
+    static func validateAppliedVMSpec(spec: WorkloadSpec, vm: VM, db: Database) throws {
+        let appliedNetwork: Network? =
+            if let netId = vm.networkId {
+                try Network.fetchOne(db, key: netId)
+            } else {
+                nil
+            }
+        if vm.networkId != nil, appliedNetwork == nil {
+            throw BarkVisorError.notFound("Network not found")
+        }
+        if let specNet = spec.spec.networks.first {
+            try NetworkCapability.requireSpecNetwork(specNet, record: appliedNetwork)
+        } else {
+            try NetworkCapability.requirePortForwardsAllowed(
+                count: vm.decodedPortForwards.count,
+                network: appliedNetwork,
+            )
+        }
+        try PortRegistry.assertAvailable(
+            vm.decodedPortForwards, excludingVM: vm.id, db: db,
+        )
+    }
+
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {
         if let name = params.name { try validateVMName(name) }
         if let cpu = params.cpuCount {
@@ -422,6 +475,9 @@ extension VMLifecycleService {
             guard mem >= 128, mem <= 1_048_576 else {
                 throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
             }
+        }
+        if let usb = params.usbDevices, !usb.isEmpty {
+            try PlatformCapabilities.requireUSBPassthrough()
         }
     }
 
@@ -435,12 +491,26 @@ extension VMLifecycleService {
         }
     }
 
-    fileprivate static func validateUpdateReferences(params: UpdateVMParams, db: Database) throws {
-        if let net = params.networkId {
-            guard try Network.fetchOne(db, key: net) != nil else {
-                throw BarkVisorError.notFound("Network not found")
+    fileprivate static func validateUpdateReferences(
+        params: UpdateVMParams,
+        vm: VM,
+        db: Database,
+    ) throws {
+        let networkId = params.networkId ?? vm.networkId
+        let network: Network? =
+            if let networkId {
+                try Network.fetchOne(db, key: networkId)
+            } else {
+                nil
             }
+        if networkId != nil, network == nil {
+            throw BarkVisorError.notFound("Network not found")
         }
+        let forwardCount =
+            params.portForwards?.count ?? vm.decodedPortForwards.count
+        try NetworkCapability.requirePortForwardsAllowed(count: forwardCount, network: network)
+        let rules = params.portForwards ?? vm.decodedPortForwards
+        try PortRegistry.assertAvailable(rules, excludingVM: vm.id, db: db)
         if let diskIds = params.additionalDiskIds, !diskIds.isEmpty {
             let existingDisks = try Disk.filter(keys: diskIds).fetchAll(db)
             let existingIds = Set(existingDisks.map(\.id))

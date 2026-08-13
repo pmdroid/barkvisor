@@ -20,10 +20,7 @@ final class ImageChecksumTests {
 
         let dbPath = tmp.appendingPathComponent("test.sqlite").path
         let pool = try DatabasePool(path: dbPath)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
         dbPool = pool
 
@@ -38,10 +35,7 @@ final class ImageChecksumTests {
 
     @Test func `repository images table has checksum columns`() throws {
         let queue = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(queue)
 
         try queue.read { db in

@@ -100,13 +100,91 @@ export function detectImageArch(input: string | null | undefined): ArchDetectRes
   return { arch: null }
 }
 
-/** Normalize host capability arch to an ImageArch when possible. */
-export function hostArchToImageArch(hostArch: string | null | undefined): ImageArch {
-  const h = (hostArch || '').toLowerCase()
+/**
+ * Strict normalize of free-form image/catalog arch labels.
+ * Returns null for unknown values (unlike hostArchToImageArch, which defaults).
+ */
+export function normalizeImageArch(arch: string | null | undefined): ImageArch | null {
+  if (!arch || !String(arch).trim()) return null
+  const h = String(arch).toLowerCase().trim()
   if (h === 'x86_64' || h === 'amd64' || h === 'x64') return 'x86_64'
   if (h === 'arm64' || h === 'aarch64') return 'arm64'
+  return null
+}
+
+/** Normalize host capability arch to an ImageArch when possible. */
+export function hostArchToImageArch(hostArch: string | null | undefined): ImageArch {
+  const strict = normalizeImageArch(hostArch)
+  if (strict) return strict
   // Unknown → arm64 (historical BarkVisor default on Apple Silicon)
   return 'arm64'
+}
+
+/**
+ * Image arches this host can run natively (PAS-48 / PAS-37).
+ * Host arch only — do not expand from guestTypes (static dual-arch lists
+ * historically made catalog filters a no-op). Unknown/empty host → empty set
+ * (fail-closed; do not invent arm64).
+ */
+export function runnableImageArches(hostArch: string | null | undefined): Set<ImageArch> {
+  const host = normalizeImageArch(hostArch)
+  return host ? new Set([host]) : new Set()
+}
+
+/**
+ * Whether a catalog/local image arch is runnable on this host.
+ * Unknown image arches and unknown hosts are unsupported (never coerce to arm64).
+ */
+export function imageArchSupportedOnHost(
+  imageArch: string | null | undefined,
+  hostArch: string | null | undefined,
+): boolean {
+  const img = normalizeImageArch(imageArch)
+  const host = normalizeImageArch(hostArch)
+  if (!img || !host) return false
+  return img === host
+}
+
+/**
+ * Arches a template can target (PAS-33). Prefer explicit `architectures`,
+ * then `imageByArch` keys, then infer from `imageSlug`.
+ */
+export function templateDeclaredArches(t: {
+  architectures?: string[] | null
+  imageByArch?: Record<string, string> | null
+  imageSlug?: string | null
+  compatible?: boolean
+}): ImageArch[] {
+  const out: ImageArch[] = []
+  const add = (raw: string | null | undefined) => {
+    const n = normalizeImageArch(raw)
+    if (n && !out.includes(n)) out.push(n)
+  }
+  for (const a of t.architectures ?? []) add(a)
+  if (out.length === 0) {
+    for (const key of Object.keys(t.imageByArch ?? {})) add(key)
+  }
+  if (out.length === 0) add(detectImageArch(t.imageSlug).arch)
+  return out
+}
+
+/** Whether this host can run any of the template's declared arches. */
+export function templateArchSupportedOnHost(
+  t: {
+    architectures?: string[] | null
+    imageByArch?: Record<string, string> | null
+    imageSlug?: string | null
+    compatible?: boolean
+  },
+  hostArch: string | null | undefined,
+): boolean {
+  if (typeof t.compatible === 'boolean') return t.compatible
+  const arches = templateDeclaredArches(t)
+  if (arches.length === 0) {
+    // Unknown template arch on a known host: keep visible; backend still blocks.
+    return !!normalizeImageArch(hostArch)
+  }
+  return arches.some((a) => imageArchSupportedOnHost(a, hostArch))
 }
 
 /**

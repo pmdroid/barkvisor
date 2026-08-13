@@ -119,4 +119,64 @@ public enum PlatformHost {
     public static var osVersionString: String {
         ProcessInfo.processInfo.operatingSystemVersionString
     }
+
+    /// Best-effort host temperature in °C.
+    ///
+    /// Linux: thermal-zone sysfs (prefers cpu/pkg types). macOS: nil — SMC is
+    /// not a public API, and a missing sensor must not be reported as 0°C.
+    public static var temperatureCelsius: Double? {
+        #if os(Linux)
+            linuxThermalCelsius()
+        #else
+            nil
+        #endif
+    }
+
+    /// Parse a thermal-zone `temp` file (millidegree C). Returns nil if the
+    /// contents are not an integer — never invents 0 for garbage input.
+    public static func parseThermalMilliCelsius(_ raw: String) -> Double? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let milli = Int(trimmed) else { return nil }
+        return Double(milli) / 1_000.0
+    }
+
+    /// Pick a thermal zone: prefer cpu/pkg/x86 type names, else the first
+    /// parseable reading. Empty / unreadable zones yield nil.
+    public static func selectLinuxThermalCelsius(zones: [(type: String, milli: String)]) -> Double? {
+        func parsed(_ zone: (type: String, milli: String)) -> Double? {
+            parseThermalMilliCelsius(zone.milli)
+        }
+        func isPreferred(_ name: String) -> Bool {
+            let lower = name.lowercased()
+            return lower.contains("cpu") || lower.contains("pkg") || lower.contains("x86")
+        }
+        for zone in zones {
+            if isPreferred(zone.type), let value = parsed(zone) { return value }
+        }
+        for zone in zones {
+            if let value = parsed(zone) { return value }
+        }
+        return nil
+    }
+
+    #if os(Linux)
+        private static func linuxThermalCelsius() -> Double? {
+            let root = "/sys/class/thermal"
+            let names = try? FileManager.default.contentsOfDirectory(atPath: root)
+            guard let names else { return nil }
+            var zones: [(type: String, milli: String)] = []
+            for name in names where name.hasPrefix("thermal_zone") {
+                let base = "\(root)/\(name)"
+                let tempPath = "\(base)/temp"
+                guard let milli = try? String(contentsOfFile: tempPath, encoding: .utf8) else {
+                    continue
+                }
+                let typePath = "\(base)/type"
+                let rawType = try? String(contentsOfFile: typePath, encoding: .utf8)
+                let typ = rawType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                zones.append((typ, milli))
+            }
+            return selectLinuxThermalCelsius(zones: zones)
+        }
+    #endif
 }

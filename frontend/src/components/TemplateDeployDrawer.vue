@@ -1,25 +1,36 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTemplateStore } from '../stores/templates'
 import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
-import type { VMTemplate, DeployTemplateRequest, BridgeInfo, DeployTemplateResponse } from '../api/types'
-import { useCapabilitiesStore } from '../stores/capabilities'
-import { storeToRefs } from 'pinia'
+import UnsupportedHint from './ui/UnsupportedHint.vue'
+import type {
+  VMTemplate,
+  DeployTemplateRequest,
+  BridgeInfo,
+  DeployTemplateResponse,
+  TemplateCompatibilityReport,
+} from '../api/types'
+import { useFeature } from '../composables/useFeature'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 
 const props = defineProps<{ template: VMTemplate }>()
 const emit = defineEmits(['close', 'deployed'])
 
+function networkModeLabel(mode: string): string {
+  if (mode === 'bridged') return 'Bridged (Home Network)'
+  if (mode === 'isolated') return 'Isolated (Private)'
+  return 'NAT'
+}
+
 const templateStore = useTemplateStore()
 const vmStore = useVMStore()
 const sshKeyStore = useSSHKeyStore()
-const caps = useCapabilitiesStore()
-const { supportsBridgedNetworking } = storeToRefs(caps)
+const bridged = useFeature('bridgedNetworking')
 
 const selectedSSHKeyId = ref('')
 
@@ -27,14 +38,16 @@ const selectedSSHKeyId = ref('')
 const bridgeAvailable = ref<boolean | null>(null) // null = loading
 const bridgeChecked = ref(false)
 const platformBridgeUnsupported = computed(
-  () => props.template.networkMode === 'bridged' && !supportsBridgedNetworking.value,
+  () => props.template.networkMode === 'bridged' && !bridged.available,
 )
+
+const compatibility = ref<TemplateCompatibilityReport | null>(null)
 
 onMounted(async () => {
   sshKeyStore.fetchAll().then(() => {
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
   })
-  if (props.template.networkMode === 'bridged' && supportsBridgedNetworking.value) {
+  if (props.template.networkMode === 'bridged' && bridged.available) {
     try {
       const { data } = await api.get<BridgeInfo[]>('/system/bridges')
       bridgeAvailable.value = data.some(b => b.status === 'active')
@@ -59,6 +72,26 @@ const vmName = ref('')
 const cpuCount = ref(props.template.cpuCount)
 const memoryMB = ref(props.template.memoryMB)
 const diskSizeGB = ref(props.template.diskSizeGB)
+const memoryFloor = computed(() => props.template.minMemoryMB ?? 128)
+const memoryBelowMinimum = computed(() => {
+  const planned = Number(memoryMB.value)
+  return Number.isFinite(planned) && planned < memoryFloor.value
+})
+
+async function refreshCompatibility() {
+  try {
+    const planned = Number(memoryMB.value)
+    compatibility.value = await templateStore.dryRun(props.template.id, {
+      memoryMB: Number.isFinite(planned) ? planned : undefined,
+    })
+  } catch {
+    compatibility.value = null
+  }
+}
+
+watch(memoryMB, () => {
+  void refreshCompatibility()
+}, { immediate: true })
 
 // Step 2: Template inputs (dynamic) — ssh_keys is handled by the dedicated SSH key selector
 const visibleInputs = computed(() => props.template.inputs.filter(i => i.id !== 'ssh_keys'))
@@ -212,6 +245,10 @@ async function doDeploy() {
 
 async function submit() {
   error.value = ''
+  if (platformBridgeUnsupported.value) {
+    error.value = bridged.explanation || 'Bridged networking is not available on this device.'
+    return
+  }
   loading.value = true
   try {
     const result = await templateStore.deploy(buildRequest())
@@ -229,6 +266,28 @@ async function submit() {
     <div class="modal" style="max-width:520px">
       <h2>Deploy {{ template.name }}</h2>
       <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">{{ template.description }}</p>
+      <p
+        v-if="compatibility?.resolvedImageSlug"
+        style="color:var(--text-dim);font-size:12px;margin:-8px 0 16px"
+      >
+        Image for this device: {{ compatibility.resolvedImageSlug }}
+      </p>
+      <div
+        v-if="compatibility && !compatibility.compatible"
+        class="bridge-error"
+        style="margin-bottom:16px"
+      >
+        <div>
+          <strong>Not compatible with this device</strong>
+          <p
+            v-for="reason in compatibility.reasons"
+            :key="reason.code + reason.message"
+            style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)"
+          >
+            {{ reason.message }}
+          </p>
+        </div>
+      </div>
 
       <!-- Bridge not available warning -->
       <div v-if="template.networkMode === 'bridged' && bridgeChecked && !bridgeAvailable" class="bridge-error">
@@ -237,12 +296,13 @@ async function submit() {
         </svg>
         <div>
           <strong>Bridged networking required</strong>
-          <p v-if="platformBridgeUnsupported" style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
-            Bridged networking is not available on this platform. This template requires a bridged network.
-          </p>
+          <UnsupportedHint
+            v-if="platformBridgeUnsupported"
+            :text="bridged.explanation"
+          />
           <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.
-            Install the BarkVisor Helper and enable a bridge under <strong>Settings &rarr; Network</strong>.
+            Install the BarkVisor Helper and enable a bridge under <router-link to="/networks"><strong>Networks</strong></router-link>.
           </p>
         </div>
       </div>
@@ -296,7 +356,7 @@ async function submit() {
             </div>
             <div class="form-group" style="flex:1">
               <label>Memory (MB)</label>
-              <input v-model.number="memoryMB" type="number" min="128" step="256" />
+              <input v-model.number="memoryMB" type="number" :min="memoryFloor" step="256" />
             </div>
           </div>
           <div class="form-group">
@@ -320,10 +380,11 @@ async function submit() {
               <path v-if="template.networkMode === 'bridged'" d="M9 2H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 2v6m12-2H9m12 0v12a2 2 0 01-2 2H9m12-14H9m0 14H5a2 2 0 01-2-2V8m6 14V8m0 0H3" />
               <path v-else d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
             </svg>
-            Network: <strong>{{ template.networkMode === 'bridged' ? 'Bridged' : 'NAT' }}</strong>
+            Network: <strong>{{ networkModeLabel(template.networkMode) }}</strong>
             <span v-if="template.networkMode === 'bridged'" style="color:var(--text-dim)">(gets its own IP on your LAN)</span>
+            <span v-else-if="template.networkMode === 'isolated'" style="color:var(--text-dim)">(Private — no host/LAN/internet)</span>
           </div>
-          <div v-if="template.portForwards && template.portForwards.length > 0 && template.networkMode !== 'bridged'" style="margin-top:12px">
+          <div v-if="template.portForwards && template.portForwards.length > 0 && template.networkMode === 'nat'" style="margin-top:12px">
             <label style="font-size:12px;color:var(--text-dim)">Port Forwards (auto-configured)</label>
             <div v-for="pf in template.portForwards" :key="`${pf.hostPort}-${pf.guestPort}`"
               style="font-size:12px;color:var(--text-dim);padding:2px 0">
@@ -367,9 +428,9 @@ async function submit() {
             <div><strong>CPU:</strong> {{ cpuCount }} cores</div>
             <div><strong>Memory:</strong> {{ memoryMB }} MB</div>
             <div><strong>Disk:</strong> {{ diskSizeGB }} GB</div>
-            <div><strong>Network:</strong> {{ template.networkMode === 'bridged' ? 'Bridged' : 'NAT' }}</div>
+            <div><strong>Network:</strong> {{ networkModeLabel(template.networkMode) }}</div>
             <div><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
-            <div><strong>Image:</strong> {{ template.imageSlug }}</div>
+            <div><strong>Image:</strong> {{ compatibility?.resolvedImageSlug || template.imageSlug }}</div>
           </div>
         </div>
 
@@ -381,7 +442,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable)" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>

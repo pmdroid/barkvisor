@@ -10,8 +10,7 @@ struct DTOTests {
     @Test func `vm response from VM`() {
         let vm = VM(
             id: "vm-1", name: "test-vm", vmType: "linux-arm64", state: "running",
-            cpuCount: 4, memoryMb: 2_048, bootDiskId: "disk-1",
-            isoId: nil, networkId: "net-1", cloudInitPath: nil, vncPort: nil,
+            cpuCount: 4, memoryMb: 2_048, bootDiskId: "disk-1", networkId: "net-1", cloudInitPath: nil,
             description: "A VM", bootOrder: "cd", displayResolution: "1920x1080",
             additionalDiskIds: "[\"disk-2\",\"disk-3\"]",
             uefi: true, tpmEnabled: false,
@@ -42,13 +41,23 @@ struct DTOTests {
         #expect(response.portForwards?.count == 1)
         #expect(response.portForwards?.first?.guestPort == 22)
         #expect(response.portForwards?.first?.hostPort == 2_222)
+        #expect(response.spec.metadata.name == "test-vm")
+        #expect(response.spec.spec.resources.cpu == 4)
+        #expect(response.spec.spec.guestType == "linux-arm64")
+        #expect(response.status.state == .running)
+        #expect(response.status.pendingChanges)
+        #expect(response.health == .running)
+        #expect(response.status.health == .running)
+        #expect(response.status.healthError == nil)
+        #expect(response.status.backend == WorkloadBackendProjector.project(guestType: "linux-arm64"))
+        #expect(response.status.backend.qemuBinary == "qemu-system-aarch64")
+        #expect(response.status.backend.accelerator == QEMUBuilder.accelerator)
     }
 
     @Test func `vm response nil optionals`() {
         let vm = VM(
             id: "vm-1", name: "minimal", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
-            isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
@@ -66,14 +75,14 @@ struct DTOTests {
         #expect(response.macAddress == nil)
         #expect(response.isoIds == nil)
         #expect(response.isoId == nil)
+        #expect(response.health == .stopped)
     }
 
     @Test func `vm response iso id backwards compat`() {
         let vm = VM(
             id: "vm-1", name: "iso-test", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
-            isoId: nil, isoIds: "[\"iso-1\",\"iso-2\"]",
-            networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1", isoIds: "[\"iso-1\",\"iso-2\"]",
+            networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
@@ -86,22 +95,45 @@ struct DTOTests {
         #expect(response.isoIds == ["iso-1", "iso-2"])
     }
 
-    @Test func `vm response legacy iso id`() {
+    @Test func `vm response failed qemu includes last error`() {
         let vm = VM(
-            id: "vm-1", name: "legacy-iso", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1",
-            isoId: "legacy-iso-1", isoIds: nil,
-            networkId: nil, cloudInitPath: nil, vncPort: nil,
+            id: "vm-1", name: "dead", vmType: "linux-arm64", state: "error",
+            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: false, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
             autoCreated: false, pendingChanges: false,
             createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
+        let response = VMResponse(
+            from: vm,
+            signals: WorkloadHealthSignals(lastError: "QEMU exited with status 1"),
+        )
+        #expect(response.health == .failed)
+        #expect(response.status.health == .failed)
+        #expect(response.status.healthError == "QEMU exited with status 1")
+    }
 
+    @Test func `vm response encodes spec and status`() throws {
+        let vm = VM(
+            id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+            uefi: true, tpmEnabled: false,
+            macAddress: nil, sharedPaths: nil, portForwards: nil,
+            autoCreated: false, pendingChanges: false,
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
         let response = VMResponse(from: vm)
-        #expect(response.isoId == "legacy-iso-1")
-        #expect(response.isoIds == ["legacy-iso-1"])
+        let data = try JSONEncoder().encode(response)
+        let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(dict?["spec"] is [String: Any])
+        #expect(dict?["status"] is [String: Any])
+        let status = dict?["status"] as? [String: Any]
+        #expect(status?["state"] as? String == "stopped")
+        #expect(status?["generation"] as? Int == 1)
+        #expect(status?["health"] as? String == "stopped")
+        #expect(dict?["health"] as? String == "stopped")
     }
 
     // MARK: - VMResponse Encodable
@@ -109,8 +141,7 @@ struct DTOTests {
     @Test func `vm response encodes to JSON`() throws {
         let vm = VM(
             id: "vm-1", name: "test", vmType: "linux-arm64", state: "stopped",
-            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1",
-            isoId: nil, networkId: nil, cloudInitPath: nil, vncPort: nil,
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
             description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
             uefi: true, tpmEnabled: false,
             macAddress: nil, sharedPaths: nil, portForwards: nil,
@@ -197,6 +228,40 @@ struct DTOTests {
         #expect(response.portForwards?.count == 1)
         #expect(response.inputs.count == 1)
         #expect(response.inputs.first?.id == "hostname")
+        #expect(response.architectures.isEmpty || response.compatible)
+    }
+
+    @Test func `template response compatible uses features and min memory`() {
+        let template = VMTemplate(
+            id: "tpl-pi", slug: "pi-hole", name: "Pi-hole", description: nil,
+            category: "networking", icon: "shield",
+            imageSlug: "ubuntu-24.04-x86_64",
+            cpuCount: 1, memoryMB: 512, diskSizeGB: 8,
+            portForwards: "[]", networkMode: "bridged", inputs: "[]",
+            userDataTemplate: "", isBuiltIn: true, repositoryId: nil,
+            createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+            architecturesJson: #"["x86_64"]"#,
+            minMemoryMB: 512,
+            requiredFeaturesJson: #"["bridgedNetworking"]"#,
+            imageByArchJson: #"{"x86_64":"ubuntu-24.04-x86_64"}"#,
+        )
+
+        let matching = TemplateResponse(
+            from: template, host: dtoTemplateHost(arch: "x86_64", bridged: true),
+        )
+        #expect(matching.compatible)
+        #expect(matching.resolvedImageSlug == "ubuntu-24.04-x86_64")
+
+        let missingBridge = TemplateResponse(
+            from: template, host: dtoTemplateHost(arch: "x86_64", bridged: false),
+        )
+        #expect(!missingBridge.compatible)
+
+        let lowHostRAM = TemplateResponse(
+            from: template,
+            host: dtoTemplateHost(arch: "x86_64", bridged: true, memoryTotalMB: 256),
+        )
+        #expect(!lowHostRAM.compatible)
     }
 
     // MARK: - RepositoryResponse
@@ -279,4 +344,36 @@ struct DTOTests {
         #expect(response.ipAddresses.isEmpty)
         #expect(response.hostname == nil)
     }
+}
+
+private func dtoTemplateHost(
+    arch: String, bridged: Bool, memoryTotalMB: Int = 8_192,
+) -> HostInventory {
+    HostInventory(
+        schemaVersion: 1,
+        hostId: "test-host-id",
+        displayName: "test-host",
+        agent: AgentInfo(version: "test"),
+        platform: PlatformInfo(os: "macOS", osVersion: "test", arch: arch, hostname: "test-host"),
+        resources: ResourcesInfo(
+            cpuCount: 4, memoryTotalMB: memoryTotalMB, memoryUsedMB: 1_024, cpuLoadPercent: 1,
+        ),
+        storage: [],
+        networking: NetworkingInfo(interfaces: []),
+        virtualization: VirtualizationInfo(
+            accelerator: "hvf",
+            qemuCPUModel: "host",
+            defaultGuestArch: arch == "arm64" ? "aarch64" : "x86_64",
+            features: VirtualizationFeatures(
+                bridgedNetworking: bridged,
+                managedBridgeDaemon: bridged,
+                usbPassthrough: true,
+                inAppUpdate: true,
+                kvmDevice: false,
+                qemuBridgeHelper: false,
+            ),
+        ),
+        guestTypes: [],
+        collectedAt: "2026-08-12T00:00:00Z",
+    )
 }

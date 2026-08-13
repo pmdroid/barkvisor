@@ -55,6 +55,8 @@ public struct VMStateEvent: Codable, Sendable {
 public actor VMManager: VMStateQuerying {
     public var runningVMs: [String: RunningVM] = [:]
     var startingVMs: Set<String> = [] // guards against concurrent start across await points
+    /// Last QEMU/start error per VM (PAS-79). Not persisted — Wave 0 signal cache.
+    var lastHealthErrors: [String: String] = [:]
     public let dbPool: DatabasePool
     public let pidsDir: URL
     public private(set) var consoleBuffers: ConsoleBufferManager?
@@ -111,6 +113,15 @@ public actor VMManager: VMStateQuerying {
         guard loaded.vm.state == "stopped" || loaded.vm.state == "error" else {
             throw BarkVisorError.vmAlreadyRunning(vmID)
         }
+
+        // PAS-48: block foreign-arch guests (portable or overlay) before QEMU / state flip.
+        // Overlay guestType stays in overridesJson; QEMUBuilder launches the merged guest.
+        let resolvedGuest = try WorkloadSpecResolver.launchGuestType(
+            WorkloadSpecProjector.fromVM(loaded.vm),
+        )
+        try PlatformCapabilities.requireCompatibleGuestArch(
+            GuestProfiles.require(resolvedGuest).arch,
+        )
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)
 
@@ -185,6 +196,7 @@ public actor VMManager: VMStateQuerying {
             // so WebSocket clients see data immediately when they connect
             await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
 
+            clearHealthError(for: vmID)
             try await updateState(vmID: vmID, state: "running")
 
             await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
@@ -198,6 +210,7 @@ public actor VMManager: VMStateQuerying {
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
             Log.vm.error("VM start failed: \(error.localizedDescription)", vm: vmID)
             do {
+                recordHealthError(error.localizedDescription, for: vmID)
                 try await updateState(vmID: vmID, state: "error", error: error.localizedDescription)
             } catch let stateError {
                 Log.vm.critical(

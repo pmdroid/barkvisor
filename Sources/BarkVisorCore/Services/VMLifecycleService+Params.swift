@@ -3,6 +3,8 @@ import Foundation
 // MARK: - Parameter Types
 
 public struct CreateVMParams: Sendable {
+    /// Optional stable id for declarative apply (PAS-80). Generated when omitted.
+    public let id: String?
     public let name: String
     public let vmType: String
     public let cpuCount: Int
@@ -21,8 +23,10 @@ public struct CreateVMParams: Sendable {
     public let displayResolution: String?
     public let uefi: Bool?
     public let tpmEnabled: Bool?
+    public let overrides: WorkloadOverrides?
 
     public init(
+        id: String? = nil,
         name: String,
         vmType: String,
         cpuCount: Int,
@@ -41,7 +45,9 @@ public struct CreateVMParams: Sendable {
         displayResolution: String? = nil,
         uefi: Bool? = nil,
         tpmEnabled: Bool? = nil,
+        overrides: WorkloadOverrides? = nil,
     ) {
+        self.id = id
         self.name = name
         self.vmType = vmType
         self.cpuCount = cpuCount
@@ -60,6 +66,7 @@ public struct CreateVMParams: Sendable {
         self.displayResolution = displayResolution
         self.uefi = uefi
         self.tpmEnabled = tpmEnabled
+        self.overrides = overrides
     }
 }
 

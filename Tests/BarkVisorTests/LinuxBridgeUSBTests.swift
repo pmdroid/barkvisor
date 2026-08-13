@@ -11,9 +11,11 @@ struct LinuxBridgeUSBTests {
         #if os(Linux)
             // Linux uses host bridges + QEMU -netdev bridge — not a managed daemon.
             #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
-            #expect(throws: BarkVisorError.self) {
+            let err = #expect(throws: BarkVisorError.self) {
                 try PlatformCapabilities.requireManagedBridgeDaemon()
             }
+            #expect(err?.httpStatus == 422)
+            #expect(err?.code == "managed_bridge_daemon")
         #elseif os(macOS)
             #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
             #expect(throws: Never.self) {
@@ -75,7 +77,20 @@ struct LinuxBridgeUSBTests {
             let err = #expect(throws: BarkVisorError.self) {
                 try LinuxHostNetwork.requireBridgeableInterface("no_such_iface_xyz")
             }
-            #expect(err?.httpStatus == 503 || err?.httpStatus == 400 || err?.httpStatus == 500)
+            #expect(err?.httpStatus == 422)
+            #expect(err?.code == "interface_missing")
         #endif
+    }
+
+    @Test func `bridge ACL comments and allow all`() {
+        let contents = """
+        # qemu-bridge-helper
+        allow virbr0
+        allow br0 # lab
+        """
+        #expect(LinuxHostNetwork.bridgeACLAllows("br0", fileContents: contents))
+        #expect(LinuxHostNetwork.bridgeACLAllows("virbr0", fileContents: contents))
+        #expect(!LinuxHostNetwork.bridgeACLAllows("docker0", fileContents: contents))
+        #expect(LinuxHostNetwork.bridgeACLAllows("docker0", fileContents: "allow all\n"))
     }
 }
