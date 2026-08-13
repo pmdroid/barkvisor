@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import api from '../api/client'
+import { acceleratorLabel } from '../utils/workloadBackend'
+import { architectureLabel } from '../utils/architectureDetails'
 
 interface License {
   name: string
@@ -9,14 +11,47 @@ interface License {
   description: string
 }
 
-const version = ref('')
-const licenses = ref<License[]>([])
+interface AboutInfo {
+  version?: string
+  platform?: string
+  hostArch?: string
+  accelerator?: string
+  processUptimeSeconds?: number
+  licenses?: License[]
+}
+
+const about = ref<AboutInfo>({})
 const expanded = ref<string | null>(null)
+
+const version = computed(() => about.value.version || '')
+const licenses = computed(() => about.value.licenses || [])
+const platformLine = computed(() => {
+  const platform = about.value.platform
+  const arch = about.value.hostArch
+  if (!platform) return '…'
+  if (arch) return `${platform} (${architectureLabel(arch)})`
+  return platform
+})
+const virtualizerLine = computed(() => {
+  const accel = about.value.accelerator
+  if (!accel) return 'QEMU'
+  if (accel === 'tcg') return 'QEMU with TCG software emulation'
+  return `QEMU with ${acceleratorLabel(accel)} acceleration`
+})
+const uptimeLine = computed(() => {
+  const raw = about.value.processUptimeSeconds
+  if (raw == null || Number.isNaN(raw)) return ''
+  const s = Math.max(0, Math.floor(raw))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s % 60}s`
+  return `${s}s`
+})
 
 onMounted(async () => {
   const { data } = await api.get('/system/about')
-  version.value = data.version
-  licenses.value = data.licenses
+  about.value = data
 })
 
 function toggle(name: string) {
@@ -37,7 +72,7 @@ function toggle(name: string) {
       </div>
       <div class="detail-row">
         <span class="detail-label">Platform</span>
-        <span>macOS (Apple Silicon)</span>
+        <span>{{ platformLine }}</span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Backend</span>
@@ -45,7 +80,11 @@ function toggle(name: string) {
       </div>
       <div class="detail-row">
         <span class="detail-label">Virtualizer</span>
-        <span>QEMU with HVF acceleration</span>
+        <span>{{ virtualizerLine }}</span>
+      </div>
+      <div v-if="uptimeLine" class="detail-row">
+        <span class="detail-label">Uptime</span>
+        <span>{{ uptimeLine }}</span>
       </div>
     </div>
   </div>

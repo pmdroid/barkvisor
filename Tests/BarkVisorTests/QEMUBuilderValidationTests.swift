@@ -217,6 +217,8 @@ struct QEMUBuilderValidationTests {
         // QEMUBuilder and PlatformCapabilities must agree (capabilities API + launch args).
         #expect(QEMUBuilder.accelerator == PlatformCapabilities.accelerator)
         #expect(QEMUBuilder.cpuModel == PlatformCapabilities.qemuCPUModel)
+        let native = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        #expect(WorkloadBackendProjector.project(guestType: native).accelerator == QEMUBuilder.accelerator)
     }
 
     // MARK: - Firmware

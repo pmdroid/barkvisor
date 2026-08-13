@@ -191,9 +191,10 @@ public enum QEMUBuilder {
         let bootOrder = spec.spec.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
         let machine = spec.spec.machine ?? profile.machine
+        let backend = WorkloadBackendProjector.project(guestType: guestType)
 
         var args: [String] = []
-        args += ["-machine", machine, "-accel", accelerator, "-cpu", cpuModel]
+        args += ["-machine", machine, "-accel", backend.accelerator, "-cpu", cpuModel]
         args += specResourceArgs(spec)
         args += try firmwareArgs(spec: spec, vmID: vmID, vmType: guestType)
         args += ["-device", "qemu-xhci"]

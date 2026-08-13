@@ -22,6 +22,8 @@ import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
+import { architectureLabel } from '../utils/architectureDetails'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -516,6 +518,8 @@ const currentNetwork = computed(() => {
   return allNetworks.value.find(n => n.id === vm.value!.networkId) || null
 })
 
+const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
+
 </script>
 
 <template>
@@ -565,6 +569,13 @@ const currentNetwork = computed(() => {
       Configuration changed. Restart the VM to apply new settings.
     </div>
 
+    <div v-if="backend?.emulated && backend.warning" class="emu-banner">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      {{ backend.warning }}
+    </div>
+
     <div v-if="bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -584,6 +595,22 @@ const currentNetwork = computed(() => {
           <div class="detail-row">
             <span class="detail-label">Type</span>
             <span><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></span>
+          </div>
+          <div v-if="backend" class="detail-row">
+            <span class="detail-label">Architecture</span>
+            <span class="mono">{{ architectureLabel(backend.guestArch) }}</span>
+          </div>
+          <div v-if="backend" class="detail-row">
+            <span class="detail-label">Accelerator</span>
+            <span style="display:flex;align-items:center;gap:6px">
+              <span class="mono">{{ acceleratorLabel(backend.accelerator) }}</span>
+              <span v-if="backend.emulated" class="badge badge-amber">emulated</span>
+              <span v-else class="badge badge-green">hardware</span>
+            </span>
+          </div>
+          <div v-if="backend" class="detail-row">
+            <span class="detail-label">QEMU</span>
+            <span class="mono" style="color:var(--text-secondary)">{{ backend.qemuBinary }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">CPU</span>
@@ -1048,6 +1075,18 @@ const currentNetwork = computed(() => {
 .pending-banner {
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--amber-muted);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--amber, #f59e0b);
+}
+.emu-banner {
+  display: flex;
+  align-items: flex-start;
   gap: 8px;
   padding: 10px 14px;
   margin-bottom: 16px;
