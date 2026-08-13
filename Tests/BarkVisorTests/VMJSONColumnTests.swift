@@ -38,6 +38,16 @@ struct VMJSONColumnTests {
         )
     }
 
+    @Test func `health json round trip`() {
+        var vm = makeVM()
+        vm.setHealth(
+            WorkloadHealthSpec(http: WorkloadHealthHTTPCheck(path: "/ready", port: 8_080)),
+        )
+        #expect(vm.decodedHealth?.http?.path == "/ready")
+        vm.setHealth(WorkloadHealthSpec())
+        #expect(vm.decodedHealth == nil)
+    }
+
     @Test func `decodedISOIds uses array`() {
         var vm = makeVM(isoIds: #"["a","b"]"#)
         #expect(vm.decodedISOIds == ["a", "b"])
@@ -59,6 +69,7 @@ struct VMJSONColumnTests {
         #expect(vm.decodedSharedPaths.isEmpty)
         #expect(vm.decodedPortForwards.isEmpty)
         #expect(vm.decodedUSBDevices.isEmpty)
+        #expect(vm.decodedHealth == nil)
     }
 
     @Test func `setters encode empty as nil`() {

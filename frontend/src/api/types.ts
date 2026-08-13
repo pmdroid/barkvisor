@@ -115,6 +115,25 @@ export interface WorkloadMetadata {
   labels?: Record<string, string> | null
 }
 
+export interface WorkloadHealthHTTPCheck {
+  path: string
+  port: number
+  expectedStatus?: number | null
+}
+
+export interface WorkloadHealthTCPCheck {
+  port: number
+}
+
+export interface WorkloadHealthSpec {
+  intervalSec?: number | null
+  timeoutSec?: number | null
+  healthyThreshold?: number | null
+  unhealthyThreshold?: number | null
+  http?: WorkloadHealthHTTPCheck | null
+  tcp?: WorkloadHealthTCPCheck | null
+}
+
 export interface WorkloadSpecBody {
   resources: WorkloadResources
   arch?: string | null
@@ -129,6 +148,7 @@ export interface WorkloadSpecBody {
   usb?: WorkloadUSBDevice[]
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
+  health?: WorkloadHealthSpec | null
 }
 
 export interface WorkloadResourcesOverlay {

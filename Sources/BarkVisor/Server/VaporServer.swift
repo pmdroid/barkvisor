@@ -13,6 +13,7 @@ public final class VaporServer: @unchecked Sendable {
     private(set) var repositorySyncService: RepositorySyncService?
     private(set) var metricsCollector: MetricsCollector?
     private(set) var backgroundTaskManager: BackgroundTaskManager?
+    private(set) var healthProbes: HealthProbeService?
     private(set) var diskInfoCache: DiskInfoCache?
     private(set) var setupMiddleware: SetupMiddleware?
 
@@ -88,6 +89,7 @@ public final class VaporServer: @unchecked Sendable {
                 loginRateLimit: loginRateLimit,
                 setupMiddleware: setup,
                 updateService: updateService,
+                healthProbes: services.healthProbes,
             ),
         )
 
@@ -117,6 +119,7 @@ public final class VaporServer: @unchecked Sendable {
         let diskInfoCache: DiskInfoCache
         let consoleBuffers: ConsoleBufferManager
         let processMonitor: VMProcessMonitor
+        let healthProbes: HealthProbeService
     }
 
     private func configureMiddleware(app: Vapor.Application) {
@@ -253,12 +256,15 @@ public final class VaporServer: @unchecked Sendable {
         await processMonitor.setQMPEventListener(qmpEventListener)
         await manager.setProcessMonitor(processMonitor)
 
+        let healthProbes = HealthProbeService(dbPool: pool)
+        self.healthProbes = healthProbes
+
         return Services(
             downloader: downloader, syncService: syncService, collector: collector,
             stateStreamService: stateStreamService, manager: manager,
             qmpDiskService: qmpDiskService, backgroundTasks: backgroundTasks,
             diskInfoCache: diskInfoCache, consoleBuffers: consoleBuffers,
-            processMonitor: processMonitor,
+            processMonitor: processMonitor, healthProbes: healthProbes,
         )
     }
 
@@ -301,6 +307,13 @@ public final class VaporServer: @unchecked Sendable {
             let bridgeSyncNs: UInt64 = 15 * 1_000_000_000
             await backgroundTasks.schedulePeriodicTask(id: "bridge-sync", interval: bridgeSyncNs) {
                 await BridgeSyncService.syncOnce(db: pool)
+            }
+        }
+        if let healthProbes {
+            await backgroundTasks.schedulePeriodicTask(
+                id: "health-probes", interval: 5 * 1_000_000_000,
+            ) {
+                await healthProbes.pollDue()
             }
         }
         await backgroundTasks.schedulePeriodicTask(

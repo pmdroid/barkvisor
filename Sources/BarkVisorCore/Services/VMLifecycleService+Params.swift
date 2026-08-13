@@ -24,6 +24,7 @@ public struct CreateVMParams: Sendable {
     public let uefi: Bool?
     public let tpmEnabled: Bool?
     public let overrides: WorkloadOverrides?
+    public let health: WorkloadHealthSpec?
 
     public init(
         id: String? = nil,
@@ -46,6 +47,7 @@ public struct CreateVMParams: Sendable {
         uefi: Bool? = nil,
         tpmEnabled: Bool? = nil,
         overrides: WorkloadOverrides? = nil,
+        health: WorkloadHealthSpec? = nil,
     ) {
         self.id = id
         self.name = name
@@ -67,6 +69,7 @@ public struct CreateVMParams: Sendable {
         self.uefi = uefi
         self.tpmEnabled = tpmEnabled
         self.overrides = overrides
+        self.health = health
     }
 }
 

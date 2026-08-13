@@ -44,6 +44,10 @@ extension VM {
         return decoded
     }
 
+    public var decodedHealth: WorkloadHealthSpec? {
+        JSONColumnCoding.decode(WorkloadHealthSpec.self, from: healthJson)
+    }
+
     // MARK: - Write (empty → nil column)
 
     public mutating func setISOIds(_ ids: [String]?) {
@@ -71,6 +75,14 @@ extension VM {
             overridesJson = JSONColumnCoding.encode(overrides)
         } else {
             overridesJson = nil
+        }
+    }
+
+    public mutating func setHealth(_ health: WorkloadHealthSpec?) {
+        if let health, health.hasProbes {
+            healthJson = JSONColumnCoding.encode(health)
+        } else {
+            healthJson = nil
         }
     }
 }

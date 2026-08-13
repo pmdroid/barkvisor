@@ -74,7 +74,8 @@ struct WorkloadHealthProjectorTests {
         #expect(status.lastError == "QMP unreachable")
     }
 
-    @Test func `wave0 never emits guest_ready`() {
+    @Test func `fresh guest agent is guest_ready`() {
+        let clock = iso8601.date(from: now) ?? Date()
         let status = WorkloadHealthProjector.project(
             state: .running,
             signals: WorkloadHealthSignals(
@@ -84,10 +85,78 @@ struct WorkloadHealthProjectorTests {
                 lastSeenAt: now,
             ),
             updatedAt: now,
+            now: clock,
+        )
+        #expect(status.health == .guestReady)
+        #expect(status.checks.contains { $0.name == "guestAgent" && $0.status == .pass })
+    }
+
+    @Test func `stale guest agent stays running`() {
+        let clock = iso8601.date(from: now) ?? Date()
+        let stale = iso8601.string(from: clock.addingTimeInterval(-180))
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                guestAgent: true,
+                lastSeenAt: stale,
+            ),
+            updatedAt: now,
+            now: clock,
         )
         #expect(status.health == .running)
-        #expect(status.health != .guestReady)
-        #expect(status.checks.contains { $0.name == "guestAgent" && $0.status == .pass })
+        #expect(status.checks.contains { $0.name == "guestAgent" && $0.status == .skip })
+        #expect(status.checks.contains { $0.name == "http" && $0.status == .skip })
+    }
+
+    @Test func `passing http probe is guest_ready without guest agent`() {
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                http: true,
+                httpConfigured: true,
+            ),
+            updatedAt: now,
+        )
+        #expect(status.health == .guestReady)
+        #expect(status.checks.contains { $0.name == "http" && $0.status == .pass })
+        #expect(status.checks.contains { $0.name == "guestAgent" && $0.status == .skip })
+    }
+
+    @Test func `failed http probe is degraded`() {
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                guestAgent: true,
+                lastSeenAt: now,
+                http: false,
+                httpConfigured: true,
+            ),
+            updatedAt: now,
+            now: iso8601.date(from: now) ?? Date(),
+        )
+        #expect(status.health == .degraded)
+        #expect(status.lastError == "HTTP probe failed")
+        #expect(status.checks.contains { $0.name == "http" && $0.status == .fail })
+    }
+
+    @Test func `configured but unobserved probe stays running`() {
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                httpConfigured: true,
+            ),
+            updatedAt: now,
+        )
+        #expect(status.health == .running)
+        #expect(status.checks.contains { $0.name == "http" && $0.status == .skip })
     }
 
     @Test func `summary counts every health case`() {

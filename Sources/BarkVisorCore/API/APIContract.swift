@@ -95,6 +95,10 @@ public enum APIContract {
         Route(method: "GET", path: "/api/system/about", stability: .evolving),
         Route(method: "GET", path: "/api/agent/inventory", stability: .evolving),
         Route(method: "GET", path: "/api/vms/{id}/guest-info", stability: .evolving),
+        Route(method: "GET", path: "/api/vms/{id}/health", stability: .evolving),
+        Route(method: "PUT", path: "/api/vms/{id}/health", stability: .evolving),
+        Route(method: "POST", path: "/api/vms/{id}/health/probe", stability: .evolving),
+        Route(method: "GET", path: "/api/workloads/health-summary", stability: .evolving),
 
         // Out-of-band transports (documented, not JSON contract)
         Route(method: "GET", path: "/api/vms/{id}/state", stability: .outOfBand),

@@ -202,6 +202,7 @@ public enum WorkloadApplyService {
             uefi: spec.spec.firmware?.uefi,
             tpmEnabled: spec.spec.firmware?.tpm,
             overrides: spec.overrides,
+            health: spec.spec.health,
         )
     }
 

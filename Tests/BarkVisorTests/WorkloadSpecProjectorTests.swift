@@ -67,6 +67,7 @@ struct WorkloadSpecProjectorTests {
         #expect(spec.spec.usb.first?.vendorId == "0x1234")
         #expect(spec.spec.display?.resolution == "1280x800")
         #expect(spec.spec.sharedPaths == ["/Users/test/share"])
+        #expect(spec.spec.health == nil)
     }
 
     @Test func `round trip apply does not lose column values`() throws {

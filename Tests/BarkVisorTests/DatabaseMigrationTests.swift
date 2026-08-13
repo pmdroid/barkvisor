@@ -164,6 +164,14 @@ struct DatabaseMigrationTests {
         }
     }
 
+    @Test func `m005 adds healthJson column`() throws {
+        let queue = try migratedQueue()
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(columns.contains("healthJson"))
+        }
+    }
+
     // MARK: - Tables Exist
 
     @Test func `expected tables exist`() throws {

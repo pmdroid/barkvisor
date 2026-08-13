@@ -65,6 +65,8 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
     public var display: WorkloadDisplay?
     /// Host bind-mounts (virtio-9p). Portable in the native spec; host paths stay host-local.
     public var sharedPaths: [String]?
+    /// Optional HTTP/TCP guest probes (PAS-65). Omitted = process-state health only.
+    public var health: WorkloadHealthSpec?
 
     public init(
         resources: WorkloadResources,
@@ -80,6 +82,7 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
         usb: [WorkloadUSBDevice] = [],
         display: WorkloadDisplay? = nil,
         sharedPaths: [String]? = nil,
+        health: WorkloadHealthSpec? = nil,
     ) {
         self.resources = resources
         self.arch = arch
@@ -94,6 +97,7 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
         self.usb = usb
         self.display = display
         self.sharedPaths = sharedPaths
+        self.health = health
     }
 }
 
@@ -437,5 +441,10 @@ enum WorkloadSpecJSON {
     static func decode(_ json: String?) -> WorkloadSpec? {
         guard let json, let data = json.data(using: .utf8) else { return nil }
         return try? decoder.decode(WorkloadSpec.self, from: data)
+    }
+
+    static func encodeHealth(_ spec: WorkloadHealthSpec) -> String? {
+        guard let data = try? encoder.encode(spec) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

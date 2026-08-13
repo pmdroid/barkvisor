@@ -1,7 +1,8 @@
 import Foundation
 
-/// Workload rollup (PAS-79). Wave 0 emits `stopped|starting|running|degraded|failed`.
-/// `guest_ready` is reserved for PAS-65 (health URL / guest-agent probe).
+/// Workload rollup (PAS-79 / PAS-65).
+/// Wave 0: `stopped|starting|running|degraded|failed`.
+/// PAS-65 adds `guest_ready` when a guest agent is fresh or HTTP/TCP probes pass.
 public enum WorkloadHealth: String, Codable, Sendable, CaseIterable {
     case unknown
     case stopped
@@ -32,14 +33,18 @@ public struct WorkloadHealthCheck: Codable, Equatable, Sendable {
 
 /// Inputs for health projection. `nil` means the signal was not observed (skip).
 ///
-/// Wave 0 sources: `qemuProcess` (VMManager), `qmp` (socket), `guestAgent` /
-/// `lastSeenAt` (guest_info), `lastError` (start/termination cache).
+/// Sources: `qemuProcess` (VMManager), `qmp` (socket), `guestAgent` /
+/// `lastSeenAt` (guest_info), `http`/`tcp` (HealthProbeService), `lastError`.
 public struct WorkloadHealthSignals: Equatable, Sendable {
     public var qemuProcess: Bool?
     public var qmp: Bool?
     public var guestAgent: Bool?
     public var lastSeenAt: String?
     public var lastError: String?
+    public var http: Bool?
+    public var tcp: Bool?
+    public var httpConfigured: Bool
+    public var tcpConfigured: Bool
 
     public static let unobserved = WorkloadHealthSignals()
 
@@ -49,12 +54,34 @@ public struct WorkloadHealthSignals: Equatable, Sendable {
         guestAgent: Bool? = nil,
         lastSeenAt: String? = nil,
         lastError: String? = nil,
+        http: Bool? = nil,
+        tcp: Bool? = nil,
+        httpConfigured: Bool = false,
+        tcpConfigured: Bool = false,
     ) {
         self.qemuProcess = qemuProcess
         self.qmp = qmp
         self.guestAgent = guestAgent
         self.lastSeenAt = lastSeenAt
         self.lastError = lastError
+        self.http = http
+        self.tcp = tcp
+        self.httpConfigured = httpConfigured
+        self.tcpConfigured = tcpConfigured
+    }
+
+    public var probesConfigured: Bool {
+        httpConfigured || tcpConfigured
+    }
+
+    public var probesFailed: Bool {
+        http == false || tcp == false
+    }
+
+    public var probesPassed: Bool {
+        if probesFailed { return false }
+        let observed = [http, tcp].compactMap(\.self)
+        return !observed.isEmpty && observed.allSatisfy(\.self)
     }
 }
 
