@@ -31,6 +31,36 @@ struct ValidationTests {
         #expect(throws: (any Error).self) { try validateVMName("vm/path") }
     }
 
+    // MARK: - validateVMID
+
+    @Test func `valid VM ids`() {
+        #expect(throws: Never.self) { try validateVMID("yaml-vm") }
+        #expect(throws: Never.self) { try validateVMID("550e8400-e29b-41d4-a716-446655440000") }
+        #expect(throws: Never.self) { try validateVMID("vm_1.0") }
+        #expect(throws: Never.self) { try validateVMID("a") }
+        #expect(throws: Never.self) { try validateVMID(String(repeating: "a", count: 128)) }
+    }
+
+    @Test func `empty VM id rejected`() {
+        #expect(throws: (any Error).self) { try validateVMID("") }
+        #expect(throws: (any Error).self) { try validateVMID("   ") }
+    }
+
+    @Test func `too long VM id rejected`() {
+        #expect(throws: (any Error).self) { try validateVMID(String(repeating: "a", count: 129)) }
+    }
+
+    @Test func `vm id path traversal rejected`() {
+        #expect(throws: (any Error).self) {
+            try validateVMID(["..", "..", "..", "tmp", "evil"].joined(separator: "/"))
+        }
+        #expect(throws: (any Error).self) { try validateVMID("..") }
+        #expect(throws: (any Error).self) { try validateVMID(".") }
+        #expect(throws: (any Error).self) { try validateVMID("vm/path") }
+        #expect(throws: (any Error).self) { try validateVMID("vm\\path") }
+        #expect(throws: (any Error).self) { try validateVMID("vm id") }
+    }
+
     // MARK: - validateBridgeName
 
     @Test func `valid bridge names`() {
