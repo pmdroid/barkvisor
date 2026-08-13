@@ -213,6 +213,8 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
     public var updatedAt: String
     public var health: WorkloadHealth
     public var healthError: String?
+    /// Effective QEMU backend for this workload (PAS-73).
+    public var backend: VMRuntimeBackend
 
     public init(
         state: VMState,
@@ -222,6 +224,7 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         updatedAt: String,
         health: WorkloadHealth,
         healthError: String? = nil,
+        backend: VMRuntimeBackend,
     ) {
         self.state = state
         self.pendingChanges = pendingChanges
@@ -230,6 +233,7 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         self.updatedAt = updatedAt
         self.health = health
         self.healthError = healthError
+        self.backend = backend
     }
 }
 

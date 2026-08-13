@@ -100,6 +100,7 @@ public enum WorkloadSpecProjector {
             updatedAt: vm.updatedAt,
             health: health.health,
             healthError: health.lastError,
+            backend: WorkloadBackendProjector.project(vm: vm),
         )
     }
 

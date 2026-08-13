@@ -75,5 +75,20 @@ struct DiagnosticServiceTests {
         #expect(system?["platform"] as? String == inventory.platform.os)
         #expect(system?["accelerator"] as? String == inventory.virtualization.accelerator)
         #expect((system?["cpuCount"] as? NSNumber)?.intValue == inventory.resources.cpuCount)
+
+        let appBlob = try PlatformProcess.run(
+            path: "/usr/bin/tar",
+            arguments: ["-xOf", archivePath, "./barkvisor-info.json"],
+            timeout: 15,
+        )
+        #expect(appBlob.succeeded)
+        let app = try JSONSerialization.jsonObject(with: appBlob.stdout) as? [String: Any]
+        let reported = (app?["uptime"] as? NSNumber)?.doubleValue
+        #expect(reported != nil)
+        if let reported {
+            #expect(reported >= 0)
+            #expect(reported <= ProcessInfo.processInfo.systemUptime + 1)
+            #expect(abs(reported - Config.processUptimeSeconds) < 2)
+        }
     }
 }
