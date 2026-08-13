@@ -15,13 +15,20 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
     public var memoryMB: Int
     public var diskSizeGB: Int
     public var portForwards: String? // JSON-encoded [PortForwardRule]
-    public var networkMode: String // "nat" or "bridged"
+    public var networkMode: String // "nat" | "bridged" | "isolated"
     public var inputs: String // JSON-encoded [TemplateInput]
     public var userDataTemplate: String
     public var isBuiltIn: Bool
     public var repositoryId: String?
     public var createdAt: String
     public var updatedAt: String
+    /// JSON-encoded `[String]` of supported guest arches (`arm64`, `x86_64`).
+    public var architecturesJson: String?
+    public var minMemoryMB: Int?
+    /// JSON-encoded `[String]` of `CapabilityCode` raw values.
+    public var requiredFeaturesJson: String?
+    /// JSON-encoded `{arch: imageSlug}` map.
+    public var imageByArchJson: String?
 
     public init(
         id: String,
@@ -42,6 +49,10 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
         repositoryId: String?,
         createdAt: String,
         updatedAt: String,
+        architecturesJson: String? = nil,
+        minMemoryMB: Int? = nil,
+        requiredFeaturesJson: String? = nil,
+        imageByArchJson: String? = nil,
     ) {
         self.id = id
         self.slug = slug
@@ -61,6 +72,38 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
         self.repositoryId = repositoryId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.architecturesJson = architecturesJson
+        self.minMemoryMB = minMemoryMB
+        self.requiredFeaturesJson = requiredFeaturesJson
+        self.imageByArchJson = imageByArchJson
+    }
+
+    public var architectures: [String] {
+        JSONColumnCoding.decodeArrayOrEmpty(String.self, from: architecturesJson)
+    }
+
+    public var requiredFeatures: [String] {
+        JSONColumnCoding.decodeArrayOrEmpty(String.self, from: requiredFeaturesJson)
+    }
+
+    public var imageByArch: [String: String] {
+        JSONColumnCoding.decode([String: String].self, from: imageByArchJson) ?? [:]
+    }
+
+    public var declaredArchitectures: [String] {
+        TemplateArchitecture.declaredArchitectures(
+            explicit: architectures,
+            imageByArch: imageByArch,
+            imageSlug: imageSlug,
+        )
+    }
+
+    public func resolvedImageSlug(forArch arch: String) -> String? {
+        TemplateArchitecture.resolveImageSlug(
+            defaultSlug: imageSlug,
+            imageByArch: imageByArch,
+            arch: arch,
+        )
     }
 }
 
@@ -116,9 +159,13 @@ public struct TemplateCatalogEntry: Codable, Sendable {
     public let memoryMB: Int
     public let diskSizeGB: Int
     public let portForwards: [PortForwardRule]
-    public let networkMode: String? // "nat" (default) or "bridged"
+    public let networkMode: String? // "nat" (default), "bridged", or "isolated"
     public let inputs: [TemplateInput]
     public let userDataTemplate: String
+    public let architectures: [String]?
+    public let imageByArch: [String: String]?
+    public let minMemoryMB: Int?
+    public let requiredFeatures: [String]?
 
     public init(
         slug: String,
@@ -134,6 +181,10 @@ public struct TemplateCatalogEntry: Codable, Sendable {
         networkMode: String?,
         inputs: [TemplateInput],
         userDataTemplate: String,
+        architectures: [String]? = nil,
+        imageByArch: [String: String]? = nil,
+        minMemoryMB: Int? = nil,
+        requiredFeatures: [String]? = nil,
     ) {
         self.slug = slug
         self.name = name
@@ -148,5 +199,9 @@ public struct TemplateCatalogEntry: Codable, Sendable {
         self.networkMode = networkMode
         self.inputs = inputs
         self.userDataTemplate = userDataTemplate
+        self.architectures = architectures
+        self.imageByArch = imageByArch
+        self.minMemoryMB = minMemoryMB
+        self.requiredFeatures = requiredFeatures
     }
 }

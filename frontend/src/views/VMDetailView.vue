@@ -18,12 +18,17 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
+import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
+import { architectureLabel } from '../utils/architectureDetails'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
+import { useFeature } from '../composables/useFeature'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,7 +36,9 @@ const store = useVMStore()
 const caps = useCapabilitiesStore()
 const diskStore = useDiskStore()
 const networkStore = useNetworkStore()
-const { supportsUSBPassthrough, supportsBridgedNetworking, supportsManagedBridgeDaemon } = storeToRefs(caps)
+const usb = useFeature('usbPassthrough')
+const bridged = useFeature('bridgedNetworking')
+const managedBridge = useFeature('managedBridgeDaemon')
 const { disks: allDisks, usages: diskUsages } = storeToRefs(diskStore)
 const { networks: allNetworks } = storeToRefs(networkStore)
 const vmId = computed(() => route.params.id as string)
@@ -147,8 +154,8 @@ async function fetchBridges() {
 
 /** macOS only: socket_vmnet daemon must be active before start. Linux uses host bridges. */
 const bridgeNotReady = computed(() => {
-  if (!supportsManagedBridgeDaemon.value) return false
-  if (!supportsBridgedNetworking.value) return false
+  if (!managedBridge.available) return false
+  if (!bridged.available) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
   const info = bridges.value.find(b => b.interface === currentNetwork.value!.bridge)
   return !info || info.status !== 'active'
@@ -272,9 +279,9 @@ function connectStateSSE() {
     maxDelayMs: 30_000,
     onMessage: (e) => {
       try {
-        const event = JSON.parse(e.data) as { id: string; state: string }
+        const event = JSON.parse(e.data) as { id: string; state: string; error?: string | null }
         const v = store.vms.find(v => v.id === event.id)
-        if (v) v.state = event.state as typeof v.state
+        if (v) applyVMStateEvent(v, event)
         fetchGuestInfo()
       } catch { /* ignore */ }
     },
@@ -291,7 +298,7 @@ async function loadVMDetail() {
       store.fetchOne(vmId.value),
       fetchNetworks(),
       fetchImages(),
-      ...(supportsManagedBridgeDaemon.value ? [fetchBridges()] : []),
+      ...(managedBridge.available ? [fetchBridges()] : []),
     ])
     if (loadVersion !== detailLoadVersion) return
 
@@ -304,7 +311,7 @@ async function loadVMDetail() {
     connectStateSSE()
     pollInterval = window.setInterval(() => {
       store.fetchOne(vmId.value).then(fetchGuestInfo).catch(() => {})
-      if (supportsManagedBridgeDaemon.value) fetchBridges()
+      if (managedBridge.available) fetchBridges()
     }, 15000)
   } catch (e: any) {
     if (loadVersion === detailLoadVersion) {
@@ -511,6 +518,8 @@ const currentNetwork = computed(() => {
   return allNetworks.value.find(n => n.id === vm.value!.networkId) || null
 })
 
+const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
+
 </script>
 
 <template>
@@ -526,7 +535,11 @@ const currentNetwork = computed(() => {
         <h1>{{ vm.name }}</h1>
       </div>
       <div style="display: flex; gap: 8px; align-items: center">
-        <span class="status-pill" :class="vm.state">{{ vm.state }}</span>
+        <span
+          class="status-pill"
+          :class="healthPillClass(vmHealth(vm))"
+          :title="vm.status?.healthError || undefined"
+        >{{ healthLabel(vmHealth(vm)) }}</span>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="!!actionLoading" @click="action('start', () => store.start(vmId))">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="!!actionLoading || stopLoading" @stop="requestStop($event)" />
@@ -556,6 +569,13 @@ const currentNetwork = computed(() => {
       Configuration changed. Restart the VM to apply new settings.
     </div>
 
+    <div v-if="backend?.emulated && backend.warning" class="emu-banner">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      {{ backend.warning }}
+    </div>
+
     <div v-if="bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -575,6 +595,22 @@ const currentNetwork = computed(() => {
           <div class="detail-row">
             <span class="detail-label">Type</span>
             <span><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></span>
+          </div>
+          <div v-if="backend" class="detail-row">
+            <span class="detail-label">Architecture</span>
+            <span class="mono">{{ architectureLabel(backend.guestArch) }}</span>
+          </div>
+          <div v-if="backend" class="detail-row">
+            <span class="detail-label">Accelerator</span>
+            <span style="display:flex;align-items:center;gap:6px">
+              <span class="mono">{{ acceleratorLabel(backend.accelerator) }}</span>
+              <span v-if="backend.emulated" class="badge badge-amber">emulated</span>
+              <span v-else class="badge badge-green">hardware</span>
+            </span>
+          </div>
+          <div v-if="backend" class="detail-row">
+            <span class="detail-label">QEMU</span>
+            <span class="mono" style="color:var(--text-secondary)">{{ backend.qemuBinary }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">CPU</span>
@@ -812,12 +848,19 @@ const currentNetwork = computed(() => {
       </div>
 
       <!-- USB Devices Section -->
-      <div v-if="supportsUSBPassthrough" style="margin-top:20px">
+      <div style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
-          <AppButton size="sm" icon="plus" @click="showAttachUSB = true; fetchUSBDevices()">Attach USB Device</AppButton>
+          <AppButton
+            size="sm"
+            icon="plus"
+            :disabled="!usb.available"
+            :title="usb.available ? undefined : usb.explanation"
+            @click="showAttachUSB = true; fetchUSBDevices()"
+          >Attach USB Device</AppButton>
         </div>
-        <DataTable :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor ID' }, { key: 'product', label: 'Product ID' }, { key: 'actions', label: '' }]">
+        <UnsupportedHint v-if="!usb.available" :text="usb.explanation" />
+        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor ID' }, { key: 'product', label: 'Product ID' }, { key: 'actions', label: '' }]">
               <tr v-for="dev in (vm.usbDevices || [])" :key="`${dev.vendorId}:${dev.productId}`">
                 <td style="font-weight:500">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</td>
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ dev.vendorId }}</span></td>
@@ -828,7 +871,7 @@ const currentNetwork = computed(() => {
                 </td>
               </tr>
               <tr v-if="!vm.usbDevices?.length">
-                <td colspan="4"><EmptyState title="No USB devices attached" subtitle="Click &quot;Attach USB Device&quot; to pass through a host USB device." /></td>
+                <td colspan="4"><EmptyState title="No USB devices attached" subtitle="Click &quot;Attach USB Device&quot; to pass through a USB device from this device." /></td>
               </tr>
         </DataTable>
       </div>
@@ -839,10 +882,10 @@ const currentNetwork = computed(() => {
     <MetricsPanel v-if="tab === 'metrics' && vm.state === 'running'" :key="`metrics-${vmId}`" :vm-id="vmId" />
 
     <!-- Attach USB Device Modal -->
-    <div v-if="supportsUSBPassthrough && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
+    <div v-if="usb.available && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
       <div class="modal">
         <h2>Attach USB Device</h2>
-        <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on the host." />
+        <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on this device." />
         <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor' }, { key: 'ids', label: 'IDs' }, { key: 'actions', label: '' }]">
               <tr v-for="dev in hostUSBDevices" :key="`${dev.vendorId}:${dev.productId}`" :style="dev.claimedByVMId ? 'opacity:0.5' : ''">
                 <td style="font-weight:500">{{ dev.name }}</td>
@@ -1032,6 +1075,18 @@ const currentNetwork = computed(() => {
 .pending-banner {
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--amber-muted);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--amber, #f59e0b);
+}
+.emu-banner {
+  display: flex;
+  align-items: flex-start;
   gap: 8px;
   padding: 10px 14px;
   margin-bottom: 16px;

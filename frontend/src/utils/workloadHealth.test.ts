@@ -1,0 +1,108 @@
+import { describe, expect, test } from 'bun:test'
+import { applyVMStateEvent, healthFromState, healthLabel, vmHealth } from './workloadHealth'
+import type { VM, VMRuntimeStatus } from '../api/types'
+
+function vm(partial: Partial<VM> & Pick<VM, 'state'>): VM {
+  return {
+    id: 'vm-1',
+    name: 'n',
+    vmType: 'linux-arm64',
+    cpuCount: 1,
+    memoryMB: 512,
+    bootDiskId: 'd',
+    isoId: null,
+    isoIds: null,
+    networkId: null,
+    cloudInitPath: null,
+    description: null,
+    bootOrder: null,
+    displayResolution: null,
+    additionalDiskIds: null,
+    uefi: false,
+    tpmEnabled: false,
+    macAddress: null,
+    sharedPaths: null,
+    portForwards: null,
+    usbDevices: null,
+    pendingChanges: false,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...partial,
+  }
+}
+
+describe('vmHealth', () => {
+  test('prefers the API health badge field', () => {
+    expect(vmHealth(vm({ state: 'running', health: 'degraded' }))).toBe('degraded')
+  })
+
+  test('running without guest agent is running not failed', () => {
+    expect(vmHealth(vm({ state: 'running', health: 'running' }))).toBe('running')
+    expect(vmHealth(vm({ state: 'running' }))).toBe('running')
+  })
+
+  test('error state falls back to failed', () => {
+    expect(vmHealth(vm({ state: 'error' }))).toBe('failed')
+  })
+})
+
+describe('healthFromState', () => {
+  test('maps lifecycle states to health badges', () => {
+    expect(healthFromState('error')).toBe('failed')
+    expect(healthFromState('starting')).toBe('starting')
+    expect(healthFromState('provisioning')).toBe('starting')
+    expect(healthFromState('running')).toBe('running')
+    expect(healthFromState('stopping')).toBe('running')
+    expect(healthFromState('stopped')).toBe('stopped')
+    expect(healthFromState('deleting')).toBe('stopped')
+    expect(healthFromState('mystery')).toBe('unknown')
+  })
+})
+
+describe('applyVMStateEvent', () => {
+  function status(partial: Partial<VMRuntimeStatus> = {}): VMRuntimeStatus {
+    return {
+      state: 'running',
+      pendingChanges: false,
+      generation: 1,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      health: 'running',
+      healthError: null,
+      ...partial,
+    }
+  }
+
+  test('overwrites stale health so a kernel-panic SSE updates the pill', () => {
+    const machine = vm({
+      state: 'running',
+      health: 'running',
+      status: status(),
+    })
+    applyVMStateEvent(machine, { state: 'error', error: 'Kernel panic' })
+    expect(machine.state).toBe('error')
+    expect(machine.health).toBe('failed')
+    expect(machine.status?.state).toBe('error')
+    expect(machine.status?.health).toBe('failed')
+    expect(machine.status?.healthError).toBe('Kernel panic')
+    expect(vmHealth(machine)).toBe('failed')
+  })
+
+  test('clears healthError when state recovers', () => {
+    const machine = vm({
+      state: 'error',
+      health: 'failed',
+      status: status({ state: 'error', health: 'failed', healthError: 'Kernel panic' }),
+    })
+    applyVMStateEvent(machine, { state: 'running' })
+    expect(vmHealth(machine)).toBe('running')
+    expect(machine.status?.healthError).toBeNull()
+  })
+})
+
+describe('healthLabel', () => {
+  test('guest_ready is humanized', () => {
+    expect(healthLabel('guest_ready')).toBe('Guest ready')
+    expect(healthLabel('failed')).toBe('Failed')
+  })
+})

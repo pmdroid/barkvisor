@@ -2,6 +2,8 @@
 defineProps<{
   name: string
   osType: 'linux' | 'windows'
+  /** False when no Windows guest profile matches the host arch (e.g. x86_64). */
+  supportsWindows?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -31,9 +33,14 @@ const emit = defineEmits<{
           <span style="font-size:24px">&#x1f427;</span>
           <span>Linux</span>
         </div>
-        <div class="os-card" :class="{ selected: osType === 'windows' }" @click="emit('selectOS', 'windows')">
+        <div
+          class="os-card"
+          :class="{ selected: osType === 'windows', disabled: supportsWindows === false }"
+          @click="supportsWindows !== false && emit('selectOS', 'windows')"
+        >
           <span style="font-size:24px">&#x1fa9f;</span>
           <span>Windows</span>
+          <span v-if="supportsWindows === false" class="os-soon">device arch</span>
         </div>
         <div class="os-card disabled">
           <span style="font-size:24px">&#x1f34e;</span>

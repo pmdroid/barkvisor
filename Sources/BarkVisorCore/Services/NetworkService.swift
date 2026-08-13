@@ -44,21 +44,22 @@ public enum NetworkService {
         _ params: CreateNetworkParams,
         db: DatabasePool,
     ) async throws -> Network {
-        guard ["nat", "bridged"].contains(params.mode) else {
-            throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
-        }
-        if params.mode == "bridged" {
-            try PlatformCapabilities.requireBridgedNetworking()
-            if (params.bridge ?? "").isEmpty {
+        let mode = try NetworkCapability.parse(params.mode)
+        try NetworkCapability.requireMode(params.mode)
+        if mode == .bridged {
+            guard let bridge = params.bridge, !bridge.isEmpty else {
                 throw BarkVisorError.badRequest("bridge interface required for bridged mode")
             }
+            try NetworkCapability.requireBridgedInterface(bridge)
+        } else if let bridge = params.bridge, !bridge.isEmpty {
+            throw BarkVisorError.badRequest("bridge is only valid for bridged mode")
         }
 
         if let bridge = params.bridge, !bridge.isEmpty { try validateBridgeName(bridge) }
         if let dns = params.dnsServer, !dns.isEmpty { try validateDNS(dns) }
         if let mac = params.macAddress, !mac.isEmpty { try validateMAC(mac) }
 
-        if params.mode == "bridged", let bridge = params.bridge, !bridge.isEmpty {
+        if mode == .bridged, let bridge = params.bridge, !bridge.isEmpty {
             let conflict = try await db.read { db in
                 try Network.filter(Column("bridge") == bridge).fetchOne(db)
             }
@@ -69,8 +70,9 @@ public enum NetworkService {
             }
         }
 
+        let storedBridge = mode == .bridged ? params.bridge : nil
         let network = Network(
-            id: UUID().uuidString, name: params.name, mode: params.mode, bridge: params.bridge,
+            id: UUID().uuidString, name: params.name, mode: params.mode, bridge: storedBridge,
             macAddress: params.macAddress, dnsServer: params.dnsServer, autoCreated: false,
             isDefault: false,
         )
@@ -95,8 +97,7 @@ public enum NetworkService {
             return existing
         }
 
-        try PlatformCapabilities.requireBridgedNetworking()
-        try validateBridgeName(interface)
+        try NetworkCapability.requireBridgedInterface(interface)
 
         let network = Network(
             id: UUID().uuidString,
@@ -127,12 +128,7 @@ public enum NetworkService {
 
         if let name = params.name { network.name = name }
         if let mode = params.mode {
-            guard ["nat", "bridged"].contains(mode) else {
-                throw BarkVisorError.badRequest("mode must be 'nat' or 'bridged'")
-            }
-            if mode == "bridged" {
-                try PlatformCapabilities.requireBridgedNetworking()
-            }
+            try NetworkCapability.requireMode(mode)
             network.mode = mode
         }
         if let bridge = params.bridge {
@@ -148,7 +144,21 @@ public enum NetworkService {
             network.dnsServer = dns
         }
 
-        if network.mode == "bridged", let bridge = network.bridge, !bridge.isEmpty {
+        let mode = try NetworkCapability.parse(network.mode)
+        if mode == .bridged {
+            let bridge = network.bridge ?? ""
+            if bridge.isEmpty {
+                throw BarkVisorError.badRequest("bridge interface required for bridged mode")
+            }
+            try NetworkCapability.requireBridgedInterface(bridge)
+        } else {
+            if let requested = params.bridge, !requested.isEmpty {
+                throw BarkVisorError.badRequest("bridge is only valid for bridged mode")
+            }
+            network.bridge = nil
+        }
+
+        if mode == .bridged, let bridge = network.bridge, !bridge.isEmpty {
             let conflict = try await db.read { db in
                 try Network
                     .filter(Column("bridge") == bridge)

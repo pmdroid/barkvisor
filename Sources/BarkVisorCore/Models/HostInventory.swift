@@ -3,11 +3,13 @@ import Foundation
 /// Versioned host inventory snapshot (schemaVersion 1).
 ///
 /// Single source of truth for "what is this machine?" — projected into
-/// `/api/system/capabilities`, diagnostics, and later `/api/agent/inventory`.
+/// `/api/system/capabilities`, diagnostics, and `GET /api/agent/inventory`.
 ///
 /// **Boundary:** one BarkVisor process ↔ one host ↔ one inventory.
 public struct HostInventory: Codable, Sendable, Equatable {
     public let schemaVersion: Int
+    /// Durable UUID from `dataDir/host-id` (PAS-42). Survives restart.
+    public let hostId: String
     public let displayName: String
     public let agent: AgentInfo
     public let platform: PlatformInfo
@@ -20,6 +22,7 @@ public struct HostInventory: Codable, Sendable, Equatable {
 
     public init(
         schemaVersion: Int = 1,
+        hostId: String,
         displayName: String,
         agent: AgentInfo,
         platform: PlatformInfo,
@@ -31,6 +34,7 @@ public struct HostInventory: Codable, Sendable, Equatable {
         collectedAt: String,
     ) {
         self.schemaVersion = schemaVersion
+        self.hostId = hostId
         self.displayName = displayName
         self.agent = agent
         self.platform = platform
@@ -49,7 +53,7 @@ public struct AgentInfo: Codable, Sendable, Equatable {
     public let version: String
     public let apiVersion: Int
 
-    public init(role: String = "colocal", version: String, apiVersion: Int = 1) {
+    public init(role: String = "colocal", version: String, apiVersion: Int = APIContract.version) {
         self.role = role
         self.version = version
         self.apiVersion = apiVersion
@@ -140,6 +144,7 @@ public struct VirtualizationInfo: Codable, Sendable, Equatable {
 }
 
 public struct VirtualizationFeatures: Codable, Sendable, Equatable {
+    /// Product bridged attach. Linux is true only when qemu-bridge-helper is present.
     public let bridgedNetworking: Bool
     public let managedBridgeDaemon: Bool
     public let usbPassthrough: Bool

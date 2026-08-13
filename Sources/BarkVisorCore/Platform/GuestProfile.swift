@@ -106,15 +106,55 @@ public enum GuestProfiles {
         byID[id]
     }
 
-    /// Map host/image arch (`arm64` / `x86_64` / `amd64`) to default Linux guest ID.
+    /// Map host/image arch (`arm64` / `x86_64` / aliases) to default Linux guest ID.
     public static func defaultLinuxID(forImageArch arch: String) -> String {
-        switch arch {
-        case "arm64", "aarch64":
+        switch PlatformCapabilities.normalizedArch(arch) {
+        case "arm64":
             return "linux-arm64"
-        case "x86_64", "amd64":
+        case "x86_64":
             return "linux-amd64"
         default:
             return "linux-\(arch)"
         }
+    }
+
+    /// Guest profiles that can run natively on the given host arch (PAS-48).
+    public static func profilesCompatible(withHostArch hostArch: String) -> [GuestProfile] {
+        let host = PlatformCapabilities.normalizedArch(hostArch)
+        return all.filter { PlatformCapabilities.normalizedArch($0.arch) == host }
+    }
+
+    /// Default Windows guest ID for a host/image arch, if supported.
+    /// Only `windows-arm64` exists today; x86_64 Windows is not a guest profile yet.
+    public static func defaultWindowsID(forImageArch arch: String) -> String? {
+        switch PlatformCapabilities.normalizedArch(arch) {
+        case "arm64":
+            return "windows-arm64"
+        default:
+            return nil
+        }
+    }
+
+    /// Default persisted guest ID when the client omits `vmType` / `guestType`.
+    ///
+    /// `osFamily` is `linux` (default) or `windows`. Arch defaults to the host.
+    public static func defaultID(
+        osFamily: String?,
+        imageArch: String = PlatformCapabilities.hostArch,
+    ) throws -> String {
+        let family = (osFamily ?? "linux")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if family == "windows" {
+            guard let id = defaultWindowsID(forImageArch: imageArch) else {
+                let arch = PlatformCapabilities.normalizedArch(imageArch)
+                throw BarkVisorError.badRequest("No Windows guest type for arch \(arch)")
+            }
+            return id
+        }
+        if !family.isEmpty, family != "linux" {
+            throw BarkVisorError.badRequest("osFamily must be linux or windows")
+        }
+        return defaultLinuxID(forImageArch: imageArch)
     }
 }

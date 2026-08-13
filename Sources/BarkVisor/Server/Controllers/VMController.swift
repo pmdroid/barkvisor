@@ -6,14 +6,18 @@ import Vapor
 // MARK: - DTOs
 
 struct VMResponse: Content {
+    let spec: WorkloadSpec
+    let status: VMRuntimeStatus
+    // Flat projections kept for existing clients (PAS-35 dual-read).
     let id: String
     let name: String
     let vmType: String
     let state: String
+    let health: WorkloadHealth
     let cpuCount: Int
     let memoryMB: Int
     let bootDiskId: String
-    let isoId: String? // Backwards compat: first element of isoIds
+    let isoId: String? // first isoIds element
     let isoIds: [String]?
     let networkId: String?
     let cloudInitPath: String?
@@ -31,11 +35,16 @@ struct VMResponse: Content {
     let createdAt: String
     let updatedAt: String
 
-    init(from vm: VM) {
+    init(from vm: VM, signals: WorkloadHealthSignals = .unobserved) {
+        let spec = WorkloadSpecProjector.fromVM(vm)
+        self.spec = spec
+        let status = WorkloadSpecProjector.status(from: vm, signals: signals)
+        self.status = status
         self.id = vm.id
         self.name = vm.name
         self.vmType = vm.vmType
         self.state = vm.state
+        self.health = status.health
         self.cpuCount = vm.cpuCount
         self.memoryMB = vm.memoryMb
         self.bootDiskId = vm.bootDiskId
@@ -65,10 +74,12 @@ struct VMResponse: Content {
 }
 
 struct CreateVMRequest: Content, Validatable {
-    let name: String
-    let vmType: String
-    let cpuCount: Int
-    let memoryMB: Int
+    let name: String?
+    let vmType: String?
+    /// Used when `vmType` is omitted so the server can pick a host-native guest (PAS-93).
+    let osFamily: String?
+    let cpuCount: Int?
+    let memoryMB: Int?
     let diskSizeGB: Int?
     let isoId: String?
     let cloudImageId: String?
@@ -83,16 +94,19 @@ struct CreateVMRequest: Content, Validatable {
     let displayResolution: String?
     let uefi: Bool?
     let tpmEnabled: Bool?
+    /// Optional WorkloadSpec. When present, it is the source for identity/resources.
+    let spec: WorkloadSpec?
 
     static func validations(_ validations: inout Validations) {
-        validations.add("name", as: String.self, is: .count(1 ... 128))
+        validations.add("name", as: String.self, is: .count(1 ... 128), required: false)
         validations.add(
             "vmType",
             as: String.self,
             is: .in("linux-arm64", "windows-arm64", "linux-amd64", "linux-x86_64"),
+            required: false,
         )
-        validations.add("cpuCount", as: Int.self, is: .range(1 ... 256))
-        validations.add("memoryMB", as: Int.self, is: .range(128 ... 1_048_576))
+        validations.add("cpuCount", as: Int.self, is: .range(1 ... 256), required: false)
+        validations.add("memoryMB", as: Int.self, is: .range(128 ... 1_048_576), required: false)
     }
 }
 
@@ -113,6 +127,7 @@ struct UpdateVMRequest: Content, Validatable {
     let sharedPaths: [String]?
     let uefi: Bool?
     let tpmEnabled: Bool?
+    let spec: WorkloadSpec?
 
     static func validations(_ validations: inout Validations) {
         validations.add("cpuCount", as: Int?.self, is: .nil || .range(1 ... 256), required: false)
@@ -189,6 +204,9 @@ struct VMController: RouteCollection {
         vms.post(":id", "attach-iso", use: attachISO)
         vms.get(":id", "state", use: stateStream)
         vms.get(":id", "guest-info", use: getGuestInfo)
+        vms.get(":id", "health", use: getHealth)
+        vms.get(":id", "spec", use: getSpec)
+        vms.put(":id", "spec", use: putSpec)
     }
 
     // MARK: - CRUD
@@ -199,7 +217,7 @@ struct VMController: RouteCollection {
         let vms = try await req.db.read { db in
             try VM.limit(limit, offset: offset).fetchAll(db)
         }
-        return vms.map { VMResponse(from: $0) }
+        return try await respond(vms, db: req.db)
     }
 
     @Sendable
@@ -208,25 +226,29 @@ struct VMController: RouteCollection {
         guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
             throw Abort(.notFound)
         }
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
+    }
+
+    @Sendable
+    func getHealth(req: Vapor.Request) async throws -> WorkloadHealthStatus {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
+            throw Abort(.notFound)
+        }
+        let lastSeen = try await guestLastSeen(ids: [vm.id], db: req.db)
+        let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
+        return WorkloadHealthProjector.project(
+            state: VMState.parse(vm.state),
+            signals: signals,
+            updatedAt: vm.updatedAt,
+        )
     }
 
     @Sendable
     func create(req: Vapor.Request) async throws -> Response {
         try CreateVMRequest.validate(content: req)
         let body = try req.content.decode(CreateVMRequest.self)
-
-        let params = CreateVMParams(
-            name: body.name, vmType: body.vmType, cpuCount: body.cpuCount,
-            memoryMB: body.memoryMB, diskSizeGB: body.diskSizeGB, isoId: body.isoId,
-            cloudImageId: body.cloudImageId, cloudInit: body.cloudInit,
-            networkId: body.networkId, existingDiskId: body.existingDiskId,
-            sharedPaths: body.sharedPaths, portForwards: body.portForwards,
-            usbDevices: body.usbDevices,
-            description: body.description, bootOrder: body.bootOrder,
-            displayResolution: body.displayResolution, uefi: body.uefi,
-            tpmEnabled: body.tpmEnabled,
-        )
+        let params = try Self.createParams(from: body)
         let result = try await VMLifecycleService.createVM(
             params: params, db: req.db, backgroundTasks: backgroundTasks,
         )
@@ -255,22 +277,27 @@ struct VMController: RouteCollection {
         try UpdateVMRequest.validate(content: req)
         let body = try req.content.decode(UpdateVMRequest.self)
 
-        let updateParams = UpdateVMParams(
-            name: body.name, cpuCount: body.cpuCount, memoryMB: body.memoryMB,
-            networkId: body.networkId, portForwards: body.portForwards,
-            usbDevices: body.usbDevices,
-            description: body.description, bootOrder: body.bootOrder,
-            displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
-            sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
-        )
-        let vm = try await VMLifecycleService.updateVM(
-            id: id, params: updateParams, db: req.db,
-        )
+        let vm: VM
+        if let spec = body.spec {
+            vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
+        } else {
+            let updateParams = UpdateVMParams(
+                name: body.name, cpuCount: body.cpuCount, memoryMB: body.memoryMB,
+                networkId: body.networkId, portForwards: body.portForwards,
+                usbDevices: body.usbDevices,
+                description: body.description, bootOrder: body.bootOrder,
+                displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
+                sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
+            )
+            vm = try await VMLifecycleService.updateVM(
+                id: id, params: updateParams, db: req.db,
+            )
+        }
 
         AuditService.log(
             action: "vm.update", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
         )
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
     }
 
     @Sendable
@@ -338,7 +365,7 @@ struct VMController: RouteCollection {
         guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
             throw Abort(.notFound)
         }
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
     }
 
     struct AttachISORequest: Content {
@@ -354,7 +381,102 @@ struct VMController: RouteCollection {
             throw Abort(.notFound)
         }
         AuditService.log(action: "vm.attach-iso", resourceType: "vm", resourceId: id, req: req)
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
+    }
+
+    // MARK: - WorkloadSpec
+
+    @Sendable
+    func getSpec(req: Vapor.Request) async throws -> WorkloadSpec {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
+            throw Abort(.notFound)
+        }
+        return WorkloadSpecProjector.fromVM(vm)
+    }
+
+    @Sendable
+    func putSpec(req: Vapor.Request) async throws -> WorkloadSpec {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        let spec = try req.content.decode(WorkloadSpec.self)
+        let vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
+        AuditService.log(
+            action: "vm.spec.update", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
+            req: req,
+        )
+        return WorkloadSpecProjector.fromVM(vm)
+    }
+
+    /// Flat create: honor an explicit `vmType`, otherwise pick a host-native guest.
+    static func resolveFlatGuestType(vmType: String?, osFamily: String?) throws -> String {
+        if let vmType, !vmType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return try GuestProfiles.require(vmType).id
+        }
+        return try GuestProfiles.defaultID(osFamily: osFamily)
+    }
+
+    static func createParams(from body: CreateVMRequest) throws -> CreateVMParams {
+        if let spec = body.spec {
+            try WorkloadSpecProjector.validate(spec)
+            let guestType = try WorkloadSpecProjector.resolveGuestType(spec)
+            let bootDiskId = spec.spec.disks.first(where: { $0.role == "boot" })?.diskId
+            let isoFromSpec = spec.spec.disks.first(where: { $0.role == "cdrom" })?.imageId
+            let forwards = spec.spec.networks.first?.portForwards.map {
+                PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
+            }
+            let usb = spec.spec.usb.map {
+                USBPassthroughDevice(vendorId: $0.vendorId, productId: $0.productId, label: $0.label)
+            }
+            return CreateVMParams(
+                name: spec.metadata.name,
+                vmType: guestType,
+                cpuCount: spec.spec.resources.cpu,
+                memoryMB: spec.spec.resources.memoryMb,
+                diskSizeGB: body.diskSizeGB,
+                isoId: body.isoId ?? isoFromSpec,
+                cloudImageId: body.cloudImageId,
+                cloudInit: body.cloudInit ?? Self.cloudInitConfig(from: spec.spec.cloudInit),
+                networkId: body.networkId ?? spec.spec.networks.first?.networkId,
+                existingDiskId: body.existingDiskId ?? bootDiskId,
+                sharedPaths: body.sharedPaths ?? spec.spec.sharedPaths,
+                portForwards: body.portForwards ?? forwards,
+                usbDevices: body.usbDevices ?? (usb.isEmpty ? nil : usb),
+                description: body.description ?? spec.metadata.description,
+                bootOrder: body.bootOrder ?? spec.spec.bootOrder,
+                displayResolution: body.displayResolution ?? spec.spec.display?.resolution,
+                uefi: body.uefi ?? spec.spec.firmware?.uefi,
+                tpmEnabled: body.tpmEnabled ?? spec.spec.firmware?.tpm,
+                overrides: spec.overrides,
+            )
+        }
+        guard let name = body.name,
+              let cpuCount = body.cpuCount, let memoryMB = body.memoryMB
+        else {
+            throw BarkVisorError.badRequest(
+                "name, cpuCount, and memoryMB are required when spec is omitted",
+            )
+        }
+        let vmType = try Self.resolveFlatGuestType(vmType: body.vmType, osFamily: body.osFamily)
+        return CreateVMParams(
+            name: name, vmType: vmType, cpuCount: cpuCount,
+            memoryMB: memoryMB, diskSizeGB: body.diskSizeGB, isoId: body.isoId,
+            cloudImageId: body.cloudImageId, cloudInit: body.cloudInit,
+            networkId: body.networkId, existingDiskId: body.existingDiskId,
+            sharedPaths: body.sharedPaths, portForwards: body.portForwards,
+            usbDevices: body.usbDevices,
+            description: body.description, bootOrder: body.bootOrder,
+            displayResolution: body.displayResolution, uefi: body.uefi,
+            tpmEnabled: body.tpmEnabled,
+        )
+    }
+
+    /// `spec.cloudInit.inline` is user-data for ISO generation. `userDataRef` is a
+    /// host ISO path and is applied on spec update, not create.
+    static func cloudInitConfig(from cloud: WorkloadCloudInit?) -> CloudInitConfig? {
+        guard let inline = cloud?.inline,
+              !inline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return CloudInitConfig(sshAuthorizedKeys: nil, userData: inline)
     }
 
     // MARK: - Guest Info
@@ -380,5 +502,37 @@ struct VMController: RouteCollection {
 
         let stream = await stateStreamService.stateStream(vmID: id)
         return SSEResponse.stream(from: stream, keepaliveSeconds: 15)
+    }
+
+    // MARK: - Health signals
+
+    private func respond(_ vm: VM, db: DatabasePool) async throws -> VMResponse {
+        let lastSeen = try await guestLastSeen(ids: [vm.id], db: db)
+        let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
+        return VMResponse(from: vm, signals: signals)
+    }
+
+    private func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
+        let lastSeen = try await guestLastSeen(ids: vms.map(\.id), db: db)
+        var responses: [VMResponse] = []
+        responses.reserveCapacity(vms.count)
+        for vm in vms {
+            let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
+            responses.append(VMResponse(from: vm, signals: signals))
+        }
+        return responses
+    }
+
+    private func guestLastSeen(ids: [String], db: DatabasePool) async throws -> [String: String] {
+        guard !ids.isEmpty else { return [:] }
+        let idSet = Set(ids)
+        let records = try await db.read { db in
+            try GuestInfoRecord.fetchAll(db)
+        }
+        var seen: [String: String] = [:]
+        for record in records where idSet.contains(record.vmId) {
+            seen[record.vmId] = record.updatedAt
+        }
+        return seen
     }
 }

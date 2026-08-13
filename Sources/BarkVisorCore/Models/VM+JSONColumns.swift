@@ -7,14 +7,11 @@ import Foundation
 extension VM {
     // MARK: - Read (log + empty on error)
 
-    /// ISO image IDs; falls back to legacy `isoId` when `isoIds` is empty/nil.
+    /// ISO image IDs stored in `isoIds` (legacy `isoId` column dropped in M002).
     public var decodedISOIds: [String] {
-        let fromJSON = JSONColumnCoding.decodeArrayOrEmpty(
+        JSONColumnCoding.decodeArrayOrEmpty(
             String.self, from: isoIds, column: "isoIds",
         )
-        if !fromJSON.isEmpty { return fromJSON }
-        if let legacyId = isoId { return [legacyId] }
-        return []
     }
 
     public var decodedAdditionalDiskIds: [String] {
@@ -41,14 +38,16 @@ extension VM {
         )
     }
 
+    public var decodedOverrides: WorkloadOverrides? {
+        let decoded = JSONColumnCoding.decode(WorkloadOverrides.self, from: overridesJson)
+        guard let decoded, !decoded.isEmpty else { return nil }
+        return decoded
+    }
+
     // MARK: - Write (empty → nil column)
 
     public mutating func setISOIds(_ ids: [String]?) {
         isoIds = JSONColumnCoding.encodeArrayOrNil(ids)
-        // Clear legacy single-ISO column when using the array form.
-        if ids != nil {
-            isoId = nil
-        }
     }
 
     public mutating func setAdditionalDiskIds(_ ids: [String]?) {
@@ -65,5 +64,13 @@ extension VM {
 
     public mutating func setUSBDevices(_ devices: [USBPassthroughDevice]?) {
         usbDevices = JSONColumnCoding.encodeArrayOrNil(devices)
+    }
+
+    public mutating func setOverrides(_ overrides: WorkloadOverrides?) {
+        if let overrides, !overrides.isEmpty {
+            overridesJson = JSONColumnCoding.encode(overrides)
+        } else {
+            overridesJson = nil
+        }
     }
 }

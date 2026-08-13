@@ -15,6 +15,11 @@ extension VMManager {
 
         let newState = status == 0 ? "stopped" : "error"
         let errorMsg = status != 0 ? "QEMU exited with status \(status)" : nil
+        if let errorMsg {
+            recordHealthError(errorMsg, for: vmID)
+        } else {
+            clearHealthError(for: vmID)
+        }
         Log.vm.info("VM \(vmID) terminated (status: \(status))", vm: vmID)
 
         // Log unexpected exits as errors

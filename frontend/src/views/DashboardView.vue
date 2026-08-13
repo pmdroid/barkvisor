@@ -6,7 +6,10 @@ import { useDiskStore } from '../stores/disks'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import api from '../api/client'
-import type { SystemStats, SystemStatsSample } from '../api/types'
+import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
+import { formatTemperatureC } from '../utils/format'
+import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
 import { Line } from 'vue-chartjs'
 import {
@@ -27,6 +30,7 @@ const store = useVMStore()
 const diskStore = useDiskStore()
 const { disks, summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
+const healthSummary = ref<WorkloadHealthSummary | null>(null)
 const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[] }>({
   timestamps: [],
   cpu: [],
@@ -35,9 +39,21 @@ const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[]
 
 const runningVMs = computed(() => store.vms.filter(v => v.state === 'running').length)
 
+const healthStrip = computed(() => {
+  const counts = healthSummary.value?.counts ?? {}
+  return (['running', 'starting', 'degraded', 'failed', 'stopped'] as WorkloadHealth[])
+    .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
+})
+
+const failedCount = computed(() => healthSummary.value?.counts?.failed ?? 0)
+
 const recentVMs = computed(() =>
   [...store.vms].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5)
 )
+
+function emuBadge(vm: (typeof store.vms)[0]) {
+  return listBackendBadge(vmBackend(vm))
+}
 const totalDiskGB = computed(() => {
   if (storageSummary.value) return (storageSummary.value.totalActualBytes / 1073741824).toFixed(1)
   const bytes = disks.value.reduce((sum, d) => sum + d.sizeBytes, 0)
@@ -82,19 +98,27 @@ async function fetchStorage() {
   await Promise.all([diskStore.fetchAll(), diskStore.fetchSummary()])
 }
 
+async function fetchHealthSummary() {
+  try {
+    const { data } = await api.get<WorkloadHealthSummary>('/workloads/health-summary')
+    healthSummary.value = data
+  } catch { /* ignore */ }
+}
+
 let pollTimer: number
 onMounted(() => {
   store.fetchAll()
   fetchHistory()
   fetchStats()
   fetchStorage()
-  pollTimer = window.setInterval(fetchStats, 5000)
+  fetchHealthSummary()
+  pollTimer = window.setInterval(() => {
+    fetchStats()
+    fetchHealthSummary()
+    store.fetchAll()
+  }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
-
-function stateLabel(state: string) {
-  return state.charAt(0).toUpperCase() + state.slice(1)
-}
 
 function makeSparkOpts(max?: number) {
   return {
@@ -146,9 +170,19 @@ const memSparkData = computed(() => ({
     <div class="welcome">
       <div>
         <h1>Dashboard</h1>
-        <p class="welcome-sub">{{ runningVMs }} of {{ store.vms.length }} VMs running</p>
+        <p class="welcome-sub">
+          {{ runningVMs }} of {{ store.vms.length }} VMs running
+          <span v-if="failedCount > 0"> · {{ failedCount }} failed</span>
+        </p>
       </div>
       <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
+    </div>
+
+    <div v-if="healthSummary" class="health-strip">
+      <div v-for="row in healthStrip" :key="row.key" class="health-chip" :class="row.key">
+        <span class="health-chip-count">{{ row.count }}</span>
+        <span class="health-chip-label">{{ row.label }}</span>
+      </div>
     </div>
 
     <!-- Host Stats -->
@@ -160,7 +194,7 @@ const memSparkData = computed(() => ({
         <div class="dash-stat-content">
           <div class="dash-stat-top">
             <span class="dash-stat-number">{{ stats.hostCpuPercent.toFixed(0) }}%</span>
-            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">host</span>
+            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">device</span>
           </div>
           <div class="dash-stat-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
@@ -198,6 +232,21 @@ const memSparkData = computed(() => ({
           <div class="dash-stat-bar" v-if="storageSummary"><div class="dash-stat-bar-fill" :style="{ width: Math.min(storageSummary.totalActualBytes / storageSummary.volumeTotalBytes * 100, 100) + '%', background: 'var(--blue)' }" /></div>
         </div>
       </div>
+
+      <div class="dash-stat" style="border-left: 3px solid var(--amber)">
+        <div class="dash-stat-content">
+          <div class="dash-stat-top">
+            <span class="dash-stat-number">{{ formatTemperatureC(stats.metrics?.temperatureC) ?? '—' }}</span>
+            <span class="dash-stat-trend" :class="stats.metrics?.temperatureC == null ? '' : 'up'">
+              {{ stats.metrics?.temperatureC == null ? 'unavailable' : 'device' }}
+            </span>
+          </div>
+          <div class="dash-stat-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+            Temperature
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Recent VMs -->
@@ -215,8 +264,23 @@ const memSparkData = computed(() => ({
         { key: 'updated', label: 'Updated' },
       ]">
         <tr v-for="vm in recentVMs" :key="vm.id" @click="router.push(`/vms/${vm.id}`)" style="cursor:pointer">
-          <td style="font-weight:600">{{ vm.name }}</td>
-          <td><span class="status-pill" :class="vm.state">{{ stateLabel(vm.state) }}</span></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-weight:600">{{ vm.name }}</span>
+              <span
+                v-if="emuBadge(vm)"
+                class="badge badge-amber"
+                :title="emuBadge(vm)!.title"
+              >{{ emuBadge(vm)!.label }}</span>
+            </div>
+          </td>
+          <td>
+            <span
+              class="status-pill"
+              :class="healthPillClass(vmHealth(vm))"
+              :title="vm.status?.healthError || undefined"
+            >{{ healthLabel(vmHealth(vm)) }}</span>
+          </td>
           <td><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></td>
           <td style="font-variant-numeric:tabular-nums">{{ vm.cpuCount }} cores</td>
           <td style="font-variant-numeric:tabular-nums">{{ vm.memoryMB >= 1024 ? (vm.memoryMB / 1024).toFixed(1) + ' GB' : vm.memoryMB + ' MB' }}</td>
@@ -250,11 +314,37 @@ const memSparkData = computed(() => ({
   font-size: 13px;
   margin-top: 4px;
 }
+.health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -16px 0 24px;
+}
+.health-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-glass);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+.health-chip-count {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.health-chip-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 /* Stat Cards */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 40px;
 }

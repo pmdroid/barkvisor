@@ -50,4 +50,45 @@ struct CloudInitServiceTests {
         #expect(throws: (any Error).self) { try CloudInitService.validateUserData("key: [unclosed") }
         #expect(throws: (any Error).self) { try CloudInitService.validateUserData(":\n  bad:\n bad") }
     }
+
+    // MARK: - userDataRef confinement
+
+    @Test func `userDataRef accepts current path without change`() throws {
+        try CloudInitService.validateUserDataRef(
+            "/data/cidata.iso",
+            vmID: "vm-1",
+            current: "/data/cidata.iso",
+        )
+    }
+
+    @Test func `userDataRef accepts service-generated ISO`() throws {
+        let generated = CloudInitService.generatedISOURL(vmID: "vm-1").path
+        try CloudInitService.validateUserDataRef(generated, vmID: "vm-1")
+    }
+
+    @Test func `userDataRef rejects host files and other VMs`() {
+        let other = CloudInitService.generatedISOURL(vmID: "vm-2").path
+        #expect(throws: BarkVisorError.self) {
+            try CloudInitService.validateUserDataRef("/etc/passwd", vmID: "vm-1")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CloudInitService.validateUserDataRef(other, vmID: "vm-1")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CloudInitService.validateUserDataRef("", vmID: "vm-1")
+        }
+    }
+
+    @Test func `userDataRef rejects path traversal out of generated ISO`() {
+        let generated = CloudInitService.generatedISOURL(vmID: "vm-1")
+        let escaped = generated.deletingLastPathComponent()
+            .appendingPathComponent("..")
+            .appendingPathComponent("..")
+            .appendingPathComponent("etc")
+            .appendingPathComponent("passwd")
+            .path
+        #expect(throws: BarkVisorError.self) {
+            try CloudInitService.validateUserDataRef(escaped, vmID: "vm-1")
+        }
+    }
 }

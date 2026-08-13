@@ -11,6 +11,9 @@ defineProps<{
   showCloudInit: boolean
   cloudUserData: string
   filteredImages: Image[]
+  /** Ready images hidden because their arch ≠ host (PAS-48). */
+  foreignArchImageCount?: number
+  hostImageArch?: string
   sshKeys: SSHKey[]
   formatBytes: (b: number) => string
 }>()
@@ -59,8 +62,16 @@ function setMode(m: 'iso' | 'cloud') {
         </option>
       </AppSelect>
       <div v-if="filteredImages.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
-        No {{ mode === 'iso' ? 'ISO' : 'cloud' }} images available.
-        Upload or download one in the Images section first.
+        <template v-if="foreignArchImageCount && foreignArchImageCount > 0">
+          {{ foreignArchImageCount }} ready {{ mode === 'iso' ? 'ISO' : 'cloud' }}
+          image{{ foreignArchImageCount === 1 ? '' : 's' }} hidden —
+          this device only runs {{ hostImageArch || 'native-arch' }} guests.
+          Download a matching image in the Images section.
+        </template>
+        <template v-else>
+          No {{ mode === 'iso' ? 'ISO' : 'cloud' }} images available.
+          Upload or download one in the Images section first.
+        </template>
       </div>
     </div>
     <div v-if="mode === 'cloud'" class="form-group">

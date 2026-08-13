@@ -108,21 +108,36 @@ extension VMLifecycleService {
         db: DatabasePool,
     ) async throws {
         try validateVMName(params.name)
+        if let id = params.id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+            try validateVMID(id)
+        }
 
-        guard GuestProfiles.profile(for: params.vmType) != nil else {
+        guard let profile = GuestProfiles.profile(for: params.vmType) else {
             let allowed = GuestProfiles.supportedIDs.joined(separator: "', '")
             throw BarkVisorError.badRequest("vmType must be '\(allowed)'")
         }
+        // PAS-48: block cross-arch create/deploy (shared by TemplateDeployService).
+        try PlatformCapabilities.requireCompatibleGuestArch(profile.arch)
         try validateCPUCount(params.cpuCount)
         guard params.memoryMB >= 128, params.memoryMB <= 1_048_576 else {
             throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
         }
 
-        if let networkId = params.networkId {
-            let network = try await db.read { db in try Network.fetchOne(db, key: networkId) }
-            guard network != nil else {
-                throw BarkVisorError.notFound("Network not found")
+        let network: Network? =
+            if let networkId = params.networkId {
+                try await db.read { db in try Network.fetchOne(db, key: networkId) }
+            } else {
+                nil
             }
+        if params.networkId != nil, network == nil {
+            throw BarkVisorError.notFound("Network not found")
+        }
+        try NetworkCapability.requirePortForwardsAllowed(
+            count: params.portForwards?.count ?? 0,
+            network: network,
+        )
+        if let rules = params.portForwards {
+            try await PortRegistry.assertAvailable(rules, db: db)
         }
 
         let hasISO = params.isoId != nil
@@ -153,6 +168,10 @@ extension VMLifecycleService {
                !userData.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 try CloudInitService.validateUserData(userData)
             }
+        }
+
+        if let usb = params.usbDevices, !usb.isEmpty {
+            try PlatformCapabilities.requireUSBPassthrough()
         }
     }
 }

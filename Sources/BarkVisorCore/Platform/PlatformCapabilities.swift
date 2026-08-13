@@ -91,11 +91,8 @@ public enum PlatformCapabilities {
                 String(cString: $0)
             }
         }
-        switch machine {
-        case "arm64", "aarch64": return "arm64"
-        case "x86_64", "amd64": return "x86_64"
-        default: return machine.isEmpty ? "x86_64" : machine
-        }
+        let normalized = normalizedArch(machine)
+        return normalized.isEmpty ? "x86_64" : normalized
     }
 
     /// Default QEMU guest architecture for this host (`aarch64` / `x86_64`).
@@ -105,74 +102,94 @@ public enum PlatformCapabilities {
 
     // MARK: - Unsupported feature messages
 
-    public enum Feature: String, Sendable {
+    public enum Feature: String, Sendable, Equatable, CaseIterable {
         case bridgedNetworking
         case managedBridgeDaemon
         case usbPassthrough
         case inAppUpdate
+
+        /// Snake_case API error `code` (ErrorMiddleware envelope).
+        public var errorCode: String {
+            switch self {
+            case .bridgedNetworking: return "bridged_networking"
+            case .managedBridgeDaemon: return "managed_bridge_daemon"
+            case .usbPassthrough: return "usb_passthrough"
+            case .inAppUpdate: return "in_app_update"
+            }
+        }
     }
 
     /// Platform-correct remediation text for an unsupported feature.
     public static func unsupportedMessage(_ feature: Feature) -> String {
-        switch feature {
-        case .bridgedNetworking:
-            #if os(Linux)
-                return "Bridged networking requires a host bridge and qemu-bridge-helper "
-                    + "(e.g. br0 + /etc/qemu/bridge.conf). Use NAT if bridging is unavailable."
-            #elseif os(macOS)
-                return "Bridged networking is not supported on this host. Use NAT networking."
-            #else
-                return "Bridged networking is not supported on this platform. Use NAT networking."
-            #endif
-        case .managedBridgeDaemon:
-            #if os(Linux)
-                return "Managed bridge daemon lifecycle is not supported on Linux. "
-                    + "Create a host bridge with ip/netplan (e.g. br0), then attach VMs "
-                    + "via a Bridged network record."
-            #else
-                return "Managed bridge daemon lifecycle is not supported on this platform."
-            #endif
-        case .usbPassthrough:
-            #if os(Linux)
-                return "USB passthrough is not available (install usbutils / check udev permissions)."
-            #else
-                return "USB passthrough is not supported on this platform."
-            #endif
-        case .inAppUpdate:
-            #if os(Linux)
-                return "In-app software updates are not supported on Linux yet. "
-                    + "Update BarkVisor using your package manager or release artifacts."
-            #else
-                return "In-app software updates are not supported on this platform."
-            #endif
-        }
+        CapabilityDetailBuilder.remediation(for: feature, os: PlatformHost.platformName)
     }
 
-    /// Throw `BarkVisorError.badRequest` when product bridged networking is unavailable.
+    /// Throw `BarkVisorError.unsupportedFeature` when product bridged networking is unavailable.
+    ///
+    /// Matches `/api/system/capabilities` (inventory), not the compile-time platform flag.
+    /// On Linux that means qemu-bridge-helper must be present.
     public static func requireBridgedNetworking() throws {
-        guard supportsBridgedNetworking else {
-            throw BarkVisorError.badRequest(unsupportedMessage(.bridgedNetworking))
+        let supported = HostInventoryService.bridgedNetworkingSupported(
+            platformSupports: supportsBridgedNetworking,
+            qemuBridgeHelper: HostInventoryService.qemuBridgeHelperPresent(),
+            os: PlatformHost.platformName,
+        )
+        guard supported else {
+            throw BarkVisorError.unsupportedFeature(.bridgedNetworking)
         }
     }
 
     /// Throw when managed bridge daemon ops are unavailable.
     public static func requireManagedBridgeDaemon() throws {
         guard supportsManagedBridgeDaemon else {
-            throw BarkVisorError.badRequest(unsupportedMessage(.managedBridgeDaemon))
+            throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
         }
     }
 
     /// Throw when USB passthrough is unavailable.
     public static func requireUSBPassthrough() throws {
         guard supportsUSBPassthrough else {
-            throw BarkVisorError.badRequest(unsupportedMessage(.usbPassthrough))
+            throw BarkVisorError.unsupportedFeature(.usbPassthrough)
         }
     }
 
     /// Throw when in-app updates are unavailable.
     public static func requireInAppUpdate() throws {
         guard supportsInAppUpdate else {
-            throw BarkVisorError.updateFailed(unsupportedMessage(.inAppUpdate))
+            throw BarkVisorError.unsupportedFeature(.inAppUpdate)
+        }
+    }
+
+    /// Whether a guest/workload arch label is compatible with this host.
+    ///
+    /// Labels are normalized the same way as ``hostArch`` (`arm64` / `x86_64`).
+    /// Wave 0 policy: **block** cross-arch by default (no force flag yet), on both
+    /// HVF/KVM (`-cpu host` fails badly) and TCG hosts. Emulation may work on TCG
+    /// with a foreign `qemu-system-*` binary, but that path is intentionally
+    /// unsupported until an advanced override exists.
+    public static func isCompatibleGuestArch(_ guestArch: String) -> Bool {
+        normalizedArch(guestArch) == hostArch
+    }
+
+    /// Throw `BarkVisorError.badRequest` when guest arch ≠ host arch.
+    public static func requireCompatibleGuestArch(_ guestArch: String) throws {
+        let guest = normalizedArch(guestArch)
+        let host = hostArch
+        guard guest == host else {
+            throw BarkVisorError.badRequest(
+                "VM architecture (\(guest)) is not compatible with this host (\(host)). "
+                    + "Cross-architecture VMs are not supported.",
+            )
+        }
+    }
+
+    /// Normalize common arch aliases to API labels (`arm64` / `x86_64`).
+    /// Matches frontend `normalizeImageArch` (lowercase, trim, `x64` → `x86_64`).
+    public static func normalizedArch(_ arch: String) -> String {
+        switch arch.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "arm64", "aarch64": return "arm64"
+        case "x86_64", "amd64", "x64": return "x86_64"
+        default: return arch
         }
     }
 }

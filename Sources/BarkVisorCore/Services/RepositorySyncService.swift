@@ -38,6 +38,10 @@ public struct RepoCatalogTemplate: Codable, Sendable {
     public let networkMode: String?
     public let inputs: [TemplateInput]
     public let userDataTemplate: String
+    public let architectures: [String]?
+    public let imageByArch: [String: String]?
+    public let minMemoryMB: Int?
+    public let requiredFeatures: [String]?
 
     public init(
         slug: String,
@@ -53,6 +57,10 @@ public struct RepoCatalogTemplate: Codable, Sendable {
         networkMode: String?,
         inputs: [TemplateInput],
         userDataTemplate: String,
+        architectures: [String]? = nil,
+        imageByArch: [String: String]? = nil,
+        minMemoryMB: Int? = nil,
+        requiredFeatures: [String]? = nil,
     ) {
         self.slug = slug
         self.name = name
@@ -67,6 +75,10 @@ public struct RepoCatalogTemplate: Codable, Sendable {
         self.networkMode = networkMode
         self.inputs = inputs
         self.userDataTemplate = userDataTemplate
+        self.architectures = architectures
+        self.imageByArch = imageByArch
+        self.minMemoryMB = minMemoryMB
+        self.requiredFeatures = requiredFeatures
     }
 }
 
@@ -193,6 +205,8 @@ public actor RepositorySyncService {
                     cpuCount: entry.cpuCount, memoryMB: entry.memoryMB, diskSizeGB: entry.diskSizeGB,
                     portForwards: entry.portForwards, networkMode: entry.networkMode,
                     inputs: entry.inputs, userDataTemplate: entry.userDataTemplate,
+                    architectures: entry.architectures, imageByArch: entry.imageByArch,
+                    minMemoryMB: entry.minMemoryMB, requiredFeatures: entry.requiredFeatures,
                 )
             },
         )
@@ -250,6 +264,10 @@ public actor RepositorySyncService {
                 repositoryId: repositoryID,
                 createdAt: iso8601.string(from: Date()),
                 updatedAt: iso8601.string(from: Date()),
+                architecturesJson: JSONColumnCoding.encodeArrayOrNil(entry.architectures),
+                minMemoryMB: entry.minMemoryMB,
+                requiredFeaturesJson: JSONColumnCoding.encodeArrayOrNil(entry.requiredFeatures),
+                imageByArchJson: JSONColumnCoding.encode(entry.imageByArch),
             )
             if var existing =
                 try VMTemplate
@@ -269,6 +287,10 @@ public actor RepositorySyncService {
                 existing.userDataTemplate = template.userDataTemplate
                 existing.repositoryId = repositoryID
                 existing.updatedAt = iso8601.string(from: Date())
+                existing.architecturesJson = template.architecturesJson
+                existing.minMemoryMB = template.minMemoryMB
+                existing.requiredFeaturesJson = template.requiredFeaturesJson
+                existing.imageByArchJson = template.imageByArchJson
                 try existing.update(db)
             } else {
                 try template.insert(db)

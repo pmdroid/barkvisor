@@ -14,6 +14,13 @@ extension APIKeyCreateResponse: Content {}
 extension BackupInfo: Content {}
 extension BackupSettings: Content {}
 extension VM: Content {}
+extension WorkloadSpec: Content {}
+extension WorkloadApplyResult: Content {}
+extension VMRuntimeStatus: Content {}
+extension WorkloadHealthStatus: Content {}
+extension WorkloadHealthSummary: Content {}
+extension ProcessHealthStatus: Content {}
+extension APIContractSummary: Content {}
 extension VMImage: Content {}
 extension VMTemplate: Content {}
 extension User: Content {}
@@ -28,3 +35,5 @@ extension BridgeRecord: Content {}
 extension LogEntry: Content {}
 extension ImageProgressEvent: Content {}
 extension DiskImageInfo: Content {}
+extension HostInventory: Content {}
+extension TemplateCompatibilityReport: Content {}

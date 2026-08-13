@@ -97,13 +97,7 @@ enum Seeder {
         -> Int {
         progress("Fetching template catalog...")
 
-        guard let url = URL(string: defaultTemplatesURL) else { return 0 }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
-            return 0
-        }
-
-        let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: data)
+        guard let catalog = try await loadTemplateCatalog() else { return 0 }
         let db = try sharedPool()
         let encoder = JSONEncoder()
         let now = iso8601.string(from: Date())
@@ -133,6 +127,12 @@ enum Seeder {
                         ) ?? "[]"
                     existing.networkMode = entry.networkMode ?? "nat"
                     existing.userDataTemplate = entry.userDataTemplate
+                    existing.architecturesJson = JSONColumnCoding.encodeArrayOrNil(entry.architectures)
+                    existing.minMemoryMB = entry.minMemoryMB
+                    existing.requiredFeaturesJson = JSONColumnCoding.encodeArrayOrNil(
+                        entry.requiredFeatures,
+                    )
+                    existing.imageByArchJson = JSONColumnCoding.encode(entry.imageByArch)
                     existing.updatedAt = now
                     try existing.update(database)
                 } else {
@@ -157,6 +157,10 @@ enum Seeder {
                         repositoryId: nil,
                         createdAt: now,
                         updatedAt: now,
+                        architecturesJson: JSONColumnCoding.encodeArrayOrNil(entry.architectures),
+                        minMemoryMB: entry.minMemoryMB,
+                        requiredFeaturesJson: JSONColumnCoding.encodeArrayOrNil(entry.requiredFeatures),
+                        imageByArchJson: JSONColumnCoding.encode(entry.imageByArch),
                     )
                     try template.insert(database)
                 }
@@ -184,6 +188,37 @@ enum Seeder {
                 let user = try User.filter(User.Columns.username == username).fetchOne(database)
                 return user.map { !$0.password.isEmpty } ?? false
             }) ?? false
+    }
+
+    /// Remote catalog first; fall back to `repos/templates.json` in the checkout
+    /// (the live catalog — `Server/Resources/templates.json` is unused).
+    private static func loadTemplateCatalog() async throws -> TemplateCatalog? {
+        if let url = URL(string: defaultTemplatesURL) {
+            if let (data, response) = try? await URLSession.shared.data(from: url),
+               let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode),
+               let catalog = try? JSONDecoder().decode(TemplateCatalog.self, from: data) {
+                return catalog
+            }
+        }
+        if let local = localTemplatesCatalogURL(),
+           let data = try? Data(contentsOf: local),
+           let catalog = try? JSONDecoder().decode(TemplateCatalog.self, from: data) {
+            Log.server.info("Loaded template catalog from \(local.path)")
+            return catalog
+        }
+        return nil
+    }
+
+    private static func localTemplatesCatalogURL() -> URL? {
+        var dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        for _ in 0 ..< 8 {
+            let candidate = dir.appendingPathComponent("repos/templates.json")
+            if FileManager.default.isReadableFile(atPath: candidate.path) {
+                return candidate
+            }
+            dir.deleteLastPathComponent()
+        }
+        return nil
     }
 
     static func seedDefaultNetwork(db: DatabasePool) throws {

@@ -14,10 +14,7 @@ final class NetworkServiceTests {
 
         let dbPath = tmp.appendingPathComponent("test.sqlite").path
         let pool = try DatabasePool(path: dbPath)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(pool)
         dbPool = pool
     }
@@ -48,7 +45,128 @@ final class NetworkServiceTests {
                 db: self.dbPool,
             )
         }
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        if advertised {
+            #expect(error?.httpStatus == 400)
+        } else {
+            #expect(error?.httpStatus == 422)
+            #expect(error?.code == "bridged_networking")
+        }
+    }
+
+    @Test func `create bridged network returns 422 when product flag is off`() async {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard !advertised else { return }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(name: "test-bridged", mode: "bridged", bridge: "br0", macAddress: nil, dnsServer: nil),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 422)
+        #expect(error?.code == "bridged_networking")
+    }
+
+    @Test func `create bridged missing interface is 422 when advertised`() async {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard advertised else { return }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "ghost-br", mode: "bridged", bridge: "bv-missing-if",
+                    macAddress: nil, dnsServer: nil,
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 422)
+        #expect(error?.code == "interface_missing")
+    }
+
+    @Test func `create bridged invalid name is invalid_bridge when advertised`() async {
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard advertised else { return }
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "bad-br", mode: "bridged", bridge: "bad name!",
+                    macAddress: nil, dnsServer: nil,
+                ),
+                db: self.dbPool,
+            )
+        }
         #expect(error?.httpStatus == 400)
+        #expect(error?.code == "invalid_bridge")
+    }
+
+    @Test func `create VM port forwards on isolated rejected`() async throws {
+        let isolated = try await NetworkService.create(
+            CreateNetworkParams(
+                name: "private", mode: "isolated", bridge: nil, macAddress: nil, dnsServer: nil,
+            ),
+            db: dbPool,
+        )
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await VMLifecycleService.validateCreateVMInputs(
+                params: CreateVMParams(
+                    name: "pf-iso",
+                    vmType: hostLinux,
+                    cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+                    memoryMB: 512,
+                    isoId: "iso-1",
+                    networkId: isolated.id,
+                    portForwards: [
+                        PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
+                    ],
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.code == "invalid_port_forward")
+    }
+
+    @Test func `create VM port forwards on implicit NAT allowed`() async throws {
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        try await VMLifecycleService.validateCreateVMInputs(
+            params: CreateVMParams(
+                name: "pf-nat",
+                vmType: hostLinux,
+                cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+                memoryMB: 512,
+                isoId: "iso-1",
+                networkId: nil,
+                portForwards: [
+                    PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
+                ],
+            ),
+            db: dbPool,
+        )
+    }
+
+    @Test func `create isolated network`() async throws {
+        let network = try await NetworkService.create(
+            CreateNetworkParams(
+                name: "private", mode: "isolated", bridge: nil, macAddress: nil, dnsServer: nil,
+            ),
+            db: dbPool,
+        )
+        #expect(network.mode == "isolated")
+        #expect(network.bridge == nil)
+    }
+
+    @Test func `create isolated rejects bridge field`() async {
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await NetworkService.create(
+                CreateNetworkParams(
+                    name: "private", mode: "isolated", bridge: "br0", macAddress: nil, dnsServer: nil,
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.httpStatus == 400)
+        #expect(error?.errorDescription?.contains("bridge") == true)
     }
 
     @Test func `create invalid mode rejected`() async {
@@ -141,8 +259,8 @@ final class NetworkServiceTests {
 
             let vm = VM(
                 id: "vm1", name: "test", vmType: "linux-arm64", state: "stopped",
-                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1", isoId: nil,
-                networkId: network.id, cloudInitPath: nil, vncPort: nil,
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d1",
+                networkId: network.id, cloudInitPath: nil,
                 description: nil, bootOrder: "cd", displayResolution: "1280x800",
                 additionalDiskIds: nil, uefi: true, tpmEnabled: false,
                 macAddress: "52:54:00:12:34:56", sharedPaths: nil, portForwards: nil,

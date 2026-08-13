@@ -12,8 +12,9 @@ describe('Dashboard', () => {
   it('displays system stat cards', () => {
     cy.get('.stat-grid').should('exist')
     cy.contains('Total VMs').should('exist')
-    cy.contains('Host CPU').should('exist')
-    cy.contains('Host Memory').should('exist')
+    cy.contains('CPU').should('exist')
+    cy.contains('Memory').should('exist')
+    cy.contains('device').should('exist')
     cy.contains('Storage (on disk)').should('exist')
   })
 
@@ -27,7 +28,7 @@ describe('Dashboard', () => {
     cy.get('.dash-stat-number').first().invoke('text').should('match', /\d+/)
   })
 
-  it('Host Memory stat shows GB format', () => {
+  it('Memory stat shows GB format', () => {
     cy.get('.dash-stat-number').eq(2).invoke('text').should('match', /\d+.*GB/)
   })
 

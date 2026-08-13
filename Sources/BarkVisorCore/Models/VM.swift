@@ -23,11 +23,9 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var cpuCount: Int
     public var memoryMb: Int
     public var bootDiskId: String
-    public var isoId: String? // Deprecated: use isoIds
     public var isoIds: String? // JSON-encoded [String]
     public var networkId: String?
     public var cloudInitPath: String?
-    public var vncPort: Int?
     public var description: String?
     public var bootOrder: String?
     public var displayResolution: String?
@@ -40,6 +38,11 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var usbDevices: String? // JSON-encoded [USBPassthroughDevice]
     public var autoCreated: Bool
     public var pendingChanges: Bool
+    /// Dual-write projection of `WorkloadSpec` (PAS-35). Source of truth is still columns.
+    public var specJson: String?
+    /// Portable `overrides.linux` / `overrides.macos` bags (PAS-41).
+    public var overridesJson: String?
+    public var specGeneration: Int
     public var createdAt: String
     public var updatedAt: String
 
@@ -51,11 +54,9 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         cpuCount: Int,
         memoryMb: Int,
         bootDiskId: String,
-        isoId: String? = nil,
         isoIds: String? = nil,
         networkId: String?,
         cloudInitPath: String?,
-        vncPort: Int?,
         description: String?,
         bootOrder: String?,
         displayResolution: String?,
@@ -68,6 +69,9 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         usbDevices: String? = nil,
         autoCreated: Bool,
         pendingChanges: Bool,
+        specJson: String? = nil,
+        overridesJson: String? = nil,
+        specGeneration: Int = 1,
         createdAt: String,
         updatedAt: String,
     ) {
@@ -78,11 +82,9 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.cpuCount = cpuCount
         self.memoryMb = memoryMb
         self.bootDiskId = bootDiskId
-        self.isoId = isoId
         self.isoIds = isoIds
         self.networkId = networkId
         self.cloudInitPath = cloudInitPath
-        self.vncPort = vncPort
         self.description = description
         self.bootOrder = bootOrder
         self.displayResolution = displayResolution
@@ -95,7 +97,18 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.usbDevices = usbDevices
         self.autoCreated = autoCreated
         self.pendingChanges = pendingChanges
+        self.specJson = specJson
+        self.overridesJson = overridesJson
+        self.specGeneration = specGeneration
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    /// Dual-write: refresh `specJson` from columns. Bump generation on user-facing writes.
+    public mutating func syncSpecProjection(bumpGeneration: Bool = true) {
+        if bumpGeneration {
+            specGeneration += 1
+        }
+        specJson = WorkloadSpecJSON.encode(WorkloadSpecProjector.fromVM(self))
     }
 }

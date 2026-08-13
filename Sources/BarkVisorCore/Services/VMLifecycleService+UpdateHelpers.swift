@@ -52,6 +52,31 @@ extension VMLifecycleService {
         return false
     }
 
+    /// Hardware columns that require a restart when changed on a running VM.
+    /// Matches `detectHardwareChanges(params:encoded:vm:)` plus spec-only fields
+    /// (`vmType`, ISO attachments, MAC, cloud-init ISO, overrides) that apply()
+    /// can rewrite. Overrides stay out of flat hardware columns, but they change
+    /// resolved QEMU launch values (CPU, memory, accelerator, hugepages).
+    static func detectHardwareChanges(before: VM, after: VM) -> Bool {
+        if before.cpuCount != after.cpuCount { return true }
+        if before.memoryMb != after.memoryMb { return true }
+        if before.networkId != after.networkId { return true }
+        if before.displayResolution != after.displayResolution { return true }
+        if before.bootOrder != after.bootOrder { return true }
+        if before.uefi != after.uefi { return true }
+        if before.tpmEnabled != after.tpmEnabled { return true }
+        if before.decodedSharedPaths != after.decodedSharedPaths { return true }
+        if before.decodedAdditionalDiskIds != after.decodedAdditionalDiskIds { return true }
+        if before.decodedUSBDevices != after.decodedUSBDevices { return true }
+        if before.decodedPortForwards != after.decodedPortForwards { return true }
+        if before.vmType != after.vmType { return true }
+        if before.decodedISOIds != after.decodedISOIds { return true }
+        if before.macAddress != after.macAddress { return true }
+        if before.cloudInitPath != after.cloudInitPath { return true }
+        if before.decodedOverrides != after.decodedOverrides { return true }
+        return false
+    }
+
     static func applyUpdates(
         params: UpdateVMParams,
         encoded: EncodedUpdateFields,

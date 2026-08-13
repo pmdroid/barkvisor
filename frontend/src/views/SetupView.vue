@@ -19,15 +19,18 @@ import {
 } from '../api/setup'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useFeature } from '../composables/useFeature'
 import { clearSetupCache } from '../router'
+import { HOME_LABEL } from '../utils/terminology'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const caps = useCapabilitiesStore()
+const managedBridge = useFeature('managedBridgeDaemon')
 /** Linear UI step index (1-based). Bridge step is omitted on unsupported platforms. */
 const step = ref(1)
 /** Setup installs the managed bridge helper (socket_vmnet) — macOS only. */
-const showBridgeStep = computed(() => caps.supportsManagedBridgeDaemon)
+const showBridgeStep = computed(() => managedBridge.available)
 
 const totalSteps = computed(() => (showBridgeStep.value ? 5 : 4))
 /** Which content panel to show for the current linear index. */
@@ -301,7 +304,8 @@ async function finishSetup() {
       <div v-if="panel === 'ready'" class="step-content">
         <h2>All Set!</h2>
         <p class="step-desc">
-          BarkVisor is ready. You'll be signed in automatically and taken to the dashboard.
+          This device is your {{ HOME_LABEL }}. You'll be signed in automatically and taken to the
+          dashboard.
         </p>
         <FormError v-if="error" :message="error" />
         <AppButton

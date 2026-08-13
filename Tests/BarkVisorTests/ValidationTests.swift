@@ -31,6 +31,36 @@ struct ValidationTests {
         #expect(throws: (any Error).self) { try validateVMName("vm/path") }
     }
 
+    // MARK: - validateVMID
+
+    @Test func `valid VM ids`() {
+        #expect(throws: Never.self) { try validateVMID("yaml-vm") }
+        #expect(throws: Never.self) { try validateVMID("550e8400-e29b-41d4-a716-446655440000") }
+        #expect(throws: Never.self) { try validateVMID("vm_1.0") }
+        #expect(throws: Never.self) { try validateVMID("a") }
+        #expect(throws: Never.self) { try validateVMID(String(repeating: "a", count: 128)) }
+    }
+
+    @Test func `empty VM id rejected`() {
+        #expect(throws: (any Error).self) { try validateVMID("") }
+        #expect(throws: (any Error).self) { try validateVMID("   ") }
+    }
+
+    @Test func `too long VM id rejected`() {
+        #expect(throws: (any Error).self) { try validateVMID(String(repeating: "a", count: 129)) }
+    }
+
+    @Test func `vm id path traversal rejected`() {
+        #expect(throws: (any Error).self) {
+            try validateVMID(["..", "..", "..", "tmp", "evil"].joined(separator: "/"))
+        }
+        #expect(throws: (any Error).self) { try validateVMID("..") }
+        #expect(throws: (any Error).self) { try validateVMID(".") }
+        #expect(throws: (any Error).self) { try validateVMID("vm/path") }
+        #expect(throws: (any Error).self) { try validateVMID("vm\\path") }
+        #expect(throws: (any Error).self) { try validateVMID("vm id") }
+    }
+
     // MARK: - validateBridgeName
 
     @Test func `valid bridge names`() {
@@ -49,16 +79,26 @@ struct ValidationTests {
     }
 
     @Test func `bridge name too long`() {
-        #expect(throws: (any Error).self) { try validateBridgeName(String(repeating: "a", count: 16)) }
-        #expect(throws: (any Error).self) { try validateBridgeName("br-0123456789abc") } // 16 chars
+        let tooLong = #expect(throws: BarkVisorError.self) {
+            try validateBridgeName(String(repeating: "a", count: 16))
+        }
+        #expect(tooLong?.code == "invalid_bridge")
+        #expect(tooLong?.httpStatus == 400)
+        let docker16 = #expect(throws: BarkVisorError.self) {
+            try validateBridgeName("br-0123456789abc")
+        }
+        #expect(docker16?.code == "invalid_bridge")
     }
 
     @Test func `bridge name rejects special chars`() {
-        #expect(throws: (any Error).self) { try validateBridgeName("") }
-        #expect(throws: (any Error).self) { try validateBridgeName("en0; rm -rf /") }
-        #expect(throws: (any Error).self) { try validateBridgeName("br 0") }
-        #expect(throws: (any Error).self) { try validateBridgeName("br/0") }
-        #expect(throws: (any Error).self) { try validateBridgeName("bad-name!") }
+        let empty = #expect(throws: BarkVisorError.self) { try validateBridgeName("") }
+        #expect(empty?.code == "invalid_bridge")
+        #expect(empty?.httpStatus == 400)
+        #expect(throws: BarkVisorError.self) { try validateBridgeName("en0; rm -rf /") }
+        #expect(throws: BarkVisorError.self) { try validateBridgeName("br 0") }
+        #expect(throws: BarkVisorError.self) { try validateBridgeName("br/0") }
+        let bang = #expect(throws: BarkVisorError.self) { try validateBridgeName("bad-name!") }
+        #expect(bang?.code == "invalid_bridge")
     }
 
     // MARK: - validateDNS

@@ -1,18 +1,32 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppSelect from '../ui/AppSelect.vue'
+import CreateVMArchitectureDetails from './CreateVMArchitectureDetails.vue'
 import { useCapabilitiesStore } from '../../stores/capabilities'
 
 defineProps<{
   cpuCount: number
   memoryMB: number
   displayResolution: string
+  guestArch: string
+  archOptions: Array<{ value: string; label: string; disabled?: boolean }>
+  machineType: string
+  accelerator: string
+  cpuModel: string
+  uefi: boolean
+  tpmEnabled: boolean
+  alwaysShowArchDetails: boolean
+  archProblem: string | null
 }>()
 
 const emit = defineEmits<{
   'update:cpuCount': [value: number]
   'update:memoryMB': [value: number]
   'update:displayResolution': [value: string]
+  'update:guestArch': [value: string]
+  'update:uefi': [value: boolean]
+  'update:tpmEnabled': [value: boolean]
+  'update:alwaysShowArchDetails': [value: boolean]
 }>()
 
 const caps = useCapabilitiesStore()
@@ -63,6 +77,21 @@ function onCpuInput(raw: string) {
         <option value="1920x1080">1920x1080</option>
       </AppSelect>
     </div>
+    <CreateVMArchitectureDetails
+      :guestArch="guestArch"
+      :archOptions="archOptions"
+      :machineType="machineType"
+      :accelerator="accelerator"
+      :cpuModel="cpuModel"
+      :uefi="uefi"
+      :tpmEnabled="tpmEnabled"
+      :alwaysShow="alwaysShowArchDetails"
+      :archProblem="archProblem"
+      @update:guestArch="emit('update:guestArch', $event)"
+      @update:uefi="emit('update:uefi', $event)"
+      @update:tpmEnabled="emit('update:tpmEnabled', $event)"
+      @update:alwaysShow="emit('update:alwaysShowArchDetails', $event)"
+    />
   </div>
 </template>
 

@@ -1,0 +1,149 @@
+import Foundation
+import GRDB
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
+
+/// A host-local port claimed by a workload (Wave 0: VMs only).
+public struct PortClaim: Sendable, Equatable {
+    public var hostPort: Int
+    public var proto: String
+    public var workloadKind: String
+    public var workloadId: String
+    public var workloadName: String
+
+    public init(
+        hostPort: Int,
+        proto: String,
+        workloadKind: String,
+        workloadId: String,
+        workloadName: String,
+    ) {
+        self.hostPort = hostPort
+        self.proto = proto
+        self.workloadKind = workloadKind
+        self.workloadId = workloadId
+        self.workloadName = workloadName
+    }
+}
+
+/// Host-local port occupancy from configured NAT `hostfwd` rules.
+///
+/// Wave 0: config-vs-config on write + TCP bind probe at start.
+/// Auto-allocation (`nextFree`) and App ports are deferred.
+public enum PortRegistry {
+    /// Claims from VMs whose effective mode allows port forwards (NAT / implicit NAT).
+    public static func claims(db: Database, excludingVM: String? = nil) throws -> [PortClaim] {
+        let networks = try Dictionary(
+            uniqueKeysWithValues: Network.fetchAll(db).map { ($0.id, $0) },
+        )
+        var result: [PortClaim] = []
+        for vm in try VM.fetchAll(db) {
+            if let excludingVM, vm.id == excludingVM { continue }
+            let network = vm.networkId.flatMap { networks[$0] }
+            let mode = (try? NetworkCapability.effectiveMode(of: network)) ?? .nat
+            guard mode.allowsPortForwards else { continue }
+            for rule in vm.decodedPortForwards {
+                result.append(
+                    PortClaim(
+                        hostPort: rule.hostPort,
+                        proto: Self.normalizedProtocol(rule.protocol),
+                        workloadKind: "vm",
+                        workloadId: vm.id,
+                        workloadName: vm.name,
+                    ),
+                )
+            }
+        }
+        return result
+    }
+
+    /// Reject duplicate hostPort+proto in `rules`, then reject collisions with other VMs.
+    public static func assertAvailable(
+        _ rules: [PortForwardRule],
+        excludingVM: String? = nil,
+        db: Database,
+    ) throws {
+        try assertUnique(rules)
+        guard !rules.isEmpty else { return }
+        var occupied: [String: PortClaim] = [:]
+        for claim in try claims(db: db, excludingVM: excludingVM) {
+            let key = claimKey(port: claim.hostPort, proto: claim.proto)
+            if occupied[key] == nil { occupied[key] = claim }
+        }
+        for rule in rules {
+            let proto = normalizedProtocol(rule.protocol)
+            if let occupant = occupied[claimKey(port: rule.hostPort, proto: proto)] {
+                throw BarkVisorError.portInUse(
+                    "Host port \(rule.hostPort)/\(proto) is already claimed by "
+                        + "\(occupant.workloadKind) \"\(occupant.workloadName)\". "
+                        + "Change this VM's host port.",
+                )
+            }
+        }
+    }
+
+    public static func assertAvailable(
+        _ rules: [PortForwardRule],
+        excludingVM: String? = nil,
+        db pool: DatabasePool,
+    ) async throws {
+        try await pool.read { db in
+            try assertAvailable(rules, excludingVM: excludingVM, db: db)
+        }
+    }
+
+    /// Same hostPort+proto twice in one request is also a conflict.
+    public static func assertUnique(_ rules: [PortForwardRule]) throws {
+        var seen: Set<String> = []
+        for rule in rules {
+            let proto = normalizedProtocol(rule.protocol)
+            let key = claimKey(port: rule.hostPort, proto: proto)
+            if seen.contains(key) {
+                throw BarkVisorError.portInUse(
+                    "Host port \(rule.hostPort)/\(proto) is claimed more than once on this VM.",
+                )
+            }
+            seen.insert(key)
+        }
+    }
+
+    /// Bind test on 0.0.0.0 without `SO_REUSEADDR` (matches QEMU `hostfwd`).
+    /// UDP is not probed in Wave 0 (returns `true`).
+    public static func probeListen(port: Int, proto: String) -> Bool {
+        guard normalizedProtocol(proto) == "tcp" else { return true }
+        return isTCPPortFree(port)
+    }
+
+    public static func normalizedProtocol(_ proto: String) -> String {
+        proto.lowercased()
+    }
+
+    private static func claimKey(port: Int, proto: String) -> String {
+        "\(port)/\(proto)"
+    }
+
+    /// Returns true if nothing is listening on 0.0.0.0:`port` for TCP.
+    private static func isTCPPortFree(_ port: Int) -> Bool {
+        #if os(Linux)
+            let sockType = Int32(SOCK_STREAM.rawValue)
+        #else
+            let sockType = SOCK_STREAM
+        #endif
+        let fd = socket(AF_INET, sockType, 0)
+        guard fd >= 0 else { return true }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(UInt16(port).bigEndian)
+        addr.sin_addr = in_addr(s_addr: INADDR_ANY)
+        let bindResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return bindResult == 0
+    }
+}

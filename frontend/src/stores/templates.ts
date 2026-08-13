@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
-import type { VMTemplate, DeployTemplateRequest, DeployTemplateResponse } from '../api/types'
+import type {
+  VMTemplate,
+  DeployTemplateRequest,
+  DeployTemplateResponse,
+  TemplateCompatibilityReport,
+} from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 
 export const useTemplateStore = defineStore('templates', () => {
@@ -28,5 +33,16 @@ export const useTemplateStore = defineStore('templates', () => {
     return data
   }
 
-  return { templates, loading, error, fetchAll, deploy }
+  async function dryRun(
+    templateId: string,
+    body: { targetHostId?: string; memoryMB?: number } = {},
+  ): Promise<TemplateCompatibilityReport> {
+    const { data } = await api.post<TemplateCompatibilityReport>(
+      `/templates/${templateId}/deploy/dry-run`,
+      body,
+    )
+    return data
+  }
+
+  return { templates, loading, error, fetchAll, deploy, dryRun }
 })

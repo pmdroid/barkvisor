@@ -2,24 +2,35 @@ import Foundation
 
 public enum DiagnosticService {
     /// Generate a diagnostic bundle archive. Returns the path to the tar.gz file.
-    public static func generateBundle(vmState: any VMStateQuerying) async throws -> String {
+    public static func generateBundle(
+        vmState: any VMStateQuerying,
+        dataDir: URL = Config.dataDir,
+        version: String = Config.version,
+    ) async throws -> String {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "barkvisor-diag-\(UUID().uuidString.prefix(8))",
         )
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        // System info
+        // Host inventory is the source of truth (PAS-42). Older consumers
+        // still read system-info.json; project that document from the snapshot.
+        let inventory = HostInventoryService.snapshot(dataDir: dataDir, version: version)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(inventory).write(to: tempDir.appendingPathComponent("host-inventory.json"))
+
         let systemInfo: [String: Any] = [
-            "platform": PlatformHost.platformName,
-            "osVersion": PlatformHost.osVersionString,
+            "hostId": inventory.hostId,
+            "platform": inventory.platform.os,
+            "osVersion": inventory.platform.osVersion,
             // Keep macOSVersion key for older consumers; mirrors osVersion.
-            "macOSVersion": PlatformHost.osVersionString,
-            "cpuCount": PlatformHost.cpuCount,
-            "physicalMemoryMB": PlatformHost.physicalMemoryMB,
-            "accelerator": PlatformCapabilities.accelerator,
-            "defaultGuestArch": PlatformCapabilities.defaultGuestArch,
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "macOSVersion": inventory.platform.osVersion,
+            "cpuCount": inventory.resources.cpuCount,
+            "physicalMemoryMB": inventory.resources.memoryTotalMB,
+            "accelerator": inventory.virtualization.accelerator,
+            "defaultGuestArch": inventory.virtualization.defaultGuestArch,
+            "timestamp": inventory.collectedAt,
         ]
         let systemData = try JSONSerialization.data(withJSONObject: systemInfo, options: .prettyPrinted)
         try systemData.write(to: tempDir.appendingPathComponent("system-info.json"))
@@ -28,11 +39,12 @@ public enum DiagnosticService {
         let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         let bundleBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
         let appInfo: [String: Any] = [
-            "version": Config.version,
-            "build": bundleBuild ?? (bundleVersion ?? Config.version),
+            "hostId": inventory.hostId,
+            "version": version,
+            "build": bundleBuild ?? (bundleVersion ?? version),
             "isDevBuild": Config.isDevBuild,
-            "uptime": ProcessInfo.processInfo.systemUptime,
-            "dataDir": Config.dataDir.path,
+            "uptime": Config.processUptimeSeconds,
+            "dataDir": dataDir.path,
             "logDir": "database",
         ]
         let appData = try JSONSerialization.data(withJSONObject: appInfo, options: .prettyPrinted)

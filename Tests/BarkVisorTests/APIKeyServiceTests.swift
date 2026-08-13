@@ -12,10 +12,7 @@ final class APIKeyServiceTests {
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         let dbPath = tmpDir.appendingPathComponent("test.sqlite").path
         dbPool = try DatabasePool(path: dbPath)
-        var migrator = DatabaseMigrator()
-        migrator.registerMigration(M001_CreateSchema.identifier) { db in
-            try M001_CreateSchema.migrate(db)
-        }
+        let migrator = AppDatabase.makeMigrator()
         try migrator.migrate(dbPool)
 
         try dbPool.write { db in

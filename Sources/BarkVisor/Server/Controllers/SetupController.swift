@@ -129,10 +129,7 @@ struct SetupController: RouteCollection {
             throw Abort(.notFound)
         }
         guard PlatformCapabilities.supportsManagedBridgeDaemon else {
-            throw Abort(
-                .notImplemented,
-                reason: PlatformCapabilities.unsupportedMessage(.managedBridgeDaemon),
-            )
+            throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
         }
         let body = try req.content.decode(BridgeRequest.self)
         do {

@@ -23,16 +23,10 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try app.register(collection: SetupController(setupMiddleware: deps.setupMiddleware, keys: deps.keys))
     try app.register(collection: AuthController(keys: deps.keys, loginRateLimit: deps.loginRateLimit))
 
-    app.get("api", "health") { req in
-        do {
-            let _: Row? = try req.db.read { db in try Row.fetchOne(db, sql: "SELECT 1") }
-            return ["status": "ok"]
-        } catch {
-            throw Abort(.serviceUnavailable, reason: "Database unreachable")
-        }
-    }
+    registerProcessHealthRoute(app)
 
-    // Public: platform capabilities for UI gating (setup wizard before login).
+    // Public: published contract (PAS-78) + capabilities for setup gating.
+    APIContractController.registerPublicRoutes(app)
     SystemCapabilitiesController.registerPublicRoutes(app)
 
     let protected = app.grouped(JWTAuthMiddleware(keys: deps.keys))
@@ -79,6 +73,9 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         ),
     )
 
+    try protected.register(collection: WorkloadHealthController(vmManager: deps.vmManager))
+    try protected.register(collection: WorkloadApplyController(backgroundTasks: deps.backgroundTasks))
+    try protected.register(collection: AgentInventoryController())
     try protected.register(collection: SystemAboutController())
     try protected.register(collection: SystemHostController())
     try protected.register(collection: SystemBridgeController())
@@ -106,4 +103,39 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
+}
+
+/// Public liveness probe (PAS-79). Database failure is 503; other checks are
+/// reported without failing the probe.
+func registerProcessHealthRoute(_ app: Vapor.Application) {
+    app.get("api", "health") { req -> ProcessHealthStatus in
+        let now = iso8601.string(from: Date())
+        var checks: [WorkloadHealthCheck] = []
+        do {
+            let _: Row? = try req.db.read { db in try Row.fetchOne(db, sql: "SELECT 1") }
+            checks.append(WorkloadHealthCheck(name: "database", status: .pass, message: "reachable"))
+        } catch {
+            throw Abort(.serviceUnavailable, reason: "Database unreachable")
+        }
+
+        let dataDir = Config.dataDir.path
+        if FileManager.default.isWritableFile(atPath: dataDir) {
+            checks.append(WorkloadHealthCheck(name: "dataDir", status: .pass, message: dataDir))
+        } else {
+            checks.append(
+                WorkloadHealthCheck(name: "dataDir", status: .fail, message: "not writable: \(dataDir)"),
+            )
+        }
+
+        let qemuName = "qemu-system-\(PlatformCapabilities.defaultGuestArch)"
+        if let qemu = try? BundleResolver.helper(qemuName) {
+            checks.append(WorkloadHealthCheck(name: "qemu", status: .pass, message: qemu.path))
+        } else {
+            checks.append(
+                WorkloadHealthCheck(name: "qemu", status: .skip, message: "\(qemuName) not found"),
+            )
+        }
+
+        return WorkloadHealthProjector.processHealth(checks: checks, updatedAt: now)
+    }
 }
