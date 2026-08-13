@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { healthLabel, vmHealth } from './workloadHealth'
-import type { VM } from '../api/types'
+import { applyVMStateEvent, healthFromState, healthLabel, vmHealth } from './workloadHealth'
+import type { VM, VMRuntimeStatus } from '../api/types'
 
 function vm(partial: Partial<VM> & Pick<VM, 'state'>): VM {
   return {
@@ -43,6 +43,60 @@ describe('vmHealth', () => {
 
   test('error state falls back to failed', () => {
     expect(vmHealth(vm({ state: 'error' }))).toBe('failed')
+  })
+})
+
+describe('healthFromState', () => {
+  test('maps lifecycle states to health badges', () => {
+    expect(healthFromState('error')).toBe('failed')
+    expect(healthFromState('starting')).toBe('starting')
+    expect(healthFromState('provisioning')).toBe('starting')
+    expect(healthFromState('running')).toBe('running')
+    expect(healthFromState('stopping')).toBe('running')
+    expect(healthFromState('stopped')).toBe('stopped')
+    expect(healthFromState('deleting')).toBe('stopped')
+    expect(healthFromState('mystery')).toBe('unknown')
+  })
+})
+
+describe('applyVMStateEvent', () => {
+  function status(partial: Partial<VMRuntimeStatus> = {}): VMRuntimeStatus {
+    return {
+      state: 'running',
+      pendingChanges: false,
+      generation: 1,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      health: 'running',
+      healthError: null,
+      ...partial,
+    }
+  }
+
+  test('overwrites stale health so a kernel-panic SSE updates the pill', () => {
+    const machine = vm({
+      state: 'running',
+      health: 'running',
+      status: status(),
+    })
+    applyVMStateEvent(machine, { state: 'error', error: 'Kernel panic' })
+    expect(machine.state).toBe('error')
+    expect(machine.health).toBe('failed')
+    expect(machine.status?.state).toBe('error')
+    expect(machine.status?.health).toBe('failed')
+    expect(machine.status?.healthError).toBe('Kernel panic')
+    expect(vmHealth(machine)).toBe('failed')
+  })
+
+  test('clears healthError when state recovers', () => {
+    const machine = vm({
+      state: 'error',
+      health: 'failed',
+      status: status({ state: 'error', health: 'failed', healthError: 'Kernel panic' }),
+    })
+    applyVMStateEvent(machine, { state: 'running' })
+    expect(vmHealth(machine)).toBe('running')
+    expect(machine.status?.healthError).toBeNull()
   })
 })
 

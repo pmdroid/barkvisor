@@ -21,7 +21,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
-import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -277,9 +277,9 @@ function connectStateSSE() {
     maxDelayMs: 30_000,
     onMessage: (e) => {
       try {
-        const event = JSON.parse(e.data) as { id: string; state: string }
+        const event = JSON.parse(e.data) as { id: string; state: string; error?: string | null }
         const v = store.vms.find(v => v.id === event.id)
-        if (v) v.state = event.state as typeof v.state
+        if (v) applyVMStateEvent(v, event)
         fetchGuestInfo()
       } catch { /* ignore */ }
     },
