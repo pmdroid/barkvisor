@@ -133,6 +133,7 @@ public struct PairingJoinResponse: Codable, Sendable, Equatable {
     public var peerHostId: String
     public var peerFingerprint: String
     public var issuedFingerprint: String
+    public var agentPort: Int
     public var pinned: Bool
     public var apiVersion: Int
 
@@ -140,12 +141,14 @@ public struct PairingJoinResponse: Codable, Sendable, Equatable {
         peerHostId: String,
         peerFingerprint: String,
         issuedFingerprint: String,
+        agentPort: Int = Config.agentPort,
         pinned: Bool = true,
         apiVersion: Int = APIContract.version,
     ) {
         self.peerHostId = peerHostId
         self.peerFingerprint = peerFingerprint
         self.issuedFingerprint = issuedFingerprint
+        self.agentPort = agentPort
         self.pinned = pinned
         self.apiVersion = apiVersion
     }
@@ -159,6 +162,7 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
     public var caFingerprint: String
     public var issuedCertificatePEM: String
     public var issuedFingerprint: String
+    public var agentPort: Int
     public var pairedAt: String
 
     public init(
@@ -168,6 +172,7 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         caFingerprint: String,
         issuedCertificatePEM: String,
         issuedFingerprint: String,
+        agentPort: Int = Config.agentPort,
         pairedAt: String,
     ) {
         self.peerHostId = peerHostId
@@ -176,6 +181,24 @@ public struct PairingPeerReceipt: Codable, Sendable, Equatable {
         self.caFingerprint = caFingerprint
         self.issuedCertificatePEM = issuedCertificatePEM
         self.issuedFingerprint = issuedFingerprint
+        self.agentPort = agentPort
         self.pairedAt = pairedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case peerHostId, peerFingerprint, caCertificatePEM, caFingerprint
+        case issuedCertificatePEM, issuedFingerprint, agentPort, pairedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.peerHostId = try container.decode(String.self, forKey: .peerHostId)
+        self.peerFingerprint = try container.decode(String.self, forKey: .peerFingerprint)
+        self.caCertificatePEM = try container.decode(String.self, forKey: .caCertificatePEM)
+        self.caFingerprint = try container.decode(String.self, forKey: .caFingerprint)
+        self.issuedCertificatePEM = try container.decode(String.self, forKey: .issuedCertificatePEM)
+        self.issuedFingerprint = try container.decode(String.self, forKey: .issuedFingerprint)
+        self.agentPort = try container.decodeIfPresent(Int.self, forKey: .agentPort) ?? Config.agentPort
+        self.pairedAt = try container.decode(String.self, forKey: .pairedAt)
     }
 }

@@ -869,11 +869,13 @@ paths:
       tags: [evolving]
       operationId: joinPairing
       x-barkvisor-stability: evolving
-      summary: Redeem a QR / code from this Device
+      summary: Redeem a QR from this Device
       description: |
-        Local join: parse the QR (or typed code + host), call the issuer
-        redeem endpoint, pin the issuer fingerprint, and persist the trust
-        bundle. Allowed without JWT only until setup completes.
+        Local join: parse the QR payload, call the issuer redeem endpoint,
+        pin the issuer fingerprint, and persist the trust bundle including
+        agentPort. QR is required so an unauthenticated setup-window caller
+        cannot aim server-side HTTP redeem at an arbitrary host. Allowed
+        without JWT only until setup completes.
       requestBody:
         required: true
         content:
@@ -2072,6 +2074,7 @@ components:
 
     PairingJoinRequest:
       type: object
+      required: [qrPayload]
       properties:
         qrPayload:
           type: string
@@ -2088,7 +2091,7 @@ components:
 
     PairingJoin:
       type: object
-      required: [peerHostId, peerFingerprint, issuedFingerprint, pinned, apiVersion]
+      required: [peerHostId, peerFingerprint, issuedFingerprint, agentPort, pinned, apiVersion]
       properties:
         peerHostId:
           type: string
@@ -2096,6 +2099,8 @@ components:
           type: string
         issuedFingerprint:
           type: string
+        agentPort:
+          type: integer
         pinned:
           type: boolean
         apiVersion:

@@ -16,6 +16,12 @@ extension PairingService {
         if response.deviceFingerprint.lowercased() != expected.fingerprint.lowercased() {
             throw PairingError.fingerprintMismatch
         }
+        guard (1 ... 65_535).contains(response.agentPort) else {
+            throw PairingError.invalidPayload("Issuer returned an invalid agentPort")
+        }
+        if response.agentPort != expected.agentPort {
+            throw PairingError.invalidPayload("Issuer agentPort does not match the pairing code")
+        }
         if response.hostId == localHostId {
             throw PairingError.selfPair
         }
@@ -26,7 +32,7 @@ extension PairingService {
             )
         }
 
-        try validateRedeemMaterial(response, localHostId: localHostId)
+        try validateRedeemMaterial(response, localHostId: localHostId, now: now)
 
         let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
         do {
@@ -50,6 +56,7 @@ extension PairingService {
             caFingerprint: response.caFingerprint,
             issuedCertificatePEM: response.issuedCertificatePEM,
             issuedFingerprint: response.issuedFingerprint,
+            agentPort: response.agentPort,
             pairedAt: iso8601.string(from: now),
         )
         try persistReceipt(receipt, dataDir: dataDir)
@@ -58,6 +65,7 @@ extension PairingService {
             peerHostId: response.hostId,
             peerFingerprint: response.deviceFingerprint,
             issuedFingerprint: response.issuedFingerprint,
+            agentPort: response.agentPort,
         )
     }
 
@@ -76,6 +84,10 @@ extension PairingService {
         if payload.hostId == hostId {
             throw PairingError.selfPair
         }
+
+        // Validate the redeem target (string encodings + DNS) before reading
+        // or POSTing joiner CSR / Device cert / Home CA.
+        let url = try PairingPayload.redeemURL(host: host, port: payload.port)
 
         let material: HomeCertificateMaterial
         do {
@@ -108,8 +120,6 @@ extension PairingService {
         } catch {
             throw PairingError.unavailable("Unable to encode redeem request")
         }
-
-        let url = try PairingPayload.redeemURL(host: host, port: payload.port)
         let http: PairingHTTPResponse
         do {
             http = try await client.postJSON(url: url, body: encoded)
@@ -189,11 +199,13 @@ extension PairingService {
     static func validateRedeemMaterial(
         _ response: PairingRedeemResponse,
         localHostId: String,
+        now: Date = Date(),
     ) throws {
         let deviceCert = try parseTrustCertificate(
             response.deviceCertificatePEM,
             reason: "Unable to parse issuer Device certificate",
         )
+        try rejectExpired(deviceCert, now: now, reason: "Issuer Device certificate is expired")
         let deviceFingerprint = try fingerprintOrThrow(deviceCert)
         if deviceFingerprint != response.deviceFingerprint.lowercased() {
             throw PairingError.fingerprintMismatch
@@ -208,6 +220,7 @@ extension PairingService {
             response.caCertificatePEM,
             reason: "Unable to parse Home CA certificate",
         )
+        try rejectExpired(caCert, now: now, reason: "Home CA certificate is expired")
         let caFingerprint = try fingerprintOrThrow(caCert)
         if caFingerprint != response.caFingerprint.lowercased() {
             throw PairingError.fingerprintMismatch
@@ -222,6 +235,7 @@ extension PairingService {
             response.issuedCertificatePEM,
             reason: "Unable to parse issued Device certificate",
         )
+        try rejectExpired(issuedCert, now: now, reason: "Issued Device certificate is expired")
         let issuedFingerprint = try fingerprintOrThrow(issuedCert)
         if issuedFingerprint != response.issuedFingerprint.lowercased() {
             throw PairingError.fingerprintMismatch
@@ -235,6 +249,12 @@ extension PairingService {
             throw PairingError.invalidDeviceCertificate(
                 "Issued certificate SAN does not match this Device",
             )
+        }
+    }
+
+    private static func rejectExpired(_ certificate: Certificate, now: Date, reason: String) throws {
+        if now < certificate.notValidBefore || now > certificate.notValidAfter {
+            throw PairingError.invalidDeviceCertificate(reason)
         }
     }
 

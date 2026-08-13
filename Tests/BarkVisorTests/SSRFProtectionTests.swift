@@ -110,6 +110,11 @@ struct SSRFProtectionTests {
         #expect(!SSRFGuard.isPrivateHost("api.example.org"))
     }
 
+    @Test func `resolvedIPStrings returns literal addresses`() {
+        #expect(SSRFGuard.resolvedIPStrings("127.0.0.1").contains("127.0.0.1"))
+        #expect(SSRFGuard.resolvedIPStrings("192.168.1.10").contains("192.168.1.10"))
+    }
+
     // MARK: - URL Scheme Allowlist
 
     @Test func `allowed URL schemes`() {

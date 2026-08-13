@@ -42,8 +42,29 @@ struct PairingPayloadTests {
         #expect(PairingPayload.sanitizeHost("metadata.google.internal") == nil)
         #expect(PairingPayload.sanitizeHost("192.168.1.10") == "192.168.1.10")
         #expect(PairingPayload.sanitizeHost("10.0.0.5") == "10.0.0.5")
+        #expect(PairingPayload.sanitizeHost("127.1") == nil)
+        #expect(PairingPayload.sanitizeHost("127.0.1") == nil)
+        #expect(PairingPayload.sanitizeHost("2130706433") == nil)
+        #expect(PairingPayload.sanitizeHost("0177.0.0.1") == nil)
+        #expect(PairingPayload.sanitizeHost("0x7f.0.0.1") == nil)
+        #expect(PairingPayload.sanitizeHost("0x7f000001") == nil)
+        #expect(PairingPayload.isBlockedJoinHost("127.1"))
+        #expect(PairingPayload.isBlockedJoinHost("2130706433"))
+        #expect(PairingPayload.isBlockedJoinHost("0177.0.0.1"))
+        #expect(PairingPayload.isBlockedJoinHost("0x7f.1"))
+        #expect(PairingPayload.isBlockedJoinHost("::ffff:127.0.0.1"))
+        #expect(PairingPayload.isBlockedJoinHost("::ffff:7f00:1"))
+        #expect(!PairingPayload.isBlockedJoinHost("192.168.1.10"))
+        #expect(PairingPayload.hostResolvesToBlockedAddress("127.0.0.1"))
+        #expect(!PairingPayload.hostResolvesToBlockedAddress("192.168.1.10"))
         #expect(throws: PairingError.self) {
             try PairingPayload.redeemURL(host: "127.0.0.1", port: 7_777)
+        }
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "127.1", port: 7_777)
+        }
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "2130706433", port: 7_777)
         }
         #expect(throws: PairingError.self) {
             try PairingPayload.redeemURL(host: "169.254.169.254", port: 80)
