@@ -36,6 +36,31 @@ struct PairingPayloadTests {
         }
         #expect(PairingPayload.sanitizeHost("http://x") == nil)
         #expect(PairingPayload.sanitizeHost("192.0.2.1") == "192.0.2.1")
+        #expect(PairingPayload.sanitizeHost("127.0.0.1") == nil)
+        #expect(PairingPayload.sanitizeHost("localhost") == nil)
+        #expect(PairingPayload.sanitizeHost("169.254.169.254") == nil)
+        #expect(PairingPayload.sanitizeHost("metadata.google.internal") == nil)
+        #expect(PairingPayload.sanitizeHost("192.168.1.10") == "192.168.1.10")
+        #expect(PairingPayload.sanitizeHost("10.0.0.5") == "10.0.0.5")
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "127.0.0.1", port: 7_777)
+        }
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "169.254.169.254", port: 80)
+        }
+        let lan = try PairingPayload.redeemURL(host: "192.168.1.10", port: 7_777)
+        #expect(lan.host == "192.168.1.10")
+        #expect(throws: PairingError.self) {
+            try PairingPayload.parse(
+                PairingPayload(
+                    code: "ABCD-EFGH",
+                    host: "127.0.0.1",
+                    port: 7_777,
+                    hostId: "host-a",
+                    fingerprint: "abcd",
+                ).uri,
+            )
+        }
     }
 
     @Test func `advertised addresses drop loopback and link local`() {

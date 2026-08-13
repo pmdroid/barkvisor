@@ -100,6 +100,7 @@ extension PairingService {
             hostId: hostId,
             csrPEM: csrPEM,
             deviceCertificatePEM: material.deviceCertificatePEM,
+            caCertificatePEM: material.caCertificatePEM,
         )
         let encoded: Data
         do {

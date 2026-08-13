@@ -47,6 +47,7 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
     public var hostId: String
     public var csrPEM: String
     public var deviceCertificatePEM: String
+    public var caCertificatePEM: String
     public var apiVersion: Int?
 
     public init(
@@ -54,12 +55,14 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
         hostId: String,
         csrPEM: String,
         deviceCertificatePEM: String,
+        caCertificatePEM: String,
         apiVersion: Int? = APIContract.version,
     ) {
         self.code = code
         self.hostId = hostId
         self.csrPEM = csrPEM
         self.deviceCertificatePEM = deviceCertificatePEM
+        self.caCertificatePEM = caCertificatePEM
         self.apiVersion = apiVersion
     }
 }
