@@ -275,15 +275,92 @@ final class WorkloadApplyServiceTests {
             "metadata": ["name": "no-disk"],
             "spec": ["resources": ["cpu": fixtureCPUCount, "memoryMb": 512]],
         ]
-        do {
-            _ = try await WorkloadApplyService.apply(
-                document: doc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
-            )
-            Issue.record("expected missing disk to fail")
-        } catch let BarkVisorError.badRequest(message) {
-            #expect(message.contains("boot diskId") || message.contains("cdrom"))
+        for dryRun in [true, false] {
+            do {
+                _ = try await WorkloadApplyService.apply(
+                    document: doc, dryRun: dryRun, db: dbPool, backgroundTasks: backgroundTasks,
+                )
+                Issue.record("expected missing disk to fail (dryRun=\(dryRun))")
+            } catch let BarkVisorError.badRequest(message) {
+                #expect(message.contains("boot diskId") || message.contains("cdrom"))
+            }
         }
         #expect(try await vmCount() == 0)
+    }
+
+    @Test func `dryRun create rejects a missing network`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-missing-net")
+        let doc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["name": "missing-net"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "networks": [["networkId": "net-missing", "portForwards": []]],
+            ],
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: doc, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.httpStatus == 404)
+        #expect(try await vmCount() == 0)
+    }
+
+    @Test func `dryRun update rejects colliding port forwards`() async throws {
+        let occupantDisk = try await insertFreeDisk(name: "boot-ha")
+        let otherDisk = try await insertFreeDisk(name: "boot-other")
+        let occupantDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["id": "vm-ha", "name": "Home Assistant"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": occupantDisk]],
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [["hostPort": 8_123, "guestPort": 8_123, "proto": "tcp"]],
+                ]],
+            ],
+        ]
+        let otherDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["id": "vm-other", "name": "Other"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": otherDisk]],
+            ],
+        ]
+        _ = try await WorkloadApplyService.apply(
+            document: occupantDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        let created = try await WorkloadApplyService.apply(
+            document: otherDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        let patch: [String: Any] = [
+            "metadata": ["id": "vm-other"],
+            "spec": [
+                "networks": [[
+                    "mode": "nat",
+                    "portForwards": [["hostPort": 8_123, "guestPort": 80, "proto": "tcp"]],
+                ]],
+            ],
+        ]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await WorkloadApplyService.apply(
+                document: patch, dryRun: true, db: self.dbPool, backgroundTasks: self.backgroundTasks,
+            )
+        }
+        #expect(error?.code == "port_in_use")
+        #expect(error?.errorDescription?.contains("Home Assistant") == true)
+
+        let live = try await fetchVM("vm-other")
+        #expect(live.decodedPortForwards.isEmpty)
+        #expect(live.specGeneration == created.generation)
+        #expect(try await vmCount() == 2)
     }
 
     // MARK: - Helpers
