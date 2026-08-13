@@ -446,6 +446,7 @@ struct VMController: RouteCollection {
                 displayResolution: body.displayResolution ?? spec.spec.display?.resolution,
                 uefi: body.uefi ?? spec.spec.firmware?.uefi,
                 tpmEnabled: body.tpmEnabled ?? spec.spec.firmware?.tpm,
+                overrides: spec.overrides,
             )
         }
         guard let name = body.name,

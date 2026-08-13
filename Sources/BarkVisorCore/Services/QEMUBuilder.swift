@@ -74,7 +74,24 @@ public enum QEMUBuilder {
 
     /// QEMU CPU model for the current accelerator.
     public static var cpuModel: String {
-        PlatformCapabilities.qemuCPUModel
+        cpuModel(for: accelerator)
+    }
+
+    public static func cpuModel(for accelerator: String) -> String {
+        WorkloadSpecResolver.cpuModel(for: accelerator)
+    }
+
+    static func hugepagesArgs(
+        hugepagesPath: String = "/dev/hugepages",
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) throws -> [String] {
+        guard fileExists(hugepagesPath) else {
+            throw BarkVisorError.badRequest(
+                "overrides.linux.hugepages is not available: \(hugepagesPath) is missing",
+            )
+        }
+        let path = try sanitizeQEMUArg(hugepagesPath, label: "hugepages path")
+        return ["-mem-prealloc", "-mem-path", path]
     }
 
     /// Machine type for the guest architecture (from `GuestProfiles`).
@@ -177,7 +194,8 @@ public enum QEMUBuilder {
     }
 
     public static func launchConfig(ctx: QEMUBuildContext) throws -> QEMULaunchConfig {
-        let spec = ctx.spec
+        let resolved = WorkloadSpecResolver.resolve(ctx.spec)
+        let spec = resolved.spec
         let disk = ctx.disk
         let guestType = try WorkloadSpecProjector.resolveGuestType(spec)
         let profile = try GuestProfiles.require(guestType)
@@ -191,10 +209,20 @@ public enum QEMUBuilder {
         let bootOrder = spec.spec.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
         let machine = spec.spec.machine ?? profile.machine
-        let backend = WorkloadBackendProjector.project(guestType: guestType)
+        let accelerator = resolved.accelerator ?? QEMUBuilder.accelerator
+        let backend = WorkloadBackendProjector.project(
+            guestType: guestType,
+            accelerator: accelerator,
+        )
 
         var args: [String] = []
-        args += ["-machine", machine, "-accel", backend.accelerator, "-cpu", cpuModel]
+        args += [
+            "-machine", machine, "-accel", backend.accelerator,
+            "-cpu", cpuModel(for: backend.accelerator),
+        ]
+        if resolved.hugepages {
+            args += try hugepagesArgs()
+        }
         args += specResourceArgs(spec)
         args += try firmwareArgs(spec: spec, vmID: vmID, vmType: guestType)
         args += ["-device", "qemu-xhci"]

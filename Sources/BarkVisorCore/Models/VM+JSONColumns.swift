@@ -38,6 +38,12 @@ extension VM {
         )
     }
 
+    public var decodedOverrides: WorkloadOverrides? {
+        let decoded = JSONColumnCoding.decode(WorkloadOverrides.self, from: overridesJson)
+        guard let decoded, !decoded.isEmpty else { return nil }
+        return decoded
+    }
+
     // MARK: - Write (empty → nil column)
 
     public mutating func setISOIds(_ ids: [String]?) {
@@ -58,5 +64,13 @@ extension VM {
 
     public mutating func setUSBDevices(_ devices: [USBPassthroughDevice]?) {
         usbDevices = JSONColumnCoding.encodeArrayOrNil(devices)
+    }
+
+    public mutating func setOverrides(_ overrides: WorkloadOverrides?) {
+        if let overrides, !overrides.isEmpty {
+            overridesJson = JSONColumnCoding.encode(overrides)
+        } else {
+            overridesJson = nil
+        }
     }
 }

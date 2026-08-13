@@ -27,6 +27,7 @@ import Foundation
 /// | spec.cloudInit.userDataRef | cloudInitPath |
 /// | spec.usb | usbDevices |
 /// | spec.sharedPaths | sharedPaths |
+/// | overrides | overridesJson |
 ///
 /// Host-only (status, not required on spec): state, pendingChanges, autoCreated,
 /// createdAt, updatedAt, specGeneration.
@@ -80,6 +81,7 @@ public enum WorkloadSpecProjector {
                 display: WorkloadDisplay(resolution: vm.displayResolution),
                 sharedPaths: shared.isEmpty ? nil : shared,
             ),
+            overrides: vm.decodedOverrides,
         )
     }
 
@@ -158,6 +160,7 @@ public enum WorkloadSpecProjector {
         if let shared = spec.spec.sharedPaths {
             vm.setSharedPaths(shared.isEmpty ? nil : shared)
         }
+        vm.setOverrides(spec.overrides)
     }
 
     public static func validate(_ spec: WorkloadSpec, existingID: String? = nil) throws {
@@ -178,11 +181,13 @@ public enum WorkloadSpecProjector {
         if let existingID, let specID = spec.metadata.id, specID != existingID {
             throw BarkVisorError.badRequest("metadata.id does not match VM \(existingID)")
         }
-        try VMLifecycleService.validateCPUCount(spec.spec.resources.cpu)
-        guard (128 ... 1_048_576).contains(spec.spec.resources.memoryMb) else {
+        try WorkloadSpecResolver.validate(spec)
+        let resolved = WorkloadSpecResolver.resolve(spec).spec
+        try VMLifecycleService.validateCPUCount(resolved.spec.resources.cpu)
+        guard (128 ... 1_048_576).contains(resolved.spec.resources.memoryMb) else {
             throw BarkVisorError.badRequest("spec.resources.memoryMb must be 128...1048576")
         }
-        _ = try resolveGuestType(spec)
+        _ = try resolveGuestType(resolved)
         for disk in spec.spec.disks {
             guard ["boot", "data", "cdrom"].contains(disk.role) else {
                 throw BarkVisorError.badRequest("Unknown disk role '\(disk.role)'")
@@ -209,7 +214,7 @@ public enum WorkloadSpecProjector {
                 PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
             })
         }
-        if let resolution = spec.spec.display?.resolution {
+        if let resolution = resolved.spec.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)
         }
     }

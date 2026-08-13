@@ -31,7 +31,11 @@ public enum WorkloadBackendProjector {
         accelerator: String = QEMUBuilder.accelerator,
         hostArch: String = PlatformCapabilities.hostArch,
     ) -> VMRuntimeBackend {
-        project(guestType: vm.vmType, accelerator: accelerator, hostArch: hostArch)
+        let spec = WorkloadSpecProjector.fromVM(vm)
+        let resolved = WorkloadSpecResolver.resolve(spec)
+        let guestType = (try? WorkloadSpecProjector.resolveGuestType(resolved.spec)) ?? vm.vmType
+        let accel = resolved.accelerator ?? accelerator
+        return project(guestType: guestType, accelerator: accel, hostArch: hostArch)
     }
 
     private static func warning(

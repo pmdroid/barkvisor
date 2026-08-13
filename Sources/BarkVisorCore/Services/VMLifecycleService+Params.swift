@@ -21,6 +21,7 @@ public struct CreateVMParams: Sendable {
     public let displayResolution: String?
     public let uefi: Bool?
     public let tpmEnabled: Bool?
+    public let overrides: WorkloadOverrides?
 
     public init(
         name: String,
@@ -41,6 +42,7 @@ public struct CreateVMParams: Sendable {
         displayResolution: String? = nil,
         uefi: Bool? = nil,
         tpmEnabled: Bool? = nil,
+        overrides: WorkloadOverrides? = nil,
     ) {
         self.name = name
         self.vmType = vmType
@@ -60,6 +62,7 @@ public struct CreateVMParams: Sendable {
         self.displayResolution = displayResolution
         self.uefi = uefi
         self.tpmEnabled = tpmEnabled
+        self.overrides = overrides
     }
 }
 

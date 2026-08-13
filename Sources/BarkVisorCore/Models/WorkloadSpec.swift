@@ -193,14 +193,182 @@ public struct WorkloadDisplay: Codable, Equatable, Sendable {
     }
 }
 
-/// Platform-specific override bags. Empty in Wave 0; reserved for PAS-41.
-public struct WorkloadOverrides: Codable, Equatable, Sendable {
-    public var linux: [String: String]?
-    public var macos: [String: String]?
+/// Partial resource overlay. Omitted fields keep the portable spec value.
+public struct WorkloadResourcesOverlay: Codable, Equatable, Sendable {
+    public var cpu: Int?
+    public var memoryMb: Int?
 
-    public init(linux: [String: String]? = nil, macos: [String: String]? = nil) {
+    public init(cpu: Int? = nil, memoryMb: Int? = nil) {
+        self.cpu = cpu
+        self.memoryMb = memoryMb
+    }
+}
+
+/// Partial firmware overlay. Omitted fields keep the portable spec value.
+public struct WorkloadFirmwareOverlay: Codable, Equatable, Sendable {
+    public var uefi: Bool?
+    public var tpm: Bool?
+
+    public init(uefi: Bool? = nil, tpm: Bool? = nil) {
+        self.uefi = uefi
+        self.tpm = tpm
+    }
+}
+
+/// Platform-specific spec overlay (PAS-41). Deep-merged onto `spec` for the
+/// current host OS at validate/launch. Raw QEMU argv is rejected.
+public struct WorkloadSpecOverlay: Equatable, Sendable {
+    public var resources: WorkloadResourcesOverlay?
+    public var arch: String?
+    public var guestType: String?
+    public var osFamily: String?
+    public var machine: String?
+    public var firmware: WorkloadFirmwareOverlay?
+    public var bootOrder: String?
+    public var display: WorkloadDisplay?
+    public var accelerator: String?
+    public var hugepages: Bool?
+
+    public init(
+        resources: WorkloadResourcesOverlay? = nil,
+        arch: String? = nil,
+        guestType: String? = nil,
+        osFamily: String? = nil,
+        machine: String? = nil,
+        firmware: WorkloadFirmwareOverlay? = nil,
+        bootOrder: String? = nil,
+        display: WorkloadDisplay? = nil,
+        accelerator: String? = nil,
+        hugepages: Bool? = nil,
+    ) {
+        self.resources = resources
+        self.arch = arch
+        self.guestType = guestType
+        self.osFamily = osFamily
+        self.machine = machine
+        self.firmware = firmware
+        self.bootOrder = bootOrder
+        self.display = display
+        self.accelerator = accelerator
+        self.hugepages = hugepages
+    }
+
+    public var isEmpty: Bool {
+        resources == nil && arch == nil && guestType == nil && osFamily == nil
+            && machine == nil && firmware == nil && bootOrder == nil
+            && display == nil && accelerator == nil && hugepages == nil
+    }
+}
+
+extension WorkloadSpecOverlay: Codable {
+    /// Keys that would inject raw QEMU arguments. Never accepted in v1.
+    public static let argvKeys: Set<String> = [
+        "argv", "args", "qemuArgs", "qemuArgv", "extraArgs", "extraQemuArgs",
+        "rawArgs", "cmdline", "qemu", "qemuArg", "additionalArgs", "extraQemu",
+    ]
+
+    /// Attachment fields stay on the portable spec in v1 (no host-local apply).
+    public static let deferredKeys: Set<String> = [
+        "disks", "networks", "usb", "sharedPaths", "cloudInit",
+    ]
+
+    public static let forbiddenKeys: Set<String> = argvKeys.union(deferredKeys)
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case resources, arch, guestType, osFamily, machine
+        case firmware, bootOrder, display, accelerator, hugepages
+    }
+
+    public init(from decoder: Decoder) throws {
+        try WorkloadOverrideJSON.rejectUnknownKeys(
+            decoder: decoder,
+            known: Set(CodingKeys.allCases.map(\.stringValue)),
+        )
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        resources = try container.decodeIfPresent(WorkloadResourcesOverlay.self, forKey: .resources)
+        arch = try container.decodeIfPresent(String.self, forKey: .arch)
+        guestType = try container.decodeIfPresent(String.self, forKey: .guestType)
+        osFamily = try container.decodeIfPresent(String.self, forKey: .osFamily)
+        machine = try container.decodeIfPresent(String.self, forKey: .machine)
+        firmware = try container.decodeIfPresent(WorkloadFirmwareOverlay.self, forKey: .firmware)
+        bootOrder = try container.decodeIfPresent(String.self, forKey: .bootOrder)
+        display = try container.decodeIfPresent(WorkloadDisplay.self, forKey: .display)
+        accelerator = try container.decodeIfPresent(String.self, forKey: .accelerator)
+        hugepages = try container.decodeIfPresent(Bool.self, forKey: .hugepages)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(resources, forKey: .resources)
+        try container.encodeIfPresent(arch, forKey: .arch)
+        try container.encodeIfPresent(guestType, forKey: .guestType)
+        try container.encodeIfPresent(osFamily, forKey: .osFamily)
+        try container.encodeIfPresent(machine, forKey: .machine)
+        try container.encodeIfPresent(firmware, forKey: .firmware)
+        try container.encodeIfPresent(bootOrder, forKey: .bootOrder)
+        try container.encodeIfPresent(display, forKey: .display)
+        try container.encodeIfPresent(accelerator, forKey: .accelerator)
+        try container.encodeIfPresent(hugepages, forKey: .hugepages)
+    }
+}
+
+/// Platform-specific override bags. Deep-merged at apply/launch for the host OS.
+public struct WorkloadOverrides: Codable, Equatable, Sendable {
+    public var linux: WorkloadSpecOverlay?
+    public var macos: WorkloadSpecOverlay?
+
+    public init(linux: WorkloadSpecOverlay? = nil, macos: WorkloadSpecOverlay? = nil) {
         self.linux = linux
         self.macos = macos
+    }
+
+    public var isEmpty: Bool {
+        (linux == nil || linux?.isEmpty == true) && (macos == nil || macos?.isEmpty == true)
+    }
+}
+
+enum WorkloadOverrideJSON {
+    struct DynamicKey: CodingKey {
+        var stringValue: String
+        var intValue: Int?
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) {
+            self.stringValue = String(intValue)
+            self.intValue = intValue
+        }
+    }
+
+    static func rejectUnknownKeys(decoder: Decoder, known: Set<String>) throws {
+        let container = try decoder.container(keyedBy: DynamicKey.self)
+        for key in container.allKeys {
+            let name = key.stringValue
+            let path = (decoder.codingPath.map(\.stringValue) + [name]).joined(separator: ".")
+            if WorkloadSpecOverlay.argvKeys.contains(name) {
+                throw DecodingError.dataCorruptedError(
+                    forKey: key,
+                    in: container,
+                    debugDescription: "\(path) is not allowed (raw QEMU argv is not supported)",
+                )
+            }
+            if WorkloadSpecOverlay.deferredKeys.contains(name) {
+                throw DecodingError.dataCorruptedError(
+                    forKey: key,
+                    in: container,
+                    debugDescription: "\(path) is not supported in v1",
+                )
+            }
+            if !known.contains(name) {
+                throw DecodingError.dataCorruptedError(
+                    forKey: key,
+                    in: container,
+                    debugDescription: "\(path) is not a valid override",
+                )
+            }
+        }
     }
 }
 

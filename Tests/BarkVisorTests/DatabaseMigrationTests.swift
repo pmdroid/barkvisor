@@ -156,6 +156,14 @@ struct DatabaseMigrationTests {
         }
     }
 
+    @Test func `m004 adds overridesJson column`() throws {
+        let queue = try migratedQueue()
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(columns.contains("overridesJson"))
+        }
+    }
+
     // MARK: - Tables Exist
 
     @Test func `expected tables exist`() throws {
