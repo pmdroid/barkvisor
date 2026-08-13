@@ -44,9 +44,10 @@ extension VMLifecycleService {
 
     static func persistableUSBDevices(
         _ devices: [USBPassthroughDevice]?,
+        hostDevices: [HostUSBDevice]? = nil,
     ) throws -> [USBPassthroughDevice]? {
         guard devices != nil else { return nil }
-        let hosts = (try? USBDeviceService.listDevices()) ?? []
+        let hosts = hostDevices ?? ((try? USBDeviceService.listDevices()) ?? [])
         return try USBPassthroughService.normalizeForPersist(devices, hostDevices: hosts)
     }
 
