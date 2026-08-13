@@ -114,9 +114,13 @@ public actor VMManager: VMStateQuerying {
             throw BarkVisorError.vmAlreadyRunning(vmID)
         }
 
-        // PAS-48: block pre-existing foreign-arch rows before QEMU launch / state flip.
+        // PAS-48: block foreign-arch guests (portable or overlay) before QEMU / state flip.
+        // Overlay guestType stays in overridesJson; QEMUBuilder launches the merged guest.
+        let resolvedGuest = try WorkloadSpecResolver.launchGuestType(
+            WorkloadSpecProjector.fromVM(loaded.vm),
+        )
         try PlatformCapabilities.requireCompatibleGuestArch(
-            GuestProfiles.require(loaded.vm.vmType).arch,
+            GuestProfiles.require(resolvedGuest).arch,
         )
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)

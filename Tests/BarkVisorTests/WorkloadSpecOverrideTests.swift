@@ -314,4 +314,126 @@ struct WorkloadSpecOverrideTests {
         #expect(QEMUBuilder.cpuModel(for: "kvm") == "host")
         #expect(QEMUBuilder.cpuModel(for: "hvf") == "host")
     }
+
+    @Test func `active overlay guestType is rejected when foreign to this host`() {
+        let host = PlatformCapabilities.hostArch
+        let native = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let foreign = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        let spec = specWithHostOverlay(portableGuest: native, overlayGuest: foreign)
+
+        do {
+            try WorkloadSpecResolver.validate(spec)
+            Issue.record("expected overlay guestType \(foreign) to be rejected on \(host)")
+        } catch let error as BarkVisorError {
+            let text = error.localizedDescription
+            #expect(text.contains("overrides."))
+            #expect(text.contains("guestType"))
+            #expect(text.lowercased().contains("not compatible")
+                || text.lowercased().contains("cross-architecture"))
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
+    @Test func `projector validate rejects foreign active overlay guestType`() {
+        let host = PlatformCapabilities.hostArch
+        let native = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let foreign = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        let spec = specWithHostOverlay(portableGuest: native, overlayGuest: foreign)
+
+        do {
+            try WorkloadSpecProjector.validate(spec)
+            Issue.record("expected projector.validate to reject overlay guestType \(foreign)")
+        } catch let error as BarkVisorError {
+            let text = error.localizedDescription
+            #expect(text.contains("overrides."))
+            #expect(text.lowercased().contains("not compatible")
+                || text.lowercased().contains("cross-architecture"))
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
+    @Test func `inactive overlay guestType may be foreign`() throws {
+        let host = PlatformCapabilities.hostArch
+        let native = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let foreign = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        let overlay = WorkloadSpecOverlay(guestType: foreign)
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "ov"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 1_024),
+                guestType: native,
+            ),
+            overrides: WorkloadSpecResolver.HostPlatform.current == .linux
+                ? WorkloadOverrides(macos: overlay)
+                : WorkloadOverrides(linux: overlay),
+        )
+        try WorkloadSpecResolver.validate(spec)
+        try WorkloadSpecProjector.validate(spec)
+    }
+
+    @Test func `active overlay guestType matching host is accepted`() throws {
+        let native = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let spec = specWithHostOverlay(portableGuest: native, overlayGuest: native)
+        try WorkloadSpecResolver.validate(spec)
+        try WorkloadSpecProjector.validate(spec)
+        #expect(try WorkloadSpecResolver.launchGuestType(spec) == native)
+    }
+
+    @Test func `launchGuestType prefers overlay guestType over fromVM arch`() throws {
+        let host = PlatformCapabilities.hostArch
+        let native = GuestProfiles.defaultLinuxID(forImageArch: host)
+        let foreign = host == "arm64" ? "linux-amd64" : "linux-arm64"
+        var vm = VM(
+            id: "vm-ov-arch",
+            name: "ov",
+            vmType: native,
+            state: "stopped",
+            cpuCount: fixtureCPUCount,
+            memoryMb: 1_024,
+            bootDiskId: "disk-boot",
+            networkId: nil,
+            cloudInitPath: nil,
+            description: nil,
+            bootOrder: nil,
+            displayResolution: nil,
+            additionalDiskIds: nil,
+            uefi: true,
+            tpmEnabled: false,
+            macAddress: nil,
+            sharedPaths: nil,
+            portForwards: nil,
+            autoCreated: false,
+            pendingChanges: false,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+        )
+        let overlay = WorkloadSpecOverlay(guestType: foreign)
+        vm.setOverrides(
+            WorkloadSpecResolver.HostPlatform.current == .linux
+                ? WorkloadOverrides(linux: overlay)
+                : WorkloadOverrides(macos: overlay),
+        )
+        let spec = WorkloadSpecProjector.fromVM(vm)
+        #expect(spec.spec.arch != nil)
+        #expect(try WorkloadSpecResolver.launchGuestType(spec) == foreign)
+        #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec)
+        }
+    }
+
+    private func specWithHostOverlay(portableGuest: String, overlayGuest: String) -> WorkloadSpec {
+        let overlay = WorkloadSpecOverlay(guestType: overlayGuest)
+        return WorkloadSpec(
+            metadata: WorkloadMetadata(name: "ov"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 1_024),
+                guestType: portableGuest,
+            ),
+            overrides: WorkloadSpecResolver.HostPlatform.current == .linux
+                ? WorkloadOverrides(linux: overlay)
+                : WorkloadOverrides(macos: overlay),
+        )
+    }
 }
