@@ -180,9 +180,7 @@ public enum WorkloadApplyService {
         let forwards = spec.spec.networks.first?.portForwards.map {
             PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
         }
-        let usb = spec.spec.usb.map {
-            USBPassthroughDevice(vendorId: $0.vendorId, productId: $0.productId, label: $0.label)
-        }
+        let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
         let requestedID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines)
         return CreateVMParams(
             id: requestedID?.isEmpty == true ? nil : requestedID,
