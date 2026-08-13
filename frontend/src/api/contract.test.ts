@@ -55,6 +55,9 @@ describe('API contract (PAS-78)', () => {
       '/api/vms/{id}/health',
       '/api/workloads/health-summary',
       '/api/agent/whoami',
+      '/api/pairing/codes',
+      '/api/pairing/redeem',
+      '/api/pairing/join',
     ]) {
       expect(yaml).toContain(`  ${path}:`)
     }
