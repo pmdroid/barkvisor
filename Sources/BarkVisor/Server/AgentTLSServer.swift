@@ -117,7 +117,15 @@ public final class AgentTLSServer: @unchecked Sendable {
             promise.succeed(.failed)
             return
         }
-        switch DeviceTrust.evaluate(leaf: leaf, homeCAPEM: homeCAPEM, pins: pins.load()) {
+        let loadedPins: [PeerPin]
+        do {
+            loadedPins = try pins.load()
+        } catch {
+            Log.server.error("Peer pin store is corrupt: \(error.localizedDescription)")
+            promise.succeed(.failed)
+            return
+        }
+        switch DeviceTrust.evaluate(leaf: leaf, homeCAPEM: homeCAPEM, pins: loadedPins) {
         case .accepted:
             promise.succeed(
                 .certificateVerified(VerificationMetadata(NIOSSL.ValidatedCertificateChain(certs))),
@@ -144,6 +152,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         do {
             let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
             let pins = PeerPinStore(dataDir: dataDir)
+            _ = try pins.load()
             let server = AgentTLSServer(
                 material: material,
                 pins: pins,

@@ -35,7 +35,13 @@ struct MTLSMiddleware: AsyncMiddleware {
         } catch {
             throw Abort(.unauthorized, reason: "Unreadable client certificate")
         }
-        switch DeviceTrust.evaluate(leafPEM: pem, homeCAPEM: homeCAPEM, pins: pins.load()) {
+        let loadedPins: [PeerPin]
+        do {
+            loadedPins = try pins.load()
+        } catch {
+            throw Abort(.internalServerError, reason: "Peer pin store is corrupt")
+        }
+        switch DeviceTrust.evaluate(leafPEM: pem, homeCAPEM: homeCAPEM, pins: loadedPins) {
         case let .accepted(hostId, source):
             let fingerprint = (try? DeviceTrust.fingerprint(pem: pem)) ?? ""
             request.mtlsPeer = AgentPeerIdentity(
