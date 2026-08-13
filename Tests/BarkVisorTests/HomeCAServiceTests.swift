@@ -95,4 +95,61 @@ struct HomeCAServiceTests {
         #expect(left.caFingerprint != right.caFingerprint)
         #expect(left.deviceFingerprint != right.deviceFingerprint)
     }
+
+    @Test func `corrupt ca key does not remint home ca`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        let keyURL = HomeCAService.caDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.caKeyFileName)
+        try Data("not-a-key".utf8).write(to: keyURL, options: [.atomic])
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
+    }
+
+    @Test func `mismatched ca key does not remint home ca`() throws {
+        let dir = try isolatedDir()
+        let otherDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: otherDir)
+        }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        let other = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: UUID().uuidString)
+        let keyURL = HomeCAService.caDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.caKeyFileName)
+        try Data(other.caKeyPEM.utf8).write(to: keyURL, options: [.atomic])
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
+    }
+
+    @Test func `partial ca files do not remint home ca`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        try FileManager.default.removeItem(
+            at: HomeCAService.caDirectory(in: dir)
+                .appendingPathComponent(HomeCAService.caKeyFileName),
+        )
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
+    }
+
+    private func persistedCAFingerprint(in dataDir: URL) throws -> String {
+        let certPEM = try String(
+            contentsOf: HomeCAService.caDirectory(in: dataDir)
+                .appendingPathComponent(HomeCAService.caCertificateFileName),
+            encoding: .utf8,
+        )
+        return try DeviceTrust.fingerprint(pem: certPEM)
+    }
 }

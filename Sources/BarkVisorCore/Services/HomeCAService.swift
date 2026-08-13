@@ -137,8 +137,18 @@ public enum HomeCAService {
         let certURL = dir.appendingPathComponent(caCertificateFileName)
         let keyURL = dir.appendingPathComponent(caKeyFileName)
 
-        if let existing = try? loadCA(certURL: certURL, keyURL: keyURL) {
-            return existing
+        let certExists = FileManager.default.fileExists(atPath: certURL.path)
+        let keyExists = FileManager.default.fileExists(atPath: keyURL.path)
+        if certExists || keyExists {
+            do {
+                return try loadCA(certURL: certURL, keyURL: keyURL)
+            } catch let error as HomeCAError {
+                throw error
+            } catch {
+                throw HomeCAError.corruptMaterial(
+                    "unable to load Home CA: \(error.localizedDescription)",
+                )
+            }
         }
 
         let key = P256.Signing.PrivateKey()
@@ -176,6 +186,9 @@ public enum HomeCAService {
         let keyPEM = try String(contentsOf: keyURL, encoding: .utf8)
         let cert = try Certificate(pemEncoded: certPEM)
         let key = try Certificate.PrivateKey(pemEncoded: keyPEM)
+        guard key.publicKey.isValidSignature(cert.signature, for: cert) else {
+            throw HomeCAError.corruptMaterial("ca.key does not match ca.crt")
+        }
         return CAFiles(certificatePEM: certPEM, keyPEM: keyPEM, certificate: cert, key: key)
     }
 
@@ -352,11 +365,13 @@ public struct IssuedDeviceCertificate: Sendable, Equatable {
 public enum HomeCAError: Error, LocalizedError, Sendable, Equatable {
     case invalidCSR(String)
     case persistFailed(String)
+    case corruptMaterial(String)
 
     public var errorDescription: String? {
         switch self {
         case let .invalidCSR(reason): "Invalid certificate signing request: \(reason)"
         case let .persistFailed(reason): "Failed to persist Home CA material: \(reason)"
+        case let .corruptMaterial(reason): "Home CA material is corrupt: \(reason)"
         }
     }
 }
