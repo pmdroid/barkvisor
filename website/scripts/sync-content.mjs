@@ -53,7 +53,7 @@ const map = {
   'product-terminology.md': {
     out: 'concepts/terminology.md',
     title: 'Product terminology',
-    description: 'Device, not node — words for the machine running BarkVisor.',
+    description: 'Home and Device — words for the tenancy and the machine running BarkVisor.',
   },
 };
 

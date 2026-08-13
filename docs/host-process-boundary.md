@@ -2,7 +2,7 @@
 
 **One BarkVisor process ↔ one host identity ↔ one data directory.**
 
-In product copy that machine is a **Device**. See [Product terminology](product-terminology.md). Do not call it a node.
+In product copy that machine is a **Device** in a **Home**. See [Product terminology](product-terminology.md). Do not call it a node or a cluster.
 
 ## Why
 
@@ -30,6 +30,6 @@ New Core code may take a small context value (data dir, durable `hostId`, invent
 
 ## Related
 
-- Product: [terminology](product-terminology.md) (PAS-97 Device / PAS-82 Home)
+- Product: [terminology](product-terminology.md) (Home + Device)
 - Product: agent identity + inventory API (PAS-42)
 - Prep: HostInventory builder (PAS-106), capabilities projection (PAS-107)
