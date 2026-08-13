@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import Testing
 import X509
@@ -98,5 +99,109 @@ struct DeviceTrustTests {
     @Test func `rejects garbage pem`() {
         let decision = DeviceTrust.evaluate(leafPEM: "nope", homeCAPEM: "also-nope", pins: [])
         #expect(decision == .rejected(.invalidPEM))
+    }
+
+    @Test func `rejects pinned cert without device san`() throws {
+        let now = Date()
+        let (ca, caKey, caPEM) = try mintCA(now: now)
+        let leaf = try mintLeaf(hostId: nil, issuer: (ca, caKey), now: now)
+        let pin = try PeerPin(
+            hostId: "claimed-host",
+            fingerprint: DeviceTrust.fingerprint(certificate: leaf),
+            pinnedAt: iso8601.string(from: now),
+        )
+        let decision = DeviceTrust.evaluate(
+            leaf: leaf,
+            homeCAPEM: caPEM,
+            pins: [pin],
+            now: now,
+        )
+        #expect(decision == .rejected(.missingDeviceSAN))
+    }
+
+    @Test func `rejects leaf when home ca is expired`() throws {
+        let now = Date()
+        let (ca, caKey, caPEM) = try mintCA(now: now, notBefore: -200, notAfter: -100)
+        let leaf = try mintLeaf(
+            hostId: UUID().uuidString,
+            issuer: (ca, caKey),
+            now: now,
+            notBefore: -150,
+            notAfter: 3_600,
+        )
+        let decision = DeviceTrust.evaluate(leaf: leaf, homeCAPEM: caPEM, pins: [], now: now)
+        #expect(decision == .rejected(.expired))
+    }
+
+    @Test func `rejects leaf when home ca is not yet valid`() throws {
+        let now = Date()
+        let (ca, caKey, caPEM) = try mintCA(now: now, notBefore: 100, notAfter: 10_000)
+        let leaf = try mintLeaf(
+            hostId: UUID().uuidString,
+            issuer: (ca, caKey),
+            now: now,
+        )
+        let decision = DeviceTrust.evaluate(leaf: leaf, homeCAPEM: caPEM, pins: [], now: now)
+        #expect(decision == .rejected(.expired))
+    }
+
+    private func mintCA(
+        now: Date,
+        notBefore: TimeInterval = -60,
+        notAfter: TimeInterval = 365 * 24 * 3_600,
+    ) throws -> (Certificate, Certificate.PrivateKey, String) {
+        let privateKey = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let name = try DistinguishedName {
+            CommonName("Test Home CA")
+        }
+        let cert = try Certificate(
+            version: .v3,
+            serialNumber: Certificate.SerialNumber(1),
+            publicKey: privateKey.publicKey,
+            notValidBefore: now.addingTimeInterval(notBefore),
+            notValidAfter: now.addingTimeInterval(notAfter),
+            issuer: name,
+            subject: name,
+            signatureAlgorithm: .ecdsaWithSHA256,
+            extensions: Certificate.Extensions {
+                Critical(BasicConstraints.isCertificateAuthority(maxPathLength: 0))
+                Critical(KeyUsage(keyCertSign: true, cRLSign: true))
+            },
+            issuerPrivateKey: privateKey,
+        )
+        return try (cert, privateKey, cert.serializeAsPEM().pemString)
+    }
+
+    private func mintLeaf(
+        hostId: String?,
+        issuer: (Certificate, Certificate.PrivateKey),
+        now: Date,
+        notBefore: TimeInterval = -60,
+        notAfter: TimeInterval = 3_600,
+    ) throws -> Certificate {
+        let privateKey = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let subject = try DistinguishedName {
+            CommonName(hostId ?? "no-san")
+        }
+        return try Certificate(
+            version: .v3,
+            serialNumber: Certificate.SerialNumber(),
+            publicKey: privateKey.publicKey,
+            notValidBefore: now.addingTimeInterval(notBefore),
+            notValidAfter: now.addingTimeInterval(notAfter),
+            issuer: issuer.0.subject,
+            subject: subject,
+            signatureAlgorithm: .ecdsaWithSHA256,
+            extensions: Certificate.Extensions {
+                Critical(BasicConstraints.notCertificateAuthority)
+                Critical(KeyUsage(digitalSignature: true, keyEncipherment: true))
+                if let hostId {
+                    SubjectAlternativeNames([
+                        .uniformResourceIdentifier(DeviceTrust.deviceURI(hostId: hostId)),
+                    ])
+                }
+            },
+            issuerPrivateKey: issuer.1,
+        )
     }
 }
