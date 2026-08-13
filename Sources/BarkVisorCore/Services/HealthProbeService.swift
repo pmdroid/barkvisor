@@ -410,7 +410,10 @@ enum HealthProbeLive {
         config.timeoutIntervalForRequest = timeout
         config.timeoutIntervalForResource = timeout
         config.httpShouldSetCookies = false
-        config.waitsForConnectivity = false
+        // FoundationNetworking exposes waitsForConnectivity as get-only.
+        #if canImport(Darwin)
+            config.waitsForConnectivity = false
+        #endif
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
 
