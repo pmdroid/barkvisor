@@ -16,6 +16,7 @@ public final class VaporServer: @unchecked Sendable {
     private(set) var healthProbes: HealthProbeService?
     private(set) var diskInfoCache: DiskInfoCache?
     private(set) var setupMiddleware: SetupMiddleware?
+    private(set) var agentTLSServer: AgentTLSServer?
 
     /// Non-nil when the database was recovered in a lossy way at startup.
     /// The UI can check this to display a warning banner to the user.
@@ -104,6 +105,13 @@ public final class VaporServer: @unchecked Sendable {
 
         try await app.startup()
         self.app = app
+
+        // PAS-76: agent mTLS is best-effort. Local SQLite / QEMU keep running
+        // if 7778 cannot bind or cert material cannot be written (PAS-47/90).
+        self.agentTLSServer = await AgentTLSServer.startDetached(
+            dataDir: Config.dataDir,
+            hostId: Config.hostId,
+        )
     }
 
     // MARK: - Bootstrap Helpers
@@ -368,6 +376,10 @@ public final class VaporServer: @unchecked Sendable {
         // Detach monitoring but leave QEMU processes running
         if let vmManager {
             await vmManager.detachAll()
+        }
+        if let agentTLSServer {
+            await agentTLSServer.stop()
+            self.agentTLSServer = nil
         }
         if let app {
             try? await app.asyncShutdown()

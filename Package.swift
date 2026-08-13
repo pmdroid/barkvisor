@@ -14,6 +14,7 @@ var coreDependencies: [Target.Dependency] = [
     .product(name: "Logging", package: "swift-log"),
     .product(name: "SwiftSentry", package: "swift-sentry"),
     .product(name: "Crypto", package: "swift-crypto"),
+    .product(name: "X509", package: "swift-certificates"),
 ]
 
 var testDependencies: [Target.Dependency] = [
@@ -23,6 +24,10 @@ var testDependencies: [Target.Dependency] = [
     .product(name: "Yams", package: "Yams"),
     // For ImageChecksumTests (and any CryptoKit/Crypto usage) on Linux.
     .product(name: "Crypto", package: "swift-crypto"),
+    .product(name: "X509", package: "swift-certificates"),
+    .product(name: "NIOSSL", package: "swift-nio-ssl"),
+    .product(name: "NIOPosix", package: "swift-nio"),
+    .product(name: "AsyncHTTPClient", package: "async-http-client"),
 ]
 
 #if os(macOS)
@@ -67,6 +72,7 @@ packageTargets.append(contentsOf: [
         dependencies: [
             "BarkVisorCore",
             .product(name: "Vapor", package: "vapor"),
+            .product(name: "NIOSSL", package: "swift-nio-ssl"),
         ],
         path: "Sources/BarkVisor",
         exclude: [
@@ -103,6 +109,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/swift-sentry/swift-sentry.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.30.0"),
+        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
     ],
     targets: packageTargets,
 )
