@@ -9,7 +9,8 @@ extension PairingJoinRequest: Content {}
 extension PairingJoinResponse: Content {}
 
 /// Pairing issue / redeem (PAS-45). JWT on the issuer; redeem is public
-/// and rate-limited. Join is public only until setup completes.
+/// and rate-limited. Join requires a QR payload and is public only until
+/// setup completes.
 struct PairingController: RouteCollection {
     let offers: PairingOfferStore
     let setupMiddleware: SetupMiddleware

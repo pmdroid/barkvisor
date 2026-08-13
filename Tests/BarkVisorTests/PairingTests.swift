@@ -392,8 +392,10 @@ struct PairingTests {
         )
         #expect(joined.peerHostId == issuerId)
         #expect(joined.pinned)
+        #expect(joined.agentPort == 7_778)
         #expect(try PeerPinStore(dataDir: joinerDir).contains(fingerprint: issuer.deviceFingerprint))
         #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.peerHostId == issuerId)
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.agentPort == 7_778)
 
         let swapped = PairingRedeemResponse(
             hostId: issuerId,
@@ -677,6 +679,17 @@ struct PairingTests {
         #expect(resolved.host == "192.0.2.10")
         #expect(resolved.port == 7_777)
         #expect(resolved.fingerprint == "abcd")
+        #expect(throws: PairingError.self) {
+            try PairingService.resolveJoinPayload(
+                PairingJoinRequest(
+                    code: "ABCD-EFGH",
+                    host: "192.0.2.10",
+                    port: 7_777,
+                    hostId: "host-a",
+                    fingerprint: "abcd",
+                ),
+            )
+        }
     }
 }
 

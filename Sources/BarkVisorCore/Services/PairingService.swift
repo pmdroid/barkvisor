@@ -229,22 +229,27 @@ public enum PairingService {
 
         let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
         let consumed = try store.consume(code: req.code, now: input.now)
-        var committed = false
-        defer {
-            if !committed {
-                try? store.restore(consumed)
+        let issued: IssuedDeviceCertificate
+        do {
+            issued = try issueAndPin(
+                joinerHostId: joinerHostId,
+                csrPEM: req.csrPEM,
+                fingerprint: presented.fingerprint,
+                material: material,
+                dataDir: input.dataDir,
+                now: input.now,
+                pins: pins,
+            )
+        } catch {
+            do {
+                try store.restore(consumed)
+            } catch {
+                throw PairingError.unavailable(
+                    "Unable to restore pairing offer after redeem failure; issue a new code",
+                )
             }
+            throw error
         }
-        let issued = try issueAndPin(
-            joinerHostId: joinerHostId,
-            csrPEM: req.csrPEM,
-            fingerprint: presented.fingerprint,
-            material: material,
-            dataDir: input.dataDir,
-            now: input.now,
-            pins: pins,
-        )
-        committed = true
         return PairingRedeemResponse(
             hostId: input.issuerHostId,
             deviceCertificatePEM: material.deviceCertificatePEM,
@@ -258,36 +263,15 @@ public enum PairingService {
     }
 
     public static func resolveJoinPayload(_ request: PairingJoinRequest) throws -> PairingPayload {
-        if let raw = request.qrPayload?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-            // QR host/port are the out-of-band redeem target. Request
-            // overrides would let an unauthenticated join caller redirect
-            // redeem at an attacker while keeping the legitimate fingerprint.
-            return try PairingPayload.parse(raw)
+        // QR host/port/agentPort are the out-of-band redeem target.
+        // Typed host/port on the non-QR path would let an unauthenticated
+        // setup-window caller aim server-side HTTP redeem at an arbitrary
+        // LAN or rebinding host.
+        guard let raw = request.qrPayload?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            throw PairingError.invalidPayload("QR payload is required to join")
         }
-        guard let code = request.code, PairingCode.isValid(code) else {
-            throw PairingError.invalidPayload("Pairing code or QR payload is required")
-        }
-        guard let host = request.host.flatMap(PairingPayload.sanitizeHost) else {
-            throw PairingError.invalidPayload("Pairing host is required when no QR is provided")
-        }
-        guard let port = request.port, (1 ... 65_535).contains(port) else {
-            throw PairingError.invalidPayload("Pairing port is required when no QR is provided")
-        }
-        guard let hostId = request.hostId?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !hostId.isEmpty else {
-            throw PairingError.invalidPayload("hostId is required when no QR is provided")
-        }
-        guard let fingerprint = request.fingerprint?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !fingerprint.isEmpty else {
-            throw PairingError.invalidPayload("fingerprint is required when no QR is provided")
-        }
-        return PairingPayload(
-            code: code,
-            host: host,
-            port: port,
-            hostId: hostId,
-            fingerprint: fingerprint,
-        )
+        return try PairingPayload.parse(raw)
     }
 
     // MARK: - Private

@@ -103,6 +103,153 @@ struct PairingReviewTests {
         #expect(remote.agentPort == 9_123)
     }
 
+    @Test func `join apply rejects agentPort mismatch and persists matching port`() throws {
+        let issuerDir = try isolatedDir("iss-ap")
+        let joinerDir = try isolatedDir("join-ap")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.0.2.9",
+            port: 7_777,
+            agentPort: 9_123,
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+        var honest = try honestRedeemResponse(
+            issuer: issuer,
+            issuerId: issuerId,
+            joiner: joiner,
+            joinerId: joinerId,
+        )
+        honest.agentPort = 7_778
+        #expect(throws: PairingError.self) {
+            try PairingService.applyTrust(
+                response: honest,
+                expected: payload,
+                dataDir: joinerDir,
+                localHostId: joinerId,
+            )
+        }
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
+        honest.agentPort = 9_123
+        let joined = try PairingService.applyTrust(
+            response: honest,
+            expected: payload,
+            dataDir: joinerDir,
+            localHostId: joinerId,
+        )
+        #expect(joined.agentPort == 9_123)
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.agentPort == 9_123)
+    }
+
+    @Test func `join apply rejects expired redeem certificates`() throws {
+        let issuerDir = try isolatedDir("iss-exp")
+        let joinerDir = try isolatedDir("join-exp")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.0.2.9",
+            port: 7_777,
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+        let honest = try honestRedeemResponse(
+            issuer: issuer,
+            issuerId: issuerId,
+            joiner: joiner,
+            joinerId: joinerId,
+        )
+        #expect(throws: PairingError.self) {
+            try PairingService.applyTrust(
+                response: honest,
+                expected: payload,
+                dataDir: joinerDir,
+                localHostId: joinerId,
+                now: Date().addingTimeInterval(20 * 365 * 24 * 3_600),
+            )
+        }
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
+    }
+
+    @Test func `legacy receipt without agentPort defaults to config`() throws {
+        let json = Data(
+            """
+            {"peerHostId":"h","peerFingerprint":"f","caCertificatePEM":"c",\
+            "caFingerprint":"cf","issuedCertificatePEM":"i","issuedFingerprint":"if",\
+            "pairedAt":"2020-01-01T00:00:00Z"}
+            """.utf8,
+        )
+        let receipt = try JSONDecoder().decode(PairingPeerReceipt.self, from: json)
+        #expect(receipt.agentPort == Config.agentPort)
+    }
+
+    @Test func `restore failure is not swallowed`() throws {
+        let dir = try isolatedDir("restore-fail")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let offers = PairingOfferStore(dataDir: dir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: UUID().uuidString,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
+            offers: offers,
+        )
+        let consumed = try offers.consume(code: issued.code)
+        try FileManager.default.removeItem(at: offers.fileURL)
+        try FileManager.default.createDirectory(at: offers.fileURL, withIntermediateDirectories: true)
+        #expect(throws: PairingError.self) {
+            try offers.restore(consumed)
+        }
+    }
+
+    @Test func `join rejects encoded loopback before posting trust material`() async throws {
+        let joinerDir = try isolatedDir("join-ssrf")
+        defer { try? FileManager.default.removeItem(at: joinerDir) }
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        final class Probe: PairingHTTPClient, @unchecked Sendable {
+            var called = false
+            func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
+                called = true
+                return PairingHTTPResponse(status: 500, body: Data())
+            }
+        }
+        let probe = Probe()
+        let qr = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "127.1",
+            port: 7_777,
+            hostId: UUID().uuidString,
+            fingerprint: "abcd",
+        ).uri
+        await #expect(throws: PairingError.self) {
+            try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: qr),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: probe,
+            )
+        }
+        #expect(!probe.called)
+    }
+
     @Test func `self signed presented device cert is rejected`() throws {
         let dir = try isolatedDir()
         let joinerDir = try isolatedDir("js")
@@ -171,6 +318,31 @@ struct PairingReviewTests {
             )
         }
         #expect(try offers.load() == nil)
+    }
+
+    private func honestRedeemResponse(
+        issuer: HomeCertificateMaterial,
+        issuerId: String,
+        joiner: HomeCertificateMaterial,
+        joinerId: String,
+        agentPort: Int = 7_778,
+    ) throws -> PairingRedeemResponse {
+        let csr = try HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM)
+        let issued = try HomeCAService.issueDeviceCert(
+            hostId: joinerId,
+            csrPEM: csr,
+            material: issuer,
+        )
+        return PairingRedeemResponse(
+            hostId: issuerId,
+            deviceCertificatePEM: issuer.deviceCertificatePEM,
+            deviceFingerprint: issuer.deviceFingerprint,
+            caCertificatePEM: issuer.caCertificatePEM,
+            caFingerprint: issuer.caFingerprint,
+            issuedCertificatePEM: issued.certificatePEM,
+            issuedFingerprint: issued.fingerprint,
+            agentPort: agentPort,
+        )
     }
 
     private func redeemRequest(

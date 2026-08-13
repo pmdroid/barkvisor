@@ -44,10 +44,9 @@ public enum SSRFGuard {
         return false
     }
 
-    /// Check if a hostname resolves to any private/internal IP via DNS.
-    /// Performs actual DNS resolution to defend against DNS rebinding attacks
-    /// where a public hostname (e.g., evil.com) resolves to a private IP (e.g., 127.0.0.1).
-    public static func resolvesToPrivateIP(_ host: String) -> Bool {
+    /// Resolve a hostname to canonical IP strings (IPv4 and IPv6).
+    /// Returns an empty array when DNS fails so the caller can decide policy.
+    public static func resolvedIPStrings(_ host: String) -> [String] {
         var hints = addrinfo()
         hints.ai_family = AF_UNSPEC // both IPv4 and IPv6
         hints.ai_socktype = PlatformSocket.stream
@@ -55,22 +54,26 @@ public enum SSRFGuard {
         var result: UnsafeMutablePointer<addrinfo>?
         let status = getaddrinfo(host, nil, &hints, &result)
         guard status == 0, let addrList = result else {
-            // Resolution failed — treat as safe to let the caller handle the network error.
-            return false
+            return []
         }
         defer { freeaddrinfo(addrList) }
 
+        var ips: [String] = []
         var current: UnsafeMutablePointer<addrinfo>? = addrList
         while let info = current {
             if let ipString = ipStringFromAddrInfo(info.pointee) {
-                if isPrivateHost(ipString) {
-                    return true
-                }
+                ips.append(ipString)
             }
             current = info.pointee.ai_next
         }
+        return ips
+    }
 
-        return false
+    /// Check if a hostname resolves to any private/internal IP via DNS.
+    /// Performs actual DNS resolution to defend against DNS rebinding attacks
+    /// where a public hostname (e.g., evil.com) resolves to a private IP (e.g., 127.0.0.1).
+    public static func resolvesToPrivateIP(_ host: String) -> Bool {
+        resolvedIPStrings(host).contains { isPrivateHost($0) }
     }
 
     /// Validate a URL, checking both the hostname string and resolved IPs.
