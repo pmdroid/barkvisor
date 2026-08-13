@@ -10,7 +10,7 @@ A headless daemon for managing QEMU virtual machines through a web UI.
 
 **Platforms:** **macOS** (`.pkg` / HVF) and **Linux** (packages + systemd / KVM). See [Linux install](docs/getting-started-linux.md).
 
-In the UI, the machine running BarkVisor is a **Device** — not a node. [Product terminology](docs/product-terminology.md).
+In the UI, the machine running BarkVisor is a **Device** in your **Home** — not a node or a cluster. [Product terminology](docs/product-terminology.md).
 
 ## Features
 
