@@ -100,12 +100,18 @@ public enum DeviceTrust {
 
         let sanHostId = hostId(from: leaf)
 
-        if let pin = pins.first(where: { $0.fingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame }) {
-            return .accepted(hostId: sanHostId ?? pin.hostId, source: .pinned)
+        if pins.contains(where: { $0.fingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame }) {
+            guard let hostId = sanHostId else {
+                return .rejected(.missingDeviceSAN)
+            }
+            return .accepted(hostId: hostId, source: .pinned)
         }
 
         guard let ca = try? Certificate(pemEncoded: homeCAPEM) else {
             return .rejected(.invalidPEM)
+        }
+        if now < ca.notValidBefore || now > ca.notValidAfter {
+            return .rejected(.expired)
         }
         guard isIssuedByHomeCA(leaf: leaf, ca: ca) else {
             return .rejected(.untrusted)
