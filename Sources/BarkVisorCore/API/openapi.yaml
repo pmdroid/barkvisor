@@ -772,6 +772,27 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/agent/whoami:
+    get:
+      tags: [out-of-band]
+      operationId: getAgentWhoami
+      x-barkvisor-stability: out-of-band
+      summary: mTLS peer identity (agent port 7778 only)
+      description: |
+        Served only on the agent-plane listener (default 7778). Requires a
+        client certificate issued by this Home CA or pairwise-pinned.
+        SPA/JWT on 7777 is unchanged.
+      security: []
+      responses:
+        "200":
+          description: Authenticated peer identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPeerIdentity"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms/{id}/guest-info:
     get:
       tags: [evolving]
@@ -1859,6 +1880,22 @@ components:
           type: string
         processUptimeSeconds:
           type: integer
+
+    AgentPeerIdentity:
+      type: object
+      required: [hostId, fingerprint, trust, listener]
+      properties:
+        hostId:
+          type: string
+        fingerprint:
+          type: string
+          description: SHA-256 of the leaf certificate DER, lowercase hex
+        trust:
+          type: string
+          enum: [home-ca, pinned]
+        listener:
+          type: string
+          enum: [mtls]
 
     HostInventory:
       type: object
