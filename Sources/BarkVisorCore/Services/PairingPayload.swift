@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
 
 /// QR / typed-code payload for PAS-45.
 ///
@@ -127,29 +132,26 @@ public struct PairingPayload: Sendable, Equatable {
 
     /// Loopback, link-local, and cloud-metadata targets are not valid
     /// pairing hosts. RFC1918 LAN addresses stay allowed.
+    ///
+    /// IPv4 is parsed with `inet_aton` so shorthand (`127.1`), decimal,
+    /// octal, and hex encodings that normalize to loopback are rejected.
     public static func isBlockedJoinHost(_ raw: String) -> Bool {
         let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-        if host == "localhost" || host.hasPrefix("localhost.") { return true }
-        if host == "metadata" || host == "metadata.google.internal" { return true }
-        if host.hasSuffix(".internal") { return true }
-
-        let dotted = host.split(separator: ".")
-        let parts = dotted.compactMap { UInt8($0) }
-        if parts.count == 4, dotted.count == 4 {
-            let (a, b) = (parts[0], parts[1])
-            if a == 0 { return true }
-            if a == 127 { return true }
-            if a == 169, b == 254 { return true }
+        if isBlockedJoinHostname(host) { return true }
+        if let octets = parseIPv4Octets(host) {
+            return isBlockedJoinIPv4(octets)
         }
-
-        if host == "::1" || host == "0:0:0:0:0:0:0:1" || host == "::" { return true }
-        if host.hasPrefix("::ffff:") {
-            return isBlockedJoinHost(String(host.dropFirst(7)))
+        if let addr = parseIPv6(host) {
+            return isBlockedJoinIPv6(addr)
         }
-        if host == "fd00:ec2::254" || host.hasPrefix("fd00:ec2:") { return true }
-        let firstGroup = host.split(separator: ":").first.map(String.init) ?? ""
-        if firstGroup == "fe80" { return true }
         return false
+    }
+
+    /// True when any resolved address is a blocked join target.
+    /// Used after the string check so a public name that rebinds to
+    /// loopback, link-local, or metadata cannot be used as a redeem host.
+    public static func hostResolvesToBlockedAddress(_ host: String) -> Bool {
+        SSRFGuard.resolvedIPStrings(host).contains { isBlockedJoinHost($0) }
     }
 
     public static func redeemURL(host: String, port: Int) throws -> URL {
@@ -159,6 +161,9 @@ public struct PairingPayload: Sendable, Equatable {
         guard let host = sanitizeHost(host) else {
             throw PairingError.invalidPayload("Invalid pairing host")
         }
+        if hostResolvesToBlockedAddress(host) {
+            throw PairingError.invalidPayload("Pairing host resolves to a blocked address")
+        }
         let wrapped = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
         guard let url = URL(string: "http://\(wrapped):\(port)/api/pairing/redeem") else {
             throw PairingError.invalidPayload("Unable to build redeem URL")
@@ -167,6 +172,57 @@ public struct PairingPayload: Sendable, Equatable {
             throw PairingError.invalidPayload("Redeem URL must be plain HTTP")
         }
         return url
+    }
+
+    private static func isBlockedJoinHostname(_ host: String) -> Bool {
+        if host == "localhost" || host.hasPrefix("localhost.") { return true }
+        if host == "metadata" || host == "metadata.google.internal" { return true }
+        if host.hasSuffix(".internal") { return true }
+        return false
+    }
+
+    private static func isBlockedJoinIPv4(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
+        let (a, b) = (parts.0, parts.1)
+        if a == 0 { return true }
+        if a == 127 { return true }
+        if a == 169, b == 254 { return true }
+        return false
+    }
+
+    private static func isBlockedJoinIPv6(_ addr: in6_addr) -> Bool {
+        withUnsafeBytes(of: addr) { raw in
+            let bytes = Array(raw)
+            guard bytes.count == 16 else { return true }
+            if bytes.dropLast().allSatisfy({ $0 == 0 }), bytes[15] == 1 { return true }
+            if bytes.allSatisfy({ $0 == 0 }) { return true }
+            if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xFF, bytes[11] == 0xFF {
+                return isBlockedJoinIPv4((bytes[12], bytes[13], bytes[14], bytes[15]))
+            }
+            if bytes[0] == 0xFE, (bytes[1] & 0xC0) == 0x80 { return true }
+            if bytes[0] == 0xFD, bytes[1] == 0x00, bytes[2] == 0x0E, bytes[3] == 0xC2 {
+                return true
+            }
+            return false
+        }
+    }
+
+    private static func parseIPv4Octets(_ host: String) -> (UInt8, UInt8, UInt8, UInt8)? {
+        var addr = in_addr()
+        guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
+        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
+            return nil
+        }
+        let canonical = String(cString: buf)
+        let parts = canonical.split(separator: ".").compactMap { UInt8($0) }
+        guard parts.count == 4 else { return nil }
+        return (parts[0], parts[1], parts[2], parts[3])
+    }
+
+    private static func parseIPv6(_ host: String) -> in6_addr? {
+        var addr = in6_addr()
+        guard host.withCString({ inet_pton(AF_INET6, $0, &addr) }) == 1 else { return nil }
+        return addr
     }
 }
 
