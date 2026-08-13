@@ -92,26 +92,7 @@ public enum VMLifecycleService {
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let before = vm
             try WorkloadSpecProjector.apply(spec, to: &vm)
-            let appliedNetwork: Network? =
-                if let netId = vm.networkId {
-                    try Network.fetchOne(db, key: netId)
-                } else {
-                    nil
-                }
-            if vm.networkId != nil, appliedNetwork == nil {
-                throw BarkVisorError.notFound("Network not found")
-            }
-            if let specNet = spec.spec.networks.first {
-                try NetworkCapability.requireSpecNetwork(specNet, record: appliedNetwork)
-            } else {
-                try NetworkCapability.requirePortForwardsAllowed(
-                    count: vm.decodedPortForwards.count,
-                    network: appliedNetwork,
-                )
-            }
-            try PortRegistry.assertAvailable(
-                vm.decodedPortForwards, excludingVM: id, db: db,
-            )
+            try validateAppliedVMSpec(spec: spec, vm: vm, db: db)
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
@@ -460,6 +441,31 @@ extension VMLifecycleService {
 // MARK: - Update VM Helpers
 
 extension VMLifecycleService {
+    /// Network existence, spec/record mode, and port occupancy after a spec is projected.
+    /// Shared by `updateVMSpec` and PAS-80 dry-run apply.
+    static func validateAppliedVMSpec(spec: WorkloadSpec, vm: VM, db: Database) throws {
+        let appliedNetwork: Network? =
+            if let netId = vm.networkId {
+                try Network.fetchOne(db, key: netId)
+            } else {
+                nil
+            }
+        if vm.networkId != nil, appliedNetwork == nil {
+            throw BarkVisorError.notFound("Network not found")
+        }
+        if let specNet = spec.spec.networks.first {
+            try NetworkCapability.requireSpecNetwork(specNet, record: appliedNetwork)
+        } else {
+            try NetworkCapability.requirePortForwardsAllowed(
+                count: vm.decodedPortForwards.count,
+                network: appliedNetwork,
+            )
+        }
+        try PortRegistry.assertAvailable(
+            vm.decodedPortForwards, excludingVM: vm.id, db: db,
+        )
+    }
+
     fileprivate static func validateUpdateVMInputs(params: UpdateVMParams) throws {
         if let name = params.name { try validateVMName(name) }
         if let cpu = params.cpuCount {

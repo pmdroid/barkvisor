@@ -104,6 +104,10 @@ public enum WorkloadApplyService {
             )
         }
         if dryRun {
+            let projected = preview
+            try await db.read { db in
+                try VMLifecycleService.validateAppliedVMSpec(spec: merged, vm: projected, db: db)
+            }
             return WorkloadApplyResult(
                 op: .updated,
                 id: existing.id,
@@ -130,6 +134,8 @@ public enum WorkloadApplyService {
     ) async throws -> WorkloadApplyResult {
         let spec = try WorkloadSpecDocument.decode(document)
         try WorkloadSpecProjector.validate(spec)
+        let params = try createParams(from: spec)
+        try await VMLifecycleService.validateCreateVMInputs(params: params, db: db)
         if dryRun {
             let previewID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return WorkloadApplyResult(
@@ -139,7 +145,6 @@ public enum WorkloadApplyService {
                 diff: WorkloadApplyDiff(before: nil, after: spec),
             )
         }
-        let params = try createParams(from: spec)
         if let requested = params.id, !requested.isEmpty {
             let taken = try await db.read { db in try VM.fetchOne(db, key: requested) }
             if taken != nil {
