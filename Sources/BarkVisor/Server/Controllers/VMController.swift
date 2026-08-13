@@ -13,6 +13,7 @@ struct VMResponse: Content {
     let name: String
     let vmType: String
     let state: String
+    let health: WorkloadHealth
     let cpuCount: Int
     let memoryMB: Int
     let bootDiskId: String
@@ -34,14 +35,16 @@ struct VMResponse: Content {
     let createdAt: String
     let updatedAt: String
 
-    init(from vm: VM) {
+    init(from vm: VM, signals: WorkloadHealthSignals = .unobserved) {
         let spec = WorkloadSpecProjector.fromVM(vm)
         self.spec = spec
-        self.status = WorkloadSpecProjector.status(from: vm)
+        let status = WorkloadSpecProjector.status(from: vm, signals: signals)
+        self.status = status
         self.id = vm.id
         self.name = vm.name
         self.vmType = vm.vmType
         self.state = vm.state
+        self.health = status.health
         self.cpuCount = vm.cpuCount
         self.memoryMB = vm.memoryMb
         self.bootDiskId = vm.bootDiskId
@@ -201,6 +204,7 @@ struct VMController: RouteCollection {
         vms.post(":id", "attach-iso", use: attachISO)
         vms.get(":id", "state", use: stateStream)
         vms.get(":id", "guest-info", use: getGuestInfo)
+        vms.get(":id", "health", use: getHealth)
         vms.get(":id", "spec", use: getSpec)
         vms.put(":id", "spec", use: putSpec)
     }
@@ -213,7 +217,7 @@ struct VMController: RouteCollection {
         let vms = try await req.db.read { db in
             try VM.limit(limit, offset: offset).fetchAll(db)
         }
-        return vms.map { VMResponse(from: $0) }
+        return try await respond(vms, db: req.db)
     }
 
     @Sendable
@@ -222,7 +226,22 @@ struct VMController: RouteCollection {
         guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
             throw Abort(.notFound)
         }
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
+    }
+
+    @Sendable
+    func getHealth(req: Vapor.Request) async throws -> WorkloadHealthStatus {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
+            throw Abort(.notFound)
+        }
+        let lastSeen = try await guestLastSeen(ids: [vm.id], db: req.db)
+        let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
+        return WorkloadHealthProjector.project(
+            state: VMState.parse(vm.state),
+            signals: signals,
+            updatedAt: vm.updatedAt,
+        )
     }
 
     @Sendable
@@ -278,7 +297,7 @@ struct VMController: RouteCollection {
         AuditService.log(
             action: "vm.update", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
         )
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
     }
 
     @Sendable
@@ -346,7 +365,7 @@ struct VMController: RouteCollection {
         guard let vm = try await req.db.read({ db in try VM.fetchOne(db, key: id) }) else {
             throw Abort(.notFound)
         }
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
     }
 
     struct AttachISORequest: Content {
@@ -362,7 +381,7 @@ struct VMController: RouteCollection {
             throw Abort(.notFound)
         }
         AuditService.log(action: "vm.attach-iso", resourceType: "vm", resourceId: id, req: req)
-        return VMResponse(from: vm)
+        return try await respond(vm, db: req.db)
     }
 
     // MARK: - WorkloadSpec
@@ -482,5 +501,37 @@ struct VMController: RouteCollection {
 
         let stream = await stateStreamService.stateStream(vmID: id)
         return SSEResponse.stream(from: stream, keepaliveSeconds: 15)
+    }
+
+    // MARK: - Health signals
+
+    private func respond(_ vm: VM, db: DatabasePool) async throws -> VMResponse {
+        let lastSeen = try await guestLastSeen(ids: [vm.id], db: db)
+        let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
+        return VMResponse(from: vm, signals: signals)
+    }
+
+    private func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
+        let lastSeen = try await guestLastSeen(ids: vms.map(\.id), db: db)
+        var responses: [VMResponse] = []
+        responses.reserveCapacity(vms.count)
+        for vm in vms {
+            let signals = await vmManager.healthSignals(for: vm, lastSeenAt: lastSeen[vm.id])
+            responses.append(VMResponse(from: vm, signals: signals))
+        }
+        return responses
+    }
+
+    private func guestLastSeen(ids: [String], db: DatabasePool) async throws -> [String: String] {
+        guard !ids.isEmpty else { return [:] }
+        let idSet = Set(ids)
+        let records = try await db.read { db in
+            try GuestInfoRecord.fetchAll(db)
+        }
+        var seen: [String: String] = [:]
+        for record in records where idSet.contains(record.vmId) {
+            seen[record.vmId] = record.updatedAt
+        }
+        return seen
     }
 }

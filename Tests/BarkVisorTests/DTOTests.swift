@@ -46,6 +46,9 @@ struct DTOTests {
         #expect(response.spec.spec.guestType == "linux-arm64")
         #expect(response.status.state == .running)
         #expect(response.status.pendingChanges)
+        #expect(response.health == .running)
+        #expect(response.status.health == .running)
+        #expect(response.status.healthError == nil)
     }
 
     @Test func `vm response nil optionals`() {
@@ -69,6 +72,7 @@ struct DTOTests {
         #expect(response.macAddress == nil)
         #expect(response.isoIds == nil)
         #expect(response.isoId == nil)
+        #expect(response.health == .stopped)
     }
 
     @Test func `vm response iso id backwards compat`() {
@@ -86,6 +90,25 @@ struct DTOTests {
         let response = VMResponse(from: vm)
         #expect(response.isoId == "iso-1")
         #expect(response.isoIds == ["iso-1", "iso-2"])
+    }
+
+    @Test func `vm response failed qemu includes last error`() {
+        let vm = VM(
+            id: "vm-1", name: "dead", vmType: "linux-arm64", state: "error",
+            cpuCount: 1, memoryMb: 512, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+            uefi: false, tpmEnabled: false,
+            macAddress: nil, sharedPaths: nil, portForwards: nil,
+            autoCreated: false, pendingChanges: false,
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
+        let response = VMResponse(
+            from: vm,
+            signals: WorkloadHealthSignals(lastError: "QEMU exited with status 1"),
+        )
+        #expect(response.health == .failed)
+        #expect(response.status.health == .failed)
+        #expect(response.status.healthError == "QEMU exited with status 1")
     }
 
     @Test func `vm response encodes spec and status`() throws {
@@ -106,6 +129,8 @@ struct DTOTests {
         let status = dict?["status"] as? [String: Any]
         #expect(status?["state"] as? String == "stopped")
         #expect(status?["generation"] as? Int == 1)
+        #expect(status?["health"] as? String == "stopped")
+        #expect(dict?["health"] as? String == "stopped")
     }
 
     // MARK: - VMResponse Encodable

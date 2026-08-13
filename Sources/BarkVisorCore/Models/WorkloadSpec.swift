@@ -211,6 +211,8 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
     public var generation: Int
     public var createdAt: String
     public var updatedAt: String
+    public var health: WorkloadHealth
+    public var healthError: String?
 
     public init(
         state: VMState,
@@ -218,12 +220,16 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         generation: Int,
         createdAt: String,
         updatedAt: String,
+        health: WorkloadHealth,
+        healthError: String? = nil,
     ) {
         self.state = state
         self.pendingChanges = pendingChanges
         self.generation = generation
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.health = health
+        self.healthError = healthError
     }
 }
 

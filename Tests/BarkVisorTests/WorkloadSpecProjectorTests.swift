@@ -103,6 +103,8 @@ struct WorkloadSpecProjectorTests {
         let status = WorkloadSpecProjector.status(from: makeVM())
         #expect(status.state == .running)
         #expect(status.generation == 3)
+        #expect(status.health == .running)
+        #expect(status.healthError == nil)
         #expect(VMState.parse("not-a-state") == .error)
     }
 

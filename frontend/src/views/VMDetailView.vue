@@ -21,6 +21,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { formatBytes } from '../utils/format'
+import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -530,7 +531,11 @@ const currentNetwork = computed(() => {
         <h1>{{ vm.name }}</h1>
       </div>
       <div style="display: flex; gap: 8px; align-items: center">
-        <span class="status-pill" :class="vm.state">{{ vm.state }}</span>
+        <span
+          class="status-pill"
+          :class="healthPillClass(vmHealth(vm))"
+          :title="vm.status?.healthError || undefined"
+        >{{ healthLabel(vmHealth(vm)) }}</span>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="!!actionLoading" @click="action('start', () => store.start(vmId))">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="!!actionLoading || stopLoading" @stop="requestStop($event)" />
