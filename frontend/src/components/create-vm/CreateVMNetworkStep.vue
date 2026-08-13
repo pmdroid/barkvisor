@@ -51,11 +51,11 @@ const emit = defineEmits<{
         </option>
       </AppSelect>
       <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:block">
-        NAT: internet via the host (also used when no network is selected).
+        NAT: internet via this device (also used when no network is selected).
         Bridged (Home Network): LAN IP.
         Isolated (Private): no host, LAN, or internet.
         Publish a service with NAT plus port forwards — not a separate mode.
-        Manage networks under <strong>Settings &rarr; Network</strong>.
+        Manage networks under <router-link to="/networks"><strong>Networks</strong></router-link>.
       </span>
       <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />
     </div>
@@ -150,7 +150,7 @@ const emit = defineEmits<{
         </div>
       </div>
       <span v-else-if="available" style="font-size:11px;color:var(--text-dim);display:block">
-        No USB devices selected. Pass physical USB devices from the host to the VM.
+        No USB devices selected. Pass physical USB devices from this device to the VM.
       </span>
     </CapabilityGate>
 
@@ -164,7 +164,7 @@ const emit = defineEmits<{
       <div class="modal" style="max-width:480px">
         <h2>Select USB Devices</h2>
         <div v-if="hostUSBDevices.length === 0" class="empty" style="padding:24px 0">
-          <p>No USB devices detected on the host.</p>
+          <p>No USB devices detected on this device.</p>
         </div>
         <div v-else style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
           <table>

@@ -871,7 +871,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 </td>
               </tr>
               <tr v-if="!vm.usbDevices?.length">
-                <td colspan="4"><EmptyState title="No USB devices attached" subtitle="Click &quot;Attach USB Device&quot; to pass through a host USB device." /></td>
+                <td colspan="4"><EmptyState title="No USB devices attached" subtitle="Click &quot;Attach USB Device&quot; to pass through a USB device from this device." /></td>
               </tr>
         </DataTable>
       </div>
@@ -885,7 +885,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     <div v-if="usb.available && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
       <div class="modal">
         <h2>Attach USB Device</h2>
-        <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on the host." />
+        <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on this device." />
         <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor' }, { key: 'ids', label: 'IDs' }, { key: 'actions', label: '' }]">
               <tr v-for="dev in hostUSBDevices" :key="`${dev.vendorId}:${dev.productId}`" :style="dev.claimedByVMId ? 'opacity:0.5' : ''">
                 <td style="font-weight:500">{{ dev.name }}</td>

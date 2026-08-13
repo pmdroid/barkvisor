@@ -23,8 +23,8 @@ describe('VM Lifecycle', () => {
 
   it('shows system stats bar on VM list', () => {
     cy.visit('/vms')
-    cy.contains('Host CPU').should('exist')
-    cy.contains('Host Memory').should('exist')
+    cy.contains('Device CPU').should('exist')
+    cy.contains('Device Memory').should('exist')
     cy.contains('VM CPU Usage').should('exist')
     cy.contains('VM Memory').should('exist')
   })

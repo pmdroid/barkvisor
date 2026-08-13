@@ -175,7 +175,7 @@ const templatesEmptyTitle = computed(() => {
     !templateSearch.value &&
     activeCategory.value === 'all'
   ) {
-    return 'No templates for this host architecture'
+    return 'No templates for this device architecture'
   }
   return 'No templates in this category'
 })
@@ -183,7 +183,7 @@ const templatesEmptyTitle = computed(() => {
 const templatesEmptySubtitle = computed(() => {
   if (foreignArchTemplateCount.value <= 0 || !hostImageArchLabel.value) return undefined
   const n = foreignArchTemplateCount.value
-  return `${n} template${n === 1 ? '' : 's'} hidden — this host only runs ${hostImageArchLabel.value} guests.`
+  return `${n} template${n === 1 ? '' : 's'} hidden — this device only runs ${hostImageArchLabel.value} guests.`
 })
 
 const templateTotalPages = computed(() => Math.max(1, Math.ceil(filteredTemplates.value.length / templatePerPage)))
@@ -360,7 +360,7 @@ const imagesEmptyTitle = computed(() => {
     !filterType.value &&
     !searchQuery.value
   ) {
-    return 'No images for this host architecture'
+    return 'No images for this device architecture'
   }
   return 'No images match the current filters'
 })
@@ -369,7 +369,7 @@ const imagesEmptySubtitle = computed(() => {
   if (repoImages.value.length === 0) return 'Click Manage > Sync to fetch the catalog.'
   if (foreignArchImageCount.value > 0 && hostImageArchLabel.value) {
     const n = foreignArchImageCount.value
-    return `${n} image${n === 1 ? '' : 's'} hidden — this host only runs ${hostImageArchLabel.value} guests.`
+    return `${n} image${n === 1 ? '' : 's'} hidden — this device only runs ${hostImageArchLabel.value} guests.`
   }
   return undefined
 })

@@ -6,9 +6,9 @@ import { normalizeImageArch, type ImageArch } from '../utils/imageArch'
 /**
  * Pinia store for the **current host** (process serving this SPA).
  *
- * Not multi-host state: when multi-device UI arrives, selected-device inventory
- * will sit beside this store (or replace it). Gate create-VM / network UI on
- * these fields instead of hardcoding platform assumptions.
+ * The SPA calls that machine a Device (PAS-97). Not multi-host state: when
+ * multi-device UI arrives, selected-device inventory will sit beside this store.
+ * Gate create-VM / network UI on these fields instead of hardcoding platforms.
  */
 /**
  * Fail-closed defaults (PAS-37). A failed / not-yet-loaded fetch must not invent

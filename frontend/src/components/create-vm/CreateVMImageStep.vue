@@ -65,7 +65,7 @@ function setMode(m: 'iso' | 'cloud') {
         <template v-if="foreignArchImageCount && foreignArchImageCount > 0">
           {{ foreignArchImageCount }} ready {{ mode === 'iso' ? 'ISO' : 'cloud' }}
           image{{ foreignArchImageCount === 1 ? '' : 's' }} hidden —
-          this host only runs {{ hostImageArch || 'native-arch' }} guests.
+          this device only runs {{ hostImageArch || 'native-arch' }} guests.
           Download a matching image in the Images section.
         </template>
         <template v-else>
