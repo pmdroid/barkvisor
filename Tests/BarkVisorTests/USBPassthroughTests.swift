@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
@@ -183,6 +184,66 @@ struct USBPassthroughTests {
         }
     }
 
+    @Test func `qemu args fail closed when serial device has no bus address`() {
+        let host = HostUSBDevice(
+            vendorId: "0x1234", productId: "0x5678", name: "Probe",
+            manufacturer: nil, serialNumber: "ZX9",
+        )
+        let usb = [
+            WorkloadUSBDevice(
+                vendorId: "0x1234", productId: "0x5678", label: "Probe",
+                serialNumber: "ZX9", deviceId: host.id,
+            ),
+        ]
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [host])
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("bus/address"))
+            #expect(!message.contains("vendorid="))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
+        }
+    }
+
+    @Test func `macos address ignores PortNum fallback`() {
+        let portOnly: [String: Any] = ["PortNum": 3]
+        #expect(USBDeviceService.parseIORegistryUSBAddress(portOnly) == nil)
+        #expect(USBDeviceService.parseIORegistryUSBBus(portOnly) == nil)
+
+        let withAddress: [String: Any] = ["USB Address": 7, "PortNum": 3, "Bus Number": 1]
+        #expect(USBDeviceService.parseIORegistryUSBAddress(withAddress) == 7)
+        #expect(USBDeviceService.parseIORegistryUSBBus(withAddress) == 1)
+    }
+
+    @Test func `assertUnclaimed rejects device already attached to another VM`() {
+        let device = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            serialNumber: "ZX9", deviceId: "0x1234:0x5678:ZX9",
+        )
+        var occupant = makeVM(usb: [device])
+        occupant.name = "htpc"
+        let err = #expect(throws: BarkVisorError.self) {
+            try USBPassthroughService.assertUnclaimed(devices: [device], vms: [occupant])
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("htpc"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
+        }
+    }
+
+    @Test func `assertUnclaimed allows the owning VM to keep its device`() throws {
+        let device = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            serialNumber: "ZX9", deviceId: "0x1234:0x5678:ZX9",
+        )
+        let occupant = makeVM(usb: [device])
+        try USBPassthroughService.assertUnclaimed(
+            devices: [device], vms: [occupant], excludingVMId: occupant.id,
+        )
+    }
+
     @Test func `projector preserves serial and device id`() {
         var vm = makeVM(usb: [
             USBPassthroughDevice(
@@ -279,5 +340,157 @@ struct USBPassthroughTests {
             atomically: true,
             encoding: .utf8,
         )
+    }
+}
+
+final class USBClaimWriteTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
+    private let hostLinux: String
+    private let fixtureCPUCount: Int
+
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
+
+        let dbPath = tmp.appendingPathComponent("test.sqlite").path
+        let pool = try DatabasePool(path: dbPath)
+        try AppDatabase.makeMigrator().migrate(pool)
+        dbPool = pool
+        hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        fixtureCPUCount = min(2, max(1, PlatformHost.cpuCount))
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: tmpDir)
+    }
+
+    @Test func `updateVM rejects USB claimed by another VM`() async throws {
+        let device = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            serialNumber: "ZX9", deviceId: "0x1234:0x5678:ZX9",
+        )
+        try await insertVM(id: "vm-htpc", name: "htpc", usb: [device])
+        try await insertVM(id: "vm-other", name: "other", usb: nil)
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVM(
+                id: "vm-other",
+                params: UpdateVMParams(usbDevices: [device]),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "conflict")
+        #expect(error?.httpStatus == 409)
+        #expect(error?.errorDescription?.contains("htpc") == true)
+    }
+
+    @Test func `updateVM can keep its own USB devices`() async throws {
+        let device = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            serialNumber: "ZX9", deviceId: "0x1234:0x5678:ZX9",
+        )
+        try await insertVM(id: "vm-htpc", name: "htpc", usb: [device])
+        let updated = try await VMLifecycleService.updateVM(
+            id: "vm-htpc",
+            params: UpdateVMParams(usbDevices: [device], description: "still mine"),
+            db: dbPool,
+        )
+        #expect(updated.description == "still mine")
+        #expect(updated.decodedUSBDevices.first?.deviceId == device.deviceId)
+    }
+
+    @Test func `updateVMSpec rejects USB claimed by another VM`() async throws {
+        let device = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            serialNumber: "ZX9", deviceId: "0x1234:0x5678:ZX9",
+        )
+        try await insertVM(id: "vm-htpc", name: "htpc", usb: [device])
+        try await insertVM(id: "vm-other", name: "other", usb: nil)
+        let other = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-other") }
+        let occupant = try #require(other)
+        var spec = WorkloadSpecProjector.fromVM(occupant)
+        spec.spec.guestType = hostLinux
+        spec.spec.usb = [USBPassthroughService.workload(from: device)]
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.updateVMSpec(
+                id: "vm-other", spec: spec, db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "conflict")
+        #expect(error?.errorDescription?.contains("htpc") == true)
+    }
+
+    @Test func `create validation rejects USB claimed by another VM`() async throws {
+        let device = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            serialNumber: "ZX9", deviceId: "0x1234:0x5678:ZX9",
+        )
+        try await insertVM(id: "vm-htpc", name: "htpc", usb: [device])
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await VMLifecycleService.validateCreateVMInputs(
+                params: CreateVMParams(
+                    name: "second",
+                    vmType: self.hostLinux,
+                    cpuCount: self.fixtureCPUCount,
+                    memoryMB: 512,
+                    isoId: "iso-1",
+                    usbDevices: [device],
+                ),
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "conflict")
+        #expect(error?.errorDescription?.contains("htpc") == true)
+    }
+
+    private func insertVM(
+        id: String,
+        name: String,
+        usb: [USBPassthroughDevice]?,
+    ) async throws {
+        let diskPath = tmpDir.appendingPathComponent("\(id).qcow2").path
+        let vmType = hostLinux
+        let cpuCount = fixtureCPUCount
+        try await dbPool.write { db in
+            let disk = Disk(
+                id: "disk-\(id)",
+                name: "boot",
+                path: diskPath,
+                sizeBytes: 1_000_000,
+                format: "qcow2",
+                vmId: id,
+                autoCreated: false,
+                status: "ready",
+                createdAt: "2026-01-01T00:00:00Z",
+            )
+            try disk.insert(db)
+            let vm = VM(
+                id: id,
+                name: name,
+                vmType: vmType,
+                state: "stopped",
+                cpuCount: cpuCount,
+                memoryMb: 512,
+                bootDiskId: disk.id,
+                networkId: nil,
+                cloudInitPath: nil,
+                description: nil,
+                bootOrder: "cd",
+                displayResolution: "1280x800",
+                additionalDiskIds: nil,
+                uefi: true,
+                tpmEnabled: false,
+                macAddress: nil,
+                sharedPaths: nil,
+                portForwards: nil,
+                usbDevices: JSONColumnCoding.encode(usb),
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: "2026-01-01T00:00:00Z",
+                updatedAt: "2026-01-01T00:00:00Z",
+            )
+            try vm.insert(db)
+        }
     }
 }

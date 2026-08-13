@@ -64,6 +64,23 @@ public enum USBDeviceService {
         #endif
     }
 
+    /// IOKit "USB Address" is the device address used by QEMU `hostaddr`.
+    /// `PortNum` is the hub port index and must not be used as a fallback.
+    public static func parseIORegistryUSBAddress(_ entry: [String: Any]) -> Int? {
+        intFromPlist(entry["USB Address"])
+    }
+
+    /// IOKit "Bus Number" for the USB controller the device is attached to.
+    public static func parseIORegistryUSBBus(_ entry: [String: Any]) -> Int? {
+        intFromPlist(entry["Bus Number"])
+    }
+
+    private static func intFromPlist(_ raw: Any?) -> Int? {
+        if let value = raw as? Int { return value }
+        if let value = raw as? NSNumber { return value.intValue }
+        return nil
+    }
+
     /// Parse `lsusb` lines: `Bus 001 Device 002: ID abcd:1234 Vendor Product`
     /// Public for unit tests on all platforms.
     public static func parseLsusbLine(_ line: String) -> HostUSBDevice? {
@@ -260,9 +277,8 @@ public enum USBDeviceService {
                         ?? "Unknown USB Device"
                 let manufacturer = entry["USB Vendor Name"] as? String
                 let serial = entry["USB Serial Number"] as? String
-                let bus = intValue(entry["Bus Number"] as Any?)
-                let address = intValue(entry["USB Address"] as Any?)
-                    ?? intValue(entry["PortNum"] as Any?)
+                let bus = parseIORegistryUSBBus(entry)
+                let address = parseIORegistryUSBAddress(entry)
 
                 let vid = String(format: "0x%04x", vendorInt)
                 let pid = String(format: "0x%04x", productInt)
@@ -285,12 +301,6 @@ public enum USBDeviceService {
             }
 
             return devices
-        }
-
-        private static func intValue(_ raw: Any?) -> Int? {
-            if let value = raw as? Int { return value }
-            if let value = raw as? NSNumber { return value.intValue }
-            return nil
         }
 
         /// Find product names of USB devices that are registered as external physical disks.
