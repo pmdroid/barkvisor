@@ -152,6 +152,94 @@ struct HealthProbeServiceTests {
         }
         try WorkloadHealthHTTPCheck(path: "/health", port: 8_080).validate()
     }
+
+    @Test func `unresolvable target clears stale pass`() async {
+        let transport = HealthProbeTransport(
+            http: { _, _, _, _, _ in true },
+            tcp: { _, _, _ in true },
+        )
+        let service = HealthProbeService(transport: transport)
+        let spec = WorkloadHealthSpec(
+            intervalSec: 5,
+            healthyThreshold: 1,
+            http: WorkloadHealthHTTPCheck(path: "/health", port: 8_080),
+        )
+        let forwarded = makeVM(
+            health: spec,
+            forwards: [PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 8_080)],
+        )
+        _ = await service.probeNow(vm: forwarded)
+        #expect(await service.results(for: forwarded).http == true)
+        #expect(await service.results(for: forwarded).passed)
+
+        let lostIP = makeVM(health: spec)
+        let after = await service.probeNow(vm: lostIP)
+        #expect(after.http == nil)
+        #expect(after.httpUnreachable)
+        #expect(!after.passed)
+    }
+
+    @Test func `both probes must be observed to pass`() async {
+        let transport = HealthProbeTransport(
+            http: { _, _, _, _, _ in true },
+            tcp: { _, _, _ in true },
+        )
+        let service = HealthProbeService(transport: transport)
+        let vm = makeVM(
+            health: WorkloadHealthSpec(
+                intervalSec: 5,
+                healthyThreshold: 1,
+                http: WorkloadHealthHTTPCheck(path: "/health", port: 8_080),
+                tcp: WorkloadHealthTCPCheck(port: 22),
+            ),
+            forwards: [PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 8_080)],
+        )
+        let results = await service.probeNow(vm: vm)
+        #expect(results.http == true)
+        #expect(results.tcp == nil)
+        #expect(results.tcpUnreachable)
+        #expect(!results.passed)
+    }
+
+    @Test func `both configured probes passing is passed`() async {
+        let transport = HealthProbeTransport(
+            http: { _, _, _, _, _ in true },
+            tcp: { _, _, _ in true },
+        )
+        let service = HealthProbeService(transport: transport)
+        let vm = makeVM(
+            health: WorkloadHealthSpec(
+                intervalSec: 5,
+                healthyThreshold: 1,
+                http: WorkloadHealthHTTPCheck(path: "/health", port: 8_080),
+                tcp: WorkloadHealthTCPCheck(port: 22),
+            ),
+            forwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 8_080),
+                PortForwardRule(protocol: "tcp", hostPort: 22_022, guestPort: 22),
+            ],
+        )
+        let results = await service.probeNow(vm: vm)
+        #expect(results.http == true)
+        #expect(results.tcp == true)
+        #expect(results.passed)
+    }
+
+    @Test func `ipv6 guest ip is a probe target`() {
+        let vm = makeVM()
+        let target = HealthProbeTarget.resolve(
+            port: 5_432, vm: vm, guestIPs: ["fd12:3456:789a::10"],
+        )
+        #expect(target?.host == "fd12:3456:789a::10")
+        #expect(target?.port == 5_432)
+        #expect(target?.via == "guest")
+    }
+
+    @Test func `ipv6 loopback is not a probe target`() {
+        let vm = makeVM()
+        #expect(HealthProbeTarget.resolve(port: 80, vm: vm, guestIPs: ["::1"]) == nil)
+        #expect(HealthProbeTarget.resolve(port: 80, vm: vm, guestIPs: ["fe80::1"]) == nil)
+    }
 }
 
 /// Minimal IPv4 TCP listener for live probe tests (macOS + Linux).

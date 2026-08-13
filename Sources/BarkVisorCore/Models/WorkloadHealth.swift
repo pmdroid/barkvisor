@@ -45,6 +45,9 @@ public struct WorkloadHealthSignals: Equatable, Sendable {
     public var tcp: Bool?
     public var httpConfigured: Bool
     public var tcpConfigured: Bool
+    /// True when a configured probe has no hostfwd / reachable guest IP.
+    public var httpUnreachable: Bool
+    public var tcpUnreachable: Bool
 
     public static let unobserved = WorkloadHealthSignals()
 
@@ -58,6 +61,8 @@ public struct WorkloadHealthSignals: Equatable, Sendable {
         tcp: Bool? = nil,
         httpConfigured: Bool = false,
         tcpConfigured: Bool = false,
+        httpUnreachable: Bool = false,
+        tcpUnreachable: Bool = false,
     ) {
         self.qemuProcess = qemuProcess
         self.qmp = qmp
@@ -68,6 +73,8 @@ public struct WorkloadHealthSignals: Equatable, Sendable {
         self.tcp = tcp
         self.httpConfigured = httpConfigured
         self.tcpConfigured = tcpConfigured
+        self.httpUnreachable = httpUnreachable
+        self.tcpUnreachable = tcpUnreachable
     }
 
     public var probesConfigured: Bool {
@@ -78,10 +85,11 @@ public struct WorkloadHealthSignals: Equatable, Sendable {
         http == false || tcp == false
     }
 
+    /// True only when every configured probe has been observed and passed.
     public var probesPassed: Bool {
-        if probesFailed { return false }
-        let observed = [http, tcp].compactMap(\.self)
-        return !observed.isEmpty && observed.allSatisfy(\.self)
+        if httpConfigured && http != true { return false }
+        if tcpConfigured && tcp != true { return false }
+        return httpConfigured || tcpConfigured
     }
 }
 
