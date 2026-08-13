@@ -10,6 +10,7 @@ public struct PairingOffer: Codable, Sendable, Equatable {
     public var createdAt: String
     public var expiresAt: String
     public var consumedAt: String?
+    public var agentPort: Int
 
     public init(
         codeHash: String,
@@ -17,12 +18,38 @@ public struct PairingOffer: Codable, Sendable, Equatable {
         createdAt: String,
         expiresAt: String,
         consumedAt: String? = nil,
+        agentPort: Int = Config.agentPort,
     ) {
         self.codeHash = codeHash
         self.codeDisplay = codeDisplay
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.consumedAt = consumedAt
+        self.agentPort = agentPort
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case codeHash, codeDisplay, createdAt, expiresAt, consumedAt, agentPort
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.codeHash = try container.decode(String.self, forKey: .codeHash)
+        self.codeDisplay = try container.decode(String.self, forKey: .codeDisplay)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.consumedAt = try container.decodeIfPresent(String.self, forKey: .consumedAt)
+        self.agentPort = try container.decodeIfPresent(Int.self, forKey: .agentPort) ?? Config.agentPort
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(codeHash, forKey: .codeHash)
+        try container.encode(codeDisplay, forKey: .codeDisplay)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(expiresAt, forKey: .expiresAt)
+        try container.encodeIfPresent(consumedAt, forKey: .consumedAt)
+        try container.encode(agentPort, forKey: .agentPort)
     }
 }
 
@@ -84,6 +111,18 @@ public final class PairingOfferStore: @unchecked Sendable {
         offer.consumedAt = iso8601.string(from: now)
         try persistLocked(offer)
         return offer
+    }
+
+    /// Undo a consume when a later redeem step fails.
+    ///
+    /// No-op if the file was replaced or is no longer the same consumed offer.
+    public func restore(_ offer: PairingOffer) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard var current = try loadLocked() else { return }
+        guard current.codeHash == offer.codeHash, current.consumedAt != nil else { return }
+        current.consumedAt = nil
+        try persistLocked(current)
     }
 
     private func loadLocked() throws -> PairingOffer? {
