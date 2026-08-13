@@ -36,19 +36,19 @@ public final class PeerPinStore: @unchecked Sendable {
         self.fileURL = fileURL
     }
 
-    public func load() -> [PeerPin] {
+    public func load() throws -> [PeerPin] {
         lock.lock()
         defer { lock.unlock() }
-        return loadLocked()
+        return try loadLocked()
     }
 
-    public func contains(fingerprint: String) -> Bool {
+    public func contains(fingerprint: String) throws -> Bool {
         let needle = fingerprint.lowercased()
-        return load().contains { $0.fingerprint == needle }
+        return try load().contains { $0.fingerprint == needle }
     }
 
-    public func pin(forHostId hostId: String) -> PeerPin? {
-        load().first { $0.hostId == hostId }
+    public func pin(forHostId hostId: String) throws -> PeerPin? {
+        try load().first { $0.hostId == hostId }
     }
 
     @discardableResult
@@ -60,7 +60,7 @@ public final class PeerPinStore: @unchecked Sendable {
         )
         lock.lock()
         defer { lock.unlock() }
-        var pins = loadLocked()
+        var pins = try loadLocked()
         pins.removeAll {
             $0.hostId == hostId || $0.fingerprint == entry.fingerprint
         }
@@ -72,16 +72,30 @@ public final class PeerPinStore: @unchecked Sendable {
     public func unpin(hostId: String) throws {
         lock.lock()
         defer { lock.unlock() }
-        var pins = loadLocked()
+        var pins = try loadLocked()
         pins.removeAll { $0.hostId == hostId }
         try persistLocked(pins)
     }
 
-    private func loadLocked() -> [PeerPin] {
-        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
+    private func loadLocked() throws -> [PeerPin] {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return []
         }
-        return (try? JSONDecoder().decode([PeerPin].self, from: data)) ?? []
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            throw PeerPinStoreError.corruptMaterial(
+                "unable to read pins.json: \(error.localizedDescription)",
+            )
+        }
+        do {
+            return try JSONDecoder().decode([PeerPin].self, from: data)
+        } catch {
+            throw PeerPinStoreError.corruptMaterial(
+                "unable to decode pins.json: \(error.localizedDescription)",
+            )
+        }
     }
 
     private func persistLocked(_ pins: [PeerPin]) throws {
@@ -93,5 +107,15 @@ public final class PeerPinStore: @unchecked Sendable {
             [.posixPermissions: 0o600],
             ofItemAtPath: fileURL.path,
         )
+    }
+}
+
+public enum PeerPinStoreError: Error, LocalizedError, Sendable, Equatable {
+    case corruptMaterial(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .corruptMaterial(reason): "Peer pin store is corrupt: \(reason)"
+        }
     }
 }

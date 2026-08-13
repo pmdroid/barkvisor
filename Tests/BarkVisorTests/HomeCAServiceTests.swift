@@ -144,10 +144,101 @@ struct HomeCAServiceTests {
         #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
     }
 
+    @Test func `corrupt device key does not remint device cert`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        let keyURL = HomeCAService.agentDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.deviceKeyFileName)
+        try Data("not-a-key".utf8).write(to: keyURL, options: [.atomic])
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedDeviceFingerprint(in: dir) == first.deviceFingerprint)
+    }
+
+    @Test func `mismatched device key does not remint device cert`() throws {
+        let dir = try isolatedDir()
+        let otherDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: otherDir)
+        }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        let other = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: UUID().uuidString)
+        let keyURL = HomeCAService.agentDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.deviceKeyFileName)
+        try Data(other.deviceKeyPEM.utf8).write(to: keyURL, options: [.atomic])
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedDeviceFingerprint(in: dir) == first.deviceFingerprint)
+    }
+
+    @Test func `partial device files do not remint device cert`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        try FileManager.default.removeItem(
+            at: HomeCAService.agentDirectory(in: dir)
+                .appendingPathComponent(HomeCAService.deviceKeyFileName),
+        )
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedDeviceFingerprint(in: dir) == first.deviceFingerprint)
+    }
+
+    @Test func `device cert san mismatch does not remint device cert`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        }
+        #expect(try persistedDeviceFingerprint(in: dir) == first.deviceFingerprint)
+    }
+
+    @Test func `device cert not issued by home ca does not remint`() throws {
+        let dir = try isolatedDir()
+        let otherDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: otherDir)
+        }
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: UUID().uuidString)
+        let other = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: first.hostId)
+        let certURL = HomeCAService.agentDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.deviceCertificateFileName)
+        let keyURL = HomeCAService.agentDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.deviceKeyFileName)
+        try Data(other.deviceCertificatePEM.utf8).write(to: certURL, options: [.atomic])
+        try Data(other.deviceKeyPEM.utf8).write(to: keyURL, options: [.atomic])
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: first.hostId)
+        }
+        #expect(try persistedDeviceFingerprint(in: dir) == other.deviceFingerprint)
+        #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
+    }
+
     private func persistedCAFingerprint(in dataDir: URL) throws -> String {
         let certPEM = try String(
             contentsOf: HomeCAService.caDirectory(in: dataDir)
                 .appendingPathComponent(HomeCAService.caCertificateFileName),
+            encoding: .utf8,
+        )
+        return try DeviceTrust.fingerprint(pem: certPEM)
+    }
+
+    private func persistedDeviceFingerprint(in dataDir: URL) throws -> String {
+        let certPEM = try String(
+            contentsOf: HomeCAService.agentDirectory(in: dataDir)
+                .appendingPathComponent(HomeCAService.deviceCertificateFileName),
             encoding: .utf8,
         )
         return try DeviceTrust.fingerprint(pem: certPEM)
