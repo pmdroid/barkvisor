@@ -36,6 +36,10 @@ struct SystemAboutController: RouteCollection {
     func getAbout(req: Vapor.Request) async throws -> AppInfoResponse {
         AppInfoResponse(
             version: Config.version,
+            platform: PlatformHost.platformName,
+            hostArch: PlatformCapabilities.hostArch,
+            accelerator: PlatformCapabilities.accelerator,
+            processUptimeSeconds: Int(Config.processUptimeSeconds.rounded(.down)),
             licenses: [
                 LicenseEntry(
                     name: "QEMU",

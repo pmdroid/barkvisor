@@ -49,6 +49,9 @@ struct DTOTests {
         #expect(response.health == .running)
         #expect(response.status.health == .running)
         #expect(response.status.healthError == nil)
+        #expect(response.status.backend == WorkloadBackendProjector.project(guestType: "linux-arm64"))
+        #expect(response.status.backend.qemuBinary == "qemu-system-aarch64")
+        #expect(response.status.backend.accelerator == QEMUBuilder.accelerator)
     }
 
     @Test func `vm response nil optionals`() {

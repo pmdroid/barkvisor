@@ -43,7 +43,7 @@ public enum DiagnosticService {
             "version": version,
             "build": bundleBuild ?? (bundleVersion ?? version),
             "isDevBuild": Config.isDevBuild,
-            "uptime": ProcessInfo.processInfo.systemUptime,
+            "uptime": Config.processUptimeSeconds,
             "dataDir": dataDir.path,
             "logDir": "database",
         ]

@@ -142,6 +142,14 @@ export interface WorkloadSpec {
   overrides?: WorkloadOverrides | null
 }
 
+export interface VMRuntimeBackend {
+  accelerator: string
+  guestArch: string
+  qemuBinary: string
+  emulated: boolean
+  warning?: string | null
+}
+
 export interface VMRuntimeStatus {
   state: VMState
   pendingChanges: boolean
@@ -150,6 +158,7 @@ export interface VMRuntimeStatus {
   updatedAt: string
   health: WorkloadHealth
   healthError?: string | null
+  backend?: VMRuntimeBackend | null
 }
 
 export interface VM {

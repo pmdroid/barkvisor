@@ -43,4 +43,11 @@ struct ConfigTests {
         let parsed = iso8601.date(from: formatted)
         #expect(parsed != nil)
     }
+
+    @Test func `process uptime is daemon elapsed not host uptime`() {
+        let process = Config.processUptimeSeconds
+        let host = ProcessInfo.processInfo.systemUptime
+        #expect(process >= 0)
+        #expect(process <= host + 0.5)
+    }
 }

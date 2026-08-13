@@ -9,6 +9,7 @@ import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { formatTemperatureC } from '../utils/format'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
 import { Line } from 'vue-chartjs'
 import {
@@ -49,6 +50,10 @@ const failedCount = computed(() => healthSummary.value?.counts?.failed ?? 0)
 const recentVMs = computed(() =>
   [...store.vms].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5)
 )
+
+function emuBadge(vm: (typeof store.vms)[0]) {
+  return listBackendBadge(vmBackend(vm))
+}
 const totalDiskGB = computed(() => {
   if (storageSummary.value) return (storageSummary.value.totalActualBytes / 1073741824).toFixed(1)
   const bytes = disks.value.reduce((sum, d) => sum + d.sizeBytes, 0)
@@ -259,7 +264,16 @@ const memSparkData = computed(() => ({
         { key: 'updated', label: 'Updated' },
       ]">
         <tr v-for="vm in recentVMs" :key="vm.id" @click="router.push(`/vms/${vm.id}`)" style="cursor:pointer">
-          <td style="font-weight:600">{{ vm.name }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-weight:600">{{ vm.name }}</span>
+              <span
+                v-if="emuBadge(vm)"
+                class="badge badge-amber"
+                :title="emuBadge(vm)!.title"
+              >{{ emuBadge(vm)!.label }}</span>
+            </div>
+          </td>
           <td>
             <span
               class="status-pill"

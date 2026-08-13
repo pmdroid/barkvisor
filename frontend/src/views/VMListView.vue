@@ -8,6 +8,7 @@ import { useNetworkStore } from '../stores/networks'
 import api from '../api/client'
 import type { SystemStats, GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -113,6 +114,10 @@ function osLabel(vm: typeof store.vms[0]) {
     return gi.osVersion ? `${gi.osName} ${gi.osVersion}` : gi.osName
   }
   return vm.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+}
+
+function emuBadge(vm: typeof store.vms[0]) {
+  return listBackendBadge(vmBackend(vm))
 }
 
 
@@ -246,7 +251,14 @@ async function doStop() {
   ]">
         <tr v-for="vm in visibleVMs" :key="vm.id" class="vm-row" @click="router.push(`/vms/${vm.id}`)">
           <td>
-            <div style="font-weight:500">{{ vm.name }}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-weight:500">{{ vm.name }}</span>
+              <span
+                v-if="emuBadge(vm)"
+                class="badge badge-amber"
+                :title="emuBadge(vm)!.title"
+              >{{ emuBadge(vm)!.label }}</span>
+            </div>
             <div v-if="vm.description" style="font-size:12px;color:var(--text-dim);margin-top:2px">{{ vm.description }}</div>
           </td>
           <td>

@@ -105,6 +105,10 @@ struct WorkloadSpecProjectorTests {
         #expect(status.generation == 3)
         #expect(status.health == .running)
         #expect(status.healthError == nil)
+        #expect(status.backend == WorkloadBackendProjector.project(guestType: "linux-arm64"))
+        #expect(status.backend.qemuBinary == "qemu-system-aarch64")
+        #expect(status.backend.guestArch == "arm64")
+        #expect(status.backend.accelerator == QEMUBuilder.accelerator)
         #expect(VMState.parse("not-a-state") == .error)
     }
 

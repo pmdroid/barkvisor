@@ -31,6 +31,10 @@ struct OnboardingStatus: Content {
 
 struct AppInfoResponse: Content {
     let version: String
+    let platform: String
+    let hostArch: String
+    let accelerator: String
+    let processUptimeSeconds: Int
     let licenses: [LicenseEntry]
 }
 
