@@ -216,6 +216,26 @@ struct USBPassthroughTests {
         #expect(USBDeviceService.parseIORegistryUSBBus(withAddress) == 1)
     }
 
+    @Test func `macos bus falls back to locationID high byte`() {
+        // Real IOUSBHostDevice entries (e.g. EXCERIA PLUS@03200000) have
+        // USB Address + locationID and no "Bus Number" key.
+        let realDevice: [String: Any] = [
+            "USB Address": 1,
+            "locationID": 0x0320_0000,
+        ]
+        #expect(USBDeviceService.parseIORegistryUSBAddress(realDevice) == 1)
+        #expect(USBDeviceService.parseIORegistryUSBBus(realDevice) == 3)
+
+        let highBus: [String: Any] = ["locationID": 0x8200_0000 as UInt32]
+        #expect(USBDeviceService.parseIORegistryUSBBus(highBus) == 0x82)
+
+        let explicitBusWins: [String: Any] = [
+            "Bus Number": 1,
+            "locationID": 0x0320_0000,
+        ]
+        #expect(USBDeviceService.parseIORegistryUSBBus(explicitBusWins) == 1)
+    }
+
     @Test func `assertUnclaimed rejects device already attached to another VM`() {
         let device = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
