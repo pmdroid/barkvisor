@@ -23,6 +23,44 @@ export type VMState =
   | 'provisioning'
   | 'deleting'
 
+export type WorkloadHealth =
+  | 'unknown'
+  | 'stopped'
+  | 'starting'
+  | 'running'
+  | 'guest_ready'
+  | 'degraded'
+  | 'failed'
+
+export type WorkloadHealthCheckStatus = 'pass' | 'fail' | 'skip'
+
+export interface WorkloadHealthCheck {
+  name: string
+  status: WorkloadHealthCheckStatus
+  message?: string | null
+}
+
+export interface WorkloadHealthStatus {
+  health: WorkloadHealth
+  checks: WorkloadHealthCheck[]
+  updatedAt: string
+  lastError?: string | null
+}
+
+export interface WorkloadHealthSummaryItem {
+  id: string
+  name: string
+  kind: string
+  health: WorkloadHealth
+  lastError?: string | null
+}
+
+export interface WorkloadHealthSummary {
+  counts: Record<string, number>
+  items: WorkloadHealthSummaryItem[]
+  updatedAt: string
+}
+
 export interface WorkloadResources {
   cpu: number
   memoryMb: number
@@ -110,6 +148,8 @@ export interface VMRuntimeStatus {
   generation: number
   createdAt: string
   updatedAt: string
+  health: WorkloadHealth
+  healthError?: string | null
 }
 
 export interface VM {
@@ -119,6 +159,7 @@ export interface VM {
   name: string
   vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
   state: VMState | string
+  health?: WorkloadHealth
   cpuCount: number
   memoryMB: number
   bootDiskId: string

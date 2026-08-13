@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { onMounted, onUnmounted, ref, reactive } from 'vue'
+import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useToastStore } from '../stores/toast'
 import { useNetworkStore } from '../stores/networks'
 import api from '../api/client'
-import type { SystemStats, GuestInfo, PortForwardRule } from '../api/types'
+import type { SystemStats, GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
+import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { storeToRefs } from 'pinia'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -25,14 +26,42 @@ const router = useRouter()
 const route = useRoute()
 const showCreate = ref(false)
 const stats = ref<SystemStats | null>(null)
+const healthSummary = ref<WorkloadHealthSummary | null>(null)
+const healthFilter = ref<WorkloadHealth | 'all'>('all')
 const guestInfoMap = reactive<Record<string, GuestInfo>>({})
 const actionLoading = reactive<Record<string, boolean>>({})
 const copied = reactive<Record<string, boolean>>({})
+
+const healthFilters: Array<{ key: WorkloadHealth | 'all'; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'running', label: 'Running' },
+  { key: 'failed', label: 'Failed' },
+  { key: 'degraded', label: 'Degraded' },
+  { key: 'stopped', label: 'Stopped' },
+]
+
+const visibleVMs = computed(() => {
+  if (healthFilter.value === 'all') return store.vms
+  return store.vms.filter((vm) => vmHealth(vm) === healthFilter.value)
+})
+
+const healthStrip = computed(() => {
+  const counts = healthSummary.value?.counts ?? {}
+  return (['running', 'starting', 'degraded', 'failed', 'stopped'] as WorkloadHealth[])
+    .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
+})
 
 async function fetchStats() {
   try {
     const { data } = await api.get('/system/stats')
     stats.value = data
+  } catch { /* ignore */ }
+}
+
+async function fetchHealthSummary() {
+  try {
+    const { data } = await api.get<WorkloadHealthSummary>('/workloads/health-summary')
+    healthSummary.value = data
   } catch { /* ignore */ }
 }
 
@@ -63,10 +92,12 @@ let pollTimer: number
 onMounted(async () => {
   await store.fetchAll()
   fetchStats()
+  fetchHealthSummary()
   fetchGuestInfo()
   void networkStore.fetchAll()
   pollTimer = window.setInterval(() => {
     fetchStats()
+    fetchHealthSummary()
     store.fetchAll().then(fetchGuestInfo)
   }, 5000)
   if (route.query.create) {
@@ -176,6 +207,31 @@ async function doStop() {
     </div>
   </div>
 
+  <div v-if="healthSummary" class="health-strip">
+    <button
+      v-for="row in healthStrip"
+      :key="row.key"
+      type="button"
+      class="health-chip"
+      :class="[row.key, { active: healthFilter === row.key }]"
+      @click="healthFilter = healthFilter === row.key ? 'all' : row.key"
+    >
+      <span class="health-chip-count">{{ row.count }}</span>
+      <span class="health-chip-label">{{ row.label }}</span>
+    </button>
+  </div>
+
+  <div v-if="store.vms.length > 0" class="health-filters">
+    <button
+      v-for="f in healthFilters"
+      :key="f.key"
+      type="button"
+      class="health-filter"
+      :class="{ active: healthFilter === f.key }"
+      @click="healthFilter = f.key"
+    >{{ f.label }}</button>
+  </div>
+
   <EmptyState v-if="store.vms.length === 0 && !store.loading" icon="monitor" title="No virtual machines yet">
     <AppButton variant="primary" @click="showCreate = true">Create your first VM</AppButton>
   </EmptyState>
@@ -188,7 +244,7 @@ async function doStop() {
     { key: 'status', label: 'Status' },
     { key: 'actions', label: '' },
   ]">
-        <tr v-for="vm in store.vms" :key="vm.id" class="vm-row" @click="router.push(`/vms/${vm.id}`)">
+        <tr v-for="vm in visibleVMs" :key="vm.id" class="vm-row" @click="router.push(`/vms/${vm.id}`)">
           <td>
             <div style="font-weight:500">{{ vm.name }}</div>
             <div v-if="vm.description" style="font-size:12px;color:var(--text-dim);margin-top:2px">{{ vm.description }}</div>
@@ -235,7 +291,11 @@ async function doStop() {
           </td>
           <td>
             <div style="display:flex;align-items:center;gap:6px">
-              <span class="status-pill" :class="vm.state">{{ vm.state }}</span>
+              <span
+                class="status-pill"
+                :class="healthPillClass(vmHealth(vm))"
+                :title="vm.status?.healthError || undefined"
+              >{{ healthLabel(vmHealth(vm)) }}</span>
               <span v-if="vm.pendingChanges && vm.state === 'running'" class="restart-badge" title="Restart required to apply changes">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 Restart needed
@@ -344,6 +404,57 @@ async function doStop() {
   font-size: 11px;
   color: #fbbf24;
   white-space: nowrap;
+}
+.health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.health-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-glass);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.health-chip.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.health-chip-count {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.health-chip-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.health-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.health-filter {
+  padding: 4px 10px;
+  border: 1px solid var(--border-glass);
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 2px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.health-filter.active {
+  background: var(--bg-card);
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 @media (max-width: 1024px) {

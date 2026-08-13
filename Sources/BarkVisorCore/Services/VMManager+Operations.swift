@@ -97,6 +97,47 @@ extension VMManager {
         runningVMs
     }
 
+    public func recordHealthError(_ message: String, for vmID: String) {
+        lastHealthErrors[vmID] = message
+    }
+
+    public func clearHealthError(for vmID: String) {
+        lastHealthErrors.removeValue(forKey: vmID)
+    }
+
+    public func healthError(for vmID: String) -> String? {
+        lastHealthErrors[vmID]
+    }
+
+    /// Live PAS-79 signals from the process table, QMP socket, and guest_info.
+    public func healthSignals(for vm: VM, lastSeenAt: String?) -> WorkloadHealthSignals {
+        let state = VMState.parse(vm.state)
+        let lastError = lastHealthErrors[vm.id]
+        if let running = runningVMs[vm.id] {
+            return WorkloadHealthSignals(
+                qemuProcess: isProcessAlive(running),
+                qmp: FileManager.default.fileExists(atPath: running.qmpSocketPath),
+                guestAgent: lastSeenAt != nil,
+                lastSeenAt: lastSeenAt,
+                lastError: lastError,
+            )
+        }
+        if state == .running {
+            return WorkloadHealthSignals(
+                qemuProcess: false,
+                qmp: false,
+                guestAgent: lastSeenAt != nil,
+                lastSeenAt: lastSeenAt,
+                lastError: lastError ?? "QEMU process not running",
+            )
+        }
+        return WorkloadHealthSignals(
+            guestAgent: lastSeenAt != nil,
+            lastSeenAt: lastSeenAt,
+            lastError: lastError,
+        )
+    }
+
     // MARK: - State & DB Helpers
 
     public func updateState(vmID: String, state: String, error: String? = nil) async throws {

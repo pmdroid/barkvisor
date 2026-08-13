@@ -16,6 +16,9 @@ extension BackupSettings: Content {}
 extension VM: Content {}
 extension WorkloadSpec: Content {}
 extension VMRuntimeStatus: Content {}
+extension WorkloadHealthStatus: Content {}
+extension WorkloadHealthSummary: Content {}
+extension ProcessHealthStatus: Content {}
 extension VMImage: Content {}
 extension VMTemplate: Content {}
 extension User: Content {}

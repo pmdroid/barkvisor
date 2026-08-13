@@ -451,6 +451,14 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   box-shadow: 0 0 6px var(--amber);
   animation: dot-pulse 1.4s ease-in-out infinite;
 }
+.status-pill.failed { background: var(--red-muted); color: var(--red); }
+.status-pill.failed::before { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.status-pill.degraded { background: var(--amber-muted); color: var(--amber); }
+.status-pill.degraded::before { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.status-pill.guest_ready { background: var(--green-muted); color: var(--green); }
+.status-pill.guest_ready::before { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.status-pill.unknown { background: var(--gray-muted); color: var(--gray); }
+.status-pill.unknown::before { background: var(--gray); }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* ── VM Grid ── */
