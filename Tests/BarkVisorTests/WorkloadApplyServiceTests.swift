@@ -219,6 +219,55 @@ final class WorkloadApplyServiceTests {
         }
     }
 
+    @Test func `metadata id path traversal is rejected`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-traverse")
+        let traversalID = ["..", "..", "..", "tmp", "evil"].joined(separator: "/")
+        let doc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["id": traversalID, "name": "evil"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+            ],
+        ]
+        var message: String?
+        do {
+            _ = try await WorkloadApplyService.apply(
+                document: doc, dryRun: true, db: dbPool, backgroundTasks: backgroundTasks,
+            )
+            Issue.record("expected path-traversal metadata.id to fail")
+        } catch let error as BarkVisorError {
+            message = error.errorDescription
+            #expect(error.httpStatus == 400)
+        }
+        #expect(message?.contains("metadata.id") == true)
+        #expect(try await vmCount() == 0)
+    }
+
+    @Test func `create validation rejects path-traversal id`() async throws {
+        let traversalID = ["..", "..", "..", "tmp", "evil"].joined(separator: "/")
+        var message: String?
+        do {
+            try await VMLifecycleService.validateCreateVMInputs(
+                params: CreateVMParams(
+                    id: traversalID,
+                    name: "evil",
+                    vmType: hostLinux,
+                    cpuCount: fixtureCPUCount,
+                    memoryMB: 512,
+                    isoId: "iso-1",
+                ),
+                db: dbPool,
+            )
+            Issue.record("expected path-traversal create id to fail")
+        } catch let error as BarkVisorError {
+            message = error.errorDescription
+            #expect(error.httpStatus == 400)
+        }
+        #expect(message?.contains("VM id") == true)
+    }
+
     @Test func `create without a boot disk or iso is rejected`() async throws {
         let doc: [String: Any] = [
             "apiVersion": WorkloadSpec.currentAPIVersion,

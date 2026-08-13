@@ -108,6 +108,9 @@ extension VMLifecycleService {
         db: DatabasePool,
     ) async throws {
         try validateVMName(params.name)
+        if let id = params.id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+            try validateVMID(id)
+        }
 
         guard let profile = GuestProfiles.profile(for: params.vmType) else {
             let allowed = GuestProfiles.supportedIDs.joined(separator: "', '")

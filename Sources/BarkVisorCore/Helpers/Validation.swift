@@ -16,6 +16,26 @@ public func validateVMName(_ name: String) throws {
     }
 }
 
+/// Validate a caller-supplied VM id before it is used as a filesystem path component.
+/// Letters, numbers, hyphens, underscores, and dots; reject `/`, `..`, and empty.
+public func validateVMID(_ id: String, label: String = "VM id") throws {
+    let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, trimmed.count <= 128 else {
+        throw BarkVisorError.badRequest("\(label) must be 1-128 characters")
+    }
+    guard trimmed != ".", trimmed != ".." else {
+        throw BarkVisorError.badRequest("\(label) must not contain path traversal segments")
+    }
+    guard trimmed.allSatisfy({
+        $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "."
+    })
+    else {
+        throw BarkVisorError.badRequest(
+            "\(label) may only contain letters, numbers, hyphens, underscores, and dots",
+        )
+    }
+}
+
 /// Validate a host network interface / bridge name.
 /// Linux IFNAMSIZ is 16 including NUL, so max 15 bytes. Allow letters, digits,
 /// `.`, `_`, `-` so real names like `br-lan`, `br0`, Docker `br-<hash>`, and

@@ -225,8 +225,12 @@ public enum WorkloadApplyService {
             )
         }
         let metadata = metadataObject(document)
-        if let id = stringValue(metadata["id"]), id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw BarkVisorError.badRequest("metadata.id must not be empty when set")
+        if let id = stringValue(metadata["id"]) {
+            let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                throw BarkVisorError.badRequest("metadata.id must not be empty when set")
+            }
+            try validateVMID(trimmed, label: "metadata.id")
         }
         let name = stringValue(metadata["name"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if name.isEmpty, stringValue(metadata["id"]) == nil {
