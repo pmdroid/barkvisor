@@ -172,6 +172,7 @@ extension VMLifecycleService {
 
         if let usb = params.usbDevices, !usb.isEmpty {
             try PlatformCapabilities.requireUSBPassthrough()
+            _ = try persistableUSBDevices(usb)
         }
     }
 }

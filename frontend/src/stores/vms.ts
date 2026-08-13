@@ -68,6 +68,20 @@ export const useVMStore = defineStore('vms', () => {
     await fetchOne(id)
   }
 
+  async function attachUSB(id: string, deviceId: string) {
+    const { data } = await api.post(`/vms/${id}/usb`, { deviceId })
+    const idx = vms.value.findIndex((v) => v.id === id)
+    if (idx >= 0) vms.value[idx] = data
+    return data
+  }
+
+  async function detachUSB(id: string, deviceId: string) {
+    const { data } = await api.delete(`/vms/${id}/usb/${encodeURIComponent(deviceId)}`)
+    const idx = vms.value.findIndex((v) => v.id === id)
+    if (idx >= 0) vms.value[idx] = data
+    return data
+  }
+
   async function remove(id: string, keepDisk = false): Promise<string | undefined> {
     const res = await api.delete(`/vms/${id}`, { params: { keepDisk } })
     if (res.status === 202) {
@@ -100,6 +114,6 @@ export const useVMStore = defineStore('vms', () => {
 
   return {
     vms, loading, error, fetchAll, fetchOne, create, start, stop, restart,
-    detachISO, attachISO, remove, update, fetchSpec, putSpec,
+    detachISO, attachISO, attachUSB, detachUSB, remove, update, fetchSpec, putSpec,
   }
 })

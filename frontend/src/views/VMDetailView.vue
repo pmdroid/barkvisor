@@ -215,6 +215,12 @@ async function fetchGuestInfo() {
 
 
 
+function usbDeviceKey(dev: { deviceId?: string | null; vendorId: string; productId: string; serialNumber?: string | null; id?: string }) {
+  if ('id' in dev && dev.id) return dev.id
+  return dev.deviceId
+    || (dev.serialNumber ? `${dev.vendorId}:${dev.productId}:${dev.serialNumber}` : `${dev.vendorId}:${dev.productId}`)
+}
+
 async function fetchUSBDevices() {
   try {
     const { data } = await api.get('/system/usb-devices')
@@ -225,16 +231,15 @@ async function fetchUSBDevices() {
 async function usbAttach(dev: HostUSBDevice) {
   usbLoading.value = true
   try {
-    const device: USBPassthroughDevice = { vendorId: dev.vendorId, productId: dev.productId, label: dev.name }
-    const current = vm.value?.usbDevices || []
-    await store.update(vmId.value, { usbDevices: [...current, device] } as any)
+    await store.attachUSB(vmId.value, usbDeviceKey(dev))
     await store.fetchOne(vmId.value)
     await fetchUSBDevices()
     showAttachUSB.value = false
+    const label = dev.productName || dev.name
     if (vm.value?.state === 'running') {
-      toast.show(`USB device "${dev.name}" added — restart the VM to apply.`, { type: 'info' })
+      toast.show(`USB device "${label}" added — restart the VM to apply.`, { type: 'info' })
     } else {
-      toast.success(`USB device "${dev.name}" attached`)
+      toast.success(`USB device "${label}" attached`)
     }
   } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally { usbLoading.value = false }
@@ -243,10 +248,7 @@ async function usbAttach(dev: HostUSBDevice) {
 async function usbDetach(dev: USBPassthroughDevice) {
   usbLoading.value = true
   try {
-    const current = vm.value?.usbDevices || []
-    await store.update(vmId.value, {
-      usbDevices: current.filter(d => !(d.vendorId === dev.vendorId && d.productId === dev.productId))
-    } as any)
+    await store.detachUSB(vmId.value, usbDeviceKey(dev))
     await store.fetchOne(vmId.value)
     await fetchUSBDevices()
     if (vm.value?.state === 'running') {
@@ -860,11 +862,13 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           >Attach USB Device</AppButton>
         </div>
         <UnsupportedHint v-if="!usb.available" :text="usb.explanation" />
-        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor ID' }, { key: 'product', label: 'Product ID' }, { key: 'actions', label: '' }]">
-              <tr v-for="dev in (vm.usbDevices || [])" :key="`${dev.vendorId}:${dev.productId}`">
-                <td style="font-weight:500">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</td>
-                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ dev.vendorId }}</span></td>
-                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ dev.productId }}</span></td>
+        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'id', label: 'ID' }, { key: 'actions', label: '' }]">
+              <tr v-for="dev in (vm.usbDevices || [])" :key="usbDeviceKey(dev)">
+                <td>
+                  <div style="font-weight:500">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</div>
+                  <div v-if="dev.serialNumber" style="font-size:11px;color:var(--text-dim)">Serial {{ dev.serialNumber }}</div>
+                </td>
+                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ usbDeviceKey(dev) }}</span></td>
                 <td style="text-align:right">
                   <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
                   <AppButton v-else size="sm" variant="danger" :disabled="usbLoading" @click="usbDetach(dev)">Detach</AppButton>
@@ -886,13 +890,23 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div class="modal">
         <h2>Attach USB Device</h2>
         <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on this device." />
-        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'vendor', label: 'Vendor' }, { key: 'ids', label: 'IDs' }, { key: 'actions', label: '' }]">
-              <tr v-for="dev in hostUSBDevices" :key="`${dev.vendorId}:${dev.productId}`" :style="dev.claimedByVMId ? 'opacity:0.5' : ''">
-                <td style="font-weight:500">{{ dev.name }}</td>
-                <td style="font-size:12px;color:var(--text-dim)">{{ dev.manufacturer || '---' }}</td>
-                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ dev.vendorId }}:{{ dev.productId }}</span></td>
+        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'id', label: 'ID' }, { key: 'actions', label: '' }]">
+              <tr
+                v-for="dev in hostUSBDevices"
+                :key="usbDeviceKey(dev)"
+                :style="dev.claimedByVMId || dev.attachable === false ? 'opacity:0.5' : ''"
+              >
+                <td>
+                  <div style="font-weight:500">{{ dev.productName || dev.name }}</div>
+                  <div v-if="dev.manufacturer" style="font-size:11px;color:var(--text-dim)">{{ dev.manufacturer }}</div>
+                  <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
+                  <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
+                  <div v-else-if="dev.idUnstable" style="font-size:11px;color:var(--text-dim)">ID may change if the device is replugged</div>
+                </td>
+                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ usbDeviceKey(dev) }}</span></td>
                 <td style="text-align:right">
                   <span v-if="dev.claimedByVMId" style="font-size:12px;color:var(--text-dim)">In use by {{ dev.claimedByVMName }}</span>
+                  <span v-else-if="dev.attachable === false" style="font-size:12px;color:var(--text-dim)">Unavailable</span>
                   <span v-else-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to attach</span>
                   <AppButton v-else variant="primary" size="sm" :disabled="usbLoading" @click="usbAttach(dev)">Attach</AppButton>
                 </td>
