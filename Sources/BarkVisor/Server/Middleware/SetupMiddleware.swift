@@ -38,7 +38,9 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
             || path.hasPrefix("/api/health")
             || path == "/api/system/capabilities"
             || path == "/api/openapi.yaml"
-            || path == "/api/contract" {
+            || path == "/api/contract"
+            || path == "/api/pairing/redeem"
+            || path == "/api/pairing/join" {
             return try await next.respond(to: request)
         }
 

@@ -24,7 +24,7 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/home/*`, `/api/apps` (home/apps reserved)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/*`, `/api/apps` (home/apps reserved)
     - internal — `/api/home/devices/{id}/v1/*` proxy (reserved, not public)
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
@@ -790,6 +790,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentPeerIdentity"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/pairing/codes:
+    post:
+      tags: [evolving]
+      operationId: issuePairingCode
+      x-barkvisor-stability: evolving
+      summary: Issue a short-lived pairing code and QR payload
+      description: |
+        Authenticated issuer (existing Device). Creates a single-use code
+        (default 10 minutes) and a `barkvisor://pair/v1` QR URI that carries
+        address, hostId, and Device certificate fingerprint. A new issue
+        replaces any previous unused code.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingIssue"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      tags: [evolving]
+      operationId: getPairingCode
+      x-barkvisor-stability: evolving
+      summary: Current unused pairing code, if any
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingIssue"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [evolving]
+      operationId: revokePairingCode
+      x-barkvisor-stability: evolving
+      summary: Revoke the current pairing code
+      responses:
+        "204":
+          description: Revoked or already absent
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/pairing/redeem:
+    post:
+      tags: [evolving]
+      operationId: redeemPairingCode
+      x-barkvisor-stability: evolving
+      summary: Redeem a pairing code on the issuer
+      description: |
+        Public, rate-limited. The joining Device presents the short code, its
+        Device certificate, and a CSR. The issuer consumes the code, pins the
+        presented certificate, issues a Home-CA cert, and returns trust material.
+        Does not touch local SQLite / QEMU.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingRedeemRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingRedeem"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/pairing/join:
+    post:
+      tags: [evolving]
+      operationId: joinPairing
+      x-barkvisor-stability: evolving
+      summary: Redeem a QR / code from this Device
+      description: |
+        Local join: parse the QR (or typed code + host), call the issuer
+        redeem endpoint, pin the issuer fingerprint, and persist the trust
+        bundle. Allowed without JWT only until setup completes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingJoinRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingJoin"
         default:
           $ref: "#/components/responses/Error"
 
@@ -1879,6 +1974,128 @@ components:
         accelerator:
           type: string
         processUptimeSeconds:
+          type: integer
+
+    PairingIssue:
+      type: object
+      required:
+        [
+          code,
+          expiresAt,
+          ttlSeconds,
+          qrPayload,
+          hostId,
+          fingerprint,
+          caFingerprint,
+          port,
+          agentPort,
+          advertisedHosts,
+          apiVersion,
+        ]
+      properties:
+        code:
+          type: string
+        expiresAt:
+          type: string
+        ttlSeconds:
+          type: integer
+        qrPayload:
+          type: string
+        hostId:
+          type: string
+        fingerprint:
+          type: string
+        caFingerprint:
+          type: string
+        port:
+          type: integer
+        agentPort:
+          type: integer
+        advertisedHosts:
+          type: array
+          items:
+            type: string
+        apiVersion:
+          type: integer
+
+    PairingRedeemRequest:
+      type: object
+      required: [code, hostId, csrPEM, deviceCertificatePEM]
+      properties:
+        code:
+          type: string
+        hostId:
+          type: string
+        csrPEM:
+          type: string
+        deviceCertificatePEM:
+          type: string
+        apiVersion:
+          type: integer
+
+    PairingRedeem:
+      type: object
+      required:
+        [
+          hostId,
+          deviceCertificatePEM,
+          deviceFingerprint,
+          caCertificatePEM,
+          caFingerprint,
+          issuedCertificatePEM,
+          issuedFingerprint,
+          agentPort,
+          apiVersion,
+        ]
+      properties:
+        hostId:
+          type: string
+        deviceCertificatePEM:
+          type: string
+        deviceFingerprint:
+          type: string
+        caCertificatePEM:
+          type: string
+        caFingerprint:
+          type: string
+        issuedCertificatePEM:
+          type: string
+        issuedFingerprint:
+          type: string
+        agentPort:
+          type: integer
+        apiVersion:
+          type: integer
+
+    PairingJoinRequest:
+      type: object
+      properties:
+        qrPayload:
+          type: string
+        code:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        hostId:
+          type: string
+        fingerprint:
+          type: string
+
+    PairingJoin:
+      type: object
+      required: [peerHostId, peerFingerprint, issuedFingerprint, pinned, apiVersion]
+      properties:
+        peerHostId:
+          type: string
+        peerFingerprint:
+          type: string
+        issuedFingerprint:
+          type: string
+        pinned:
+          type: boolean
+        apiVersion:
           type: integer
 
     AgentPeerIdentity:

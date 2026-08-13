@@ -1,0 +1,120 @@
+import Foundation
+
+/// One active pairing offer (hashed secret + display code) at `agent/pairing-offer.json`.
+///
+/// Independent of SQLite so local VM runtime (PAS-47/90) does not depend
+/// on pairing state.
+public struct PairingOffer: Codable, Sendable, Equatable {
+    public var codeHash: String
+    public var codeDisplay: String
+    public var createdAt: String
+    public var expiresAt: String
+    public var consumedAt: String?
+
+    public init(
+        codeHash: String,
+        codeDisplay: String,
+        createdAt: String,
+        expiresAt: String,
+        consumedAt: String? = nil,
+    ) {
+        self.codeHash = codeHash
+        self.codeDisplay = codeDisplay
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.consumedAt = consumedAt
+    }
+}
+
+public final class PairingOfferStore: @unchecked Sendable {
+    public static let fileName = "pairing-offer.json"
+
+    public let fileURL: URL
+    private let lock = NSLock()
+
+    public init(dataDir: URL) {
+        self.fileURL = dataDir
+            .appendingPathComponent(HomeCAService.agentDirectoryName)
+            .appendingPathComponent(Self.fileName)
+    }
+
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    public func load() throws -> PairingOffer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return try loadLocked()
+    }
+
+    public func replace(_ offer: PairingOffer) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try persistLocked(offer)
+    }
+
+    public func clear() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+    }
+
+    /// Consume the matching unused, unexpired offer. Returns the offer
+    /// after marking it consumed, or throws ``PairingError/expiredOrUsed``.
+    @discardableResult
+    public func consume(code: String, now: Date = Date()) throws -> PairingOffer {
+        lock.lock()
+        defer { lock.unlock() }
+        guard var offer = try loadLocked() else {
+            throw PairingError.expiredOrUsed
+        }
+        if offer.consumedAt != nil {
+            throw PairingError.expiredOrUsed
+        }
+        if let expires = iso8601.date(from: offer.expiresAt), now >= expires {
+            throw PairingError.expiredOrUsed
+        }
+        let incoming = PairingCode.hash(code)
+        guard PairingCode.hashesEqual(incoming, offer.codeHash) else {
+            throw PairingError.expiredOrUsed
+        }
+        offer.consumedAt = iso8601.string(from: now)
+        try persistLocked(offer)
+        return offer
+    }
+
+    private func loadLocked() throws -> PairingOffer? {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            throw PairingError.unavailable(
+                "unable to read pairing-offer.json: \(error.localizedDescription)",
+            )
+        }
+        do {
+            return try JSONDecoder().decode(PairingOffer.self, from: data)
+        } catch {
+            throw PairingError.unavailable(
+                "unable to decode pairing-offer.json: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    private func persistLocked(_ offer: PairingOffer) throws {
+        let dir = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(offer)
+        try data.write(to: fileURL, options: [.atomic])
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path,
+        )
+    }
+}
