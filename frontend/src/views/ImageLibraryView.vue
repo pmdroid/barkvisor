@@ -131,7 +131,7 @@ function applyDetectedArch(
     } else {
       dlArch.value = defaultArch.value
       dlArchHint.value = source.trim()
-        ? `Could not detect arch from URL — using host default (${defaultArch.value})`
+        ? `Could not detect arch from URL — using device default (${defaultArch.value})`
         : ''
     }
   } else {
@@ -142,7 +142,7 @@ function applyDetectedArch(
     } else {
       uploadArch.value = defaultArch.value
       uploadArchHint.value = source.trim()
-        ? `Could not detect arch from filename — using host default (${defaultArch.value})`
+        ? `Could not detect arch from filename — using device default (${defaultArch.value})`
         : ''
     }
   }

@@ -246,7 +246,7 @@ async function doDeploy() {
 async function submit() {
   error.value = ''
   if (platformBridgeUnsupported.value) {
-    error.value = bridged.explanation || 'Bridged networking is not available on this host.'
+    error.value = bridged.explanation || 'Bridged networking is not available on this device.'
     return
   }
   loading.value = true
@@ -270,7 +270,7 @@ async function submit() {
         v-if="compatibility?.resolvedImageSlug"
         style="color:var(--text-dim);font-size:12px;margin:-8px 0 16px"
       >
-        Image for this host: {{ compatibility.resolvedImageSlug }}
+        Image for this device: {{ compatibility.resolvedImageSlug }}
       </p>
       <div
         v-if="compatibility && !compatibility.compatible"
@@ -278,7 +278,7 @@ async function submit() {
         style="margin-bottom:16px"
       >
         <div>
-          <strong>Not compatible with this host</strong>
+          <strong>Not compatible with this device</strong>
           <p
             v-for="reason in compatibility.reasons"
             :key="reason.code + reason.message"
@@ -302,7 +302,7 @@ async function submit() {
           />
           <p v-else style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
             This template requires a bridge network but no active bridge was found.
-            Install the BarkVisor Helper and enable a bridge under <strong>Settings &rarr; Network</strong>.
+            Install the BarkVisor Helper and enable a bridge under <router-link to="/networks"><strong>Networks</strong></router-link>.
           </p>
         </div>
       </div>

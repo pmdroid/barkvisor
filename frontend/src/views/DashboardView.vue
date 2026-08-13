@@ -194,7 +194,7 @@ const memSparkData = computed(() => ({
         <div class="dash-stat-content">
           <div class="dash-stat-top">
             <span class="dash-stat-number">{{ stats.hostCpuPercent.toFixed(0) }}%</span>
-            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">host</span>
+            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">device</span>
           </div>
           <div class="dash-stat-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
@@ -238,7 +238,7 @@ const memSparkData = computed(() => ({
           <div class="dash-stat-top">
             <span class="dash-stat-number">{{ formatTemperatureC(stats.metrics?.temperatureC) ?? '—' }}</span>
             <span class="dash-stat-trend" :class="stats.metrics?.temperatureC == null ? '' : 'up'">
-              {{ stats.metrics?.temperatureC == null ? 'unavailable' : 'host' }}
+              {{ stats.metrics?.temperatureC == null ? 'unavailable' : 'device' }}
             </span>
           </div>
           <div class="dash-stat-label">

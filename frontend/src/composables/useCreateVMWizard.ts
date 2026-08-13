@@ -104,11 +104,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const archProblemText = computed(() => {
     if (!archIsProblem.value) return null
     const guest = effectiveGuestArch.value || 'selected'
-    const host = hostImageArch.value || 'this host'
+    const host = hostImageArch.value || 'this device'
     if (osType.value === 'windows' && guest !== 'arm64') {
-      return `Windows guests are not available on ${guest}. This host runs ${host}.`
+      return `Windows guests are not available on ${guest}. This device runs ${host}.`
     }
-    return `VM architecture (${guest}) is not compatible with this host (${host}). Cross-architecture VMs are not supported.`
+    return `VM architecture (${guest}) is not compatible with this device (${host}). Cross-architecture VMs are not supported.`
   })
   const revealArchOnSummary = computed(() =>
     shouldRevealArchitectureDetails({
@@ -122,11 +122,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     return [
       {
         value: 'arm64',
-        label: host === 'arm64' ? 'ARM64 (this host)' : 'ARM64',
+        label: host === 'arm64' ? 'ARM64 (this device)' : 'ARM64',
       },
       {
         value: 'x86_64',
-        label: host === 'x86_64' ? 'x86_64 (this host)' : 'x86_64',
+        label: host === 'x86_64' ? 'x86_64 (this device)' : 'x86_64',
         disabled: osType.value === 'windows',
       },
     ]
@@ -445,15 +445,15 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   async function submit() {
     error.value = ''
     if (osType.value === 'windows' && !supportsWindows.value) {
-      error.value = 'Windows VMs are not available on this host architecture.'
+      error.value = 'Windows VMs are not available on this device architecture.'
       return
     }
     if (selectedNetwork.value?.mode === 'bridged' && !bridged.available) {
-      error.value = bridged.explanation || 'Bridged networking is not available on this host.'
+      error.value = bridged.explanation || 'Bridged networking is not available on this device.'
       return
     }
     if (archIsProblem.value) {
-      error.value = archProblemText.value || 'This architecture is not supported on this host.'
+      error.value = archProblemText.value || 'This architecture is not supported on this device.'
       return
     }
     loading.value = true

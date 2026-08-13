@@ -198,7 +198,7 @@ async function saveNetwork() {
   error.value = ''
   if (!newName.value.trim()) { error.value = 'Name required'; return }
   if (newMode.value === 'bridged' && !bridged.available) {
-    error.value = bridged.explanation || 'Bridged networking is not available on this host.'
+    error.value = bridged.explanation || 'Bridged networking is not available on this device.'
     return
   }
   if (newMode.value === 'bridged' && !newBridge.value) { error.value = 'Bridge interface required for bridged mode'; return }
@@ -455,7 +455,7 @@ async function setupBridgeInline() {
           Bridges without an IP still appear when detected; you can also type the name.
         </p>
         <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
-          Interface "{{ newBridge }}" is not on this host. Create it first — save and VM start will
+          Interface "{{ newBridge }}" is not on this device. Create it first — save and VM start will
           fail closed with a structured error instead of a QEMU log.
         </p>
       </template>

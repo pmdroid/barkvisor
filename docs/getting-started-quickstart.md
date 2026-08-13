@@ -24,7 +24,7 @@ BarkVisor supports two image types:
 | `iso`         | Installer ISO (manual OS install via VNC)            |
 | `cloud-image` | Pre-built cloud image (automated via cloud-init)    |
 
-Architecture follows the **host**: `arm64` on Apple Silicon and Linux aarch64; `x86_64` on Linux amd64 hosts. Pick catalog images and `vmType` (`linux-arm64` / `linux-amd64`) that match `GET /api/system/capabilities` (`hostArch`).
+Architecture follows this **Device** (the machine running BarkVisor): `arm64` on Apple Silicon and Linux aarch64; `x86_64` on Linux amd64. Pick catalog images and `vmType` (`linux-arm64` / `linux-amd64`) that match `GET /api/system/capabilities` (`hostArch`). See [Product terminology](product-terminology.md).
 
 ### Downloading from a Repository
 

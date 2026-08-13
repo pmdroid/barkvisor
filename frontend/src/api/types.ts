@@ -626,9 +626,9 @@ export interface NetworkModeCapability {
  * Feature flags and host facts from GET /api/system/capabilities.
  *
  * Describes the **current host** (the process serving the SPA) — a projection
- * of server-side HostInventory. Multi-host UI will select a device inventory;
- * until then there is only one host (this process). Prefer these fields over
- * hardcoding platform assumptions in views.
+ * of server-side HostInventory. The SPA calls that machine a Device (PAS-97).
+ * Multi-host UI will select a device inventory; until then there is only one
+ * host (this process). Prefer these fields over hardcoding platform assumptions.
  */
 export interface SystemCapabilities {
   platform: 'macOS' | 'Linux' | string

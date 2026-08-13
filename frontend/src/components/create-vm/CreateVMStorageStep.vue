@@ -61,7 +61,7 @@ function removeSharedPath(i: number, current: string[]) {
         @input="emit('update:diskSizeGB', Number(($event.target as HTMLInputElement).value))"
       />
       <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:block">
-        A QCOW2 virtual disk will be created. It grows dynamically — only used space is allocated on the host.
+        A QCOW2 virtual disk will be created. It grows dynamically — only used space is allocated on this device.
       </span>
     </div>
 

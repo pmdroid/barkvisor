@@ -2,6 +2,8 @@
 
 **One BarkVisor process ↔ one host identity ↔ one data directory.**
 
+In product copy that machine is a **Device**. See [Product terminology](product-terminology.md). Do not call it a node.
+
 ## Why
 
 BarkVisor is moving toward multi-device homes (Mac + Linux + boards), but multi-host is **N daemon installs**, not one process with many hosts.
@@ -14,7 +16,7 @@ BarkVisor is moving toward multi-device homes (Mac + Linux + boards), but multi-
 | Concept | Rule |
 |--------|------|
 | Process | Single OS process (LaunchDaemon / systemd / `BarkVisorApp`) |
-| Host | Physical or virtual machine running that process |
+| Host | Physical or virtual machine running that process (user-facing: **Device**) |
 | Data dir | One tree per install (`BARKVISOR_DATA_DIR` / default path) |
 | Host identity | Durable UUID at `dataDir/host-id` (0600, created on first start; same pattern as `jwt-secret`) |
 | Inventory | `HostInventoryService.snapshot()` describes *this* host only, including `hostId` |
@@ -28,5 +30,6 @@ New Core code may take a small context value (data dir, durable `hostId`, invent
 
 ## Related
 
+- Product: [terminology](product-terminology.md) (PAS-97 Device / PAS-82 Home)
 - Product: agent identity + inventory API (PAS-42)
 - Prep: HostInventory builder (PAS-106), capabilities projection (PAS-107)

@@ -18,6 +18,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
 import { pct } from '../utils/format'
+import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
 
 const store = useVMStore()
 const toast = useToastStore()
@@ -191,12 +192,12 @@ async function doStop() {
   <!-- System Stats -->
   <div v-if="stats" class="stats-row">
     <div class="stat-card">
-      <div class="stat-label">Host CPU</div>
+      <div class="stat-label">{{ DEVICE_CPU_LABEL }}</div>
       <div class="stat-value">{{ stats.hostCpuPercent.toFixed(0) }}%</div>
       <div class="stat-bar"><div class="stat-bar-fill" :style="{ width: Math.min(stats.hostCpuPercent, 100) + '%', background: 'var(--accent)' }" /></div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Host Memory</div>
+      <div class="stat-label">{{ DEVICE_MEMORY_LABEL }}</div>
       <div class="stat-value">{{ (stats.hostMemoryUsedMB / 1024).toFixed(1) }} / {{ (stats.hostMemoryTotalMB / 1024).toFixed(0) }} GB</div>
       <div class="stat-bar"><div class="stat-bar-fill" :style="{ width: pct(stats.hostMemoryUsedMB, stats.hostMemoryTotalMB) + '%', background: '#34d399' }" /></div>
     </div>
