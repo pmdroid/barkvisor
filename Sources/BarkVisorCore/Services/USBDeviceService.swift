@@ -70,14 +70,34 @@ public enum USBDeviceService {
         intFromPlist(entry["USB Address"])
     }
 
-    /// IOKit "Bus Number" for the USB controller the device is attached to.
+    /// USB controller bus used by QEMU `hostbus` / libusb.
+    /// Real `IOUSBHostDevice` entries typically omit "Bus Number"; the high
+    /// byte of `locationID` is the same bus encoded in `@BBAAAA` device names.
     public static func parseIORegistryUSBBus(_ entry: [String: Any]) -> Int? {
-        intFromPlist(entry["Bus Number"])
+        if let bus = intFromPlist(entry["Bus Number"]) {
+            return bus
+        }
+        guard let locationID = uint32FromPlist(entry["locationID"]) else {
+            return nil
+        }
+        return Int(locationID >> 24)
     }
 
     private static func intFromPlist(_ raw: Any?) -> Int? {
         if let value = raw as? Int { return value }
         if let value = raw as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    /// IOKit `locationID` is a 32-bit topology word. Read it unsigned so bus
+    /// values ≥ 128 (high bit set) survive NSNumber / signed Int conversion.
+    private static func uint32FromPlist(_ raw: Any?) -> UInt32? {
+        if let value = raw as? UInt32 { return value }
+        if let value = raw as? UInt, value <= UInt32.max { return UInt32(value) }
+        if let value = raw as? Int, (0 ... Int(UInt32.max)).contains(value) {
+            return UInt32(value)
+        }
+        if let value = raw as? NSNumber { return value.uint32Value }
         return nil
     }
 
