@@ -112,7 +112,9 @@
             "properties": {
               "vendorId": { "type": "string" },
               "productId": { "type": "string" },
-              "label": { "type": ["string", "null"] }
+              "label": { "type": ["string", "null"] },
+              "serialNumber": { "type": ["string", "null"] },
+              "deviceId": { "type": ["string", "null"] }
             }
           }
         },

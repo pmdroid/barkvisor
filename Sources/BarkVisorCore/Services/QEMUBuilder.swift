@@ -466,19 +466,73 @@ public enum QEMUBuilder {
     }
 
     private static func usbPassthroughArgs(spec: WorkloadSpec) throws -> [String] {
-        let usbDevs = spec.spec.usb
-        guard !usbDevs.isEmpty else { return [] }
+        guard !spec.spec.usb.isEmpty else { return [] }
+        let hostDevices = try USBDeviceService.listDevices()
+        return try usbHostArgs(usb: spec.spec.usb, hostDevices: hostDevices)
+    }
+
+    /// Builds `usb-host` args. Serial-identified devices resolve to the current
+    /// bus/address so two sticks with the same vid:pid stay distinct. Missing
+    /// topology fails closed — never fall back to vendorid/productid.
+    public static func usbHostArgs(
+        usb: [WorkloadUSBDevice],
+        hostDevices: [HostUSBDevice],
+    ) throws -> [String] {
+        guard !usb.isEmpty else { return [] }
         try PlatformCapabilities.requireUSBPassthrough()
         var args: [String] = []
-        for (i, dev) in usbDevs.enumerated() {
-            try validateUSBId(dev.vendorId)
-            try validateUSBId(dev.productId)
-            args += [
-                "-device",
-                "usb-host,vendorid=\(dev.vendorId),productid=\(dev.productId),guest-reset=off,id=usb-pt-\(i)",
-            ]
+        for (i, specDev) in usb.enumerated() {
+            try validateUSBId(specDev.vendorId)
+            try validateUSBId(specDev.productId)
+            let stored = USBPassthroughService.passthrough(from: specDev)
+            let deviceArg = try usbHostDeviceArg(stored: stored, hostDevices: hostDevices, index: i)
+            args += ["-device", deviceArg]
         }
         return args
+    }
+
+    private static func usbHostDeviceArg(
+        stored: USBPassthroughDevice,
+        hostDevices: [HostUSBDevice],
+        index: Int,
+    ) throws -> String {
+        let suffix = ",guest-reset=off,id=usb-pt-\(index)"
+        let identified = stored.serialNumber != nil
+            || (stored.deviceId?.contains(":") == true && stored.deviceId?.hasPrefix("bus:") != true
+                && (stored.deviceId?.split(separator: ":").count ?? 0) >= 3)
+
+        if identified {
+            let lookup = stored.deviceId ?? USBDeviceIdentity.make(
+                vendorId: stored.vendorId,
+                productId: stored.productId,
+                serial: stored.serialNumber,
+            ).id
+            let host = try USBPassthroughService.resolve(deviceId: lookup, hostDevices: hostDevices)
+            guard host.attachable else {
+                throw BarkVisorError.badRequest(
+                    host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
+                )
+            }
+            if let bus = host.bus, let address = host.address {
+                return "usb-host,hostbus=\(bus),hostaddr=\(address)\(suffix)"
+            }
+            throw BarkVisorError.conflict(
+                "USB device \(lookup) resolved without bus/address; refusing vendor/product fallback",
+            )
+        }
+
+        if let deviceId = stored.deviceId, deviceId.hasPrefix("bus:"),
+           let parsed = USBDeviceIdentity.parse(deviceId),
+           let bus = parsed.bus, let address = parsed.address {
+            if let host = try? USBPassthroughService.resolve(
+                deviceId: deviceId, hostDevices: hostDevices,
+            ), let hostBus = host.bus, let hostAddr = host.address {
+                return "usb-host,hostbus=\(hostBus),hostaddr=\(hostAddr)\(suffix)"
+            }
+            return "usb-host,hostbus=\(bus),hostaddr=\(address)\(suffix)"
+        }
+
+        return "usb-host,vendorid=\(stored.vendorId),productid=\(stored.productId)\(suffix)"
     }
 
     private static func miscArgs(spec: WorkloadSpec, vmID: String) throws -> [String] {

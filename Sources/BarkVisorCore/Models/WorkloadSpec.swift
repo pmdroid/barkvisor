@@ -177,11 +177,26 @@ public struct WorkloadUSBDevice: Codable, Equatable, Sendable {
     public var vendorId: String
     public var productId: String
     public var label: String?
+    public var serialNumber: String?
+    public var deviceId: String?
 
-    public init(vendorId: String, productId: String, label: String? = nil) {
-        self.vendorId = vendorId
-        self.productId = productId
+    public init(
+        vendorId: String,
+        productId: String,
+        label: String? = nil,
+        serialNumber: String? = nil,
+        deviceId: String? = nil,
+    ) {
+        let ref = USBDeviceIdentity.make(
+            vendorId: vendorId,
+            productId: productId,
+            serial: serialNumber,
+        )
+        self.vendorId = ref.vendorId
+        self.productId = ref.productId
         self.label = label
+        self.serialNumber = USBDeviceIdentity.normalizedSerial(serialNumber)
+        self.deviceId = deviceId ?? (ref.serial != nil ? ref.id : nil)
     }
 }
 

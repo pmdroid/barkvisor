@@ -172,6 +172,10 @@ extension VMLifecycleService {
 
         if let usb = params.usbDevices, !usb.isEmpty {
             try PlatformCapabilities.requireUSBPassthrough()
+            let normalized = try persistableUSBDevices(usb)
+            try await db.read { db in
+                try assertUSBUnclaimed(normalized ?? usb, db: db)
+            }
         }
     }
 }

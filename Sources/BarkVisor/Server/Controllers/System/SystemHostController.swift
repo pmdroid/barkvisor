@@ -9,6 +9,7 @@ struct SystemHostController: RouteCollection {
         system.get("interfaces", use: listInterfaces)
         system.get("browse", use: browseDirectory)
         system.get("usb-devices", use: listUSBDevices)
+        system.get("usb", use: listUSBDevices)
     }
 
     // MARK: - Directory Browser
@@ -101,26 +102,26 @@ struct SystemHostController: RouteCollection {
             return []
         }
         let hostDevices = try USBDeviceService.listDevices()
-
-        // Build a map of claimed USB devices (vendorId:productId → VM)
         let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
-        var claimed: [String: (id: String, name: String)] = [:]
-        for vm in allVMs {
-            let devs = vm.decodedUSBDevices
-            for dev in devs {
-                claimed["\(dev.vendorId):\(dev.productId)"] = (id: vm.id, name: vm.name)
-            }
-        }
 
         return hostDevices.map { dev in
-            let key = "\(dev.vendorId):\(dev.productId)"
-            let claim = claimed[key]
+            let claim = USBPassthroughService.claimedBy(host: dev, vms: allVMs)
             return HostUSBDeviceResponse(
+                id: dev.id,
                 vendorId: dev.vendorId,
                 productId: dev.productId,
                 name: dev.name,
+                productName: dev.productName,
                 manufacturer: dev.manufacturer,
+                serial: dev.serialNumber,
                 serialNumber: dev.serialNumber,
+                bus: dev.bus,
+                address: dev.address,
+                idUnstable: dev.idUnstable,
+                attachable: dev.attachable,
+                excludedReason: dev.excludedReason,
+                busy: claim != nil,
+                attachedToVmId: claim?.id,
                 claimedByVMId: claim?.id,
                 claimedByVMName: claim?.name,
             )
