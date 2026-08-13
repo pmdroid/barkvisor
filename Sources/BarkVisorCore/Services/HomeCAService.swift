@@ -201,12 +201,18 @@ public enum HomeCAService {
         let dir = agentDirectory(in: dataDir)
         let certURL = dir.appendingPathComponent(deviceCertificateFileName)
         let keyURL = dir.appendingPathComponent(deviceKeyFileName)
-        if let certPEM = try? String(contentsOf: certURL, encoding: .utf8),
-           let keyPEM = try? String(contentsOf: keyURL, encoding: .utf8),
-           let cert = try? Certificate(pemEncoded: certPEM),
-           DeviceTrust.hostId(from: cert) == hostId,
-           DeviceTrust.isIssuedByHomeCA(leaf: cert, ca: ca.certificate) {
-            return DeviceFiles(certificatePEM: certPEM, keyPEM: keyPEM)
+        let certExists = FileManager.default.fileExists(atPath: certURL.path)
+        let keyExists = FileManager.default.fileExists(atPath: keyURL.path)
+        if certExists || keyExists {
+            do {
+                return try loadDeviceCert(certURL: certURL, keyURL: keyURL, hostId: hostId, ca: ca)
+            } catch let error as HomeCAError {
+                throw error
+            } catch {
+                throw HomeCAError.corruptMaterial(
+                    "unable to load device certificate: \(error.localizedDescription)",
+                )
+            }
         }
 
         let issued = try issueDeviceCert(
@@ -223,6 +229,28 @@ public enum HomeCAService {
         try writeAtomic(Data(keyPEM.utf8), to: keyURL, permissions: 0o600)
         try incrementSerial(in: dataDir)
         return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
+    }
+
+    private static func loadDeviceCert(
+        certURL: URL,
+        keyURL: URL,
+        hostId: String,
+        ca: CAFiles,
+    ) throws -> DeviceFiles {
+        let certPEM = try String(contentsOf: certURL, encoding: .utf8)
+        let keyPEM = try String(contentsOf: keyURL, encoding: .utf8)
+        let cert = try Certificate(pemEncoded: certPEM)
+        let key = try Certificate.PrivateKey(pemEncoded: keyPEM)
+        guard key.publicKey.subjectPublicKeyInfoBytes == cert.publicKey.subjectPublicKeyInfoBytes else {
+            throw HomeCAError.corruptMaterial("device.key does not match device.crt")
+        }
+        guard DeviceTrust.hostId(from: cert) == hostId else {
+            throw HomeCAError.corruptMaterial("device.crt SAN does not match hostId")
+        }
+        guard DeviceTrust.isIssuedByHomeCA(leaf: cert, ca: ca.certificate) else {
+            throw HomeCAError.corruptMaterial("device.crt is not issued by Home CA")
+        }
+        return DeviceFiles(certificatePEM: certPEM, keyPEM: keyPEM)
     }
 
     private static func issueDeviceCert(
