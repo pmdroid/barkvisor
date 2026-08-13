@@ -56,6 +56,9 @@ packageTargets.append(contentsOf: [
         name: "BarkVisorCore",
         dependencies: coreDependencies,
         path: "Sources/BarkVisorCore",
+        resources: [
+            .copy("API/openapi.yaml"),
+        ],
     ),
     // Vapor HTTP layer: controllers, middleware, server
     .target(

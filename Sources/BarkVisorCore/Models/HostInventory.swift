@@ -53,7 +53,7 @@ public struct AgentInfo: Codable, Sendable, Equatable {
     public let version: String
     public let apiVersion: Int
 
-    public init(role: String = "colocal", version: String, apiVersion: Int = 1) {
+    public init(role: String = "colocal", version: String, apiVersion: Int = APIContract.version) {
         self.role = role
         self.version = version
         self.apiVersion = apiVersion

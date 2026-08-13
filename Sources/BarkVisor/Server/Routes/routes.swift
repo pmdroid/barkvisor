@@ -25,7 +25,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
 
     registerProcessHealthRoute(app)
 
-    // Public: platform capabilities for UI gating (setup wizard before login).
+    // Public: published contract (PAS-78) + capabilities for setup gating.
+    APIContractController.registerPublicRoutes(app)
     SystemCapabilitiesController.registerPublicRoutes(app)
 
     let protected = app.grouped(JWTAuthMiddleware(keys: deps.keys))

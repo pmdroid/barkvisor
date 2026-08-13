@@ -115,11 +115,18 @@ public struct WorkloadHealthSummary: Codable, Equatable, Sendable {
 /// required check passes so existing probes keep working.
 public struct ProcessHealthStatus: Codable, Equatable, Sendable {
     public var status: String
+    public var apiVersion: Int
     public var checks: [WorkloadHealthCheck]
     public var updatedAt: String
 
-    public init(status: String, checks: [WorkloadHealthCheck], updatedAt: String) {
+    public init(
+        status: String,
+        checks: [WorkloadHealthCheck],
+        updatedAt: String,
+        apiVersion: Int = APIContract.version,
+    ) {
         self.status = status
+        self.apiVersion = apiVersion
         self.checks = checks
         self.updatedAt = updatedAt
     }
