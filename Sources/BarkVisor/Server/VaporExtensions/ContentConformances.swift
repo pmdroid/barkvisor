@@ -15,6 +15,7 @@ extension BackupInfo: Content {}
 extension BackupSettings: Content {}
 extension VM: Content {}
 extension WorkloadSpec: Content {}
+extension WorkloadApplyResult: Content {}
 extension VMRuntimeStatus: Content {}
 extension WorkloadHealthStatus: Content {}
 extension WorkloadHealthSummary: Content {}

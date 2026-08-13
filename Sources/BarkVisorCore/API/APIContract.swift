@@ -63,6 +63,9 @@ public enum APIContract {
         Route(method: "POST", path: "/api/vms/{id}/detach-iso", stability: .stable),
         Route(method: "GET", path: "/api/vms/{id}/spec", stability: .stable),
         Route(method: "PUT", path: "/api/vms/{id}/spec", stability: .stable),
+        Route(method: "POST", path: "/api/workloads/apply", stability: .stable),
+        Route(method: "GET", path: "/api/workloads/{id}/spec", stability: .stable),
+        Route(method: "GET", path: "/api/workloadspec.schema.json", stability: .stable),
 
         Route(method: "GET", path: "/api/disks", stability: .stable),
         Route(method: "POST", path: "/api/disks", stability: .stable),
@@ -120,6 +123,24 @@ public enum APIContract {
 
     public static func specYAML() throws -> String {
         guard let url = specURL() else {
+            throw APIContractError.specMissing
+        }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    public static func workloadSpecSchemaURL() -> URL? {
+        if let bundled = Bundle.module.url(
+            forResource: "workloadspec.schema",
+            withExtension: "json",
+            subdirectory: "API",
+        ) ?? Bundle.module.url(forResource: "workloadspec.schema", withExtension: "json") {
+            return bundled
+        }
+        return nil
+    }
+
+    public static func workloadSpecSchemaJSON() throws -> String {
+        guard let url = workloadSpecSchemaURL() else {
             throw APIContractError.specMissing
         }
         return try String(contentsOf: url, encoding: .utf8)
