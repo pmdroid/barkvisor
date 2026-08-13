@@ -430,6 +430,27 @@ struct WorkloadSpecProjectorTests {
         #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
     }
 
+    @Test func `override-only spec apply is a hardware change`() throws {
+        let before = makeVM()
+        var after = makeVM()
+        var spec = WorkloadSpecProjector.fromVM(after)
+        spec.overrides = WorkloadOverrides(
+            linux: WorkloadSpecOverlay(
+                resources: WorkloadResourcesOverlay(memoryMb: 4_096),
+                accelerator: "tcg",
+            ),
+            macos: WorkloadSpecOverlay(
+                resources: WorkloadResourcesOverlay(cpu: fixtureCPUCount),
+                accelerator: "tcg",
+            ),
+        )
+        try WorkloadSpecProjector.apply(spec, to: &after)
+        #expect(after.cpuCount == before.cpuCount)
+        #expect(after.memoryMb == before.memoryMb)
+        #expect(after.decodedOverrides != before.decodedOverrides)
+        #expect(VMLifecycleService.detectHardwareChanges(before: before, after: after))
+    }
+
     @Test func `fromVM projects implicit NAT when networkId is nil`() {
         var vm = makeVM()
         vm.networkId = nil
