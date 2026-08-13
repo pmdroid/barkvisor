@@ -14,6 +14,16 @@
       "sha256": "69223638286cb1c7728e70e6dee133c501490591804656b5051a2c1fa3eaa51f"
     },
     {
+      "slug": "alpine-3.23-x86_64",
+      "name": "Alpine Linux 3.23",
+      "description": "Lightweight virtual ISO for x86_64 (~67 MB)",
+      "imageType": "iso",
+      "arch": "x86_64",
+      "version": "3.23.3",
+      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-virt-3.23.3-x86_64.iso",
+      "sizeBytes": 70254592
+    },
+    {
       "slug": "ubuntu-24.04-arm64",
       "name": "Ubuntu 24.04 LTS",
       "description": "Minimal cloud image for ARM64",
@@ -47,6 +57,76 @@
       "sha512": "d5e7f38648cfd32a49ebb42f835ac78435f507f540dcf86565ec32277eaf9b3b5f41876e49e4397795eda41cc7d1320fe6eb39604945d357c9f22e4b1cef0e7b"
     },
     {
+      "slug": "debian-12-x86_64",
+      "name": "Debian 12 Bookworm",
+      "description": "Generic cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "12",
+      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
+      "sizeBytes": 448069632
+    },
+    {
+      "slug": "debian-13-arm64",
+      "name": "Debian 13 Trixie",
+      "description": "Generic cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "13",
+      "downloadUrl": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2",
+      "sizeBytes": 429195264
+    },
+    {
+      "slug": "debian-13-x86_64",
+      "name": "Debian 13 Trixie",
+      "description": "Generic cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "13",
+      "downloadUrl": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2",
+      "sizeBytes": 436404224
+    },
+    {
+      "slug": "ubuntu-22.04-arm64",
+      "name": "Ubuntu 22.04 LTS",
+      "description": "Minimal cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "22.04",
+      "downloadUrl": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-arm64.img",
+      "sizeBytes": 703484928
+    },
+    {
+      "slug": "ubuntu-22.04-x86_64",
+      "name": "Ubuntu 22.04 LTS",
+      "description": "Minimal cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "22.04",
+      "downloadUrl": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
+      "sizeBytes": 734344192
+    },
+    {
+      "slug": "rocky-9-arm64",
+      "name": "Rocky Linux 9",
+      "description": "Generic cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "9",
+      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2",
+      "sizeBytes": 519831552
+    },
+    {
+      "slug": "rocky-9-x86_64",
+      "name": "Rocky Linux 9",
+      "description": "Generic cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "9",
+      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
+      "sizeBytes": 645988352
+    },
+    {
       "slug": "fedora-42-arm64",
       "name": "Fedora 42 Cloud",
       "description": "Cloud base image for ARM64",
@@ -66,6 +146,16 @@
       "version": "17.2",
       "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/17.2/haos_generic-aarch64-17.2.qcow2.xz",
       "sizeBytes": 314572800
+    },
+    {
+      "slug": "haos-18.1-arm64",
+      "name": "Home Assistant OS 18.1",
+      "description": "Official HAOS generic image for QEMU ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "18.1",
+      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.1/haos_generic-aarch64-18.1.qcow2.xz",
+      "sizeBytes": 359257372
     },
     {
       "slug": "haos-18.1-x86_64",
