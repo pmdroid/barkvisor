@@ -62,13 +62,22 @@ public enum Config {
         max(0, ProcessInfo.processInfo.systemUptime - processStartSystemUptime)
     }
 
-    /// HTTP listen port. Override with `BARKVISOR_PORT` (1–65535).
+    /// HTTP listen port (SPA + JWT). Override with `BARKVISOR_PORT` (1–65535).
     public static let port: Int = {
         if let raw = ProcessInfo.processInfo.environment["BARKVISOR_PORT"],
            let value = Int(raw), value >= 1, value <= 65_535 {
             return value
         }
         return 7_777
+    }()
+
+    /// mTLS agent-plane listen port. Override with `BARKVISOR_AGENT_PORT` (1–65535).
+    public static let agentPort: Int = {
+        if let raw = ProcessInfo.processInfo.environment["BARKVISOR_AGENT_PORT"],
+           let value = Int(raw), value >= 1, value <= 65_535 {
+            return value
+        }
+        return 7_778
     }()
 
     /// Install prefix derived from binary location.
@@ -224,6 +233,8 @@ public enum Config {
             dataDir.appendingPathComponent("tus-uploads"),
             dataDir.appendingPathComponent("pids"),
             dataDir.appendingPathComponent("console"),
+            dataDir.appendingPathComponent(HomeCAService.caDirectoryName),
+            dataDir.appendingPathComponent(HomeCAService.agentDirectoryName),
             backupDir,
         ]
         for dir in dirs where !fm.fileExists(atPath: dir.path) {

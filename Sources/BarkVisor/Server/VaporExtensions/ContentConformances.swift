@@ -38,3 +38,4 @@ extension ImageProgressEvent: Content {}
 extension DiskImageInfo: Content {}
 extension HostInventory: Content {}
 extension TemplateCompatibilityReport: Content {}
+extension AgentPeerIdentity: Content {}
