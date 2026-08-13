@@ -67,6 +67,21 @@ public enum HomeCAService {
         )
     }
 
+    /// Build a PKCS#10 CSR from this Device's existing key (pairing redeem).
+    public static func makeDeviceCSR(hostId: String, keyPEM: String) throws -> String {
+        let key = try Certificate.PrivateKey(pemEncoded: keyPEM)
+        let subject = try DistinguishedName {
+            CommonName(hostId)
+        }
+        let csr = try CertificateSigningRequest(
+            version: .v1,
+            subject: subject,
+            privateKey: key,
+            attributes: CertificateSigningRequest.Attributes([]),
+        )
+        return try csr.serializeAsPEM().pemString
+    }
+
     /// Issue a Device cert signed by this Home CA.
     ///
     /// When `csrPEM` is set, the CSR public key is signed (pairing will send

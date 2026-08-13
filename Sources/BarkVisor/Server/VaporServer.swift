@@ -73,6 +73,7 @@ public final class VaporServer: @unchecked Sendable {
 
         let loginRateLimit = configureRateLimit(backgroundTasks: services.backgroundTasks)
         let updateService = UpdateService()
+        let pairingOffers = PairingOfferStore(dataDir: Config.dataDir)
 
         try registerRoutes(
             app,
@@ -91,6 +92,8 @@ public final class VaporServer: @unchecked Sendable {
                 setupMiddleware: setup,
                 updateService: updateService,
                 healthProbes: services.healthProbes,
+                pairingOffers: pairingOffers,
+                jwt: JWTAuthMiddleware(keys: keys),
             ),
         )
 

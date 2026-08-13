@@ -18,11 +18,21 @@ struct RouteDependencies {
     let setupMiddleware: SetupMiddleware
     let updateService: UpdateService
     let healthProbes: HealthProbeService
+    let pairingOffers: PairingOfferStore
+    let jwt: JWTAuthMiddleware
 }
 
 func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try app.register(collection: SetupController(setupMiddleware: deps.setupMiddleware, keys: deps.keys))
     try app.register(collection: AuthController(keys: deps.keys, loginRateLimit: deps.loginRateLimit))
+
+    let pairing = PairingController(
+        offers: deps.pairingOffers,
+        setupMiddleware: deps.setupMiddleware,
+        jwt: deps.jwt,
+        rateLimit: deps.loginRateLimit,
+    )
+    try pairing.boot(routes: app)
 
     registerProcessHealthRoute(app)
 
@@ -46,6 +56,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
 
     try AuthController(keys: deps.keys, loginRateLimit: deps.loginRateLimit)
         .bootProtected(routes: protected)
+    try pairing.bootProtected(routes: protected)
 
     try protected.register(collection: APIKeyController())
     try protected.register(collection: AuditController())
