@@ -110,6 +110,7 @@ onMounted(() => {
   pollTimer = window.setInterval(() => {
     fetchStats()
     fetchHealthSummary()
+    store.fetchAll()
   }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
