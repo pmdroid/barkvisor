@@ -34,12 +34,20 @@ export function applyVMStateEvent(
   event: { state: string; error?: string | null },
 ): void {
   vm.state = event.state
-  const health = healthFromState(event.state)
+  const derived = healthFromState(event.state)
+  const previous = vm.health ?? vm.status?.health
+  // SSE only carries lifecycle state. Keep API probe rollups while the guest
+  // is still running so guest_ready/degraded do not flicker back to running.
+  const keepProbeHealth =
+    event.state === 'running' && (previous === 'guest_ready' || previous === 'degraded')
+  const health = keepProbeHealth && previous ? previous : derived
   vm.health = health
   if (vm.status) {
     vm.status.state = event.state as VMState
     vm.status.health = health
-    vm.status.healthError = event.error ?? null
+    if (!keepProbeHealth || event.error !== undefined) {
+      vm.status.healthError = event.error ?? null
+    }
   }
 }
 

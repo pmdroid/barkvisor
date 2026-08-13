@@ -117,6 +117,7 @@ public enum WorkloadHealthProjector {
                 name: "http",
                 configured: signals.httpConfigured,
                 observed: signals.http,
+                unreachable: signals.httpUnreachable,
                 failMessage: "HTTP probe failed",
                 passMessage: "HTTP probe passed",
             ),
@@ -124,6 +125,7 @@ public enum WorkloadHealthProjector {
                 name: "tcp",
                 configured: signals.tcpConfigured,
                 observed: signals.tcp,
+                unreachable: signals.tcpUnreachable,
                 failMessage: "TCP probe failed",
                 passMessage: "TCP probe passed",
             ),
@@ -159,11 +161,15 @@ public enum WorkloadHealthProjector {
         name: String,
         configured: Bool,
         observed: Bool?,
+        unreachable: Bool,
         failMessage: String,
         passMessage: String,
     ) -> WorkloadHealthCheck {
         if !configured {
             return WorkloadHealthCheck(name: name, status: .skip, message: "not configured")
+        }
+        if unreachable {
+            return WorkloadHealthCheck(name: name, status: .skip, message: "unreachable target")
         }
         return check(
             name: name,

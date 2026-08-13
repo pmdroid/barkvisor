@@ -128,6 +128,8 @@ extension VMManager {
                 tcp: probes.tcp,
                 httpConfigured: probes.httpConfigured,
                 tcpConfigured: probes.tcpConfigured,
+                httpUnreachable: probes.httpUnreachable,
+                tcpUnreachable: probes.tcpUnreachable,
             )
         }
         if state == .running {
@@ -141,6 +143,8 @@ extension VMManager {
                 tcp: probes.tcp,
                 httpConfigured: probes.httpConfigured,
                 tcpConfigured: probes.tcpConfigured,
+                httpUnreachable: probes.httpUnreachable,
+                tcpUnreachable: probes.tcpUnreachable,
             )
         }
         return WorkloadHealthSignals(
@@ -151,6 +155,8 @@ extension VMManager {
             tcp: probes.tcp,
             httpConfigured: probes.httpConfigured,
             tcpConfigured: probes.tcpConfigured,
+            httpUnreachable: probes.httpUnreachable,
+            tcpUnreachable: probes.tcpUnreachable,
         )
     }
 

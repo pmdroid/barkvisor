@@ -159,6 +159,60 @@ struct WorkloadHealthProjectorTests {
         #expect(status.checks.contains { $0.name == "http" && $0.status == .skip })
     }
 
+    @Test func `http pass with unobserved tcp stays running`() {
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                http: true,
+                httpConfigured: true,
+                tcpConfigured: true,
+            ),
+            updatedAt: now,
+        )
+        #expect(status.health == .running)
+        #expect(status.checks.contains { $0.name == "http" && $0.status == .pass })
+        #expect(status.checks.contains { $0.name == "tcp" && $0.status == .skip })
+    }
+
+    @Test func `http and tcp both passing is guest_ready`() {
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                http: true,
+                tcp: true,
+                httpConfigured: true,
+                tcpConfigured: true,
+            ),
+            updatedAt: now,
+        )
+        #expect(status.health == .guestReady)
+        #expect(status.checks.contains { $0.name == "http" && $0.status == .pass })
+        #expect(status.checks.contains { $0.name == "tcp" && $0.status == .pass })
+    }
+
+    @Test func `unreachable probe is skip not guest_ready`() {
+        let status = WorkloadHealthProjector.project(
+            state: .running,
+            signals: WorkloadHealthSignals(
+                qemuProcess: true,
+                qmp: true,
+                http: true,
+                httpConfigured: true,
+                tcpConfigured: true,
+                tcpUnreachable: true,
+            ),
+            updatedAt: now,
+        )
+        #expect(status.health == .running)
+        #expect(status.checks.contains {
+            $0.name == "tcp" && $0.status == .skip && $0.message == "unreachable target"
+        })
+    }
+
     @Test func `summary counts every health case`() {
         let items = [
             WorkloadHealthSummaryItem(id: "a", name: "one", health: .running),

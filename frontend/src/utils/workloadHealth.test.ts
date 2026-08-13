@@ -98,6 +98,42 @@ describe('applyVMStateEvent', () => {
     expect(vmHealth(machine)).toBe('running')
     expect(machine.status?.healthError).toBeNull()
   })
+
+  test('keeps guest_ready on a running SSE event', () => {
+    const machine = vm({
+      state: 'running',
+      health: 'guest_ready',
+      status: status({ health: 'guest_ready' }),
+    })
+    applyVMStateEvent(machine, { state: 'running' })
+    expect(machine.health).toBe('guest_ready')
+    expect(machine.status?.health).toBe('guest_ready')
+    expect(vmHealth(machine)).toBe('guest_ready')
+  })
+
+  test('keeps degraded on a running SSE event', () => {
+    const machine = vm({
+      state: 'running',
+      health: 'degraded',
+      status: status({ health: 'degraded', healthError: 'HTTP probe failed' }),
+    })
+    applyVMStateEvent(machine, { state: 'running' })
+    expect(machine.health).toBe('degraded')
+    expect(machine.status?.health).toBe('degraded')
+    expect(machine.status?.healthError).toBe('HTTP probe failed')
+    expect(vmHealth(machine)).toBe('degraded')
+  })
+
+  test('drops guest_ready when the VM leaves running', () => {
+    const machine = vm({
+      state: 'running',
+      health: 'guest_ready',
+      status: status({ health: 'guest_ready' }),
+    })
+    applyVMStateEvent(machine, { state: 'stopped' })
+    expect(machine.health).toBe('stopped')
+    expect(vmHealth(machine)).toBe('stopped')
+  })
 })
 
 describe('healthLabel', () => {
