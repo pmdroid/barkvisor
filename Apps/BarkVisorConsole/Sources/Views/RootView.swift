@@ -4,12 +4,10 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ZStack {
-            BVTheme.bg.ignoresSafeArea()
+        Group {
             switch model.phase {
             case .launching:
-                ProgressView()
-                    .tint(BVTheme.accent)
+                ProgressView("Opening BarkVisor…")
             case .connect:
                 ConnectView()
             case .login:
@@ -20,6 +18,5 @@ struct RootView: View {
                 AppShell()
             }
         }
-        .foregroundStyle(BVTheme.text)
     }
 }

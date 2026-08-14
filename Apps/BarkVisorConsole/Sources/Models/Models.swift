@@ -57,6 +57,25 @@ struct HomeDevice: Decodable, Identifiable, Hashable {
     }
 
     var isSelf: Bool { role == "self" }
+
+    var asSnapshot: HomeDeviceHealthSnapshot {
+        HomeDeviceHealthSnapshot(
+            hostId: hostId,
+            role: role,
+            displayName: displayName,
+            fingerprint: fingerprint,
+            agentHost: agentHost,
+            agentPort: agentPort,
+            pairedAt: pairedAt,
+            reachability: "ok",
+            reachabilityError: nil,
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil
+        )
+    }
 }
 
 struct HomeDevicePlatformSummary: Decodable, Hashable {

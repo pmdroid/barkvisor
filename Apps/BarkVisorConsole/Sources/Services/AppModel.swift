@@ -126,6 +126,8 @@ final class AppModel {
             startPolling()
         } catch APIError.setupRequired {
             phase = .setupRequired
+        } catch APIError.unauthorized {
+            banner = "Invalid username or password"
         } catch {
             banner = error.localizedDescription
         }
@@ -233,26 +235,15 @@ final class AppModel {
             devices = report.devices
             totals = report.totals
         } catch let APIError.http(status, _) where status == 404 {
-            let list = try await client.deviceList()
-            devices = list.devices.map { device in
-                HomeDeviceHealthSnapshot(
-                    hostId: device.hostId,
-                    role: device.role,
-                    displayName: device.displayName,
-                    fingerprint: device.fingerprint,
-                    agentHost: device.agentHost,
-                    agentPort: device.agentPort,
-                    pairedAt: device.pairedAt,
-                    reachability: "ok",
-                    reachabilityError: nil,
-                    collectedAt: nil,
-                    platform: nil,
-                    resources: nil,
-                    workloadCount: nil,
-                    healthCounts: nil
-                )
+            do {
+                let list = try await client.deviceList()
+                devices = list.devices.map(\.asSnapshot)
+                totals = nil
+            } catch let APIError.http(status, _) where status == 404 {
+                // Pre-Home Device (no PAS-34 registry). Still a valid login.
+                devices = [await client.localOnlyDevice()]
+                totals = nil
             }
-            totals = nil
         }
         if selectedDeviceID == nil || !devices.contains(where: { $0.hostId == selectedDeviceID }) {
             selectedDeviceID = devices.first(where: \.isSelf)?.hostId ?? devices.first?.hostId

@@ -8,13 +8,12 @@ struct BarkVisorConsoleApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .preferredColorScheme(.dark)
                 .tint(BVTheme.accent)
                 .task { await model.bootstrap() }
         }
         #if os(macOS)
         .defaultSize(width: 1180, height: 760)
-        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified)
         #endif
     }
 }

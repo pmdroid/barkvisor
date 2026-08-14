@@ -29,6 +29,7 @@ enum KeychainStore {
             kSecAttrAccount as String: tokenAccount,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
@@ -54,9 +55,16 @@ enum JWT {
             .replacingOccurrences(of: "_", with: "/")
         while payload.count % 4 != 0 { payload.append("=") }
         guard let data = Data(base64Encoded: payload),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let exp = object["exp"] as? TimeInterval
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return true }
-        return exp * 1000 < now.timeIntervalSince1970 * 1000
+        let exp: TimeInterval
+        if let value = object["exp"] as? TimeInterval {
+            exp = value
+        } else if let value = object["exp"] as? Int {
+            exp = TimeInterval(value)
+        } else {
+            return true
+        }
+        return exp < now.timeIntervalSince1970
     }
 }

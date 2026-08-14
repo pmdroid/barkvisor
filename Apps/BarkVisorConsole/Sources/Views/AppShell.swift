@@ -2,82 +2,63 @@ import SwiftUI
 
 struct AppShell: View {
     @Environment(AppModel.self) private var model
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
-    @State private var mobileMenuOpen = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        Group {
-            #if os(iOS)
-            if compactWidth {
-                VStack(spacing: 0) {
-                    SidebarView(compact: true, menuOpen: $mobileMenuOpen)
-                    content
-                }
-            } else {
-                HStack(spacing: 0) {
-                    SidebarView(compact: false, menuOpen: $mobileMenuOpen)
-                    content
-                }
+        @Bindable var model = model
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            List(AppRoute.allCases, selection: $model.route) { item in
+                Label(item.title, systemImage: item.symbol)
+                    .tag(item)
             }
-            #else
-            HStack(spacing: 0) {
-                SidebarView(compact: false, menuOpen: $mobileMenuOpen)
-                content
-            }
-            #endif
-        }
-        .background(BVTheme.bg.ignoresSafeArea())
-        #if os(macOS)
-        .ignoresSafeArea(edges: .top)
-        #endif
-    }
-
-    private var content: some View {
-        ZStack(alignment: .topLeading) {
-            BVTheme.bg
-            RadialGradient(
-                colors: [BVTheme.mainGradient1, .clear],
-                center: .topTrailing,
-                startRadius: 20,
-                endRadius: 520
-            )
-            RadialGradient(
-                colors: [BVTheme.mainGradient2, .clear],
-                center: .bottomLeading,
-                startRadius: 20,
-                endRadius: 420
-            )
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let banner = model.banner {
-                        BannerView(text: banner)
-                    }
-                    switch model.route {
-                    case .dashboard: DashboardView()
-                    case .devices: DevicesView()
-                    case .workloads: WorkloadsView()
-                    case .library: LibraryView()
-                    case .disks: DisksView()
-                    case .networks: NetworksView()
-                    case .logs: LogsView()
-                    case .settings: SettingsView()
-                    }
+            .navigationTitle("BarkVisor")
+            .listStyle(.sidebar)
+            .safeAreaInset(edge: .bottom) {
+                Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right") {
+                    model.logout()
                 }
-                .padding(.horizontal, compactWidth ? 14 : 40)
-                .padding(.vertical, compactWidth ? 16 : 32)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .bvGlassButton()
+                .padding()
+                .frame(maxWidth: .infinity)
+            }
+        } detail: {
+            NavigationStack {
+                detail
+                    .navigationTitle(model.route.title)
+                    .toolbar {
+                        ToolbarItem(placement: .primaryAction) {
+                            DevicePicker()
+                        }
+                    }
+                    .safeAreaInset(edge: .top) {
+                        if let banner = model.banner {
+                            Text(banner)
+                                .font(.subheadline)
+                                .foregroundStyle(BVTheme.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(.red.opacity(0.12))
+                        }
+                    }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationSplitViewStyle(.balanced)
+        .onChange(of: model.route) { _, next in
+            Task { await model.open(next) }
+        }
     }
 
-    private var compactWidth: Bool {
-        #if os(iOS)
-        horizontalSizeClass == .compact
-        #else
-        false
-        #endif
+    @ViewBuilder
+    private var detail: some View {
+        switch model.route {
+        case .dashboard: DashboardView()
+        case .devices: DevicesView()
+        case .workloads: WorkloadsView()
+        case .library: LibraryView()
+        case .disks: DisksView()
+        case .networks: NetworksView()
+        case .logs: LogsView()
+        case .settings: SettingsView()
+        }
     }
 }
