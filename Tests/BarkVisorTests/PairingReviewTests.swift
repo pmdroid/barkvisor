@@ -226,6 +226,10 @@ struct PairingReviewTests {
         _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         final class Probe: PairingHTTPClient, @unchecked Sendable {
             var called = false
+            func get(url: URL) async throws -> PairingHTTPResponse {
+                called = true
+                return PairingHTTPResponse(status: 500, body: Data())
+            }
             func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
                 called = true
                 return PairingHTTPResponse(status: 500, body: Data())
