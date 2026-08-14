@@ -96,6 +96,26 @@ struct APIClient: Sendable {
         try await get("/api/setup/status")
     }
 
+    func localOnlyDevice() async -> HomeDeviceHealthSnapshot {
+        let about = try? await about()
+        return HomeDeviceHealthSnapshot(
+            hostId: "self",
+            role: "self",
+            displayName: about.map { "This Device · \($0.platform)" } ?? "This Device",
+            fingerprint: nil,
+            agentHost: baseURL.host,
+            agentPort: baseURL.port ?? DeviceURL.defaultPort,
+            pairedAt: nil,
+            reachability: "ok",
+            reachabilityError: nil,
+            collectedAt: nil,
+            platform: about.map { HomeDevicePlatformSummary(os: $0.platform, arch: $0.hostArch) },
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil
+        )
+    }
+
     func login(username: String, password: String) async throws -> String {
         let response: LoginResponse = try await post(
             "/api/auth/login",
@@ -221,12 +241,11 @@ enum DeviceURL {
     static let defaultPort = 7777
 
     static var `default`: String {
-        #if os(macOS)
-        "http://127.0.0.1:7777"
-        #else
-        "http://192.168.1.10:7777"
-        #endif
+        "http://192.168.30.1:7777"
     }
+
+    /// SPA paths the web UI uses; the native client talks to the Device origin only.
+    private static let spaPathPrefixes = ["/login", "/setup", "/dashboard", "/vms", "/images", "/disks", "/networks", "/registry", "/logs", "/settings"]
 
     static func normalize(_ raw: String) throws -> URL {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -236,6 +255,12 @@ enum DeviceURL {
         if components.port == nil, components.host != nil {
             components.port = defaultPort
         }
+        let path = components.path
+        if spaPathPrefixes.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
+            components.path = ""
+        }
+        components.query = nil
+        components.fragment = nil
         guard let url = components.url, url.host != nil else { throw APIError.invalidURL }
         return url
     }

@@ -118,5 +118,9 @@ struct APIDecodingTests {
         #expect(url.host == "192.168.1.20")
         #expect(url.port == 7777)
         #expect(try DeviceURL.normalize("http://home.local:7777/").absoluteString == "http://home.local:7777")
+        #expect(
+            try DeviceURL.normalize("http://192.168.30.1:7777/login").absoluteString
+                == "http://192.168.30.1:7777"
+        )
     }
 }

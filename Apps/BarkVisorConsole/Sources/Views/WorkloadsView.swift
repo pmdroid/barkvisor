@@ -10,61 +10,38 @@ struct WorkloadsView: View {
     @State private var filter = "all"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            PageHeader(title: Copy.workloads, subtitle: subtitle) {
-                DevicePicker()
-            }
-
-            HStack(spacing: 4) {
-                filterChip("all", label: "All")
+        VStack(spacing: 0) {
+            Picker("Filter", selection: $filter) {
+                Text("All").tag("all")
                 ForEach(["running", "failed", "degraded", "stopped"], id: \.self) { key in
-                    filterChip(key, label: WorkloadHealth.label(key))
+                    Text(WorkloadHealth.label(key)).tag(key)
                 }
             }
-            .padding(4)
-            .background(BVTheme.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: BVTheme.radius)
-                    .stroke(BVTheme.borderGlass, lineWidth: 1)
-            )
+            .pickerStyle(.segmented)
+            .padding()
 
             if visible.isEmpty {
-                EmptyPanel(
-                    title: "No workloads",
-                    message: model.selectedDevice?.isReachable == false
-                        ? "This \(Copy.device.lowercased()) is unreachable."
-                        : "Create workloads in the web UI, then they appear here."
+                ContentUnavailableView(
+                    "No workloads",
+                    systemImage: "display",
+                    description: Text(
+                        model.selectedDevice?.isReachable == false
+                            ? "This \(Copy.device.lowercased()) is unreachable."
+                            : "Create workloads in the web UI, then they appear here."
+                    )
                 )
             } else {
-                VStack(spacing: 10) {
-                    ForEach(visible) { workload in
-                        WorkloadRow(workload: workload, compact: false)
-                    }
+                List(visible) { workload in
+                    WorkloadRow(workload: workload, compact: false)
                 }
+                .bvListStyle()
             }
         }
-    }
-
-    private var subtitle: String {
-        let name = model.selectedDevice?.title ?? Copy.device
-        return "\(visible.count) on \(name)"
     }
 
     private var visible: [Workload] {
         if filter == "all" { return model.workloads }
         return model.workloads.filter { $0.resolvedHealth == filter }
-    }
-
-    private func filterChip(_ key: String, label: String) -> some View {
-        let active = filter == key
-        return Button(label) { filter = key }
-            .font(BVTheme.font(13, weight: .semibold))
-            .foregroundStyle(active ? .white : BVTheme.textDim)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(active ? BVTheme.accent : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: BVTheme.radius))
-            .buttonStyle(.plain)
     }
 }
 
@@ -75,49 +52,43 @@ struct WorkloadRow: View {
     @State private var showVNCHint = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(workload.name)
-                        .font(BVTheme.font(16, weight: .bold))
-                    HStack(spacing: 8) {
-                        Text("\(workload.cpuCount) vCPU")
-                        Text("\(workload.memoryMB) MB")
-                        Text(osLabel)
-                    }
-                    .font(BVTheme.font(12))
-                    .foregroundStyle(BVTheme.textDim)
+                        .font(.headline)
+                    Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(osLabel)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 StatusPill.health(workload.resolvedHealth)
             }
 
             if !compact {
-                HStack(spacing: 8) {
+                HStack {
                     if workload.canStart {
                         Button("Start") {
                             Task { await model.startWorkload(workload) }
                         }
-                        .buttonStyle(BVButtonStyle(kind: .primary))
+                        .bvProminentButton()
                         .disabled(model.actionIDs.contains(workload.id))
                     }
                     if workload.canStop {
                         Button("Stop") {
                             Task { await model.stopWorkload(workload) }
                         }
-                        .buttonStyle(BVButtonStyle(kind: .ghost))
+                        .bvGlassButton()
                         .disabled(model.actionIDs.contains(workload.id))
-                        Button("Force stop") {
+                        Button("Force stop", role: .destructive) {
                             Task { await model.stopWorkload(workload, force: true) }
                         }
-                        .buttonStyle(BVButtonStyle(kind: .danger))
                         .disabled(model.actionIDs.contains(workload.id))
                     }
                     Button("Console") { showVNCHint = true }
-                        .buttonStyle(BVButtonStyle(kind: .ghost))
+                        .bvGlassButton()
                     if let url = webURL {
                         Link("Open in web UI", destination: url)
-                            .buttonStyle(BVButtonStyle(kind: .ghost))
                     }
                     if model.actionIDs.contains(workload.id) {
                         ProgressView().controlSize(.small)
@@ -125,12 +96,7 @@ struct WorkloadRow: View {
                 }
             }
         }
-        .padding(18)
-        .background(BVTheme.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: BVTheme.radius)
-                .stroke(BVTheme.borderGlass, lineWidth: 1)
-        )
+        .padding(.vertical, 4)
         .alert("Console", isPresented: $showVNCHint) {
             if let url = vncURL {
                 Button("Open web console") { open(url) }

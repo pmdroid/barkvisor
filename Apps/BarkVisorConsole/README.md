@@ -1,6 +1,6 @@
 # BarkVisor Console
 
-Native SwiftUI console for macOS 14+ and iOS 17+. It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol.
+Native SwiftUI console for macOS 14+ and iOS 17+ (Liquid Glass on iOS / macOS 26 when available). It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol. The chrome uses system `NavigationSplitView`, `Form`, and `List` with the BarkVisor accent.
 
 Product words in the UI: **Home**, **Device**, **Workload**, **Library**.
 
@@ -30,7 +30,7 @@ xcodebuild -project Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj \
 
 1. Run BarkVisor so the HTTP API is on port **7777**.
 2. Launch the console.
-3. Enter the Device URL (default `http://127.0.0.1:7777` on Mac, or `http://<lan-host>:7777` on iPhone).
+3. Enter the Device URL (default `http://192.168.30.1:7777`). A web `/login` URL is accepted and stripped to the origin.
 4. Sign in with the same admin user as the web UI.
 
 JWT is stored in the Keychain. The Device URL is stored in UserDefaults.
