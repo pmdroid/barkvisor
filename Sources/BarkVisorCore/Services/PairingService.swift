@@ -186,8 +186,11 @@ public enum PairingService {
         pins: PeerPinStore? = nil,
     ) throws -> PairingRedeemResponse {
         let req = input.request
-        if let version = req.apiVersion, version != APIContract.version {
-            throw PairingError.incompatibleAPIVersion(got: version, expected: APIContract.version)
+        guard req.apiVersion == APIContract.version else {
+            throw PairingError.incompatibleAPIVersion(
+                got: req.apiVersion ?? 0,
+                expected: APIContract.version,
+            )
         }
         guard PairingCode.isValid(req.code) else {
             throw PairingError.invalidCode
