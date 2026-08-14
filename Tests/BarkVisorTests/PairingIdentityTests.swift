@@ -316,6 +316,7 @@ struct PairingIdentityTests {
         #expect(Config.loadJWTSecret(from: joinerDir) == "keep-local")
         #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.peerHostId == issuerId)
         #expect(try PeerPinStore(dataDir: joinerDir).contains(fingerprint: issuer.deviceFingerprint))
+        #expect(try DeviceRegistry(dataDir: joinerDir).record(forHostId: issuerId) == nil)
     }
 
     @Test func `receipt persist failure leaves local jwt and admin unchanged`() async throws {
