@@ -1,4 +1,6 @@
 import Foundation
+import GRDB
+import JWTKit
 import X509
 
 extension PairingService {
@@ -9,7 +11,9 @@ extension PairingService {
         localHostId: String,
         now: Date = Date(),
         pins: PeerPinStore? = nil,
-    ) throws -> PairingJoinResponse {
+        db: DatabasePool? = nil,
+        keys: JWTKeyCollection? = nil,
+    ) async throws -> PairingJoinResponse {
         if response.hostId != expected.hostId {
             throw PairingError.fingerprintMismatch
         }
@@ -33,6 +37,7 @@ extension PairingService {
         }
 
         try validateRedeemMaterial(response, localHostId: localHostId, now: now)
+        try await applySharedIdentity(response, dataDir: dataDir, now: now, db: db, keys: keys)
 
         let receipt = PairingPeerReceipt(
             peerHostId: response.hostId,
@@ -79,6 +84,8 @@ extension PairingService {
         now: Date = Date(),
         client: any PairingHTTPClient,
         pins: PeerPinStore? = nil,
+        db: DatabasePool? = nil,
+        keys: JWTKeyCollection? = nil,
     ) async throws -> PairingJoinResponse {
         let payload = try resolveJoinPayload(request)
         guard let host = payload.host, !host.isEmpty else {
@@ -94,13 +101,15 @@ extension PairingService {
         // again instead of reusing stale material.
         if let pending = loadPendingRedeem(dataDir: dataDir),
            pendingMatches(pending, expected: payload) {
-            let result = try applyTrust(
+            let result = try await applyTrust(
                 response: pending.response,
                 expected: payload,
                 dataDir: dataDir,
                 localHostId: hostId,
                 now: now,
                 pins: pins,
+                db: db,
+                keys: keys,
             )
             clearPendingRedeem(dataDir: dataDir)
             return result
@@ -170,13 +179,15 @@ extension PairingService {
         }
         persistPendingRedeem(remote, code: payload.code, dataDir: dataDir)
 
-        let result = try applyTrust(
+        let result = try await applyTrust(
             response: remote,
             expected: payload,
             dataDir: dataDir,
             localHostId: hostId,
             now: now,
             pins: pins,
+            db: db,
+            keys: keys,
         )
         clearPendingRedeem(dataDir: dataDir)
         return result
@@ -377,6 +388,73 @@ extension PairingService {
             return try DeviceTrust.fingerprint(certificate: certificate)
         } catch {
             throw PairingError.invalidDeviceCertificate("Unable to fingerprint certificate")
+        }
+    }
+
+    /// Copy issuer login onto this Device. Local SQLite still owns runtime
+    /// (PAS-47 / PAS-90); peers are not contacted.
+    static func applySharedIdentity(
+        _ response: PairingRedeemResponse,
+        dataDir: URL,
+        now: Date,
+        db: DatabasePool?,
+        keys: JWTKeyCollection?,
+    ) async throws {
+        if let admin = response.adminUser {
+            guard let db else {
+                throw PairingError.unavailable(
+                    "Unable to persist shared identity; local runtime continues",
+                )
+            }
+            try upsertAdmin(admin, db: db, now: now)
+        }
+        let secret = response.jwtSecret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !secret.isEmpty else { return }
+        do {
+            try Config.persistJWTSecret(secret, to: dataDir)
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to persist JWT secret: \(error.localizedDescription)",
+            )
+        }
+        if let keys {
+            await keys.add(hmac: .init(from: secret), digestAlgorithm: .sha256)
+        }
+    }
+
+    static func upsertAdmin(_ admin: PairingAdminUser, db: DatabasePool, now: Date) throws {
+        let id = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hash = admin.passwordHash
+        guard !id.isEmpty, !username.isEmpty, !hash.isEmpty else {
+            throw PairingError.invalidPayload("Issuer returned incomplete admin identity")
+        }
+        do {
+            try db.write { db in
+                if var existing = try User.filter(User.Columns.username == username).fetchOne(db) {
+                    existing.password = hash
+                    try existing.update(db)
+                    return
+                }
+                if var existing = try User.fetchOne(db, key: id) {
+                    existing.username = username
+                    existing.password = hash
+                    try existing.update(db)
+                    return
+                }
+                try User(
+                    id: id,
+                    username: username,
+                    password: hash,
+                    createdAt: iso8601.string(from: now),
+                ).insert(db)
+            }
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to persist admin identity: \(error.localizedDescription)",
+            )
         }
     }
 }

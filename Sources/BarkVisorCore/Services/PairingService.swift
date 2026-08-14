@@ -1,12 +1,14 @@
 import Foundation
+import GRDB
 import X509
 
-/// Pairing issue + redeem (PAS-45).
+/// Pairing issue + redeem (PAS-45) and shared login copy (PAS-81).
 ///
 /// The existing Device issues a short-lived code / QR. The joining Device
 /// redeems it and both sides record pairwise pins. Home CA issues a peer
-/// cert as trust material on the wire. Local SQLite / QEMU are untouched
-/// (PAS-47 / PAS-90).
+/// cert as trust material on the wire. Redeem also attaches the issuer
+/// jwt-secret and admin user hash so one login works on both Devices.
+/// Local SQLite / QEMU stay authoritative (PAS-47 / PAS-90).
 public enum PairingService {
     public static let defaultTTL: TimeInterval = 10 * 60
     public static let receiptFileName = "pairing-peer.json"
@@ -174,17 +176,23 @@ public enum PairingService {
         public var issuerHostId: String
         public var request: PairingRedeemRequest
         public var now: Date
+        public var jwtSecret: String?
+        public var adminUser: PairingAdminUser?
 
         public init(
             dataDir: URL,
             issuerHostId: String,
             request: PairingRedeemRequest,
             now: Date = Date(),
+            jwtSecret: String? = nil,
+            adminUser: PairingAdminUser? = nil,
         ) {
             self.dataDir = dataDir
             self.issuerHostId = issuerHostId
             self.request = request
             self.now = now
+            self.jwtSecret = jwtSecret
+            self.adminUser = adminUser
         }
     }
 
@@ -247,7 +255,7 @@ public enum PairingService {
             material: material,
             now: input.now,
         ) {
-            return replayed
+            return attachIdentity(replayed, input: input)
         }
         let consumed = try store.consume(code: req.code, now: input.now)
         let issued: IssuedDeviceCertificate
@@ -270,15 +278,31 @@ public enum PairingService {
             }
             throw error
         }
-        return PairingRedeemResponse(
-            hostId: input.issuerHostId,
-            deviceCertificatePEM: material.deviceCertificatePEM,
-            deviceFingerprint: material.deviceFingerprint,
-            caCertificatePEM: material.caCertificatePEM,
-            caFingerprint: material.caFingerprint,
-            issuedCertificatePEM: issued.certificatePEM,
-            issuedFingerprint: issued.fingerprint,
-            agentPort: consumed.agentPort,
+        return attachIdentity(
+            PairingRedeemResponse(
+                hostId: input.issuerHostId,
+                deviceCertificatePEM: material.deviceCertificatePEM,
+                deviceFingerprint: material.deviceFingerprint,
+                caCertificatePEM: material.caCertificatePEM,
+                caFingerprint: material.caFingerprint,
+                issuedCertificatePEM: issued.certificatePEM,
+                issuedFingerprint: issued.fingerprint,
+                agentPort: consumed.agentPort,
+            ),
+            input: input,
+        )
+    }
+
+    /// First local admin with a password set. Used by redeem to attach identity.
+    public static func loadAdminUser(db: DatabasePool) throws -> PairingAdminUser? {
+        let user = try db.read { db in
+            try User.filter(User.Columns.password != "").fetchOne(db)
+        }
+        guard let user else { return nil }
+        return PairingAdminUser(
+            id: user.id,
+            username: user.username,
+            passwordHash: user.password,
         )
     }
 
@@ -343,6 +367,26 @@ public enum PairingService {
             issuedFingerprint: issued.fingerprint,
             agentPort: offer.agentPort,
         )
+    }
+
+    /// Shared login material for the joiner (PAS-81). Reads `dataDir/jwt-secret`
+    /// when RedeemInput does not pass one; never generates a secret here.
+    static func attachIdentity(
+        _ response: PairingRedeemResponse,
+        input: RedeemInput,
+    ) -> PairingRedeemResponse {
+        var copy = response
+        let secret = input.jwtSecret ?? Config.loadJWTSecret(from: input.dataDir)
+        if let secret, !secret.isEmpty {
+            copy.jwtSecret = secret
+        }
+        if let admin = input.adminUser,
+           !admin.id.isEmpty,
+           !admin.username.isEmpty,
+           !admin.passwordHash.isEmpty {
+            copy.adminUser = admin
+        }
+        return copy
     }
 
     private static func issuePeerCertificate(

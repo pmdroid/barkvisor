@@ -357,7 +357,7 @@ struct PairingTests {
         #expect(try offers.load()?.consumedAt == nil)
     }
 
-    @Test func `join apply pins issuer and rejects fingerprint swap`() throws {
+    @Test func `join apply pins issuer and rejects fingerprint swap`() async throws {
         let issuerDir = try isolatedDir("iss")
         let joinerDir = try isolatedDir("join")
         let attackerDir = try isolatedDir("atk")
@@ -384,7 +384,7 @@ struct PairingTests {
             joiner: joiner,
             joinerId: joinerId,
         )
-        let joined = try PairingService.applyTrust(
+        let joined = try await PairingService.applyTrust(
             response: honest,
             expected: payload,
             dataDir: joinerDir,
@@ -409,8 +409,8 @@ struct PairingTests {
         )
         let otherDir = try isolatedDir("join2")
         defer { try? FileManager.default.removeItem(at: otherDir) }
-        #expect(throws: PairingError.fingerprintMismatch) {
-            try PairingService.applyTrust(
+        await #expect(throws: PairingError.fingerprintMismatch) {
+            try await PairingService.applyTrust(
                 response: swapped,
                 expected: payload,
                 dataDir: otherDir,
@@ -421,7 +421,7 @@ struct PairingTests {
         #expect(try PairingService.loadReceipt(dataDir: otherDir) == nil)
     }
 
-    @Test func `join apply rejects attacker CA with matching QR fingerprint`() throws {
+    @Test func `join apply rejects attacker CA with matching QR fingerprint`() async throws {
         let issuerDir = try isolatedDir("iss-mitm")
         let joinerDir = try isolatedDir("join-mitm")
         let attackerDir = try isolatedDir("atk-mitm")
@@ -457,8 +457,8 @@ struct PairingTests {
             issuedFingerprint: attackerIssued.fingerprint,
             agentPort: 7_778,
         )
-        #expect(throws: PairingError.self) {
-            try PairingService.applyTrust(
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
                 response: mitm,
                 expected: payload,
                 dataDir: joinerDir,
@@ -469,7 +469,7 @@ struct PairingTests {
         #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
     }
 
-    @Test func `join apply rejects issued cert whose SAN is not the joiner`() throws {
+    @Test func `join apply rejects issued cert whose SAN is not the joiner`() async throws {
         let issuerDir = try isolatedDir("iss-san")
         let joinerDir = try isolatedDir("join-san")
         defer {
@@ -500,8 +500,8 @@ struct PairingTests {
             issuedFingerprint: otherIssued.fingerprint,
             agentPort: 7_778,
         )
-        #expect(throws: PairingError.self) {
-            try PairingService.applyTrust(
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
                 response: wrongSAN,
                 expected: payload,
                 dataDir: joinerDir,
