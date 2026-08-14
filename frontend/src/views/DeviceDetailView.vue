@@ -37,9 +37,21 @@ const platformLabel = computed(() => {
 const vms = computed(() => workloads.vmsFor(hostId.value))
 const listError = computed(() => workloads.errorFor(hostId.value))
 const loadingList = computed(() => workloads.isLoading(hostId.value))
+const healthReady = computed(() => devices.report !== null || Boolean(devices.error))
+const listSettled = computed(() => hostId.value in workloads.vmsByHost)
+const showEmptyWorkloads = computed(() =>
+  vms.value.length === 0 && !loadingList.value && !listError.value && listSettled.value,
+)
 
 const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
+
+function clearHostTransientState() {
+  stopConfirm.value = null
+  for (const id of Object.keys(restartLoading)) {
+    delete restartLoading[id]
+  }
+}
 
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
@@ -57,7 +69,10 @@ onMounted(() => {
   pollTimer = window.setInterval(() => { void refresh() }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
-watch(hostId, () => { void refresh() })
+watch(hostId, () => {
+  clearHostTransientState()
+  void refresh()
+})
 
 async function doStart(id: string) {
   const row = device.value
@@ -105,7 +120,11 @@ async function doStop() {
       ← {{ DEVICE_LABEL }}s
     </button>
 
-    <div v-if="!device && !devices.loading" class="missing">
+    <div v-if="!device && (devices.loading || !healthReady)" class="missing">
+      <p>Loading {{ DEVICE_LABEL.toLowerCase() }}...</p>
+    </div>
+
+    <div v-else-if="!device" class="missing">
       <template v-if="devices.error">
         <h1>{{ DEVICE_LABEL }}s unavailable</h1>
         <p>
@@ -143,13 +162,13 @@ async function doStop() {
         <p v-if="listError" class="list-error">{{ listError }}</p>
 
         <EmptyState
-          v-if="vms.length === 0 && !loadingList"
+          v-if="showEmptyWorkloads"
           icon="monitor"
           title="No workloads on this Device"
         />
 
         <DataTable
-          v-else
+          v-else-if="listSettled || loadingList || vms.length > 0"
           :columns="[
             { key: 'name', label: 'Workload' },
             { key: 'resources', label: 'Resources' },
