@@ -6,7 +6,8 @@ import Vapor
 /// `GET /api/agent/whoami` stays on the agent listener. Nested
 /// `/api/home/*` is rejected so a member cannot recurse the proxy.
 /// Setup and pairing join stay off this path: the loopback hop would
-/// look console-local to the host API.
+/// look console-local to the host API. Incoming paths are decoded
+/// and rejected for `.` / `..` before those guards run.
 struct AgentLocalProxyController: RouteCollection {
     var localPort: Int
     var client: any HomeDeviceProxyClient
@@ -28,7 +29,7 @@ struct AgentLocalProxyController: RouteCollection {
     @Sendable
     func forward(req: Vapor.Request) async throws -> Response {
         let peer = try requirePeer(req)
-        let path = req.url.path
+        let path = try HomeDeviceProxy.normalizedAPIPath(req.url.path)
         if path == "/api/agent/whoami" {
             let response = Response(status: .ok)
             try response.content.encode(peer)

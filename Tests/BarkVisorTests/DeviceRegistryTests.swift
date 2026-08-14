@@ -50,6 +50,14 @@ struct DeviceRegistryTests {
             agentPort: 7_778,
         )
         #expect(try store.record(forHostId: "peer-b")?.agentHost == nil)
+
+        try store.upsert(
+            hostId: "peer-c",
+            fingerprint: "bb",
+            agentHost: "evil.example.com",
+            agentPort: 7_778,
+        )
+        #expect(try store.record(forHostId: "peer-c")?.agentHost == nil)
     }
 
     @Test func `list always includes self without network or sqlite`() throws {

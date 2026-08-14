@@ -133,6 +133,10 @@ public struct PairingPayload: Sendable, Equatable {
     /// Registry / mTLS proxy target. LAN join hosts plus loopback so a
     /// same-machine member and tests can be reached. Public, metadata,
     /// and link-local addresses stay blocked.
+    ///
+    /// Hostnames are resolved and pinned to an allowed LAN address
+    /// (`resolvedAllowedJoinAddresses`) so a public name cannot be stored
+    /// or used as an egress target. DNS failure is fail-closed.
     public static func sanitizeProxyHost(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 253 else { return nil }
@@ -140,7 +144,13 @@ public struct PairingPayload: Sendable, Equatable {
         if isConsoleLocalClient(host) {
             return host
         }
-        return sanitizeHost(host)
+        guard let clean = sanitizeHost(host) else { return nil }
+        do {
+            let resolved = try resolvedAllowedJoinAddresses(clean)
+            return pinnedJoinAddress(preferred: clean, resolved: resolved)
+        } catch {
+            return nil
+        }
     }
 
     /// Join egress is LAN-only: RFC1918 IPv4 and IPv6 ULA.
