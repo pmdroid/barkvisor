@@ -147,11 +147,27 @@ public struct PairingPayload: Sendable, Equatable {
         return false
     }
 
-    /// True when any resolved address is a blocked join target.
-    /// Used after the string check so a public name that rebinds to
-    /// loopback, link-local, or metadata cannot be used as a redeem host.
+    /// True when the host must not be used as a join target.
+    /// Fail closed: DNS failure (empty resolution) is treated as blocked
+    /// so a name that later resolves to loopback or metadata cannot slip
+    /// through at check time.
     public static func hostResolvesToBlockedAddress(_ host: String) -> Bool {
-        SSRFGuard.resolvedIPStrings(host).contains { isBlockedJoinHost($0) }
+        let ips = SSRFGuard.resolvedIPStrings(host)
+        if ips.isEmpty { return true }
+        return ips.contains { isBlockedJoinHost($0) }
+    }
+
+    /// Resolved addresses that are safe join targets. Fails closed on DNS
+    /// failure or any blocked address (loopback, link-local, metadata).
+    public static func resolvedAllowedJoinAddresses(_ host: String) throws -> [String] {
+        let ips = SSRFGuard.resolvedIPStrings(host)
+        guard !ips.isEmpty else {
+            throw PairingError.invalidPayload("Pairing host could not be resolved")
+        }
+        if ips.contains(where: { isBlockedJoinHost($0) }) {
+            throw PairingError.invalidPayload("Pairing host resolves to a blocked address")
+        }
+        return ips
     }
 
     public static func redeemURL(host: String, port: Int) throws -> URL {
@@ -173,10 +189,13 @@ public struct PairingPayload: Sendable, Equatable {
         guard let host = sanitizeHost(host) else {
             throw PairingError.invalidPayload("Invalid pairing host")
         }
-        if hostResolvesToBlockedAddress(host) {
-            throw PairingError.invalidPayload("Pairing host resolves to a blocked address")
-        }
-        let wrapped = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        // Pin a resolved allowed IP so URLSession cannot re-resolve a
+        // rebinding hostname to loopback or metadata at connect time.
+        let pinned = try pinnedJoinAddress(
+            preferred: host,
+            resolved: resolvedAllowedJoinAddresses(host),
+        )
+        let wrapped = pinned.contains(":") && !pinned.hasPrefix("[") ? "[\(pinned)]" : pinned
         guard let url = URL(string: "http://\(wrapped):\(port)\(path)") else {
             throw PairingError.invalidPayload("Unable to build pairing URL")
         }
@@ -184,6 +203,13 @@ public struct PairingPayload: Sendable, Equatable {
             throw PairingError.invalidPayload("Pairing URL must be plain HTTP")
         }
         return url
+    }
+
+    static func pinnedJoinAddress(preferred: String, resolved: [String]) -> String {
+        let stripped = preferred.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if resolved.contains(stripped) { return stripped }
+        if let v4 = resolved.first(where: { parseIPv4Octets($0) != nil }) { return v4 }
+        return resolved[0]
     }
 
     private static func isBlockedJoinHostname(_ host: String) -> Bool {
