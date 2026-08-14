@@ -93,9 +93,53 @@ struct HomeDeviceProxyTests {
         }
         #expect(throws: BarkVisorError.self) {
             try HomeDeviceProxy.memberURL(
+                host: "evil.example.com",
+                port: 7_778,
+                path: "/api/vms",
+            )
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberURL(
+                host: "no-such-host.invalid",
+                port: 7_778,
+                path: "/api/vms",
+            )
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberURL(
                 host: "192.168.1.9",
                 port: 7_778,
                 path: "/api/home/devices",
+            )
+        }
+    }
+
+    @Test func `agent proxy path decodes and rejects traversal before guards`() throws {
+        #expect(try HomeDeviceProxy.normalizedAPIPath("/api/vms") == "/api/vms")
+        #expect(try HomeDeviceProxy.normalizedAPIPath("/api/agent/whoami") == "/api/agent/whoami")
+        #expect(try HomeDeviceProxy.normalizedAPIPath("/api/%73etup") == "/api/setup")
+        #expect(try HomeDeviceProxy.normalizedAPIPath("/api/pairing/%6Aoin") == "/api/pairing/join")
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.normalizedAPIPath("/api/x/../pairing/join")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.normalizedAPIPath("/api/%2e%2e/setup")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.normalizedAPIPath("/api/foo%2Fbar")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.normalizedAPIPath("/api/.")
+        }
+        try HomeDeviceProxy.rejectConsoleLocalOnly(HomeDeviceProxy.normalizedAPIPath("/api/vms"))
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.rejectConsoleLocalOnly(
+                HomeDeviceProxy.normalizedAPIPath("/api/%73etup/admin"),
+            )
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.rejectConsoleLocalOnly(
+                HomeDeviceProxy.normalizedAPIPath("/api/pairing/%6Aoin"),
             )
         }
     }

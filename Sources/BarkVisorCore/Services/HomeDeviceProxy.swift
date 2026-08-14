@@ -12,15 +12,31 @@ public enum HomeDeviceProxy {
             throw BarkVisorError.badRequest("Missing member API path")
         }
         for part in components {
-            if part.isEmpty || part == "." || part == ".." || part.contains("/")
-                || part.contains("\\") {
-                throw BarkVisorError.badRequest("Invalid member API path")
-            }
+            try rejectPathSegment(part)
         }
         let path = "/api/" + components.joined(separator: "/")
         try rejectNestedHome(path)
         try rejectConsoleLocalOnly(path)
         return path
+    }
+
+    /// Decode percent-encoded segments and reject `.` / `..` so
+    /// console-local guards do not depend on router or client
+    /// path normalization. Encoded slashes stay a single segment
+    /// and are rejected the same way as ``memberAPIPath``.
+    public static func normalizedAPIPath(_ raw: String) throws -> String {
+        let parts = raw.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        let decoded: [String] = try parts.map { part in
+            guard let value = part.removingPercentEncoding else {
+                throw BarkVisorError.badRequest("Invalid member API path")
+            }
+            try rejectPathSegment(value)
+            return value
+        }
+        guard !decoded.isEmpty else {
+            throw BarkVisorError.badRequest("Missing member API path")
+        }
+        return "/" + decoded.joined(separator: "/")
     }
 
     public static func memberURL(
@@ -63,6 +79,13 @@ public enum HomeDeviceProxy {
     public static func rejectNestedHome(_ path: String) throws {
         if path == "/api/home" || path.hasPrefix("/api/home/") {
             throw BarkVisorError.badRequest("Home proxy cannot be nested")
+        }
+    }
+
+    private static func rejectPathSegment(_ part: String) throws {
+        if part.isEmpty || part == "." || part == ".." || part.contains("/")
+            || part.contains("\\") {
+            throw BarkVisorError.badRequest("Invalid member API path")
         }
     }
 
