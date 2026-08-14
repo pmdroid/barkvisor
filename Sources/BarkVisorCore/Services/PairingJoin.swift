@@ -396,6 +396,10 @@ extension PairingService {
 
     /// Copy issuer login onto this Device. Local SQLite still owns runtime
     /// (PAS-47 / PAS-90); peers are not contacted.
+    ///
+    /// Persist the JWT secret before upserting admin. A secret write failure
+    /// must leave the previous password hash in place so login stays consistent
+    /// with the on-disk HMAC key until retry.
     static func applySharedIdentity(
         _ response: PairingRedeemResponse,
         dataDir: URL,
@@ -403,6 +407,21 @@ extension PairingService {
         db: DatabasePool?,
         keys: JWTKeyCollection?,
     ) async throws {
+        if response.adminUser != nil, db == nil {
+            throw PairingError.unavailable(
+                "Unable to persist shared identity; local runtime continues",
+            )
+        }
+        let secret = response.jwtSecret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !secret.isEmpty {
+            do {
+                try Config.persistJWTSecret(secret, to: dataDir)
+            } catch {
+                throw PairingError.unavailable(
+                    "Unable to persist JWT secret: \(error.localizedDescription)",
+                )
+            }
+        }
         if let admin = response.adminUser {
             guard let db else {
                 throw PairingError.unavailable(
@@ -411,16 +430,7 @@ extension PairingService {
             }
             try upsertAdmin(admin, db: db, now: now)
         }
-        let secret = response.jwtSecret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !secret.isEmpty else { return }
-        do {
-            try Config.persistJWTSecret(secret, to: dataDir)
-        } catch {
-            throw PairingError.unavailable(
-                "Unable to persist JWT secret: \(error.localizedDescription)",
-            )
-        }
-        if let keys {
+        if !secret.isEmpty, let keys {
             await keys.add(hmac: .init(from: secret), digestAlgorithm: .sha256)
         }
     }

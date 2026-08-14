@@ -371,6 +371,89 @@ struct PairingIdentityTests {
         #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
     }
 
+    @Test func `jwt secret persist failure leaves local admin unchanged`() async throws {
+        let issuerDir = try isolatedDir("iss-secret-fail")
+        let joinerDir = try isolatedDir("join-secret-fail")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let joinerDB = try makeDB(joinerDir)
+        _ = try insertAdmin(joinerDB, id: "local-admin", username: "local", password: "oldpass1234")
+
+        var remote = try honestRedeemResponse(
+            issuer: issuer,
+            issuerId: issuerId,
+            joiner: joiner,
+            joinerId: joinerId,
+        )
+        remote.jwtSecret = "should-not-replace"
+        remote.adminUser = PairingAdminUser(
+            id: "home-admin",
+            username: "admin",
+            passwordHash: "hashed:shared",
+        )
+        try FileManager.default.createDirectory(
+            at: Config.jwtSecretFile(in: joinerDir),
+            withIntermediateDirectories: true,
+        )
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
+                response: remote,
+                expected: PairingPayload(
+                    code: "ABCD-EFGH",
+                    host: "192.168.0.9",
+                    port: 7_777,
+                    hostId: issuerId,
+                    fingerprint: issuer.deviceFingerprint,
+                ),
+                dataDir: joinerDir,
+                localHostId: joinerId,
+                db: joinerDB,
+            )
+        }
+        #expect(Config.loadJWTSecret(from: joinerDir) == nil)
+        let users = try await joinerDB.read { db in try User.fetchAll(db) }
+        #expect(users.count == 1)
+        #expect(users[0].id == "local-admin")
+        #expect(users[0].username == "local")
+        #expect(users[0].password == "hashed:oldpass1234")
+    }
+
+    @Test func `loadAdminUser returns earliest password-backed user`() throws {
+        let dir = try isolatedDir("admin-order")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let db = try makeDB(dir)
+        try db.write { db in
+            try User(
+                id: "later-admin",
+                username: "second",
+                password: "hashed:later",
+                createdAt: "2026-02-01T00:00:00Z",
+            ).insert(db)
+            try User(
+                id: "earliest-admin",
+                username: "first",
+                password: "hashed:first",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+            try User(
+                id: "no-password",
+                username: "setup",
+                password: "",
+                createdAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        let admin = try PairingService.loadAdminUser(db: db)
+        #expect(admin?.id == "earliest-admin")
+        #expect(admin?.username == "first")
+        #expect(admin?.passwordHash == "hashed:first")
+    }
+
     @Test func `join copies identity through existing redeem`() async throws {
         let issuerDir = try isolatedDir("iss-join")
         let joinerDir = try isolatedDir("join-join")

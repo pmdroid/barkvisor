@@ -296,7 +296,10 @@ public enum PairingService {
     /// First local admin with a password set. Used by redeem to attach identity.
     public static func loadAdminUser(db: DatabasePool) throws -> PairingAdminUser? {
         let user = try db.read { db in
-            try User.filter(User.Columns.password != "").fetchOne(db)
+            try User
+                .filter(User.Columns.password != "")
+                .order(User.Columns.createdAt.asc)
+                .fetchOne(db)
         }
         guard let user else { return nil }
         return PairingAdminUser(
