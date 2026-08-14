@@ -28,3 +28,12 @@ export function resolveHealthCounts(
   if (hasKnownHealthCounts(preferred)) return preferred
   return fallback ?? {}
 }
+
+/** Home-wide "X of Y workloads running". Null when the API reports unknown. */
+export function homeWorkloadsRunningLine(
+  totals: { workloadCount?: number | null } | null | undefined,
+  runningCount: number,
+): string | null {
+  if (totals?.workloadCount == null) return null
+  return `${runningCount} of ${totals.workloadCount} workloads running`
+}
