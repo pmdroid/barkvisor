@@ -103,6 +103,164 @@ struct PairingReviewTests {
         #expect(remote.agentPort == 9_123)
     }
 
+    @Test func `consumed code rejects a different joiner`() throws {
+        let dir = try isolatedDir()
+        let joinerDir = try isolatedDir("ja")
+        let otherDir = try isolatedDir("jb")
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: joinerDir)
+            try? FileManager.default.removeItem(at: otherDir)
+        }
+        let issuerId = UUID().uuidString
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: UUID().uuidString)
+        let other = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: UUID().uuidString)
+        let offers = PairingOfferStore(dataDir: dir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.8",
+                advertisedHosts: ["192.0.2.8"],
+            ),
+            offers: offers,
+        )
+        _ = try PairingService.redeem(
+            PairingService.RedeemInput(
+                dataDir: dir,
+                issuerHostId: issuerId,
+                request: redeemRequest(code: issued.code, joiner: joiner),
+            ),
+            offers: offers,
+        )
+        #expect(throws: PairingError.expiredOrUsed) {
+            try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: dir,
+                    issuerHostId: issuerId,
+                    request: redeemRequest(code: issued.code, joiner: other),
+                ),
+                offers: offers,
+            )
+        }
+        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
+    }
+
+    @Test func `receipt persist failure does not leave a peer pin`() throws {
+        let issuerDir = try isolatedDir("iss-receipt")
+        let joinerDir = try isolatedDir("join-receipt")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let payload = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "192.0.2.9",
+            port: 7_777,
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+        let honest = try honestRedeemResponse(
+            issuer: issuer,
+            issuerId: issuerId,
+            joiner: joiner,
+            joinerId: joinerId,
+        )
+        let receiptURL = PairingService.receiptURL(in: joinerDir)
+        try FileManager.default.createDirectory(at: receiptURL, withIntermediateDirectories: true)
+        #expect(throws: PairingError.self) {
+            try PairingService.applyTrust(
+                response: honest,
+                expected: payload,
+                dataDir: joinerDir,
+                localHostId: joinerId,
+            )
+        }
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
+    }
+
+    @Test func `join retries applyTrust from pending redeem without posting again`() async throws {
+        let issuerDir = try isolatedDir("iss-pending")
+        let joinerDir = try isolatedDir("join-pending")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.22",
+                advertisedHosts: ["192.0.2.22"],
+            ),
+            offers: offers,
+        )
+        final class CountingClient: PairingHTTPClient, @unchecked Sendable {
+            var posts = 0
+            let handler: @Sendable (Data) throws -> PairingRedeemResponse
+            init(handler: @escaping @Sendable (Data) throws -> PairingRedeemResponse) {
+                self.handler = handler
+            }
+            func get(url: URL) async throws -> PairingHTTPResponse {
+                struct Probe: Encodable { var apiVersion: Int }
+                return try PairingHTTPResponse(
+                    status: 200,
+                    body: JSONEncoder().encode(Probe(apiVersion: APIContract.version)),
+                )
+            }
+            func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
+                posts += 1
+                let response = try handler(body)
+                return try PairingHTTPResponse(status: 200, body: JSONEncoder().encode(response))
+            }
+        }
+        let client = CountingClient { body in
+            let request = try JSONDecoder().decode(PairingRedeemRequest.self, from: body)
+            return try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: issuerDir,
+                    issuerHostId: issuerId,
+                    request: request,
+                ),
+                offers: offers,
+            )
+        }
+        let receiptURL = PairingService.receiptURL(in: joinerDir)
+        try FileManager.default.createDirectory(at: receiptURL, withIntermediateDirectories: true)
+        await #expect(throws: PairingError.self) {
+            try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: issued.qrPayload),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: client,
+            )
+        }
+        #expect(client.posts == 1)
+        #expect(try offers.load()?.consumedAt != nil)
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
+        try FileManager.default.removeItem(at: receiptURL)
+        let result = try await PairingService.join(
+            request: PairingJoinRequest(qrPayload: issued.qrPayload),
+            dataDir: joinerDir,
+            hostId: joinerId,
+            client: client,
+        )
+        #expect(client.posts == 1)
+        #expect(result.peerHostId == issuerId)
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.peerHostId == issuerId)
+        #expect(try PeerPinStore(dataDir: joinerDir).contains(fingerprint: issuer.deviceFingerprint))
+        #expect(!FileManager.default.fileExists(atPath: PairingService.pendingRedeemURL(in: joinerDir).path))
+    }
+
     @Test func `join apply rejects agentPort mismatch and persists matching port`() throws {
         let issuerDir = try isolatedDir("iss-ap")
         let joinerDir = try isolatedDir("join-ap")
