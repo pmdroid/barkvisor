@@ -18,6 +18,11 @@ import {
   type RepoSyncStatus,
 } from '../api/setup'
 import { joinHome, isPairingPayload, type PairingJoin } from '../api/pairing'
+import {
+  clearSetupJoinProgress,
+  loadSetupJoinProgress,
+  saveSetupJoinProgress,
+} from '../api/setupJoinProgress'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useFeature } from '../composables/useFeature'
@@ -79,10 +84,18 @@ onMounted(async () => {
   try {
     const status = await getSetupStatus()
     if (status.complete) {
+      clearSetupJoinProgress()
       router.replace('/login')
+      return
     }
   } catch {
     // Server may not be ready yet
+  }
+  const saved = loadSetupJoinProgress()
+  if (saved) {
+    path.value = 'join'
+    joinResult.value = saved
+    step.value = 2
   }
 })
 
@@ -102,6 +115,7 @@ async function nextStep() {
 function startCreate() {
   path.value = 'create'
   joinResult.value = null
+  clearSetupJoinProgress()
   nextStep()
 }
 
@@ -117,6 +131,7 @@ function backToWelcome() {
   qrPayload.value = ''
   error.value = ''
   step.value = 1
+  clearSetupJoinProgress()
 }
 
 async function submitJoin() {
@@ -129,6 +144,7 @@ async function submitJoin() {
   loading.value = true
   try {
     joinResult.value = await joinHome(payload)
+    saveSetupJoinProgress(joinResult.value)
   } catch (e: unknown) {
     error.value = apiErrorMessage(e, 'Failed to join Home')
   } finally {
@@ -224,6 +240,7 @@ async function finishSetup() {
   loading.value = true
   try {
     const { token } = await completeSetup()
+    clearSetupJoinProgress()
     clearSetupCache()
     authStore.token = token
     localStorage.setItem('token', token)
