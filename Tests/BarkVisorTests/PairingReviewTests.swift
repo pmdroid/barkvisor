@@ -30,8 +30,8 @@ struct PairingReviewTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -85,8 +85,8 @@ struct PairingReviewTests {
                 dataDir: dir,
                 hostId: issuerId,
                 agentPort: 9_123,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -120,8 +120,8 @@ struct PairingReviewTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -159,7 +159,7 @@ struct PairingReviewTests {
         let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.9",
+            host: "192.168.0.9",
             port: 7_777,
             hostId: issuerId,
             fingerprint: issuer.deviceFingerprint,
@@ -199,8 +199,8 @@ struct PairingReviewTests {
             PairingService.IssueInput(
                 dataDir: issuerDir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.22",
-                advertisedHosts: ["192.0.2.22"],
+                advertisedHost: "192.168.0.22",
+                advertisedHosts: ["192.168.0.22"],
             ),
             offers: offers,
         )
@@ -274,7 +274,7 @@ struct PairingReviewTests {
         let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.9",
+            host: "192.168.0.9",
             port: 7_777,
             agentPort: 9_123,
             hostId: issuerId,
@@ -320,7 +320,7 @@ struct PairingReviewTests {
         let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.9",
+            host: "192.168.0.9",
             port: 7_777,
             hostId: issuerId,
             fingerprint: issuer.deviceFingerprint,
@@ -364,8 +364,8 @@ struct PairingReviewTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: UUID().uuidString,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -412,6 +412,41 @@ struct PairingReviewTests {
         #expect(!probe.called)
     }
 
+    @Test func `join rejects public host before posting trust material`() async throws {
+        let joinerDir = try isolatedDir("join-wan")
+        defer { try? FileManager.default.removeItem(at: joinerDir) }
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        final class Probe: PairingHTTPClient, @unchecked Sendable {
+            var called = false
+            func get(url: URL) async throws -> PairingHTTPResponse {
+                called = true
+                return PairingHTTPResponse(status: 500, body: Data())
+            }
+            func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
+                called = true
+                return PairingHTTPResponse(status: 500, body: Data())
+            }
+        }
+        let probe = Probe()
+        let qr = PairingPayload(
+            code: "ABCD-EFGH",
+            host: "8.8.8.8",
+            port: 7_777,
+            hostId: UUID().uuidString,
+            fingerprint: "abcd",
+        ).uri
+        await #expect(throws: PairingError.self) {
+            try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: qr),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: probe,
+            )
+        }
+        #expect(!probe.called)
+    }
+
     @Test func `self signed presented device cert is rejected`() throws {
         let dir = try isolatedDir()
         let joinerDir = try isolatedDir("js")
@@ -426,8 +461,8 @@ struct PairingReviewTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )

@@ -873,9 +873,12 @@ paths:
       description: |
         Local join: parse the QR payload, call the issuer redeem endpoint,
         pin the issuer fingerprint, and persist the trust bundle including
-        agentPort. QR is required so an unauthenticated setup-window caller
-        cannot aim server-side HTTP redeem at an arbitrary host. Allowed
-        without JWT only until setup completes.
+        agentPort. QR is required so a caller cannot aim server-side HTTP
+        redeem at an arbitrary host. Unauthenticated only from this Device
+        (loopback) until setup completes; after setup, JWT is required.
+        Join targets must resolve to RFC1918 or IPv6 ULA addresses. Rate
+        limited with the pairing limiter, which stays on when login
+        limiting is disabled.
       requestBody:
         required: true
         content:

@@ -2,13 +2,13 @@ import BarkVisorCore
 import Foundation
 import Vapor
 
-/// Login limiting can be turned off; pairing redeem cannot.
+/// Login limiting can be turned off; pairing redeem and join cannot.
 enum RateLimitPolicy {
     static func loginMaxAttempts(enabled: Bool, configured: Int) -> Int {
         enabled ? max(1, configured) : Int.max
     }
 
-    /// Public redeem stays finite even when `rateLimitEnabled` is false.
+    /// Public redeem and join stay finite even when `rateLimitEnabled` is false.
     static func pairingMaxAttempts(configured: Int) -> Int {
         max(1, configured)
     }

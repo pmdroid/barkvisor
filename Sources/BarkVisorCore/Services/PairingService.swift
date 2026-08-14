@@ -293,7 +293,8 @@ public enum PairingService {
     // MARK: - Private
 
     /// Same joiner may retry after a successful consume (lost 200, local
-    /// applyTrust failure). A different Device still sees expiredOrUsed.
+    /// applyTrust failure) until the offer TTL elapses. A different Device
+    /// still sees expiredOrUsed.
     private static func replaySameJoinerIfConsumed(
         store: PairingOfferStore,
         pins: PeerPinStore,
@@ -306,6 +307,9 @@ public enum PairingService {
     ) throws -> PairingRedeemResponse? {
         guard let offer = try store.load(), offer.consumedAt != nil else {
             return nil
+        }
+        if let expires = iso8601.date(from: offer.expiresAt), now >= expires {
+            throw PairingError.expiredOrUsed
         }
         let incoming = PairingCode.hash(code)
         guard PairingCode.hashesEqual(incoming, offer.codeHash) else {

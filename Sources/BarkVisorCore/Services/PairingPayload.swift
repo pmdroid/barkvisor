@@ -130,8 +130,9 @@ public struct PairingPayload: Sendable, Equatable {
         return trimmed
     }
 
-    /// Loopback, link-local, and cloud-metadata targets are not valid
-    /// pairing hosts. RFC1918 LAN addresses stay allowed.
+    /// Join egress is LAN-only: RFC1918 IPv4 and IPv6 ULA.
+    /// Loopback, link-local, cloud-metadata, and public/WAN addresses
+    /// are not valid pairing hosts.
     ///
     /// IPv4 is parsed with `inet_aton` so shorthand (`127.1`), decimal,
     /// octal, and hex encodings that normalize to loopback are rejected.
@@ -139,7 +140,7 @@ public struct PairingPayload: Sendable, Equatable {
         let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
         if isBlockedJoinHostname(host) { return true }
         if let octets = parseIPv4Octets(host) {
-            return isBlockedJoinIPv4(octets)
+            return !isRFC1918(octets)
         }
         if let addr = parseIPv6(host) {
             return isBlockedJoinIPv6(addr)
@@ -147,10 +148,27 @@ public struct PairingPayload: Sendable, Equatable {
         return false
     }
 
+    /// True when the TCP peer is this Device (loopback). Unauthenticated
+    /// setup-window join stays console-local so a LAN client cannot force
+    /// a rogue pairing while the server is bound to 0.0.0.0.
+    public static func isConsoleLocalClient(_ raw: String?) -> Bool {
+        guard let raw else { return false }
+        let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        guard !host.isEmpty else { return false }
+        if host == "localhost" || host.hasPrefix("localhost.") { return true }
+        if let octets = parseIPv4Octets(host) {
+            return octets.0 == 127
+        }
+        if let addr = parseIPv6(host) {
+            return isIPv6Loopback(addr)
+        }
+        return false
+    }
+
     /// True when the host must not be used as a join target.
     /// Fail closed: DNS failure (empty resolution) is treated as blocked
-    /// so a name that later resolves to loopback or metadata cannot slip
-    /// through at check time.
+    /// so a name that later resolves to loopback, metadata, or a public
+    /// address cannot slip through at check time.
     public static func hostResolvesToBlockedAddress(_ host: String) -> Bool {
         let ips = SSRFGuard.resolvedIPStrings(host)
         if ips.isEmpty { return true }
@@ -158,7 +176,7 @@ public struct PairingPayload: Sendable, Equatable {
     }
 
     /// Resolved addresses that are safe join targets. Fails closed on DNS
-    /// failure or any blocked address (loopback, link-local, metadata).
+    /// failure or any non-LAN address (public, loopback, link-local, metadata).
     public static func resolvedAllowedJoinAddresses(_ host: String) throws -> [String] {
         let ips = SSRFGuard.resolvedIPStrings(host)
         guard !ips.isEmpty else {
@@ -219,11 +237,11 @@ public struct PairingPayload: Sendable, Equatable {
         return false
     }
 
-    private static func isBlockedJoinIPv4(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
+    private static func isRFC1918(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
         let (a, b) = (parts.0, parts.1)
-        if a == 0 { return true }
-        if a == 127 { return true }
-        if a == 169, b == 254 { return true }
+        if a == 10 { return true }
+        if a == 172, (16 ... 31).contains(b) { return true }
+        if a == 192, b == 168 { return true }
         return false
     }
 
@@ -231,14 +249,28 @@ public struct PairingPayload: Sendable, Equatable {
         withUnsafeBytes(of: addr) { raw in
             let bytes = Array(raw)
             guard bytes.count == 16 else { return true }
-            if bytes.dropLast().allSatisfy({ $0 == 0 }), bytes[15] == 1 { return true }
-            if bytes.allSatisfy({ $0 == 0 }) { return true }
             if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xFF, bytes[11] == 0xFF {
-                return isBlockedJoinIPv4((bytes[12], bytes[13], bytes[14], bytes[15]))
+                return !isRFC1918((bytes[12], bytes[13], bytes[14], bytes[15]))
             }
-            if bytes[0] == 0xFE, (bytes[1] & 0xC0) == 0x80 { return true }
-            if bytes[0] == 0xFD, bytes[1] == 0x00, bytes[2] == 0x0E, bytes[3] == 0xC2 {
-                return true
+            // ULA fc00::/7, except AWS metadata fd00:ec2::/32.
+            let isULA = (bytes[0] & 0xFE) == 0xFC
+            if isULA {
+                if bytes[0] == 0xFD, bytes[1] == 0x00, bytes[2] == 0x0E, bytes[3] == 0xC2 {
+                    return true
+                }
+                return false
+            }
+            return true
+        }
+    }
+
+    private static func isIPv6Loopback(_ addr: in6_addr) -> Bool {
+        withUnsafeBytes(of: addr) { raw in
+            let bytes = Array(raw)
+            guard bytes.count == 16 else { return false }
+            if bytes.dropLast().allSatisfy({ $0 == 0 }), bytes[15] == 1 { return true }
+            if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xFF, bytes[11] == 0xFF {
+                return bytes[12] == 127
             }
             return false
         }
@@ -264,7 +296,7 @@ public struct PairingPayload: Sendable, Equatable {
     }
 }
 
-/// Non-loopback IPv4 addresses to advertise in a pairing QR.
+/// RFC1918 IPv4 addresses to advertise in a pairing QR.
 public enum PairingAddresses {
     public static func advertisedIPv4(
         from interfaces: [HostInterfaceInfo] = HostInfoService.listInterfaces(),
@@ -272,9 +304,7 @@ public enum PairingAddresses {
         interfaces.compactMap { iface -> String? in
             let ip = iface.ipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !ip.isEmpty else { return nil }
-            if ip == "127.0.0.1" || ip.hasPrefix("127.") { return nil }
-            if ip == "0.0.0.0" { return nil }
-            if ip.hasPrefix("169.254.") { return nil }
+            if PairingPayload.isBlockedJoinHost(ip) { return nil }
             return ip
         }
     }
