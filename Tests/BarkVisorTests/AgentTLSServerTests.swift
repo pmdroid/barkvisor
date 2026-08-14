@@ -116,6 +116,102 @@ struct AgentTLSServerTests {
         }
     }
 
+    @Test func `paired homes verify each other over agent mtls`() async throws {
+        let issuerDir = try isolatedDir()
+        let joinerDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let csr = try HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM)
+        let issued = try HomeCAService.issueDeviceCert(
+            hostId: joinerId,
+            csrPEM: csr,
+            material: issuer,
+        )
+        let receipt = PairingPeerReceipt(
+            peerHostId: issuerId,
+            peerFingerprint: issuer.deviceFingerprint,
+            caCertificatePEM: issuer.caCertificatePEM,
+            caFingerprint: issuer.caFingerprint,
+            issuedCertificatePEM: issued.certificatePEM,
+            issuedFingerprint: issued.fingerprint,
+            pairedAt: "2026-08-14T00:00:00Z",
+        )
+        try PeerPinStore(dataDir: issuerDir).pin(
+            hostId: joinerId,
+            fingerprint: joiner.deviceFingerprint,
+        )
+        try PeerPinStore(dataDir: joinerDir).pin(
+            hostId: issuerId,
+            fingerprint: issuer.deviceFingerprint,
+        )
+
+        let issuerServer = AgentTLSServer(
+            material: issuer,
+            pins: PeerPinStore(dataDir: issuerDir),
+            hostname: "127.0.0.1",
+            port: 0,
+        )
+        let joinerPresented = AgentPlaneCertificates.presentationCertificatePEM(
+            material: joiner,
+            receipt: receipt,
+        )
+        let joinerServer = AgentTLSServer(
+            material: joiner,
+            pins: PeerPinStore(dataDir: joinerDir),
+            presentationCertificatePEM: joinerPresented,
+            hostname: "127.0.0.1",
+            port: 0,
+        )
+        try await issuerServer.start()
+        try await joinerServer.start()
+        do {
+            let issuerPort = try #require(issuerServer.boundPort)
+            let joinerPort = try #require(joinerServer.boundPort)
+
+            // Home still trusts only its own CA — joiner must present the issued leaf.
+            let homeClient = AgentMTLSClient(material: issuer)
+            let joinerURL = try HomeDeviceProxy.memberURL(
+                host: "127.0.0.1",
+                port: joinerPort,
+                path: "/api/agent/whoami",
+            )
+            let fromHome = try await homeClient.send(
+                HomeDeviceProxyRequest(method: "GET", url: joinerURL),
+            )
+            #expect((200 ... 299).contains(fromHome.status))
+
+            let joinerClient = AgentMTLSClient(
+                material: joiner,
+                presentationCertificatePEM: joinerPresented,
+                trustCertificatePEMs: AgentPlaneCertificates.trustCertificatePEMs(
+                    material: joiner,
+                    receipt: receipt,
+                ),
+            )
+            let issuerURL = try HomeDeviceProxy.memberURL(
+                host: "127.0.0.1",
+                port: issuerPort,
+                path: "/api/agent/whoami",
+            )
+            let fromJoiner = try await joinerClient.send(
+                HomeDeviceProxyRequest(method: "GET", url: issuerURL),
+            )
+            #expect((200 ... 299).contains(fromJoiner.status))
+            await issuerServer.stop()
+            await joinerServer.stop()
+        } catch {
+            await issuerServer.stop()
+            await joinerServer.stop()
+            throw error
+        }
+    }
+
     @Test func `startDetached failure leaves local runtime independent`() async throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }

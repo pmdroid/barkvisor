@@ -11,6 +11,7 @@ import X509
 public final class AgentTLSServer: @unchecked Sendable {
     private var app: Vapor.Application?
     private let material: HomeCertificateMaterial
+    private let presentationCertificatePEM: String
     private let pins: PeerPinStore
     private let hostname: String
     private let port: Int
@@ -20,10 +21,12 @@ public final class AgentTLSServer: @unchecked Sendable {
     public init(
         material: HomeCertificateMaterial,
         pins: PeerPinStore,
+        presentationCertificatePEM: String? = nil,
         hostname: String = "0.0.0.0",
         port: Int = Config.agentPort,
     ) {
         self.material = material
+        self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
         self.pins = pins
         self.hostname = hostname
         self.port = port
@@ -58,7 +61,7 @@ public final class AgentTLSServer: @unchecked Sendable {
 
     private func configure(_ app: Vapor.Application) throws {
         let deviceCert = try NIOSSLCertificate(
-            bytes: Array(material.deviceCertificatePEM.utf8),
+            bytes: Array(presentationCertificatePEM.utf8),
             format: .pem,
         )
         let deviceKey = try NIOSSLPrivateKey(
@@ -154,9 +157,15 @@ public final class AgentTLSServer: @unchecked Sendable {
             let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
             let pins = PeerPinStore(dataDir: dataDir)
             _ = try pins.load()
+            let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
+            let presented = AgentPlaneCertificates.presentationCertificatePEM(
+                material: material,
+                receipt: receipt,
+            )
             let server = AgentTLSServer(
                 material: material,
                 pins: pins,
+                presentationCertificatePEM: presented,
                 hostname: hostname,
                 port: port,
             )
