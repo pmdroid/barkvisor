@@ -7,6 +7,13 @@ import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useFeature } from '../composables/useFeature'
+import {
+  getPairingCode,
+  issuePairingCode,
+  revokePairingCode,
+  type PairingIssue,
+} from '../api/pairing'
+import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
@@ -17,7 +24,69 @@ import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
 const inAppUpdate = useFeature('inAppUpdate')
-const tab = ref<'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+const tab = ref<'home' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+
+const pairingOffer = ref<PairingIssue | null>(null)
+const pairingLoading = ref(false)
+const pairingCopied = ref(false)
+
+async function loadPairingCode() {
+  try {
+    pairingOffer.value = await getPairingCode()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  }
+}
+
+function openHomeTab() {
+  tab.value = 'home'
+  loadPairingCode()
+}
+
+async function addDevice() {
+  pairingLoading.value = true
+  try {
+    pairingOffer.value = await issuePairingCode()
+    toast.success(`Add a ${DEVICE_LABEL} with this pairing code`)
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    pairingLoading.value = false
+  }
+}
+
+async function revokeDeviceCode() {
+  pairingLoading.value = true
+  try {
+    await revokePairingCode()
+    pairingOffer.value = null
+    toast.success('Pairing code revoked')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    pairingLoading.value = false
+  }
+}
+
+async function copyPairingPayload() {
+  if (!pairingOffer.value) return
+  try {
+    await navigator.clipboard.writeText(pairingOffer.value.qrPayload)
+    pairingCopied.value = true
+    setTimeout(() => {
+      pairingCopied.value = false
+    }, 2000)
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not copy pairing code'))
+  }
+}
+
+function pairingExpiryLabel(offer: PairingIssue) {
+  const seconds = Math.max(0, offer.ttlSeconds)
+  if (seconds === 0) return 'Expired'
+  const minutes = Math.ceil(seconds / 60)
+  return minutes === 1 ? 'Expires in 1 minute' : `Expires in ${minutes} minutes`
+}
 
 function openUpdatesTab() {
   tab.value = 'updates'
@@ -354,6 +423,7 @@ onUnmounted(() => {
   </div>
 
   <div class="tabs">
+    <button :class="{ active: tab === 'home' }" @click="openHomeTab">{{ HOME_LABEL }}</button>
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
@@ -361,6 +431,49 @@ onUnmounted(() => {
       :class="{ active: tab === 'updates' }"
       @click="openUpdatesTab"
     >Updates</button>
+  </div>
+
+  <!-- Home / Add a Device (PAS-51) — existing /api/pairing/codes, not a second wizard -->
+  <div v-if="tab === 'home'">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <p style="color:var(--text-secondary);font-size:13px;margin:0">
+        Add a {{ DEVICE_LABEL }} to this {{ HOME_LABEL }}. On the new {{ DEVICE_LABEL }}, open
+        setup and choose Join an existing {{ HOME_LABEL }}, then paste this pairing code.
+      </p>
+      <AppButton
+        variant="primary"
+        icon="plus"
+        :loading="pairingLoading"
+        loading-text="Creating..."
+        @click="addDevice"
+      >
+        Add a {{ DEVICE_LABEL }}
+      </AppButton>
+    </div>
+
+    <EmptyState
+      v-if="!pairingOffer"
+      icon="key"
+      :title="`No pairing code yet. Add a ${DEVICE_LABEL} to invite another machine into this ${HOME_LABEL}.`"
+    />
+
+    <div v-else class="pairing-card">
+      <div class="pairing-code">{{ pairingOffer.code }}</div>
+      <p class="pairing-meta">{{ pairingExpiryLabel(pairingOffer) }}</p>
+      <p class="pairing-hint">
+        Paste the full pairing code below on the new {{ DEVICE_LABEL }}. This
+        {{ DEVICE_LABEL }} still runs if that {{ DEVICE_LABEL }} is unreachable.
+      </p>
+      <pre class="pairing-uri">{{ pairingOffer.qrPayload }}</pre>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <AppButton size="sm" @click="copyPairingPayload">
+          {{ pairingCopied ? 'Copied' : 'Copy pairing code' }}
+        </AppButton>
+        <AppButton size="sm" style="color:var(--red)" :loading="pairingLoading" @click="revokeDeviceCode">
+          Revoke
+        </AppButton>
+      </div>
+    </div>
   </div>
 
   <!-- API Keys Tab -->
@@ -721,11 +834,37 @@ onUnmounted(() => {
 }
 .badge-yellow { background: var(--yellow-muted, rgba(234,179,8,0.15)); color: var(--yellow, #eab308); }
 
-.update-card {
+.update-card,
+.pairing-card {
   background: var(--bg-raised, var(--bg));
   border: 1px solid var(--border);
   border-radius: var(--radius, 8px);
   padding: 16px;
+}
+.pairing-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.pairing-meta,
+.pairing-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  margin: 8px 0 0;
+}
+.pairing-uri {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs, 6px);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .changelog {
   background: var(--bg);
