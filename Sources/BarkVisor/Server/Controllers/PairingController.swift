@@ -1,5 +1,7 @@
 import BarkVisorCore
 import Foundation
+import GRDB
+import JWTKit
 import Vapor
 
 extension PairingIssueResponse: Content {}
@@ -17,6 +19,7 @@ struct PairingController: RouteCollection {
     let setupMiddleware: SetupMiddleware
     let jwt: JWTAuthMiddleware
     let pairingRateLimit: RateLimitMiddleware
+    let keys: JWTKeyCollection
 
     func boot(routes: any RoutesBuilder) throws {
         let pairing = routes.grouped("api", "pairing")
@@ -98,11 +101,14 @@ struct PairingController: RouteCollection {
             throw BarkVisorError.badRequest("Invalid pairing redeem request")
         }
         do {
+            let admin = try PairingService.loadAdminUser(db: req.db)
             let response = try PairingService.redeem(
                 PairingService.RedeemInput(
                     dataDir: Config.dataDir,
                     issuerHostId: Config.hostId,
                     request: body,
+                    jwtSecret: Config.jwtSecret,
+                    adminUser: admin,
                 ),
                 offers: offers,
             )
@@ -140,7 +146,14 @@ struct PairingController: RouteCollection {
                 dataDir: Config.dataDir,
                 hostId: Config.hostId,
                 client: URLSessionPairingHTTPClient(),
+                db: req.db,
+                keys: keys,
             )
+            if let adminCount = try? await req.db.read({ db in
+                try User.filter(User.Columns.password != "").fetchCount(db)
+            }), adminCount > 0 {
+                setupMiddleware.markComplete()
+            }
             AuditService.log(
                 action: "pairing.join",
                 resourceType: "device",

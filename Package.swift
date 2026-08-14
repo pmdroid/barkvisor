@@ -28,6 +28,7 @@ var testDependencies: [Target.Dependency] = [
     .product(name: "NIOSSL", package: "swift-nio-ssl"),
     .product(name: "NIOPosix", package: "swift-nio"),
     .product(name: "AsyncHTTPClient", package: "async-http-client"),
+    .product(name: "JWTKit", package: "jwt-kit"),
 ]
 
 #if os(macOS)

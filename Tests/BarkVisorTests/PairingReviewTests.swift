@@ -146,7 +146,7 @@ struct PairingReviewTests {
         #expect(try PeerPinStore(dataDir: dir).load().count == 1)
     }
 
-    @Test func `receipt persist failure does not leave a peer pin`() throws {
+    @Test func `receipt persist failure does not leave a peer pin`() async throws {
         let issuerDir = try isolatedDir("iss-receipt")
         let joinerDir = try isolatedDir("join-receipt")
         defer {
@@ -172,8 +172,8 @@ struct PairingReviewTests {
         )
         let receiptURL = PairingService.receiptURL(in: joinerDir)
         try FileManager.default.createDirectory(at: receiptURL, withIntermediateDirectories: true)
-        #expect(throws: PairingError.self) {
-            try PairingService.applyTrust(
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
                 response: honest,
                 expected: payload,
                 dataDir: joinerDir,
@@ -261,7 +261,7 @@ struct PairingReviewTests {
         #expect(!FileManager.default.fileExists(atPath: PairingService.pendingRedeemURL(in: joinerDir).path))
     }
 
-    @Test func `join apply rejects agentPort mismatch and persists matching port`() throws {
+    @Test func `join apply rejects agentPort mismatch and persists matching port`() async throws {
         let issuerDir = try isolatedDir("iss-ap")
         let joinerDir = try isolatedDir("join-ap")
         defer {
@@ -287,8 +287,8 @@ struct PairingReviewTests {
             joinerId: joinerId,
         )
         honest.agentPort = 7_778
-        #expect(throws: PairingError.self) {
-            try PairingService.applyTrust(
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
                 response: honest,
                 expected: payload,
                 dataDir: joinerDir,
@@ -297,7 +297,7 @@ struct PairingReviewTests {
         }
         #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
         honest.agentPort = 9_123
-        let joined = try PairingService.applyTrust(
+        let joined = try await PairingService.applyTrust(
             response: honest,
             expected: payload,
             dataDir: joinerDir,
@@ -307,7 +307,7 @@ struct PairingReviewTests {
         #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.agentPort == 9_123)
     }
 
-    @Test func `join apply rejects expired redeem certificates`() throws {
+    @Test func `join apply rejects expired redeem certificates`() async throws {
         let issuerDir = try isolatedDir("iss-exp")
         let joinerDir = try isolatedDir("join-exp")
         defer {
@@ -331,8 +331,8 @@ struct PairingReviewTests {
             joiner: joiner,
             joinerId: joinerId,
         )
-        #expect(throws: PairingError.self) {
-            try PairingService.applyTrust(
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
                 response: honest,
                 expected: payload,
                 dataDir: joinerDir,

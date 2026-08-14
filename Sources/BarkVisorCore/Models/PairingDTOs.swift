@@ -67,6 +67,19 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
     }
 }
 
+/// Admin row copied at pair time (PAS-81). Password is the stored hash only.
+public struct PairingAdminUser: Codable, Sendable, Equatable {
+    public var id: String
+    public var username: String
+    public var passwordHash: String
+
+    public init(id: String, username: String, passwordHash: String) {
+        self.id = id
+        self.username = username
+        self.passwordHash = passwordHash
+    }
+}
+
 /// Trust material returned by a successful redeem.
 public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var hostId: String
@@ -78,6 +91,10 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var issuedFingerprint: String
     public var agentPort: Int
     public var apiVersion: Int
+    /// Issuer HMAC secret (`dataDir/jwt-secret`). Optional so older pending
+    /// redeem files still decode; redeem attaches it when present (PAS-81).
+    public var jwtSecret: String?
+    public var adminUser: PairingAdminUser?
 
     public init(
         hostId: String,
@@ -89,6 +106,8 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         issuedFingerprint: String,
         agentPort: Int,
         apiVersion: Int = APIContract.version,
+        jwtSecret: String? = nil,
+        adminUser: PairingAdminUser? = nil,
     ) {
         self.hostId = hostId
         self.deviceCertificatePEM = deviceCertificatePEM
@@ -99,6 +118,8 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         self.issuedFingerprint = issuedFingerprint
         self.agentPort = agentPort
         self.apiVersion = apiVersion
+        self.jwtSecret = jwtSecret
+        self.adminUser = adminUser
     }
 }
 

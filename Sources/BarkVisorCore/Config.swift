@@ -118,37 +118,44 @@ public enum Config {
         PlatformPaths.isInstalled(libexecDir: libexecDir)
     }
 
-    private static var secretFile: URL {
-        dataDir.appendingPathComponent("jwt-secret")
+    public static let jwtSecretFileName = "jwt-secret"
+
+    public static func jwtSecretFile(in dataDir: URL) -> URL {
+        dataDir.appendingPathComponent(jwtSecretFileName)
+    }
+
+    /// Load a previously persisted HMAC secret. Does not create one.
+    public static func loadJWTSecret(from dataDir: URL) -> String? {
+        let file = jwtSecretFile(in: dataDir)
+        guard let data = try? Data(contentsOf: file),
+              let existing = String(data: data, encoding: .utf8)?.trimmingCharacters(
+                  in: .whitespacesAndNewlines,
+              ),
+              !existing.isEmpty
+        else {
+            return nil
+        }
+        return existing
+    }
+
+    /// Atomic write + 0600. Replaces any existing secret at `dataDir/jwt-secret`.
+    public static func persistJWTSecret(_ secret: String, to dataDir: URL) throws {
+        let file = jwtSecretFile(in: dataDir)
+        try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        try Data(secret.utf8).write(to: file, options: [.atomic])
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: file.path,
+        )
     }
 
     public static var jwtSecret: String {
-        // Try to load from disk
-        if let data = try? Data(contentsOf: secretFile),
-           let existing = String(data: data, encoding: .utf8)?.trimmingCharacters(
-               in: .whitespacesAndNewlines,
-           ),
-           !existing.isEmpty {
+        if let existing = loadJWTSecret(from: dataDir) {
             return existing
         }
         // First start: generate and persist
         let secret = PlatformRandom.secureBase64(byteCount: 32)
         do {
-            try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
-        } catch {
-            Log.server.critical(
-                """
-                Failed to create data directory for JWT secret: \(error.localizedDescription). \
-                JWT secret will not be persisted — all sessions will be invalidated on restart.
-                """,
-            )
-        }
-        do {
-            // Atomic write + 0600 on all platforms (completeFileProtection is macOS-only).
-            try Data(secret.utf8).write(to: secretFile, options: [.atomic])
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: secretFile.path,
-            )
+            try persistJWTSecret(secret, to: dataDir)
             Log.server.info("Generated and stored JWT secret on disk")
         } catch {
             Log.server.critical(
