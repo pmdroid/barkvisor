@@ -5,6 +5,8 @@ import Vapor
 ///
 /// `GET /api/agent/whoami` stays on the agent listener. Nested
 /// `/api/home/*` is rejected so a member cannot recurse the proxy.
+/// Setup and pairing join stay off this path: the loopback hop would
+/// look console-local to the host API.
 struct AgentLocalProxyController: RouteCollection {
     var localPort: Int
     var client: any HomeDeviceProxyClient
@@ -33,6 +35,7 @@ struct AgentLocalProxyController: RouteCollection {
             return response
         }
         try HomeDeviceProxy.rejectNestedHome(path)
+        try HomeDeviceProxy.rejectConsoleLocalOnly(path)
         guard path.hasPrefix("/api/") else {
             throw BarkVisorError.badRequest("Invalid member API path")
         }
