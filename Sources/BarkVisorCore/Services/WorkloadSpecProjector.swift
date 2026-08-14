@@ -159,10 +159,13 @@ public enum WorkloadSpecProjector {
             vm.setSharedPaths(shared.isEmpty ? nil : shared)
         }
         vm.setOverrides(spec.overrides)
+        // Always write health: SSA merge keeps omitted fields, so nil here is an
+        // explicit `spec.health: null` (or a full spec without health) and must
+        // clear persisted probes instead of leaving healthJson in place.
         if let health = spec.spec.health {
             try WorkloadHealthSpec.validate(health)
-            vm.setHealth(health)
         }
+        vm.setHealth(spec.spec.health)
     }
 
     public static func validate(_ spec: WorkloadSpec, existingID: String? = nil) throws {

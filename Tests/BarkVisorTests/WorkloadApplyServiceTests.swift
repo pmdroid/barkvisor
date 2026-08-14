@@ -363,6 +363,49 @@ final class WorkloadApplyServiceTests {
         #expect(try await vmCount() == 2)
     }
 
+    @Test func `apply health then explicit null clears persisted probes`() async throws {
+        let diskID = try await insertFreeDisk(name: "boot-health")
+        let createDoc: [String: Any] = [
+            "apiVersion": WorkloadSpec.currentAPIVersion,
+            "kind": WorkloadSpec.kindVirtualMachine,
+            "metadata": ["id": "vm-health", "name": "probed"],
+            "spec": [
+                "resources": ["cpu": fixtureCPUCount, "memoryMb": 512],
+                "disks": [["role": "boot", "diskId": diskID]],
+                "health": [
+                    "http": ["path": "/health", "port": 8_080],
+                ],
+            ],
+        ]
+        _ = try await WorkloadApplyService.apply(
+            document: createDoc, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        let created = try await fetchVM("vm-health")
+        #expect(created.decodedHealth?.http?.port == 8_080)
+
+        let omit: [String: Any] = [
+            "metadata": ["id": "vm-health"],
+            "spec": ["resources": ["memoryMb": 768]],
+        ]
+        _ = try await WorkloadApplyService.apply(
+            document: omit, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        let kept = try await fetchVM("vm-health")
+        #expect(kept.decodedHealth?.http?.port == 8_080)
+        #expect(kept.memoryMb == 768)
+
+        let clear: [String: Any] = [
+            "metadata": ["id": "vm-health"],
+            "spec": ["health": NSNull()],
+        ]
+        _ = try await WorkloadApplyService.apply(
+            document: clear, dryRun: false, db: dbPool, backgroundTasks: backgroundTasks,
+        )
+        let after = try await fetchVM("vm-health")
+        #expect(after.decodedHealth == nil)
+        #expect(after.healthJson == nil)
+    }
+
     // MARK: - Helpers
 
     private func insertFreeDisk(name: String) async throws -> String {

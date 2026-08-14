@@ -1,11 +1,3 @@
-#if canImport(FoundationNetworking)
-    import FoundationNetworking
-#endif
-#if canImport(Darwin)
-    import Darwin
-#elseif canImport(Glibc)
-    import Glibc
-#endif
 import Foundation
 import GRDB
 
@@ -81,8 +73,8 @@ public struct HealthProbeTransport: Sendable {
 
 /// Per-host HTTP/TCP probe runner. Results stay in memory; config lives on `vms.healthJson`.
 ///
-/// Probes only the owner Device (localhost hostfwd or a non-SLIRP guest IP). They never
-/// call a peer or controller — local SQLite still owns runtime (PAS-47 / PAS-90).
+/// Probes only the owner Device (localhost hostfwd or a VM-bound bridged guest IP).
+/// They never call a peer or controller — local SQLite still owns runtime (PAS-47 / PAS-90).
 public actor HealthProbeService {
     private struct State {
         var fingerprint: String
@@ -102,6 +94,10 @@ public actor HealthProbeService {
     private let dbPool: DatabasePool?
     private let transport: HealthProbeTransport
     private var states: [String: State] = [:]
+    /// Bumped on each attempt and on `reset` so a suspended run cannot commit.
+    private var generations: [String: UInt64] = [:]
+    private var probeBusy: Set<String> = []
+    private var probeWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     public init(dbPool: DatabasePool? = nil, transport: HealthProbeTransport = .live) {
         self.dbPool = dbPool
@@ -131,6 +127,7 @@ public actor HealthProbeService {
 
     public func reset(vmID: String) {
         states.removeValue(forKey: vmID)
+        generations[vmID] = (generations[vmID] ?? 0) &+ 1
     }
 
     /// Run configured probes once and update the in-memory cache.
@@ -139,12 +136,14 @@ public actor HealthProbeService {
         vm: VM,
         guestIPs: [String] = [],
         now: Date = Date(),
+        policy: HealthProbePolicy? = nil,
     ) async -> HealthProbeResults {
         guard let spec = vm.decodedHealth, spec.hasProbes else {
             states.removeValue(forKey: vm.id)
             return .unobserved
         }
-        await run(vm: vm, spec: spec, guestIPs: guestIPs, now: now, force: true)
+        let resolved = await destinationPolicy(for: vm, override: policy)
+        await run(vm: vm, spec: spec, guestIPs: guestIPs, now: now, force: true, policy: resolved)
         return results(for: vm.id)
     }
 
@@ -161,7 +160,13 @@ public actor HealthProbeService {
             return
         }
         let ips = await GuestHealthStore.ipsByVM(ids: vms.map(\.id), db: dbPool)
-        var jobs: [(vm: VM, spec: WorkloadHealthSpec, guestIPs: [String])] = []
+        let networks = await loadNetworks(ids: Set(vms.compactMap(\.networkId)), db: dbPool)
+        var jobs: [(
+            vm: VM,
+            spec: WorkloadHealthSpec,
+            guestIPs: [String],
+            policy: HealthProbePolicy,
+        )] = []
         jobs.reserveCapacity(vms.count)
         for vm in vms {
             let state = VMState.parse(vm.state)
@@ -173,7 +178,8 @@ public actor HealthProbeService {
                 states.removeValue(forKey: vm.id)
                 continue
             }
-            jobs.append((vm, spec, ips[vm.id] ?? []))
+            let network = vm.networkId.flatMap { networks[$0] }
+            jobs.append((vm, spec, ips[vm.id] ?? [], HealthProbeTarget.policy(for: network)))
         }
 
         // Bound in-flight probes so a fleet of unreachable targets cannot
@@ -192,6 +198,7 @@ public actor HealthProbeService {
                         guestIPs: job.guestIPs,
                         now: now,
                         force: false,
+                        policy: job.policy,
                     )
                 }
                 started += 1
@@ -207,7 +214,11 @@ public actor HealthProbeService {
         guestIPs: [String],
         now: Date,
         force: Bool,
+        policy: HealthProbePolicy,
     ) async {
+        await acquireProbe(vm.id)
+        defer { releaseProbe(vm.id) }
+
         let fingerprint = spec.fingerprint
         var state = states[vm.id] ?? State(
             fingerprint: fingerprint,
@@ -227,76 +238,145 @@ public actor HealthProbeService {
             return
         }
         state.lastAttempt = now
+        let generation = (generations[vm.id] ?? 0) &+ 1
+        generations[vm.id] = generation
+        // Persist lastAttempt before awaiting transport so a later pollDue
+        // does not immediately schedule another attempt for the same interval.
+        states[vm.id] = state
 
-        if let http = spec.http {
-            if let target = HealthProbeTarget.resolve(
-                port: http.port, vm: vm, guestIPs: guestIPs,
-            ) {
-                state.httpUnreachable = false
-                let ok = await transport.http(
-                    target.host, target.port, http.normalizedPath, spec.resolvedTimeout,
-                    http.expectedStatus,
-                )
-                if ok {
-                    state.consecutiveHTTPPass += 1
-                    state.consecutiveHTTPFail = 0
-                    if state.consecutiveHTTPPass >= spec.resolvedHealthyThreshold {
-                        state.http = true
-                    }
-                } else {
-                    state.consecutiveHTTPFail += 1
-                    state.consecutiveHTTPPass = 0
-                    if state.consecutiveHTTPFail >= spec.resolvedUnhealthyThreshold {
-                        state.http = false
-                    }
-                }
-            } else {
-                // Drop stale pass/fail so a lost guest IP cannot keep guest_ready.
-                state.http = nil
-                state.httpUnreachable = true
-                state.consecutiveHTTPPass = 0
-                state.consecutiveHTTPFail = 0
-            }
-        } else {
+        await applyHTTP(spec: spec, vm: vm, guestIPs: guestIPs, policy: policy, state: &state)
+        await applyTCP(spec: spec, vm: vm, guestIPs: guestIPs, policy: policy, state: &state)
+
+        guard generations[vm.id] == generation else { return }
+        states[vm.id] = state
+    }
+
+    private func applyHTTP(
+        spec: WorkloadHealthSpec,
+        vm: VM,
+        guestIPs: [String],
+        policy: HealthProbePolicy,
+        state: inout State,
+    ) async {
+        guard let http = spec.http else {
             state.http = nil
             state.httpUnreachable = false
             state.consecutiveHTTPPass = 0
             state.consecutiveHTTPFail = 0
+            return
         }
-
-        if let tcp = spec.tcp {
-            if let target = HealthProbeTarget.resolve(
-                port: tcp.port, vm: vm, guestIPs: guestIPs,
-            ) {
-                state.tcpUnreachable = false
-                let ok = await transport.tcp(target.host, target.port, spec.resolvedTimeout)
-                if ok {
-                    state.consecutiveTCPPass += 1
-                    state.consecutiveTCPFail = 0
-                    if state.consecutiveTCPPass >= spec.resolvedHealthyThreshold {
-                        state.tcp = true
-                    }
-                } else {
-                    state.consecutiveTCPFail += 1
-                    state.consecutiveTCPPass = 0
-                    if state.consecutiveTCPFail >= spec.resolvedUnhealthyThreshold {
-                        state.tcp = false
-                    }
-                }
-            } else {
-                state.tcp = nil
-                state.tcpUnreachable = true
-                state.consecutiveTCPPass = 0
-                state.consecutiveTCPFail = 0
+        guard let target = HealthProbeTarget.resolve(
+            port: http.port, vm: vm, guestIPs: guestIPs, policy: policy,
+        ) else {
+            // Drop stale pass/fail so a lost guest IP cannot keep guest_ready.
+            state.http = nil
+            state.httpUnreachable = true
+            state.consecutiveHTTPPass = 0
+            state.consecutiveHTTPFail = 0
+            return
+        }
+        state.httpUnreachable = false
+        let ok = await transport.http(
+            target.host, target.port, http.normalizedPath, spec.resolvedTimeout,
+            http.expectedStatus,
+        )
+        if ok {
+            state.consecutiveHTTPPass += 1
+            state.consecutiveHTTPFail = 0
+            if state.consecutiveHTTPPass >= spec.resolvedHealthyThreshold {
+                state.http = true
             }
         } else {
+            state.consecutiveHTTPFail += 1
+            state.consecutiveHTTPPass = 0
+            if state.consecutiveHTTPFail >= spec.resolvedUnhealthyThreshold {
+                state.http = false
+            }
+        }
+    }
+
+    private func applyTCP(
+        spec: WorkloadHealthSpec,
+        vm: VM,
+        guestIPs: [String],
+        policy: HealthProbePolicy,
+        state: inout State,
+    ) async {
+        guard let tcp = spec.tcp else {
             state.tcp = nil
             state.tcpUnreachable = false
             state.consecutiveTCPPass = 0
             state.consecutiveTCPFail = 0
+            return
         }
+        guard let target = HealthProbeTarget.resolve(
+            port: tcp.port, vm: vm, guestIPs: guestIPs, policy: policy,
+        ) else {
+            state.tcp = nil
+            state.tcpUnreachable = true
+            state.consecutiveTCPPass = 0
+            state.consecutiveTCPFail = 0
+            return
+        }
+        state.tcpUnreachable = false
+        let ok = await transport.tcp(target.host, target.port, spec.resolvedTimeout)
+        if ok {
+            state.consecutiveTCPPass += 1
+            state.consecutiveTCPFail = 0
+            if state.consecutiveTCPPass >= spec.resolvedHealthyThreshold {
+                state.tcp = true
+            }
+        } else {
+            state.consecutiveTCPFail += 1
+            state.consecutiveTCPPass = 0
+            if state.consecutiveTCPFail >= spec.resolvedUnhealthyThreshold {
+                state.tcp = false
+            }
+        }
+    }
 
-        states[vm.id] = state
+    private func destinationPolicy(
+        for vm: VM,
+        override: HealthProbePolicy?,
+    ) async -> HealthProbePolicy {
+        if let override { return override }
+        guard let dbPool, let networkId = vm.networkId else { return .hostfwdOnly }
+        let network = try? await dbPool.read { db in
+            try Network.fetchOne(db, key: networkId)
+        }
+        return HealthProbeTarget.policy(for: network)
+    }
+
+    private func loadNetworks(ids: Set<String>, db: DatabasePool) async -> [String: Network] {
+        guard !ids.isEmpty else { return [:] }
+        let rows = await (try? db.read { db in
+            try Network.fetchAll(db)
+        }) ?? []
+        var out: [String: Network] = [:]
+        for row in rows where ids.contains(row.id) {
+            out[row.id] = row
+        }
+        return out
+    }
+
+    private func acquireProbe(_ id: String) async {
+        while probeBusy.contains(id) {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                probeWaiters[id, default: []].append(cont)
+            }
+        }
+        probeBusy.insert(id)
+    }
+
+    private func releaseProbe(_ id: String) {
+        probeBusy.remove(id)
+        guard var queue = probeWaiters[id], !queue.isEmpty else {
+            probeWaiters[id] = nil
+            return
+        }
+        let next = queue.removeFirst()
+        probeWaiters[id] = queue.isEmpty ? nil : queue
+        next.resume()
     }
 
     private func results(from state: State) -> HealthProbeResults {
@@ -308,56 +388,6 @@ public actor HealthProbeService {
             httpUnreachable: state.httpUnreachable,
             tcpUnreachable: state.tcpUnreachable,
         )
-    }
-}
-
-/// Resolves a guest probe destination. Prefer hostfwd so NAT VMs are reachable.
-public enum HealthProbeTarget: Equatable, Sendable {
-    public struct Resolved: Equatable, Sendable {
-        public var host: String
-        public var port: Int
-        public var via: String
-    }
-
-    /// QEMU user-net guest address — not reachable from the host.
-    public static let slirpGuestIPv4 = "10.0.2.15"
-
-    public static func resolve(port: Int, vm: VM, guestIPs: [String]) -> Resolved? {
-        if let rule = vm.decodedPortForwards.first(where: {
-            $0.protocol == "tcp" && $0.guestPort == port
-        }) {
-            return Resolved(host: "127.0.0.1", port: rule.hostPort, via: "hostfwd")
-        }
-        for ip in guestIPs where isReachableGuestIP(ip) {
-            return Resolved(host: ip, port: port, via: "guest")
-        }
-        return nil
-    }
-
-    public static func isReachableGuestIP(_ ip: String) -> Bool {
-        if isReachableGuestIPv4(ip) { return true }
-        return isReachableGuestIPv6(ip)
-    }
-
-    public static func isReachableGuestIPv4(_ ip: String) -> Bool {
-        if ip == slirpGuestIPv4 { return false }
-        if ip.hasPrefix("127.") { return false }
-        let parts = ip.split(separator: ".")
-        guard parts.count == 4, parts.allSatisfy({ UInt8($0) != nil }) else { return false }
-        return true
-    }
-
-    public static func isReachableGuestIPv6(_ ip: String) -> Bool {
-        let bare = ip.split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false)
-            .first.map(String.init) ?? ip
-        let lower = bare.lowercased()
-        if lower == "::1" || lower == "::" { return false }
-        if lower.hasPrefix("fe80:") { return false }
-        if lower.hasPrefix("::ffff:") {
-            return isReachableGuestIPv4(String(lower.dropFirst(7)))
-        }
-        var addr = in6_addr()
-        return bare.withCString { inet_pton(AF_INET6, $0, &addr) == 1 }
     }
 }
 
@@ -388,100 +418,5 @@ public enum GuestHealthStore {
                 ?? []
         }
         return out
-    }
-}
-
-enum HealthProbeLive {
-    static func http(
-        host: String,
-        port: Int,
-        path: String,
-        timeout: TimeInterval,
-        expectedStatus: Int?,
-    ) async -> Bool {
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = host
-        components.port = port
-        components.percentEncodedPath = path.hasPrefix("/") ? path : "/\(path)"
-        guard let url = components.url else { return false }
-
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = timeout
-        config.timeoutIntervalForResource = timeout
-        config.httpShouldSetCookies = false
-        // FoundationNetworking exposes waitsForConnectivity as get-only.
-        #if canImport(Darwin)
-            config.waitsForConnectivity = false
-        #endif
-        let session = URLSession(configuration: config)
-        defer { session.invalidateAndCancel() }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = timeout
-        request.setValue("BarkVisor-health/1", forHTTPHeaderField: "User-Agent")
-
-        do {
-            let (_, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return false }
-            if let expectedStatus {
-                return http.statusCode == expectedStatus
-            }
-            return (200 ... 399).contains(http.statusCode)
-        } catch {
-            return false
-        }
-    }
-
-    static func tcp(host: String, port: Int, timeout: TimeInterval) async -> Bool {
-        // getaddrinfo + poll are blocking; keep them off the cooperative pool.
-        await Task.detached(priority: .utility) {
-            tcpBlocking(host: host, port: port, timeout: timeout)
-        }.value
-    }
-
-    private static func tcpBlocking(host: String, port: Int, timeout: TimeInterval) -> Bool {
-        var hints = addrinfo()
-        hints.ai_family = AF_UNSPEC
-        hints.ai_socktype = PlatformSocket.stream
-
-        var result: UnsafeMutablePointer<addrinfo>?
-        let status = getaddrinfo(host, String(port), &hints, &result)
-        guard status == 0, let list = result else { return false }
-        defer { freeaddrinfo(list) }
-
-        var current: UnsafeMutablePointer<addrinfo>? = list
-        while let info = current {
-            if connectNonblocking(info.pointee, timeout: timeout) {
-                return true
-            }
-            current = info.pointee.ai_next
-        }
-        return false
-    }
-
-    private static func connectNonblocking(_ info: addrinfo, timeout: TimeInterval) -> Bool {
-        let fd = socket(info.ai_family, info.ai_socktype, info.ai_protocol)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-
-        let flags = fcntl(fd, F_GETFL, 0)
-        guard flags >= 0 else { return false }
-        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-
-        let rc = connect(fd, info.ai_addr, info.ai_addrlen)
-        if rc == 0 { return true }
-        if errno != EINPROGRESS { return false }
-
-        var pollFD = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
-        let ms = Int32(min(max(timeout * 1_000, 1), Double(Int32.max)))
-        let prc = poll(&pollFD, 1, ms)
-        guard prc > 0, (pollFD.revents & Int16(POLLOUT)) != 0 else { return false }
-
-        var err: Int32 = 0
-        var len = socklen_t(MemoryLayout<Int32>.size)
-        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0 else { return false }
-        return err == 0
     }
 }
