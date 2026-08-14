@@ -121,6 +121,15 @@ describe('PAS-82 Home terminology', () => {
     expect(offenders).toEqual([])
   })
 
+  test('Devices view is Home-scoped and reuses Settings pairing', () => {
+    const text = readFileSync(join(srcRoot, 'views/DevicesView.vue'), 'utf8')
+    expect(text).toContain('DEVICE_LABEL')
+    expect(text).toContain('HOME_LABEL')
+    expect(text).toContain('/settings?tab=home')
+    expect(text).not.toContain('/api/pairing/join')
+    expect(text).not.toMatch(forbiddenTemplateRe)
+  })
+
   test('setup ready copy names this device a Home', () => {
     const text = readFileSync(join(srcRoot, 'views/SetupView.vue'), 'utf8')
     expect(text).toContain('HOME_LABEL')

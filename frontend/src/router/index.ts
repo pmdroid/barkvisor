@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/login', name: 'login', component: () => import('../views/LoginView.vue') },
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
+    { path: '/devices', name: 'devices', component: () => import('../views/DevicesView.vue') },
     { path: '/vms', name: 'vms', component: () => import('../views/VMListView.vue') },
     { path: '/vms/:id', name: 'vm-detail', component: () => import('../views/VMDetailView.vue') },
     {

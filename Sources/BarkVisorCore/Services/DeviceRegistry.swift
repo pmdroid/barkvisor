@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Independent of SQLite so local VM runtime (PAS-47 / PAS-90) does not
 /// depend on mesh membership. Pairing redeem/join writes rows; the
-/// dashboard (PAS-52) only reads them.
+/// dashboard (PAS-52) reads them and best-effort probes members.
 public final class DeviceRegistry: @unchecked Sendable {
     public static let fileName = "devices.json"
 

@@ -43,6 +43,13 @@ function isActive(path: string) {
           </svg>
           <span class="nav-label">Dashboard</span>
         </router-link>
+        <router-link to="/devices" :class="{ active: isActive('/devices') }">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="9" height="7" rx="1"/><rect x="13" y="3" width="9" height="7" rx="1"/>
+            <rect x="2" y="14" width="9" height="7" rx="1"/><rect x="13" y="14" width="9" height="7" rx="1"/>
+          </svg>
+          <span class="nav-label">Devices</span>
+        </router-link>
         <router-link to="/vms" :class="{ active: isActive('/vms') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>

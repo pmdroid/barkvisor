@@ -41,3 +41,6 @@ extension TemplateCompatibilityReport: Content {}
 extension AgentPeerIdentity: Content {}
 extension HomeDevice: Content {}
 extension HomeDeviceList: Content {}
+extension HomeDeviceHealthReport: Content {}
+extension HomeDeviceHealthSnapshot: Content {}
+extension HomeDeviceHealthTotals: Content {}

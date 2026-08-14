@@ -24,7 +24,7 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/apps` (apps reserved)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/apps` (apps reserved)
     - internal — `/api/home/devices/{id}/v1/*` mTLS member proxy
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
@@ -912,6 +912,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HomeDeviceList"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/devices/health:
+    get:
+      tags: [evolving]
+      operationId: getHomeDeviceHealth
+      x-barkvisor-stability: evolving
+      summary: Aggregated Device health for the Home dashboard
+      description: |
+        JWT. This Device is always included from local inventory and
+        workload health. Members are probed over mTLS; unreachable
+        Devices stay in the list with `reachability: unreachable` and
+        no live resources. Local SQLite / QEMU are unchanged (PAS-47).
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeDeviceHealthReport"
         default:
           $ref: "#/components/responses/Error"
 
@@ -2257,6 +2277,92 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HomeDevice"
+
+    HomeDevicePlatformSummary:
+      type: object
+      required: [os, arch]
+      properties:
+        os:
+          type: string
+        arch:
+          type: string
+
+    HomeDeviceResourceSummary:
+      type: object
+      properties:
+        cpuCount:
+          type: integer
+        memoryTotalMB:
+          type: integer
+        memoryUsedMB:
+          type: integer
+        cpuLoadPercent:
+          type: number
+
+    HomeDeviceHealthSnapshot:
+      type: object
+      required: [hostId, role, agentPort, reachability]
+      properties:
+        hostId:
+          type: string
+        role:
+          type: string
+          enum: [self, member]
+        displayName:
+          type: string
+        fingerprint:
+          type: string
+        agentHost:
+          type: string
+        agentPort:
+          type: integer
+        pairedAt:
+          type: string
+        reachability:
+          type: string
+          enum: [ok, unreachable]
+        reachabilityError:
+          type: string
+        collectedAt:
+          type: string
+        platform:
+          $ref: "#/components/schemas/HomeDevicePlatformSummary"
+        resources:
+          $ref: "#/components/schemas/HomeDeviceResourceSummary"
+        workloadCount:
+          type: integer
+        healthCounts:
+          type: object
+          additionalProperties:
+            type: integer
+
+    HomeDeviceHealthTotals:
+      type: object
+      required: [devices, reachable, unreachable, workloadCount, healthCounts]
+      properties:
+        devices:
+          type: integer
+        reachable:
+          type: integer
+        unreachable:
+          type: integer
+        workloadCount:
+          type: integer
+        healthCounts:
+          type: object
+          additionalProperties:
+            type: integer
+
+    HomeDeviceHealthReport:
+      type: object
+      required: [devices, totals]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeDeviceHealthSnapshot"
+        totals:
+          $ref: "#/components/schemas/HomeDeviceHealthTotals"
 
     HostInventory:
       type: object
