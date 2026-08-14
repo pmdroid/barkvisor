@@ -2348,6 +2348,7 @@ components:
           type: integer
         workloadCount:
           type: integer
+          nullable: true
         healthCounts:
           type: object
           additionalProperties:

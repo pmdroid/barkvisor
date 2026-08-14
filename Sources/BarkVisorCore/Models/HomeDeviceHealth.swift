@@ -112,14 +112,16 @@ public struct HomeDeviceHealthTotals: Codable, Sendable, Equatable {
     public var devices: Int
     public var reachable: Int
     public var unreachable: Int
-    public var workloadCount: Int
+    /// Sum of known per-device counts. `nil` when any reachable Device
+    /// did not return a workload health summary — never treat unknown as 0.
+    public var workloadCount: Int?
     public var healthCounts: [String: Int]
 
     public init(
         devices: Int,
         reachable: Int,
         unreachable: Int,
-        workloadCount: Int,
+        workloadCount: Int?,
         healthCounts: [String: Int],
     ) {
         self.devices = devices

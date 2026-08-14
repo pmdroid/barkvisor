@@ -156,6 +156,38 @@ struct HomeDeviceHealthTests {
         #expect(live.resources?.cpuCount == 2)
         #expect(live.workloadCount == 3)
         #expect(live.healthCounts?["stopped"] == 2)
+        let inventoryOnly = HomeDeviceHealthAggregator.facts(from: decoded, summary: nil)
+        #expect(inventoryOnly.workloadCount == nil)
+        #expect(inventoryOnly.healthCounts == nil)
+    }
+
+    @Test func `reachable device with unknown health is not counted as zero workloads`() {
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self", role: "self", displayName: "a"),
+            HomeDevice(hostId: "ok-peer", role: "member", agentHost: "10.0.0.2"),
+        ])
+        let inventoryOnly = HomeDeviceLiveFacts(
+            displayName: "b",
+            collectedAt: "2026-08-14T00:00:00Z",
+            platform: HomeDevicePlatformSummary(os: "linux", arch: "arm64"),
+            resources: HomeDeviceResourceSummary(
+                cpuCount: 2, memoryTotalMB: 4_096, memoryUsedMB: 1_024, cpuLoadPercent: 8,
+            ),
+            workloadCount: nil,
+            healthCounts: nil,
+        )
+        let report = HomeDeviceHealthAggregator.report(
+            listed: listed,
+            local: facts(name: "a", cpuCount: 2, running: 3),
+            members: ["ok-peer": .ok(inventoryOnly)],
+        )
+        let peer = report.devices.first { $0.hostId == "ok-peer" }
+        #expect(peer?.reachability == HomeDeviceHealthAggregator.ok)
+        #expect(peer?.workloadCount == nil)
+        #expect(peer?.healthCounts == nil)
+        #expect(report.totals.reachable == 2)
+        #expect(report.totals.workloadCount == nil)
+        #expect(report.totals.healthCounts["running"] == 3)
     }
 
     @Test func `missing member result is unreachable not invented live data`() {

@@ -731,7 +731,7 @@ export interface HomeDeviceHealthTotals {
   devices: number
   reachable: number
   unreachable: number
-  workloadCount: number
+  workloadCount: number | null
   healthCounts: Record<string, number>
 }
 

@@ -10,6 +10,7 @@ import DeviceCard from '../components/DeviceCard.vue'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { formatTemperatureC } from '../utils/format'
+import { hasKnownHealthCounts, resolveHealthCounts } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
@@ -44,23 +45,25 @@ const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[]
 const runningVMs = computed(() => store.vms.filter(v => v.state === 'running').length)
 
 const healthStrip = computed(() => {
-  const counts = devices.totals?.healthCounts ?? healthSummary.value?.counts ?? {}
+  const counts = resolveHealthCounts(devices.totals?.healthCounts, healthSummary.value?.counts)
   return (['running', 'starting', 'degraded', 'failed', 'stopped'] as WorkloadHealth[])
     .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
 })
 
 const failedCount = computed(() => {
-  if (devices.totals) return devices.totals.healthCounts.failed ?? 0
+  const counts = devices.totals?.healthCounts
+  if (hasKnownHealthCounts(counts)) return counts.failed ?? 0
   return healthSummary.value?.counts?.failed ?? 0
 })
 
 const homeWorkloadCount = computed(() => {
-  if (devices.totals) return devices.totals.workloadCount
+  if (devices.totals?.workloadCount != null) return devices.totals.workloadCount
   return store.vms.length
 })
 
 const homeRunningCount = computed(() => {
-  if (devices.totals) return devices.totals.healthCounts.running ?? 0
+  const counts = devices.totals?.healthCounts
+  if (hasKnownHealthCounts(counts)) return counts.running ?? 0
   return runningVMs.value
 })
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { HomeDeviceHealthSnapshot, WorkloadHealth } from '../api/types'
+import { deviceWorkloadLine } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { healthLabel } from '../utils/workloadHealth'
 
@@ -23,13 +24,7 @@ const platformLabel = computed(() => {
   return reachable.value ? DEVICE_LABEL : 'Unknown platform'
 })
 
-const workloadLine = computed(() => {
-  if (!reachable.value) return 'Health unavailable'
-  const count = props.device.workloadCount ?? 0
-  const failed = props.device.healthCounts?.failed ?? 0
-  if (failed > 0) return `${count} workloads · ${failed} failed`
-  return `${count} workload${count === 1 ? '' : 's'}`
-})
+const workloadLine = computed(() => deviceWorkloadLine(props.device))
 
 const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed', 'stopped']
 </script>
