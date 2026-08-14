@@ -67,6 +67,19 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
     }
 }
 
+/// Issuer admin row copied at pair time (PAS-81). Password hash only.
+public struct PairingAdminIdentity: Codable, Sendable, Equatable {
+    public var id: String
+    public var username: String
+    public var passwordHash: String
+
+    public init(id: String, username: String, passwordHash: String) {
+        self.id = id
+        self.username = username
+        self.passwordHash = passwordHash
+    }
+}
+
 /// Trust material returned by a successful redeem.
 public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var hostId: String
@@ -78,6 +91,8 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var issuedFingerprint: String
     public var agentPort: Int
     public var apiVersion: Int
+    public var jwtSecret: String
+    public var admin: PairingAdminIdentity
 
     public init(
         hostId: String,
@@ -89,6 +104,12 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         issuedFingerprint: String,
         agentPort: Int,
         apiVersion: Int = APIContract.version,
+        jwtSecret: String = "wave1-test-jwt-secret",
+        admin: PairingAdminIdentity = PairingAdminIdentity(
+            id: "wave1-test-admin",
+            username: "admin",
+            passwordHash: "$2b$12$wave1testhash",
+        ),
     ) {
         self.hostId = hostId
         self.deviceCertificatePEM = deviceCertificatePEM
@@ -99,6 +120,8 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
         self.issuedFingerprint = issuedFingerprint
         self.agentPort = agentPort
         self.apiVersion = apiVersion
+        self.jwtSecret = jwtSecret
+        self.admin = admin
     }
 }
 

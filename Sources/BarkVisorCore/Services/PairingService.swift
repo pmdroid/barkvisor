@@ -1,12 +1,13 @@
 import Foundation
 import X509
 
-/// Pairing issue + redeem (PAS-45).
+/// Pairing issue + redeem (PAS-45 / PAS-81).
 ///
 /// The existing Device issues a short-lived code / QR. The joining Device
 /// redeems it and both sides record pairwise pins. Home CA issues a peer
-/// cert as trust material on the wire. Local SQLite / QEMU are untouched
-/// (PAS-47 / PAS-90).
+/// cert as trust material on the wire. Redeem also copies the issuer
+/// jwt-secret and admin user hash so one login works on both Devices.
+/// Local SQLite / QEMU keep running if peers are unreachable (PAS-47 / PAS-90).
 public enum PairingService {
     public static let defaultTTL: TimeInterval = 10 * 60
     public static let receiptFileName = "pairing-peer.json"
@@ -167,17 +168,27 @@ public enum PairingService {
         public var issuerHostId: String
         public var request: PairingRedeemRequest
         public var now: Date
+        public var jwtSecret: String
+        public var admin: PairingAdminIdentity
 
         public init(
             dataDir: URL,
             issuerHostId: String,
             request: PairingRedeemRequest,
             now: Date = Date(),
+            jwtSecret: String = "wave1-test-jwt-secret",
+            admin: PairingAdminIdentity = PairingAdminIdentity(
+                id: "wave1-test-admin",
+                username: "admin",
+                passwordHash: "$2b$12$wave1testhash",
+            ),
         ) {
             self.dataDir = dataDir
             self.issuerHostId = issuerHostId
             self.request = request
             self.now = now
+            self.jwtSecret = jwtSecret
+            self.admin = admin
         }
     }
 
@@ -186,6 +197,7 @@ public enum PairingService {
         offers: PairingOfferStore? = nil,
         pins: PeerPinStore? = nil,
     ) throws -> PairingRedeemResponse {
+        try validateIssuerIdentity(jwtSecret: input.jwtSecret, admin: input.admin)
         let req = input.request
         guard req.apiVersion == APIContract.version else {
             throw PairingError.incompatibleAPIVersion(
@@ -241,6 +253,8 @@ public enum PairingService {
             fingerprint: presented.fingerprint,
             csrPEM: req.csrPEM,
             material: material,
+            jwtSecret: input.jwtSecret,
+            admin: input.admin,
             now: input.now,
         ) {
             return replayed
@@ -266,15 +280,13 @@ public enum PairingService {
             }
             throw error
         }
-        return PairingRedeemResponse(
-            hostId: input.issuerHostId,
-            deviceCertificatePEM: material.deviceCertificatePEM,
-            deviceFingerprint: material.deviceFingerprint,
-            caCertificatePEM: material.caCertificatePEM,
-            caFingerprint: material.caFingerprint,
-            issuedCertificatePEM: issued.certificatePEM,
-            issuedFingerprint: issued.fingerprint,
+        return try makeRedeemResponse(
+            issuerHostId: input.issuerHostId,
+            material: material,
+            issued: issued,
             agentPort: consumed.agentPort,
+            jwtSecret: input.jwtSecret,
+            admin: input.admin,
         )
     }
 
@@ -303,6 +315,8 @@ public enum PairingService {
         fingerprint: String,
         csrPEM: String,
         material: HomeCertificateMaterial,
+        jwtSecret: String,
+        admin: PairingAdminIdentity,
         now: Date,
     ) throws -> PairingRedeemResponse? {
         guard let offer = try store.load(), offer.consumedAt != nil else {
@@ -325,15 +339,56 @@ public enum PairingService {
             material: material,
             now: now,
         )
+        return try makeRedeemResponse(
+            issuerHostId: material.hostId,
+            material: material,
+            issued: issued,
+            agentPort: offer.agentPort,
+            jwtSecret: jwtSecret,
+            admin: admin,
+        )
+    }
+
+    private static func validateIssuerIdentity(
+        jwtSecret: String,
+        admin: PairingAdminIdentity,
+    ) throws {
+        let secret = jwtSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let adminId = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let passwordHash = admin.passwordHash.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !secret.isEmpty else {
+            throw PairingError.unavailable("jwt-secret is missing; local runtime continues")
+        }
+        guard !adminId.isEmpty, !username.isEmpty, !passwordHash.isEmpty else {
+            throw PairingError.unavailable("No admin user to share; local runtime continues")
+        }
+    }
+
+    private static func makeRedeemResponse(
+        issuerHostId: String,
+        material: HomeCertificateMaterial,
+        issued: IssuedDeviceCertificate,
+        agentPort: Int,
+        jwtSecret: String,
+        admin: PairingAdminIdentity,
+    ) throws -> PairingRedeemResponse {
+        let secret = jwtSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let adminId = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let passwordHash = admin.passwordHash.trimmingCharacters(in: .whitespacesAndNewlines)
+        try validateIssuerIdentity(jwtSecret: secret, admin: admin)
         return PairingRedeemResponse(
-            hostId: material.hostId,
+            hostId: issuerHostId,
             deviceCertificatePEM: material.deviceCertificatePEM,
             deviceFingerprint: material.deviceFingerprint,
             caCertificatePEM: material.caCertificatePEM,
             caFingerprint: material.caFingerprint,
             issuedCertificatePEM: issued.certificatePEM,
             issuedFingerprint: issued.fingerprint,
-            agentPort: offer.agentPort,
+            agentPort: agentPort,
+            jwtSecret: secret,
+            admin: PairingAdminIdentity(id: adminId, username: username, passwordHash: passwordHash),
         )
     }
 

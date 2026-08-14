@@ -21,6 +21,7 @@ var testDependencies: [Target.Dependency] = [
     "BarkVisor",
     "BarkVisorCore",
     .product(name: "GRDB", package: "GRDB.swift"),
+    .product(name: "JWTKit", package: "jwt-kit"),
     .product(name: "Yams", package: "Yams"),
     // For ImageChecksumTests (and any CryptoKit/Crypto usage) on Linux.
     .product(name: "Crypto", package: "swift-crypto"),

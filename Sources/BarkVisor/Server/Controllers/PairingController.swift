@@ -1,5 +1,7 @@
 import BarkVisorCore
 import Foundation
+import GRDB
+import JWTKit
 import Vapor
 
 extension PairingIssueResponse: Content {}
@@ -12,11 +14,13 @@ extension PairingJoinResponse: Content {}
 /// and uses a dedicated pairing limiter that stays on when login limiting
 /// is disabled. Join uses the same pairing limiter. Join requires a QR
 /// payload and is console-local until setup completes, then JWT.
+/// Redeem copies jwt-secret + admin hash (PAS-81); join persists them.
 struct PairingController: RouteCollection {
     let offers: PairingOfferStore
     let setupMiddleware: SetupMiddleware
     let jwt: JWTAuthMiddleware
     let pairingRateLimit: RateLimitMiddleware
+    let keys: JWTKeyCollection
 
     func boot(routes: any RoutesBuilder) throws {
         let pairing = routes.grouped("api", "pairing")
@@ -98,11 +102,14 @@ struct PairingController: RouteCollection {
             throw BarkVisorError.badRequest("Invalid pairing redeem request")
         }
         do {
+            let identity = try await loadSharedIdentity(req)
             let response = try PairingService.redeem(
                 PairingService.RedeemInput(
                     dataDir: Config.dataDir,
                     issuerHostId: Config.hostId,
                     request: body,
+                    jwtSecret: identity.jwtSecret,
+                    admin: identity.admin,
                 ),
                 offers: offers,
             )
@@ -140,6 +147,8 @@ struct PairingController: RouteCollection {
                 dataDir: Config.dataDir,
                 hostId: Config.hostId,
                 client: URLSessionPairingHTTPClient(),
+                db: req.db,
+                keys: keys,
             )
             AuditService.log(
                 action: "pairing.join",
@@ -151,6 +160,29 @@ struct PairingController: RouteCollection {
         } catch let error as PairingError {
             throw map(error)
         }
+    }
+
+    private func loadSharedIdentity(_ req: Vapor.Request) async throws -> (
+        jwtSecret: String,
+        admin: PairingAdminIdentity,
+    ) {
+        let user = try await req.db.read { db in
+            try User
+                .filter(User.Columns.password != "")
+                .order(User.Columns.createdAt.asc)
+                .fetchOne(db)
+        }
+        guard let user else {
+            throw BarkVisorError.preconditionFailed("No admin user to share")
+        }
+        return (
+            jwtSecret: Config.jwtSecret,
+            admin: PairingAdminIdentity(
+                id: user.id,
+                username: user.username,
+                passwordHash: user.password,
+            ),
+        )
     }
 
     private func map(_ error: PairingError) -> Error {

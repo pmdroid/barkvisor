@@ -1,4 +1,6 @@
 import Foundation
+import GRDB
+import JWTKit
 import X509
 
 extension PairingService {
@@ -9,6 +11,7 @@ extension PairingService {
         localHostId: String,
         now: Date = Date(),
         pins: PeerPinStore? = nil,
+        db: (any DatabaseWriter)? = nil,
     ) throws -> PairingJoinResponse {
         if response.hostId != expected.hostId {
             throw PairingError.fingerprintMismatch
@@ -33,6 +36,7 @@ extension PairingService {
         }
 
         try validateRedeemMaterial(response, localHostId: localHostId, now: now)
+        try persistSharedIdentity(response, dataDir: dataDir, db: db, now: now)
 
         let receipt = PairingPeerReceipt(
             peerHostId: response.hostId,
@@ -79,6 +83,8 @@ extension PairingService {
         now: Date = Date(),
         client: any PairingHTTPClient,
         pins: PeerPinStore? = nil,
+        db: (any DatabaseWriter)? = nil,
+        keys: JWTKeyCollection? = nil,
     ) async throws -> PairingJoinResponse {
         let payload = try resolveJoinPayload(request)
         guard let host = payload.host, !host.isEmpty else {
@@ -100,8 +106,12 @@ extension PairingService {
                 localHostId: hostId,
                 now: now,
                 pins: pins,
+                db: db,
             )
             clearPendingRedeem(dataDir: dataDir)
+            if let keys {
+                await JWTSecret.reloadHMAC(keys, secret: pending.jwtSecret)
+            }
             return result
         }
 
@@ -176,8 +186,12 @@ extension PairingService {
             localHostId: hostId,
             now: now,
             pins: pins,
+            db: db,
         )
         clearPendingRedeem(dataDir: dataDir)
+        if let keys {
+            await JWTSecret.reloadHMAC(keys, secret: remote.jwtSecret)
+        }
         return result
     }
 
@@ -291,6 +305,61 @@ extension PairingService {
             var reason: String?
         }
         return (try? JSONDecoder().decode(Envelope.self, from: data))?.reason
+    }
+
+    static func persistSharedIdentity(
+        _ response: PairingRedeemResponse,
+        dataDir: URL,
+        db: (any DatabaseWriter)?,
+        now: Date,
+    ) throws {
+        let admin = try validatedAdmin(response.admin)
+        try JWTSecret.replace(response.jwtSecret, dataDir: dataDir)
+        guard let db else { return }
+        do {
+            try upsertAdmin(admin, db: db, now: now)
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to persist shared admin: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    static func upsertAdmin(
+        _ admin: PairingAdminIdentity,
+        db: any DatabaseWriter,
+        now: Date,
+    ) throws {
+        try db.write { db in
+            if let conflict = try User.filter(User.Columns.username == admin.username).fetchOne(db),
+               conflict.id != admin.id {
+                try conflict.delete(db)
+            }
+            if var existing = try User.filter(User.Columns.id == admin.id).fetchOne(db) {
+                existing.username = admin.username
+                existing.password = admin.passwordHash
+                try existing.update(db)
+                return
+            }
+            try User(
+                id: admin.id,
+                username: admin.username,
+                password: admin.passwordHash,
+                createdAt: iso8601.string(from: now),
+            ).insert(db)
+        }
+    }
+
+    static func validatedAdmin(_ admin: PairingAdminIdentity) throws -> PairingAdminIdentity {
+        let id = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let passwordHash = admin.passwordHash.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, !username.isEmpty, !passwordHash.isEmpty else {
+            throw PairingError.invalidPayload("Issuer admin identity is incomplete")
+        }
+        return PairingAdminIdentity(id: id, username: username, passwordHash: passwordHash)
     }
 
     /// Bind redeem PEMs to the QR fingerprint and check the issuer / issued
