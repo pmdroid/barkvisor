@@ -31,15 +31,15 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: issuerDir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
         #expect(issued.hostId == issuerId)
         #expect(issued.fingerprint == issuer.deviceFingerprint)
         #expect(issued.qrPayload.contains(issued.code))
-        #expect(issued.qrPayload.contains("192.0.2.8"))
+        #expect(issued.qrPayload.contains("192.168.0.8"))
 
         let csr = try HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM)
         let remote = try PairingService.redeem(
@@ -98,8 +98,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
                 ttl: 60,
                 now: now,
             ),
@@ -132,8 +132,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
                 ttl: 30,
                 now: now,
             ),
@@ -169,8 +169,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -224,8 +224,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -259,8 +259,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -315,8 +315,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: hostId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -373,7 +373,7 @@ struct PairingTests {
         let attacker = try HomeCAService.loadOrCreate(dataDir: attackerDir, hostId: UUID().uuidString)
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.9",
+            host: "192.168.0.9",
             port: 7_777,
             hostId: issuerId,
             fingerprint: issuer.deviceFingerprint,
@@ -442,7 +442,7 @@ struct PairingTests {
         )
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.9",
+            host: "192.168.0.9",
             port: 7_777,
             hostId: issuerId,
             fingerprint: issuer.deviceFingerprint,
@@ -485,7 +485,7 @@ struct PairingTests {
         )
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.9",
+            host: "192.168.0.9",
             port: 7_777,
             hostId: issuerId,
             fingerprint: issuer.deviceFingerprint,
@@ -527,8 +527,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: issuerDir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.20",
-                advertisedHosts: ["192.0.2.20"],
+                advertisedHost: "192.168.0.20",
+                advertisedHosts: ["192.168.0.20"],
             ),
             offers: offers,
         )
@@ -574,8 +574,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: issuerDir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.21",
-                advertisedHosts: ["192.0.2.21"],
+                advertisedHost: "192.168.0.21",
+                advertisedHosts: ["192.168.0.21"],
             ),
             offers: offers,
         )
@@ -607,8 +607,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: UUID().uuidString,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -629,8 +629,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: UUID().uuidString,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -664,8 +664,8 @@ struct PairingTests {
         let input = PairingService.IssueInput(
             dataDir: dir,
             hostId: hostId,
-            advertisedHost: "192.0.2.8",
-            advertisedHosts: ["192.0.2.8"],
+            advertisedHost: "192.168.0.8",
+            advertisedHosts: ["192.168.0.8"],
         )
         _ = try PairingService.issue(input, offers: offers)
         #expect(try PairingService.currentOffer(input, offers: offers).code.isEmpty == false)
@@ -684,8 +684,8 @@ struct PairingTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: hostId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -694,18 +694,18 @@ struct PairingTests {
                 dataDir: dir,
                 hostId: hostId,
                 advertisedHost: "http://evil.example",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
         #expect(!current.qrPayload.contains("evil"))
-        #expect(current.qrPayload.contains("192.0.2.8"))
+        #expect(current.qrPayload.contains("192.168.0.8"))
     }
 
     @Test func `qr join path ignores host and port overrides`() throws {
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.10",
+            host: "192.168.0.10",
             port: 7_777,
             hostId: "host-a",
             fingerprint: "abcd",
@@ -717,14 +717,14 @@ struct PairingTests {
                 port: 0,
             ),
         )
-        #expect(resolved.host == "192.0.2.10")
+        #expect(resolved.host == "192.168.0.10")
         #expect(resolved.port == 7_777)
         #expect(resolved.fingerprint == "abcd")
         #expect(throws: PairingError.self) {
             try PairingService.resolveJoinPayload(
                 PairingJoinRequest(
                     code: "ABCD-EFGH",
-                    host: "192.0.2.10",
+                    host: "192.168.0.10",
                     port: 7_777,
                     hostId: "host-a",
                     fingerprint: "abcd",

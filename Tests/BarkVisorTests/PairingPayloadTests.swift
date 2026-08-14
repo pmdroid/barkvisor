@@ -18,7 +18,7 @@ struct PairingPayloadTests {
     @Test func `qr payload round trips host port hostId and fingerprint`() throws {
         let payload = PairingPayload(
             code: "ABCD-EFGH",
-            host: "192.0.2.10",
+            host: "192.168.0.10",
             port: 7_777,
             agentPort: 7_778,
             hostId: "host-a",
@@ -26,7 +26,7 @@ struct PairingPayloadTests {
         )
         let parsed = try PairingPayload.parse(payload.uri)
         #expect(parsed.code == "ABCD-EFGH")
-        #expect(parsed.host == "192.0.2.10")
+        #expect(parsed.host == "192.168.0.10")
         #expect(parsed.port == 7_777)
         #expect(parsed.agentPort == 7_778)
         #expect(parsed.hostId == "host-a")
@@ -35,7 +35,6 @@ struct PairingPayloadTests {
             try PairingPayload.parse("https://evil.example/pair")
         }
         #expect(PairingPayload.sanitizeHost("http://x") == nil)
-        #expect(PairingPayload.sanitizeHost("192.0.2.1") == "192.0.2.1")
         #expect(PairingPayload.sanitizeHost("127.0.0.1") == nil)
         #expect(PairingPayload.sanitizeHost("localhost") == nil)
         #expect(PairingPayload.sanitizeHost("169.254.169.254") == nil)
@@ -91,6 +90,40 @@ struct PairingPayloadTests {
         }
     }
 
+    @Test func `join host policy is lan only and setup join is console local`() throws {
+        #expect(PairingPayload.sanitizeHost("192.0.2.1") == nil)
+        #expect(PairingPayload.sanitizeHost("8.8.8.8") == nil)
+        #expect(PairingPayload.sanitizeHost("172.16.0.1") == "172.16.0.1")
+        #expect(PairingPayload.sanitizeHost("172.15.0.1") == nil)
+        #expect(PairingPayload.isBlockedJoinHost("8.8.8.8"))
+        #expect(PairingPayload.isBlockedJoinHost("1.1.1.1"))
+        #expect(PairingPayload.isBlockedJoinHost("192.0.2.1"))
+        #expect(PairingPayload.isBlockedJoinHost("::ffff:8.8.8.8"))
+        #expect(!PairingPayload.isBlockedJoinHost("10.0.0.5"))
+        #expect(!PairingPayload.isBlockedJoinHost("172.31.255.1"))
+        #expect(!PairingPayload.isBlockedJoinHost("fd12:3456:789a::1"))
+        #expect(PairingPayload.isBlockedJoinHost("fd00:ec2::254"))
+        #expect(PairingPayload.isBlockedJoinHost("2001:db8::1"))
+        #expect(PairingPayload.hostResolvesToBlockedAddress("8.8.8.8"))
+        #expect(PairingPayload.isConsoleLocalClient("127.0.0.1"))
+        #expect(PairingPayload.isConsoleLocalClient("127.1"))
+        #expect(PairingPayload.isConsoleLocalClient("::1"))
+        #expect(PairingPayload.isConsoleLocalClient("[::1]"))
+        #expect(PairingPayload.isConsoleLocalClient("::ffff:127.0.0.1"))
+        #expect(PairingPayload.isConsoleLocalClient("localhost"))
+        #expect(!PairingPayload.isConsoleLocalClient("192.168.1.10"))
+        #expect(!PairingPayload.isConsoleLocalClient("10.0.0.5"))
+        #expect(!PairingPayload.isConsoleLocalClient("8.8.8.8"))
+        #expect(!PairingPayload.isConsoleLocalClient(nil))
+        #expect(!PairingPayload.isConsoleLocalClient(""))
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "8.8.8.8", port: 7_777)
+        }
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "192.0.2.1", port: 7_777)
+        }
+    }
+
     @Test func `unresolved join host is fail closed and lan ips stay pinned`() throws {
         #expect(PairingPayload.hostResolvesToBlockedAddress("no-such-host.invalid"))
         #expect(throws: PairingError.self) {
@@ -109,12 +142,14 @@ struct PairingPayloadTests {
         #expect(redeem.host == "192.168.1.10")
     }
 
-    @Test func `advertised addresses drop loopback and link local`() {
+    @Test func `advertised addresses drop loopback link local and public`() {
         let ifaces = [
             HostInterfaceInfo(name: "lo0", ipAddress: "127.0.0.1"),
-            HostInterfaceInfo(name: "en0", ipAddress: "192.0.2.4"),
+            HostInterfaceInfo(name: "en0", ipAddress: "192.168.0.4"),
             HostInterfaceInfo(name: "ap0", ipAddress: "169.254.1.1"),
+            HostInterfaceInfo(name: "en1", ipAddress: "8.8.8.8"),
+            HostInterfaceInfo(name: "en2", ipAddress: "192.0.2.4"),
         ]
-        #expect(PairingAddresses.advertisedIPv4(from: ifaces) == ["192.0.2.4"])
+        #expect(PairingAddresses.advertisedIPv4(from: ifaces) == ["192.168.0.4"])
     }
 }

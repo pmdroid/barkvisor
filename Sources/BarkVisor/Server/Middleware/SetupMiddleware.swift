@@ -40,6 +40,8 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
             || path == "/api/openapi.yaml"
             || path == "/api/contract"
             || path == "/api/pairing/redeem"
+            // Join stays allowlisted so first-run SetupView can pair; the
+            // route still requires a console-local peer (SetupOrJWTMiddleware).
             || path == "/api/pairing/join" {
             return try await next.respond(to: request)
         }

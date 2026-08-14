@@ -31,8 +31,8 @@ struct PairingHTTPTests {
             PairingService.IssueInput(
                 dataDir: dir,
                 hostId: issuerId,
-                advertisedHost: "192.0.2.8",
-                advertisedHosts: ["192.0.2.8"],
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
         )
@@ -64,6 +64,57 @@ struct PairingHTTPTests {
             )
         }
         #expect(try offers.load()?.consumedAt == nil)
+    }
+
+    @Test func `consumed code replay honors offer expiry`() throws {
+        let dir = try isolatedDir("replay-ttl")
+        let joinerDir = try isolatedDir("replay-ttl-j")
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: UUID().uuidString)
+        let offers = PairingOfferStore(dataDir: dir)
+        let now = Date()
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
+                ttl: 30,
+                now: now,
+            ),
+            offers: offers,
+        )
+        let csr = try HomeCAService.makeDeviceCSR(hostId: joiner.hostId, keyPEM: joiner.deviceKeyPEM)
+        let request = PairingRedeemRequest(
+            code: issued.code,
+            hostId: joiner.hostId,
+            csrPEM: csr,
+            deviceCertificatePEM: joiner.deviceCertificatePEM,
+            caCertificatePEM: joiner.caCertificatePEM,
+        )
+        _ = try PairingService.redeem(
+            PairingService.RedeemInput(
+                dataDir: dir, issuerHostId: issuerId, request: request, now: now,
+            ),
+            offers: offers,
+        )
+        #expect(try offers.load()?.consumedAt != nil)
+        #expect(throws: PairingError.expiredOrUsed) {
+            try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: dir,
+                    issuerHostId: issuerId,
+                    request: request,
+                    now: now.addingTimeInterval(31),
+                ),
+                offers: offers,
+            )
+        }
+        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
     }
 
     @Test func `pairing HTTP client does not follow redirects`() async throws {

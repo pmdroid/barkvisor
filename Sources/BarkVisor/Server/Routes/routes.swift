@@ -31,7 +31,6 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         offers: deps.pairingOffers,
         setupMiddleware: deps.setupMiddleware,
         jwt: deps.jwt,
-        loginRateLimit: deps.loginRateLimit,
         pairingRateLimit: deps.pairingRateLimit,
     )
     try pairing.boot(routes: app)
