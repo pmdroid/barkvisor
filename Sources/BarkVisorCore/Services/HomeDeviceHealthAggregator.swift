@@ -97,12 +97,17 @@ public enum HomeDeviceHealthAggregator {
     public static func totals(from rows: [HomeDeviceHealthSnapshot]) -> HomeDeviceHealthTotals {
         var reachable = 0
         var unreachable = 0
-        var workloadCount = 0
+        var knownWorkloadCount = 0
+        var workloadCountComplete = true
         var healthCounts: [String: Int] = [:]
         for row in rows {
             if row.reachability == ok {
                 reachable += 1
-                workloadCount += row.workloadCount ?? 0
+                if let count = row.workloadCount {
+                    knownWorkloadCount += count
+                } else {
+                    workloadCountComplete = false
+                }
                 if let counts = row.healthCounts {
                     for (key, value) in counts {
                         healthCounts[key, default: 0] += value
@@ -116,7 +121,7 @@ public enum HomeDeviceHealthAggregator {
             devices: rows.count,
             reachable: reachable,
             unreachable: unreachable,
-            workloadCount: workloadCount,
+            workloadCount: workloadCountComplete ? knownWorkloadCount : nil,
             healthCounts: healthCounts,
         )
     }

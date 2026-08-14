@@ -28,7 +28,9 @@ onUnmounted(() => clearInterval(pollTimer))
             <span v-if="devices.totals.unreachable > 0">
               · {{ devices.totals.unreachable }} unreachable
             </span>
-            · {{ devices.totals.workloadCount }} workloads across this {{ HOME_LABEL }}
+            <template v-if="devices.totals.workloadCount != null">
+              · {{ devices.totals.workloadCount }} workloads across this {{ HOME_LABEL }}
+            </template>
           </template>
           <template v-else>
             Every {{ DEVICE_LABEL.toLowerCase() }} in this {{ HOME_LABEL }}
