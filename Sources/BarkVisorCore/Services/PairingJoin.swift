@@ -39,6 +39,9 @@ extension PairingService {
 
         try validateRedeemMaterial(response, localHostId: localHostId, now: now)
 
+        // Re-pair (PAS-77): overwrite the last receipt / pin / registry
+        // row. Local host-id and SQLite are not replaced.
+
         let receipt = PairingPeerReceipt(
             peerHostId: response.hostId,
             peerFingerprint: response.deviceFingerprint,

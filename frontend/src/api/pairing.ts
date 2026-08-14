@@ -33,11 +33,21 @@ export interface PairingJoin {
   apiVersion: number
 }
 
-/** POST /api/pairing/join — SetupView join-Home branch (PAS-51). */
+/**
+ * POST /api/pairing/join — SetupView join-Home (PAS-51) and Settings
+ * re-pair after this Device is already set up (PAS-77).
+ *
+ * Setup has no JWT; after setup the same endpoint requires the session
+ * token. Both paths stay on this one join surface.
+ */
 export async function joinHome(qrPayload: string): Promise<PairingJoin> {
-  const { data } = await pairingApi.post<PairingJoin>('/join', {
-    qrPayload: qrPayload.trim(),
-  })
+  const body = { qrPayload: qrPayload.trim() }
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null
+  if (token) {
+    const { data } = await api.post<PairingJoin>('/pairing/join', body)
+    return data
+  }
+  const { data } = await pairingApi.post<PairingJoin>('/join', body)
   return data
 }
 

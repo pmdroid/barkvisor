@@ -36,4 +36,20 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('HOME_LABEL')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
   })
+
+  test('Settings re-pairs through the existing join endpoint', () => {
+    const pairing = readFileSync(join(here, 'pairing.ts'), 'utf8')
+    expect(pairing).toContain("localStorage.getItem('token')")
+    expect(pairing).toContain("api.post<PairingJoin>('/pairing/join'")
+    expect(pairing).toContain("pairingApi.post<PairingJoin>('/join'")
+    expect(pairing).not.toContain('/api/setup/recover-device')
+    expect(pairing).not.toContain('recovery-blob')
+
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    expect(settings).toContain('joinHome')
+    expect(settings).toContain('Re-pair this {{ DEVICE_LABEL }}')
+    expect(settings).not.toContain('OnboardingWizard')
+    expect(settings).not.toContain('/api/pairing/redeem')
+    expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
+  })
 })

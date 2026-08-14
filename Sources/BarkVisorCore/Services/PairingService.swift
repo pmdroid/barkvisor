@@ -2,13 +2,18 @@ import Foundation
 import GRDB
 import X509
 
-/// Pairing issue + redeem (PAS-45) and shared login copy (PAS-81).
+/// Pairing issue + redeem (PAS-45), shared login (PAS-81), and re-pair
+/// after pairing exists (PAS-77).
 ///
 /// The existing Device issues a short-lived code / QR. The joining Device
 /// redeems it and both sides record pairwise pins. Home CA issues a peer
 /// cert as trust material on the wire. Redeem also attaches the issuer
 /// jwt-secret and admin user hash so one login works on both Devices.
-/// Local SQLite / QEMU stay authoritative (PAS-47 / PAS-90).
+///
+/// Re-pair uses this same issue / redeem / join surface — a later pairing
+/// code for a hostId already on this Device replaces the pin and registry
+/// row. Local SQLite, host-id, and workloads stay put (PAS-47 / PAS-90).
+/// Recovery blobs and a second pairing wizard are later-wave work.
 public enum PairingService {
     public static let defaultTTL: TimeInterval = 10 * 60
     public static let receiptFileName = "pairing-peer.json"
@@ -267,6 +272,10 @@ public enum PairingService {
             )
             return attachIdentity(replayed, input: input)
         }
+        // New unused code: first pair or PAS-77 re-pair. issueAndPin
+        // replaces any previous pin for this hostId; registerPairedDevice
+        // upserts the registry row. A consumed code with a new fingerprint
+        // does not replay — issue a fresh code.
         let consumed = try store.consume(code: req.code, now: input.now)
         let issued: IssuedDeviceCertificate
         do {
