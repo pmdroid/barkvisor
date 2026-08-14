@@ -19,6 +19,7 @@ public enum HomeDeviceProxy {
         }
         let path = "/api/" + components.joined(separator: "/")
         try rejectNestedHome(path)
+        try rejectConsoleLocalOnly(path)
         return path
     }
 
@@ -36,6 +37,7 @@ public enum HomeDeviceProxy {
             throw BarkVisorError.badRequest("Device address is not reachable")
         }
         try rejectNestedHome(path)
+        try rejectConsoleLocalOnly(path)
         guard path.hasPrefix("/api/") else {
             throw BarkVisorError.badRequest("Invalid member API path")
         }
@@ -62,6 +64,19 @@ public enum HomeDeviceProxy {
         if path == "/api/home" || path.hasPrefix("/api/home/") {
             throw BarkVisorError.badRequest("Home proxy cannot be nested")
         }
+    }
+
+    /// Setup and first-run join stay on the host listener. The agent-plane
+    /// loopback hop would present `127.0.0.1` and skip the console-local check.
+    public static func rejectConsoleLocalOnly(_ path: String) throws {
+        if isConsoleLocalOnly(path) {
+            throw BarkVisorError.forbidden("Setup and pairing join are limited to this Device")
+        }
+    }
+
+    public static func isConsoleLocalOnly(_ path: String) -> Bool {
+        path == "/api/setup" || path.hasPrefix("/api/setup/")
+            || path == "/api/pairing/join" || path.hasPrefix("/api/pairing/join/")
     }
 }
 
@@ -98,11 +113,14 @@ public protocol HomeDeviceProxyClient: Sendable {
 
 public enum HomeDeviceProxyError: Error, LocalizedError, Sendable, Equatable {
     case unreachable(String)
+    case responseTooLarge
 
     public var errorDescription: String? {
         switch self {
         case let .unreachable(reason):
             "Device is unreachable: \(reason)"
+        case .responseTooLarge:
+            "Device response is too large"
         }
     }
 }

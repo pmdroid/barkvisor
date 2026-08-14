@@ -73,6 +73,7 @@ packageTargets.append(contentsOf: [
         dependencies: [
             "BarkVisorCore",
             .product(name: "Vapor", package: "vapor"),
+            .product(name: "NIOCore", package: "swift-nio"),
             .product(name: "NIOSSL", package: "swift-nio-ssl"),
             .product(name: "AsyncHTTPClient", package: "async-http-client"),
         ],

@@ -1,3 +1,8 @@
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 import Foundation
 import Testing
 @testable import BarkVisor
@@ -27,6 +32,45 @@ struct HomeDeviceProxyTests {
         }
         #expect(throws: BarkVisorError.self) {
             try HomeDeviceProxy.memberAPIPath(components: ["home", "devices"])
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberAPIPath(components: ["setup", "admin"])
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberAPIPath(components: ["pairing", "join"])
+        }
+        #expect(
+            try HomeDeviceProxy.memberAPIPath(components: ["pairing", "redeem"])
+                == "/api/pairing/redeem",
+        )
+    }
+
+    @Test func `agent proxy rejects setup and pairing join`() throws {
+        #expect(HomeDeviceProxy.isConsoleLocalOnly("/api/setup"))
+        #expect(HomeDeviceProxy.isConsoleLocalOnly("/api/setup/admin"))
+        #expect(HomeDeviceProxy.isConsoleLocalOnly("/api/setup/status"))
+        #expect(HomeDeviceProxy.isConsoleLocalOnly("/api/pairing/join"))
+        #expect(HomeDeviceProxy.isConsoleLocalOnly("/api/pairing/join/extra"))
+        #expect(!HomeDeviceProxy.isConsoleLocalOnly("/api/pairing/redeem"))
+        #expect(!HomeDeviceProxy.isConsoleLocalOnly("/api/vms"))
+        #expect(!HomeDeviceProxy.isConsoleLocalOnly("/api/agent/whoami"))
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.rejectConsoleLocalOnly("/api/setup/admin")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.rejectConsoleLocalOnly("/api/pairing/join")
+        }
+        try HomeDeviceProxy.rejectConsoleLocalOnly("/api/vms")
+        try HomeDeviceProxy.rejectConsoleLocalOnly("/api/pairing/redeem")
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberURL(
+                host: "192.168.1.9",
+                port: 7_778,
+                path: "/api/setup/status",
+            )
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.localURL(port: 7_777, path: "/api/pairing/join")
         }
     }
 
@@ -114,10 +158,98 @@ struct HomeDeviceProxyTests {
             throw error
         }
     }
+
+    @Test func `local host proxy caps response body`() async throws {
+        let oversized = try LocalStaticHTTPServer(body: Data(repeating: 0x61, count: 32))
+        let within = try LocalStaticHTTPServer(body: Data("ok".utf8))
+        defer {
+            oversized.stop()
+            within.stop()
+        }
+        let bigURL = try #require(URL(string: "http://127.0.0.1:\(oversized.port)/"))
+        let smallURL = try #require(URL(string: "http://127.0.0.1:\(within.port)/"))
+        let client = LocalHostProxyClient(maxBodyBytes: 16)
+        await #expect(throws: HomeDeviceProxyError.responseTooLarge) {
+            try await client.send(HomeDeviceProxyRequest(method: "GET", url: bigURL))
+        }
+        let response = try await client.send(HomeDeviceProxyRequest(method: "GET", url: smallURL))
+        #expect(response.status == 200)
+        #expect(response.body == Data("ok".utf8))
+    }
 }
 
 private struct FailingProxyClient: HomeDeviceProxyClient {
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
         throw HomeDeviceProxyError.unreachable("peer down")
+    }
+}
+
+/// Serves a fixed HTTP body on loopback so body-cap tests do not bind TLS.
+private final class LocalStaticHTTPServer: @unchecked Sendable {
+    let port: Int
+    private let fd: Int32
+
+    init(body: Data) throws {
+        let sock = socket(AF_INET, PlatformSocket.stream, 0)
+        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+        var yes: Int32 = 1
+        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        addr.sin_port = 0
+        let bindRC = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindRC == 0, listen(sock, 8) == 0 else {
+            close(sock)
+            throw BarkVisorError.badRequest("bind")
+        }
+        var got = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(sock, $0, &len)
+            }
+        }
+        guard nameRC == 0 else {
+            close(sock)
+            throw BarkVisorError.badRequest("getsockname")
+        }
+        self.fd = sock
+        self.port = Int(UInt16(bigEndian: got.sin_port))
+        let ready = DispatchSemaphore(value: 0)
+        Thread.detachNewThread { [fd = sock, body] in
+            ready.signal()
+            while true {
+                var clientAddr = sockaddr_in()
+                var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
+                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        accept(fd, $0, &clientLen)
+                    }
+                }
+                if client < 0 { break }
+                var buf = [UInt8](repeating: 0, count: 1_024)
+                _ = read(client, &buf, buf.count)
+                var payload = Data(
+                    "HTTP/1.1 200 OK\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+                        .utf8,
+                )
+                payload.append(body)
+                payload.withUnsafeBytes { raw in
+                    guard let base = raw.baseAddress else { return }
+                    _ = write(client, base, raw.count)
+                }
+                close(client)
+            }
+        }
+        ready.wait()
+    }
+
+    func stop() {
+        close(fd)
     }
 }

@@ -1,9 +1,7 @@
-#if canImport(FoundationNetworking)
-    import FoundationNetworking
-#endif
 import AsyncHTTPClient
 import BarkVisorCore
 import Foundation
+import NIOCore
 import NIOHTTP1
 import NIOPosix
 import NIOSSL
@@ -16,7 +14,7 @@ import NIOSSL
 /// trust root. A failed call must not touch local SQLite / QEMU.
 ///
 /// Event loops and TLS-backed HTTP clients are process-scoped (same idea
-/// as `LocalHostProxySession.shared`) so concurrent dashboard proxies do
+/// as `LocalHostProxyHTTP.shared`) so concurrent dashboard proxies do
 /// not spawn a NIO thread pool per request.
 public struct AgentMTLSClient: HomeDeviceProxyClient {
     public var material: HomeCertificateMaterial
@@ -56,7 +54,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         } catch {
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)
         }
-        let buffer = try await response.body.collect(upTo: HomeDeviceProxy.maxBodyBytes)
+        let buffer = try await collectProxyBody(response.body, maxBytes: HomeDeviceProxy.maxBodyBytes)
         let headers = response.headers.map { ($0.name, $0.value) }
         return HomeDeviceProxyResponse(
             status: Int(response.status.code),
@@ -67,7 +65,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
 }
 
 /// Process-wide NIO + HTTPClient cache. Clients are never shut down; the
-/// daemon owns them for its lifetime, matching `LocalHostProxySession`.
+/// daemon owns them for its lifetime, matching `LocalHostProxyHTTP`.
 private final class AgentMTLSRuntime: @unchecked Sendable {
     static let shared = AgentMTLSRuntime()
     /// NIO sockets (not Network.framework) so `certificateChain` works on macOS.
@@ -153,63 +151,71 @@ private final class HomeDevicesMTLSCache: @unchecked Sendable {
 /// Loopback HTTP client for self-proxy and the agent-plane local forward.
 public struct LocalHostProxyClient: HomeDeviceProxyClient {
     public var timeout: TimeInterval
+    public var maxBodyBytes: Int
 
-    public init(timeout: TimeInterval = 10) {
+    public init(
+        timeout: TimeInterval = 10,
+        maxBodyBytes: Int = HomeDeviceProxy.maxBodyBytes,
+    ) {
         self.timeout = timeout
+        self.maxBodyBytes = maxBodyBytes
     }
 
     public func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
-        var outbound = URLRequest(url: request.url)
-        outbound.httpMethod = request.method
-        outbound.timeoutInterval = timeout
+        var outbound = HTTPClientRequest(url: request.url.absoluteString)
+        outbound.method = HTTPMethod(rawValue: request.method.uppercased())
         for (name, value) in request.headers {
-            outbound.setValue(value, forHTTPHeaderField: name)
+            outbound.headers.replaceOrAdd(name: name, value: value)
         }
-        outbound.httpBody = request.body
+        if let body = request.body {
+            outbound.body = .bytes(body)
+        }
+        let seconds = Int64(max(1, timeout.rounded(.up)))
+        let response: HTTPClientResponse
         do {
-            let (data, response) = try await LocalHostProxySession.shared.data(for: outbound)
-            guard let http = response as? HTTPURLResponse else {
-                throw HomeDeviceProxyError.unreachable("Non-HTTP local response")
-            }
-            let headers = http.allHeaderFields.compactMap { key, value -> (String, String)? in
-                guard let name = key as? String else { return nil }
-                return (name, String(describing: value))
-            }
-            return HomeDeviceProxyResponse(status: http.statusCode, headers: headers, body: data)
-        } catch let error as HomeDeviceProxyError {
-            throw error
+            response = try await LocalHostProxyHTTP.shared.execute(outbound, timeout: .seconds(seconds))
         } catch {
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)
         }
+        let buffer = try await collectProxyBody(response.body, maxBytes: maxBodyBytes)
+        let headers = response.headers.map { ($0.name, $0.value) }
+        return HomeDeviceProxyResponse(
+            status: Int(response.status.code),
+            headers: headers,
+            body: Data(buffer.readableBytesView),
+        )
     }
 }
 
-private enum LocalHostProxySession {
-    static let shared: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpShouldSetCookies = false
-        #if canImport(Darwin)
-            config.waitsForConnectivity = false
-        #endif
-        return URLSession(
+/// Process-wide plaintext loopback client. Never shut down; same lifetime
+/// as `AgentMTLSRuntime`. Redirects are off so a 3xx cannot escape loopback.
+private enum LocalHostProxyHTTP {
+    static let shared: HTTPClient = {
+        var config = HTTPClient.Configuration()
+        config.redirectConfiguration = .disallow
+        config.timeout = HTTPClient.Configuration.Timeout(connect: .seconds(10), read: .seconds(10))
+        return HTTPClient(
+            eventLoopGroupProvider: .shared(LocalHostProxyHTTPGroup.shared),
             configuration: config,
-            delegate: LocalHostRedirectBlocker.shared,
-            delegateQueue: nil,
         )
     }()
 }
 
-private final class LocalHostRedirectBlocker: NSObject, URLSessionDelegate, URLSessionTaskDelegate,
-    @unchecked Sendable {
-    static let shared = LocalHostRedirectBlocker()
+private enum LocalHostProxyHTTPGroup {
+    static let shared = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+}
 
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping @Sendable (URLRequest?) -> Void,
-    ) {
-        completionHandler(nil)
+private func collectProxyBody(
+    _ body: HTTPClientResponse.Body,
+    maxBytes: Int,
+) async throws -> ByteBuffer {
+    do {
+        return try await body.collect(upTo: maxBytes)
+    } catch is NIOTooManyBytesError {
+        throw HomeDeviceProxyError.responseTooLarge
+    } catch let error as HomeDeviceProxyError {
+        throw error
+    } catch {
+        throw HomeDeviceProxyError.unreachable(error.localizedDescription)
     }
 }
