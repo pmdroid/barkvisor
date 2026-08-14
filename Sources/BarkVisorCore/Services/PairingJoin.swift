@@ -88,6 +88,8 @@ extension PairingService {
         // Validate the redeem target (string encodings + DNS) before reading
         // or POSTing joiner CSR / Device cert / Home CA.
         let url = try PairingPayload.redeemURL(host: host, port: payload.port)
+        let contractURL = try PairingPayload.contractURL(host: host, port: payload.port)
+        try await checkRemoteContract(url: contractURL, client: client)
 
         let material: HomeCertificateMaterial
         do {
@@ -183,6 +185,41 @@ extension PairingService {
         } catch {
             throw PairingError.unavailable(
                 "Unable to persist pairing receipt: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    /// `GET /api/contract` before redeem so incompatible daemons fail closed
+    /// (PAS-78 / Wave 1 synthesis) without exchanging trust material.
+    static func checkRemoteContract(url: URL, client: any PairingHTTPClient) async throws {
+        let http: PairingHTTPResponse
+        do {
+            http = try await client.get(url: url)
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.redeemFailed(
+                status: 502,
+                reason: "Unable to reach the other Device: \(error.localizedDescription)",
+            )
+        }
+        guard (200 ... 299).contains(http.status) else {
+            let reason = decodeErrorReason(http.body) ?? "Unable to read the other Device API contract"
+            throw PairingError.redeemFailed(status: http.status, reason: reason)
+        }
+        struct ContractProbe: Decodable {
+            var apiVersion: Int
+        }
+        let probe: ContractProbe
+        do {
+            probe = try JSONDecoder().decode(ContractProbe.self, from: http.body)
+        } catch {
+            throw PairingError.invalidPayload("Issuer returned an invalid API contract")
+        }
+        if probe.apiVersion != APIContract.version {
+            throw PairingError.incompatibleAPIVersion(
+                got: probe.apiVersion,
+                expected: APIContract.version,
             )
         }
     }
