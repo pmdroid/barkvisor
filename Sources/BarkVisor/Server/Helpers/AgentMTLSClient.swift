@@ -18,15 +18,31 @@ import NIOSSL
 /// not spawn a NIO thread pool per request.
 public struct AgentMTLSClient: HomeDeviceProxyClient {
     public var material: HomeCertificateMaterial
+    public var presentationCertificatePEM: String
+    public var trustCertificatePEMs: [String]
     public var timeoutSeconds: Int64
 
-    public init(material: HomeCertificateMaterial, timeoutSeconds: Int64 = 10) {
+    public init(
+        material: HomeCertificateMaterial,
+        presentationCertificatePEM: String? = nil,
+        trustCertificatePEMs: [String] = [],
+        timeoutSeconds: Int64 = 10,
+    ) {
         self.material = material
+        self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
+        self.trustCertificatePEMs = trustCertificatePEMs.isEmpty
+            ? [material.caCertificatePEM]
+            : trustCertificatePEMs
         self.timeoutSeconds = timeoutSeconds
     }
 
     public func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
-        let client = try AgentMTLSRuntime.shared.client(for: material, timeoutSeconds: timeoutSeconds)
+        let client = try AgentMTLSRuntime.shared.client(
+            for: material,
+            presentationCertificatePEM: presentationCertificatePEM,
+            trustCertificatePEMs: trustCertificatePEMs,
+            timeoutSeconds: timeoutSeconds,
+        )
         do {
             return try await execute(request, on: client)
         } catch let error as HomeDeviceProxyError {
@@ -75,33 +91,46 @@ private final class AgentMTLSRuntime: @unchecked Sendable {
 
     func client(
         for material: HomeCertificateMaterial,
+        presentationCertificatePEM: String,
+        trustCertificatePEMs: [String],
         timeoutSeconds: Int64,
     ) throws -> HTTPClient {
-        let key = "\(material.caFingerprint)|\(material.deviceFingerprint)|\(timeoutSeconds)"
+        let trustKey = trustCertificatePEMs.map(\.count).map(String.init).joined(separator: ",")
+        let key =
+            "\(material.caFingerprint)|\(presentationCertificatePEM.count)|\(trustKey)|\(timeoutSeconds)"
         lock.lock()
         defer { lock.unlock() }
         if let existing = clients[key] {
             return existing
         }
-        let created = try makeClient(material: material, timeoutSeconds: timeoutSeconds)
+        let created = try makeClient(
+            material: material,
+            presentationCertificatePEM: presentationCertificatePEM,
+            trustCertificatePEMs: trustCertificatePEMs,
+            timeoutSeconds: timeoutSeconds,
+        )
         clients[key] = created
         return created
     }
 
     private func makeClient(
         material: HomeCertificateMaterial,
+        presentationCertificatePEM: String,
+        trustCertificatePEMs: [String],
         timeoutSeconds: Int64,
     ) throws -> HTTPClient {
-        let ca = try NIOSSLCertificate(bytes: Array(material.caCertificatePEM.utf8), format: .pem)
+        let roots = try trustCertificatePEMs.map { pem in
+            try NIOSSLCertificate(bytes: Array(pem.utf8), format: .pem)
+        }
         let cert = try NIOSSLCertificate(
-            bytes: Array(material.deviceCertificatePEM.utf8),
+            bytes: Array(presentationCertificatePEM.utf8),
             format: .pem,
         )
         let key = try NIOSSLPrivateKey(bytes: Array(material.deviceKeyPEM.utf8), format: .pem)
 
         var tls = TLSConfiguration.makeClientConfiguration()
         tls.certificateVerification = .noHostnameVerification
-        tls.trustRoots = .certificates([ca])
+        tls.trustRoots = .certificates(roots)
         tls.certificateChain = [.certificate(cert)]
         tls.privateKey = .privateKey(key)
         tls.minimumTLSVersion = .tlsv12
@@ -131,7 +160,8 @@ private final class HomeDevicesMTLSCache: @unchecked Sendable {
     private var cached: (key: String, client: AgentMTLSClient)?
 
     func client(dataDir: URL, hostId: String) throws -> AgentMTLSClient {
-        let key = "\(dataDir.path)|\(hostId)"
+        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
+        let key = "\(dataDir.path)|\(hostId)|\(receipt?.issuedFingerprint ?? "-")"
         lock.lock()
         if let cached, cached.key == key {
             let client = cached.client
@@ -140,7 +170,19 @@ private final class HomeDevicesMTLSCache: @unchecked Sendable {
         }
         lock.unlock()
         let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
-        let created = AgentMTLSClient(material: material)
+        let presented = AgentPlaneCertificates.presentationCertificatePEM(
+            material: material,
+            receipt: receipt,
+        )
+        let trusts = AgentPlaneCertificates.trustCertificatePEMs(
+            material: material,
+            receipt: receipt,
+        )
+        let created = AgentMTLSClient(
+            material: material,
+            presentationCertificatePEM: presented,
+            trustCertificatePEMs: trusts,
+        )
         lock.lock()
         self.cached = (key, created)
         lock.unlock()
