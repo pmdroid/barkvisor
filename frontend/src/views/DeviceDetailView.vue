@@ -42,6 +42,9 @@ const listSettled = computed(() => hostId.value in workloads.vmsByHost)
 const showEmptyWorkloads = computed(() =>
   vms.value.length === 0 && !loadingList.value && !listError.value && listSettled.value,
 )
+const showLoadingWorkloads = computed(() =>
+  !listSettled.value && !loadingList.value && !listError.value && vms.value.length === 0,
+)
 
 const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
@@ -59,6 +62,11 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
 }
 
 async function refresh() {
+  const known = device.value
+  if (known && canFetchDeviceWorkloads(known)) {
+    await Promise.all([devices.fetchHealth(), refreshDevice(known)])
+    return
+  }
   await devices.fetchHealth()
   await refreshDevice(devices.deviceByHostId(hostId.value))
 }
@@ -224,6 +232,8 @@ async function doStop() {
             </td>
           </tr>
         </DataTable>
+
+        <p v-else-if="showLoadingWorkloads" class="list-loading">Loading workloads...</p>
       </template>
     </template>
 
@@ -290,12 +300,14 @@ async function doStop() {
 }
 .unreachable-copy,
 .list-error,
+.list-loading,
 .missing p {
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.5;
 }
-.list-error { margin: 0 0 16px; }
+.list-error,
+.list-loading { margin: 0 0 16px; }
 .missing h1 {
   margin: 0 0 8px;
   font-size: 28px;
