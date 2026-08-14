@@ -24,8 +24,8 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/*`, `/api/apps` (home/apps reserved)
-    - internal — `/api/home/devices/{id}/v1/*` proxy (reserved, not public)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/apps` (apps reserved)
+    - internal — `/api/home/devices/{id}/v1/*` mTLS member proxy
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
 
@@ -895,6 +895,79 @@ paths:
                 $ref: "#/components/schemas/PairingJoin"
         default:
           $ref: "#/components/responses/Error"
+
+  /api/home/devices:
+    get:
+      tags: [evolving]
+      operationId: listHomeDevices
+      x-barkvisor-stability: evolving
+      summary: This Device plus paired members
+      description: |
+        JWT. Local registry only — does not probe members. A Device still
+        lists itself when peers are unreachable or the registry file is
+        missing (PAS-47 / PAS-90). Dashboard UI is PAS-52.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeDeviceList"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/devices/{id}/v1/{path}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Remainder of the member `/api/` path (for example `vms` or `agent/inventory`)
+    get:
+      tags: [evolving]
+      operationId: proxyHomeDeviceGet
+      x-barkvisor-stability: internal
+      summary: Proxy GET to a Home member over mTLS
+      description: |
+        JWT on this Device. Forwards to the member agent port with this
+        Device's client certificate. Unreachable members return 502;
+        local runtime is unchanged. Nested `/api/home/*` is rejected.
+      responses:
+        default:
+          description: Member status and body, or an error envelope
+    post:
+      tags: [evolving]
+      operationId: proxyHomeDevicePost
+      x-barkvisor-stability: internal
+      summary: Proxy POST to a Home member over mTLS
+      responses:
+        default:
+          description: Member status and body, or an error envelope
+    put:
+      tags: [evolving]
+      operationId: proxyHomeDevicePut
+      x-barkvisor-stability: internal
+      summary: Proxy PUT to a Home member over mTLS
+      responses:
+        default:
+          description: Member status and body, or an error envelope
+    patch:
+      tags: [evolving]
+      operationId: proxyHomeDevicePatch
+      x-barkvisor-stability: internal
+      summary: Proxy PATCH to a Home member over mTLS
+      responses:
+        default:
+          description: Member status and body, or an error envelope
+    delete:
+      tags: [evolving]
+      operationId: proxyHomeDeviceDelete
+      x-barkvisor-stability: internal
+      summary: Proxy DELETE to a Home member over mTLS
+      responses:
+        default:
+          description: Member status and body, or an error envelope
 
   /api/vms/{id}/guest-info:
     get:
@@ -2042,6 +2115,12 @@ components:
           type: string
         apiVersion:
           type: integer
+        agentHost:
+          type: string
+          description: Optional joiner agent-plane address for the issuer registry
+        agentPort:
+          type: integer
+          description: Optional joiner agent-plane port (default 7778)
 
     PairingRedeem:
       type: object
@@ -2148,6 +2227,35 @@ components:
           enum: [home-ca, pinned]
         listener:
           type: string
+
+    HomeDevice:
+      type: object
+      required: [hostId, role, agentPort]
+      properties:
+        hostId:
+          type: string
+        role:
+          type: string
+          enum: [self, member]
+        fingerprint:
+          type: string
+        displayName:
+          type: string
+        agentHost:
+          type: string
+        agentPort:
+          type: integer
+        pairedAt:
+          type: string
+
+    HomeDeviceList:
+      type: object
+      required: [devices]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeDevice"
           enum: [mtls]
 
     HostInventory:

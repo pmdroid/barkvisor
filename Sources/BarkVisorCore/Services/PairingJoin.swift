@@ -13,6 +13,7 @@ extension PairingService {
         pins: PeerPinStore? = nil,
         db: DatabasePool? = nil,
         keys: JWTKeyCollection? = nil,
+        devices: DeviceRegistry? = nil,
     ) async throws -> PairingJoinResponse {
         if response.hostId != expected.hostId {
             throw PairingError.fingerprintMismatch
@@ -68,6 +69,16 @@ extension PairingService {
             )
         }
 
+        try registerPairedDevice(
+            dataDir: dataDir,
+            hostId: response.hostId,
+            fingerprint: response.deviceFingerprint,
+            agentHost: expected.host,
+            agentPort: response.agentPort,
+            now: now,
+            devices: devices,
+        )
+
         // Identity last: a receipt/pin persist failure must leave local
         // JWT secret and admin credentials unchanged.
         try await applySharedIdentity(response, dataDir: dataDir, now: now, db: db, keys: keys)
@@ -89,6 +100,7 @@ extension PairingService {
         pins: PeerPinStore? = nil,
         db: DatabasePool? = nil,
         keys: JWTKeyCollection? = nil,
+        devices: DeviceRegistry? = nil,
     ) async throws -> PairingJoinResponse {
         let payload = try resolveJoinPayload(request)
         guard let host = payload.host, !host.isEmpty else {
@@ -113,6 +125,7 @@ extension PairingService {
                 pins: pins,
                 db: db,
                 keys: keys,
+                devices: devices,
             )
             clearPendingRedeem(dataDir: dataDir)
             return result
@@ -147,6 +160,8 @@ extension PairingService {
             csrPEM: csrPEM,
             deviceCertificatePEM: material.deviceCertificatePEM,
             caCertificatePEM: material.caCertificatePEM,
+            agentHost: PairingAddresses.advertisedIPv4().first,
+            agentPort: Config.agentPort,
         )
         let encoded: Data
         do {
@@ -191,6 +206,7 @@ extension PairingService {
             pins: pins,
             db: db,
             keys: keys,
+            devices: devices,
         )
         clearPendingRedeem(dataDir: dataDir)
         return result

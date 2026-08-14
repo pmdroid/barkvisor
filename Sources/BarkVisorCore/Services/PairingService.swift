@@ -200,6 +200,7 @@ public enum PairingService {
         _ input: RedeemInput,
         offers: PairingOfferStore? = nil,
         pins: PeerPinStore? = nil,
+        devices: DeviceRegistry? = nil,
     ) throws -> PairingRedeemResponse {
         let req = input.request
         guard req.apiVersion == APIContract.version else {
@@ -255,6 +256,15 @@ public enum PairingService {
             material: material,
             now: input.now,
         ) {
+            try registerPairedDevice(
+                dataDir: input.dataDir,
+                hostId: joinerHostId,
+                fingerprint: presented.fingerprint,
+                agentHost: req.agentHost,
+                agentPort: req.agentPort ?? Config.agentPort,
+                now: input.now,
+                devices: devices,
+            )
             return attachIdentity(replayed, input: input)
         }
         let consumed = try store.consume(code: req.code, now: input.now)
@@ -278,6 +288,15 @@ public enum PairingService {
             }
             throw error
         }
+        try registerPairedDevice(
+            dataDir: input.dataDir,
+            hostId: joinerHostId,
+            fingerprint: presented.fingerprint,
+            agentHost: req.agentHost,
+            agentPort: req.agentPort ?? Config.agentPort,
+            now: input.now,
+            devices: devices,
+        )
         return attachIdentity(
             PairingRedeemResponse(
                 hostId: input.issuerHostId,
@@ -538,6 +557,37 @@ public enum PairingService {
             return false
         }
         return true
+    }
+
+    static func registerPairedDevice(
+        dataDir: URL,
+        hostId: String,
+        fingerprint: String,
+        agentHost: String?,
+        agentPort: Int,
+        now: Date,
+        devices: DeviceRegistry? = nil,
+    ) throws {
+        let trimmed = hostId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let store = devices ?? DeviceRegistry(dataDir: dataDir)
+        do {
+            try store.upsert(
+                hostId: trimmed,
+                fingerprint: fingerprint,
+                agentHost: agentHost,
+                agentPort: agentPort,
+                now: now,
+            )
+        } catch let error as PairingError {
+            throw error
+        } catch let error as DeviceRegistryError {
+            throw PairingError.unavailable(error.localizedDescription)
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to persist device registry: \(error.localizedDescription)",
+            )
+        }
     }
 
     private static func advertisedHost(from input: IssueInput) throws -> String {

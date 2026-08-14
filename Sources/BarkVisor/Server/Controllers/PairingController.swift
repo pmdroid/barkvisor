@@ -94,11 +94,17 @@ struct PairingController: RouteCollection {
 
     @Sendable
     func redeem(req: Vapor.Request) async throws -> PairingRedeemResponse {
-        let body: PairingRedeemRequest
+        var body: PairingRedeemRequest
         do {
             body = try req.content.decode(PairingRedeemRequest.self)
         } catch {
             throw BarkVisorError.badRequest("Invalid pairing redeem request")
+        }
+        if body.agentHost == nil {
+            let peer = req.remoteAddress?.ipAddress ?? req.peerAddress?.ipAddress
+            if let peer, let host = PairingPayload.sanitizeProxyHost(peer) {
+                body.agentHost = host
+            }
         }
         do {
             let admin = try PairingService.loadAdminUser(db: req.db)

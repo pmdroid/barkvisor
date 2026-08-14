@@ -8,7 +8,7 @@ A single-device install is a **Home of one**. More Devices join that Home later;
 
 | Term | User-facing meaning | Code / API (keep as-is) |
 |------|---------------------|-------------------------|
-| **Home** | A person’s set of Devices (one or more) | Later `/api/home/*` — not shipped yet |
+| **Home** | A person’s set of Devices (one or more) | `/api/home/devices` registry + member proxy (dashboard UI is PAS-52) |
 | **Device** | The Mac, PC, or board running this BarkVisor daemon | Inventory JSON keeps `hostId`, `hostname`, and host metrics |
 | **Agent** | The daemon role on a Device | `/api/agent/*`, `BarkVisorApp` process |
 | **Workload** | A VM (later: app) running on a Device | `VM`, `WorkloadSpec` |

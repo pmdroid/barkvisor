@@ -49,6 +49,9 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
     public var deviceCertificatePEM: String
     public var caCertificatePEM: String
     public var apiVersion: Int?
+    /// Joiner's advertised agent-plane address so the issuer can proxy back.
+    public var agentHost: String?
+    public var agentPort: Int?
 
     public init(
         code: String,
@@ -57,6 +60,8 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
         deviceCertificatePEM: String,
         caCertificatePEM: String,
         apiVersion: Int? = APIContract.version,
+        agentHost: String? = nil,
+        agentPort: Int? = nil,
     ) {
         self.code = code
         self.hostId = hostId
@@ -64,6 +69,8 @@ public struct PairingRedeemRequest: Codable, Sendable, Equatable {
         self.deviceCertificatePEM = deviceCertificatePEM
         self.caCertificatePEM = caCertificatePEM
         self.apiVersion = apiVersion
+        self.agentHost = agentHost
+        self.agentPort = agentPort
     }
 }
 
