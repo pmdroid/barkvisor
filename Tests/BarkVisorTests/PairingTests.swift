@@ -558,6 +558,47 @@ struct PairingTests {
         #expect(local.caFingerprint != issuer.caFingerprint)
     }
 
+    @Test func `join rejects incompatible GET contract without redeeming`() async throws {
+        let issuerDir = try isolatedDir("iss-contract")
+        let joinerDir = try isolatedDir("join-contract")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.0.2.21",
+                advertisedHosts: ["192.0.2.21"],
+            ),
+            offers: offers,
+        )
+        let client = InMemoryRedeemClient(contractVersion: APIContract.version + 1) { _ in
+            Issue.record("redeem must not run after a contract mismatch")
+            throw PairingError.unavailable("redeem should not be called")
+        }
+        await #expect(throws: PairingError.incompatibleAPIVersion(
+            got: APIContract.version + 1,
+            expected: APIContract.version,
+        )) {
+            try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: issued.qrPayload),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: client,
+            )
+        }
+        #expect(try offers.load()?.consumedAt == nil)
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
+    }
+
     @Test func `corrupt offer file does not remint a new code`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -718,7 +759,20 @@ private func honestRedeemResponse(
 }
 
 private struct InMemoryRedeemClient: PairingHTTPClient {
+    var contractVersion: Int = APIContract.version
     let handler: @Sendable (Data) throws -> PairingRedeemResponse
+
+    func get(url: URL) async throws -> PairingHTTPResponse {
+        #expect(url.path == "/api/contract")
+        #expect(url.scheme == "http")
+        struct Probe: Encodable {
+            var apiVersion: Int
+        }
+        return try PairingHTTPResponse(
+            status: 200,
+            body: JSONEncoder().encode(Probe(apiVersion: contractVersion)),
+        )
+    }
 
     func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
         #expect(url.path == "/api/pairing/redeem")

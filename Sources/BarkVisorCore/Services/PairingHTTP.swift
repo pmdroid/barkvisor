@@ -11,6 +11,7 @@ public struct PairingHTTPResponse: Sendable {
 }
 
 public protocol PairingHTTPClient: Sendable {
+    func get(url: URL) async throws -> PairingHTTPResponse
     func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse
 }
 
@@ -21,14 +22,24 @@ public struct URLSessionPairingHTTPClient: PairingHTTPClient {
         self.timeout = timeout
     }
 
+    public func get(url: URL) async throws -> PairingHTTPResponse {
+        try await send(url: url, method: "GET", body: nil)
+    }
+
     public func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse {
+        try await send(url: url, method: "POST", body: body)
+    }
+
+    private func send(url: URL, method: String, body: Data?) async throws -> PairingHTTPResponse {
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(String(APIContract.version), forHTTPHeaderField: APIContract.versionHeaderName)
         request.timeoutInterval = timeout
-        request.httpBody = body
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw PairingError.redeemFailed(status: 502, reason: "Non-HTTP pairing response")

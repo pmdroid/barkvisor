@@ -71,6 +71,13 @@ struct PairingPayloadTests {
         }
         let lan = try PairingPayload.redeemURL(host: "192.168.1.10", port: 7_777)
         #expect(lan.host == "192.168.1.10")
+        #expect(lan.path == "/api/pairing/redeem")
+        let contract = try PairingPayload.contractURL(host: "192.168.1.10", port: 7_777)
+        #expect(contract.host == "192.168.1.10")
+        #expect(contract.path == "/api/contract")
+        #expect(throws: PairingError.self) {
+            try PairingPayload.contractURL(host: "127.0.0.1", port: 7_777)
+        }
         #expect(throws: PairingError.self) {
             try PairingPayload.parse(
                 PairingPayload(

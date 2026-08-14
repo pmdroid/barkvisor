@@ -155,8 +155,20 @@ public struct PairingPayload: Sendable, Equatable {
     }
 
     public static func redeemURL(host: String, port: Int) throws -> URL {
+        try httpAPIURL(host: host, port: port, path: "/api/pairing/redeem")
+    }
+
+    public static func contractURL(host: String, port: Int) throws -> URL {
+        try httpAPIURL(host: host, port: port, path: APIContract.contractPath)
+    }
+
+    /// Shared LAN HTTP builder for join-time `GET /api/contract` and redeem.
+    public static func httpAPIURL(host: String, port: Int, path: String) throws -> URL {
         guard (1 ... 65_535).contains(port) else {
             throw PairingError.invalidPayload("Invalid pairing port")
+        }
+        guard path.hasPrefix("/api/") else {
+            throw PairingError.invalidPayload("Pairing URL path must be under /api/")
         }
         guard let host = sanitizeHost(host) else {
             throw PairingError.invalidPayload("Invalid pairing host")
@@ -165,11 +177,11 @@ public struct PairingPayload: Sendable, Equatable {
             throw PairingError.invalidPayload("Pairing host resolves to a blocked address")
         }
         let wrapped = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
-        guard let url = URL(string: "http://\(wrapped):\(port)/api/pairing/redeem") else {
-            throw PairingError.invalidPayload("Unable to build redeem URL")
+        guard let url = URL(string: "http://\(wrapped):\(port)\(path)") else {
+            throw PairingError.invalidPayload("Unable to build pairing URL")
         }
         guard url.scheme == "http", url.user == nil, url.password == nil else {
-            throw PairingError.invalidPayload("Redeem URL must be plain HTTP")
+            throw PairingError.invalidPayload("Pairing URL must be plain HTTP")
         }
         return url
     }
