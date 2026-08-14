@@ -215,6 +215,16 @@ extension PairingService {
         return try JSONDecoder().decode(PairingPeerReceipt.self, from: data)
     }
 
+    /// True after a successful join persisted a receipt. Used by setup status so
+    /// SetupView can resume join-ready when sessionStorage is unavailable.
+    public static func hasPairedReceipt(dataDir: URL) -> Bool {
+        do {
+            return try loadReceipt(dataDir: dataDir) != nil
+        } catch {
+            return false
+        }
+    }
+
     static func loadPendingRedeem(dataDir: URL) -> PendingRedeemRecord? {
         let url = pendingRedeemURL(in: dataDir)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }

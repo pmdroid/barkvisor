@@ -9,6 +9,7 @@ import {
   parseSetupJoinProgress,
   saveSetupJoinProgress,
   SETUP_JOIN_PROGRESS_KEY,
+  shouldResumeJoinReady,
 } from './setupJoinProgress'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -86,11 +87,22 @@ describe('setup join progress (PAS-51)', () => {
     expect(loadSetupJoinProgress()).toBeNull()
   })
 
+  test('resumes join-ready from sessionStorage or a server-side receipt', () => {
+    expect(shouldResumeJoinReady({ complete: false }, null)).toBe(false)
+    expect(shouldResumeJoinReady({ complete: false, joined: false }, null)).toBe(false)
+    expect(shouldResumeJoinReady({ complete: false }, sample)).toBe(true)
+    expect(shouldResumeJoinReady({ complete: false, joined: true }, null)).toBe(true)
+    expect(shouldResumeJoinReady({ complete: true, joined: true }, sample)).toBe(false)
+  })
+
   test('SetupView persists join progress and resumes join-ready after refresh', () => {
     const setup = readFileSync(join(here, '../views/SetupView.vue'), 'utf8')
     expect(setup).toContain('loadSetupJoinProgress')
     expect(setup).toContain('saveSetupJoinProgress')
     expect(setup).toContain('clearSetupJoinProgress')
+    expect(setup).toContain('shouldResumeJoinReady')
+    expect(setup).toContain('status.joined')
+    expect(setup).toContain('resumeJoinReady')
     expect(setup).toMatch(/joinResult\.value = saved/)
     expect(setup).toMatch(/saveSetupJoinProgress\(joinResult\.value\)/)
     expect(setup).toMatch(/clearSetupJoinProgress\(\)/)

@@ -5,6 +5,8 @@ const setupApi = axios.create({ baseURL: '/api/setup' })
 
 export interface SetupStatus {
   complete: boolean
+  /** Server-side pairing receipt exists; setup may still be incomplete. */
+  joined?: boolean
 }
 
 export interface InterfaceInfo {

@@ -1,4 +1,5 @@
 import type { PairingJoin } from './pairing'
+import type { SetupStatus } from './setup'
 
 /** sessionStorage key for a successful SetupView join that has not finished setup. */
 export const SETUP_JOIN_PROGRESS_KEY = 'barkvisor.setup.join'
@@ -27,6 +28,15 @@ export function clearSetupJoinProgress(): void {
   } catch {
     // Ignore blocked storage.
   }
+}
+
+/** Resume join-ready from sessionStorage or a server-side pairing receipt. */
+export function shouldResumeJoinReady(
+  status: Pick<SetupStatus, 'complete' | 'joined'>,
+  saved: PairingJoin | null,
+): boolean {
+  if (status.complete) return false
+  return saved != null || status.joined === true
 }
 
 export function parseSetupJoinProgress(raw: string): PairingJoin | null {
