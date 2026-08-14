@@ -4,6 +4,7 @@
     import Glibc
 #endif
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
@@ -340,6 +341,56 @@ struct HealthProbeServiceTests {
         let results = await service.results(for: vm)
         #expect(results.http == true)
         #expect(results.passed)
+    }
+
+    @Test func `stopped vm poll drops in-flight probe`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+
+        let gate = ProbeOverlapGate()
+        let transport = HealthProbeTransport(
+            http: { _, _, _, _, _ in await gate.nextHTTP() },
+            tcp: { _, _, _ in false },
+        )
+        let service = HealthProbeService(dbPool: pool, transport: transport)
+        var vm = makeVM(
+            health: WorkloadHealthSpec(
+                intervalSec: 5,
+                healthyThreshold: 1,
+                http: WorkloadHealthHTTPCheck(path: "/health", port: 8_080),
+            ),
+            forwards: [PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 8_080)],
+        )
+        let running = vm
+        try await pool.write { db in
+            try Disk(
+                id: running.bootDiskId,
+                name: "boot",
+                path: tmp.appendingPathComponent("boot.qcow2").path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: running.id,
+                autoCreated: false,
+                status: "ready",
+                createdAt: running.createdAt,
+            ).insert(db)
+            try running.insert(db)
+        }
+
+        async let first = service.probeNow(vm: running, now: Date())
+        await gate.waitUntilFirstParked()
+
+        vm.state = "stopped"
+        let stopped = vm
+        try await pool.write { db in try stopped.update(db) }
+        await service.pollDue()
+
+        await gate.releaseFirst()
+        _ = await first
+        #expect(await service.results(for: running.id) == .unobserved)
     }
 
     @Test func `http probe does not follow redirects`() async throws {
