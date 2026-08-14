@@ -34,6 +34,21 @@ extension PairingService {
 
         try validateRedeemMaterial(response, localHostId: localHostId, now: now)
 
+        let receipt = PairingPeerReceipt(
+            peerHostId: response.hostId,
+            peerFingerprint: response.deviceFingerprint,
+            caCertificatePEM: response.caCertificatePEM,
+            caFingerprint: response.caFingerprint,
+            issuedCertificatePEM: response.issuedCertificatePEM,
+            issuedFingerprint: response.issuedFingerprint,
+            agentPort: response.agentPort,
+            pairedAt: iso8601.string(from: now),
+        )
+        // Receipt first: issuedCertificatePEM / agentPort are required by
+        // downstream agent/mTLS. A later pin failure can retry; a pin
+        // without a receipt cannot.
+        try persistReceipt(receipt, dataDir: dataDir)
+
         let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
         do {
             try pinStore.pin(
@@ -48,18 +63,6 @@ extension PairingService {
                 "Unable to persist peer pin: \(error.localizedDescription)",
             )
         }
-
-        let receipt = PairingPeerReceipt(
-            peerHostId: response.hostId,
-            peerFingerprint: response.deviceFingerprint,
-            caCertificatePEM: response.caCertificatePEM,
-            caFingerprint: response.caFingerprint,
-            issuedCertificatePEM: response.issuedCertificatePEM,
-            issuedFingerprint: response.issuedFingerprint,
-            agentPort: response.agentPort,
-            pairedAt: iso8601.string(from: now),
-        )
-        try persistReceipt(receipt, dataDir: dataDir)
 
         return PairingJoinResponse(
             peerHostId: response.hostId,
@@ -83,6 +86,23 @@ extension PairingService {
         }
         if payload.hostId == hostId {
             throw PairingError.selfPair
+        }
+
+        // Issuer already consumed the code on HTTP 200. A local decode /
+        // applyTrust failure must retry from this pending body instead of
+        // requiring a new pairing code.
+        if let pending = loadPendingRedeem(dataDir: dataDir),
+           pendingMatches(pending, expected: payload) {
+            let result = try applyTrust(
+                response: pending,
+                expected: payload,
+                dataDir: dataDir,
+                localHostId: hostId,
+                now: now,
+                pins: pins,
+            )
+            clearPendingRedeem(dataDir: dataDir)
+            return result
         }
 
         // Validate + pin the contract target (string encodings + DNS) before
@@ -147,8 +167,9 @@ extension PairingService {
         } catch {
             throw PairingError.invalidPayload("Issuer returned an invalid pairing response")
         }
+        persistPendingRedeem(remote, dataDir: dataDir)
 
-        return try applyTrust(
+        let result = try applyTrust(
             response: remote,
             expected: payload,
             dataDir: dataDir,
@@ -156,6 +177,8 @@ extension PairingService {
             now: now,
             pins: pins,
         )
+        clearPendingRedeem(dataDir: dataDir)
+        return result
     }
 
     public static func receiptURL(in dataDir: URL) -> URL {
@@ -164,11 +187,48 @@ extension PairingService {
             .appendingPathComponent(receiptFileName)
     }
 
+    public static func pendingRedeemURL(in dataDir: URL) -> URL {
+        dataDir
+            .appendingPathComponent(HomeCAService.agentDirectoryName)
+            .appendingPathComponent(pendingRedeemFileName)
+    }
+
     public static func loadReceipt(dataDir: URL) throws -> PairingPeerReceipt? {
         let url = receiptURL(in: dataDir)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(PairingPeerReceipt.self, from: data)
+    }
+
+    static func loadPendingRedeem(dataDir: URL) -> PairingRedeemResponse? {
+        let url = pendingRedeemURL(in: dataDir)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PairingRedeemResponse.self, from: data)
+    }
+
+    static func persistPendingRedeem(_ response: PairingRedeemResponse, dataDir: URL) {
+        let url = pendingRedeemURL(in: dataDir)
+        guard let data = try? JSONEncoder().encode(response) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try? data.write(to: url, options: [.atomic])
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path,
+        )
+    }
+
+    static func clearPendingRedeem(dataDir: URL) {
+        let url = pendingRedeemURL(in: dataDir)
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    static func pendingMatches(_ pending: PairingRedeemResponse, expected: PairingPayload) -> Bool {
+        pending.hostId == expected.hostId
+            && pending.deviceFingerprint.lowercased() == expected.fingerprint.lowercased()
     }
 
     static func persistReceipt(_ receipt: PairingPeerReceipt, dataDir: URL) throws {

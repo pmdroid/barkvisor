@@ -10,6 +10,7 @@ import X509
 public enum PairingService {
     public static let defaultTTL: TimeInterval = 10 * 60
     public static let receiptFileName = "pairing-peer.json"
+    public static let pendingRedeemFileName = "pairing-redeem-pending.json"
 
     public struct IssueInput: Sendable {
         public var dataDir: URL
@@ -231,6 +232,19 @@ public enum PairingService {
         }
 
         let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
+        let pinStore = pins ?? PeerPinStore(dataDir: input.dataDir)
+        if let replayed = try replaySameJoinerIfConsumed(
+            store: store,
+            pins: pinStore,
+            code: req.code,
+            joinerHostId: joinerHostId,
+            fingerprint: presented.fingerprint,
+            csrPEM: req.csrPEM,
+            material: material,
+            now: input.now,
+        ) {
+            return replayed
+        }
         let consumed = try store.consume(code: req.code, now: input.now)
         let issued: IssuedDeviceCertificate
         do {
@@ -239,9 +253,8 @@ public enum PairingService {
                 csrPEM: req.csrPEM,
                 fingerprint: presented.fingerprint,
                 material: material,
-                dataDir: input.dataDir,
                 now: input.now,
-                pins: pins,
+                pins: pinStore,
             )
         } catch {
             do {
@@ -279,18 +292,55 @@ public enum PairingService {
 
     // MARK: - Private
 
-    private static func issueAndPin(
+    /// Same joiner may retry after a successful consume (lost 200, local
+    /// applyTrust failure). A different Device still sees expiredOrUsed.
+    private static func replaySameJoinerIfConsumed(
+        store: PairingOfferStore,
+        pins: PeerPinStore,
+        code: String,
+        joinerHostId: String,
+        fingerprint: String,
+        csrPEM: String,
+        material: HomeCertificateMaterial,
+        now: Date,
+    ) throws -> PairingRedeemResponse? {
+        guard let offer = try store.load(), offer.consumedAt != nil else {
+            return nil
+        }
+        let incoming = PairingCode.hash(code)
+        guard PairingCode.hashesEqual(incoming, offer.codeHash) else {
+            return nil
+        }
+        guard let pin = try pins.pin(forHostId: joinerHostId),
+              pin.fingerprint == fingerprint.lowercased() else {
+            return nil
+        }
+        let issued = try issuePeerCertificate(
+            joinerHostId: joinerHostId,
+            csrPEM: csrPEM,
+            material: material,
+            now: now,
+        )
+        return PairingRedeemResponse(
+            hostId: material.hostId,
+            deviceCertificatePEM: material.deviceCertificatePEM,
+            deviceFingerprint: material.deviceFingerprint,
+            caCertificatePEM: material.caCertificatePEM,
+            caFingerprint: material.caFingerprint,
+            issuedCertificatePEM: issued.certificatePEM,
+            issuedFingerprint: issued.fingerprint,
+            agentPort: offer.agentPort,
+        )
+    }
+
+    private static func issuePeerCertificate(
         joinerHostId: String,
         csrPEM: String,
-        fingerprint: String,
         material: HomeCertificateMaterial,
-        dataDir: URL,
         now: Date,
-        pins: PeerPinStore?,
     ) throws -> IssuedDeviceCertificate {
-        let issued: IssuedDeviceCertificate
         do {
-            issued = try HomeCAService.issueDeviceCert(
+            return try HomeCAService.issueDeviceCert(
                 hostId: joinerHostId,
                 csrPEM: csrPEM,
                 material: material,
@@ -303,9 +353,24 @@ public enum PairingService {
                 "Unable to issue Device certificate: \(error.localizedDescription)",
             )
         }
-        let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
+    }
+
+    private static func issueAndPin(
+        joinerHostId: String,
+        csrPEM: String,
+        fingerprint: String,
+        material: HomeCertificateMaterial,
+        now: Date,
+        pins: PeerPinStore,
+    ) throws -> IssuedDeviceCertificate {
+        let issued = try issuePeerCertificate(
+            joinerHostId: joinerHostId,
+            csrPEM: csrPEM,
+            material: material,
+            now: now,
+        )
         do {
-            try pinStore.pin(hostId: joinerHostId, fingerprint: fingerprint, now: now)
+            try pins.pin(hostId: joinerHostId, fingerprint: fingerprint, now: now)
         } catch let error as PairingError {
             throw error
         } catch {

@@ -2,6 +2,18 @@ import BarkVisorCore
 import Foundation
 import Vapor
 
+/// Login limiting can be turned off; pairing redeem cannot.
+enum RateLimitPolicy {
+    static func loginMaxAttempts(enabled: Bool, configured: Int) -> Int {
+        enabled ? max(1, configured) : Int.max
+    }
+
+    /// Public redeem stays finite even when `rateLimitEnabled` is false.
+    static func pairingMaxAttempts(configured: Int) -> Int {
+        max(1, configured)
+    }
+}
+
 /// In-memory per-IP rate limiter. Tracks request timestamps and rejects
 /// requests that exceed `maxAttempts` within the sliding `window`.
 actor RateLimitStore {
