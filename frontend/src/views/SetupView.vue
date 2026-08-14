@@ -16,12 +16,14 @@ import {
   completeSetup,
   type InterfaceInfo,
   type RepoSyncStatus,
+  type SetupStatus,
 } from '../api/setup'
 import { joinHome, isPairingPayload, type PairingJoin } from '../api/pairing'
 import {
   clearSetupJoinProgress,
   loadSetupJoinProgress,
   saveSetupJoinProgress,
+  shouldResumeJoinReady,
 } from '../api/setupJoinProgress'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
@@ -42,6 +44,8 @@ const showBridgeStep = computed(() => managedBridge.available)
 const path = ref<'create' | 'join'>('create')
 const qrPayload = ref('')
 const joinResult = ref<PairingJoin | null>(null)
+/** Server-side join (receipt) so refresh works when sessionStorage is blocked. */
+const resumeJoinReady = ref(false)
 
 const totalSteps = computed(() => {
   if (path.value === 'join') return 2
@@ -51,7 +55,7 @@ const totalSteps = computed(() => {
 const panel = computed(() => {
   if (step.value === 1) return 'welcome'
   if (path.value === 'join') {
-    return joinResult.value ? 'join-ready' : 'join'
+    return joinResult.value || resumeJoinReady.value ? 'join-ready' : 'join'
   }
   if (step.value === 2) return 'admin'
   if (showBridgeStep.value) {
@@ -81,20 +85,22 @@ let syncPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await caps.fetchCapabilities()
+  let status: SetupStatus = { complete: false }
   try {
-    const status = await getSetupStatus()
-    if (status.complete) {
-      clearSetupJoinProgress()
-      router.replace('/login')
-      return
-    }
+    status = await getSetupStatus()
   } catch {
     // Server may not be ready yet
   }
+  if (status.complete) {
+    clearSetupJoinProgress()
+    router.replace('/login')
+    return
+  }
   const saved = loadSetupJoinProgress()
-  if (saved) {
+  if (shouldResumeJoinReady(status, saved)) {
     path.value = 'join'
     joinResult.value = saved
+    resumeJoinReady.value = status.joined === true
     step.value = 2
   }
 })
@@ -115,6 +121,7 @@ async function nextStep() {
 function startCreate() {
   path.value = 'create'
   joinResult.value = null
+  resumeJoinReady.value = false
   clearSetupJoinProgress()
   nextStep()
 }
@@ -128,6 +135,7 @@ function startJoin() {
 function backToWelcome() {
   path.value = 'create'
   joinResult.value = null
+  resumeJoinReady.value = false
   qrPayload.value = ''
   error.value = ''
   step.value = 1

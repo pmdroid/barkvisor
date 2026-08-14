@@ -26,11 +26,16 @@ struct SetupController: RouteCollection {
 
     struct StatusResponse: Content {
         let complete: Bool
+        /// Successful pairing join left a receipt; setup may still be incomplete.
+        let joined: Bool
     }
 
     @Sendable
     func getStatus(req: Request) async throws -> StatusResponse {
-        StatusResponse(complete: setupMiddleware.isSetupComplete)
+        StatusResponse(
+            complete: setupMiddleware.isSetupComplete,
+            joined: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
+        )
     }
 
     // MARK: - Admin User
