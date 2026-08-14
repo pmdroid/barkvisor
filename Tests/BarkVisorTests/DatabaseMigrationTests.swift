@@ -221,6 +221,131 @@ struct DatabaseMigrationTests {
         }
     }
 
+    // MARK: - PAS-175 orphan audit FKs
+
+    @Test func `orphan audit apiKeyId fails M005 without repair`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pas-175-fail-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let path = dir.appendingPathComponent("db.sqlite").path
+        var seedConfig = Configuration()
+        seedConfig.foreignKeysEnabled = false
+        let seed = try DatabaseQueue(path: path, configuration: seedConfig)
+        try seedThroughM004WithOrphanAuditLog(seed)
+        try seed.close()
+
+        var liveConfig = Configuration()
+        liveConfig.foreignKeysEnabled = true
+        let live = try DatabaseQueue(path: path, configuration: liveConfig)
+        #expect(throws: DatabaseError.self) {
+            try AppDatabase.makeMigrator().migrate(live)
+        }
+    }
+
+    @Test func `orphan audit apiKeyId is repaired then M005 applies`() throws {
+        let queue = try queueThroughM004WithOrphanAuditLog()
+        try queue.write { db in
+            try AppDatabase.repairOrphanAuditForeignKeys(db)
+        }
+        try AppDatabase.makeMigrator().migrate(queue)
+
+        try queue.read { db in
+            let apiKeyId = try String.fetchOne(
+                db,
+                sql: "SELECT apiKeyId FROM audit_log WHERE id = 1",
+            )
+            #expect(apiKeyId == nil)
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(columns.contains("healthJson"))
+            let applied = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations")
+            #expect(applied.contains(M007_RepairOrphanAuditFKs.identifier))
+        }
+    }
+
+    @Test func `appDatabase migrate repairs orphans on a file database`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pas-175-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let path = dir.appendingPathComponent("db.sqlite").path
+        var seedConfig = Configuration()
+        seedConfig.foreignKeysEnabled = false
+        let seed = try DatabaseQueue(path: path, configuration: seedConfig)
+        try seedThroughM004WithOrphanAuditLog(seed)
+        try seed.close()
+
+        let database = try AppDatabase(path: path)
+        try database.migrate()
+        try database.pool.read { db in
+            let orphans = try Int.fetchOne(
+                db,
+                sql: """
+                SELECT COUNT(*) FROM audit_log
+                WHERE apiKeyId IS NOT NULL
+                  AND apiKeyId NOT IN (SELECT id FROM api_keys)
+                """,
+            )
+            #expect(orphans == 0)
+        }
+    }
+
+    @Test func `database open recovery ignores constraint errors`() {
+        let constraint = DatabaseError(resultCode: .SQLITE_CONSTRAINT, message: "FOREIGN KEY")
+        #expect(DatabaseOpenRecovery.shouldRestoreFromBackup(constraint) == false)
+        #expect(DatabaseOpenRecovery.shouldRestoreFromBackup(DatabaseError(resultCode: .SQLITE_CORRUPT)) == true)
+        #expect(DatabaseOpenRecovery.shouldRestoreFromBackup(DatabaseError(resultCode: .SQLITE_NOTADB)) == true)
+        #expect(DatabaseOpenRecovery.shouldRestoreFromBackup(NSError(domain: "x", code: 1)) == false)
+    }
+
+    private func queueThroughM004WithOrphanAuditLog() throws -> DatabaseQueue {
+        var config = Configuration()
+        config.foreignKeysEnabled = false
+        let queue = try DatabaseQueue(configuration: config)
+        try seedThroughM004WithOrphanAuditLog(queue)
+        return queue
+    }
+
+    private func seedThroughM004WithOrphanAuditLog(_ db: some DatabaseWriter) throws {
+        var partial = DatabaseMigrator()
+        partial.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        partial.registerMigration(M002_WorkloadSpec.identifier) { db in
+            try M002_WorkloadSpec.migrate(db)
+        }
+        partial.registerMigration(M003_ArchitectureAwareTemplates.identifier) { db in
+            try M003_ArchitectureAwareTemplates.migrate(db)
+        }
+        partial.registerMigration(M004_WorkloadOverrides.identifier) { db in
+            try M004_WorkloadOverrides.migrate(db)
+        }
+        try partial.migrate(db)
+
+        try db.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO users (id, username, password, createdAt)
+                VALUES ('user-1', 'admin', 'x', '2026-08-13T16:39:34Z')
+                """,
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO audit_log (
+                    timestamp, userId, username, action, resourceType, resourceId,
+                    resourceName, authMethod, apiKeyId
+                ) VALUES (
+                    '2026-08-13T16:39:34Z', 'user-1', 'admin', 'vm.create', 'vm',
+                    'vm-1', 'Home Assistant', 'apikey',
+                    '8518b0a4-7584-43c9-a11c-870c20f9e2d7'
+                )
+                """,
+            )
+        }
+    }
+
     // MARK: - Tables Exist
 
     @Test func `expected tables exist`() throws {

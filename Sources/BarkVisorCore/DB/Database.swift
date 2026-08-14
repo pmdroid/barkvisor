@@ -22,7 +22,43 @@ public final class AppDatabase: Sendable {
     }
 
     public func migrate() throws {
+        // Must run before the migrator. GRDB checks FKs when each migration
+        // commits, so M005 (ALTER vms) fails if audit_log already has orphans.
+        try pool.write { db in
+            try Self.repairOrphanAuditForeignKeys(db)
+        }
         try AppDatabase.makeMigrator().migrate(pool)
+    }
+
+    /// Null dangling `audit_log` references. Safe on a fresh file (no tables yet).
+    public static func repairOrphanAuditForeignKeys(_ db: GRDB.Database) throws {
+        let tables = try String.fetchAll(
+            db,
+            sql: "SELECT name FROM sqlite_master WHERE type = 'table'",
+        )
+        guard tables.contains("audit_log") else { return }
+
+        if tables.contains("api_keys") {
+            try db.execute(
+                sql: """
+                UPDATE audit_log
+                SET apiKeyId = NULL
+                WHERE apiKeyId IS NOT NULL
+                  AND apiKeyId NOT IN (SELECT id FROM api_keys)
+                """,
+            )
+        }
+
+        if tables.contains("users") {
+            try db.execute(
+                sql: """
+                UPDATE audit_log
+                SET userId = NULL
+                WHERE userId IS NOT NULL
+                  AND userId NOT IN (SELECT id FROM users)
+                """,
+            )
+        }
     }
 
     public static func makeMigrator() -> DatabaseMigrator {
@@ -49,6 +85,24 @@ public final class AppDatabase: Sendable {
         }
         migrator.registerMigration(M006_ImageSha256.identifier) { db in
             try M006_ImageSha256.migrate(db)
+        }
+        migrator.registerMigration(M007_RepairOrphanAuditFKs.identifier) { db in
+            try M007_RepairOrphanAuditFKs.migrate(db)
+        }
+    }
+}
+
+/// When `openDatabase()` should replace the live file with a backup.
+public enum DatabaseOpenRecovery: Sendable {
+    /// Constraint / migration failures are data the next build can repair.
+    /// Only treat SQLite corruption as a reason to throw away the live file.
+    public static func shouldRestoreFromBackup(_ error: Error) -> Bool {
+        guard let dbError = error as? DatabaseError else { return false }
+        switch dbError.resultCode {
+        case .SQLITE_CORRUPT, .SQLITE_NOTADB:
+            return true
+        default:
+            return false
         }
     }
 }
