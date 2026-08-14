@@ -135,6 +135,8 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('DEVICE_LABEL')
     expect(text).toContain('useDeviceWorkloadsStore')
     expect(text).toContain('No workloads on this Device')
+    expect(text).toContain('Loading workloads...')
+    expect(text).toContain('Promise.all')
     expect(text).not.toContain('CreateVMDrawer')
     expect(text).not.toContain('cluster')
     expect(text).not.toMatch(forbiddenTemplateRe)
