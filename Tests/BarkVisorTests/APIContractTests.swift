@@ -44,6 +44,9 @@ struct APIContractTests {
         let devices = try #require(asStringKeyed(listProps["devices"]))
         #expect(devices["type"] as? String == "array")
         #expect(devices["enum"] == nil)
+        let health = try #require(asStringKeyed(schemas["HomeDeviceHealthReport"]))
+        let healthRequired = try #require(health["required"] as? [String])
+        #expect(healthRequired == ["devices", "totals"])
     }
 
     @Test func `docs copy matches bundled spec`() throws {
@@ -179,6 +182,7 @@ struct APIContractTests {
         }
         #expect(APIContractSummary.current.reserved["evolving"]?.contains("/api/apps") == true)
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices" })
+        #expect(APIContract.routes.contains { $0.path == "/api/home/devices/health" })
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices/{id}/v1/{path}" })
     }
 
