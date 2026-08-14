@@ -80,6 +80,13 @@ struct SecurityTests {
         #expect(result2 == nil, "stale2 should be allowed after prune clears expired entries")
     }
 
+    @Test func `pairing rate limit stays finite when login limiting is disabled`() {
+        #expect(RateLimitPolicy.loginMaxAttempts(enabled: false, configured: 10) == Int.max)
+        #expect(RateLimitPolicy.loginMaxAttempts(enabled: true, configured: 10) == 10)
+        #expect(RateLimitPolicy.pairingMaxAttempts(configured: 10) == 10)
+        #expect(RateLimitPolicy.pairingMaxAttempts(configured: 0) == 1)
+    }
+
     @Test func `prune keeps active entries`() async {
         let store = RateLimitStore(maxAttempts: 2, window: 60)
 

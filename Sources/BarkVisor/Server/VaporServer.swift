@@ -71,7 +71,24 @@ public final class VaporServer: @unchecked Sendable {
 
         Log.server.info("BarkVisor server starting on port \(Config.port)")
 
-        let loginRateLimit = configureRateLimit(backgroundTasks: services.backgroundTasks)
+        let loginRateLimit = configureRateLimit(
+            backgroundTasks: services.backgroundTasks,
+            maxAttempts: RateLimitPolicy.loginMaxAttempts(
+                enabled: Config.rateLimitEnabled,
+                configured: Config.rateLimitMaxAttempts,
+            ),
+            pruneTaskID: "rate-limit-prune",
+        )
+        if !Config.rateLimitEnabled {
+            Log.server.info("Login rate limiting is DISABLED via settings")
+        }
+        let pairingRateLimit = configureRateLimit(
+            backgroundTasks: services.backgroundTasks,
+            maxAttempts: RateLimitPolicy.pairingMaxAttempts(
+                configured: Config.rateLimitMaxAttempts,
+            ),
+            pruneTaskID: "pairing-rate-limit-prune",
+        )
         let updateService = UpdateService()
         let pairingOffers = PairingOfferStore(dataDir: Config.dataDir)
 
@@ -89,6 +106,7 @@ public final class VaporServer: @unchecked Sendable {
                 backgroundTasks: services.backgroundTasks,
                 diskInfoCache: services.diskInfoCache,
                 loginRateLimit: loginRateLimit,
+                pairingRateLimit: pairingRateLimit,
                 setupMiddleware: setup,
                 updateService: updateService,
                 healthProbes: services.healthProbes,
@@ -341,17 +359,16 @@ public final class VaporServer: @unchecked Sendable {
 
     private func configureRateLimit(
         backgroundTasks: BackgroundTaskManager,
+        maxAttempts: Int,
+        pruneTaskID: String,
     ) -> RateLimitMiddleware {
         let store = RateLimitStore(
-            maxAttempts: Config.rateLimitEnabled ? Config.rateLimitMaxAttempts : Int.max,
+            maxAttempts: maxAttempts,
             window: TimeInterval(Config.rateLimitWindow),
         )
-        if !Config.rateLimitEnabled {
-            Log.server.info("Login rate limiting is DISABLED via settings")
-        }
         Task {
             await backgroundTasks.schedulePeriodicTask(
-                id: "rate-limit-prune", interval: 60 * 60 * 1_000_000_000,
+                id: pruneTaskID, interval: 60 * 60 * 1_000_000_000,
             ) {
                 await store.prune()
             }

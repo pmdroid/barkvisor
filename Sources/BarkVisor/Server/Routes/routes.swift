@@ -15,6 +15,7 @@ struct RouteDependencies {
     let backgroundTasks: BackgroundTaskManager
     let diskInfoCache: DiskInfoCache
     let loginRateLimit: RateLimitMiddleware
+    let pairingRateLimit: RateLimitMiddleware
     let setupMiddleware: SetupMiddleware
     let updateService: UpdateService
     let healthProbes: HealthProbeService
@@ -30,7 +31,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         offers: deps.pairingOffers,
         setupMiddleware: deps.setupMiddleware,
         jwt: deps.jwt,
-        rateLimit: deps.loginRateLimit,
+        loginRateLimit: deps.loginRateLimit,
+        pairingRateLimit: deps.pairingRateLimit,
     )
     try pairing.boot(routes: app)
 

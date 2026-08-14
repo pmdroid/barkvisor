@@ -9,18 +9,20 @@ extension PairingJoinRequest: Content {}
 extension PairingJoinResponse: Content {}
 
 /// Pairing issue / redeem (PAS-45). JWT on the issuer; redeem is public
-/// and rate-limited. Join requires a QR payload and is public only until
+/// and uses a dedicated pairing limiter that stays on when login limiting
+/// is disabled. Join requires a QR payload and is public only until
 /// setup completes.
 struct PairingController: RouteCollection {
     let offers: PairingOfferStore
     let setupMiddleware: SetupMiddleware
     let jwt: JWTAuthMiddleware
-    let rateLimit: RateLimitMiddleware
+    let loginRateLimit: RateLimitMiddleware
+    let pairingRateLimit: RateLimitMiddleware
 
     func boot(routes: any RoutesBuilder) throws {
         let pairing = routes.grouped("api", "pairing")
-        pairing.grouped(rateLimit).post("redeem", use: redeem)
-        pairing.grouped(SetupOrJWTMiddleware(setup: setupMiddleware, jwt: jwt), rateLimit)
+        pairing.grouped(pairingRateLimit).post("redeem", use: redeem)
+        pairing.grouped(SetupOrJWTMiddleware(setup: setupMiddleware, jwt: jwt), loginRateLimit)
             .post("join", use: join)
     }
 

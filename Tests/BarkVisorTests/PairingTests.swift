@@ -119,14 +119,14 @@ struct PairingTests {
             ),
             offers: offers,
         )
-        #expect(throws: PairingError.expiredOrUsed) {
-            try PairingService.redeem(
-                PairingService.RedeemInput(
-                    dataDir: dir, issuerHostId: issuerId, request: request, now: now,
-                ),
-                offers: offers,
-            )
-        }
+        let replayed = try PairingService.redeem(
+            PairingService.RedeemInput(
+                dataDir: dir, issuerHostId: issuerId, request: request, now: now,
+            ),
+            offers: offers,
+        )
+        #expect(replayed.hostId == issuerId)
+        #expect(try PeerPinStore(dataDir: dir).load().count == 1)
 
         let short = try PairingService.issue(
             PairingService.IssueInput(
