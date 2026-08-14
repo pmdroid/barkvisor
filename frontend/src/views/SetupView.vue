@@ -44,7 +44,7 @@ const showBridgeStep = computed(() => managedBridge.available)
 const path = ref<'create' | 'join'>('create')
 const qrPayload = ref('')
 const joinResult = ref<PairingJoin | null>(null)
-/** Server-side join (receipt) so refresh works when sessionStorage is blocked. */
+/** Server-side join (identity complete) so refresh works when sessionStorage is blocked. */
 const resumeJoinReady = ref(false)
 
 const totalSteps = computed(() => {

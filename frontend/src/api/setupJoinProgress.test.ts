@@ -87,10 +87,12 @@ describe('setup join progress (PAS-51)', () => {
     expect(loadSetupJoinProgress()).toBeNull()
   })
 
-  test('resumes join-ready from sessionStorage or a server-side receipt', () => {
+  test('resumes join-ready from sessionStorage or completed identity, not a receipt leftover', () => {
     expect(shouldResumeJoinReady({ complete: false }, null)).toBe(false)
+    // Receipt-only leftover: server must report joined=false when no admin exists.
     expect(shouldResumeJoinReady({ complete: false, joined: false }, null)).toBe(false)
     expect(shouldResumeJoinReady({ complete: false }, sample)).toBe(true)
+    // joined=true means identity landed (admin exists), not a pairing receipt alone.
     expect(shouldResumeJoinReady({ complete: false, joined: true }, null)).toBe(true)
     expect(shouldResumeJoinReady({ complete: true, joined: true }, sample)).toBe(false)
   })
