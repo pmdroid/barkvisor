@@ -11,6 +11,8 @@ import { useFeature } from '../composables/useFeature'
 import {
   getPairingCode,
   issuePairingCode,
+  joinHome,
+  isPairingPayload,
   revokePairingCode,
   type PairingIssue,
 } from '../api/pairing'
@@ -31,6 +33,8 @@ const tab = ref<'home' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
 const pairingCopied = ref(false)
+const rejoinPayload = ref('')
+const rejoinLoading = ref(false)
 
 async function loadPairingCode() {
   try {
@@ -88,6 +92,24 @@ function pairingExpiryLabel(offer: PairingIssue) {
   if (seconds === 0) return 'Expired'
   const minutes = Math.ceil(seconds / 60)
   return minutes === 1 ? 'Expires in 1 minute' : `Expires in ${minutes} minutes`
+}
+
+async function rejoinThisDevice() {
+  const payload = rejoinPayload.value.trim()
+  if (!isPairingPayload(payload)) {
+    toast.error('Paste the full pairing code (starts with barkvisor://), not only the short code.')
+    return
+  }
+  rejoinLoading.value = true
+  try {
+    await joinHome(payload)
+    rejoinPayload.value = ''
+    toast.success(`Trust restored. This ${DEVICE_LABEL} still runs if peers are unreachable.`)
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, `Could not re-pair this ${DEVICE_LABEL}`))
+  } finally {
+    rejoinLoading.value = false
+  }
 }
 
 function openUpdatesTab() {
@@ -474,6 +496,32 @@ onUnmounted(() => {
         </AppButton>
         <AppButton size="sm" style="color:var(--red)" :loading="pairingLoading" @click="revokeDeviceCode">
           Revoke
+        </AppButton>
+      </div>
+    </div>
+
+    <div class="pairing-card rejoin-card">
+      <p class="pairing-hint" style="text-align:left;margin:0 0 10px">
+        If this {{ DEVICE_LABEL }} already has its data, paste a pairing code from
+        another {{ DEVICE_LABEL }} to restore trust. Local workloads keep running.
+      </p>
+      <textarea
+        v-model="rejoinPayload"
+        class="pairing-input"
+        rows="3"
+        placeholder="barkvisor://pair/v1?…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <AppButton
+          size="sm"
+          variant="primary"
+          :loading="rejoinLoading"
+          loading-text="Re-pairing..."
+          @click="rejoinThisDevice"
+        >
+          Re-pair this {{ DEVICE_LABEL }}
         </AppButton>
       </div>
     </div>
@@ -868,6 +916,21 @@ onUnmounted(() => {
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+.rejoin-card {
+  margin-top: 16px;
+}
+.pairing-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-input, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  font-size: 13px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  resize: vertical;
+  line-height: 1.4;
 }
 .changelog {
   background: var(--bg);
