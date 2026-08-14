@@ -2227,6 +2227,7 @@ components:
           enum: [home-ca, pinned]
         listener:
           type: string
+          enum: [mtls]
 
     HomeDevice:
       type: object
@@ -2256,7 +2257,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HomeDevice"
-          enum: [mtls]
 
     HostInventory:
       type: object

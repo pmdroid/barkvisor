@@ -14,6 +14,10 @@ import NIOSSL
 /// on macOS and Linux. Hostname verification is off because Device certs
 /// carry a `barkvisor://device` SAN, not a DNS name; the Home CA is the
 /// trust root. A failed call must not touch local SQLite / QEMU.
+///
+/// Event loops and TLS-backed HTTP clients are process-scoped (same idea
+/// as `LocalHostProxySession.shared`) so concurrent dashboard proxies do
+/// not spawn a NIO thread pool per request.
 public struct AgentMTLSClient: HomeDeviceProxyClient {
     public var material: HomeCertificateMaterial
     public var timeoutSeconds: Int64
@@ -24,42 +28,12 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
     }
 
     public func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
-        let ca = try NIOSSLCertificate(bytes: Array(material.caCertificatePEM.utf8), format: .pem)
-        let cert = try NIOSSLCertificate(
-            bytes: Array(material.deviceCertificatePEM.utf8),
-            format: .pem,
-        )
-        let key = try NIOSSLPrivateKey(bytes: Array(material.deviceKeyPEM.utf8), format: .pem)
-
-        var tls = TLSConfiguration.makeClientConfiguration()
-        tls.certificateVerification = .noHostnameVerification
-        tls.trustRoots = .certificates([ca])
-        tls.certificateChain = [.certificate(cert)]
-        tls.privateKey = .privateKey(key)
-        tls.minimumTLSVersion = .tlsv12
-
-        var config = HTTPClient.Configuration()
-        config.tlsConfiguration = tls
-        config.redirectConfiguration = .disallow
-        config.timeout = HTTPClient.Configuration.Timeout(
-            connect: .seconds(timeoutSeconds),
-            read: .seconds(timeoutSeconds),
-        )
-
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let client = HTTPClient(eventLoopGroupProvider: .shared(group), configuration: config)
+        let client = try AgentMTLSRuntime.shared.client(for: material, timeoutSeconds: timeoutSeconds)
         do {
-            let response = try await execute(request, on: client)
-            try await client.shutdown()
-            try await group.shutdownGracefully()
-            return response
+            return try await execute(request, on: client)
         } catch let error as HomeDeviceProxyError {
-            try? await client.shutdown()
-            try? await group.shutdownGracefully()
             throw error
         } catch {
-            try? await client.shutdown()
-            try? await group.shutdownGracefully()
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)
         }
     }
@@ -89,6 +63,90 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
             headers: headers,
             body: Data(buffer.readableBytesView),
         )
+    }
+}
+
+/// Process-wide NIO + HTTPClient cache. Clients are never shut down; the
+/// daemon owns them for its lifetime, matching `LocalHostProxySession`.
+private final class AgentMTLSRuntime: @unchecked Sendable {
+    static let shared = AgentMTLSRuntime()
+    /// NIO sockets (not Network.framework) so `certificateChain` works on macOS.
+    private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    private let lock = NSLock()
+    private var clients: [String: HTTPClient] = [:]
+
+    func client(
+        for material: HomeCertificateMaterial,
+        timeoutSeconds: Int64,
+    ) throws -> HTTPClient {
+        let key = "\(material.caFingerprint)|\(material.deviceFingerprint)|\(timeoutSeconds)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = clients[key] {
+            return existing
+        }
+        let created = try makeClient(material: material, timeoutSeconds: timeoutSeconds)
+        clients[key] = created
+        return created
+    }
+
+    private func makeClient(
+        material: HomeCertificateMaterial,
+        timeoutSeconds: Int64,
+    ) throws -> HTTPClient {
+        let ca = try NIOSSLCertificate(bytes: Array(material.caCertificatePEM.utf8), format: .pem)
+        let cert = try NIOSSLCertificate(
+            bytes: Array(material.deviceCertificatePEM.utf8),
+            format: .pem,
+        )
+        let key = try NIOSSLPrivateKey(bytes: Array(material.deviceKeyPEM.utf8), format: .pem)
+
+        var tls = TLSConfiguration.makeClientConfiguration()
+        tls.certificateVerification = .noHostnameVerification
+        tls.trustRoots = .certificates([ca])
+        tls.certificateChain = [.certificate(cert)]
+        tls.privateKey = .privateKey(key)
+        tls.minimumTLSVersion = .tlsv12
+
+        var config = HTTPClient.Configuration()
+        config.tlsConfiguration = tls
+        config.redirectConfiguration = .disallow
+        config.timeout = HTTPClient.Configuration.Timeout(
+            connect: .seconds(timeoutSeconds),
+            read: .seconds(timeoutSeconds),
+        )
+        return HTTPClient(eventLoopGroupProvider: .shared(group), configuration: config)
+    }
+}
+
+/// One `AgentMTLSClient` per local Home CA so controllers do not rebuild
+/// TLS material on every member proxy.
+enum HomeDevicesMTLS {
+    static func client(dataDir: URL, hostId: String) throws -> AgentMTLSClient {
+        try HomeDevicesMTLSCache.shared.client(dataDir: dataDir, hostId: hostId)
+    }
+}
+
+private final class HomeDevicesMTLSCache: @unchecked Sendable {
+    static let shared = HomeDevicesMTLSCache()
+    private let lock = NSLock()
+    private var cached: (key: String, client: AgentMTLSClient)?
+
+    func client(dataDir: URL, hostId: String) throws -> AgentMTLSClient {
+        let key = "\(dataDir.path)|\(hostId)"
+        lock.lock()
+        if let cached, cached.key == key {
+            let client = cached.client
+            lock.unlock()
+            return client
+        }
+        lock.unlock()
+        let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
+        let created = AgentMTLSClient(material: material)
+        lock.lock()
+        self.cached = (key, created)
+        lock.unlock()
+        return created
     }
 }
 

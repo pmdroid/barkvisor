@@ -69,6 +69,12 @@ extension PairingService {
             )
         }
 
+        // Identity after receipt/pin so those persist failures leave local
+        // JWT secret and admin credentials unchanged. Registry after
+        // identity so a failed applySharedIdentity does not list a paired
+        // member before shared login is applied.
+        try await applySharedIdentity(response, dataDir: dataDir, now: now, db: db, keys: keys)
+
         try registerPairedDevice(
             dataDir: dataDir,
             hostId: response.hostId,
@@ -78,10 +84,6 @@ extension PairingService {
             now: now,
             devices: devices,
         )
-
-        // Identity last: a receipt/pin persist failure must leave local
-        // JWT secret and admin credentials unchanged.
-        try await applySharedIdentity(response, dataDir: dataDir, now: now, db: db, keys: keys)
 
         return PairingJoinResponse(
             peerHostId: response.hostId,

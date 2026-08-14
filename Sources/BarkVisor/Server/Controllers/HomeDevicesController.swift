@@ -90,16 +90,14 @@ struct HomeDevicesController: RouteCollection {
         if let mtlsClient {
             client = mtlsClient
         } else {
-            let material: HomeCertificateMaterial
             do {
-                material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
+                client = try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
             } catch {
                 throw Abort(
                     .serviceUnavailable,
                     reason: "This Device cannot reach members yet; local runtime continues",
                 )
             }
-            client = AgentMTLSClient(material: material)
         }
         return try await forward(req: req, url: url, client: client)
     }

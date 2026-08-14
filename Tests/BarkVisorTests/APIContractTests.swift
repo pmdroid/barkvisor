@@ -32,6 +32,18 @@ struct APIContractTests {
         let info = try #require(root["info"] as? [String: Any])
         #expect(info["x-barkvisor-api-version"] as? Int == APIContract.version)
         #expect(info["x-barkvisor-version-header"] as? String == APIContract.versionHeaderName)
+
+        let components = try #require(asStringKeyed(root["components"]))
+        let schemas = try #require(asStringKeyed(components["schemas"]))
+        let identity = try #require(asStringKeyed(schemas["AgentPeerIdentity"]))
+        let identityProps = try #require(asStringKeyed(identity["properties"]))
+        let listener = try #require(asStringKeyed(identityProps["listener"]))
+        #expect(listener["enum"] as? [String] == ["mtls"])
+        let list = try #require(asStringKeyed(schemas["HomeDeviceList"]))
+        let listProps = try #require(asStringKeyed(list["properties"]))
+        let devices = try #require(asStringKeyed(listProps["devices"]))
+        #expect(devices["type"] as? String == "array")
+        #expect(devices["enum"] == nil)
     }
 
     @Test func `docs copy matches bundled spec`() throws {
