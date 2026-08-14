@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   deviceWorkloadLine,
   hasKnownHealthCounts,
+  homeWorkloadsRunningLine,
   resolveHealthCounts,
 } from './homeDeviceHealth'
 
@@ -25,6 +26,24 @@ describe('deviceWorkloadLine', () => {
     ).toBe('3 workloads · 1 failed')
     expect(deviceWorkloadLine({ reachability: 'unreachable', workloadCount: null })).toBe(
       'Health unavailable',
+    )
+  })
+})
+
+describe('homeWorkloadsRunningLine', () => {
+  test('unknown home-wide count is omitted instead of substituting a local total', () => {
+    expect(homeWorkloadsRunningLine({ workloadCount: null }, 2)).toBeNull()
+    expect(homeWorkloadsRunningLine({ workloadCount: undefined }, 2)).toBeNull()
+    expect(homeWorkloadsRunningLine(null, 2)).toBeNull()
+    expect(homeWorkloadsRunningLine(undefined, 2)).toBeNull()
+  })
+
+  test('known zero stays zero', () => {
+    expect(homeWorkloadsRunningLine({ workloadCount: 0 }, 0)).toBe(
+      '0 of 0 workloads running',
+    )
+    expect(homeWorkloadsRunningLine({ workloadCount: 5 }, 2)).toBe(
+      '2 of 5 workloads running',
     )
   })
 })

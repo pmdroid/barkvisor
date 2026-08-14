@@ -10,7 +10,7 @@ import DeviceCard from '../components/DeviceCard.vue'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { formatTemperatureC } from '../utils/format'
-import { hasKnownHealthCounts, resolveHealthCounts } from '../utils/homeDeviceHealth'
+import { hasKnownHealthCounts, homeWorkloadsRunningLine, resolveHealthCounts } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
@@ -56,16 +56,15 @@ const failedCount = computed(() => {
   return healthSummary.value?.counts?.failed ?? 0
 })
 
-const homeWorkloadCount = computed(() => {
-  if (devices.totals?.workloadCount != null) return devices.totals.workloadCount
-  return store.vms.length
-})
-
 const homeRunningCount = computed(() => {
   const counts = devices.totals?.healthCounts
   if (hasKnownHealthCounts(counts)) return counts.running ?? 0
   return runningVMs.value
 })
+
+const homeWorkloadsLine = computed(() =>
+  homeWorkloadsRunningLine(devices.totals, homeRunningCount.value),
+)
 
 const recentVMs = computed(() =>
   [...store.vms].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5)
@@ -195,7 +194,9 @@ const memSparkData = computed(() => ({
         <p class="welcome-sub">
           <template v-if="devices.totals">
             {{ devices.totals.devices }} {{ devices.totals.devices === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's' }}
-            · {{ homeRunningCount }} of {{ homeWorkloadCount }} workloads running
+            <template v-if="homeWorkloadsLine">
+              · {{ homeWorkloadsLine }}
+            </template>
             <span v-if="devices.totals.unreachable > 0">
               · {{ devices.totals.unreachable }} unreachable
             </span>
