@@ -407,13 +407,17 @@ struct HealthProbeServiceTests {
         }
         defer { guestServer.stop() }
 
-        let ok = await HealthProbeLive.http(
-            host: "127.0.0.1",
-            port: guestServer.port,
-            path: "/health",
-            timeout: 2,
-            expectedStatus: 200,
-        )
+        var ok = false
+        for _ in 0 ..< 8 {
+            ok = await HealthProbeLive.http(
+                host: "127.0.0.1",
+                port: guestServer.port,
+                path: "/health",
+                timeout: 2,
+                expectedStatus: 200,
+            )
+            if guestServer.hitCount() >= 1 { break }
+        }
         #expect(!ok)
         #expect(internalServer.hitCount() == 0)
         #expect(guestServer.hitCount() == 1)
@@ -551,13 +555,18 @@ private final class LocalHTTPServer: @unchecked Sendable {
         self.fd = sock
         self.port = Int(UInt16(bigEndian: got.sin_port))
         let listenFD = sock
-        DispatchQueue.global().async { [weak self] in
+        // Dedicated thread + ready gate: a global-queue accept loop can miss
+        // the first URLSession connect on a busy CI runner (hitCount stays 0).
+        let ready = DispatchSemaphore(value: 0)
+        Thread.detachNewThread { [weak self] in
+            ready.signal()
             while let server = self, server.running {
                 let client = accept(listenFD, nil, nil)
                 if client < 0 { continue }
                 server.handle(client: client)
             }
         }
+        ready.wait()
     }
 
     func hitCount() -> Int {
