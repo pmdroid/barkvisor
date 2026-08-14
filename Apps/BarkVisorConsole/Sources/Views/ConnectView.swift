@@ -14,38 +14,35 @@ struct ConnectView: View {
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         #endif
-                    Text("Paste a Device origin or a web /login URL. The console talks to port 7777.")
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Connect")
-                }
-
-                if let banner = model.banner {
-                    Section {
-                        Text(banner)
-                            .foregroundStyle(.red)
-                    }
+                } footer: {
+                    Text("Paste a Device origin or a web /login URL. The console talks to port 7777.")
                 }
 
                 Section {
-                    Button {
+                    Button("Continue") {
                         Task { await model.connect() }
-                    } label: {
-                        if model.busy {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Text("Continue")
-                                .frame(maxWidth: .infinity)
-                        }
                     }
-                    .bvProminentButton()
                     .disabled(model.busy || model.serverURLText.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .listRowBackground(Color.clear)
+                    if model.busy {
+                        ProgressView()
+                    }
                 }
             }
             .formStyle(.grouped)
             .navigationTitle("BarkVisor")
+            .alert(
+                "Could not connect",
+                isPresented: Binding(
+                    get: { model.banner != nil },
+                    set: { if !$0 { model.banner = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { model.banner = nil }
+            } message: {
+                Text(model.banner ?? "")
+            }
         }
     }
 }
@@ -74,45 +71,38 @@ struct LoginView: View {
                         .focused($focused, equals: .password)
                         .onSubmit { Task { await model.signIn() } }
                 } header: {
-                    Text("Sign in")
+                    Text("Sign In")
                 } footer: {
                     Text("Same admin user as the web UI on this Device.")
                 }
 
-                if let banner = model.banner {
-                    Section {
-                        Text(banner)
-                            .foregroundStyle(.red)
-                    }
-                }
-
                 Section {
-                    Button {
+                    Button("Sign In") {
                         Task { await model.signIn() }
-                    } label: {
-                        if model.busy {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Text("Sign In")
-                                .frame(maxWidth: .infinity)
-                        }
                     }
-                    .bvProminentButton()
                     .disabled(model.busy || model.username.isEmpty || model.password.isEmpty)
-                    .listRowBackground(Color.clear)
-
+                    if model.busy {
+                        ProgressView()
+                    }
                     Button("Use a different Device URL") {
                         model.disconnect()
                     }
-                    .bvGlassButton()
-                    .frame(maxWidth: .infinity)
-                    .listRowBackground(Color.clear)
                 }
             }
             .formStyle(.grouped)
             .navigationTitle("Sign In")
             .onAppear { focused = model.username.isEmpty ? .user : .password }
+            .alert(
+                "Sign in failed",
+                isPresented: Binding(
+                    get: { model.banner != nil },
+                    set: { if !$0 { model.banner = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { model.banner = nil }
+            } message: {
+                Text(model.banner ?? "")
+            }
         }
     }
 }
@@ -129,10 +119,8 @@ struct SetupRequiredView: View {
             } actions: {
                 if let url = model.connectedURL {
                     Link("Open web UI", destination: url.appending(path: "setup"))
-                        .bvProminentButton()
                 }
                 Button("Back") { model.disconnect() }
-                    .bvGlassButton()
             }
             .navigationTitle("BarkVisor")
         }

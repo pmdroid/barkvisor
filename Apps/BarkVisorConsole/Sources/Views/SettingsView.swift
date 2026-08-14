@@ -52,7 +52,6 @@ struct SettingsView: View {
                     Button("Create pairing code") {
                         Task { await model.issuePairing() }
                     }
-                    .bvProminentButton()
                 }
             } header: {
                 Text("Add a \(Copy.device)")

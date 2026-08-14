@@ -7,34 +7,17 @@ struct DashboardView: View {
         List {
             if let stats = model.stats {
                 Section("This Device") {
-                    LabeledContent("CPU") {
-                        Text(String(format: "%.0f%%", stats.hostCpuPercent))
-                            .foregroundStyle(BVTheme.accent)
-                            .monospacedDigit()
-                    }
-                    LabeledContent("Memory") {
-                        Text(memoryLabel(used: stats.hostMemoryUsedMB, total: stats.hostMemoryTotalMB))
-                            .monospacedDigit()
-                    }
-                    LabeledContent("Workloads running") {
-                        Text("\(stats.runningVMs) / \(stats.totalVMs)")
-                            .monospacedDigit()
-                    }
-                    LabeledContent("Devices reachable") {
-                        Text("\(reachable) / \(model.devices.count)")
-                            .monospacedDigit()
-                    }
+                    LabeledContent("CPU", value: String(format: "%.0f%%", stats.hostCpuPercent))
+                    LabeledContent("Memory", value: memoryLabel(used: stats.hostMemoryUsedMB, total: stats.hostMemoryTotalMB))
+                    LabeledContent("Workloads running", value: "\(stats.runningVMs) / \(stats.totalVMs)")
+                    LabeledContent("Devices reachable", value: "\(reachable) / \(model.devices.count)")
                 }
             }
 
             if let counts = model.totals?.healthCounts {
                 Section("Home health") {
                     ForEach(WorkloadHealth.stripKeys, id: \.self) { key in
-                        LabeledContent(WorkloadHealth.label(key)) {
-                            Text("\(counts[key] ?? 0)")
-                                .foregroundStyle(pillColor(key))
-                                .monospacedDigit()
-                        }
+                        LabeledContent(WorkloadHealth.label(key), value: "\(counts[key] ?? 0)")
                     }
                 }
             }
@@ -72,7 +55,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .bvListStyle()
+        .platformListStyle()
     }
 
     private var reachable: Int {
@@ -85,14 +68,5 @@ struct DashboardView: View {
 
     private func memoryLabel(used: Int, total: Int) -> String {
         String(format: "%.1f / %.0f GB", Double(used) / 1024, Double(total) / 1024)
-    }
-
-    private func pillColor(_ key: String) -> Color {
-        switch key {
-        case "running": BVTheme.green
-        case "failed": BVTheme.red
-        case "starting", "degraded": BVTheme.amber
-        default: .secondary
-        }
     }
 }

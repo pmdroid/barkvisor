@@ -1,6 +1,8 @@
 # BarkVisor Console
 
-Native SwiftUI console for macOS 14+ and iOS 17+ (Liquid Glass on iOS / macOS 26 when available). It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol. The chrome uses system `NavigationSplitView`, `Form`, and `List` with the BarkVisor accent.
+Native SwiftUI console for macOS 14+ and iOS 17+. It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol.
+
+The UI is stock SwiftUI: `NavigationSplitView`, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
 
 Product words in the UI: **Home**, **Device**, **Workload**, **Library**.
 

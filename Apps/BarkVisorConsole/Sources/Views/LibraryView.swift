@@ -13,17 +13,15 @@ struct LibraryView: View {
                 )
             } else {
                 List(model.images) { image in
-                    VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent {
+                        Text(image.status)
+                            .foregroundStyle(Color.status(image.status))
+                    } label: {
                         Text(image.name)
-                            .font(.headline)
-                            .foregroundStyle(image.status == "ready" ? BVTheme.green : .primary)
-                        Text("\(image.imageType) · \(image.arch) · \(image.status) · \(ByteCountFormatter.string(fromByteCount: image.sizeBytes ?? 0, countStyle: .file))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text("\(image.imageType) · \(image.arch) · \(ByteCountFormatter.string(fromByteCount: image.sizeBytes ?? 0, countStyle: .file))")
                     }
-                    .padding(.vertical, 2)
                 }
-                .bvListStyle()
+                .platformListStyle()
             }
         }
     }
@@ -42,16 +40,14 @@ struct DisksView: View {
                 )
             } else {
                 List(model.disks) { disk in
-                    VStack(alignment: .leading, spacing: 4) {
+                    LabeledContent {
+                        Text(disk.status)
+                    } label: {
                         Text(disk.name)
-                            .font(.headline)
-                        Text("\(disk.format) · \(ByteCountFormatter.string(fromByteCount: disk.sizeBytes, countStyle: .file)) · \(disk.status)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text("\(disk.format) · \(ByteCountFormatter.string(fromByteCount: disk.sizeBytes, countStyle: .file))")
                     }
-                    .padding(.vertical, 2)
                 }
-                .bvListStyle()
+                .platformListStyle()
             }
         }
     }
@@ -70,12 +66,13 @@ struct NetworksView: View {
                 )
             } else {
                 List(model.networks) { network in
-                    LabeledContent(network.name) {
+                    LabeledContent {
                         Text(network.isDefault ? "\(network.mode) · Default" : network.mode)
-                            .foregroundStyle(.secondary)
+                    } label: {
+                        Text(network.name)
                     }
                 }
-                .bvListStyle()
+                .platformListStyle()
             }
         }
     }
@@ -94,24 +91,16 @@ struct LogsView: View {
                 )
             } else {
                 List(Array(model.logs.enumerated()), id: \.offset) { _, entry in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(entry.level.uppercased())
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(levelColor(entry.level))
-                            Text(entry.cat)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(entry.ts)
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
+                    LabeledContent {
+                        Text(entry.ts)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    } label: {
                         Text(entry.msg)
-                            .font(.system(.footnote, design: .monospaced))
-                            .textSelection(.enabled)
+                            .font(.body)
+                        Text("\(entry.level) · \(entry.cat)")
+                            .foregroundStyle(Color.status(entry.level))
                     }
-                    .padding(.vertical, 2)
                 }
                 .listStyle(.plain)
             }
@@ -124,13 +113,5 @@ struct LogsView: View {
             }
         }
         .task { await model.open(.logs) }
-    }
-
-    private func levelColor(_ level: String) -> Color {
-        switch level.lowercased() {
-        case "error": BVTheme.red
-        case "warn", "warning": BVTheme.amber
-        default: .secondary
-        }
     }
 }
