@@ -58,15 +58,27 @@ struct HomeDevicesController: RouteCollection {
     @Sendable
     func health(req: Vapor.Request) async throws -> HomeDeviceHealthReport {
         _ = try req.requireUser
-        let listed = listedDevices()
-        let local = await resolvedLocalFacts(db: req.db)
-        let auth = req.headers.bearerAuthorization?.token
+        return await healthReport(
+            listed: listedDevices(),
+            local: resolvedLocalFacts(db: req.db),
+            bearer: req.headers.bearerAuthorization?.token,
+        )
+    }
+
+    /// Probe members in parallel and merge with local facts. Extracted so
+    /// tests can cover URL construction, bearer forwarding, and HTTP mapping
+    /// without constructing a Vapor `Request`.
+    func healthReport(
+        listed: HomeDeviceList,
+        local: HomeDeviceLiveFacts,
+        bearer: String?,
+    ) async -> HomeDeviceHealthReport {
         let members = listed.devices.filter { $0.role != "self" }
         var probed: [String: HomeDeviceProbeOutcome] = [:]
         await withTaskGroup(of: (String, HomeDeviceProbeOutcome).self) { group in
             for device in members {
                 group.addTask {
-                    await (device.hostId, self.probeMember(device, bearer: auth))
+                    await (device.hostId, self.probeMember(device, bearer: bearer))
                 }
             }
             for await (id, result) in group {
@@ -184,16 +196,22 @@ struct HomeDevicesController: RouteCollection {
         return buffer.map { Data($0.readableBytesView) }
     }
 
-    private func resolvedLocalFacts(db: DatabasePool) async -> HomeDeviceLiveFacts {
+    func resolvedLocalFacts(db: DatabasePool) async -> HomeDeviceLiveFacts {
         if let localFacts {
             return await localFacts()
         }
         let slice = HostInventoryService.metricsSlice(dataDir: dataDir, hostId: hostId)
         var summary: WorkloadHealthSummary?
         if let vmManager {
-            summary = try? await Self.localHealthSummary(
-                db: db, vmManager: vmManager, healthProbes: healthProbes,
-            )
+            do {
+                summary = try await Self.localHealthSummary(
+                    db: db, vmManager: vmManager, healthProbes: healthProbes,
+                )
+            } catch {
+                // Leave counts unknown. A DB/projection failure must not
+                // invent 0 workloads on a reachable Device.
+                summary = nil
+            }
         }
         return HomeDeviceLiveFacts(
             displayName: ProcessInfo.processInfo.hostName,
@@ -252,7 +270,7 @@ struct HomeDevicesController: RouteCollection {
         )
     }
 
-    private func probeMember(
+    func probeMember(
         _ device: HomeDevice,
         bearer: String?,
     ) async -> HomeDeviceProbeOutcome {
