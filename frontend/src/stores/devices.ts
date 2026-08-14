@@ -14,6 +14,10 @@ export const useDevicesStore = defineStore('devices', () => {
     () => devices.value.find((row) => row.role === 'self') ?? null,
   )
 
+  function deviceByHostId(hostId: string): HomeDeviceHealthSnapshot | null {
+    return devices.value.find((row) => row.hostId === hostId) ?? null
+  }
+
   async function fetchHealth(): Promise<void> {
     loading.value = true
     try {
@@ -39,6 +43,7 @@ export const useDevicesStore = defineStore('devices', () => {
     devices,
     totals,
     selfDevice,
+    deviceByHostId,
     fetchHealth,
     deviceLabel,
   }

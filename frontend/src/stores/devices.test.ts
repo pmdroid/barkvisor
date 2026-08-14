@@ -55,6 +55,7 @@ describe('devices store (PAS-52)', () => {
     await store.fetchHealth()
     expect(store.devices).toHaveLength(2)
     expect(store.selfDevice?.hostId).toBe('self-1')
+    expect(store.deviceByHostId('peer-1')?.reachability).toBe('unreachable')
     expect(store.deviceLabel(store.devices[1]!)).toBe('peer-1')
     expect(store.totals?.unreachable).toBe(1)
     expect(store.totals?.workloadCount).toBe(2)

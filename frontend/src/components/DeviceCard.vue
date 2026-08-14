@@ -30,6 +30,11 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
 </script>
 
 <template>
+  <router-link
+    class="device-card-link"
+    :to="{ name: 'device-detail', params: { hostId: device.hostId } }"
+    :aria-label="`Open workloads on ${title}`"
+  >
   <article class="device-card" :class="{ unreachable: !reachable }">
     <div class="device-card-top">
       <div>
@@ -66,10 +71,21 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
         {{ (device.resources.memoryTotalMB / 1024).toFixed(0) }} GB
       </span>
     </p>
+    <p class="device-card-open">Workloads</p>
   </article>
+  </router-link>
 </template>
 
 <style scoped>
+.device-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.device-card-link:hover .device-card,
+.device-card-link:focus-visible .device-card {
+  border-color: var(--accent);
+}
 .device-card {
   background: var(--bg-card);
   border: 1px solid var(--border-glass);
@@ -143,5 +159,11 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
+}
+.device-card-open {
+  margin: 12px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
 }
 </style>
