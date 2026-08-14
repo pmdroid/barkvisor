@@ -12,6 +12,13 @@ public enum PairingService {
     public static let receiptFileName = "pairing-peer.json"
     public static let pendingRedeemFileName = "pairing-redeem-pending.json"
 
+    /// Disk-only wrapper so a pending redeem cannot be reused for a later
+    /// offer from the same host (new one-time code).
+    struct PendingRedeemRecord: Codable, Equatable {
+        var codeHash: String
+        var response: PairingRedeemResponse
+    }
+
     public struct IssueInput: Sendable {
         public var dataDir: URL
         public var hostId: String
@@ -212,11 +219,7 @@ public enum PairingService {
         )
 
         let csr = try validateCSR(req.csrPEM)
-        guard Array(csr.publicKey.subjectPublicKeyInfoBytes) == presented.spki else {
-            throw PairingError.invalidCSR(
-                "CSR public key does not match Device certificate",
-            )
-        }
+        try bindCSR(csr, to: presented.spki)
 
         let material: HomeCertificateMaterial
         do {
@@ -239,6 +242,7 @@ public enum PairingService {
             code: req.code,
             joinerHostId: joinerHostId,
             fingerprint: presented.fingerprint,
+            presentedSPKI: presented.spki,
             csrPEM: req.csrPEM,
             material: material,
             now: input.now,
@@ -293,14 +297,16 @@ public enum PairingService {
     // MARK: - Private
 
     /// Same joiner may retry after a successful consume (lost 200, local
-    /// applyTrust failure) until the offer TTL elapses. A different Device
-    /// still sees expiredOrUsed.
+    /// applyTrust failure) until the offer TTL elapses. The CSR must still
+    /// match the pinned Device certificate; a different key is not signed.
+    /// A different Device still sees expiredOrUsed.
     private static func replaySameJoinerIfConsumed(
         store: PairingOfferStore,
         pins: PeerPinStore,
         code: String,
         joinerHostId: String,
         fingerprint: String,
+        presentedSPKI: [UInt8],
         csrPEM: String,
         material: HomeCertificateMaterial,
         now: Date,
@@ -319,6 +325,8 @@ public enum PairingService {
               pin.fingerprint == fingerprint.lowercased() else {
             return nil
         }
+        let csr = try validateCSR(csrPEM)
+        try bindCSR(csr, to: presentedSPKI)
         let issued = try issuePeerCertificate(
             joinerHostId: joinerHostId,
             csrPEM: csrPEM,
@@ -388,6 +396,14 @@ public enum PairingService {
     private struct PresentedCertificate {
         let fingerprint: String
         let spki: [UInt8]
+    }
+
+    private static func bindCSR(_ csr: CertificateSigningRequest, to presentedSPKI: [UInt8]) throws {
+        guard Array(csr.publicKey.subjectPublicKeyInfoBytes) == presentedSPKI else {
+            throw PairingError.invalidCSR(
+                "CSR public key does not match Device certificate",
+            )
+        }
     }
 
     private static func validateCSR(_ pem: String) throws -> CertificateSigningRequest {
