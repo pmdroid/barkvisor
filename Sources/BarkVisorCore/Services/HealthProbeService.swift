@@ -94,7 +94,8 @@ public actor HealthProbeService {
     private let dbPool: DatabasePool?
     private let transport: HealthProbeTransport
     private var states: [String: State] = [:]
-    /// Bumped on each attempt and on `reset` so a suspended run cannot commit.
+    /// Bumped on each attempt and whenever cached state is cleared so a
+    /// suspended run cannot restore results after the VM became ineligible.
     private var generations: [String: UInt64] = [:]
     private var probeBusy: Set<String> = []
     private var probeWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -126,8 +127,7 @@ public actor HealthProbeService {
     }
 
     public func reset(vmID: String) {
-        states.removeValue(forKey: vmID)
-        generations[vmID] = (generations[vmID] ?? 0) &+ 1
+        clearState(vmID)
     }
 
     /// Run configured probes once and update the in-memory cache.
@@ -139,7 +139,7 @@ public actor HealthProbeService {
         policy: HealthProbePolicy? = nil,
     ) async -> HealthProbeResults {
         guard let spec = vm.decodedHealth, spec.hasProbes else {
-            states.removeValue(forKey: vm.id)
+            clearState(vm.id)
             return .unobserved
         }
         let resolved = await destinationPolicy(for: vm, override: policy)
@@ -171,11 +171,11 @@ public actor HealthProbeService {
         for vm in vms {
             let state = VMState.parse(vm.state)
             guard state == .running || state == .starting else {
-                states.removeValue(forKey: vm.id)
+                clearState(vm.id)
                 continue
             }
             guard let spec = vm.decodedHealth, spec.hasProbes else {
-                states.removeValue(forKey: vm.id)
+                clearState(vm.id)
                 continue
             }
             let network = vm.networkId.flatMap { networks[$0] }
@@ -357,6 +357,11 @@ public actor HealthProbeService {
             out[row.id] = row
         }
         return out
+    }
+
+    private func clearState(_ vmID: String) {
+        states.removeValue(forKey: vmID)
+        generations[vmID] = (generations[vmID] ?? 0) &+ 1
     }
 
     private func acquireProbe(_ id: String) async {
