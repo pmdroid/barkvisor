@@ -91,6 +91,24 @@ struct PairingPayloadTests {
         }
     }
 
+    @Test func `unresolved join host is fail closed and lan ips stay pinned`() throws {
+        #expect(PairingPayload.hostResolvesToBlockedAddress("no-such-host.invalid"))
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "no-such-host.invalid", port: 7_777)
+        }
+        #expect(throws: PairingError.self) {
+            try PairingPayload.contractURL(host: "no-such-host.invalid", port: 7_777)
+        }
+        let pinned = try PairingPayload.resolvedAllowedJoinAddresses("192.168.1.10")
+        #expect(pinned.contains("192.168.1.10"))
+        #expect(
+            PairingPayload.pinnedJoinAddress(preferred: "192.168.1.10", resolved: pinned)
+                == "192.168.1.10",
+        )
+        let redeem = try PairingPayload.redeemURL(host: "192.168.1.10", port: 7_777)
+        #expect(redeem.host == "192.168.1.10")
+    }
+
     @Test func `advertised addresses drop loopback and link local`() {
         let ifaces = [
             HostInterfaceInfo(name: "lo0", ipAddress: "127.0.0.1"),

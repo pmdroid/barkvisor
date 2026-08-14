@@ -2023,7 +2023,7 @@ components:
 
     PairingRedeemRequest:
       type: object
-      required: [code, hostId, csrPEM, deviceCertificatePEM, caCertificatePEM]
+      required: [code, hostId, csrPEM, deviceCertificatePEM, caCertificatePEM, apiVersion]
       properties:
         code:
           type: string

@@ -85,9 +85,8 @@ extension PairingService {
             throw PairingError.selfPair
         }
 
-        // Validate the redeem target (string encodings + DNS) before reading
-        // or POSTing joiner CSR / Device cert / Home CA.
-        let url = try PairingPayload.redeemURL(host: host, port: payload.port)
+        // Validate + pin the contract target (string encodings + DNS) before
+        // reading or POSTing joiner CSR / Device cert / Home CA.
         let contractURL = try PairingPayload.contractURL(host: host, port: payload.port)
         try await checkRemoteContract(url: contractURL, client: client)
 
@@ -122,6 +121,9 @@ extension PairingService {
         } catch {
             throw PairingError.unavailable("Unable to encode redeem request")
         }
+        // Re-resolve and pin immediately before POST so a rebinding name
+        // cannot pass the earlier check then connect to a blocked address.
+        let url = try PairingPayload.redeemURL(host: host, port: payload.port)
         let http: PairingHTTPResponse
         do {
             http = try await client.postJSON(url: url, body: encoded)
