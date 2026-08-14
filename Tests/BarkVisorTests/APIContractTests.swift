@@ -165,8 +165,9 @@ struct APIContractTests {
         for item in APIContract.reservedPrefixes {
             #expect(!specPaths.contains(where: { $0.hasPrefix(item.prefix) }))
         }
-        #expect(APIContractSummary.current.reserved["evolving"]?.contains("/api/home") == true)
-        #expect(APIContractSummary.current.reserved["internal"]?.contains("/api/home/devices/{id}/v1") == true)
+        #expect(APIContractSummary.current.reserved["evolving"]?.contains("/api/apps") == true)
+        #expect(APIContract.routes.contains { $0.path == "/api/home/devices" })
+        #expect(APIContract.routes.contains { $0.path == "/api/home/devices/{id}/v1/{path}" })
     }
 
     @Test func `sse and websocket routes are marked out of band`() throws {

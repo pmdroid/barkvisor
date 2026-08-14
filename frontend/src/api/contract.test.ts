@@ -58,6 +58,7 @@ describe('API contract (PAS-78)', () => {
       '/api/pairing/codes',
       '/api/pairing/redeem',
       '/api/pairing/join',
+      '/api/home/devices',
     ]) {
       expect(yaml).toContain(`  ${path}:`)
     }

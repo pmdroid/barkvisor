@@ -100,6 +100,12 @@ public enum APIContract {
         Route(method: "DELETE", path: "/api/pairing/codes", stability: .evolving),
         Route(method: "POST", path: "/api/pairing/redeem", stability: .evolving),
         Route(method: "POST", path: "/api/pairing/join", stability: .evolving),
+        Route(method: "GET", path: "/api/home/devices", stability: .evolving),
+        Route(method: "GET", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
+        Route(method: "POST", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
+        Route(method: "PUT", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
+        Route(method: "PATCH", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
+        Route(method: "DELETE", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
         Route(method: "GET", path: "/api/vms/{id}/guest-info", stability: .evolving),
         Route(method: "GET", path: "/api/vms/{id}/health", stability: .evolving),
         Route(method: "PUT", path: "/api/vms/{id}/health", stability: .evolving),
@@ -115,9 +121,7 @@ public enum APIContract {
 
     /// Prefixes reserved for later waves — not implemented as routes today.
     public static let reservedPrefixes: [(prefix: String, stability: Stability)] = [
-        ("/api/home", .evolving),
         ("/api/apps", .evolving),
-        ("/api/home/devices/{id}/v1", .internalAccess),
     ]
 
     public static func routes(stability: Stability) -> [Route] {

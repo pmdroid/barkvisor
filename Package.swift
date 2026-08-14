@@ -74,6 +74,7 @@ packageTargets.append(contentsOf: [
             "BarkVisorCore",
             .product(name: "Vapor", package: "vapor"),
             .product(name: "NIOSSL", package: "swift-nio-ssl"),
+            .product(name: "AsyncHTTPClient", package: "async-http-client"),
         ],
         path: "Sources/BarkVisor",
         exclude: [
