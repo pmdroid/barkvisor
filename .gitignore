@@ -4,6 +4,10 @@
 node_modules/
 frontend/dist/
 *.xcodeproj/
+!Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj/
+!Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj/**
+Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj/xcuserdata/
+Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj/project.xcworkspace/xcuserdata/
 xcuserdata/
 DerivedData/
 build/
