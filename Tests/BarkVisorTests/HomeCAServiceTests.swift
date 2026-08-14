@@ -226,6 +226,131 @@ struct HomeCAServiceTests {
         #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
     }
 
+    @Test func `expired device cert is reminted and ca is reused`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+
+        #expect(first.caFingerprint == second.caFingerprint)
+        #expect(first.deviceFingerprint != second.deviceFingerprint)
+        #expect(try persistedDeviceFingerprint(in: dir) == second.deviceFingerprint)
+
+        let device = try Certificate(pemEncoded: second.deviceCertificatePEM)
+        let ca = try Certificate(pemEncoded: second.caCertificatePEM)
+        #expect(now <= device.notValidAfter)
+        #expect(!HomeCAService.certificateNeedsRenewal(
+            device,
+            now: now,
+            renewalWindow: HomeCAService.deviceRenewalWindow,
+        ))
+        #expect(DeviceTrust.isIssuedByHomeCA(leaf: device, ca: ca))
+        #expect(DeviceTrust.hostId(from: device) == hostId)
+    }
+
+    @Test func `device cert near expiry is reminted`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(
+            -(HomeCAService.deviceValidity - HomeCAService.deviceRenewalWindow / 2),
+        )
+
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+
+        #expect(first.caFingerprint == second.caFingerprint)
+        #expect(first.deviceFingerprint != second.deviceFingerprint)
+    }
+
+    @Test func `device cert outside renewal window is reused`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-100 * 24 * 60 * 60)
+
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+
+        #expect(first == second)
+    }
+
+    @Test func `expired home ca is reminted with a new device cert`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.caValidity + 3_600))
+
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+
+        #expect(first.caFingerprint != second.caFingerprint)
+        #expect(first.deviceFingerprint != second.deviceFingerprint)
+        #expect(try persistedCAFingerprint(in: dir) == second.caFingerprint)
+        #expect(try persistedDeviceFingerprint(in: dir) == second.deviceFingerprint)
+
+        let ca = try Certificate(pemEncoded: second.caCertificatePEM)
+        let device = try Certificate(pemEncoded: second.deviceCertificatePEM)
+        #expect(now <= ca.notValidAfter)
+        #expect(!HomeCAService.isExpired(ca, now: now))
+        #expect(DeviceTrust.isIssuedByHomeCA(leaf: device, ca: ca))
+        #expect(DeviceTrust.hostId(from: device) == hostId)
+
+        let decision = DeviceTrust.evaluate(
+            leafPEM: second.deviceCertificatePEM,
+            homeCAPEM: second.caCertificatePEM,
+            pins: [],
+            now: now,
+        )
+        #expect(decision == .accepted(hostId: hostId, source: .homeCA))
+    }
+
+    @Test func `issueDeviceCert after ca expiry signs with reminted ca`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.caValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+
+        let peerId = UUID().uuidString
+        let issued = try HomeCAService.issueDeviceCert(hostId: peerId, dataDir: dir, now: now)
+        let reloaded = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+
+        #expect(reloaded.caFingerprint != first.caFingerprint)
+        #expect(reloaded.deviceFingerprint != first.deviceFingerprint)
+
+        let ca = try Certificate(pemEncoded: reloaded.caCertificatePEM)
+        let issuedCert = try Certificate(pemEncoded: issued.certificatePEM)
+        #expect(DeviceTrust.isIssuedByHomeCA(leaf: issuedCert, ca: ca))
+        #expect(DeviceTrust.hostId(from: issuedCert) == peerId)
+    }
+
+    @Test func `expired device cert with corrupt key still does not remint`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let keyURL = HomeCAService.agentDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.deviceKeyFileName)
+        try Data("not-a-key".utf8).write(to: keyURL, options: [.atomic])
+
+        #expect(throws: HomeCAError.self) {
+            try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+        }
+        #expect(try persistedDeviceFingerprint(in: dir) == first.deviceFingerprint)
+        #expect(try persistedCAFingerprint(in: dir) == first.caFingerprint)
+    }
+
     private func persistedCAFingerprint(in dataDir: URL) throws -> String {
         let certPEM = try String(
             contentsOf: HomeCAService.caDirectory(in: dataDir)

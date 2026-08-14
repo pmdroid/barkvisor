@@ -28,6 +28,8 @@ public enum HomeCAService {
 
     public static let caValidity: TimeInterval = 10 * 365 * 24 * 60 * 60
     public static let deviceValidity: TimeInterval = 365 * 24 * 60 * 60
+    /// Reissue a still-valid Device leaf this far before `notValidAfter`.
+    public static let deviceRenewalWindow: TimeInterval = 30 * 24 * 60 * 60
 
     public static func caDirectory(in dataDir: URL) -> URL {
         dataDir.appendingPathComponent(caDirectoryName)
@@ -140,8 +142,9 @@ public enum HomeCAService {
         let certExists = FileManager.default.fileExists(atPath: certURL.path)
         let keyExists = FileManager.default.fileExists(atPath: keyURL.path)
         if certExists || keyExists {
+            let loaded: CAFiles
             do {
-                return try loadCA(certURL: certURL, keyURL: keyURL)
+                loaded = try loadCA(certURL: certURL, keyURL: keyURL)
             } catch let error as HomeCAError {
                 throw error
             } catch {
@@ -149,36 +152,16 @@ public enum HomeCAService {
                     "unable to load Home CA: \(error.localizedDescription)",
                 )
             }
+            if !isExpired(loaded.certificate, now: now) {
+                return loaded
+            }
         }
 
-        let key = P256.Signing.PrivateKey()
-        let privateKey = Certificate.PrivateKey(key)
-        let name = try DistinguishedName {
-            CommonName("BarkVisor Home CA")
+        let created = try mintAndPersistCA(dataDir: dataDir, now: now)
+        if certExists || keyExists {
+            try remintPersistedLocalDeviceIfPresent(dataDir: dataDir, ca: created, now: now)
         }
-        let ski = SubjectKeyIdentifier(hash: privateKey.publicKey)
-        let cert = try Certificate(
-            version: .v3,
-            serialNumber: Certificate.SerialNumber(1),
-            publicKey: privateKey.publicKey,
-            notValidBefore: now.addingTimeInterval(-60),
-            notValidAfter: now.addingTimeInterval(caValidity),
-            issuer: name,
-            subject: name,
-            signatureAlgorithm: .ecdsaWithSHA256,
-            extensions: Certificate.Extensions {
-                Critical(BasicConstraints.isCertificateAuthority(maxPathLength: 0))
-                Critical(KeyUsage(keyCertSign: true, cRLSign: true))
-                ski
-            },
-            issuerPrivateKey: privateKey,
-        )
-        let certPEM = try cert.serializeAsPEM().pemString
-        let keyPEM = try privateKey.serializeAsPEM().pemString
-        try writeAtomic(Data(certPEM.utf8), to: certURL, permissions: 0o644)
-        try writeAtomic(Data(keyPEM.utf8), to: keyURL, permissions: 0o600)
-        try writeAtomic(Data("2".utf8), to: dir.appendingPathComponent(serialFileName), permissions: 0o644)
-        return CAFiles(certificatePEM: certPEM, keyPEM: keyPEM, certificate: cert, key: privateKey)
+        return created
     }
 
     private static func loadCA(certURL: URL, keyURL: URL) throws -> CAFiles {
@@ -204,8 +187,9 @@ public enum HomeCAService {
         let certExists = FileManager.default.fileExists(atPath: certURL.path)
         let keyExists = FileManager.default.fileExists(atPath: keyURL.path)
         if certExists || keyExists {
+            let loaded: DeviceFiles
             do {
-                return try loadDeviceCert(certURL: certURL, keyURL: keyURL, hostId: hostId, ca: ca)
+                loaded = try loadDeviceCert(certURL: certURL, keyURL: keyURL, hostId: hostId, ca: ca)
             } catch let error as HomeCAError {
                 throw error
             } catch {
@@ -213,22 +197,13 @@ public enum HomeCAService {
                     "unable to load device certificate: \(error.localizedDescription)",
                 )
             }
+            let cert = try Certificate(pemEncoded: loaded.certificatePEM)
+            if !certificateNeedsRenewal(cert, now: now, renewalWindow: deviceRenewalWindow) {
+                return loaded
+            }
         }
 
-        let issued = try issueDeviceCert(
-            hostId: hostId,
-            csrPEM: nil,
-            caCert: ca.certificate,
-            caKey: ca.key,
-            now: now,
-        )
-        guard let keyPEM = issued.privateKeyPEM else {
-            throw HomeCAError.persistFailed("Issued local device cert without a private key")
-        }
-        try writeAtomic(Data(issued.certificatePEM.utf8), to: certURL, permissions: 0o644)
-        try writeAtomic(Data(keyPEM.utf8), to: keyURL, permissions: 0o600)
-        try incrementSerial(in: dataDir)
-        return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
+        return try mintAndPersistDeviceCert(dataDir: dataDir, hostId: hostId, ca: ca, now: now)
     }
 
     private static func loadDeviceCert(
@@ -318,6 +293,100 @@ public enum HomeCAService {
             fingerprint: DeviceTrust.fingerprint(certificate: cert),
             notValidAfter: cert.notValidAfter,
         )
+    }
+
+    private static func mintAndPersistCA(dataDir: URL, now: Date) throws -> CAFiles {
+        let dir = caDirectory(in: dataDir)
+        let certURL = dir.appendingPathComponent(caCertificateFileName)
+        let keyURL = dir.appendingPathComponent(caKeyFileName)
+        let key = P256.Signing.PrivateKey()
+        let privateKey = Certificate.PrivateKey(key)
+        let name = try DistinguishedName {
+            CommonName("BarkVisor Home CA")
+        }
+        let ski = SubjectKeyIdentifier(hash: privateKey.publicKey)
+        let cert = try Certificate(
+            version: .v3,
+            serialNumber: Certificate.SerialNumber(1),
+            publicKey: privateKey.publicKey,
+            notValidBefore: now.addingTimeInterval(-60),
+            notValidAfter: now.addingTimeInterval(caValidity),
+            issuer: name,
+            subject: name,
+            signatureAlgorithm: .ecdsaWithSHA256,
+            extensions: Certificate.Extensions {
+                Critical(BasicConstraints.isCertificateAuthority(maxPathLength: 0))
+                Critical(KeyUsage(keyCertSign: true, cRLSign: true))
+                ski
+            },
+            issuerPrivateKey: privateKey,
+        )
+        let certPEM = try cert.serializeAsPEM().pemString
+        let keyPEM = try privateKey.serializeAsPEM().pemString
+        try writeAtomic(Data(certPEM.utf8), to: certURL, permissions: 0o644)
+        try writeAtomic(Data(keyPEM.utf8), to: keyURL, permissions: 0o600)
+        try writeAtomic(Data("2".utf8), to: dir.appendingPathComponent(serialFileName), permissions: 0o644)
+        return CAFiles(certificatePEM: certPEM, keyPEM: keyPEM, certificate: cert, key: privateKey)
+    }
+
+    private static func mintAndPersistDeviceCert(
+        dataDir: URL,
+        hostId: String,
+        ca: CAFiles,
+        now: Date,
+    ) throws -> DeviceFiles {
+        let dir = agentDirectory(in: dataDir)
+        let issued = try issueDeviceCert(
+            hostId: hostId,
+            csrPEM: nil,
+            caCert: ca.certificate,
+            caKey: ca.key,
+            now: now,
+        )
+        guard let keyPEM = issued.privateKeyPEM else {
+            throw HomeCAError.persistFailed("Issued local device cert without a private key")
+        }
+        try writeAtomic(
+            Data(issued.certificatePEM.utf8),
+            to: dir.appendingPathComponent(deviceCertificateFileName),
+            permissions: 0o644,
+        )
+        try writeAtomic(
+            Data(keyPEM.utf8),
+            to: dir.appendingPathComponent(deviceKeyFileName),
+            permissions: 0o600,
+        )
+        try incrementSerial(in: dataDir)
+        return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
+    }
+
+    /// After a Home CA rotation, rewrite this Device's leaf so it is issued by the new CA.
+    private static func remintPersistedLocalDeviceIfPresent(
+        dataDir: URL,
+        ca: CAFiles,
+        now: Date,
+    ) throws {
+        let certURL = agentDirectory(in: dataDir).appendingPathComponent(deviceCertificateFileName)
+        guard FileManager.default.fileExists(atPath: certURL.path) else { return }
+        let certPEM = try String(contentsOf: certURL, encoding: .utf8)
+        let cert = try Certificate(pemEncoded: certPEM)
+        guard let hostId = DeviceTrust.hostId(from: cert) else {
+            throw HomeCAError.corruptMaterial("device.crt SAN missing after Home CA rotation")
+        }
+        _ = try mintAndPersistDeviceCert(dataDir: dataDir, hostId: hostId, ca: ca, now: now)
+    }
+
+    static func isExpired(_ certificate: Certificate, now: Date) -> Bool {
+        now > certificate.notValidAfter
+    }
+
+    static func certificateNeedsRenewal(
+        _ certificate: Certificate,
+        now: Date,
+        renewalWindow: TimeInterval,
+    ) -> Bool {
+        now < certificate.notValidBefore
+            || now.addingTimeInterval(renewalWindow) > certificate.notValidAfter
     }
 
     private static func incrementSerial(in dataDir: URL) throws {
