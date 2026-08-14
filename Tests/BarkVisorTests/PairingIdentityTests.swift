@@ -314,7 +314,61 @@ struct PairingIdentityTests {
             )
         }
         #expect(Config.loadJWTSecret(from: joinerDir) == "keep-local")
-        #expect(try PairingService.loadReceipt(dataDir: joinerDir) == nil)
+        #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.peerHostId == issuerId)
+        #expect(try PeerPinStore(dataDir: joinerDir).contains(fingerprint: issuer.deviceFingerprint))
+    }
+
+    @Test func `receipt persist failure leaves local jwt and admin unchanged`() async throws {
+        let issuerDir = try isolatedDir("iss-receipt-auth")
+        let joinerDir = try isolatedDir("join-receipt-auth")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let joinerDB = try makeDB(joinerDir)
+        _ = try insertAdmin(joinerDB, id: "local-admin", username: "local", password: "oldpass1234")
+        try Config.persistJWTSecret("keep-local", to: joinerDir)
+
+        var remote = try honestRedeemResponse(
+            issuer: issuer,
+            issuerId: issuerId,
+            joiner: joiner,
+            joinerId: joinerId,
+        )
+        remote.jwtSecret = "should-not-replace"
+        remote.adminUser = PairingAdminUser(
+            id: "home-admin",
+            username: "admin",
+            passwordHash: "hashed:shared",
+        )
+        let receiptURL = PairingService.receiptURL(in: joinerDir)
+        try FileManager.default.createDirectory(at: receiptURL, withIntermediateDirectories: true)
+        await #expect(throws: PairingError.self) {
+            try await PairingService.applyTrust(
+                response: remote,
+                expected: PairingPayload(
+                    code: "ABCD-EFGH",
+                    host: "192.168.0.9",
+                    port: 7_777,
+                    hostId: issuerId,
+                    fingerprint: issuer.deviceFingerprint,
+                ),
+                dataDir: joinerDir,
+                localHostId: joinerId,
+                db: joinerDB,
+            )
+        }
+        #expect(Config.loadJWTSecret(from: joinerDir) == "keep-local")
+        let users = try await joinerDB.read { db in try User.fetchAll(db) }
+        #expect(users.count == 1)
+        #expect(users[0].id == "local-admin")
+        #expect(users[0].username == "local")
+        #expect(users[0].password == "hashed:oldpass1234")
+        #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
     }
 
     @Test func `join copies identity through existing redeem`() async throws {

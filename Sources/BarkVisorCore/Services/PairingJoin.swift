@@ -37,7 +37,6 @@ extension PairingService {
         }
 
         try validateRedeemMaterial(response, localHostId: localHostId, now: now)
-        try await applySharedIdentity(response, dataDir: dataDir, now: now, db: db, keys: keys)
 
         let receipt = PairingPeerReceipt(
             peerHostId: response.hostId,
@@ -68,6 +67,10 @@ extension PairingService {
                 "Unable to persist peer pin: \(error.localizedDescription)",
             )
         }
+
+        // Identity last: a receipt/pin persist failure must leave local
+        // JWT secret and admin credentials unchanged.
+        try await applySharedIdentity(response, dataDir: dataDir, now: now, db: db, keys: keys)
 
         return PairingJoinResponse(
             peerHostId: response.hostId,
