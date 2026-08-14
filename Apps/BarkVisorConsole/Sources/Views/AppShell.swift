@@ -7,20 +7,23 @@ struct AppShell: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(AppRoute.allCases, selection: $model.route) { item in
-                Label(item.title, systemImage: item.symbol)
-                    .tag(item)
+            List(selection: $model.route) {
+                Section {
+                    ForEach(AppRoute.allCases.filter { $0 != .settings }, id: \.self) { item in
+                        Label(item.title, systemImage: item.symbol)
+                            .tag(item)
+                    }
+                }
+                Section {
+                    Label(AppRoute.settings.title, systemImage: AppRoute.settings.symbol)
+                        .tag(AppRoute.settings)
+                    Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                        model.logout()
+                    }
+                }
             }
             .navigationTitle("BarkVisor")
             .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) {
-                Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right") {
-                    model.logout()
-                }
-                .bvGlassButton()
-                .padding()
-                .frame(maxWidth: .infinity)
-            }
         } detail: {
             NavigationStack {
                 detail
@@ -30,19 +33,20 @@ struct AppShell: View {
                             DevicePicker()
                         }
                     }
-                    .safeAreaInset(edge: .top) {
-                        if let banner = model.banner {
-                            Text(banner)
-                                .font(.subheadline)
-                                .foregroundStyle(BVTheme.red)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(.red.opacity(0.12))
-                        }
-                    }
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { model.banner != nil },
+                set: { if !$0 { model.banner = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model.banner = nil }
+        } message: {
+            Text(model.banner ?? "")
+        }
         .onChange(of: model.route) { _, next in
             Task { await model.open(next) }
         }

@@ -10,16 +10,7 @@ struct WorkloadsView: View {
     @State private var filter = "all"
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Filter", selection: $filter) {
-                Text("All").tag("all")
-                ForEach(["running", "failed", "degraded", "stopped"], id: \.self) { key in
-                    Text(WorkloadHealth.label(key)).tag(key)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
+        Group {
             if visible.isEmpty {
                 ContentUnavailableView(
                     "No workloads",
@@ -34,7 +25,18 @@ struct WorkloadsView: View {
                 List(visible) { workload in
                     WorkloadRow(workload: workload, compact: false)
                 }
-                .bvListStyle()
+                .platformListStyle()
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Picker("Filter", selection: $filter) {
+                    Text("All").tag("all")
+                    ForEach(["running", "failed", "degraded", "stopped"], id: \.self) { key in
+                        Text(WorkloadHealth.label(key)).tag(key)
+                    }
+                }
+                .pickerStyle(.menu)
             }
         }
     }
@@ -52,51 +54,61 @@ struct WorkloadRow: View {
     @State private var showVNCHint = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(workload.name)
-                        .font(.headline)
-                    Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(osLabel)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                StatusPill.health(workload.resolvedHealth)
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workload.name)
+                Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(osLabel)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
-
+            Spacer()
+            StatusLabel.health(workload.resolvedHealth)
+            if model.actionIDs.contains(workload.id) {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !compact {
-                HStack {
-                    if workload.canStart {
-                        Button("Start") {
-                            Task { await model.startWorkload(workload) }
-                        }
-                        .bvProminentButton()
-                        .disabled(model.actionIDs.contains(workload.id))
+                if workload.canStart {
+                    Button("Start") {
+                        Task { await model.startWorkload(workload) }
                     }
-                    if workload.canStop {
-                        Button("Stop") {
-                            Task { await model.stopWorkload(workload) }
-                        }
-                        .bvGlassButton()
-                        .disabled(model.actionIDs.contains(workload.id))
-                        Button("Force stop", role: .destructive) {
-                            Task { await model.stopWorkload(workload, force: true) }
-                        }
-                        .disabled(model.actionIDs.contains(workload.id))
+                    .tint(.green)
+                    .disabled(model.actionIDs.contains(workload.id))
+                }
+                if workload.canStop {
+                    Button("Stop") {
+                        Task { await model.stopWorkload(workload) }
                     }
-                    Button("Console") { showVNCHint = true }
-                        .bvGlassButton()
-                    if let url = webURL {
-                        Link("Open in web UI", destination: url)
+                    .disabled(model.actionIDs.contains(workload.id))
+                    Button("Force Stop", role: .destructive) {
+                        Task { await model.stopWorkload(workload, force: true) }
                     }
-                    if model.actionIDs.contains(workload.id) {
-                        ProgressView().controlSize(.small)
-                    }
+                    .disabled(model.actionIDs.contains(workload.id))
                 }
             }
         }
-        .padding(.vertical, 4)
+        .contextMenu {
+            if !compact {
+                if workload.canStart {
+                    Button("Start") {
+                        Task { await model.startWorkload(workload) }
+                    }
+                }
+                if workload.canStop {
+                    Button("Stop") {
+                        Task { await model.stopWorkload(workload) }
+                    }
+                    Button("Force Stop", role: .destructive) {
+                        Task { await model.stopWorkload(workload, force: true) }
+                    }
+                }
+                Button("Console") { showVNCHint = true }
+                if let url = webURL {
+                    Link("Open in web UI", destination: url)
+                }
+            }
+        }
         .alert("Console", isPresented: $showVNCHint) {
             if let url = vncURL {
                 Button("Open web console") { open(url) }
