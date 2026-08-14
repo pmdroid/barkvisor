@@ -149,11 +149,8 @@ struct PairingController: RouteCollection {
                 db: req.db,
                 keys: keys,
             )
-            if let adminCount = try? await req.db.read({ db in
-                try User.filter(User.Columns.password != "").fetchCount(db)
-            }), adminCount > 0 {
-                setupMiddleware.markComplete()
-            }
+            // Pairing during first-run setup must not close /api/setup/* —
+            // the wizard still needs bridge / repo / catalog steps.
             AuditService.log(
                 action: "pairing.join",
                 resourceType: "device",
