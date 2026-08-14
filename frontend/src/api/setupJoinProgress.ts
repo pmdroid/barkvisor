@@ -30,7 +30,11 @@ export function clearSetupJoinProgress(): void {
   }
 }
 
-/** Resume join-ready from sessionStorage or a server-side pairing receipt. */
+/**
+ * Resume join-ready after a completed join (identity, not a pairing receipt).
+ * `status.joined` is true only when an admin exists; sessionStorage is written
+ * only after a successful joinHome. Receipt-only leftovers must not resume.
+ */
 export function shouldResumeJoinReady(
   status: Pick<SetupStatus, 'complete' | 'joined'>,
   saved: PairingJoin | null,

@@ -26,15 +26,28 @@ struct SetupController: RouteCollection {
 
     struct StatusResponse: Content {
         let complete: Bool
-        /// Successful pairing join left a receipt; setup may still be incomplete.
+        /// Shared identity landed after a pairing join (admin exists). A receipt
+        /// alone is not enough — applyTrust persists it before pin / identity.
         let joined: Bool
+    }
+
+    /// Resume join-ready only after identity is complete. A pairing receipt can
+    /// exist after a failed applyTrust; finishSetup then has no admin and no Back.
+    static func shouldReportJoined(hasReceipt: Bool, hasAdmin: Bool) -> Bool {
+        hasReceipt && hasAdmin
     }
 
     @Sendable
     func getStatus(req: Request) async throws -> StatusResponse {
-        StatusResponse(
+        let hasAdmin = try await req.db.read { db in
+            try User.filter(User.Columns.password != "").fetchCount(db) > 0
+        }
+        return StatusResponse(
             complete: setupMiddleware.isSetupComplete,
-            joined: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
+            joined: Self.shouldReportJoined(
+                hasReceipt: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
+                hasAdmin: hasAdmin,
+            ),
         )
     }
 

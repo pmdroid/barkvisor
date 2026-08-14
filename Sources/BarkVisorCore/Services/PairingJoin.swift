@@ -215,8 +215,8 @@ extension PairingService {
         return try JSONDecoder().decode(PairingPeerReceipt.self, from: data)
     }
 
-    /// True after a successful join persisted a receipt. Used by setup status so
-    /// SetupView can resume join-ready when sessionStorage is unavailable.
+    /// True after a pairing receipt was persisted. Receipt can exist before
+    /// pin / applySharedIdentity; setup `joined` also requires an admin.
     public static func hasPairedReceipt(dataDir: URL) -> Bool {
         do {
             return try loadReceipt(dataDir: dataDir) != nil
