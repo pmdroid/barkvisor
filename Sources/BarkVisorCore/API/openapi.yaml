@@ -841,13 +841,15 @@ paths:
       tags: [evolving]
       operationId: redeemPairingCode
       x-barkvisor-stability: evolving
-      summary: Redeem a pairing code on the issuer
+      summary: Redeem a pairing code; return trust material and shared identity copy
       description: |
         Public, rate-limited. The joining Device presents the short code, its
         Home-CA-issued Device certificate, the issuing Home CA, and a CSR.
         The issuer consumes the code, pins the presented certificate, issues
         a Home-CA cert, and returns trust material including the issued
-        agentPort. Does not touch local SQLite / QEMU.
+        agentPort plus optional shared identity copy (issuer jwtSecret and
+        adminUser with id, username, and password hash; never a plaintext
+        password). Local SQLite still owns VM runtime.
       security: []
       requestBody:
         required: true
@@ -2074,6 +2076,29 @@ components:
           type: integer
         apiVersion:
           type: integer
+        jwtSecret:
+          type: string
+          description: >
+            Optional issuer Home JWT HMAC secret (dataDir/jwt-secret).
+            Omitted when the issuer has no secret to copy.
+        adminUser:
+          $ref: "#/components/schemas/PairingAdminUser"
+          description: >
+            Optional first password-backed admin row copied from the issuer.
+            Omitted when no such user exists.
+
+    PairingAdminUser:
+      type: object
+      description: Admin row copied at pair time. Password is the stored hash only.
+      required: [id, username, passwordHash]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        passwordHash:
+          type: string
+          description: bcrypt hash; never a plaintext password
 
     PairingJoinRequest:
       type: object
