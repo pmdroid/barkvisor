@@ -10,19 +10,18 @@ extension PairingJoinResponse: Content {}
 
 /// Pairing issue / redeem (PAS-45). JWT on the issuer; redeem is public
 /// and uses a dedicated pairing limiter that stays on when login limiting
-/// is disabled. Join requires a QR payload and is public only until
-/// setup completes.
+/// is disabled. Join uses the same pairing limiter. Join requires a QR
+/// payload and is console-local until setup completes, then JWT.
 struct PairingController: RouteCollection {
     let offers: PairingOfferStore
     let setupMiddleware: SetupMiddleware
     let jwt: JWTAuthMiddleware
-    let loginRateLimit: RateLimitMiddleware
     let pairingRateLimit: RateLimitMiddleware
 
     func boot(routes: any RoutesBuilder) throws {
         let pairing = routes.grouped("api", "pairing")
         pairing.grouped(pairingRateLimit).post("redeem", use: redeem)
-        pairing.grouped(SetupOrJWTMiddleware(setup: setupMiddleware, jwt: jwt), loginRateLimit)
+        pairing.grouped(SetupOrJWTMiddleware(setup: setupMiddleware, jwt: jwt), pairingRateLimit)
             .post("join", use: join)
     }
 
@@ -174,6 +173,10 @@ struct SetupOrJWTMiddleware: AsyncMiddleware {
         -> Vapor.Response {
         if setup.isSetupComplete {
             return try await jwt.respond(to: request, chainingTo: next)
+        }
+        let peer = request.remoteAddress?.ipAddress ?? request.peerAddress?.ipAddress
+        guard PairingPayload.isConsoleLocalClient(peer) else {
+            throw Abort(.forbidden, reason: "Pairing join during setup is limited to this Device")
         }
         return try await next.respond(to: request)
     }
