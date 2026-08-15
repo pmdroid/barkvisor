@@ -21,7 +21,10 @@ import AppModal from '../components/ui/AppModal.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
-import { hostArchToImageArch } from '../utils/imageArch'
+import { normalizeImageArch } from '../utils/imageArch'
+import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
+import { deviceForCatalogImage } from '../utils/libraryDownloadTarget'
+import api from '../api/client'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
 const router = useRouter()
@@ -35,14 +38,6 @@ const homeLibrary = useHomeLibraryStore()
 
 // Tab
 const activeTab = ref<'templates' | 'images'>('templates')
-
-/**
- * Catalog arch gate (PAS-37 fail-closed). Unknown host → not runnable.
- * Do not infer from guestTypes.
- */
-function imageArchSupported(arch: string | null | undefined): boolean {
-  return caps.isArchRunnable(arch)
-}
 
 // Repos filtered by active tab
 const templateRepos = computed(() =>
@@ -65,7 +60,7 @@ const imageTabCount = computed(() => {
   let count = 0
   for (const r of imageRepos.value) {
     const imgs = repoStore.imagesByRepo[r.id]
-    if (imgs) count += imgs.filter(i => imageArchSupported(i.arch)).length
+    if (imgs) count += imgs.length
   }
   return count
 })
@@ -131,10 +126,6 @@ const repoTemplatesUnfiltered = computed(() => {
 })
 
 const repoTemplates = computed(() => repoTemplatesUnfiltered.value)
-
-const hostImageArchLabel = computed(() =>
-  caps.hostArchKnown ? hostArchToImageArch(caps.hostArch) : null,
-)
 
 const availableCategories = computed(() => {
   const cats = new Set(repoTemplates.value.map(t => t.category))
@@ -218,6 +209,7 @@ const addLoading = ref(false)
 const repoImages = ref<RepositoryImage[]>([])
 const imagesLoading = ref(false)
 const filterType = ref('')
+const filterArch = ref('')
 const searchQuery = ref('')
 const downloading = ref<Set<string>>(new Set())
 const imagePage = ref(1)
@@ -312,17 +304,22 @@ watch(activeTab, (tab) => {
   if (tab === 'images' && repoImages.value.length === 0) loadRepoImages()
 })
 
-/** Catalog images hidden by host-arch filter (PAS-48 empty-state messaging). */
-const foreignArchImageCount = computed(() => {
-  if (!caps.hostArchKnown) return 0
-  return repoImages.value.filter((img) => !imageArchSupported(img.arch)).length
+const catalogArches = computed(() => {
+  const arches = new Set<string>()
+  for (const img of repoImages.value) {
+    const arch = normalizeImageArch(img.arch) ?? img.arch
+    if (arch) arches.add(arch)
+  }
+  return [...arches].sort()
 })
 
 const filteredImages = computed(() => {
   return repoImages.value.filter(img => {
-    // Hide catalog entries for guest arches this host cannot run (was hard-coded arm64).
-    if (!imageArchSupported(img.arch)) return false
     if (filterType.value && img.imageType !== filterType.value) return false
+    if (filterArch.value) {
+      const arch = normalizeImageArch(img.arch) ?? img.arch
+      if (arch !== filterArch.value) return false
+    }
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase()
       if (!img.name.toLowerCase().includes(q) && !(img.description || '').toLowerCase().includes(q)) return false
@@ -341,27 +338,15 @@ const types = computed(() => [...new Set(repoImages.value.map(i => i.imageType))
 
 const imagesEmptyTitle = computed(() => {
   if (repoImages.value.length === 0) return 'Repository is empty'
-  if (
-    foreignArchImageCount.value > 0 &&
-    filteredImages.value.length === 0 &&
-    !filterType.value &&
-    !searchQuery.value
-  ) {
-    return 'No images for this device architecture'
-  }
   return 'No images match the current filters'
 })
 
 const imagesEmptySubtitle = computed(() => {
   if (repoImages.value.length === 0) return 'Click Manage > Sync to fetch the catalog.'
-  if (foreignArchImageCount.value > 0 && hostImageArchLabel.value) {
-    const n = foreignArchImageCount.value
-    return `${n} image${n === 1 ? '' : 's'} hidden — this device only runs ${hostImageArchLabel.value} guests.`
-  }
   return undefined
 })
 
-watch([filterType, searchQuery], () => { imagePage.value = 1 })
+watch([filterType, filterArch, searchQuery], () => { imagePage.value = 1 })
 
 function localImage(img: RepositoryImage): Image | undefined {
   return imageStore.images.find(i => i.sourceUrl === img.downloadUrl)
@@ -388,12 +373,46 @@ async function doDeleteLocal() {
   }
 }
 
+async function downloadOnDevice(
+  device: NonNullable<ReturnType<typeof deviceForCatalogImage>>,
+  img: RepositoryImage,
+) {
+  const { data: repos } = await api.get(devicePath(device, '/repositories'))
+  const imageRepos = Array.isArray(repos)
+    ? repos.filter((row: { repoType?: string }) => row.repoType === 'images')
+    : []
+  for (const repo of imageRepos) {
+    const { data: catalog } = await api.get(devicePath(device, `/repositories/${repo.id}/images`))
+    const match = Array.isArray(catalog)
+      ? catalog.find((row: RepositoryImage) => row.slug === img.slug && (
+        normalizeImageArch(row.arch) === normalizeImageArch(img.arch)
+      ))
+      : null
+    if (!match) continue
+    await api.post(devicePath(device, `/repositories/images/${match.id}/download`))
+    toast.success(`Download started on ${devicesStore.deviceLabel(device)}`)
+    return
+  }
+  throw new Error(
+    `“${img.name}” is not in ${devicesStore.deviceLabel(device)}'s catalog. Sync repositories on that Device.`,
+  )
+}
+
 async function download(img: RepositoryImage) {
   downloading.value.add(img.id)
   try {
-    await repoStore.downloadImage(img.id)
-    await imageStore.fetchAll()
-    setTimeout(subscribeDownloading, 500)
+    const device = deviceForCatalogImage(img.arch, devicesStore.devices)
+    if (!device) {
+      toast.error(`No reachable Device can run ${img.arch || 'this'} guests.`)
+      return
+    }
+    if (isSelfDevice(device)) {
+      await repoStore.downloadImage(img.id)
+      await imageStore.fetchAll()
+      setTimeout(subscribeDownloading, 500)
+    } else {
+      await downloadOnDevice(device, img)
+    }
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -597,6 +616,10 @@ async function addRepo() {
       <AppSelect v-model="filterType" size="sm">
         <option value="">All types</option>
         <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
+      </AppSelect>
+      <AppSelect v-if="catalogArches.length > 1" v-model="filterArch" size="sm">
+        <option value="">All architectures</option>
+        <option v-for="arch in catalogArches" :key="arch" :value="arch">{{ arch }}</option>
       </AppSelect>
       <span style="font-size:12px;color:var(--text-dim)">{{ filteredImages.length }} images</span>
     </div>
