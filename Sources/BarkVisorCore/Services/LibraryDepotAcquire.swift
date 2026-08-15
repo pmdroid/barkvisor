@@ -9,7 +9,9 @@ import GRDB
 /// deploy/download keeps today's internet path (PAS-47 / PAS-90). A failed
 /// copy tags the Library row so a later `fetchMatching` also returns `nil`
 /// instead of listing the depot again. Concurrent callers share one
-/// downloading row. Local Workload start does not call this.
+/// downloading row. A `downloading` row with no live copy worker (process
+/// restart) is marked failed so callers can fall back to the internet path.
+/// Local Workload start does not call this.
 public struct LibraryDepotAcquire: LibraryDepotFetching {
     public var localHostId: String
     public var dataDir: URL
@@ -43,6 +45,13 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             await fallback(
                 db: db, sourceUrl: request.sourceUrl,
                 reason: "previous depot fetch failed; using internet",
+            )
+            return nil
+        }
+        if await reclaimOrphan(sourceUrl: request.sourceUrl, db: db) {
+            await fallback(
+                db: db, sourceUrl: request.sourceUrl,
+                reason: "depot copy was interrupted; using internet",
             )
             return nil
         }
@@ -153,7 +162,7 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             path: nil,
             sizeBytes: nil,
             status: "downloading",
-            error: nil,
+            error: Self.depotCopyingMarker,
             sourceUrl: request.sourceUrl,
             createdAt: now,
             updatedAt: now,
@@ -167,12 +176,17 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
                     return .ready(ready)
                 }
                 if let downloading = rows.first(where: { $0.status == "downloading" }) {
+                    if Self.isDepotCopy(downloading), !LiveDepotCopies.contains(downloading.id) {
+                        try Self.markInterrupted(downloading.id, db: db)
+                        return .depotFailed
+                    }
                     return .inFlight(downloading)
                 }
                 if rows.contains(where: { $0.status == "error" && Self.isDepotCopyFailure($0.error) }) {
                     return .depotFailed
                 }
                 try image.insert(db)
+                LiveDepotCopies.begin(image.id)
                 return .started(image)
             }
         } catch {
@@ -207,6 +221,7 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         client: any LibraryDepotClient,
         db: DatabasePool,
     ) async {
+        defer { LiveDepotCopies.end(job.imageId) }
         let destination: URL
         do {
             let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
@@ -343,9 +358,51 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
     /// Prefix so a later `fetchMatching` can tell a depot copy failure from
     /// an internet / upload error and skip the depot on retry.
     private static let depotFailurePrefix = "Library depot: "
+    /// In-progress marker written on the downloading row so a later process
+    /// can tell a depot copy from an internet download after restart.
+    static let depotCopyingMarker = depotFailurePrefix + "copying"
 
     static func isDepotCopyFailure(_ message: String?) -> Bool {
         message?.hasPrefix(depotFailurePrefix) == true
+            && message != depotCopyingMarker
+    }
+
+    private static func isDepotCopy(_ image: VMImage) -> Bool {
+        image.error?.hasPrefix(depotFailurePrefix) == true
+    }
+
+    private func reclaimOrphan(sourceUrl: String, db: DatabasePool) async -> Bool {
+        do {
+            return try await db.write { db in
+                let rows = try VMImage.filter(Column("sourceUrl") == sourceUrl).fetchAll(db)
+                if rows.contains(where: { $0.status == "ready" }) {
+                    return false
+                }
+                guard let downloading = rows.first(where: {
+                    $0.status == "downloading" && Self.isDepotCopy($0)
+                }) else {
+                    return false
+                }
+                if LiveDepotCopies.contains(downloading.id) {
+                    return false
+                }
+                try Self.markInterrupted(downloading.id, db: db)
+                return true
+            }
+        } catch {
+            return false
+        }
+    }
+
+    private static func markInterrupted(_ imageId: String, db: Database) throws {
+        try db.execute(
+            sql: "UPDATE images SET status = 'error', error = ?, updatedAt = ? WHERE id = ?",
+            arguments: [
+                depotFailurePrefix + "copy interrupted",
+                iso8601.string(from: Date()),
+                imageId,
+            ],
+        )
     }
 
     private func markFailed(imageId: String, db: DatabasePool, message: String) async {
@@ -367,5 +424,46 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             db: db,
         )
         Log.images.warning("Library depot fallback: \(reason)")
+    }
+}
+
+/// Process-lifetime set of depot copy jobs. Survives `LibraryDepotAcquire`
+/// value copies; empty after restart so orphaned downloading rows can fall back.
+private enum LiveDepotCopies {
+    private static let shared = LiveDepotCopySet()
+
+    static func begin(_ id: String) {
+        shared.begin(id)
+    }
+
+    static func end(_ id: String) {
+        shared.end(id)
+    }
+
+    static func contains(_ id: String) -> Bool {
+        shared.contains(id)
+    }
+}
+
+private final class LiveDepotCopySet: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids = Set<String>()
+
+    func begin(_ id: String) {
+        lock.lock()
+        ids.insert(id)
+        lock.unlock()
+    }
+
+    func end(_ id: String) {
+        lock.lock()
+        ids.remove(id)
+        lock.unlock()
+    }
+
+    func contains(_ id: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ids.contains(id)
     }
 }
