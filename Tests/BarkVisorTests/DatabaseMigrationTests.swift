@@ -172,6 +172,55 @@ struct DatabaseMigrationTests {
         }
     }
 
+    @Test func `m006 adds sha256 column on images`() throws {
+        let queue = try migratedQueue()
+        try queue.read { db in
+            let columns = try db.columns(in: "images").map(\.name)
+            #expect(columns.contains("sha256"))
+        }
+    }
+
+    @Test func `m006 leaves existing images sha256 null`() throws {
+        let queue = try DatabaseQueue()
+        var prior = DatabaseMigrator()
+        prior.registerMigration(M001_CreateSchema.identifier) { db in
+            try M001_CreateSchema.migrate(db)
+        }
+        prior.registerMigration(M002_WorkloadSpec.identifier) { db in
+            try M002_WorkloadSpec.migrate(db)
+        }
+        prior.registerMigration(M003_ArchitectureAwareTemplates.identifier) { db in
+            try M003_ArchitectureAwareTemplates.migrate(db)
+        }
+        prior.registerMigration(M004_WorkloadOverrides.identifier) { db in
+            try M004_WorkloadOverrides.migrate(db)
+        }
+        prior.registerMigration(M005_WorkloadHealth.identifier) { db in
+            try M005_WorkloadHealth.migrate(db)
+        }
+        try prior.migrate(queue)
+
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO images (id, name, imageType, arch, status, createdAt, updatedAt)
+                VALUES (
+                    'img-legacy', 'legacy.iso', 'iso', 'arm64', 'ready',
+                    '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z'
+                )
+                """,
+            )
+        }
+
+        try AppDatabase.makeMigrator().migrate(queue)
+
+        try queue.read { db in
+            let image = try VMImage.fetchOne(db, key: "img-legacy")
+            #expect(image?.name == "legacy.iso")
+            #expect(image?.sha256 == nil)
+        }
+    }
+
     // MARK: - Tables Exist
 
     @Test func `expected tables exist`() throws {

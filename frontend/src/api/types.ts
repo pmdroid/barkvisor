@@ -10,6 +10,7 @@ export interface Image {
   sizeBytes: number | null
   sourceUrl: string | null
   error: string | null
+  sha256?: string | null
   createdAt: string
   updatedAt: string
 }

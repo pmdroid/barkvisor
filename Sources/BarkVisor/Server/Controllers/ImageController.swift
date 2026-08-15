@@ -14,6 +14,7 @@ struct ImageResponse: Content {
     let sizeBytes: Int64?
     let sourceUrl: String?
     let error: String?
+    let sha256: String?
     let createdAt: String
     let updatedAt: String
 
@@ -26,6 +27,7 @@ struct ImageResponse: Content {
         self.sizeBytes = image.sizeBytes
         self.sourceUrl = image.sourceUrl
         self.error = image.error
+        self.sha256 = image.sha256
         self.createdAt = image.createdAt
         self.updatedAt = image.updatedAt
     }

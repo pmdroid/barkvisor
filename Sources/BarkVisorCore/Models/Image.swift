@@ -13,6 +13,7 @@ public struct VMImage: Codable, Sendable, FetchableRecord, PersistableRecord, Ta
     public var status: String
     public var error: String?
     public var sourceUrl: String?
+    public var sha256: String?
     public var createdAt: String
     public var updatedAt: String
 
@@ -31,6 +32,7 @@ public struct VMImage: Codable, Sendable, FetchableRecord, PersistableRecord, Ta
         status: String,
         error: String?,
         sourceUrl: String?,
+        sha256: String? = nil,
         createdAt: String,
         updatedAt: String,
     ) {
@@ -43,6 +45,7 @@ public struct VMImage: Codable, Sendable, FetchableRecord, PersistableRecord, Ta
         self.status = status
         self.error = error
         self.sourceUrl = sourceUrl
+        self.sha256 = sha256
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

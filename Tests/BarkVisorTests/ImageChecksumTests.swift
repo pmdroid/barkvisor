@@ -45,6 +45,17 @@ final class ImageChecksumTests {
         }
     }
 
+    @Test func `images table has sha256 column`() throws {
+        let queue = try DatabaseQueue()
+        let migrator = AppDatabase.makeMigrator()
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let columns = try db.columns(in: "images").map(\.name)
+            #expect(columns.contains("sha256"), "images should have sha256 column")
+        }
+    }
+
     // MARK: - RepoCatalogImage parsing
 
     @Test func `repo catalog image decodes checksums`() throws {
@@ -148,6 +159,7 @@ final class ImageChecksumTests {
 
             let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
             #expect(image?.status == "ready", "Download with correct SHA256 should succeed")
+            #expect(image?.sha256 == hash)
         }
 
         @Test func `download with wrong SHA 256 fails`() async throws {
@@ -183,6 +195,7 @@ final class ImageChecksumTests {
             let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
             #expect(image?.status == "error", "Download with wrong SHA256 should fail")
             #expect(image?.error?.contains("SHA256 mismatch") ?? false)
+            #expect(image?.sha256 == nil, "Failed download must not persist a digest")
             #expect(
                 !FileManager.default.fileExists(atPath: dest.path),
                 "File should be deleted on checksum mismatch",
@@ -221,6 +234,11 @@ final class ImageChecksumTests {
 
             let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
             #expect(image?.status == "ready", "Download with correct SHA512 should succeed")
+            #expect(
+                image?.sha256 == SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }
+                    .joined(),
+                "Row stores sha256 even when the catalog only had sha512",
+            )
         }
 
         @Test func `download with no checksum succeeds`() async throws {
@@ -253,6 +271,19 @@ final class ImageChecksumTests {
 
             let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
             #expect(image?.status == "ready", "Download without checksum should succeed")
+            #expect(
+                image?.sha256 == SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }
+                    .joined(),
+            )
         }
     #endif
+
+    @Test func `file checksum helper hashes stored bytes`() throws {
+        let file = tmpDir.appendingPathComponent("hash-me.bin")
+        let content = Data("stored library bytes".utf8)
+        try content.write(to: file)
+        let expected = SHA256.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()
+        let digest = try ImageFileChecksum.sha256Hex(ofFile: file)
+        #expect(digest == expected)
+    }
 }

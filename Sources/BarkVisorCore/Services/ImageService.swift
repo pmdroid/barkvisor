@@ -117,14 +117,15 @@ public enum ImageService {
             // Get file size
             let attrs = try FileManager.default.attributesOfItem(atPath: resolvedPath.path)
             let size = attrs[.size] as? Int64 ?? upload.length
+            let digest = try ImageFileChecksum.sha256Hex(ofFile: resolvedPath)
 
             // Update image to ready
             let now = iso8601.string(from: Date())
             try await db.write { database in
                 try database.execute(
                     sql:
-                    "UPDATE images SET status = 'ready', error = NULL, path = ?, sizeBytes = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [resolvedPath.path, size, now, image.id],
+                    "UPDATE images SET status = 'ready', error = NULL, path = ?, sizeBytes = ?, sha256 = ?, updatedAt = ? WHERE id = ?",
+                    arguments: [resolvedPath.path, size, digest, now, image.id],
                 )
                 _ = try TusUpload.deleteOne(database, key: upload.id)
             }

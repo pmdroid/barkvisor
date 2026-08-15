@@ -206,12 +206,14 @@ final class ModelDBRoundTripTests {
             id: "img-1", name: "Ubuntu", imageType: "cloud-image",
             arch: "arm64", path: "/data/images/test.img", sizeBytes: 500_000,
             status: "ready", error: nil, sourceUrl: "https://example.com/test.img",
+            sha256: "abc123",
             createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
         try dbPool.write { db in try image.insert(db) }
         let fetched = try dbPool.read { db in try VMImage.fetchOne(db, key: "img-1") }
         #expect(fetched?.name == "Ubuntu")
         #expect(fetched?.status == "ready")
+        #expect(fetched?.sha256 == "abc123")
     }
 
     // MARK: - TusUpload (cascade)
