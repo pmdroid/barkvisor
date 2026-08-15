@@ -12,6 +12,8 @@ import {
   deviceVmPath,
   deviceVmsBasePath,
   isSelfDevice,
+  resolveSelectedDevice,
+  selectedHostIsLive,
 } from './homeDeviceApi'
 
 const self = { hostId: 'desk-1', role: 'self', reachability: 'ok' }
@@ -61,5 +63,15 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(deviceTaskPath(member, 'task-9')).toBe('/home/devices/peer%2F1/v1/tasks/task-9')
     expect(deviceCapabilitiesPath(member)).toBe('/home/devices/peer%2F1/v1/system/capabilities')
     expect(devicePath(member, '/images')).toBe('/home/devices/peer%2F1/v1/images')
+  })
+
+  test('a stale hostId does not fall back to self', () => {
+    const byId = (id: string) => (id === member.hostId ? member : id === self.hostId ? self : null)
+    expect(resolveSelectedDevice(member.hostId, byId, self)).toBe(member)
+    expect(resolveSelectedDevice('gone', byId, self)).toBeNull()
+    expect(resolveSelectedDevice('', byId, self)).toBe(self)
+    expect(selectedHostIsLive(member.hostId, byId)).toBe(true)
+    expect(selectedHostIsLive('gone', byId)).toBe(false)
+    expect(selectedHostIsLive('', byId)).toBe(true)
   })
 })
