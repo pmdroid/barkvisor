@@ -21,11 +21,7 @@ import AppModal from '../components/ui/AppModal.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
-import {
-  detectImageArch,
-  hostArchToImageArch,
-  templateArchSupportedOnHost,
-} from '../utils/imageArch'
+import { hostArchToImageArch } from '../utils/imageArch'
 import type { VMTemplate, RepositoryImage, Image } from '../api/types'
 
 const router = useRouter()
@@ -46,23 +42,6 @@ const activeTab = ref<'templates' | 'images'>('templates')
  */
 function imageArchSupported(arch: string | null | undefined): boolean {
   return caps.isArchRunnable(arch)
-}
-
-/** Resolve a template's guest arch from declared arches, catalog image, or slug. */
-function templateArchSupported(t: VMTemplate): boolean {
-  if (!caps.hostArchKnown) return false
-  if (typeof t.compatible === 'boolean') return t.compatible
-  if ((t.architectures && t.architectures.length > 0) || t.imageByArch) {
-    return templateArchSupportedOnHost(t, caps.hostArch)
-  }
-  for (const imgs of Object.values(repoStore.imagesByRepo)) {
-    const match = imgs.find((i) => i.slug === t.imageSlug || i.slug === t.resolvedImageSlug)
-    if (match) return imageArchSupported(match.arch)
-  }
-  const fromSlug = detectImageArch(t.resolvedImageSlug || t.imageSlug).arch
-  if (fromSlug) return caps.isArchRunnable(fromSlug)
-  // Unknown template arch on a known host: keep visible; backend still blocks.
-  return true
 }
 
 // Repos filtered by active tab
@@ -153,12 +132,6 @@ const repoTemplatesUnfiltered = computed(() => {
 
 const repoTemplates = computed(() => repoTemplatesUnfiltered.value)
 
-/** Count hidden solely by host-arch filter (PAS-48 empty-state messaging). */
-const foreignArchTemplateCount = computed(() => {
-  if (!caps.hostArchKnown) return 0
-  return repoTemplatesUnfiltered.value.filter((t) => !templateArchSupported(t)).length
-})
-
 const hostImageArchLabel = computed(() =>
   caps.hostArchKnown ? hostArchToImageArch(caps.hostArch) : null,
 )
@@ -182,21 +155,10 @@ const filteredTemplates = computed(() => {
 })
 
 const templatesEmptyTitle = computed(() => {
-  if (
-    foreignArchTemplateCount.value > 0 &&
-    repoTemplates.value.length === 0 &&
-    !templateSearch.value &&
-    activeCategory.value === 'all'
-  ) {
-    return 'No templates for this device architecture'
+  if (templateSearch.value || (activeCategory.value !== 'all' && availableCategories.value.length > 0)) {
+    return 'No templates match the current filters'
   }
   return 'No templates in this category'
-})
-
-const templatesEmptySubtitle = computed(() => {
-  if (foreignArchTemplateCount.value <= 0 || !hostImageArchLabel.value) return undefined
-  const n = foreignArchTemplateCount.value
-  return `${n} template${n === 1 ? '' : 's'} hidden — this device only runs ${hostImageArchLabel.value} guests.`
 })
 
 const templateTotalPages = computed(() => Math.max(1, Math.ceil(filteredTemplates.value.length / templatePerPage)))
@@ -572,7 +534,6 @@ async function addRepo() {
     <EmptyState
       v-else-if="filteredTemplates.length === 0"
       :title="templatesEmptyTitle"
-      :subtitle="templatesEmptySubtitle"
     />
 
     <DataTable v-else :columns="[

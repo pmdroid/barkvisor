@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot, VMTemplate } from '../api/types'
-import { canCallDeviceAPI, deviceTemplatesPath } from '../utils/homeDeviceApi'
+import { canCallDeviceAPI, deviceTemplatesPath, isSelfDevice, type DeviceApiTarget } from '../utils/homeDeviceApi'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useDevicesStore } from './devices'
 
@@ -47,6 +47,25 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     const copy = row.copies.find((c) => c.hostId === hostId)
     if (!copy) return null
     return { ...row, id: copy.templateId, repositoryId: copy.repositoryId }
+  }
+
+  /** Empty library must not imply every Device has the local catalog row. */
+  function deviceHasDeployableTemplate(slug: string, device: DeviceApiTarget): boolean {
+    if (templates.value.length === 0) return isSelfDevice(device)
+    return deviceHasTemplate(slug, device.hostId)
+  }
+
+  /** Member IDs differ per host — never fall back to the self catalog row. */
+  function resolveTemplateForDeploy(
+    slug: string,
+    device: DeviceApiTarget | null | undefined,
+    localTemplate: VMTemplate,
+  ): VMTemplate | null {
+    if (!device) return localTemplate
+    const fromLibrary = templateForDevice(slug, device.hostId)
+    if (fromLibrary) return fromLibrary
+    if (templates.value.length === 0 && isSelfDevice(device)) return localTemplate
+    return null
   }
 
   async function fetchAll(devices?: HomeDeviceHealthSnapshot[]): Promise<void> {
@@ -130,6 +149,8 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     copiesOn,
     deviceHasTemplate,
     templateForDevice,
+    deviceHasDeployableTemplate,
+    resolveTemplateForDeploy,
     fetchAll,
     sourceLine,
     defaultLabelFor,

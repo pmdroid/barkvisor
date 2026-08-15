@@ -67,10 +67,29 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.deviceHasTemplate('ubuntu', 'studio')).toBe(true)
     expect(store.deviceHasTemplate('win', 'desk')).toBe(false)
     expect(store.templateForDevice('ubuntu', 'studio')?.id).toBe('peer-1')
+    expect(store.deviceHasDeployableTemplate('ubuntu', self)).toBe(true)
+    expect(store.deviceHasDeployableTemplate('win', self)).toBe(false)
+    expect(store.deviceHasDeployableTemplate('win', peer)).toBe(true)
+    const local = tpl({ id: 'local-1', slug: 'ubuntu' })
+    expect(store.resolveTemplateForDeploy('ubuntu', peer, local)?.id).toBe('peer-1')
+    expect(store.resolveTemplateForDeploy('win', self, local)).toBeNull()
     expect(get.mock.calls.map((c) => c[0])).toEqual([
       '/templates',
       '/home/devices/studio/v1/templates',
     ])
+  })
+
+  test('empty library does not treat member Devices as having the local template', () => {
+    const store = useHomeLibraryStore()
+    const local = tpl({ id: 'local-1', slug: 'ubuntu' })
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    expect(store.templates).toHaveLength(0)
+    expect(store.deviceHasDeployableTemplate('ubuntu', self)).toBe(true)
+    expect(store.deviceHasDeployableTemplate('ubuntu', peer)).toBe(false)
+    expect(store.resolveTemplateForDeploy('ubuntu', peer, local)).toBeNull()
+    expect(store.resolveTemplateForDeploy('ubuntu', self, local)?.id).toBe('local-1')
+    expect(store.resolveTemplateForDeploy('ubuntu', null, local)?.id).toBe('local-1')
   })
 
   test('falls back to local /templates when no Devices are listed', async () => {

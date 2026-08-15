@@ -64,11 +64,9 @@ const selectedDevice = computed(() => {
   return devicesStore.selfDevice
 })
 
-const resolvedTemplate = computed(() => {
-  const device = selectedDevice.value
-  if (!device) return props.template
-  return homeLibrary.templateForDevice(props.template.slug, device.hostId) ?? props.template
-})
+const resolvedTemplate = computed(() =>
+  homeLibrary.resolveTemplateForDeploy(props.template.slug, selectedDevice.value, props.template),
+)
 
 const deviceOptions = computed<DevicePickOption[]>(() => {
   const rows = devicesStore.devices
@@ -80,9 +78,7 @@ const deviceOptions = computed<DevicePickOption[]>(() => {
         capabilities: row.hostId === selectedDevice.value?.hostId
           ? (pickedCaps.value ?? defaultCapabilities)
           : undefined,
-        hasTemplate: homeLibrary.templates.length === 0
-          ? true
-          : homeLibrary.deviceHasTemplate(props.template.slug, row.hostId),
+        hasTemplate: homeLibrary.deviceHasDeployableTemplate(props.template.slug, row),
       }),
     ),
   )
@@ -198,7 +194,11 @@ async function refreshCompatibility() {
   try {
     const planned = Number(memoryMB.value)
     const device = selectedDevice.value
-    const templateId = resolvedTemplate.value.id
+    const templateId = resolvedTemplate.value?.id
+    if (!templateId) {
+      compatibility.value = null
+      return
+    }
     compatibility.value = await templateStore.dryRun(
       templateId,
       { memoryMB: Number.isFinite(planned) ? planned : undefined },
@@ -230,8 +230,10 @@ const phase = ref<'form' | 'downloading' | 'deploying' | 'done'>('form')
 const downloadPercent = ref(0)
 const downloadStatus = ref('')
 const imageProgress = useImageProgress()
+let drawerClosed = false
 
 onUnmounted(() => {
+  drawerClosed = true
   imageProgress.stop()
 })
 
@@ -259,13 +261,17 @@ function prev() {
 }
 
 function buildRequest(): DeployTemplateRequest {
+  const resolved = resolvedTemplate.value
+  if (!resolved) {
+    throw new Error("Not in this Device's Library")
+  }
   const inputs = { ...inputValues.value }
   const selectedKey = deviceSSHKeys.value.find(k => k.id === selectedSSHKeyId.value)
   if (selectedKey) {
     inputs.ssh_keys = selectedKey.publicKey
   }
   return {
-    templateId: resolvedTemplate.value.id,
+    templateId: resolved.id,
     vmName: vmName.value.trim(),
     inputs,
     cpuCount: cpuCount.value !== props.template.cpuCount ? cpuCount.value : undefined,
@@ -276,13 +282,15 @@ function buildRequest(): DeployTemplateRequest {
 
 async function pollRemoteImage(imageId: string) {
   const device = selectedDevice.value
-  if (!device) return
+  if (!device || drawerClosed) return
   phase.value = 'downloading'
   downloadPercent.value = 0
   downloadStatus.value = 'Downloading image on the picked Device...'
   try {
     for (let i = 0; i < 600; i++) {
+      if (drawerClosed) return
       const { data } = await api.get(deviceImagePath(device, imageId))
+      if (drawerClosed) return
       if (data.status === 'ready') {
         await doDeploy()
         return
@@ -294,9 +302,11 @@ async function pollRemoteImage(imageId: string) {
       }
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
+    if (drawerClosed) return
     error.value = 'Timed out waiting for the Device image download'
     phase.value = 'form'
   } catch (e: unknown) {
+    if (drawerClosed) return
     error.value = apiErrorMessage(e, 'Image download failed')
     phase.value = 'form'
   }
@@ -331,6 +341,7 @@ function watchDownload(imageId: string) {
       void doDeploy()
     },
     onError: (data) => {
+      if (drawerClosed) return
       error.value = data?.error || 'Image download failed'
       phase.value = 'form'
     },
@@ -338,6 +349,7 @@ function watchDownload(imageId: string) {
 }
 
 async function finishDeploy(result: DeployTemplateResponse) {
+  if (drawerClosed) return
   if (result.status === 'downloading' && result.imageId) {
     watchDownload(result.imageId)
     return
@@ -356,6 +368,7 @@ async function finishDeploy(result: DeployTemplateResponse) {
     const event = await poll(result.taskID, {
       path: device ? deviceTaskPath(device, result.taskID) : undefined,
     })
+    if (drawerClosed) return
     if (event.status !== 'completed') {
       error.value = event.error || 'Provisioning failed'
       phase.value = 'form'
@@ -370,6 +383,7 @@ async function finishDeploy(result: DeployTemplateResponse) {
     } catch {
       // VM is created; start can fail if host lacks accel — still report deployed.
     }
+    if (drawerClosed) return
     phase.value = 'done'
     emit('deployed', result.vm, device?.hostId)
     return
@@ -388,20 +402,29 @@ async function finishDeploy(result: DeployTemplateResponse) {
     } catch {
       /* ignore */
     }
+    if (drawerClosed) return
     phase.value = 'done'
     emit('deployed', result.vm, device?.hostId)
   }
 }
 
 async function doDeploy() {
+  if (drawerClosed) return
+  if (!resolvedTemplate.value) {
+    error.value = "Not in this Device's Library"
+    phase.value = 'form'
+    return
+  }
   phase.value = 'deploying'
   downloadStatus.value = 'Creating VM...'
   error.value = ''
 
   try {
     const result = await templateStore.deploy(buildRequest(), selectedDevice.value ?? undefined)
+    if (drawerClosed) return
     await finishDeploy(result)
   } catch (e: any) {
+    if (drawerClosed) return
     error.value = apiErrorMessage(e)
     phase.value = 'form'
   }
@@ -409,6 +432,10 @@ async function doDeploy() {
 
 async function submit() {
   error.value = ''
+  if (!resolvedTemplate.value) {
+    error.value = "Not in this Device's Library"
+    return
+  }
   if (platformBridgeUnsupported.value) {
     error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
     return
@@ -416,11 +443,13 @@ async function submit() {
   loading.value = true
   try {
     const result = await templateStore.deploy(buildRequest(), selectedDevice.value ?? undefined)
+    if (drawerClosed) return
     await finishDeploy(result)
   } catch (e: any) {
+    if (drawerClosed) return
     error.value = apiErrorMessage(e)
   } finally {
-    loading.value = false
+    if (!drawerClosed) loading.value = false
   }
 }
 </script>
@@ -612,7 +641,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.compatible))" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || !resolvedTemplate || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.compatible))" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>
