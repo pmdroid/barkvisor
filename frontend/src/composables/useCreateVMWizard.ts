@@ -18,6 +18,7 @@ import type {
   CreateVMRequest,
   CurrentHostCapabilities,
   Disk,
+  HomePlacementScoreResponse,
   Image,
   Network,
   SSHKey,
@@ -53,6 +54,12 @@ import {
   selectedHostIsLive,
   usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
+import {
+  applyRecommendedHostId,
+  isRecommendedHost,
+  placementReasonsForHost,
+  scorePlacement,
+} from '../utils/placement'
 
 export function useCreateVMWizard(
   emit: (e: 'created') => void,
@@ -68,6 +75,8 @@ export function useCreateVMWizard(
   const devicesStore = useDevicesStore()
 
   const selectedHostId = ref(opts.initialHostId ?? '')
+  const userOverrodeHost = ref(!!opts.initialHostId)
+  const placementScore = ref<HomePlacementScoreResponse | null>(null)
   const pickedCaps = ref<CurrentHostCapabilities>({ ...defaultCapabilities })
   const pickedHostArchKnown = ref(false)
   const deviceImages = ref<Image[]>([])
@@ -138,17 +147,23 @@ export function useCreateVMWizard(
   const deviceOptions = computed<DevicePickOption[]>(() => {
     const rows = devicesStore.devices
     const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
-    return list.map((row) =>
-      toPickOption(
-        row,
-        createVMIncompatibilityReasons(row, {
-          // Configured guest for this create — not each row's host arch.
-          guestArch: effectiveGuestArch.value,
-          osType: osType.value,
-          capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
-        }),
-      ),
-    )
+    return list.map((row) => {
+      const local = createVMIncompatibilityReasons(row, {
+        // Configured guest for this create — not each row's host arch.
+        guestArch: effectiveGuestArch.value,
+        osType: osType.value,
+        capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+      })
+      const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
+      const hard = (scored?.reasons ?? [])
+        .filter((reason) => reason.kind === 'hard')
+        .map((reason) => reason.message)
+      const reasons = [...new Set([...local, ...hard])]
+      return toPickOption(row, reasons, {
+        recommended: isRecommendedHost(placementScore.value, row.hostId),
+        recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
+      })
+    })
   })
 
   const vmType = computed(() => {
@@ -525,11 +540,36 @@ export function useCreateVMWizard(
     deviceSSHKeys.value = []
   }
 
+  async function refreshPlacement(seq: number) {
+    try {
+      const guest = effectiveGuestArch.value
+      const data = await scorePlacement({
+        declaredArchitectures: guest ? [guest] : [],
+        minMemoryMB: memoryMB.value,
+        requestedMemoryMB: memoryMB.value,
+      })
+      if (!isCurrentPickedDeviceLoad(seq)) return
+      placementScore.value = data
+    } catch {
+      if (!isCurrentPickedDeviceLoad(seq)) return
+      placementScore.value = null
+    }
+    if (userOverrodeHost.value) return
+    selectedHostId.value = applyRecommendedHostId({
+      recommendedHostId: placementScore.value?.recommendedHostId,
+      initialHostId: opts.initialHostId,
+      selfHostId: devicesStore.selfDevice?.hostId,
+      currentHostId: selectedHostId.value,
+    })
+  }
+
   async function loadPickedDevice() {
     const seq = ++pickedDeviceLoadSeq
     pickedDeviceLoading.value = true
     try {
       await devicesStore.fetchHealth().catch(() => {})
+      if (!isCurrentPickedDeviceLoad(seq)) return
+      await refreshPlacement(seq)
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
         selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
@@ -597,6 +637,7 @@ export function useCreateVMWizard(
 
   watch(selectedHostId, async (next, prev) => {
     if (!prev || !next || next === prev) return
+    userOverrodeHost.value = true
     selectedImageId.value = ''
     existingDiskId.value = ''
     selectedUSBDevices.value = []
@@ -763,6 +804,7 @@ export function useCreateVMWizard(
     sshKeyStore: { keys: deviceSSHKeys },
     sshKeys: deviceSSHKeys,
     selectedHostId,
+    placementScore,
     deviceOptions,
     selectedDevice,
     hostArch,

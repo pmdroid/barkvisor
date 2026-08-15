@@ -711,6 +711,12 @@ export interface HomeDeviceResourceSummary {
   cpuLoadPercent?: number | null
 }
 
+export interface HomeDeviceFeatureSummary {
+  kvmDevice: boolean
+  bridgedNetworking: boolean
+  usbPassthrough: boolean
+}
+
 export interface HomeDeviceHealthSnapshot {
   hostId: string
   role: HomeDeviceRole | string
@@ -724,8 +730,38 @@ export interface HomeDeviceHealthSnapshot {
   collectedAt?: string | null
   platform?: HomeDevicePlatformSummary | null
   resources?: HomeDeviceResourceSummary | null
+  features?: HomeDeviceFeatureSummary | null
   workloadCount?: number | null
   healthCounts?: Record<string, number> | null
+}
+
+export interface HomePlacementScoreRequest {
+  declaredArchitectures?: string[]
+  requiredFeatures?: string[]
+  minMemoryMB?: number | null
+  requestedMemoryMB?: number | null
+}
+
+export interface HomePlacementReason {
+  code: string
+  kind: 'hard' | 'soft' | string
+  message: string
+}
+
+export interface HomePlacementCandidate {
+  hostId: string
+  displayName?: string | null
+  role: string
+  eligible: boolean
+  recommended: boolean
+  rank: number
+  score: number
+  reasons: HomePlacementReason[]
+}
+
+export interface HomePlacementScoreResponse {
+  recommendedHostId: string | null
+  candidates: HomePlacementCandidate[]
 }
 
 export interface HomeDeviceHealthTotals {
