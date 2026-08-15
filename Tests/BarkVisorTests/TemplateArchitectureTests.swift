@@ -231,6 +231,26 @@ struct CatalogSlugResolutionTests {
         #expect(missing.isEmpty, "Unresolved template image slugs: \(missing.joined(separator: ", "))")
     }
 
+    @Test func `checksum pins do not use rotating catalog URLs`() throws {
+        let imagesURL = repoRoot().appendingPathComponent("repos/images.json")
+        let images = try JSONDecoder().decode(RepoCatalog.self, from: Data(contentsOf: imagesURL))
+        #expect(!images.images.isEmpty)
+
+        var rotating: [String] = []
+        for image in images.images {
+            let hasPin = !(image.sha256 ?? "").isEmpty || !(image.sha512 ?? "").isEmpty
+            guard hasPin else { continue }
+            let url = image.downloadUrl
+            if url.contains("/current/") || url.contains("/latest/") || url.contains(".latest.") {
+                rotating.append("\(image.slug) → \(url)")
+            }
+        }
+        #expect(
+            rotating.isEmpty,
+            "Checksum pins must use dated snapshot URLs, not rotating aliases: \(rotating.joined(separator: ", "))",
+        )
+    }
+
     @Test func `bundled server templates.json is gone`() {
         let bundled = repoRoot()
             .appendingPathComponent("Sources/BarkVisor/Server/Resources/templates.json")

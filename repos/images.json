@@ -21,7 +21,8 @@
       "arch": "x86_64",
       "version": "3.23.3",
       "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-virt-3.23.3-x86_64.iso",
-      "sizeBytes": 70254592
+      "sizeBytes": 70254592,
+      "sha256": "d91fb5c7a73528c89e0a1aa9a7d959f9deb9ca3dc5211e39bd73fd7df0d9070e"
     },
     {
       "slug": "ubuntu-24.04-arm64",
@@ -30,9 +31,9 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img",
-      "sizeBytes": 624435712,
-      "sha256": "c7eff9b3ee6e7b212882e680a9e06cac939107fbf5298384340a0ad1c667a38a"
+      "downloadUrl": "https://cloud-images.ubuntu.com/noble/20260814/noble-server-cloudimg-arm64.img",
+      "sizeBytes": 618370560,
+      "sha256": "4a281a921b8d7db952895ab619736f10efe9f63e111fa5b5779ed18f023818aa"
     },
     {
       "slug": "ubuntu-24.04-x86_64",
@@ -41,9 +42,9 @@
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
-      "sizeBytes": 624239616,
-      "sha256": "0533b0655c32e68b31d792ecd6ccfca95abdbc536c4446874fe0513bd4140ffe"
+      "downloadUrl": "https://cloud-images.ubuntu.com/noble/20260814/noble-server-cloudimg-amd64.img",
+      "sizeBytes": 624447488,
+      "sha256": "6e40c07ae715f744f84af0bec76415cc1987dd115b4b8de437818561f01a3733"
     },
     {
       "slug": "debian-12-arm64",
@@ -52,9 +53,9 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "12",
-      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2",
-      "sizeBytes": 434186752,
-      "sha512": "d5e7f38648cfd32a49ebb42f835ac78435f507f540dcf86565ec32277eaf9b3b5f41876e49e4397795eda41cc7d1320fe6eb39604945d357c9f22e4b1cef0e7b"
+      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/20260806-2562/debian-12-generic-arm64-20260806-2562.qcow2",
+      "sizeBytes": 434044928,
+      "sha512": "8f872616a25ac6ca7c0d1b169b062931db51cd03fda4c8cbc74f228d045b186edd1c7d105933a7149c3377372cd0196d7659f07574d7bf6425b82b01df323026"
     },
     {
       "slug": "debian-12-x86_64",
