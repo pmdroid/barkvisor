@@ -99,11 +99,19 @@ const platformBridgeUnsupported = computed(
 )
 
 const compatibility = ref<TemplateCompatibilityReport | null>(null)
+let pickedDeviceLoadSeq = 0
+
+function isCurrentPickedDeviceLoad(seq: number): boolean {
+  return seq === pickedDeviceLoadSeq
+}
 
 async function loadPickedDevice() {
+  const seq = ++pickedDeviceLoadSeq
   await devicesStore.fetchHealth().catch(() => {})
+  if (!isCurrentPickedDeviceLoad(seq)) return
   if (homeLibrary.templates.length === 0) {
     await homeLibrary.fetchAll(devicesStore.devices).catch(() => {})
+    if (!isCurrentPickedDeviceLoad(seq)) return
   }
   if (!selectedHostId.value) {
     selectedHostId.value = defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId)
@@ -111,6 +119,7 @@ async function loadPickedDevice() {
   const device = selectedDevice.value
   if (!device) {
     await sshKeyStore.fetchAll()
+    if (!isCurrentPickedDeviceLoad(seq)) return
     deviceSSHKeys.value = sshKeyStore.keys
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
     pickedCaps.value = null
@@ -127,11 +136,14 @@ async function loadPickedDevice() {
   if (usesLocalDeviceInventory(device)) {
     try {
       const { data } = await api.get(deviceCapabilitiesPath(device))
+      if (!isCurrentPickedDeviceLoad(seq)) return
       pickedCaps.value = parseSystemCapabilities(data)
     } catch {
+      if (!isCurrentPickedDeviceLoad(seq)) return
       pickedCaps.value = null
     }
     await sshKeyStore.fetchAll()
+    if (!isCurrentPickedDeviceLoad(seq)) return
     deviceSSHKeys.value = sshKeyStore.keys
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
   } else {
@@ -140,19 +152,23 @@ async function loadPickedDevice() {
         api.get(deviceCapabilitiesPath(device)),
         api.get(devicePath(device, '/ssh-keys')),
       ])
+      if (!isCurrentPickedDeviceLoad(seq)) return
       pickedCaps.value = parseSystemCapabilities(capsRes.data)
       deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
       const def = deviceSSHKeys.value.find((k) => k.isDefault)
       if (def) selectedSSHKeyId.value = def.id
     } catch {
+      if (!isCurrentPickedDeviceLoad(seq)) return
       pickedCaps.value = null
     }
   }
   if (props.template.networkMode === 'bridged' && bridged.value.available && device) {
     try {
       const { data } = await api.get<BridgeInfo[]>(devicePath(device, '/system/bridges'))
+      if (!isCurrentPickedDeviceLoad(seq)) return
       bridgeAvailable.value = data.some((b) => b.status === 'active')
     } catch {
+      if (!isCurrentPickedDeviceLoad(seq)) return
       bridgeAvailable.value = false
     }
     bridgeChecked.value = true
@@ -163,7 +179,8 @@ async function loadPickedDevice() {
     bridgeAvailable.value = true
     bridgeChecked.value = true
   }
-  await refreshCompatibility()
+  if (!isCurrentPickedDeviceLoad(seq)) return
+  await refreshCompatibility(selectedHostId.value)
 }
 
 onMounted(async () => {
@@ -190,21 +207,25 @@ const memoryBelowMinimum = computed(() => {
   return Number.isFinite(planned) && planned < memoryFloor.value
 })
 
-async function refreshCompatibility() {
+async function refreshCompatibility(expectedHostId = selectedHostId.value) {
   try {
     const planned = Number(memoryMB.value)
     const device = selectedDevice.value
     const templateId = resolvedTemplate.value?.id
     if (!templateId) {
+      if (selectedHostId.value !== expectedHostId) return
       compatibility.value = null
       return
     }
-    compatibility.value = await templateStore.dryRun(
+    const report = await templateStore.dryRun(
       templateId,
       { memoryMB: Number.isFinite(planned) ? planned : undefined },
       device ?? undefined,
     )
+    if (selectedHostId.value !== expectedHostId) return
+    compatibility.value = report
   } catch {
+    if (selectedHostId.value !== expectedHostId) return
     compatibility.value = null
   }
 }
