@@ -8,6 +8,38 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
+final class FetchGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var permits = 0
+
+    func wait() async {
+        await withCheckedContinuation { cont in
+            lock.lock()
+            if permits > 0 {
+                permits -= 1
+                lock.unlock()
+                cont.resume()
+            } else {
+                waiters.append(cont)
+                lock.unlock()
+            }
+        }
+    }
+
+    func signal() {
+        lock.lock()
+        if let waiter = waiters.first {
+            waiters.removeFirst()
+            lock.unlock()
+            waiter.resume()
+        } else {
+            permits += 1
+            lock.unlock()
+        }
+    }
+}
+
 final class FakeLibraryDepotClient: LibraryDepotClient, @unchecked Sendable {
     var images: [LibraryDepotImageInfo] = []
     var bytes = Data("depot-bytes".utf8)
@@ -16,6 +48,7 @@ final class FakeLibraryDepotClient: LibraryDepotClient, @unchecked Sendable {
     var listedURLs: [String] = []
     var fetchedIds: [String] = []
     var reportedSha256: String?
+    var fetchGate: FetchGate?
 
     func listImages(sourceUrl: String) async throws -> [LibraryDepotImageInfo] {
         listedURLs.append(sourceUrl)
@@ -26,6 +59,9 @@ final class FakeLibraryDepotClient: LibraryDepotClient, @unchecked Sendable {
     func fetchBytes(imageId: String, to destination: URL) async throws -> LibraryDepotFetchBytes {
         fetchedIds.append(imageId)
         if let fetchError { throw fetchError }
+        if let fetchGate {
+            await fetchGate.wait()
+        }
         try bytes.write(to: destination)
         let sha = SHA256.hash(data: bytes).compactMap { String(format: "%02x", $0) }.joined()
         return LibraryDepotFetchBytes(
@@ -75,6 +111,7 @@ final class LibraryDepotTests {
             dataDir: tmp,
             devices: devices,
             openClient: { _ in fake },
+            awaitCopy: true,
         )
     }
 
@@ -84,14 +121,43 @@ final class LibraryDepotTests {
 
     private static func cloudRequest(
         sourceUrl: String = "https://example.com/cloud.img",
+        expectedChecksum: ExpectedChecksum? = nil,
     ) -> LibraryDepotFetchRequest {
         LibraryDepotFetchRequest(
             sourceUrl: sourceUrl,
             name: "Cloud",
             imageType: "cloud-image",
             arch: "arm64",
-            expectedChecksum: nil,
+            expectedChecksum: expectedChecksum,
         )
+    }
+
+    private func seedReadyRemote(id: String, source: String, filename: String = "cloud.img") {
+        client.images = [
+            LibraryDepotImageInfo(
+                id: id,
+                name: "Cloud",
+                imageType: "cloud-image",
+                arch: "arm64",
+                status: "ready",
+                sizeBytes: Int64(client.bytes.count),
+                sourceUrl: source,
+                sha256: nil,
+                slug: "ubuntu",
+                filename: filename,
+            ),
+        ]
+    }
+
+    private func waitUntilReady(id: String) async throws -> VMImage {
+        for _ in 0 ..< 80 {
+            if let image = try await dbPool.read({ db in try VMImage.fetchOne(db, key: id) }),
+               image.status == "ready" {
+                return image
+            }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        throw BarkVisorError.timeout("depot copy did not become ready")
     }
 
     private func setDepot(_ hostId: String?) throws {
@@ -129,20 +195,7 @@ final class LibraryDepotTests {
     @Test func `successful depot fetch writes local Library row`() async throws {
         try setDepot("depot-device")
         let source = "https://example.com/cloud.img"
-        client.images = [
-            LibraryDepotImageInfo(
-                id: "remote-1",
-                name: "Cloud",
-                imageType: "cloud-image",
-                arch: "arm64",
-                status: "ready",
-                sizeBytes: Int64(client.bytes.count),
-                sourceUrl: source,
-                sha256: nil,
-                slug: "ubuntu",
-                filename: "cloud.img",
-            ),
-        ]
+        seedReadyRemote(id: "remote-1", source: source)
 
         let image = await acquire.fetchMatching(Self.cloudRequest(sourceUrl: source), db: dbPool)
         let stored = try #require(image)
@@ -170,20 +223,7 @@ final class LibraryDepotTests {
     @Test func `checksum mismatch falls back and deletes bytes`() async throws {
         try setDepot("depot-device")
         let source = "https://example.com/cloud.img"
-        client.images = [
-            LibraryDepotImageInfo(
-                id: "remote-bad",
-                name: "Cloud",
-                imageType: "cloud-image",
-                arch: "arm64",
-                status: "ready",
-                sizeBytes: 4,
-                sourceUrl: source,
-                sha256: nil,
-                slug: nil,
-                filename: "cloud.img",
-            ),
-        ]
+        seedReadyRemote(id: "remote-bad", source: source)
         client.reportedSha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
         let image = await acquire.fetchMatching(Self.cloudRequest(sourceUrl: source), db: dbPool)
@@ -192,6 +232,80 @@ final class LibraryDepotTests {
         let library = tmpDir.appendingPathComponent("library")
         let files = try FileManager.default.contentsOfDirectory(atPath: library.path)
         #expect(!files.contains { $0.hasSuffix(".img") || $0.hasSuffix(".img.part") })
+    }
+
+    @Test func `uncompressed catalog checksum mismatch falls back`() async throws {
+        try setDepot("depot-device")
+        let source = "https://example.com/cloud.img"
+        seedReadyRemote(id: "remote-catalog", source: source)
+        let image = await acquire.fetchMatching(
+            Self.cloudRequest(
+                sourceUrl: source,
+                expectedChecksum: .sha256(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                ),
+            ),
+            db: dbPool,
+        )
+        #expect(image == nil)
+        #expect(try auditActions() == ["library.depot.fallback"])
+    }
+
+    @Test func `compressed source skips catalog checksum and keeps depot digest`() async throws {
+        try setDepot("depot-device")
+        let source = "https://example.com/cloud.img.xz?token=abc&exp=1"
+        seedReadyRemote(id: "remote-xz", source: source, filename: "cloud.img")
+        let image = await acquire.fetchMatching(
+            Self.cloudRequest(
+                sourceUrl: source,
+                expectedChecksum: .sha256(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ),
+            ),
+            db: dbPool,
+        )
+        let stored = try #require(image)
+        #expect(stored.status == "ready")
+        let digest = SHA256.hash(data: client.bytes).compactMap { String(format: "%02x", $0) }.joined()
+        #expect(stored.sha256 == digest)
+        #expect(try auditActions() == ["library.depot.fetch"])
+    }
+
+    @Test func `fetchMatching returns downloading before the copy finishes`() async throws {
+        try setDepot("depot-device")
+        let source = "https://example.com/cloud.img"
+        seedReadyRemote(id: "remote-slow", source: source)
+        let gate = FetchGate()
+        client.fetchGate = gate
+        let fake = client
+        let live = LibraryDepotAcquire(
+            localHostId: localHostId,
+            dataDir: tmpDir,
+            devices: devices,
+            openClient: { _ in fake },
+            awaitCopy: false,
+        )
+        let pool = dbPool
+        let image = try await withThrowingTaskGroup(of: VMImage?.self) { group in
+            group.addTask {
+                await live.fetchMatching(Self.cloudRequest(sourceUrl: source), db: pool)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                throw BarkVisorError.timeout("fetchMatching blocked on depot copy")
+            }
+            let first = try await group.next()!
+            group.cancelAll()
+            return first
+        }
+        let stored = try #require(image)
+        #expect(stored.status == "downloading")
+        let pending = try await dbPool.read { db in try VMImage.fetchOne(db, key: stored.id) }
+        #expect(pending?.status == "downloading")
+        #expect(pending?.path == nil)
+        gate.signal()
+        let ready = try await waitUntilReady(id: stored.id)
+        #expect(ready.status == "ready")
     }
 
     @Test func `catalog listing exposes slug name arch size sha256`() throws {
@@ -266,5 +380,27 @@ struct LibraryDepotHTTPTests {
         #expect(
             LibraryDepotHTTP.contentPath(id: "img-1") == "/api/agent/library/images/img-1/content",
         )
+    }
+
+    @Test func `sourceUrl query encodes ampersand and equals`() throws {
+        let source = "https://cdn.example/cloud.img.xz?token=abc&exp=1"
+        let query = LibraryDepotHTTP.sourceUrlQuery(source)
+        #expect(query.hasPrefix("sourceUrl="))
+        let encoded = String(query.dropFirst("sourceUrl=".count))
+        #expect(!encoded.contains("&"))
+        #expect(encoded.contains("%26"))
+        #expect(encoded.contains("%3D"))
+        let url = try HomeDeviceProxy.memberURL(
+            host: "192.168.1.9",
+            port: 7_778,
+            path: LibraryDepotHTTP.listPath,
+            query: query,
+        )
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        #expect(items?.count == 1)
+        #expect(items?.first?.name == "sourceUrl")
+        #expect(items?.first?.value == source)
+        #expect(ImageService.isCompressedSource(source))
+        #expect(!ImageService.isCompressedSource("https://example.com/cloud.img"))
     }
 }

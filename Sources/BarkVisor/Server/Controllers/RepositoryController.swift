@@ -292,6 +292,14 @@ struct RepositoryController: RouteCollection {
             return try Self.imageJSON(existing)
         }
 
+        if let alreadyDownloading = try await req.db.read({ db in
+            try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl)
+                .filter(Column("status") == "downloading")
+                .fetchOne(db)
+        }) {
+            return try Self.imageJSON(alreadyDownloading)
+        }
+
         if let fetched = await LibraryDepotClients.acquire().fetchMatching(
             LibraryDepotFetchRequest(
                 sourceUrl: repoImage.downloadUrl,

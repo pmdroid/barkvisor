@@ -22,6 +22,14 @@ public enum LibraryDepotHTTP {
     public static func isImageBytesPath(_ path: String) -> Bool {
         path.hasPrefix("/api/agent/library/") && path.hasSuffix("/content")
     }
+
+    /// Percent-encode `sourceUrl` so `&` / `=` in signed CDN URLs survive `req.query`.
+    public static func sourceUrlQuery(_ sourceUrl: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        let encoded = sourceUrl.addingPercentEncoding(withAllowedCharacters: allowed) ?? sourceUrl
+        return "sourceUrl=\(encoded)"
+    }
 }
 
 /// Ready Library row a depot Device will advertise over mTLS.

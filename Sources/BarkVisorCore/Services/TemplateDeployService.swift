@@ -92,6 +92,9 @@ public enum TemplateDeployService {
                     ),
                     db: db,
                 ) {
+                    if fetched.status != "ready" {
+                        return .downloading(imageId: fetched.id)
+                    }
                     return try await createViaLifecycle(
                         options: options,
                         template: template,
