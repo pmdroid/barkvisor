@@ -1,39 +1,25 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { CapabilityDetail, CurrentHostCapabilities, NetworkModeCapability, SystemCapabilities } from '../api/types'
+import type { CapabilityDetail, CurrentHostCapabilities, SystemCapabilities } from '../api/types'
 import { normalizeImageArch, type ImageArch } from '../utils/imageArch'
+import {
+  defaultCapabilities,
+  parseSystemCapabilities,
+} from '../utils/capabilitiesParse'
+
+export {
+  capabilitiesArchRunnable,
+  capabilitiesFeatureSupported,
+  defaultCapabilities,
+  parseSystemCapabilities,
+} from '../utils/capabilitiesParse'
 
 /**
  * Pinia store for the **current host** (process serving this SPA).
  *
- * The SPA calls that machine a Device (PAS-97). Not multi-host state: when
- * multi-device UI arrives, selected-device inventory will sit beside this store.
- * Gate create-VM / network UI on these fields instead of hardcoding platforms.
+ * The SPA calls that machine a Device (PAS-97). Selected-device inventory
+ * for Create/Deploy sits beside this store (PAS-34).
  */
-/**
- * Fail-closed defaults (PAS-37). A failed / not-yet-loaded fetch must not invent
- * macOS feature flags or a runnable arch. Catalogs and USB/bridge/update UI stay
- * hidden until a real capabilities document arrives.
- */
-const defaultCapabilities: CurrentHostCapabilities = {
-  platform: '',
-  supportsBridgedNetworking: false,
-  supportsManagedBridgeDaemon: false,
-  supportsUSBPassthrough: false,
-  supportsInAppUpdate: false,
-  accelerator: '',
-  hostArch: '',
-  hostCpuCount: 1,
-  guestTypes: [],
-  details: [],
-  inventorySchemaVersion: undefined,
-  runnableArches: [],
-  networkModes: [
-    { mode: 'nat', supported: true },
-    { mode: 'bridged', supported: false },
-    { mode: 'isolated', supported: true },
-  ],
-}
 
 export const useCapabilitiesStore = defineStore('capabilities', () => {
   /** Inventory projection for the host running this BarkVisor process. */
@@ -130,38 +116,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
         const res = await fetch('/api/system/capabilities')
         if (res.ok) {
           const data = (await res.json()) as SystemCapabilities
-          currentHost.value = {
-            platform: data.platform ?? defaultCapabilities.platform,
-            supportsBridgedNetworking: !!data.supportsBridgedNetworking,
-            // Older servers omit the field — treat as product-bridge-only platforms.
-            supportsManagedBridgeDaemon: !!data.supportsManagedBridgeDaemon,
-            supportsUSBPassthrough: !!data.supportsUSBPassthrough,
-            supportsInAppUpdate: !!data.supportsInAppUpdate,
-            accelerator: data.accelerator ?? defaultCapabilities.accelerator,
-            hostArch: data.hostArch ?? defaultCapabilities.hostArch,
-            hostCpuCount:
-              typeof data.hostCpuCount === 'number' && data.hostCpuCount >= 1
-                ? data.hostCpuCount
-                : defaultCapabilities.hostCpuCount,
-            guestTypes: Array.isArray(data.guestTypes) ? data.guestTypes : [],
-            details: Array.isArray(data.details) ? data.details : [],
-            inventorySchemaVersion:
-              typeof data.inventorySchemaVersion === 'number'
-                ? data.inventorySchemaVersion
-                : undefined,
-            runnableArches: Array.isArray(data.runnableArches)
-              ? data.runnableArches.filter((a): a is string => typeof a === 'string' && a.length > 0)
-              : typeof data.hostArch === 'string' && data.hostArch.length > 0
-                ? [data.hostArch]
-                : [],
-            networkModes: normalizeNetworkModes(
-              data.networkModes,
-              !!data.supportsBridgedNetworking,
-              Array.isArray(data.details)
-                ? data.details.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
-                : undefined,
-            ),
-          }
+          currentHost.value = parseSystemCapabilities(data)
           hostArchKnown.value = typeof data.hostArch === 'string' && data.hostArch.length > 0
           // Only a 2xx response counts as loaded. A boot-time 502/network blip
           // must not permanently disable the PAS-48 arch gate (or Windows).
@@ -208,21 +163,3 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
   }
 })
 
-function normalizeNetworkModes(
-  raw: NetworkModeCapability[] | undefined,
-  bridgedOk: boolean,
-  bridgedRemediation?: string | null,
-): NetworkModeCapability[] {
-  if (Array.isArray(raw) && raw.length > 0) {
-    return raw.filter((m) => typeof m?.mode === 'string')
-  }
-  return [
-    { mode: 'nat', supported: true },
-    {
-      mode: 'bridged',
-      supported: bridgedOk,
-      remediation: bridgedOk ? undefined : bridgedRemediation || undefined,
-    },
-    { mode: 'isolated', supported: true },
-  ]
-}

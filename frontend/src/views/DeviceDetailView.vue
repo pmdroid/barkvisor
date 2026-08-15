@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -48,6 +49,7 @@ const showLoadingWorkloads = computed(() =>
 
 const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
+const showCreate = ref(false)
 
 function clearHostTransientState() {
   stopConfirm.value = null
@@ -156,9 +158,19 @@ async function doStop() {
             <span v-if="platformLabel">{{ platformLabel }}</span>
           </p>
         </div>
-        <span class="status-pill" :class="reachable ? 'running' : 'failed'">
-          {{ reachable ? 'Reachable' : 'Unreachable' }}
-        </span>
+        <div class="detail-actions">
+          <AppButton
+            v-if="canFetchDeviceWorkloads(device)"
+            variant="primary"
+            icon="plus"
+            @click="showCreate = true"
+          >
+            Create VM
+          </AppButton>
+          <span class="status-pill" :class="reachable ? 'running' : 'failed'">
+            {{ reachable ? 'Reachable' : 'Unreachable' }}
+          </span>
+        </div>
       </div>
 
       <p v-if="!canFetchDeviceWorkloads(device)" class="unreachable-copy">
@@ -237,6 +249,13 @@ async function doStop() {
       </template>
     </template>
 
+    <CreateVMDrawer
+      v-if="showCreate && device"
+      :initial-host-id="device.hostId"
+      @close="showCreate = false"
+      @created="showCreate = false; refresh()"
+    />
+
     <ConfirmDialog
       v-if="stopConfirm"
       :title="stopConfirm.method === 'force' ? 'Force Stop Workload' : 'Stop Workload'"
@@ -267,6 +286,11 @@ async function doStop() {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 20px;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .detail-header h1 {
   margin: 0;

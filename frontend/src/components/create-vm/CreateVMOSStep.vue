@@ -1,13 +1,19 @@
 <script setup lang="ts">
+import DevicePicker from '../DevicePicker.vue'
+import type { DevicePickOption } from '../../utils/deviceCompatibility'
+
 defineProps<{
   name: string
   osType: 'linux' | 'windows'
   /** False when no Windows guest profile matches the host arch (e.g. x86_64). */
   supportsWindows?: boolean
+  selectedHostId?: string
+  deviceOptions?: DevicePickOption[]
 }>()
 
 const emit = defineEmits<{
   'update:name': [value: string]
+  'update:selectedHostId': [value: string]
   selectOS: [os: 'linux' | 'windows']
   next: []
 }>()
@@ -16,6 +22,12 @@ const emit = defineEmits<{
 <template>
   <div>
     <h3 class="step-title">Operating System</h3>
+    <DevicePicker
+      v-if="deviceOptions && deviceOptions.length > 0"
+      :model-value="selectedHostId || ''"
+      :options="deviceOptions"
+      @update:model-value="emit('update:selectedHostId', $event)"
+    />
     <div class="form-group">
       <label>VM Name</label>
       <input

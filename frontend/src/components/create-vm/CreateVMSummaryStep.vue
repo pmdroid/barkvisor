@@ -24,6 +24,7 @@ defineProps<{
   sharedPaths: string[]
   selectedUSBDevices: USBPassthroughDevice[]
   selectedNetwork: Network | null
+  deviceLabel?: string
 }>()
 </script>
 
@@ -31,6 +32,10 @@ defineProps<{
   <div>
     <h3 class="step-title">Summary</h3>
     <div class="summary-grid">
+      <div v-if="deviceLabel" class="summary-row">
+        <span class="summary-label">Device</span>
+        <span>{{ deviceLabel }}</span>
+      </div>
       <div class="summary-row">
         <span class="summary-label">Name</span>
         <span>{{ name }}</span>
