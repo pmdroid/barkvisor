@@ -171,6 +171,13 @@ public enum ImageService {
 
     private static let compressionExtensions = [".xz", ".gz", ".zst", ".bz2"]
 
+    /// Catalog checksums cover the compressed download; the depot stores the decompressed file.
+    static func isCompressedSource(_ sourceUrl: String) -> Bool {
+        let path = URL(string: sourceUrl)?.path ?? sourceUrl
+        let lower = path.lowercased()
+        return compressionExtensions.contains { lower.hasSuffix($0) }
+    }
+
     /// Derive the file extension from a filename, preserving compound extensions for compressed files.
     /// e.g. "manjaro.img.xz" → "img.xz", "ubuntu.qcow2.gz" → "qcow2.gz", "debian.iso" → "iso"
     static func imageExtension(from filename: String, imageType: String) -> String {

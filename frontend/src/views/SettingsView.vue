@@ -128,6 +128,7 @@ function openUpdatesTab() {
 function openLibraryTab() {
   tab.value = 'library'
   fetchLibrarySettings()
+  devicesStore.fetchHealth()
 }
 
 const devicesStore = useDevicesStore()

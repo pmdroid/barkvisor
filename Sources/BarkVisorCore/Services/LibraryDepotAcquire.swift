@@ -3,7 +3,9 @@ import GRDB
 
 /// Copy a ready depot image into this Device's Library on a local miss.
 ///
-/// Failures never throw to the caller — they audit-log and return `nil` so
+/// Lookup is awaited (small JSON GET). Byte copy runs in the background and
+/// the caller receives a `downloading` row so proxied deploys stay inside
+/// the Home 10s timeout. Failures before the copy starts return `nil` so
 /// deploy/download keeps today's internet path (PAS-47 / PAS-90). Local
 /// Workload start does not call this.
 public struct LibraryDepotAcquire: LibraryDepotFetching {
@@ -11,17 +13,22 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
     public var dataDir: URL
     public var devices: DeviceRegistry
     public var openClient: @Sendable (DeviceRecord) throws -> any LibraryDepotClient
+    /// When true, `fetchMatching` waits for the byte copy so tests can observe
+    /// the terminal row. Production leaves this false.
+    public var awaitCopy: Bool
 
     public init(
         localHostId: String,
         dataDir: URL,
         devices: DeviceRegistry,
         openClient: @escaping @Sendable (DeviceRecord) throws -> any LibraryDepotClient,
+        awaitCopy: Bool = false,
     ) {
         self.localHostId = localHostId
         self.dataDir = dataDir
         self.devices = devices
         self.openClient = openClient
+        self.awaitCopy = awaitCopy
     }
 
     public func fetchMatching(_ request: LibraryDepotFetchRequest, db: DatabasePool) async -> VMImage? {
@@ -36,7 +43,22 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         guard let remote = await lookup(request.sourceUrl, client: client, db: db) else {
             return nil
         }
-        return await copyRemote(remote, request: request, depotHostId: depotHostId, client: client, db: db)
+        guard let pending = await insertDownloading(request: request, db: db) else {
+            return nil
+        }
+
+        let job = CopyJob(
+            remote: remote, request: request, imageId: pending.id, depotHostId: depotHostId,
+        )
+        let work: @Sendable () async -> Void = {
+            await self.copyRemote(job, client: client, db: db)
+        }
+        if awaitCopy {
+            await work()
+            return await readyImage(id: pending.id, db: db)
+        }
+        Task.detached { await work() }
+        return pending
     }
 
     private func client(
@@ -94,80 +116,18 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         }
     }
 
-    private func copyRemote(
-        _ remote: LibraryDepotImageInfo,
-        request: LibraryDepotFetchRequest,
-        depotHostId: String,
-        client: any LibraryDepotClient,
-        db: DatabasePool,
-    ) async -> VMImage? {
-        let imageId = UUID().uuidString
-        let destination: URL
-        do {
-            let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
-            try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-            let filename = remote.filename
-                ?? URL(string: request.sourceUrl)?.lastPathComponent
-                ?? "image"
-            let ext = ImageService.imageExtension(from: filename, imageType: request.imageType)
-            destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
-        } catch {
-            await fallback(
-                db: db, sourceUrl: request.sourceUrl,
-                reason: "Library directory unavailable: \(error.localizedDescription)",
-            )
-            return nil
-        }
-
-        let fetched: LibraryDepotFetchBytes
-        do {
-            fetched = try await client.fetchBytes(imageId: remote.id, to: destination)
-            try verify(
-                destination: destination,
-                computedSha256: fetched.sha256,
-                remoteSha256: fetched.reportedSha256 ?? remote.sha256,
-                expectedChecksum: request.expectedChecksum,
-            )
-        } catch {
-            try? FileManager.default.removeItem(at: destination)
-            await fallback(
-                db: db, sourceUrl: request.sourceUrl,
-                reason: "depot fetch failed: \(error.localizedDescription)",
-            )
-            return nil
-        }
-
-        return await persist(
-            imageId: imageId,
-            request: request,
-            destination: destination,
-            fetched: fetched,
-            depotHostId: depotHostId,
-            db: db,
-        )
-    }
-
-    private func persist(
-        imageId: String,
-        request: LibraryDepotFetchRequest,
-        destination: URL,
-        fetched: LibraryDepotFetchBytes,
-        depotHostId: String,
-        db: DatabasePool,
-    ) async -> VMImage? {
+    private func insertDownloading(request: LibraryDepotFetchRequest, db: DatabasePool) async -> VMImage? {
         let now = iso8601.string(from: Date())
-        let attrs = try? FileManager.default.attributesOfItem(atPath: destination.path)
         let image = VMImage(
-            id: imageId,
+            id: UUID().uuidString,
             name: request.name,
             imageType: request.imageType,
             arch: request.arch,
-            path: destination.path,
-            sizeBytes: (attrs?[.size] as? Int64) ?? fetched.bytesWritten,
-            status: "ready",
+            path: nil,
+            sizeBytes: nil,
+            status: "downloading",
             error: nil,
             sourceUrl: request.sourceUrl,
-            sha256: fetched.sha256,
             createdAt: now,
             updatedAt: now,
         )
@@ -175,25 +135,121 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             try await db.write { db in
                 try image.insert(db)
             }
+            return image
         } catch {
-            try? FileManager.default.removeItem(at: destination)
             await fallback(
                 db: db, sourceUrl: request.sourceUrl,
                 reason: "could not record depot image: \(error.localizedDescription)",
             )
             return nil
         }
+    }
+
+    private struct CopyJob {
+        var remote: LibraryDepotImageInfo
+        var request: LibraryDepotFetchRequest
+        var imageId: String
+        var depotHostId: String
+    }
+
+    private func copyRemote(
+        _ job: CopyJob,
+        client: any LibraryDepotClient,
+        db: DatabasePool,
+    ) async {
+        let destination: URL
+        do {
+            let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+            try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+            let filename = job.remote.filename
+                ?? URL(string: job.request.sourceUrl)?.lastPathComponent
+                ?? "image"
+            let ext = ImageService.imageExtension(from: filename, imageType: job.request.imageType)
+            destination = imagesDir.appendingPathComponent("\(job.imageId).\(ext)")
+        } catch {
+            await markFailed(imageId: job.imageId, db: db, message: error.localizedDescription)
+            await fallback(
+                db: db, sourceUrl: job.request.sourceUrl,
+                reason: "Library directory unavailable: \(error.localizedDescription)",
+            )
+            return
+        }
+
+        let fetched: LibraryDepotFetchBytes
+        do {
+            fetched = try await client.fetchBytes(imageId: job.remote.id, to: destination)
+            try verify(
+                destination: destination,
+                sourceUrl: job.request.sourceUrl,
+                computedSha256: fetched.sha256,
+                remoteSha256: fetched.reportedSha256 ?? job.remote.sha256,
+                expectedChecksum: job.request.expectedChecksum,
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            await markFailed(imageId: job.imageId, db: db, message: error.localizedDescription)
+            await fallback(
+                db: db, sourceUrl: job.request.sourceUrl,
+                reason: "depot fetch failed: \(error.localizedDescription)",
+            )
+            return
+        }
+
+        await persist(job, destination: destination, fetched: fetched, db: db)
+    }
+
+    private func persist(
+        _ job: CopyJob,
+        destination: URL,
+        fetched: LibraryDepotFetchBytes,
+        db: DatabasePool,
+    ) async {
+        let now = iso8601.string(from: Date())
+        let sizeBytes =
+            (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64)
+                ?? fetched.bytesWritten
+        do {
+            let updated = try await db.write { db -> VMImage? in
+                guard var row = try VMImage.fetchOne(db, key: job.imageId) else { return nil }
+                row.path = destination.path
+                row.sizeBytes = sizeBytes
+                row.status = "ready"
+                row.error = nil
+                row.sha256 = fetched.sha256
+                row.updatedAt = now
+                try row.update(db)
+                return row
+            }
+            guard updated != nil else {
+                try? FileManager.default.removeItem(at: destination)
+                await fallback(
+                    db: db, sourceUrl: job.request.sourceUrl,
+                    reason: "could not record depot image: row missing",
+                )
+                return
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            await markFailed(imageId: job.imageId, db: db, message: error.localizedDescription)
+            await fallback(
+                db: db, sourceUrl: job.request.sourceUrl,
+                reason: "could not record depot image: \(error.localizedDescription)",
+            )
+            return
+        }
         await AuditService.logSystem(
             action: "library.depot.fetch",
-            detail: "copied \(request.sourceUrl) from Device \(depotHostId)",
+            detail: "copied \(job.request.sourceUrl) from Device \(job.depotHostId)",
             db: db,
         )
-        Log.images.info("Library depot fetch ready for \(request.sourceUrl) from Device \(depotHostId)")
-        return image
+        Log.images.info(
+            "Library depot fetch ready for \(job.request.sourceUrl) from Device \(job.depotHostId)",
+        )
     }
 
     private func verify(
         destination: URL,
+        sourceUrl: String,
         computedSha256: String,
         remoteSha256: String?,
         expectedChecksum: ExpectedChecksum?,
@@ -204,7 +260,9 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
                 "SHA256 mismatch: expected \(remoteSha256.lowercased()), got \(computedSha256)",
             )
         }
-        guard let expectedChecksum else { return }
+        // Depot stores the decompressed file; catalog hashes are of the compressed
+        // artifact. Compare the stored-file digest only for .xz/.gz/.zst/.bz2 sources.
+        guard let expectedChecksum, !ImageService.isCompressedSource(sourceUrl) else { return }
         switch expectedChecksum {
         case let .sha256(hash):
             let expected = hash.lowercased()
@@ -221,6 +279,23 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
                     "SHA512 mismatch: expected \(expected), got \(computed)",
                 )
             }
+        }
+    }
+
+    private func readyImage(id: String, db: DatabasePool) async -> VMImage? {
+        let image = try? await db.read { db in
+            try VMImage.fetchOne(db, key: id)
+        }
+        guard let image, image.status == "ready" else { return nil }
+        return image
+    }
+
+    private func markFailed(imageId: String, db: DatabasePool, message: String) async {
+        try? await db.write { db in
+            try db.execute(
+                sql: "UPDATE images SET status = 'error', error = ?, updatedAt = ? WHERE id = ?",
+                arguments: [message, iso8601.string(from: Date()), imageId],
+            )
         }
     }
 

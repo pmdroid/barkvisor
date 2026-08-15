@@ -17,12 +17,11 @@ struct AgentLibraryDepotClient: LibraryDepotClient {
         guard let host = record.agentHost, !host.isEmpty else {
             throw HomeDeviceProxyError.unreachable("Device has no reachable address")
         }
-        let encoded = sourceUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sourceUrl
         let url = try HomeDeviceProxy.memberURL(
             host: host,
             port: record.agentPort,
             path: LibraryDepotHTTP.listPath,
-            query: "sourceUrl=\(encoded)",
+            query: LibraryDepotHTTP.sourceUrlQuery(sourceUrl),
         )
         let result = try await listClient.send(
             HomeDeviceProxyRequest(
