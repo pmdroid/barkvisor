@@ -48,6 +48,8 @@ import {
   devicePath,
   deviceTaskPath,
   isSelfDevice,
+  resolveSelectedDevice,
+  selectedHostIsLive,
 } from '../utils/homeDeviceApi'
 
 export function useCreateVMWizard(
@@ -71,13 +73,17 @@ export function useCreateVMWizard(
   const deviceDisks = ref<Disk[]>([])
   const deviceSSHKeys = ref<SSHKey[]>([])
 
-  const selectedDevice = computed(() => {
-    if (selectedHostId.value) {
-      return devicesStore.deviceByHostId(selectedHostId.value)
-        ?? devicesStore.selfDevice
-    }
-    return devicesStore.selfDevice
-  })
+  const selectedDevice = computed(() =>
+    resolveSelectedDevice(
+      selectedHostId.value,
+      (id) => devicesStore.deviceByHostId(id),
+      devicesStore.selfDevice,
+    ),
+  )
+
+  function pickedDeviceStillLive(): boolean {
+    return selectedHostIsLive(selectedHostId.value, (id) => devicesStore.deviceByHostId(id))
+  }
 
   const hostArch = computed(() => pickedCaps.value.hostArch)
   const guestTypes = computed(() => pickedCaps.value.guestTypes ?? [])
@@ -298,6 +304,10 @@ export function useCreateVMWizard(
   async function checkVirtioWinStatus() {
     try {
       const target = selectedDevice.value
+      if (selectedHostId.value && !target) {
+        virtioWinAvailable.value = false
+        return
+      }
       const path = target ? devicePath(target, '/system/virtio-win/status') : '/system/virtio-win/status'
       const { data } = await api.get(path)
       virtioWinAvailable.value = data.available
@@ -318,6 +328,11 @@ export function useCreateVMWizard(
 
     try {
       const target = selectedDevice.value
+      if (selectedHostId.value && !target) {
+        virtioWinError.value = 'The selected Device is no longer available. Pick a Device again.'
+        virtioWinDownloading.value = false
+        return
+      }
       const path = target ? devicePath(target, '/system/virtio-win/download') : '/system/virtio-win/download'
       const { data } = await api.post(path)
       virtioWinImageId.value = data.imageId
@@ -380,6 +395,10 @@ export function useCreateVMWizard(
   async function fetchUSBDevices() {
     try {
       const target = selectedDevice.value
+      if (selectedHostId.value && !target) {
+        hostUSBDevices.value = []
+        return
+      }
       const path = target ? devicePath(target, '/system/usb-devices') : '/system/usb-devices'
       const { data } = await api.get(path)
       hostUSBDevices.value = data
@@ -487,10 +506,24 @@ export function useCreateVMWizard(
     selectedNetworkId.value = defaultNet?.id ?? ''
   }
 
+  function clearPickedInventory() {
+    pickedCaps.value = { ...defaultCapabilities }
+    pickedHostArchKnown.value = false
+    deviceImages.value = []
+    deviceNetworks.value = []
+    deviceDisks.value = []
+    deviceSSHKeys.value = []
+  }
+
   async function loadPickedDevice() {
     await devicesStore.fetchHealth().catch(() => {})
     if (!selectedHostId.value) {
       selectedHostId.value = opts.initialHostId || devicesStore.selfDevice?.hostId || ''
+    }
+    if (!pickedDeviceStillLive()) {
+      clearPickedInventory()
+      error.value = 'The selected Device is no longer available. Pick a Device again.'
+      return
     }
     const device = selectedDevice.value
     if (!device) {
@@ -505,23 +538,29 @@ export function useCreateVMWizard(
       await applyLoadedResources(true)
       return
     }
-    const [capsRes, imagesRes, netsRes, disksRes, keysRes] = await Promise.all([
-      api.get(deviceCapabilitiesPath(device)),
-      api.get(devicePath(device, '/images')),
-      api.get(devicePath(device, '/networks')),
-      api.get(devicePath(device, '/disks')),
-      api.get(devicePath(device, '/ssh-keys')),
-    ])
-    pickedCaps.value = parseSystemCapabilities(capsRes.data)
-    pickedHostArchKnown.value = typeof capsRes.data?.hostArch === 'string' && capsRes.data.hostArch.length > 0
-    deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
-    deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
-    deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
-    deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
-    selectedImageId.value = ''
-    existingDiskId.value = ''
-    selectedUSBDevices.value = []
-    await applyLoadedResources(false)
+    try {
+      const [capsRes, imagesRes, netsRes, disksRes, keysRes] = await Promise.all([
+        api.get(deviceCapabilitiesPath(device)),
+        api.get(devicePath(device, '/images')),
+        api.get(devicePath(device, '/networks')),
+        api.get(devicePath(device, '/disks')),
+        api.get(devicePath(device, '/ssh-keys')),
+      ])
+      pickedCaps.value = parseSystemCapabilities(capsRes.data)
+      pickedHostArchKnown.value = typeof capsRes.data?.hostArch === 'string' && capsRes.data.hostArch.length > 0
+      deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
+      deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
+      deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
+      deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
+      selectedImageId.value = ''
+      existingDiskId.value = ''
+      selectedUSBDevices.value = []
+      error.value = ''
+      await applyLoadedResources(false)
+    } catch (e: unknown) {
+      clearPickedInventory()
+      error.value = apiErrorMessage(e, 'Could not load inventory from the picked Device.')
+    }
   }
 
   onMounted(async () => {
@@ -591,7 +630,7 @@ export function useCreateVMWizard(
       case 'Network':
         return true
       case 'Summary':
-        return !archIsProblem.value
+        return !archIsProblem.value && pickedDeviceStillLive()
       default:
         return false
     }
@@ -617,6 +656,10 @@ export function useCreateVMWizard(
     }
     if (archIsProblem.value) {
       error.value = archProblemText.value || 'This architecture is not supported on this device.'
+      return
+    }
+    if (!pickedDeviceStillLive()) {
+      error.value = 'The selected Device is no longer available. Pick a Device again.'
       return
     }
     loading.value = true

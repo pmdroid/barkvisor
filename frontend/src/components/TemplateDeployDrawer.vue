@@ -6,7 +6,7 @@ import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useDevicesStore } from '../stores/devices'
 import { useHomeLibraryStore } from '../stores/homeLibrary'
-import { parseSystemCapabilities } from '../utils/capabilitiesParse'
+import { defaultCapabilities, parseSystemCapabilities } from '../utils/capabilitiesParse'
 import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
 import UnsupportedHint from './ui/UnsupportedHint.vue'
@@ -75,7 +75,9 @@ const deviceOptions = computed<DevicePickOption[]>(() => {
     toPickOption(
       row,
       templateIncompatibilityReasons(row, props.template, {
-        capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+        capabilities: row.hostId === selectedDevice.value?.hostId
+          ? (pickedCaps.value ?? defaultCapabilities)
+          : undefined,
         hasTemplate: homeLibrary.templates.length === 0
           ? true
           : homeLibrary.deviceHasTemplate(props.template.slug, row.hostId),
@@ -85,7 +87,7 @@ const deviceOptions = computed<DevicePickOption[]>(() => {
 })
 
 const bridged = computed(() => ({
-  available: pickedCaps.value?.supportsBridgedNetworking !== false,
+  available: pickedCaps.value?.supportsBridgedNetworking === true,
   explanation:
     pickedCaps.value?.details?.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
     || undefined,
@@ -270,21 +272,26 @@ async function pollRemoteImage(imageId: string) {
   phase.value = 'downloading'
   downloadPercent.value = 0
   downloadStatus.value = 'Downloading image on the picked Device...'
-  for (let i = 0; i < 600; i++) {
-    const { data } = await api.get(deviceImagePath(device, imageId))
-    if (data.status === 'ready') {
-      await doDeploy()
-      return
+  try {
+    for (let i = 0; i < 600; i++) {
+      const { data } = await api.get(deviceImagePath(device, imageId))
+      if (data.status === 'ready') {
+        await doDeploy()
+        return
+      }
+      if (data.status === 'error') {
+        error.value = data.error || 'Image download failed'
+        phase.value = 'form'
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
-    if (data.status === 'error') {
-      error.value = data.error || 'Image download failed'
-      phase.value = 'form'
-      return
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    error.value = 'Timed out waiting for the Device image download'
+    phase.value = 'form'
+  } catch (e: unknown) {
+    error.value = apiErrorMessage(e, 'Image download failed')
+    phase.value = 'form'
   }
-  error.value = 'Timed out waiting for the Device image download'
-  phase.value = 'form'
 }
 
 function watchDownload(imageId: string) {

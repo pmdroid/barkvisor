@@ -17,6 +17,25 @@ export function canFetchDeviceWorkloads(device: DeviceApiTarget): boolean {
   return device.reachability === 'ok'
 }
 
+/** If a hostId was picked, never fall back to self (PAS-34). */
+export function resolveSelectedDevice<T extends DeviceApiTarget>(
+  selectedHostId: string,
+  lookup: (hostId: string) => T | null,
+  selfDevice: T | null,
+): T | null {
+  if (selectedHostId) return lookup(selectedHostId)
+  return selfDevice
+}
+
+/** Summary/submit must refuse a hostId that no longer maps to a live Device. */
+export function selectedHostIsLive(
+  selectedHostId: string,
+  lookup: (hostId: string) => unknown,
+): boolean {
+  if (!selectedHostId) return true
+  return lookup(selectedHostId) != null
+}
+
 /** Alias: same reachability rule for templates, tasks, capabilities. */
 export function canCallDeviceAPI(device: DeviceApiTarget): boolean {
   return canFetchDeviceWorkloads(device)

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, VMTemplate } from '../api/types'
+import { defaultCapabilities } from './capabilitiesParse'
 import {
   createVMIncompatibilityReasons,
   templateIncompatibilityReasons,
@@ -91,6 +92,15 @@ describe('deviceCompatibility (PAS-34)', () => {
     expect(createVMIncompatibilityReasons(x86, { osType: 'windows', capabilities: x86Caps })).toEqual([
       'Windows guests are not available on this Device architecture.',
     ])
+  })
+
+  test('bridged templates fail closed when capabilities are the PAS-37 defaults', () => {
+    const peer = device({ hostId: 'studio', role: 'member' })
+    expect(
+      templateIncompatibilityReasons(peer, template({ networkMode: 'bridged' }), {
+        capabilities: defaultCapabilities,
+      }),
+    ).toContain('Bridged networking is not available on this Device.')
   })
 
   test('required features and bridged templates use picked-Device capabilities', () => {
