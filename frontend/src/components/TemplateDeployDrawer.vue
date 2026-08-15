@@ -4,21 +4,40 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTemplateStore } from '../stores/templates'
 import { useVMStore } from '../stores/vms'
 import { useSSHKeyStore } from '../stores/sshKeys'
+import { useDevicesStore } from '../stores/devices'
+import { useHomeLibraryStore } from '../stores/homeLibrary'
+import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import api from '../api/client'
 import AppSelect from './ui/AppSelect.vue'
 import UnsupportedHint from './ui/UnsupportedHint.vue'
+import DevicePicker from './DevicePicker.vue'
 import type {
   VMTemplate,
   DeployTemplateRequest,
   BridgeInfo,
   DeployTemplateResponse,
   TemplateCompatibilityReport,
+  CurrentHostCapabilities,
+  SSHKey,
 } from '../api/types'
-import { useFeature } from '../composables/useFeature'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useImageProgress } from '../composables/useTicketedEventSource'
+import {
+  templateIncompatibilityReasons,
+  toPickOption,
+  type DevicePickOption,
+} from '../utils/deviceCompatibility'
+import {
+  canCallDeviceAPI,
+  deviceCapabilitiesPath,
+  deviceImagePath,
+  devicePath,
+  deviceTaskPath,
+  deviceVmActionPath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
 
-const props = defineProps<{ template: VMTemplate }>()
+const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
 const emit = defineEmits(['close', 'deployed'])
 
 function networkModeLabel(mode: string): string {
@@ -30,27 +49,103 @@ function networkModeLabel(mode: string): string {
 const templateStore = useTemplateStore()
 const vmStore = useVMStore()
 const sshKeyStore = useSSHKeyStore()
-const bridged = useFeature('bridgedNetworking')
+const devicesStore = useDevicesStore()
+const homeLibrary = useHomeLibraryStore()
 
+const selectedHostId = ref(props.initialHostId ?? '')
+const pickedCaps = ref<CurrentHostCapabilities | null>(null)
+const deviceSSHKeys = ref<SSHKey[]>([])
 const selectedSSHKeyId = ref('')
+
+const selectedDevice = computed(() => {
+  if (selectedHostId.value) return devicesStore.deviceByHostId(selectedHostId.value)
+  return devicesStore.selfDevice
+})
+
+const resolvedTemplate = computed(() => {
+  const device = selectedDevice.value
+  if (!device) return props.template
+  return homeLibrary.templateForDevice(props.template.slug, device.hostId) ?? props.template
+})
+
+const deviceOptions = computed<DevicePickOption[]>(() => {
+  const rows = devicesStore.devices
+  const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
+  return list.map((row) =>
+    toPickOption(
+      row,
+      templateIncompatibilityReasons(row, props.template, {
+        capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+        hasTemplate: homeLibrary.templates.length === 0
+          ? true
+          : homeLibrary.deviceHasTemplate(props.template.slug, row.hostId),
+      }),
+    ),
+  )
+})
+
+const bridged = computed(() => ({
+  available: pickedCaps.value?.supportsBridgedNetworking !== false,
+  explanation:
+    pickedCaps.value?.details?.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
+    || undefined,
+}))
 
 // Bridge status for bridged templates
 const bridgeAvailable = ref<boolean | null>(null) // null = loading
 const bridgeChecked = ref(false)
 const platformBridgeUnsupported = computed(
-  () => props.template.networkMode === 'bridged' && !bridged.available,
+  () => props.template.networkMode === 'bridged' && !bridged.value.available,
 )
 
 const compatibility = ref<TemplateCompatibilityReport | null>(null)
 
-onMounted(async () => {
-  sshKeyStore.fetchAll().then(() => {
+async function loadPickedDevice() {
+  await devicesStore.fetchHealth().catch(() => {})
+  if (homeLibrary.templates.length === 0) {
+    await homeLibrary.fetchAll(devicesStore.devices).catch(() => {})
+  }
+  if (!selectedHostId.value) {
+    const selfId = devicesStore.selfDevice?.hostId
+    const firstOk = deviceOptions.value.find((o) => o.compatible)
+    selectedHostId.value = props.initialHostId || firstOk?.hostId || selfId || ''
+  }
+  const device = selectedDevice.value
+  if (!device) {
+    await sshKeyStore.fetchAll()
+    deviceSSHKeys.value = sshKeyStore.keys
     if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
-  })
-  if (props.template.networkMode === 'bridged' && bridged.available) {
+    pickedCaps.value = null
+    return
+  }
+  if (isSelfDevice(device) || !canCallDeviceAPI(device)) {
     try {
-      const { data } = await api.get<BridgeInfo[]>('/system/bridges')
-      bridgeAvailable.value = data.some(b => b.status === 'active')
+      const { data } = await api.get(deviceCapabilitiesPath(device))
+      pickedCaps.value = parseSystemCapabilities(data)
+    } catch {
+      pickedCaps.value = null
+    }
+    await sshKeyStore.fetchAll()
+    deviceSSHKeys.value = sshKeyStore.keys
+    if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
+  } else {
+    try {
+      const [capsRes, keysRes] = await Promise.all([
+        api.get(deviceCapabilitiesPath(device)),
+        api.get(devicePath(device, '/ssh-keys')),
+      ])
+      pickedCaps.value = parseSystemCapabilities(capsRes.data)
+      deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
+      const def = deviceSSHKeys.value.find((k) => k.isDefault)
+      if (def) selectedSSHKeyId.value = def.id
+    } catch {
+      pickedCaps.value = null
+    }
+  }
+  if (props.template.networkMode === 'bridged' && bridged.value.available && device) {
+    try {
+      const { data } = await api.get<BridgeInfo[]>(devicePath(device, '/system/bridges'))
+      bridgeAvailable.value = data.some((b) => b.status === 'active')
     } catch {
       bridgeAvailable.value = false
     }
@@ -62,6 +157,17 @@ onMounted(async () => {
     bridgeAvailable.value = true
     bridgeChecked.value = true
   }
+  await refreshCompatibility()
+}
+
+onMounted(async () => {
+  await loadPickedDevice()
+})
+
+watch(selectedHostId, async (next, prev) => {
+  if (!prev || !next || next === prev) return
+  await loadPickedDevice()
+  await refreshCompatibility()
 })
 
 const step = ref(1)
@@ -81,9 +187,13 @@ const memoryBelowMinimum = computed(() => {
 async function refreshCompatibility() {
   try {
     const planned = Number(memoryMB.value)
-    compatibility.value = await templateStore.dryRun(props.template.id, {
-      memoryMB: Number.isFinite(planned) ? planned : undefined,
-    })
+    const device = selectedDevice.value
+    const templateId = resolvedTemplate.value.id
+    compatibility.value = await templateStore.dryRun(
+      templateId,
+      { memoryMB: Number.isFinite(planned) ? planned : undefined },
+      device ?? undefined,
+    )
   } catch {
     compatibility.value = null
   }
@@ -140,12 +250,12 @@ function prev() {
 
 function buildRequest(): DeployTemplateRequest {
   const inputs = { ...inputValues.value }
-  const selectedKey = sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
+  const selectedKey = deviceSSHKeys.value.find(k => k.id === selectedSSHKeyId.value)
   if (selectedKey) {
     inputs.ssh_keys = selectedKey.publicKey
   }
   return {
-    templateId: props.template.id,
+    templateId: resolvedTemplate.value.id,
     vmName: vmName.value.trim(),
     inputs,
     cpuCount: cpuCount.value !== props.template.cpuCount ? cpuCount.value : undefined,
@@ -154,7 +264,35 @@ function buildRequest(): DeployTemplateRequest {
   }
 }
 
+async function pollRemoteImage(imageId: string) {
+  const device = selectedDevice.value
+  if (!device) return
+  phase.value = 'downloading'
+  downloadPercent.value = 0
+  downloadStatus.value = 'Downloading image on the picked Device...'
+  for (let i = 0; i < 600; i++) {
+    const { data } = await api.get(deviceImagePath(device, imageId))
+    if (data.status === 'ready') {
+      await doDeploy()
+      return
+    }
+    if (data.status === 'error') {
+      error.value = data.error || 'Image download failed'
+      phase.value = 'form'
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+  error.value = 'Timed out waiting for the Device image download'
+  phase.value = 'form'
+}
+
 function watchDownload(imageId: string) {
+  const device = selectedDevice.value
+  if (device && !isSelfDevice(device)) {
+    void pollRemoteImage(imageId)
+    return
+  }
   phase.value = 'downloading'
   downloadPercent.value = 0
   downloadStatus.value = 'Starting download...'
@@ -190,42 +328,53 @@ async function finishDeploy(result: DeployTemplateResponse) {
     return
   }
 
+  const device = selectedDevice.value
+  const localList = !device || isSelfDevice(device)
+
   if (result.status === 'provisioning' && result.vm && result.taskID) {
-    // Shared create pipeline: async disk clone — poll like Create VM.
-    if (!vmStore.vms.find(v => v.id === result.vm!.id)) {
+    if (localList && !vmStore.vms.find(v => v.id === result.vm!.id)) {
       vmStore.vms.push(result.vm)
     }
     phase.value = 'deploying'
     downloadStatus.value = 'Provisioning disk from cloud image...'
     const { poll } = useTaskPoller()
-    const event = await poll(result.taskID)
+    const event = await poll(result.taskID, {
+      path: device ? deviceTaskPath(device, result.taskID) : undefined,
+    })
     if (event.status !== 'completed') {
       error.value = event.error || 'Provisioning failed'
       phase.value = 'form'
       return
     }
-    // Auto-start after provision (previous template deploy UX).
     try {
-      await vmStore.start(result.vm.id)
+      if (device && !isSelfDevice(device)) {
+        await api.post(deviceVmActionPath(device, result.vm.id, 'start'))
+      } else {
+        await vmStore.start(result.vm.id)
+      }
     } catch {
       // VM is created; start can fail if host lacks accel — still report deployed.
     }
     phase.value = 'done'
-    emit('deployed', result.vm)
+    emit('deployed', result.vm, device?.hostId)
     return
   }
 
   if (result.status === 'created' && result.vm) {
-    if (!vmStore.vms.find(v => v.id === result.vm!.id)) {
+    if (localList && !vmStore.vms.find(v => v.id === result.vm!.id)) {
       vmStore.vms.push(result.vm)
     }
     try {
-      await vmStore.start(result.vm.id)
+      if (device && !isSelfDevice(device)) {
+        await api.post(deviceVmActionPath(device, result.vm.id, 'start'))
+      } else {
+        await vmStore.start(result.vm.id)
+      }
     } catch {
       /* ignore */
     }
     phase.value = 'done'
-    emit('deployed', result.vm)
+    emit('deployed', result.vm, device?.hostId)
   }
 }
 
@@ -235,7 +384,7 @@ async function doDeploy() {
   error.value = ''
 
   try {
-    const result = await templateStore.deploy(buildRequest())
+    const result = await templateStore.deploy(buildRequest(), selectedDevice.value ?? undefined)
     await finishDeploy(result)
   } catch (e: any) {
     error.value = apiErrorMessage(e)
@@ -246,12 +395,12 @@ async function doDeploy() {
 async function submit() {
   error.value = ''
   if (platformBridgeUnsupported.value) {
-    error.value = bridged.explanation || 'Bridged networking is not available on this device.'
+    error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
     return
   }
   loading.value = true
   try {
-    const result = await templateStore.deploy(buildRequest())
+    const result = await templateStore.deploy(buildRequest(), selectedDevice.value ?? undefined)
     await finishDeploy(result)
   } catch (e: any) {
     error.value = apiErrorMessage(e)
@@ -266,6 +415,11 @@ async function submit() {
     <div class="modal" style="max-width:520px">
       <h2>Deploy {{ template.name }}</h2>
       <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">{{ template.description }}</p>
+      <DevicePicker
+        v-if="phase === 'form' && deviceOptions.length > 0"
+        v-model="selectedHostId"
+        :options="deviceOptions"
+      />
       <p
         v-if="compatibility?.resolvedImageSlug"
         style="color:var(--text-dim);font-size:12px;margin:-8px 0 16px"
@@ -367,11 +521,11 @@ async function submit() {
             <label>SSH Key</label>
             <AppSelect v-model="selectedSSHKeyId">
               <option value="">None</option>
-              <option v-for="sk in sshKeyStore.keys" :key="sk.id" :value="sk.id">
+              <option v-for="sk in deviceSSHKeys" :key="sk.id" :value="sk.id">
                 {{ sk.name }}
               </option>
             </AppSelect>
-            <div v-if="sshKeyStore.keys.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
+            <div v-if="deviceSSHKeys.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
               No SSH keys stored yet. Add keys in Settings first.
             </div>
           </div>
@@ -424,12 +578,13 @@ async function submit() {
           <h3 class="step-title">Review</h3>
           <div style="font-size:13px;line-height:1.8">
             <div><strong>Template:</strong> {{ template.name }}</div>
+            <div v-if="selectedDevice"><strong>Device:</strong> {{ selectedDevice.displayName || selectedDevice.hostId }}</div>
             <div><strong>VM Name:</strong> {{ vmName }}</div>
             <div><strong>CPU:</strong> {{ cpuCount }} cores</div>
             <div><strong>Memory:</strong> {{ memoryMB }} MB</div>
             <div><strong>Disk:</strong> {{ diskSizeGB }} GB</div>
             <div><strong>Network:</strong> {{ networkModeLabel(template.networkMode) }}</div>
-            <div><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
+            <div><strong>SSH Key:</strong> {{ deviceSSHKeys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
             <div><strong>Image:</strong> {{ compatibility?.resolvedImageSlug || template.imageSlug }}</div>
           </div>
         </div>
@@ -442,7 +597,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.compatible))" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>

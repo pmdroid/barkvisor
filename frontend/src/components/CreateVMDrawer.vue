@@ -8,6 +8,7 @@ import CreateVMStorageStep from './create-vm/CreateVMStorageStep.vue'
 import CreateVMNetworkStep from './create-vm/CreateVMNetworkStep.vue'
 import CreateVMSummaryStep from './create-vm/CreateVMSummaryStep.vue'
 
+const props = defineProps<{ initialHostId?: string }>()
 const emit = defineEmits(['close', 'created'])
 
 const {
@@ -45,7 +46,7 @@ const {
   hostImageArch,
   selectedImage,
   formatBytes,
-  sshKeyStore,
+  sshKeys,
   virtioWinAvailable,
   virtioWinDownloading,
   virtioWinProgress,
@@ -81,7 +82,10 @@ const {
   error,
   loading,
   submit,
-} = useCreateVMWizard((e) => emit(e))
+  selectedHostId,
+  deviceOptions,
+  selectedDevice,
+} = useCreateVMWizard((e) => emit(e), { initialHostId: props.initialHostId })
 
 function openUSBPicker() {
   showUSBPicker.value = true
@@ -112,7 +116,10 @@ function openUSBPicker() {
         :name="name"
         :osType="osType"
         :supportsWindows="supportsWindows"
+        :selectedHostId="selectedHostId"
+        :deviceOptions="deviceOptions"
         @update:name="name = $event"
+        @update:selectedHostId="selectedHostId = $event"
         @selectOS="selectOS"
         @next="next"
       />
@@ -151,7 +158,7 @@ function openUSBPicker() {
         :filteredImages="filteredImages"
         :foreignArchImageCount="foreignArchImageCount"
         :hostImageArch="hostImageArch"
-        :sshKeys="sshKeyStore.keys"
+        :sshKeys="sshKeys"
         :formatBytes="formatBytes"
         @update:mode="mode = $event"
         @update:selectedImageId="selectedImageId = $event"
@@ -233,6 +240,7 @@ function openUSBPicker() {
         :sharedPaths="sharedPaths"
         :selectedUSBDevices="selectedUSBDevices"
         :selectedNetwork="selectedNetwork"
+        :deviceLabel="selectedDevice ? (selectedDevice.displayName || selectedDevice.hostId) : ''"
       />
 
       <!-- Error -->

@@ -1,17 +1,33 @@
 import { ref, computed, watch, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useVMStore } from '../stores/vms'
 import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import { networksUsableOnHost, useFeature } from './useFeature'
+import {
+  capabilitiesArchRunnable,
+  defaultCapabilities,
+  parseSystemCapabilities,
+} from '../utils/capabilitiesParse'
+import { networksUsableOnHost } from './useFeature'
 import api from '../api/client'
-import type { PortForwardRule, HostUSBDevice, USBPassthroughDevice, CreateVMRequest } from '../api/types'
+import type {
+  PortForwardRule,
+  HostUSBDevice,
+  USBPassthroughDevice,
+  CreateVMRequest,
+  CurrentHostCapabilities,
+  Disk,
+  Image,
+  Network,
+  SSHKey,
+} from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
+import { useTaskPoller } from './useTaskPoller'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
+import { useDevicesStore } from '../stores/devices'
 import { hostArchToImageArch } from '../utils/imageArch'
 import {
   architectureIsProblem,
@@ -21,8 +37,23 @@ import {
   shouldRevealArchitectureDetails,
   writeAlwaysShowArchitectureDetails,
 } from '../utils/architectureDetails'
+import {
+  createVMIncompatibilityReasons,
+  toPickOption,
+  type DevicePickOption,
+} from '../utils/deviceCompatibility'
+import {
+  canCallDeviceAPI,
+  deviceCapabilitiesPath,
+  devicePath,
+  deviceTaskPath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
 
-export function useCreateVMWizard(emit: (e: 'created') => void) {
+export function useCreateVMWizard(
+  emit: (e: 'created') => void,
+  opts: { initialHostId?: string } = {},
+) {
   const vmStore = useVMStore()
   const imageStore = useImageStore()
   const toast = useToastStore()
@@ -30,12 +61,43 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const caps = useCapabilitiesStore()
   const networkStore = useNetworkStore()
   const diskStore = useDiskStore()
-  const { hostArch, guestTypes, accelerator } = storeToRefs(caps)
-  const usb = useFeature('usbPassthrough')
-  const bridged = useFeature('bridgedNetworking')
-  const { networks: allNetworks } = storeToRefs(networkStore)
-  const networks = computed(() => networksUsableOnHost(allNetworks.value, bridged.available))
-  const { unattached: availableDisks } = storeToRefs(diskStore)
+  const devicesStore = useDevicesStore()
+
+  const selectedHostId = ref(opts.initialHostId ?? '')
+  const pickedCaps = ref<CurrentHostCapabilities>({ ...defaultCapabilities })
+  const pickedHostArchKnown = ref(false)
+  const deviceImages = ref<Image[]>([])
+  const deviceNetworks = ref<Network[]>([])
+  const deviceDisks = ref<Disk[]>([])
+  const deviceSSHKeys = ref<SSHKey[]>([])
+
+  const selectedDevice = computed(() => {
+    if (selectedHostId.value) {
+      return devicesStore.deviceByHostId(selectedHostId.value)
+        ?? devicesStore.selfDevice
+    }
+    return devicesStore.selfDevice
+  })
+
+  const hostArch = computed(() => pickedCaps.value.hostArch)
+  const guestTypes = computed(() => pickedCaps.value.guestTypes ?? [])
+  const accelerator = computed(() => pickedCaps.value.accelerator)
+  const hostCpuCount = computed(() => {
+    const n = pickedCaps.value.hostCpuCount
+    return typeof n === 'number' && n >= 1 ? n : 1
+  })
+  const usb = computed(() => ({
+    available: pickedCaps.value.supportsUSBPassthrough,
+  }))
+  const bridged = computed(() => ({
+    available: pickedCaps.value.supportsBridgedNetworking,
+    explanation:
+      pickedCaps.value.details?.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
+      || undefined,
+  }))
+  const allNetworks = computed(() => deviceNetworks.value)
+  const networks = computed(() => networksUsableOnHost(allNetworks.value, bridged.value.available))
+  const availableDisks = computed(() => deviceDisks.value.filter((d) => !d.vmId))
 
   // Wizard step
   const step = ref(1)
@@ -48,7 +110,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
    * Until hostArch is known, do not offer Windows (PAS-48 / PAS-37 fail-closed).
    */
   const supportsWindows = computed(() => {
-    if (!caps.hostArchKnown) return false
+    if (!pickedHostArchKnown.value) return false
     const host = hostArchToImageArch(hostArch.value)
     if (host !== 'arm64') return false
     const types = guestTypes.value ?? []
@@ -56,6 +118,23 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     return types.some(
       (g) => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'),
     )
+  })
+
+  const deviceOptions = computed<DevicePickOption[]>(() => {
+    const rows = devicesStore.devices
+    const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
+    return list.map((row) => {
+      const guest = guestArchOverride.value
+        ?? hostArchToImageArch(row.platform?.arch || pickedCaps.value.hostArch)
+      return toPickOption(
+        row,
+        createVMIncompatibilityReasons(row, {
+          guestArch: guest,
+          osType: osType.value,
+          capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+        }),
+      )
+    })
   })
   /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
   const guestArchOverride = ref<string | null>(null)
@@ -96,9 +175,9 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   })
   const uefiCustomized = computed(() => uefi.value !== true)
   const tpmCustomized = computed(() => tpmOverride.value !== null)
-  const archRunnable = computed(() => caps.isArchRunnable(effectiveGuestArch.value))
+  const archRunnable = computed(() => capabilitiesArchRunnable(pickedCaps.value, effectiveGuestArch.value))
   const archIsProblem = computed(() => {
-    if (!caps.hostArchKnown) return false
+    if (!pickedHostArchKnown.value) return false
     return architectureIsProblem(effectiveGuestArch.value, archRunnable.value)
   })
   const archProblemText = computed(() => {
@@ -162,7 +241,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     if (os === 'windows' && guestArchOverride.value === 'x86_64') {
       guestArchOverride.value = null
     }
-    const maxCpu = caps.hostCpuCount
+    const maxCpu = hostCpuCount.value
     if (os === 'windows') {
       cpuCount.value = Math.min(4, maxCpu)
       memoryMB.value = 4096
@@ -218,7 +297,9 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   async function checkVirtioWinStatus() {
     try {
-      const { data } = await api.get('/system/virtio-win/status')
+      const target = selectedDevice.value
+      const path = target ? devicePath(target, '/system/virtio-win/status') : '/system/virtio-win/status'
+      const { data } = await api.get(path)
       virtioWinAvailable.value = data.available
       virtioWinImageId.value = data.imageId || null
     } catch {
@@ -236,8 +317,29 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     virtioProgress.stop()
 
     try {
-      const { data } = await api.post('/system/virtio-win/download')
+      const target = selectedDevice.value
+      const path = target ? devicePath(target, '/system/virtio-win/download') : '/system/virtio-win/download'
+      const { data } = await api.post(path)
       virtioWinImageId.value = data.imageId
+      if (target && !isSelfDevice(target)) {
+        // No SSE cross-device — poll the member image until ready.
+        const { poll } = useTaskPoller()
+        if (data.taskID) {
+          const event = await poll(data.taskID, { path: deviceTaskPath(target, data.taskID) })
+          if (event.status === 'completed') {
+            virtioWinAvailable.value = true
+            virtioWinDownloading.value = false
+            return
+          }
+          virtioWinError.value = event.error || 'Download failed'
+          virtioWinDownloading.value = false
+          return
+        }
+        virtioWinAvailable.value = false
+        virtioWinDownloading.value = false
+        virtioWinError.value = 'Download started on the Device. Refresh this step shortly.'
+        return
+      }
 
       virtioProgress.start(data.imageId, {
         onProgress: (msg) => {
@@ -277,7 +379,9 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   async function fetchUSBDevices() {
     try {
-      const { data } = await api.get('/system/usb-devices')
+      const target = selectedDevice.value
+      const path = target ? devicePath(target, '/system/usb-devices') : '/system/usb-devices'
+      const { data } = await api.get(path)
       hostUSBDevices.value = data
     } catch {
       hostUSBDevices.value = []
@@ -350,11 +454,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     if (!nat) portForwards.value = []
   })
 
-  watch([() => bridged.available, allNetworks], () => {
+  watch([() => bridged.value.available, allNetworks], () => {
     const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
-    if (current && current.mode === 'bridged' && !bridged.available) {
+    if (current && current.mode === 'bridged' && !bridged.value.available) {
       const fallback =
-        networkStore.defaultNAT
+        allNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
         ?? allNetworks.value.find((n) => n.mode === 'nat')
         ?? null
       selectedNetworkId.value = fallback?.id ?? ''
@@ -365,30 +469,83 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   const error = ref('')
   const loading = ref(false)
 
-  onMounted(async () => {
-    // Resolve host arch before OS selection can enable Windows (PAS-48).
-    await caps.fetchCapabilities().catch(() => {})
-    imageStore.fetchAll()
-    sshKeyStore.fetchAll().then(() => {
-      if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
-    })
-    await Promise.all([networkStore.fetchAll(), diskStore.fetchAll()])
+  async function applyLoadedResources(deviceIsSelf: boolean) {
+    if (deviceIsSelf) {
+      deviceImages.value = imageStore.images
+      deviceNetworks.value = networkStore.networks
+      deviceDisks.value = diskStore.disks
+      deviceSSHKeys.value = sshKeyStore.keys
+      pickedCaps.value = { ...caps.currentHost }
+      pickedHostArchKnown.value = caps.hostArchKnown
+    }
+    const defaultKey = deviceSSHKeys.value.find((k) => k.isDefault)
+    if (defaultKey) selectedSSHKeyId.value = defaultKey.id
     const defaultNet =
-      networkStore.defaultNAT
-      ?? networks.value.find(n => n.isDefault)
+      deviceNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
+      ?? networks.value.find((n) => n.isDefault)
       ?? null
-    if (defaultNet) selectedNetworkId.value = defaultNet.id
+    selectedNetworkId.value = defaultNet?.id ?? ''
+  }
+
+  async function loadPickedDevice() {
+    await devicesStore.fetchHealth().catch(() => {})
+    if (!selectedHostId.value) {
+      selectedHostId.value = opts.initialHostId || devicesStore.selfDevice?.hostId || ''
+    }
+    const device = selectedDevice.value
+    if (!device) {
+      await caps.fetchCapabilities().catch(() => {})
+      await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
+      await applyLoadedResources(true)
+      return
+    }
+    if (isSelfDevice(device) || !canCallDeviceAPI(device)) {
+      await caps.fetchCapabilities().catch(() => {})
+      await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
+      await applyLoadedResources(true)
+      return
+    }
+    const [capsRes, imagesRes, netsRes, disksRes, keysRes] = await Promise.all([
+      api.get(deviceCapabilitiesPath(device)),
+      api.get(devicePath(device, '/images')),
+      api.get(devicePath(device, '/networks')),
+      api.get(devicePath(device, '/disks')),
+      api.get(devicePath(device, '/ssh-keys')),
+    ])
+    pickedCaps.value = parseSystemCapabilities(capsRes.data)
+    pickedHostArchKnown.value = typeof capsRes.data?.hostArch === 'string' && capsRes.data.hostArch.length > 0
+    deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
+    deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
+    deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
+    deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
+    selectedImageId.value = ''
+    existingDiskId.value = ''
+    selectedUSBDevices.value = []
+    await applyLoadedResources(false)
+  }
+
+  onMounted(async () => {
+    await loadPickedDevice()
+  })
+
+  watch(selectedHostId, async (next, prev) => {
+    if (!prev || !next || next === prev) return
+    selectedImageId.value = ''
+    existingDiskId.value = ''
+    selectedUSBDevices.value = []
+    await loadPickedDevice()
+    if (osType.value === 'windows') await checkVirtioWinStatus()
   })
 
   /** Local ready images of the current mode, unfiltered by arch. */
   function readyImagesForMode(imageType: 'iso' | 'cloud-image') {
-    return imageStore.images.filter((i) => i.imageType === imageType && i.status === 'ready')
+    return deviceImages.value.filter((i) => i.imageType === imageType && i.status === 'ready')
   }
 
   /** Match host-runnable arch; empty arch allowed (e.g. virtio drivers). */
   function localImageMatchesHost(arch: string | null | undefined): boolean {
     if (!arch) return true
-    return caps.isArchRunnable(arch)
+    return capabilitiesArchRunnable(pickedCaps.value, arch)
   }
 
   const isoImages = computed(() =>
@@ -402,14 +559,14 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
   )
   /** Ready images hidden solely because of host arch mismatch (PAS-48 empty-state copy). */
   const foreignArchImageCount = computed(() => {
-    if (!caps.hostArchKnown) return 0
+    if (!pickedHostArchKnown.value) return 0
     const type = mode.value === 'iso' ? 'iso' : 'cloud-image'
     return readyImagesForMode(type).filter((i) => i.arch && !localImageMatchesHost(i.arch)).length
   })
 
   const selectedImage = computed(() => {
     if (!selectedImageId.value) return null
-    return imageStore.images.find((i) => i.id === selectedImageId.value) || null
+    return deviceImages.value.find((i) => i.id === selectedImageId.value) || null
   })
 
   const selectedNetwork = computed(() => {
@@ -422,7 +579,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
     const content = stepContent(step.value)
     switch (content) {
       case 'OS':
-        return !!name.value.trim()
+        return !!name.value.trim() && (!deviceOptions.value.length || deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.compatible))
       case 'Hardware':
         return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value
       case 'Image':
@@ -454,8 +611,8 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       error.value = 'Windows VMs are not available on this device architecture.'
       return
     }
-    if (selectedNetwork.value?.mode === 'bridged' && !bridged.available) {
-      error.value = bridged.explanation || 'Bridged networking is not available on this device.'
+    if (selectedNetwork.value?.mode === 'bridged' && !bridged.value.available) {
+      error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
       return
     }
     if (archIsProblem.value) {
@@ -483,7 +640,7 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
         req.isoId = selectedImageId.value
       } else {
         req.cloudImageId = selectedImageId.value
-        const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
+        const selectedKey = deviceSSHKeys.value.find((k) => k.id === selectedSSHKeyId.value)
         const keys = selectedKey ? [selectedKey.publicKey] : []
         const userData = cloudUserData.value.trim()
         if (keys.length || userData) {
@@ -497,12 +654,21 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
       if (selectedNetworkId.value) req.networkId = selectedNetworkId.value
       if (portForwards.value.length > 0) req.portForwards = portForwards.value
       if (sharedPaths.value.length > 0) req.sharedPaths = sharedPaths.value
-      if (usb.available && selectedUSBDevices.value.length > 0) {
+      if (usb.value.available && selectedUSBDevices.value.length > 0) {
         req.usbDevices = selectedUSBDevices.value
       }
 
-      const result = await vmStore.create(req)
-      if (result.taskID) {
+      const target = selectedDevice.value
+      const result = await vmStore.create(req, target ?? undefined)
+      if (result.taskID && target && !isSelfDevice(target)) {
+        toast.info(`VM "${name.value.trim()}" is provisioning on the picked Device...`)
+        const { poll } = useTaskPoller()
+        const event = await poll(result.taskID, { path: deviceTaskPath(target, result.taskID) })
+        if (event.status !== 'completed') {
+          error.value = event.error || 'Provisioning failed'
+          return
+        }
+      } else if (result.taskID) {
         toast.info(`VM "${name.value.trim()}" is provisioning...`)
       }
       emit('created')
@@ -521,7 +687,11 @@ export function useCreateVMWizard(emit: (e: 'created') => void) {
 
   return {
     // stores exposed for steps that need lists
-    sshKeyStore,
+    sshKeyStore: { keys: deviceSSHKeys },
+    sshKeys: deviceSSHKeys,
+    selectedHostId,
+    deviceOptions,
+    selectedDevice,
     hostArch,
     archLabel,
     revealArchOnSummary,

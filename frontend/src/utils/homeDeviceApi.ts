@@ -1,5 +1,5 @@
-/** Home proxy paths for a Device's Workloads (PAS-52 remainder).
- *  Members go through /home/devices/:id/v1/*; self stays on local /vms. */
+/** Home proxy paths for a Device (PAS-52 / PAS-34).
+ *  Members go through /home/devices/:id/v1/*; self stays on local /api paths. */
 
 export type DeviceApiTarget = {
   hostId: string
@@ -17,9 +17,25 @@ export function canFetchDeviceWorkloads(device: DeviceApiTarget): boolean {
   return device.reachability === 'ok'
 }
 
+/** Alias: same reachability rule for templates, tasks, capabilities. */
+export function canCallDeviceAPI(device: DeviceApiTarget): boolean {
+  return canFetchDeviceWorkloads(device)
+}
+
+/** Member prefix only. Self callers must use the local path instead. */
+export function deviceMemberPrefix(device: DeviceApiTarget): string {
+  return `/home/devices/${encodeURIComponent(device.hostId)}/v1`
+}
+
+/** Map a local `/vms`-style path onto the picked Device. Self is unchanged. */
+export function devicePath(device: DeviceApiTarget, localPath: string): string {
+  const path = localPath.startsWith('/') ? localPath : `/${localPath}`
+  if (isSelfDevice(device)) return path
+  return `${deviceMemberPrefix(device)}${path}`
+}
+
 export function deviceVmsBasePath(device: DeviceApiTarget): string {
-  if (isSelfDevice(device)) return '/vms'
-  return `/home/devices/${encodeURIComponent(device.hostId)}/v1/vms`
+  return devicePath(device, '/vms')
 }
 
 export function deviceVmPath(device: DeviceApiTarget, vmId: string): string {
@@ -32,4 +48,28 @@ export function deviceVmActionPath(
   action: 'start' | 'stop' | 'restart',
 ): string {
   return `${deviceVmPath(device, vmId)}/${action}`
+}
+
+export function deviceTemplatesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/templates')
+}
+
+export function deviceTemplateDeployPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/templates/deploy')
+}
+
+export function deviceTemplateDryRunPath(device: DeviceApiTarget, templateId: string): string {
+  return devicePath(device, `/templates/${encodeURIComponent(templateId)}/deploy/dry-run`)
+}
+
+export function deviceTaskPath(device: DeviceApiTarget, taskID: string): string {
+  return devicePath(device, `/tasks/${encodeURIComponent(taskID)}`)
+}
+
+export function deviceCapabilitiesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/capabilities')
+}
+
+export function deviceImagePath(device: DeviceApiTarget, imageId: string): string {
+  return devicePath(device, `/images/${encodeURIComponent(imageId)}`)
 }

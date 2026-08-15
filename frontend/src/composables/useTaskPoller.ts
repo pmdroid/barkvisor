@@ -13,18 +13,21 @@ export function useTaskPoller() {
   const polling = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
 
-  async function poll(taskID: string, { interval = 1000, onComplete, onFailed }: {
+  async function poll(taskID: string, { interval = 1000, path, onComplete, onFailed }: {
     interval?: number
+    /** Override GET path (member: /home/devices/:id/v1/tasks/:id). */
+    path?: string
     onComplete?: (event: TaskEvent) => void
     onFailed?: (event: TaskEvent) => void
   } = {}): Promise<TaskEvent> {
     polling.value = true
     let consecutiveErrors = 0
+    const url = path ?? `/tasks/${taskID}`
 
     return new Promise<TaskEvent>((resolve, reject) => {
       const check = async () => {
         try {
-          const { data } = await api.get(`/tasks/${taskID}`)
+          const { data } = await api.get(url)
           task.value = data
           consecutiveErrors = 0
 

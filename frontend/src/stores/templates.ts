@@ -8,6 +8,15 @@ import type {
   TemplateCompatibilityReport,
 } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
+import {
+  deviceTemplateDeployPath,
+  deviceTemplateDryRunPath,
+  deviceTemplatesPath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
+
+export type TemplateDryRunBody = { memoryMB?: number }
 
 export const useTemplateStore = defineStore('templates', () => {
   const templates = ref<VMTemplate[]>([])
@@ -27,22 +36,39 @@ export const useTemplateStore = defineStore('templates', () => {
     }
   }
 
-  async function deploy(req: DeployTemplateRequest): Promise<DeployTemplateResponse> {
-    // 200 (created/downloading) or 202 (provisioning) — both return the same body shape.
-    const { data } = await api.post<DeployTemplateResponse>('/templates/deploy', req)
+  async function fetchFor(device: DeviceApiTarget): Promise<VMTemplate[]> {
+    const { data } = await api.get(deviceTemplatesPath(device))
+    const rows = Array.isArray(data) ? (data as VMTemplate[]) : []
+    if (isSelfDevice(device)) templates.value = rows
+    return rows
+  }
+
+  async function deploy(
+    req: DeployTemplateRequest,
+    device?: DeviceApiTarget,
+  ): Promise<DeployTemplateResponse> {
+    // Never send targetHostId — member requireLocalHost stays. Route by URL.
+    const { targetHostId: _ignored, ...body } = req as DeployTemplateRequest & {
+      targetHostId?: string
+    }
+    const path = device ? deviceTemplateDeployPath(device) : '/templates/deploy'
+    const { data } = await api.post<DeployTemplateResponse>(path, body)
     return data
   }
 
   async function dryRun(
     templateId: string,
-    body: { targetHostId?: string; memoryMB?: number } = {},
+    body: TemplateDryRunBody = {},
+    device?: DeviceApiTarget,
   ): Promise<TemplateCompatibilityReport> {
-    const { data } = await api.post<TemplateCompatibilityReport>(
-      `/templates/${templateId}/deploy/dry-run`,
-      body,
-    )
+    const path = device
+      ? deviceTemplateDryRunPath(device, templateId)
+      : `/templates/${templateId}/deploy/dry-run`
+    const { data } = await api.post<TemplateCompatibilityReport>(path, {
+      memoryMB: body.memoryMB,
+    })
     return data
   }
 
-  return { templates, loading, error, fetchAll, deploy, dryRun }
+  return { templates, loading, error, fetchAll, fetchFor, deploy, dryRun }
 })

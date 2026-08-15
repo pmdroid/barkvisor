@@ -7,6 +7,8 @@ import { useRepositoryStore } from '../stores/repositories'
 import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useDevicesStore } from '../stores/devices'
+import { useHomeLibraryStore, type HomeTemplate } from '../stores/homeLibrary'
 import TemplateDeployDrawer from '../components/TemplateDeployDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -32,6 +34,8 @@ const repoStore = useRepositoryStore()
 const imageStore = useImageStore()
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
+const devicesStore = useDevicesStore()
+const homeLibrary = useHomeLibraryStore()
 
 // Tab
 const activeTab = ref<'templates' | 'images'>('templates')
@@ -72,9 +76,10 @@ const activeRepos = computed(() => activeTab.value === 'templates' ? templateRep
 
 // Tab counts — independent of selectedRepoId so they stay stable when switching tabs
 const templateTabCount = computed(() => {
+  if (homeLibrary.templates.length > 0) return homeLibrary.templates.length
   const repoIds = new Set(templateRepos.value.map(r => r.id))
   return templateStore.templates.filter(
-    (t) => t.repositoryId && repoIds.has(t.repositoryId) && templateArchSupported(t),
+    (t) => t.repositoryId && repoIds.has(t.repositoryId),
   ).length
 })
 const imageTabCount = computed(() => {
@@ -124,21 +129,29 @@ const iconMap: Record<string, string> = {
   cloud: 'M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z',
 }
 
-/** Templates in the selected repo(s), before host-arch filtering. */
-const repoTemplatesUnfiltered = computed(() => {
-  if (selectedRepoId.value === '__all__') {
-    return templateStore.templates.filter((t) =>
-      templateRepos.value.some((r) => r.id === t.repositoryId),
-    )
-  }
-  if (!selectedRepoId.value) return []
-  return templateStore.templates.filter((t) => t.repositoryId === selectedRepoId.value)
+const libraryTemplates = computed<HomeTemplate[]>(() => {
+  if (homeLibrary.templates.length > 0) return homeLibrary.templates
+  return templateStore.templates.map((t) => ({
+    ...t,
+    sourceHostIds: [],
+    copies: [],
+  }))
 })
 
-const repoTemplates = computed(() => {
-  // Hide templates whose catalog image cannot run on this host (PAS-48).
-  return repoTemplatesUnfiltered.value.filter(templateArchSupported)
+/** Home Library union — templates stay visible even if this Device cannot run them. */
+const repoTemplatesUnfiltered = computed(() => {
+  const all = libraryTemplates.value
+  if (selectedRepoId.value === '__all__') return all
+  if (!selectedRepoId.value) return []
+  const localSlugs = new Set(
+    templateStore.templates.filter((t) => t.repositoryId === selectedRepoId.value).map((t) => t.slug),
+  )
+  return all.filter((t) =>
+    t.copies.some((c) => c.repositoryId === selectedRepoId.value) || localSlugs.has(t.slug),
+  )
 })
+
+const repoTemplates = computed(() => repoTemplatesUnfiltered.value)
 
 /** Count hidden solely by host-arch filter (PAS-48 empty-state messaging). */
 const foreignArchTemplateCount = computed(() => {
@@ -213,9 +226,19 @@ watch(selectedRepoId, () => {
 
 watch(templateSearch, () => { templatePage.value = 1 })
 
-function onDeployed() {
+function onDeployed(_vm?: unknown, hostId?: string) {
   selectedTemplate.value = null
+  const selfId = devicesStore.selfDevice?.hostId
+  if (hostId && hostId !== selfId) {
+    router.push({ name: 'device-detail', params: { hostId } })
+    return
+  }
   router.push('/vms')
+}
+
+function templateSources(t: HomeTemplate): string {
+  if (!t.sourceHostIds?.length) return ''
+  return t.sourceHostIds.map((id) => homeLibrary.defaultLabelFor(id)).join(', ')
 }
 
 // === Repositories / Images ===
@@ -244,8 +267,10 @@ const deletingLocal = ref(false)
 const deletingRepo = ref(false)
 
 onMounted(async () => {
+  await devicesStore.fetchHealth().catch(() => {})
   await Promise.all([
     caps.fetchCapabilities(),
+    homeLibrary.fetchAll(devicesStore.devices),
     templateStore.fetchAll(),
     repoStore.fetchAll(),
     imageStore.fetchAll(),
@@ -542,7 +567,7 @@ async function addRepo() {
       <span style="font-size:12px;color:var(--text-dim)">{{ filteredTemplates.length }} templates</span>
     </div>
 
-    <EmptyState v-if="templateStore.loading" title="Loading templates..." />
+    <EmptyState v-if="templateStore.loading || homeLibrary.loading" title="Loading templates..." />
 
     <EmptyState
       v-else-if="filteredTemplates.length === 0"
@@ -558,7 +583,7 @@ async function addRepo() {
       { key: 'disk', label: 'Disk' },
       { key: 'actions', label: '', align: 'right' },
     ]">
-      <tr v-for="t in paginatedTemplates" :key="t.id" class="tmpl-row" @click="selectedTemplate = t">
+      <tr v-for="t in paginatedTemplates" :key="t.slug || t.id" class="tmpl-row" @click="selectedTemplate = t">
         <td>
           <div class="tmpl-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -570,6 +595,9 @@ async function addRepo() {
         <td>
           <div style="font-weight:500">{{ t.name }}</div>
           <div style="font-size:12px;color:var(--text-dim);margin-top:2px;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.description }}</div>
+          <div v-if="templateSources(t)" style="font-size:11px;color:var(--text-dim);margin-top:2px">
+            On: {{ templateSources(t) }}
+          </div>
         </td>
         <td><span class="badge badge-gray">{{ categoryLabels[t.category] || t.category }}</span></td>
         <td>

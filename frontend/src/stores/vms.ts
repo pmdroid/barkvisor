@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import api from '../api/client'
 import type { VM, CreateVMRequest, UpdateVMRequest, WorkloadSpec } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
+import { deviceVmsBasePath, isSelfDevice } from '../utils/homeDeviceApi'
 
 export const useVMStore = defineStore('vms', () => {
   const vms = ref<VM[]>([])
@@ -30,16 +32,19 @@ export const useVMStore = defineStore('vms', () => {
     return data
   }
 
-  async function create(req: CreateVMRequest): Promise<{ vm: VM; taskID?: string }> {
-    const res = await api.post('/vms', req)
+  async function create(
+    req: CreateVMRequest,
+    device?: DeviceApiTarget,
+  ): Promise<{ vm: VM; taskID?: string }> {
+    const path = device ? deviceVmsBasePath(device) : '/vms'
+    const res = await api.post(path, req)
+    const keepLocal = !device || isSelfDevice(device)
     if (res.status === 202) {
-      // Cloud image mode — VM is provisioning in background
       const { vm, taskID } = res.data
-      vms.value.push(vm)
+      if (keepLocal) vms.value.push(vm)
       return { vm, taskID }
     }
-    // Synchronous creation (ISO / existing disk)
-    vms.value.push(res.data)
+    if (keepLocal) vms.value.push(res.data)
     return { vm: res.data }
   }
 

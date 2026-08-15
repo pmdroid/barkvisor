@@ -130,14 +130,15 @@ describe('PAS-82 Home terminology', () => {
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
 
-  test('Device drill-down lists Workloads without a Create picker', () => {
+  test('Device drill-down lists Workloads and can open Create on that Device', () => {
     const text = readFileSync(join(srcRoot, 'views/DeviceDetailView.vue'), 'utf8')
     expect(text).toContain('DEVICE_LABEL')
     expect(text).toContain('useDeviceWorkloadsStore')
     expect(text).toContain('No workloads on this Device')
     expect(text).toContain('Loading workloads...')
     expect(text).toContain('Promise.all')
-    expect(text).not.toContain('CreateVMDrawer')
+    expect(text).toContain('CreateVMDrawer')
+    expect(text).toContain('initial-host-id')
     expect(text).not.toContain('cluster')
     expect(text).not.toMatch(forbiddenTemplateRe)
     const card = readFileSync(join(srcRoot, 'components/DeviceCard.vue'), 'utf8')

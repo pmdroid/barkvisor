@@ -661,7 +661,8 @@ export interface NetworkModeCapability {
  *
  * Describes the **current host** (the process serving the SPA) — a projection
  * of server-side HostInventory. The SPA calls that machine a Device (PAS-97).
- * Create-VM still uses this process. Home-wide health is GET /api/home/devices/health.
+ * Create-VM / Deploy may target a picked Device via /home/devices/:id/v1/*.
+ * Home-wide health is GET /api/home/devices/health.
  */
 export interface SystemCapabilities {
   platform: 'macOS' | 'Linux' | string
