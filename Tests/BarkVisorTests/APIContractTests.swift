@@ -183,6 +183,7 @@ struct APIContractTests {
         #expect(APIContractSummary.current.reserved["evolving"]?.contains("/api/apps") == true)
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices" })
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices/health" })
+        #expect(APIContract.routes.contains { $0.path == "/api/home/placement/score" })
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices/{id}/v1/{path}" })
     }
 

@@ -16,6 +16,8 @@ export type DevicePickOption = {
   reachable: boolean
   compatible: boolean
   reasons: string[]
+  recommended?: boolean
+  recommendReasons?: string[]
 }
 
 export function deviceDisplayLabel(device: {
@@ -123,6 +125,7 @@ export function templateIncompatibilityReasons(
 export function toPickOption(
   device: HomeDeviceHealthSnapshot,
   reasons: string[],
+  extra: { recommended?: boolean; recommendReasons?: string[] } = {},
 ): DevicePickOption {
   return {
     hostId: device.hostId,
@@ -132,5 +135,7 @@ export function toPickOption(
     reachable: device.reachability === 'ok' || isSelfDevice(device),
     compatible: reasons.length === 0,
     reasons,
+    recommended: extra.recommended === true,
+    recommendReasons: extra.recommendReasons ?? [],
   }
 }

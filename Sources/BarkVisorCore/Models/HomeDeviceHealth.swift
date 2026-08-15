@@ -9,6 +9,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
     public var collectedAt: String?
     public var platform: HomeDevicePlatformSummary?
     public var resources: HomeDeviceResourceSummary?
+    public var features: HomeDeviceFeatureSummary?
     public var workloadCount: Int?
     public var healthCounts: [String: Int]?
 
@@ -17,6 +18,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
         collectedAt: String? = nil,
         platform: HomeDevicePlatformSummary? = nil,
         resources: HomeDeviceResourceSummary? = nil,
+        features: HomeDeviceFeatureSummary? = nil,
         workloadCount: Int? = nil,
         healthCounts: [String: Int]? = nil,
     ) {
@@ -24,6 +26,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
         self.collectedAt = collectedAt
         self.platform = platform
         self.resources = resources
+        self.features = features
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
     }
@@ -56,6 +59,56 @@ public struct HomeDeviceResourceSummary: Codable, Sendable, Equatable {
         self.memoryUsedMB = memoryUsedMB
         self.cpuLoadPercent = cpuLoadPercent
     }
+
+    public var freeMemoryMB: Int? {
+        guard let total = memoryTotalMB, let used = memoryUsedMB else { return nil }
+        return max(0, total - used)
+    }
+}
+
+/// Inventory feature flags kept on the health snapshot for placement (PAS-44).
+///
+/// Wave 1 matches template `requiredFeatures` (`kvmDevice`, `bridgedNetworking`,
+/// `usbPassthrough`). Concrete USB/GPU peripherals are PAS-91.
+public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
+    public var kvmDevice: Bool
+    public var bridgedNetworking: Bool
+    public var usbPassthrough: Bool
+
+    public init(
+        kvmDevice: Bool = false,
+        bridgedNetworking: Bool = false,
+        usbPassthrough: Bool = false,
+    ) {
+        self.kvmDevice = kvmDevice
+        self.bridgedNetworking = bridgedNetworking
+        self.usbPassthrough = usbPassthrough
+    }
+
+    public init(from features: VirtualizationFeatures) {
+        self.kvmDevice = features.kvmDevice
+        self.bridgedNetworking = features.bridgedNetworking
+        self.usbPassthrough = features.usbPassthrough
+    }
+
+    public func supports(_ feature: String) -> Bool {
+        switch Self.canonicalFeature(feature) {
+        case CapabilityCode.kvmDevice.rawValue: kvmDevice
+        case CapabilityCode.bridgedNetworking.rawValue: bridgedNetworking
+        case CapabilityCode.usbPassthrough.rawValue: usbPassthrough
+        default: false
+        }
+    }
+
+    /// Map short aliases (`kvm` / `bridged` / `usb`) onto Wave 0 capability codes.
+    public static func canonicalFeature(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "kvm": CapabilityCode.kvmDevice.rawValue
+        case "bridged": CapabilityCode.bridgedNetworking.rawValue
+        case "usb": CapabilityCode.usbPassthrough.rawValue
+        default: raw
+        }
+    }
 }
 
 /// One row in `GET /api/home/devices/health`.
@@ -72,6 +125,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
     public var collectedAt: String?
     public var platform: HomeDevicePlatformSummary?
     public var resources: HomeDeviceResourceSummary?
+    public var features: HomeDeviceFeatureSummary?
     public var workloadCount: Int?
     public var healthCounts: [String: Int]?
 
@@ -88,6 +142,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         collectedAt: String? = nil,
         platform: HomeDevicePlatformSummary? = nil,
         resources: HomeDeviceResourceSummary? = nil,
+        features: HomeDeviceFeatureSummary? = nil,
         workloadCount: Int? = nil,
         healthCounts: [String: Int]? = nil,
     ) {
@@ -103,6 +158,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         self.collectedAt = collectedAt
         self.platform = platform
         self.resources = resources
+        self.features = features
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
     }

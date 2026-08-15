@@ -123,6 +123,9 @@ struct HomeDevicesControllerTests {
         #expect(facts.workloadCount == 3)
         #expect(facts.healthCounts?["running"] == 2)
         #expect(facts.resources?.cpuCount == 2)
+        #expect(facts.features?.kvmDevice == false)
+        #expect(facts.features?.bridgedNetworking == false)
+        #expect(facts.features?.usbPassthrough == false)
 
         let calls = client.calls
         #expect(calls.count == 2)
@@ -344,6 +347,46 @@ struct HomeDevicesControllerTests {
         ).resolvedLocalFacts(db: pool)
         #expect(facts.workloadCount == 0)
         #expect(facts.healthCounts != nil)
+        #expect(facts.features != nil)
+    }
+
+    @Test func `placement score keeps this Device when a peer is down`() async throws {
+        let dir = try isolatedDir("place-down")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selfId = "self-host"
+        let downId = "down-peer"
+        let client = RecordingProxyClient()
+        client.fail(
+            host: "10.0.0.9",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            error: HomeDeviceProxyError.unreachable("peer down"),
+        )
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: selfId, role: "self", displayName: "this-device"),
+            HomeDevice(hostId: downId, role: "member", agentHost: "10.0.0.9", agentPort: 7_778),
+        ])
+        var local = localFacts(running: 1)
+        local.features = HomeDeviceFeatureSummary(
+            kvmDevice: true, bridgedNetworking: true, usbPassthrough: false,
+        )
+        let scored = await controller(dir: dir, hostId: selfId, mtlsClient: client).scorePlacement(
+            request: HomePlacementScoreRequest(
+                declaredArchitectures: ["arm64"],
+                requiredFeatures: ["kvmDevice"],
+                minMemoryMB: 512,
+            ),
+            listed: listed,
+            local: local,
+            bearer: "home-jwt",
+        )
+        #expect(scored.recommendedHostId == selfId)
+        let selfRow = try #require(scored.candidates.first { $0.hostId == selfId })
+        #expect(selfRow.eligible)
+        #expect(selfRow.recommended)
+        let down = try #require(scored.candidates.first { $0.hostId == downId })
+        #expect(!down.eligible)
+        #expect(down.reasons.contains { $0.code == HomePlacementScorer.offlineCode })
     }
 }
 

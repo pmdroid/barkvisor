@@ -24,7 +24,7 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/apps` (apps reserved)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/apps` (apps reserved)
     - internal — `/api/home/devices/{id}/v1/*` mTLS member proxy
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
@@ -932,6 +932,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HomeDeviceHealthReport"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/placement/score:
+    post:
+      tags: [evolving]
+      operationId: scoreHomePlacement
+      x-barkvisor-stability: evolving
+      summary: Rank Devices for a create or template deploy
+      description: |
+        JWT. One recommender (PAS-44 + PAS-43). Hard-fails offline Devices,
+        architecture mismatch, missing `requiredFeatures`, and free memory
+        below `minMemoryMB` / `requestedMemoryMB`. Eligible Devices are
+        ranked by CPU and memory headroom with human-readable reasons.
+
+        Does not place a workload. The SPA pre-selects `recommendedHostId`
+        and the operator confirms or overrides. A down peer is ineligible
+        and never blocks scoring this Device (PAS-47 / PAS-90). USB/GPU
+        peripheral matching is PAS-91.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HomePlacementScoreRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomePlacementScoreResponse"
         default:
           $ref: "#/components/responses/Error"
 
@@ -2329,12 +2360,88 @@ components:
           $ref: "#/components/schemas/HomeDevicePlatformSummary"
         resources:
           $ref: "#/components/schemas/HomeDeviceResourceSummary"
+        features:
+          $ref: "#/components/schemas/HomeDeviceFeatureSummary"
         workloadCount:
           type: integer
         healthCounts:
           type: object
           additionalProperties:
             type: integer
+
+    HomeDeviceFeatureSummary:
+      type: object
+      required: [kvmDevice, bridgedNetworking, usbPassthrough]
+      properties:
+        kvmDevice:
+          type: boolean
+        bridgedNetworking:
+          type: boolean
+        usbPassthrough:
+          type: boolean
+
+    HomePlacementScoreRequest:
+      type: object
+      properties:
+        declaredArchitectures:
+          type: array
+          items:
+            type: string
+        requiredFeatures:
+          type: array
+          items:
+            type: string
+        minMemoryMB:
+          type: integer
+        requestedMemoryMB:
+          type: integer
+
+    HomePlacementReason:
+      type: object
+      required: [code, kind, message]
+      properties:
+        code:
+          type: string
+        kind:
+          type: string
+          enum: [hard, soft]
+        message:
+          type: string
+
+    HomePlacementCandidate:
+      type: object
+      required: [hostId, role, eligible, recommended, rank, score, reasons]
+      properties:
+        hostId:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+        eligible:
+          type: boolean
+        recommended:
+          type: boolean
+        rank:
+          type: integer
+        score:
+          type: integer
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomePlacementReason"
+
+    HomePlacementScoreResponse:
+      type: object
+      required: [recommendedHostId, candidates]
+      properties:
+        recommendedHostId:
+          type: string
+          nullable: true
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomePlacementCandidate"
 
     HomeDeviceHealthTotals:
       type: object

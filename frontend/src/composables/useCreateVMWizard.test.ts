@@ -7,6 +7,7 @@ import { useDevicesStore } from '../stores/devices'
 import { useCreateVMWizard } from './useCreateVMWizard'
 
 const originalGet = api.get
+const originalPost = api.post
 
 function device(
   partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>,
@@ -81,10 +82,17 @@ function inventoryGet(hostId: string, url: string) {
 describe('useCreateVMWizard (PAS-34)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    api.post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    }) as typeof api.post
   })
 
   afterEach(() => {
     api.get = originalGet
+    api.post = originalPost
   })
 
   test('picker uses the configured guest arch for every Device, not each row host arch', () => {
@@ -191,5 +199,67 @@ describe('useCreateVMWizard (PAS-34)', () => {
     expect(wizard.hostArch.value).toBe('arm64')
     expect(wizard.sshKeys.value.map((key) => key.id)).toEqual(['key-beta'])
     expect(wizard.error.value).toBe('')
+  })
+
+  test('pre-selects the recommended Device and keeps an operator override', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({ hostId: 'studio', role: 'member', displayName: 'studio' }),
+    ])
+    devices.report = health
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64' } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({
+          data: {
+            recommendedHostId: 'studio',
+            candidates: [
+              {
+                hostId: 'studio',
+                role: 'member',
+                eligible: true,
+                recommended: true,
+                rank: 1,
+                score: 90,
+                reasons: [{ code: 'headroom', kind: 'soft', message: '6 GB free, 5% CPU.' }],
+              },
+              {
+                hostId: 'desk',
+                role: 'self',
+                eligible: true,
+                recommended: false,
+                rank: 2,
+                score: 40,
+                reasons: [{ code: 'headroom', kind: 'soft', message: '1 GB free, 40% CPU.' }],
+              },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+    const wizard = useCreateVMWizard(() => {})
+    await wizard.loadPickedDevice()
+    expect(wizard.selectedHostId.value).toBe('studio')
+    expect(wizard.deviceOptions.value.find((row) => row.hostId === 'studio')?.recommended).toBe(true)
+    wizard.selectedHostId.value = 'desk'
+    await nextTick()
+    await wizard.loadPickedDevice()
+    expect(wizard.selectedHostId.value).toBe('desk')
   })
 })

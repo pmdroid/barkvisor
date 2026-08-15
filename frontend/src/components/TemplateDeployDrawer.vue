@@ -18,6 +18,7 @@ import type {
   DeployTemplateResponse,
   TemplateCompatibilityReport,
   CurrentHostCapabilities,
+  HomePlacementScoreResponse,
   SSHKey,
 } from '../api/types'
 import { useTaskPoller } from '../composables/useTaskPoller'
@@ -38,6 +39,12 @@ import {
   isSelfDevice,
   usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
+import {
+  applyRecommendedHostId,
+  isRecommendedHost,
+  placementReasonsForHost,
+  scorePlacement,
+} from '../utils/placement'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -55,6 +62,8 @@ const devicesStore = useDevicesStore()
 const homeLibrary = useHomeLibraryStore()
 
 const selectedHostId = ref(props.initialHostId ?? '')
+const userOverrodeHost = ref(!!props.initialHostId)
+const placementScore = ref<HomePlacementScoreResponse | null>(null)
 const pickedCaps = ref<CurrentHostCapabilities | null>(null)
 const deviceSSHKeys = ref<SSHKey[]>([])
 const selectedSSHKeyId = ref('')
@@ -71,17 +80,22 @@ const resolvedTemplate = computed(() =>
 const deviceOptions = computed<DevicePickOption[]>(() => {
   const rows = devicesStore.devices
   const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
-  return list.map((row) =>
-    toPickOption(
-      row,
-      templateIncompatibilityReasons(row, props.template, {
-        capabilities: row.hostId === selectedDevice.value?.hostId
-          ? (pickedCaps.value ?? defaultCapabilities)
-          : undefined,
-        hasTemplate: homeLibrary.deviceHasDeployableTemplate(props.template.slug, row),
-      }),
-    ),
-  )
+  return list.map((row) => {
+    const local = templateIncompatibilityReasons(row, props.template, {
+      capabilities: row.hostId === selectedDevice.value?.hostId
+        ? (pickedCaps.value ?? defaultCapabilities)
+        : undefined,
+      hasTemplate: homeLibrary.deviceHasDeployableTemplate(props.template.slug, row),
+    })
+    const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
+    const hard = (scored?.reasons ?? [])
+      .filter((reason) => reason.kind === 'hard')
+      .map((reason) => reason.message)
+    return toPickOption(row, [...new Set([...local, ...hard])], {
+      recommended: isRecommendedHost(placementScore.value, row.hostId),
+      recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
+    })
+  })
 })
 
 const bridged = computed(() => ({
@@ -105,6 +119,29 @@ function isCurrentPickedDeviceLoad(seq: number): boolean {
   return seq === pickedDeviceLoadSeq
 }
 
+async function refreshPlacement(seq: number) {
+  try {
+    const data = await scorePlacement({
+      declaredArchitectures: props.template.architectures ?? [],
+      requiredFeatures: props.template.requiredFeatures ?? [],
+      minMemoryMB: props.template.minMemoryMB,
+      requestedMemoryMB: props.template.memoryMB,
+    })
+    if (!isCurrentPickedDeviceLoad(seq)) return
+    placementScore.value = data
+  } catch {
+    if (!isCurrentPickedDeviceLoad(seq)) return
+    placementScore.value = null
+  }
+  if (userOverrodeHost.value) return
+  selectedHostId.value = applyRecommendedHostId({
+    recommendedHostId: placementScore.value?.recommendedHostId,
+    initialHostId: props.initialHostId,
+    selfHostId: devicesStore.selfDevice?.hostId,
+    currentHostId: selectedHostId.value,
+  })
+}
+
 async function loadPickedDevice() {
   const seq = ++pickedDeviceLoadSeq
   await devicesStore.fetchHealth().catch(() => {})
@@ -113,6 +150,8 @@ async function loadPickedDevice() {
     await homeLibrary.fetchAll(devicesStore.devices).catch(() => {})
     if (!isCurrentPickedDeviceLoad(seq)) return
   }
+  await refreshPlacement(seq)
+  if (!isCurrentPickedDeviceLoad(seq)) return
   if (!selectedHostId.value) {
     selectedHostId.value = defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId)
   }
@@ -189,6 +228,7 @@ onMounted(async () => {
 
 watch(selectedHostId, async (next, prev) => {
   if (!prev || !next || next === prev) return
+  userOverrodeHost.value = true
   await loadPickedDevice()
   await refreshCompatibility()
 })
