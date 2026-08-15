@@ -390,11 +390,11 @@ async function downloadOnDevice(
       : null
     if (!match) continue
     await api.post(devicePath(device, `/repositories/images/${match.id}/download`))
-    toast.success(`Download started on ${devicesStore.deviceLabel(device)}`)
+    toast.success(`Download started on ${device.displayName || device.hostId}`)
     return
   }
   throw new Error(
-    `“${img.name}” is not in ${devicesStore.deviceLabel(device)}'s catalog. Sync repositories on that Device.`,
+    `“${img.name}” is not in ${(device.displayName || device.hostId)}'s catalog. Sync repositories on that Device.`,
   )
 }
 
