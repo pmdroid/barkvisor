@@ -36,9 +36,22 @@ export function selectedHostIsLive(
   return lookup(selectedHostId) != null
 }
 
+/** Manual pick only. Default to the explicit initial host or self — never auto-place. */
+export function defaultPickedHostId(
+  initialHostId?: string | null,
+  selfHostId?: string | null,
+): string {
+  return initialHostId || selfHostId || ''
+}
+
 /** Alias: same reachability rule for templates, tasks, capabilities. */
 export function canCallDeviceAPI(device: DeviceApiTarget): boolean {
   return canFetchDeviceWorkloads(device)
+}
+
+/** Local images/networks/keys belong to this process only. */
+export function usesLocalDeviceInventory(device: DeviceApiTarget): boolean {
+  return isSelfDevice(device)
 }
 
 /** Member prefix only. Self callers must use the local path instead. */

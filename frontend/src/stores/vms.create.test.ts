@@ -22,10 +22,12 @@ describe('vms.create (PAS-34)', () => {
     const store = useVMStore()
     await store.create({ name: 'local', osFamily: 'linux', cpuCount: 1, memoryMB: 512 } as never)
     await store.create(
-      { name: 'remote', osFamily: 'linux', cpuCount: 1, memoryMB: 512 } as never,
+      { name: 'remote', osFamily: 'linux', cpuCount: 1, memoryMB: 512, targetHostId: 'foreign' } as never,
       { hostId: 'peer-1', role: 'member', reachability: 'ok' },
     )
     expect(post.mock.calls.map((c) => c[0])).toEqual(['/vms', '/home/devices/peer-1/v1/vms'])
+    const remoteBody = post.mock.calls[1]?.[1] as { targetHostId?: string }
+    expect(remoteBody.targetHostId).toBeUndefined()
     expect(store.vms).toHaveLength(1)
     expect(store.vms[0]?.name).toBe('box')
   })

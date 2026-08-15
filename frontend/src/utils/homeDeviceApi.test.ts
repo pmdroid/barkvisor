@@ -11,9 +11,11 @@ import {
   deviceVmActionPath,
   deviceVmPath,
   deviceVmsBasePath,
+  defaultPickedHostId,
   isSelfDevice,
   resolveSelectedDevice,
   selectedHostIsLive,
+  usesLocalDeviceInventory,
 } from './homeDeviceApi'
 
 const self = { hostId: 'desk-1', role: 'self', reachability: 'ok' }
@@ -73,5 +75,15 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(selectedHostIsLive(member.hostId, byId)).toBe(true)
     expect(selectedHostIsLive('gone', byId)).toBe(false)
     expect(selectedHostIsLive('', byId)).toBe(true)
+  })
+
+  test('default pick is initial or self, never the first compatible peer', () => {
+    expect(defaultPickedHostId('desk-1', 'desk-1')).toBe('desk-1')
+    expect(defaultPickedHostId(undefined, 'desk-1')).toBe('desk-1')
+    expect(defaultPickedHostId('', 'desk-1')).toBe('desk-1')
+    expect(defaultPickedHostId(null, null)).toBe('')
+    expect(usesLocalDeviceInventory(self)).toBe(true)
+    expect(usesLocalDeviceInventory(member)).toBe(false)
+    expect(usesLocalDeviceInventory(down)).toBe(false)
   })
 })
