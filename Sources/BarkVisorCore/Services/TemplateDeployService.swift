@@ -44,6 +44,7 @@ public enum TemplateDeployService {
         imageDownloader: any ImageDownloadStarting,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
+        depot: (any LibraryDepotFetching)? = nil,
     ) async throws -> DeployResult {
         let template = try await fetchTemplate(id: options.templateId, db: db)
         try validateInputs(template: template, inputs: options.inputs)
@@ -63,6 +64,43 @@ public enum TemplateDeployService {
         }
 
         if localImage == nil {
+            let alreadyDownloading = try await db.read { db in
+                try VMImage
+                    .filter(Column("sourceUrl") == repoImage.downloadUrl)
+                    .filter(Column("status") == "downloading")
+                    .fetchOne(db)
+            }
+            if let alreadyDownloading {
+                return .downloading(imageId: alreadyDownloading.id)
+            }
+            if let depot {
+                let checksum: ExpectedChecksum? =
+                    if let sha256 = repoImage.sha256, !sha256.isEmpty {
+                        .sha256(sha256)
+                    } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
+                        .sha512(sha512)
+                    } else {
+                        nil
+                    }
+                if let fetched = await depot.fetchMatching(
+                    LibraryDepotFetchRequest(
+                        sourceUrl: repoImage.downloadUrl,
+                        name: repoImage.name,
+                        imageType: repoImage.imageType,
+                        arch: repoImage.arch,
+                        expectedChecksum: checksum,
+                    ),
+                    db: db,
+                ) {
+                    return try await createViaLifecycle(
+                        options: options,
+                        template: template,
+                        localImage: fetched,
+                        backgroundTasks: backgroundTasks,
+                        db: db,
+                    )
+                }
+            }
             return try await startOrDetectDownload(
                 repoImage: repoImage, imageDownloader: imageDownloader, db: db,
             )

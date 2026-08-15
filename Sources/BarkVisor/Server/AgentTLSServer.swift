@@ -1,5 +1,6 @@
 import BarkVisorCore
 import Foundation
+import GRDB
 import NIOSSL
 import Vapor
 import X509
@@ -15,6 +16,7 @@ public final class AgentTLSServer: @unchecked Sendable {
     private let pins: PeerPinStore
     private let hostname: String
     private let port: Int
+    private let database: DatabasePool?
 
     public private(set) var boundPort: Int?
 
@@ -24,12 +26,14 @@ public final class AgentTLSServer: @unchecked Sendable {
         presentationCertificatePEM: String? = nil,
         hostname: String = "0.0.0.0",
         port: Int = Config.agentPort,
+        database: DatabasePool? = nil,
     ) {
         self.material = material
         self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
         self.pins = pins
         self.hostname = hostname
         self.port = port
+        self.database = database
     }
 
     public func start() async throws {
@@ -101,6 +105,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(APIVersionMiddleware(), at: .beginning)
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
         try app.register(collection: AgentMTLSController())
+        try app.register(collection: AgentLibraryController(db: database))
         try app.register(collection: AgentLocalProxyController())
     }
 
@@ -146,6 +151,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         hostId: String,
         hostname: String = "0.0.0.0",
         port: Int = Config.agentPort,
+        database: DatabasePool? = nil,
     ) async -> AgentTLSServer? {
         if port == Config.port {
             Log.server.error(
@@ -168,6 +174,7 @@ public final class AgentTLSServer: @unchecked Sendable {
                 presentationCertificatePEM: presented,
                 hostname: hostname,
                 port: port,
+                database: database,
             )
             try await server.start()
             return server

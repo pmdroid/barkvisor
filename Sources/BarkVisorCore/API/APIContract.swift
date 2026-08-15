@@ -97,6 +97,8 @@ public enum APIContract {
         Route(method: "PUT", path: "/api/system/library/settings", stability: .evolving),
         Route(method: "GET", path: "/api/agent/inventory", stability: .evolving),
         Route(method: "GET", path: "/api/agent/whoami", stability: .outOfBand),
+        Route(method: "GET", path: "/api/agent/library/images", stability: .outOfBand),
+        Route(method: "GET", path: "/api/agent/library/images/{id}/content", stability: .outOfBand),
         Route(method: "POST", path: "/api/pairing/codes", stability: .evolving),
         Route(method: "GET", path: "/api/pairing/codes", stability: .evolving),
         Route(method: "DELETE", path: "/api/pairing/codes", stability: .evolving),
