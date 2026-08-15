@@ -262,4 +262,90 @@ describe('useCreateVMWizard (PAS-34)', () => {
     await wizard.loadPickedDevice()
     expect(wizard.selectedHostId.value).toBe('desk')
   })
+
+  test('re-scores placement when memory or guest arch changes and blocks submit without headroom', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+    ])
+    devices.report = health
+    const scoreBodies: Array<Record<string, unknown>> = []
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64' } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        const requested = typeof body?.requestedMemoryMB === 'number' ? body.requestedMemoryMB : 1024
+        scoreBodies.push(body ?? {})
+        const eligible = requested <= 1024
+        return Promise.resolve({
+          data: {
+            recommendedHostId: eligible ? 'desk' : null,
+            candidates: [
+              {
+                hostId: 'desk',
+                role: 'self',
+                eligible,
+                recommended: eligible,
+                rank: 1,
+                score: eligible ? 80 : 0,
+                reasons: eligible
+                  ? [{ code: 'headroom', kind: 'soft', message: '2048 MB free memory, 10% CPU load.' }]
+                  : [{
+                    code: 'memory',
+                    kind: 'hard',
+                    message: `Needs at least ${requested} MB free memory; this Device has 1024 MB free.`,
+                  }],
+              },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    await wizard.loadPickedDevice()
+    expect(scoreBodies.some((body) => body.requestedMemoryMB === 1024)).toBe(true)
+
+    const beforeMemory = scoreBodies.length
+    wizard.step.value = 2
+    wizard.memoryMB.value = 8192
+    for (let i = 0; i < 50; i++) {
+      if (scoreBodies.length > beforeMemory && scoreBodies.some((body) => body.requestedMemoryMB === 8192)) break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(scoreBodies.some((body) => body.requestedMemoryMB === 8192)).toBe(true)
+    const desk = wizard.deviceOptions.value.find((row) => row.hostId === 'desk')
+    expect(desk?.compatible).toBe(false)
+    expect(desk?.reasons.some((reason) => reason.includes('8192'))).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
+    await wizard.submit()
+    expect(wizard.error.value).toContain('8192')
+
+    const beforeArch = scoreBodies.length
+    wizard.setGuestArch('x86_64')
+    for (let i = 0; i < 50; i++) {
+      if (scoreBodies.length > beforeArch) break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(scoreBodies.some((body) => {
+      const arches = body.declaredArchitectures
+      return Array.isArray(arches) && arches.includes('x86_64')
+    })).toBe(true)
+  })
 })

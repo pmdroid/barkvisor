@@ -12,6 +12,10 @@ export async function scorePlacement(
   return data
 }
 
+function hostIsAllowed(hostId: string, hostAllowed?: (hostId: string) => boolean): boolean {
+  return hostAllowed ? hostAllowed(hostId) : true
+}
+
 /** Explicit initial pick wins; else the recommended Device; else this Device. */
 export function applyRecommendedHostId(opts: {
   recommendedHostId?: string | null
@@ -19,10 +23,14 @@ export function applyRecommendedHostId(opts: {
   selfHostId?: string | null
   userOverrode?: boolean
   currentHostId?: string | null
+  /** Reject a server recommendation the local picker cannot deploy (e.g. Library). */
+  hostAllowed?: (hostId: string) => boolean
 }): string {
   if (opts.userOverrode && opts.currentHostId) return opts.currentHostId
   if (opts.initialHostId) return opts.initialHostId
-  if (opts.recommendedHostId) return opts.recommendedHostId
+  if (opts.recommendedHostId && hostIsAllowed(opts.recommendedHostId, opts.hostAllowed)) {
+    return opts.recommendedHostId
+  }
   return opts.selfHostId || opts.currentHostId || ''
 }
 
@@ -37,6 +45,8 @@ export function placementReasonsForHost(
 export function isRecommendedHost(
   score: HomePlacementScoreResponse | null | undefined,
   hostId: string,
+  hostAllowed?: (hostId: string) => boolean,
 ): boolean {
-  return !!score?.recommendedHostId && score.recommendedHostId === hostId
+  if (!score?.recommendedHostId || score.recommendedHostId !== hostId) return false
+  return hostIsAllowed(hostId, hostAllowed)
 }
