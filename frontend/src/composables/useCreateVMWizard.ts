@@ -493,7 +493,12 @@ export function useCreateVMWizard(
   const pickedDeviceLoading = ref(true)
   let pickedDeviceLoadSeq = 0
 
-  async function applyLoadedResources(deviceIsSelf: boolean) {
+  function isCurrentPickedDeviceLoad(seq: number): boolean {
+    return seq === pickedDeviceLoadSeq
+  }
+
+  async function applyLoadedResources(deviceIsSelf: boolean, seq: number) {
+    if (!isCurrentPickedDeviceLoad(seq)) return
     if (deviceIsSelf) {
       deviceImages.value = imageStore.images
       deviceNetworks.value = networkStore.networks
@@ -525,6 +530,7 @@ export function useCreateVMWizard(
     pickedDeviceLoading.value = true
     try {
       await devicesStore.fetchHealth().catch(() => {})
+      if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
         selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
       }
@@ -536,8 +542,10 @@ export function useCreateVMWizard(
       const device = selectedDevice.value
       if (!device) {
         await caps.fetchCapabilities().catch(() => {})
+        if (!isCurrentPickedDeviceLoad(seq)) return
         await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
-        await applyLoadedResources(true)
+        if (!isCurrentPickedDeviceLoad(seq)) return
+        await applyLoadedResources(true, seq)
         return
       }
       if (!canCallDeviceAPI(device)) {
@@ -547,8 +555,10 @@ export function useCreateVMWizard(
       }
       if (usesLocalDeviceInventory(device)) {
         await caps.fetchCapabilities().catch(() => {})
+        if (!isCurrentPickedDeviceLoad(seq)) return
         await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
-        await applyLoadedResources(true)
+        if (!isCurrentPickedDeviceLoad(seq)) return
+        await applyLoadedResources(true, seq)
         return
       }
       try {
@@ -559,6 +569,7 @@ export function useCreateVMWizard(
           api.get(devicePath(device, '/disks')),
           api.get(devicePath(device, '/ssh-keys')),
         ])
+        if (!isCurrentPickedDeviceLoad(seq)) return
         pickedCaps.value = parseSystemCapabilities(capsRes.data)
         pickedHostArchKnown.value = typeof capsRes.data?.hostArch === 'string' && capsRes.data.hostArch.length > 0
         deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
@@ -569,13 +580,14 @@ export function useCreateVMWizard(
         existingDiskId.value = ''
         selectedUSBDevices.value = []
         error.value = ''
-        await applyLoadedResources(false)
+        await applyLoadedResources(false, seq)
       } catch (e: unknown) {
+        if (!isCurrentPickedDeviceLoad(seq)) return
         clearPickedInventory()
         error.value = apiErrorMessage(e, 'Could not load inventory from the picked Device.')
       }
     } finally {
-      if (seq === pickedDeviceLoadSeq) pickedDeviceLoading.value = false
+      if (isCurrentPickedDeviceLoad(seq)) pickedDeviceLoading.value = false
     }
   }
 
@@ -843,6 +855,8 @@ export function useCreateVMWizard(
     // submit
     error,
     loading,
+    pickedDeviceLoading,
     submit,
+    loadPickedDevice,
   }
 }
