@@ -188,4 +188,123 @@ final class DepotRetryTests {
         #expect(ready.status == "ready")
         #expect(client.fetchedIds == ["remote-concurrent"])
     }
+
+    @Test func `orphaned downloading row falls back to internet`() async throws {
+        try setDepot()
+        let source = "https://example.com/cloud-orphan.img"
+        seedReadyRemote(id: "remote-orphan", source: source)
+        let now = "2026-01-01T00:00:00Z"
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-orphan", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: nil, sizeBytes: nil, status: "downloading",
+                error: LibraryDepotAcquire.depotCopyingMarker,
+                sourceUrl: source, createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+
+        let retry = await liveAcquire().fetchMatching(request(source), db: dbPool)
+        #expect(retry == nil)
+        #expect(client.listedURLs.isEmpty)
+        #expect(client.fetchedIds.isEmpty)
+        let rows = try await dbPool.read { db in try VMImage.fetchAll(db) }
+        #expect(rows.count == 1)
+        #expect(rows[0].id == "img-orphan")
+        #expect(rows[0].status == "error")
+        #expect(LibraryDepotAcquire.isDepotCopyFailure(rows[0].error))
+        #expect(try fallbackCount() == 1)
+    }
+
+    @Test func `internet downloading row is left for the downloader`() async throws {
+        try setDepot()
+        let source = "https://example.com/cloud-internet-inflight.img"
+        seedReadyRemote(id: "remote-internet-inflight", source: source)
+        let now = "2026-01-01T00:00:00Z"
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-inet", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                sourceUrl: source, createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+
+        let image = await liveAcquire().fetchMatching(request(source), db: dbPool)
+        let stored = try #require(image)
+        #expect(stored.id == "img-inet")
+        #expect(stored.status == "downloading")
+        #expect(client.fetchedIds.isEmpty)
+        let rows = try await dbPool.read { db in try VMImage.fetchAll(db) }
+        #expect(rows.count == 1)
+        #expect(rows[0].status == "downloading")
+        #expect(rows[0].error == nil)
+    }
+
+    @Test func `deploy starts internet after orphaned depot row`() async throws {
+        try setDepot()
+        let host = PlatformCapabilities.hostArch
+        let source = "https://example.com/cloud-deploy-orphan.img"
+        seedReadyRemote(id: "remote-deploy-orphan", source: source)
+        let now = "2026-01-01T00:00:00Z"
+        let repoId = UUID().uuidString
+        let templateId = UUID().uuidString
+        let slug = "cloud-\(host)"
+        try await dbPool.write { db in
+            try ImageRepository(
+                id: repoId, name: "test", url: "https://example.com/catalog.json",
+                isBuiltIn: false, repoType: "templates", lastSyncedAt: nil, lastError: nil,
+                syncStatus: "idle", createdAt: now, updatedAt: now,
+            ).insert(db)
+            try RepositoryImage(
+                id: UUID().uuidString, repositoryId: repoId, slug: slug,
+                name: "Cloud", description: nil, imageType: "cloud-image", arch: host,
+                version: "1", downloadUrl: source, sizeBytes: 1_024,
+            ).insert(db)
+            try VMTemplate(
+                id: templateId, slug: "orphan-deploy", name: "Orphan", description: nil,
+                category: "general", icon: "terminal", imageSlug: slug,
+                cpuCount: 1, memoryMB: 512, diskSizeGB: 8, portForwards: "[]",
+                networkMode: "nat", inputs: "[]", userDataTemplate: "",
+                isBuiltIn: false, repositoryId: repoId, createdAt: now, updatedAt: now,
+                architecturesJson: #"["arm64","x86_64"]"#,
+                imageByArchJson: #"{"arm64":"cloud-arm64","x86_64":"cloud-x86_64"}"#,
+            ).insert(db)
+            try VMImage(
+                id: "img-deploy-orphan", name: "Cloud", imageType: "cloud-image", arch: host,
+                path: nil, sizeBytes: nil, status: "downloading",
+                error: LibraryDepotAcquire.depotCopyingMarker,
+                sourceUrl: source, createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+
+        let downloader = RecordingCatalogDownloader()
+        let result = try await TemplateDeployService.deploy(
+            options: DeployOptions(templateId: templateId, vmName: "orphan-vm", inputs: [:]),
+            imageDownloader: downloader,
+            backgroundTasks: BackgroundTaskManager(),
+            db: dbPool,
+            depot: liveAcquire(),
+        )
+        guard case let .downloading(imageId) = result else {
+            Issue.record("expected internet download after orphan, got \(result)")
+            return
+        }
+        #expect(imageId != "img-deploy-orphan")
+        let started = await downloader.startedURLs
+        #expect(started == [URL(string: source)])
+        let orphan = try await dbPool.read { db in try VMImage.fetchOne(db, key: "img-deploy-orphan") }
+        #expect(orphan?.status == "error")
+        #expect(LibraryDepotAcquire.isDepotCopyFailure(orphan?.error))
+        #expect(client.listedURLs.isEmpty)
+        #expect(client.fetchedIds.isEmpty)
+    }
+}
+
+private actor RecordingCatalogDownloader: ImageDownloadStarting {
+    private(set) var startedURLs: [URL] = []
+
+    func start(
+        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+    ) {
+        startedURLs.append(url)
+    }
 }

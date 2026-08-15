@@ -292,14 +292,6 @@ struct RepositoryController: RouteCollection {
             return try Self.imageJSON(existing)
         }
 
-        if let alreadyDownloading = try await req.db.read({ db in
-            try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl)
-                .filter(Column("status") == "downloading")
-                .fetchOne(db)
-        }) {
-            return try Self.imageJSON(alreadyDownloading)
-        }
-
         if let fetched = await LibraryDepotClients.acquire().fetchMatching(
             LibraryDepotFetchRequest(
                 sourceUrl: repoImage.downloadUrl,
@@ -313,43 +305,16 @@ struct RepositoryController: RouteCollection {
             return try Self.imageJSON(fetched)
         }
 
-        let now = iso8601.string(from: Date())
-        let imageId = UUID().uuidString
-        // Handle compound extensions like .qcow2.xz — keep full suffix for download,
-        // decompression in ImageDownloader will strip the compression extension
-        let filename = sourceURL.lastPathComponent
-        let ext: String
-        if filename.hasSuffix(".qcow2.xz") || filename.hasSuffix(".img.xz")
-            || filename.hasSuffix(".img.gz") || filename.hasSuffix(".qcow2.gz") {
-            // Keep compound extension so decompression produces the right file
-            let parts = filename.split(separator: ".", maxSplits: 1)
-            ext = parts.count > 1 ? String(parts[1]) : (repoImage.imageType == "iso" ? "iso" : "img")
-        } else {
-            ext =
-                sourceURL.pathExtension.isEmpty
-                    ? (repoImage.imageType == "iso" ? "iso" : "img")
-                    : sourceURL.pathExtension
-        }
-        let imagesDir = try await req.db.read { try Config.imagesDir(from: $0) }
-        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-        let destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
-
-        let image = VMImage(
-            id: imageId, name: repoImage.name, imageType: repoImage.imageType,
-            arch: repoImage.arch, path: nil, sizeBytes: nil,
-            status: "downloading", error: nil, sourceUrl: repoImage.downloadUrl,
-            createdAt: now, updatedAt: now,
+        // After a depot miss, claim the internet download in one write so two
+        // concurrent requests cannot each insert a downloading row.
+        let claim = try await ImageService.startOrDetectCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: checksum,
+            downloader: imageDownloader,
+            db: req.db,
         )
-
-        try await req.db.write { db in
-            try image.insert(db)
-        }
-
-        await imageDownloader.start(
-            imageID: imageId, url: sourceURL, destination: destination, expectedChecksum: checksum,
-        )
-
-        return try Self.imageJSON(image)
+        return try Self.imageJSON(claim.image)
     }
 
     private static func imageJSON(_ image: VMImage) throws -> Response {

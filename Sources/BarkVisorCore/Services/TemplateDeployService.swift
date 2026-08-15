@@ -64,15 +64,6 @@ public enum TemplateDeployService {
         }
 
         if localImage == nil {
-            let alreadyDownloading = try await db.read { db in
-                try VMImage
-                    .filter(Column("sourceUrl") == repoImage.downloadUrl)
-                    .filter(Column("status") == "downloading")
-                    .fetchOne(db)
-            }
-            if let alreadyDownloading {
-                return .downloading(imageId: alreadyDownloading.id)
-            }
             if let depot {
                 let checksum: ExpectedChecksum? =
                     if let sha256 = repoImage.sha256, !sha256.isEmpty {
