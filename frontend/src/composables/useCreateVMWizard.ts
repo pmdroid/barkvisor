@@ -128,28 +128,28 @@ export function useCreateVMWizard(
     )
   })
 
-  const deviceOptions = computed<DevicePickOption[]>(() => {
-    const rows = devicesStore.devices
-    const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
-    return list.map((row) => {
-      const guest = guestArchOverride.value
-        ?? hostArchToImageArch(row.platform?.arch || pickedCaps.value.hostArch)
-      return toPickOption(
-        row,
-        createVMIncompatibilityReasons(row, {
-          guestArch: guest,
-          osType: osType.value,
-          capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
-        }),
-      )
-    })
-  })
   /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
   const guestArchOverride = ref<string | null>(null)
 
   const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
 
   const effectiveGuestArch = computed(() => guestArchOverride.value ?? hostImageArch.value)
+
+  const deviceOptions = computed<DevicePickOption[]>(() => {
+    const rows = devicesStore.devices
+    const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
+    return list.map((row) =>
+      toPickOption(
+        row,
+        createVMIncompatibilityReasons(row, {
+          // Configured guest for this create — not each row's host arch.
+          guestArch: effectiveGuestArch.value,
+          osType: osType.value,
+          capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+        }),
+      ),
+    )
+  })
 
   const vmType = computed(() => {
     const arch = effectiveGuestArch.value
@@ -489,6 +489,9 @@ export function useCreateVMWizard(
   // State
   const error = ref('')
   const loading = ref(false)
+  /** True while loadPickedDevice is in flight (initial mount and Device switch). */
+  const pickedDeviceLoading = ref(true)
+  let pickedDeviceLoadSeq = 0
 
   async function applyLoadedResources(deviceIsSelf: boolean) {
     if (deviceIsSelf) {
@@ -518,55 +521,61 @@ export function useCreateVMWizard(
   }
 
   async function loadPickedDevice() {
-    await devicesStore.fetchHealth().catch(() => {})
-    if (!selectedHostId.value) {
-      selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
-    }
-    if (!pickedDeviceStillLive()) {
-      clearPickedInventory()
-      error.value = 'The selected Device is no longer available. Pick a Device again.'
-      return
-    }
-    const device = selectedDevice.value
-    if (!device) {
-      await caps.fetchCapabilities().catch(() => {})
-      await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
-      await applyLoadedResources(true)
-      return
-    }
-    if (!canCallDeviceAPI(device)) {
-      clearPickedInventory()
-      error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
-      return
-    }
-    if (usesLocalDeviceInventory(device)) {
-      await caps.fetchCapabilities().catch(() => {})
-      await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
-      await applyLoadedResources(true)
-      return
-    }
+    const seq = ++pickedDeviceLoadSeq
+    pickedDeviceLoading.value = true
     try {
-      const [capsRes, imagesRes, netsRes, disksRes, keysRes] = await Promise.all([
-        api.get(deviceCapabilitiesPath(device)),
-        api.get(devicePath(device, '/images')),
-        api.get(devicePath(device, '/networks')),
-        api.get(devicePath(device, '/disks')),
-        api.get(devicePath(device, '/ssh-keys')),
-      ])
-      pickedCaps.value = parseSystemCapabilities(capsRes.data)
-      pickedHostArchKnown.value = typeof capsRes.data?.hostArch === 'string' && capsRes.data.hostArch.length > 0
-      deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
-      deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
-      deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
-      deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
-      selectedImageId.value = ''
-      existingDiskId.value = ''
-      selectedUSBDevices.value = []
-      error.value = ''
-      await applyLoadedResources(false)
-    } catch (e: unknown) {
-      clearPickedInventory()
-      error.value = apiErrorMessage(e, 'Could not load inventory from the picked Device.')
+      await devicesStore.fetchHealth().catch(() => {})
+      if (!selectedHostId.value) {
+        selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
+      }
+      if (!pickedDeviceStillLive()) {
+        clearPickedInventory()
+        error.value = 'The selected Device is no longer available. Pick a Device again.'
+        return
+      }
+      const device = selectedDevice.value
+      if (!device) {
+        await caps.fetchCapabilities().catch(() => {})
+        await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
+        await applyLoadedResources(true)
+        return
+      }
+      if (!canCallDeviceAPI(device)) {
+        clearPickedInventory()
+        error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+        return
+      }
+      if (usesLocalDeviceInventory(device)) {
+        await caps.fetchCapabilities().catch(() => {})
+        await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
+        await applyLoadedResources(true)
+        return
+      }
+      try {
+        const [capsRes, imagesRes, netsRes, disksRes, keysRes] = await Promise.all([
+          api.get(deviceCapabilitiesPath(device)),
+          api.get(devicePath(device, '/images')),
+          api.get(devicePath(device, '/networks')),
+          api.get(devicePath(device, '/disks')),
+          api.get(devicePath(device, '/ssh-keys')),
+        ])
+        pickedCaps.value = parseSystemCapabilities(capsRes.data)
+        pickedHostArchKnown.value = typeof capsRes.data?.hostArch === 'string' && capsRes.data.hostArch.length > 0
+        deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
+        deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
+        deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
+        deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
+        selectedImageId.value = ''
+        existingDiskId.value = ''
+        selectedUSBDevices.value = []
+        error.value = ''
+        await applyLoadedResources(false)
+      } catch (e: unknown) {
+        clearPickedInventory()
+        error.value = apiErrorMessage(e, 'Could not load inventory from the picked Device.')
+      }
+    } finally {
+      if (seq === pickedDeviceLoadSeq) pickedDeviceLoading.value = false
     }
   }
 
@@ -621,6 +630,7 @@ export function useCreateVMWizard(
   })
 
   function canProceed(): boolean {
+    if (pickedDeviceLoading.value) return false
     if (osType.value === 'windows' && !supportsWindows.value) return false
     const content = stepContent(step.value)
     switch (content) {
@@ -653,6 +663,7 @@ export function useCreateVMWizard(
 
   async function submit() {
     error.value = ''
+    if (pickedDeviceLoading.value) return
     if (osType.value === 'windows' && !supportsWindows.value) {
       error.value = 'Windows VMs are not available on this device architecture.'
       return
