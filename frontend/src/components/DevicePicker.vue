@@ -18,7 +18,7 @@ function pick(option: DevicePickOption) {
 <template>
   <div class="device-picker">
     <label class="device-picker-label">{{ DEVICE_LABEL }}</label>
-    <p v-if="options.some((option) => option.recommended)" class="device-picker-hint">
+    <p v-if="options.some((option) => option.recommended && option.compatible)" class="device-picker-hint">
       Recommended {{ DEVICE_LABEL }} is pre-selected. Confirm or pick another {{ DEVICE_LABEL }}.
     </p>
     <div class="device-picker-list" role="radiogroup" :aria-label="DEVICE_LABEL">
@@ -38,7 +38,7 @@ function pick(option: DevicePickOption) {
       >
         <div class="device-picker-top">
           <span class="device-picker-name">{{ option.label }}</span>
-          <span v-if="option.recommended" class="device-chip recommended">Recommended</span>
+          <span v-if="option.recommended && option.compatible" class="device-chip recommended">Recommended</span>
           <span v-if="option.role === 'self'" class="device-chip self">This {{ DEVICE_LABEL }}</span>
           <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
         </div>
@@ -48,11 +48,11 @@ function pick(option: DevicePickOption) {
             {{ option.reachable ? 'Reachable' : 'Unreachable' }}
           </span>
         </div>
-        <p v-if="option.recommended && option.recommendReasons?.length" class="device-picker-reason recommend">
-          {{ option.recommendReasons[0] }}
-        </p>
-        <p v-else-if="!option.compatible && option.reasons.length" class="device-picker-reason">
+        <p v-if="!option.compatible && option.reasons.length" class="device-picker-reason">
           {{ option.reasons[0] }}
+        </p>
+        <p v-else-if="option.recommended && option.recommendReasons?.length" class="device-picker-reason recommend">
+          {{ option.recommendReasons[0] }}
         </p>
       </button>
     </div>

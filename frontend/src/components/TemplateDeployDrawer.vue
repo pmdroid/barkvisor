@@ -77,6 +77,12 @@ const resolvedTemplate = computed(() =>
   homeLibrary.resolveTemplateForDeploy(props.template.slug, selectedDevice.value, props.template),
 )
 
+function hostHasDeployableTemplate(hostId: string): boolean {
+  const device = devicesStore.deviceByHostId(hostId)
+  if (!device) return false
+  return homeLibrary.deviceHasDeployableTemplate(props.template.slug, device)
+}
+
 const deviceOptions = computed<DevicePickOption[]>(() => {
   const rows = devicesStore.devices
   const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
@@ -92,7 +98,7 @@ const deviceOptions = computed<DevicePickOption[]>(() => {
       .filter((reason) => reason.kind === 'hard')
       .map((reason) => reason.message)
     return toPickOption(row, [...new Set([...local, ...hard])], {
-      recommended: isRecommendedHost(placementScore.value, row.hostId),
+      recommended: isRecommendedHost(placementScore.value, row.hostId, hostHasDeployableTemplate),
       recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
     })
   })
@@ -139,6 +145,7 @@ async function refreshPlacement(seq: number) {
     initialHostId: props.initialHostId,
     selfHostId: devicesStore.selfDevice?.hostId,
     currentHostId: selectedHostId.value,
+    hostAllowed: hostHasDeployableTemplate,
   })
 }
 

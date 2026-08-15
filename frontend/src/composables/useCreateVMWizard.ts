@@ -540,7 +540,12 @@ export function useCreateVMWizard(
     deviceSSHKeys.value = []
   }
 
-  async function refreshPlacement(seq: number) {
+  let placementScoreSeq = 0
+  const placementRefreshing = ref(false)
+
+  async function refreshPlacement(applyRecommendation = true) {
+    const seq = ++placementScoreSeq
+    placementRefreshing.value = true
     try {
       const guest = effectiveGuestArch.value
       const data = await scorePlacement({
@@ -548,13 +553,16 @@ export function useCreateVMWizard(
         minMemoryMB: memoryMB.value,
         requestedMemoryMB: memoryMB.value,
       })
-      if (!isCurrentPickedDeviceLoad(seq)) return
+      if (seq !== placementScoreSeq) return
       placementScore.value = data
     } catch {
-      if (!isCurrentPickedDeviceLoad(seq)) return
+      if (seq !== placementScoreSeq) return
       placementScore.value = null
+    } finally {
+      if (seq === placementScoreSeq) placementRefreshing.value = false
     }
-    if (userOverrodeHost.value) return
+    if (seq !== placementScoreSeq) return
+    if (!applyRecommendation || userOverrodeHost.value) return
     selectedHostId.value = applyRecommendedHostId({
       recommendedHostId: placementScore.value?.recommendedHostId,
       initialHostId: opts.initialHostId,
@@ -563,13 +571,17 @@ export function useCreateVMWizard(
     })
   }
 
+  watch([memoryMB, effectiveGuestArch, osType], () => {
+    void refreshPlacement(false)
+  })
+
   async function loadPickedDevice() {
     const seq = ++pickedDeviceLoadSeq
     pickedDeviceLoading.value = true
     try {
       await devicesStore.fetchHealth().catch(() => {})
       if (!isCurrentPickedDeviceLoad(seq)) return
-      await refreshPlacement(seq)
+      await refreshPlacement()
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
         selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
@@ -682,15 +694,28 @@ export function useCreateVMWizard(
     return allNetworks.value.find((n) => n.id === selectedNetworkId.value) || null
   })
 
+  function selectedDeviceCompatible(): boolean {
+    if (!deviceOptions.value.length) return true
+    return deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.compatible)
+  }
+
+  function selectedDeviceIncompatibility(): string | null {
+    const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
+    if (option && !option.compatible) {
+      return option.reasons[0] || 'This Device cannot run this VM.'
+    }
+    return null
+  }
+
   function canProceed(): boolean {
-    if (pickedDeviceLoading.value) return false
+    if (pickedDeviceLoading.value || placementRefreshing.value) return false
     if (osType.value === 'windows' && !supportsWindows.value) return false
     const content = stepContent(step.value)
     switch (content) {
       case 'OS':
-        return !!name.value.trim() && (!deviceOptions.value.length || deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.compatible))
+        return !!name.value.trim() && selectedDeviceCompatible()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value && selectedDeviceCompatible()
       case 'Image':
         return !!selectedImageId.value
       case 'Drivers':
@@ -700,7 +725,7 @@ export function useCreateVMWizard(
       case 'Network':
         return true
       case 'Summary':
-        return !archIsProblem.value && pickedDeviceStillLive()
+        return !archIsProblem.value && pickedDeviceStillLive() && selectedDeviceCompatible()
       default:
         return false
     }
@@ -717,6 +742,12 @@ export function useCreateVMWizard(
   async function submit() {
     error.value = ''
     if (pickedDeviceLoading.value) return
+    await refreshPlacement(false)
+    const placementBlock = selectedDeviceIncompatibility()
+    if (placementBlock) {
+      error.value = placementBlock
+      return
+    }
     if (osType.value === 'windows' && !supportsWindows.value) {
       error.value = 'Windows VMs are not available on this device architecture.'
       return

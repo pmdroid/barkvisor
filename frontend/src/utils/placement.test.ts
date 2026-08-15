@@ -64,4 +64,15 @@ describe('placement (PAS-44)', () => {
     expect(isRecommendedHost(score, 'desk')).toBe(false)
     expect(placementReasonsForHost(score, 'studio')[0]).toContain('6144 MB free')
   })
+
+  test('ignores a server recommendation the local picker cannot use', () => {
+    const hostAllowed = (hostId: string) => hostId !== 'studio'
+    expect(applyRecommendedHostId({
+      recommendedHostId: 'studio',
+      selfHostId: 'desk',
+      hostAllowed,
+    })).toBe('desk')
+    expect(isRecommendedHost(score, 'studio', hostAllowed)).toBe(false)
+    expect(isRecommendedHost(score, 'studio', (hostId) => hostId === 'studio')).toBe(true)
+  })
 })
