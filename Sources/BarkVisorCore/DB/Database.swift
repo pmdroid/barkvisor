@@ -47,6 +47,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M005_WorkloadHealth.identifier) { db in
             try M005_WorkloadHealth.migrate(db)
         }
+        migrator.registerMigration(M006_ImageSha256.identifier) { db in
+            try M006_ImageSha256.migrate(db)
+        }
     }
 }
 

@@ -1972,6 +1972,10 @@ components:
         error:
           type: string
           nullable: true
+        sha256:
+          type: string
+          nullable: true
+          description: Hex SHA-256 of the stored Library file. Null until download/upload completes.
         createdAt:
           type: string
         updatedAt:

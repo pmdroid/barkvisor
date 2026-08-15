@@ -167,6 +167,7 @@ struct DTOTests {
             path: "/data/images/img-1.qcow2", sizeBytes: 1_073_741_824,
             status: "ready", error: nil,
             sourceUrl: "https://example.com/ubuntu.qcow2",
+            sha256: "deadbeef",
             createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
         )
 
@@ -180,6 +181,7 @@ struct DTOTests {
         #expect(response.sizeBytes == 1_073_741_824)
         #expect(response.sourceUrl == "https://example.com/ubuntu.qcow2")
         #expect(response.error == nil)
+        #expect(response.sha256 == "deadbeef")
     }
 
     @Test func `image response with error`() {

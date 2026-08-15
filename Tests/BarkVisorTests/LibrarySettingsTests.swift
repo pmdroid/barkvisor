@@ -153,8 +153,10 @@ final class LibrarySettingsTests {
         let dest = library.appendingPathComponent("img-custom.iso")
         #expect(FileManager.default.fileExists(atPath: dest.path))
         let stored = try await dbPool.read { db in try VMImage.fetchOne(db, key: image.id) }
+        let digest = try ImageFileChecksum.sha256Hex(ofFile: dest)
         #expect(stored?.status == "ready")
         #expect(stored?.path == dest.path)
+        #expect(stored?.sha256 == digest)
     }
 
     // MARK: - Delete honors Library dir

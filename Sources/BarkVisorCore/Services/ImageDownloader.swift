@@ -197,12 +197,16 @@ public actor ImageDownloader: ImageDownloadStarting {
             (try? FileManager.default.attributesOfItem(atPath: finalPath.path)[.size] as? Int64)
                 ?? received
 
+        // Persist sha256 of the stored file (after decompress). Catalog sha512 is
+        // verified above when present; the row always stores sha256 for depot verify.
+        let digest = try ImageFileChecksum.sha256Hex(ofFile: finalPath)
+
         let pool = dbPool()
         try await pool.write { db in
             try db.execute(
                 sql:
-                "UPDATE images SET status = 'ready', path = ?, sizeBytes = ?, updatedAt = ? WHERE id = ?",
-                arguments: [finalPath.path, finalSize, iso8601.string(from: Date()), imageID],
+                "UPDATE images SET status = 'ready', path = ?, sizeBytes = ?, sha256 = ?, updatedAt = ? WHERE id = ?",
+                arguments: [finalPath.path, finalSize, digest, iso8601.string(from: Date()), imageID],
             )
         }
 
