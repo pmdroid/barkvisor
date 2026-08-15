@@ -120,26 +120,52 @@ const platformBridgeUnsupported = computed(
 
 const compatibility = ref<TemplateCompatibilityReport | null>(null)
 let pickedDeviceLoadSeq = 0
+let placementScoreSeq = 0
 
 function isCurrentPickedDeviceLoad(seq: number): boolean {
   return seq === pickedDeviceLoadSeq
 }
 
-async function refreshPlacement(seq: number) {
+const vmName = ref('')
+const cpuCount = ref(props.template.cpuCount)
+const memoryMB = ref(props.template.memoryMB)
+const diskSizeGB = ref(props.template.diskSizeGB)
+const memoryFloor = computed(() => props.template.minMemoryMB ?? 128)
+const memoryBelowMinimum = computed(() => {
+  const planned = Number(memoryMB.value)
+  return Number.isFinite(planned) && planned < memoryFloor.value
+})
+
+function plannedMemoryMB(): number {
+  const planned = Number(memoryMB.value)
+  return Number.isFinite(planned) ? planned : props.template.memoryMB
+}
+
+function selectedDeviceIncompatibility(): string | null {
+  const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
+  if (option && !option.compatible) {
+    return option.reasons[0] || 'This Device cannot run this template.'
+  }
+  return null
+}
+
+async function refreshPlacement(applyRecommendation = true) {
+  const seq = ++placementScoreSeq
   try {
     const data = await scorePlacement({
       declaredArchitectures: props.template.architectures ?? [],
       requiredFeatures: props.template.requiredFeatures ?? [],
       minMemoryMB: props.template.minMemoryMB,
-      requestedMemoryMB: props.template.memoryMB,
+      requestedMemoryMB: plannedMemoryMB(),
     })
-    if (!isCurrentPickedDeviceLoad(seq)) return
+    if (seq !== placementScoreSeq) return
     placementScore.value = data
   } catch {
-    if (!isCurrentPickedDeviceLoad(seq)) return
+    if (seq !== placementScoreSeq) return
     placementScore.value = null
   }
-  if (userOverrodeHost.value) return
+  if (seq !== placementScoreSeq) return
+  if (!applyRecommendation || userOverrodeHost.value) return
   selectedHostId.value = applyRecommendedHostId({
     recommendedHostId: placementScore.value?.recommendedHostId,
     initialHostId: props.initialHostId,
@@ -157,7 +183,7 @@ async function loadPickedDevice() {
     await homeLibrary.fetchAll(devicesStore.devices).catch(() => {})
     if (!isCurrentPickedDeviceLoad(seq)) return
   }
-  await refreshPlacement(seq)
+  await refreshPlacement()
   if (!isCurrentPickedDeviceLoad(seq)) return
   if (!selectedHostId.value) {
     selectedHostId.value = defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId)
@@ -243,17 +269,6 @@ watch(selectedHostId, async (next, prev) => {
 const step = ref(1)
 const totalSteps = computed(() => visibleInputs.value.length > 0 ? 3 : 2)
 
-// Step 1: VM Name & Resource overrides
-const vmName = ref('')
-const cpuCount = ref(props.template.cpuCount)
-const memoryMB = ref(props.template.memoryMB)
-const diskSizeGB = ref(props.template.diskSizeGB)
-const memoryFloor = computed(() => props.template.minMemoryMB ?? 128)
-const memoryBelowMinimum = computed(() => {
-  const planned = Number(memoryMB.value)
-  return Number.isFinite(planned) && planned < memoryFloor.value
-})
-
 async function refreshCompatibility(expectedHostId = selectedHostId.value) {
   try {
     const planned = Number(memoryMB.value)
@@ -277,8 +292,9 @@ async function refreshCompatibility(expectedHostId = selectedHostId.value) {
   }
 }
 
-watch(memoryMB, () => {
+watch(memoryMB, (_next, prev) => {
   void refreshCompatibility()
+  if (prev !== undefined) void refreshPlacement(false)
 }, { immediate: true })
 
 // Step 2: Template inputs (dynamic) — ssh_keys is handled by the dedicated SSH key selector
@@ -502,6 +518,12 @@ async function submit() {
   error.value = ''
   if (!resolvedTemplate.value) {
     error.value = "Not in this Device's Library"
+    return
+  }
+  await refreshPlacement(false)
+  const placementBlock = selectedDeviceIncompatibility()
+  if (placementBlock) {
+    error.value = placementBlock
     return
   }
   if (platformBridgeUnsupported.value) {
