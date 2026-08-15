@@ -634,6 +634,7 @@ export interface UpdateSettings {
 export interface LibrarySettings {
   imageDirectory: string
   isDefault: boolean
+  libraryDepotHostId: string | null
 }
 
 /** Supported guest type from GET /api/system/capabilities (stable persisted IDs). */

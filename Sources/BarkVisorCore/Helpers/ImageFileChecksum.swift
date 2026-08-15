@@ -19,4 +19,16 @@ public enum ImageFileChecksum {
         }
         return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
+
+    public static func sha512Hex(ofFile url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA512()
+        while true {
+            let chunk = try handle.read(upToCount: 1_024 * 1_024) ?? Data()
+            guard !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+    }
 }

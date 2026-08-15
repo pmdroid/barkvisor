@@ -275,6 +275,36 @@ struct RepositoryController: RouteCollection {
             )
         }
 
+        let checksum: ExpectedChecksum? =
+            if let sha256 = repoImage.sha256, !sha256.isEmpty {
+                .sha256(sha256)
+            } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
+                .sha512(sha512)
+            } else {
+                nil
+            }
+
+        if let existing = try await req.db.read({ db in
+            try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl)
+                .filter(Column("status") == "ready")
+                .fetchOne(db)
+        }) {
+            return try Self.imageJSON(existing)
+        }
+
+        if let fetched = await LibraryDepotClients.acquire().fetchMatching(
+            LibraryDepotFetchRequest(
+                sourceUrl: repoImage.downloadUrl,
+                name: repoImage.name,
+                imageType: repoImage.imageType,
+                arch: repoImage.arch,
+                expectedChecksum: checksum,
+            ),
+            db: req.db,
+        ) {
+            return try Self.imageJSON(fetched)
+        }
+
         let now = iso8601.string(from: Date())
         let imageId = UUID().uuidString
         // Handle compound extensions like .qcow2.xz — keep full suffix for download,
@@ -307,19 +337,14 @@ struct RepositoryController: RouteCollection {
             try image.insert(db)
         }
 
-        let checksum: ExpectedChecksum? =
-            if let sha256 = repoImage.sha256, !sha256.isEmpty {
-                .sha256(sha256)
-            } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
-                .sha512(sha512)
-            } else {
-                nil
-            }
-
         await imageDownloader.start(
             imageID: imageId, url: sourceURL, destination: destination, expectedChecksum: checksum,
         )
 
+        return try Self.imageJSON(image)
+    }
+
+    private static func imageJSON(_ image: VMImage) throws -> Response {
         let encoder = JSONEncoder()
         let responseData = try encoder.encode(ImageResponse(from: image))
         var headers = HTTPHeaders()

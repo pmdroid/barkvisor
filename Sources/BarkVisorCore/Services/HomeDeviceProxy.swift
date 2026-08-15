@@ -17,6 +17,7 @@ public enum HomeDeviceProxy {
         let path = "/api/" + components.joined(separator: "/")
         try rejectNestedHome(path)
         try rejectConsoleLocalOnly(path)
+        try rejectLibraryBytes(path)
         return path
     }
 
@@ -86,6 +87,16 @@ public enum HomeDeviceProxy {
         if part.isEmpty || part == "." || part == ".." || part.contains("/")
             || part.contains("\\") {
             throw BarkVisorError.badRequest("Invalid member API path")
+        }
+    }
+
+    /// Image bytes stay on the agent plane. The Home proxy buffers and caps
+    /// bodies at 10 MiB — a cloud image must not ride that path.
+    public static func rejectLibraryBytes(_ path: String) throws {
+        if LibraryDepotHTTP.isImageBytesPath(path) {
+            throw BarkVisorError.badRequest(
+                "Library image bytes are served on the agent plane, not the Home proxy",
+            )
         }
     }
 
