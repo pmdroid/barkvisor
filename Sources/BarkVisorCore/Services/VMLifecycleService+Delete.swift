@@ -81,15 +81,13 @@ extension VMLifecycleService {
         }
 
         if let disk = try await db.read({ db in try Disk.fetchOne(db, key: bootDiskId) }) {
+            let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
             let resolvedPath = (disk.path as NSString).resolvingSymlinksInPath
-            let canonicalDataDir = (Config.dataDir.path as NSString).resolvingSymlinksInPath
-            let dataDirWithSlash =
-                canonicalDataDir.hasSuffix("/") ? canonicalDataDir : canonicalDataDir + "/"
-            if resolvedPath.hasPrefix(dataDirWithSlash) {
+            if LibrarySettings.isManagedStoragePath(disk.path, imagesDir: imagesDir) {
                 try? FileManager.default.removeItem(atPath: resolvedPath)
             } else {
                 Log.vm.warning(
-                    "Refusing to delete disk outside data directory: \(disk.path) -> \(resolvedPath)",
+                    "Refusing to delete disk outside data/Library directory: \(disk.path) -> \(resolvedPath)",
                     vm: vmID,
                 )
             }

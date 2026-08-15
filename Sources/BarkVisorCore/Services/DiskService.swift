@@ -323,12 +323,10 @@ public enum DiskService {
             throw BarkVisorError.conflict("Disk is attached to a VM")
         }
 
-        // Resolve symlinks and canonicalize both paths before comparison
+        // Resolve symlinks; allow unlink under dataDir or the configured Library dir.
+        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
         let resolvedPath = (disk.path as NSString).resolvingSymlinksInPath
-        let canonicalDataDir = (Config.dataDir.path as NSString).resolvingSymlinksInPath
-        let dataDirWithSlash =
-            canonicalDataDir.hasSuffix("/") ? canonicalDataDir : canonicalDataDir + "/"
-        if resolvedPath.hasPrefix(dataDirWithSlash) {
+        if LibrarySettings.isManagedStoragePath(disk.path, imagesDir: imagesDir) {
             do {
                 try FileManager.default.removeItem(atPath: resolvedPath)
             } catch let fileError {
@@ -339,7 +337,7 @@ public enum DiskService {
             }
         } else {
             Log.server.warning(
-                "Skipping file deletion for disk outside data directory: \(disk.path) -> \(resolvedPath)",
+                "Skipping file deletion for disk outside data/Library directory: \(disk.path) -> \(resolvedPath)",
             )
         }
 

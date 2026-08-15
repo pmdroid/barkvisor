@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Structured logging for BarkVisor subsystems — writes to the database via LogService
 public enum Log {
@@ -226,13 +227,26 @@ public enum Config {
         PlatformPaths.settingsInt(forKey: "rateLimitWindow", dataDir: dataDir, default: 300)
     }
 
+    // MARK: - Library
+
+    /// Default Library dir (`{dataDir}/images`). The configured path is
+    /// `imagesDir(from:)` / `LibrarySettings.resolvedDirectory`.
+    public static var imagesDir: URL {
+        LibrarySettings.defaultDirectory
+    }
+
+    /// Library dir from `app_settings.image_directory`, else `{dataDir}/images`.
+    public static func imagesDir(from db: Database) throws -> URL {
+        try LibrarySettings.resolvedDirectory(from: db)
+    }
+
     // MARK: - Directories
 
-    public static func ensureDirectories() throws {
+    public static func ensureDirectories(imagesDir: URL? = nil) throws {
         let fm = FileManager.default
-        let dirs = [
+        var dirs = [
             dataDir,
-            dataDir.appendingPathComponent("images"),
+            Self.imagesDir,
             dataDir.appendingPathComponent("disks"),
             dataDir.appendingPathComponent("cloud-init"),
             dataDir.appendingPathComponent("efivars"),
@@ -244,6 +258,12 @@ public enum Config {
             dataDir.appendingPathComponent(HomeCAService.agentDirectoryName),
             backupDir,
         ]
+        if let imagesDir {
+            let custom = imagesDir.standardizedFileURL
+            if custom.path != Self.imagesDir.standardizedFileURL.path {
+                dirs.append(custom)
+            }
+        }
         for dir in dirs where !fm.fileExists(atPath: dir.path) {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }

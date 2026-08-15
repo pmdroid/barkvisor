@@ -629,6 +629,12 @@ export interface UpdateSettings {
   updateURL?: string | null
 }
 
+/** GET/PUT /api/system/library/settings */
+export interface LibrarySettings {
+  imageDirectory: string
+  isDefault: boolean
+}
+
 /** Supported guest type from GET /api/system/capabilities (stable persisted IDs). */
 export interface GuestTypeInfo {
   id: string
