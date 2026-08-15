@@ -6,8 +6,10 @@ import GRDB
 /// Lookup is awaited (small JSON GET). Byte copy runs in the background and
 /// the caller receives a `downloading` row so proxied deploys stay inside
 /// the Home 10s timeout. Failures before the copy starts return `nil` so
-/// deploy/download keeps today's internet path (PAS-47 / PAS-90). Local
-/// Workload start does not call this.
+/// deploy/download keeps today's internet path (PAS-47 / PAS-90). A failed
+/// copy tags the Library row so a later `fetchMatching` also returns `nil`
+/// instead of listing the depot again. Concurrent callers share one
+/// downloading row. Local Workload start does not call this.
 public struct LibraryDepotAcquire: LibraryDepotFetching {
     public var localHostId: String
     public var dataDir: URL
@@ -37,28 +39,44 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         else {
             return nil
         }
+        if await hasDepotCopyFailure(sourceUrl: request.sourceUrl, db: db) {
+            await fallback(
+                db: db, sourceUrl: request.sourceUrl,
+                reason: "previous depot fetch failed; using internet",
+            )
+            return nil
+        }
         guard let client = await client(for: depotHostId, sourceUrl: request.sourceUrl, db: db) else {
             return nil
         }
         guard let remote = await lookup(request.sourceUrl, client: client, db: db) else {
             return nil
         }
-        guard let pending = await insertDownloading(request: request, db: db) else {
+        switch await claimDownload(request: request, db: db) {
+        case let .ready(image), let .inFlight(image):
+            return image
+        case .depotFailed:
+            await fallback(
+                db: db, sourceUrl: request.sourceUrl,
+                reason: "previous depot fetch failed; using internet",
+            )
+            return nil
+        case let .started(pending):
+            let job = CopyJob(
+                remote: remote, request: request, imageId: pending.id, depotHostId: depotHostId,
+            )
+            let work: @Sendable () async -> Void = {
+                await self.copyRemote(job, client: client, db: db)
+            }
+            if awaitCopy {
+                await work()
+                return await readyImage(id: pending.id, db: db)
+            }
+            Task.detached { await work() }
+            return pending
+        case nil:
             return nil
         }
-
-        let job = CopyJob(
-            remote: remote, request: request, imageId: pending.id, depotHostId: depotHostId,
-        )
-        let work: @Sendable () async -> Void = {
-            await self.copyRemote(job, client: client, db: db)
-        }
-        if awaitCopy {
-            await work()
-            return await readyImage(id: pending.id, db: db)
-        }
-        Task.detached { await work() }
-        return pending
     }
 
     private func client(
@@ -116,7 +134,16 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         }
     }
 
-    private func insertDownloading(request: LibraryDepotFetchRequest, db: DatabasePool) async -> VMImage? {
+    private enum DownloadClaim {
+        case ready(VMImage)
+        case inFlight(VMImage)
+        case started(VMImage)
+        case depotFailed
+    }
+
+    /// Insert or reuse the Library row for this catalog URL in one write so
+    /// concurrent download/deploy requests share a single depot copy.
+    private func claimDownload(request: LibraryDepotFetchRequest, db: DatabasePool) async -> DownloadClaim? {
         let now = iso8601.string(from: Date())
         let image = VMImage(
             id: UUID().uuidString,
@@ -132,10 +159,22 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             updatedAt: now,
         )
         do {
-            try await db.write { db in
+            return try await db.write { db in
+                let rows = try VMImage
+                    .filter(Column("sourceUrl") == request.sourceUrl)
+                    .fetchAll(db)
+                if let ready = rows.first(where: { $0.status == "ready" }) {
+                    return .ready(ready)
+                }
+                if let downloading = rows.first(where: { $0.status == "downloading" }) {
+                    return .inFlight(downloading)
+                }
+                if rows.contains(where: { $0.status == "error" && Self.isDepotCopyFailure($0.error) }) {
+                    return .depotFailed
+                }
                 try image.insert(db)
+                return .started(image)
             }
-            return image
         } catch {
             await fallback(
                 db: db, sourceUrl: request.sourceUrl,
@@ -143,6 +182,17 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             )
             return nil
         }
+    }
+
+    private func hasDepotCopyFailure(sourceUrl: String, db: DatabasePool) async -> Bool {
+        let rows = try? await db.read { db in
+            try VMImage.filter(Column("sourceUrl") == sourceUrl).fetchAll(db)
+        }
+        guard let rows else { return false }
+        if rows.contains(where: { $0.status == "ready" || $0.status == "downloading" }) {
+            return false
+        }
+        return rows.contains { $0.status == "error" && Self.isDepotCopyFailure($0.error) }
     }
 
     private struct CopyJob {
@@ -290,11 +340,22 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         return image
     }
 
+    /// Prefix so a later `fetchMatching` can tell a depot copy failure from
+    /// an internet / upload error and skip the depot on retry.
+    private static let depotFailurePrefix = "Library depot: "
+
+    static func isDepotCopyFailure(_ message: String?) -> Bool {
+        message?.hasPrefix(depotFailurePrefix) == true
+    }
+
     private func markFailed(imageId: String, db: DatabasePool, message: String) async {
+        let tagged = message.hasPrefix(Self.depotFailurePrefix)
+            ? message
+            : Self.depotFailurePrefix + message
         try? await db.write { db in
             try db.execute(
                 sql: "UPDATE images SET status = 'error', error = ?, updatedAt = ? WHERE id = ?",
-                arguments: [message, iso8601.string(from: Date()), imageId],
+                arguments: [tagged, iso8601.string(from: Date()), imageId],
             )
         }
     }

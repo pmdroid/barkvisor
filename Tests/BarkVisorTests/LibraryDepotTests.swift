@@ -8,6 +8,17 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
+private func waitUntilImageStatus(id: String, status: String, db: DatabasePool) async throws -> VMImage {
+    for _ in 0 ..< 80 {
+        if let image = try await db.read({ db in try VMImage.fetchOne(db, key: id) }),
+           image.status == status {
+            return image
+        }
+        try await Task.sleep(nanoseconds: 25_000_000)
+    }
+    throw BarkVisorError.timeout("depot row did not become \(status)")
+}
+
 final class FetchGate: @unchecked Sendable {
     private let lock = NSLock()
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -41,35 +52,73 @@ final class FetchGate: @unchecked Sendable {
 }
 
 final class FakeLibraryDepotClient: LibraryDepotClient, @unchecked Sendable {
+    private let lock = NSLock()
     var images: [LibraryDepotImageInfo] = []
     var bytes = Data("depot-bytes".utf8)
     var listError: Error?
     var fetchError: Error?
-    var listedURLs: [String] = []
-    var fetchedIds: [String] = []
+    private var listed: [String] = []
+    private var fetched: [String] = []
     var reportedSha256: String?
     var fetchGate: FetchGate?
 
+    var listedURLs: [String] {
+        snapshotListed()
+    }
+
+    var fetchedIds: [String] {
+        snapshotFetched()
+    }
+
     func listImages(sourceUrl: String) async throws -> [LibraryDepotImageInfo] {
-        listedURLs.append(sourceUrl)
-        if let listError { throw listError }
-        return images.filter { $0.sourceUrl == sourceUrl || $0.sourceUrl == nil }
+        let snapshot = recordList(sourceUrl)
+        if let listError = snapshot.0 { throw listError }
+        return snapshot.1.filter { $0.sourceUrl == sourceUrl || $0.sourceUrl == nil }
     }
 
     func fetchBytes(imageId: String, to destination: URL) async throws -> LibraryDepotFetchBytes {
-        fetchedIds.append(imageId)
-        if let fetchError { throw fetchError }
-        if let fetchGate {
-            await fetchGate.wait()
+        let snapshot = recordFetch(imageId)
+        if let fetchError = snapshot.0 { throw fetchError }
+        if let gate = snapshot.1 {
+            await gate.wait()
         }
+        let bytes = snapshot.2
         try bytes.write(to: destination)
         let sha = SHA256.hash(data: bytes).compactMap { String(format: "%02x", $0) }.joined()
         return LibraryDepotFetchBytes(
             sha256: sha,
             bytesWritten: Int64(bytes.count),
             filename: "cloud.img",
-            reportedSha256: reportedSha256 ?? sha,
+            reportedSha256: snapshot.3 ?? sha,
         )
+    }
+
+    private func snapshotListed() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return listed
+    }
+
+    private func snapshotFetched() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return fetched
+    }
+
+    private func recordList(_ sourceUrl: String) -> (Error?, [LibraryDepotImageInfo]) {
+        lock.lock()
+        defer { lock.unlock() }
+        listed.append(sourceUrl)
+        return (listError, images)
+    }
+
+    private func recordFetch(
+        _ imageId: String,
+    ) -> (Error?, FetchGate?, Data, String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        fetched.append(imageId)
+        return (fetchError, fetchGate, bytes, reportedSha256)
     }
 }
 
@@ -150,14 +199,7 @@ final class LibraryDepotTests {
     }
 
     private func waitUntilReady(id: String) async throws -> VMImage {
-        for _ in 0 ..< 80 {
-            if let image = try await dbPool.read({ db in try VMImage.fetchOne(db, key: id) }),
-               image.status == "ready" {
-                return image
-            }
-            try await Task.sleep(nanoseconds: 25_000_000)
-        }
-        throw BarkVisorError.timeout("depot copy did not become ready")
+        try await waitUntilImageStatus(id: id, status: "ready", db: dbPool)
     }
 
     private func setDepot(_ hostId: String?) throws {
