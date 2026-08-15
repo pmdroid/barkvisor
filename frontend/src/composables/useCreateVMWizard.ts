@@ -44,12 +44,14 @@ import {
 } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
+  defaultPickedHostId,
   deviceCapabilitiesPath,
   devicePath,
   deviceTaskPath,
   isSelfDevice,
   resolveSelectedDevice,
   selectedHostIsLive,
+  usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
 
 export function useCreateVMWizard(
@@ -518,7 +520,7 @@ export function useCreateVMWizard(
   async function loadPickedDevice() {
     await devicesStore.fetchHealth().catch(() => {})
     if (!selectedHostId.value) {
-      selectedHostId.value = opts.initialHostId || devicesStore.selfDevice?.hostId || ''
+      selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
     }
     if (!pickedDeviceStillLive()) {
       clearPickedInventory()
@@ -532,7 +534,12 @@ export function useCreateVMWizard(
       await applyLoadedResources(true)
       return
     }
-    if (isSelfDevice(device) || !canCallDeviceAPI(device)) {
+    if (!canCallDeviceAPI(device)) {
+      clearPickedInventory()
+      error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+      return
+    }
+    if (usesLocalDeviceInventory(device)) {
       await caps.fetchCapabilities().catch(() => {})
       await Promise.all([imageStore.fetchAll(), sshKeyStore.fetchAll(), networkStore.fetchAll(), diskStore.fetchAll()])
       await applyLoadedResources(true)

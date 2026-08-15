@@ -36,8 +36,12 @@ export const useVMStore = defineStore('vms', () => {
     req: CreateVMRequest,
     device?: DeviceApiTarget,
   ): Promise<{ vm: VM; taskID?: string }> {
+    // Never send targetHostId — member requireLocalHost stays. Route by URL.
+    const { targetHostId: _ignored, ...body } = req as CreateVMRequest & {
+      targetHostId?: string
+    }
     const path = device ? deviceVmsBasePath(device) : '/vms'
-    const res = await api.post(path, req)
+    const res = await api.post(path, body)
     const keepLocal = !device || isSelfDevice(device)
     if (res.status === 202) {
       const { vm, taskID } = res.data

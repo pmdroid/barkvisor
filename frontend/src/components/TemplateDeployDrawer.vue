@@ -29,12 +29,14 @@ import {
 } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
+  defaultPickedHostId,
   deviceCapabilitiesPath,
   deviceImagePath,
   devicePath,
   deviceTaskPath,
   deviceVmActionPath,
   isSelfDevice,
+  usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
@@ -108,9 +110,7 @@ async function loadPickedDevice() {
     await homeLibrary.fetchAll(devicesStore.devices).catch(() => {})
   }
   if (!selectedHostId.value) {
-    const selfId = devicesStore.selfDevice?.hostId
-    const firstOk = deviceOptions.value.find((o) => o.compatible)
-    selectedHostId.value = props.initialHostId || firstOk?.hostId || selfId || ''
+    selectedHostId.value = defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId)
   }
   const device = selectedDevice.value
   if (!device) {
@@ -120,7 +120,15 @@ async function loadPickedDevice() {
     pickedCaps.value = null
     return
   }
-  if (isSelfDevice(device) || !canCallDeviceAPI(device)) {
+  if (!canCallDeviceAPI(device)) {
+    pickedCaps.value = null
+    deviceSSHKeys.value = []
+    selectedSSHKeyId.value = ''
+    bridgeAvailable.value = false
+    bridgeChecked.value = true
+    return
+  }
+  if (usesLocalDeviceInventory(device)) {
     try {
       const { data } = await api.get(deviceCapabilitiesPath(device))
       pickedCaps.value = parseSystemCapabilities(data)
