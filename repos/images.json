@@ -31,7 +31,7 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/noble/20260814/noble-server-cloudimg-arm64.img",
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260814/ubuntu-24.04-server-cloudimg-arm64.img",
       "sizeBytes": 618370560,
       "sha256": "4a281a921b8d7db952895ab619736f10efe9f63e111fa5b5779ed18f023818aa"
     },
@@ -42,7 +42,7 @@
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/noble/20260814/noble-server-cloudimg-amd64.img",
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260814/ubuntu-24.04-server-cloudimg-amd64.img",
       "sizeBytes": 624447488,
       "sha256": "6e40c07ae715f744f84af0bec76415cc1987dd115b4b8de437818561f01a3733"
     },
