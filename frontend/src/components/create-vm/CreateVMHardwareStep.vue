@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import AppSelect from '../ui/AppSelect.vue'
 import CreateVMArchitectureDetails from './CreateVMArchitectureDetails.vue'
-import { useCapabilitiesStore } from '../../stores/capabilities'
 
-defineProps<{
+const props = defineProps<{
   cpuCount: number
   memoryMB: number
   displayResolution: string
@@ -17,6 +15,8 @@ defineProps<{
   tpmEnabled: boolean
   alwaysShowArchDetails: boolean
   archProblem: string | null
+  /** Picked Device logical CPU count (PAS-182). */
+  maxCpu: number
 }>()
 
 const emit = defineEmits<{
@@ -29,13 +29,11 @@ const emit = defineEmits<{
   'update:alwaysShowArchDetails': [value: boolean]
 }>()
 
-const caps = useCapabilitiesStore()
-const maxCpu = computed(() => caps.hostCpuCount)
-
 function onCpuInput(raw: string) {
   const n = Number(raw)
   if (!Number.isFinite(n)) return
-  const clamped = Math.min(Math.max(1, Math.trunc(n)), maxCpu.value)
+  const max = props.maxCpu >= 1 ? props.maxCpu : 1
+  const clamped = Math.min(Math.max(1, Math.trunc(n)), max)
   emit('update:cpuCount', clamped)
 }
 </script>
@@ -45,12 +43,12 @@ function onCpuInput(raw: string) {
     <h3 class="step-title">Hardware</h3>
     <div style="display:flex;gap:12px">
       <div class="form-group" style="flex:1">
-        <label>CPU Cores <span class="hint">(max {{ maxCpu }})</span></label>
+        <label>CPU Cores <span class="hint">(max {{ maxCpu >= 1 ? maxCpu : 1 }})</span></label>
         <input
           :value="cpuCount"
           type="number"
           min="1"
-          :max="maxCpu"
+          :max="maxCpu >= 1 ? maxCpu : 1"
           @input="onCpuInput(($event.target as HTMLInputElement).value)"
         />
       </div>

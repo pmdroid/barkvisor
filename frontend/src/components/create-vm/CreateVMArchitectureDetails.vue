@@ -37,7 +37,7 @@ watch(
     <summary class="arch-summary">Architecture details</summary>
     <div class="arch-body">
       <p class="arch-lede">
-        BarkVisor picks the guest that matches this device. Change these only if you know you need a different architecture or firmware.
+        BarkVisor uses the image architecture. Change these only if you know you need a different architecture or firmware.
       </p>
       <div class="form-group">
         <label>Architecture</label>
