@@ -270,7 +270,10 @@ mapper prints `SKIP: qemu-system-* is not on PATH` and exits 0. Set
 DRY_RUN=1 ./scripts/guest-boot-bdd.sh   # syntax + scenario inventory, no server
 ```
 
-Out of scope here: Windows boot, Cypress, cross-Device Home proxy, CI wiring.
+Optional CI lanes (never a required check) are documented in
+[Guest-boot CI and the self-hosted KVM runner](ci-kvm-runner.md).
+
+Out of scope here: Windows boot, Cypress.
 
 ### Cross-Device Home proxy smoke (opt-in, not prepush)
 
@@ -297,7 +300,8 @@ after pair + create (exit 0). Set `ALLOW_NO_QEMU=1` to treat create-only
 as the intended path.
 
 Out of scope here: more than two Devices, auto-placement, template deploy
-via proxy, UI/Cypress, first-time join only, CI wiring.
+via proxy, UI/Cypress, first-time join only. Guest-boot CI does not run
+this smoke; see [ci-kvm-runner.md](ci-kvm-runner.md).
 
 ## Privileged Helper in Debug Builds
 
