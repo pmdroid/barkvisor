@@ -14,13 +14,6 @@ struct SystemHostController: RouteCollection {
 
     // MARK: - Directory Browser
 
-    /// Allowed root directories for the directory browser.
-    /// Only paths under the user's home directory or /Volumes are browsable.
-    private static let allowedRoots: [String] = [
-        NSHomeDirectory(),
-        "/Volumes",
-    ]
-
     @Sendable
     func browseDirectory(req: Vapor.Request) async throws -> [BrowseEntry] {
         let rawPath = (try? req.query.get(String.self, at: "path")) ?? NSHomeDirectory()
@@ -28,12 +21,10 @@ struct SystemHostController: RouteCollection {
         // Resolve symlinks and canonicalize to prevent traversal via symlinks or ../
         let resolvedPath = (rawPath as NSString).resolvingSymlinksInPath
 
-        // Validate the resolved path is within an allowed root directory (use trailing slash to prevent prefix bypass)
-        let isAllowed = Self.allowedRoots.contains(where: { root in
-            let rootWithSlash = root.hasSuffix("/") ? root : root + "/"
-            return resolvedPath == root || resolvedPath.hasPrefix(rootWithSlash)
-        })
-        guard isAllowed || resolvedPath == "/" else {
+        let libraryRoot = try await req.db.read { db in
+            try LibrarySettings.resolvedDirectory(from: db).path
+        }
+        guard DirectoryBrowser.isAllowed(resolvedPath, extraRoots: [libraryRoot]) else {
             throw Abort(.forbidden, reason: "Access denied: path is outside allowed directories")
         }
 
@@ -49,12 +40,7 @@ struct SystemHostController: RouteCollection {
         // Parent directory (only if still within allowed roots)
         if resolvedPath != "/" {
             let parent = (resolvedPath as NSString).deletingLastPathComponent
-            let parentResolved = (parent as NSString).resolvingSymlinksInPath
-            let parentAllowed = Self.allowedRoots.contains(where: { root in
-                let rootWithSlash = root.hasSuffix("/") ? root : root + "/"
-                return parentResolved == root || parentResolved.hasPrefix(rootWithSlash)
-            })
-            if parentAllowed || parentResolved == "/" {
+            if DirectoryBrowser.isAllowed(parent, extraRoots: [libraryRoot]) {
                 entries.append(BrowseEntry(name: "..", path: parent, isDirectory: true))
             }
         }

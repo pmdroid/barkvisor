@@ -434,6 +434,45 @@ function watchDownload(imageId: string) {
   downloadPercent.value = 0
   downloadStatus.value = 'Starting download...'
 
+  let settled = false
+  const finishReady = () => {
+    if (settled || drawerClosed) return
+    settled = true
+    imageProgress.stop()
+    void doDeploy()
+  }
+  const finishError = (message: string) => {
+    if (settled || drawerClosed) return
+    settled = true
+    imageProgress.stop()
+    error.value = message
+    phase.value = 'form'
+  }
+
+  // Depot copies update SQLite without ImageDownloader events. Poll the
+  // Library row so deploy still proceeds when SSE never sees ready.
+  void (async () => {
+    try {
+      for (let i = 0; i < 600; i++) {
+        if (drawerClosed || settled) return
+        const { data } = await api.get(`/images/${imageId}`)
+        if (drawerClosed || settled) return
+        if (data.status === 'ready') {
+          finishReady()
+          return
+        }
+        if (data.status === 'error') {
+          finishError(data.error || 'Image download failed')
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+      finishError('Timed out waiting for the Device image download')
+    } catch (e: unknown) {
+      if (!settled && !drawerClosed) finishError(apiErrorMessage(e, 'Image download failed'))
+    }
+  })()
+
   imageProgress.start(imageId, {
     onProgress: (data) => {
       if (data.status === 'downloading') {
@@ -449,13 +488,10 @@ function watchDownload(imageId: string) {
       }
     },
     onReady: () => {
-      // Image is ready — re-deploy to create the VM
-      void doDeploy()
+      finishReady()
     },
     onError: (data) => {
-      if (drawerClosed) return
-      error.value = data?.error || 'Image download failed'
-      phase.value = 'form'
+      finishError(data?.error || 'Image download failed')
     },
   })
 }

@@ -64,6 +64,24 @@ final class LibrarySettingsTests {
         #expect(LibrarySettings.isDefault(resolved))
     }
 
+    @Test func `relative stored path is rejected on read`() throws {
+        try dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: "images")
+                .save(db, onConflict: .replace)
+        }
+        let resolved = try dbPool.read { try LibrarySettings.resolvedDirectory(from: $0) }
+        #expect(LibrarySettings.isDefault(resolved))
+    }
+
+    @Test func `comma stored path is rejected on read`() throws {
+        try dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: "/tmp/lib,rary")
+                .save(db, onConflict: .replace)
+        }
+        let resolved = try dbPool.read { try LibrarySettings.resolvedDirectory(from: $0) }
+        #expect(LibrarySettings.isDefault(resolved))
+    }
+
     // MARK: - Validation
 
     @Test func `empty path resets to default`() throws {
@@ -236,5 +254,37 @@ final class LibrarySettingsTests {
         #expect(LibrarySettings.isManagedStoragePath(insideLibrary, imagesDir: library))
         #expect(LibrarySettings.isManagedStoragePath(insideData, imagesDir: library))
         #expect(!LibrarySettings.isManagedStoragePath("/etc/passwd", imagesDir: library))
+    }
+
+    @Test func `deleteDisk unlinks a file in a previous library dir`() async throws {
+        let oldLibrary = tmpDir.appendingPathComponent("old-library")
+        let newLibrary = tmpDir.appendingPathComponent("new-library")
+        try FileManager.default.createDirectory(at: oldLibrary, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newLibrary, withIntermediateDirectories: true)
+        let file = oldLibrary.appendingPathComponent("stale.qcow2")
+        try Data("qcow".utf8).write(to: file)
+
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: newLibrary.path)
+                .save(db, onConflict: .replace)
+            try LibrarySettings.recordPreviousDirectory(oldLibrary, db: db)
+            try Disk(
+                id: "disk-prev",
+                name: "stale",
+                path: file.path,
+                sizeBytes: 4,
+                format: "qcow2",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+        }
+
+        let cache = DiskInfoCache(dbPool: dbPool)
+        _ = try await DiskService.deleteDisk(id: "disk-prev", diskInfoCache: cache, db: dbPool)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        let gone = try await dbPool.read { db in try Disk.fetchOne(db, key: "disk-prev") }
+        #expect(gone == nil)
     }
 }

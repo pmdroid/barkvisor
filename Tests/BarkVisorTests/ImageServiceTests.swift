@@ -148,6 +148,30 @@ final class ImageServiceTests {
         let started = await downloader.startedIDs
         #expect(started == [claims[0].image.id])
     }
+
+    @Test func `ready image is ignored when catalog checksum differs`() throws {
+        let now = "2026-01-01T00:00:00Z"
+        let source = "https://example.com/cloud-checksum.img"
+        try dbPool.write { db in
+            try VMImage(
+                id: "img-wrong-hash", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: "/tmp/cloud.img", sizeBytes: 4, status: "ready", error: nil,
+                sourceUrl: source, sha256: "aaa", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let miss = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256("bbb"), db: db,
+            )
+        }
+        #expect(miss == nil)
+        let hit = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256("aaa"), db: db,
+            )
+        }
+        #expect(hit?.id == "img-wrong-hash")
+    }
 }
 
 private actor RecordingCatalogStartDownloader: ImageDownloadStarting {

@@ -157,24 +157,17 @@ struct ControllerLogicTests {
     // MARK: - Directory Browser Allowed Roots
 
     @Test func `directory browser path validation`() {
-        let allowedRoots = [NSHomeDirectory(), "/Volumes"]
-
-        func isAllowed(_ path: String) -> Bool {
-            let resolvedPath = (path as NSString).resolvingSymlinksInPath
-            return allowedRoots.contains(where: { root in
-                let rootWithSlash = root.hasSuffix("/") ? root : root + "/"
-                return resolvedPath == root || resolvedPath.hasPrefix(rootWithSlash)
-            }) || resolvedPath == "/"
-        }
-
-        #expect(isAllowed(NSHomeDirectory()))
-        #expect(isAllowed(NSHomeDirectory() + "/Documents"))
-        #expect(isAllowed("/Volumes"))
-        #expect(isAllowed("/Volumes/External"))
-        #expect(isAllowed("/"))
-        #expect(!isAllowed("/etc"))
-        #expect(!isAllowed("/usr"))
-        #expect(!isAllowed("/var"))
+        #expect(DirectoryBrowser.isAllowed(NSHomeDirectory()))
+        #expect(DirectoryBrowser.isAllowed(NSHomeDirectory() + "/Documents"))
+        #expect(DirectoryBrowser.isAllowed("/Volumes"))
+        #expect(DirectoryBrowser.isAllowed("/Volumes/External"))
+        #expect(DirectoryBrowser.isAllowed("/"))
+        #expect(!DirectoryBrowser.isAllowed("/etc"))
+        #expect(!DirectoryBrowser.isAllowed("/usr"))
+        #expect(!DirectoryBrowser.isAllowed("/var"))
+        #expect(DirectoryBrowser.isAllowed("/var/lib/barkvisor/images", extraRoots: ["/var/lib/barkvisor/images"]))
+        #expect(DirectoryBrowser.isAllowed("/var/lib/barkvisor/images/ubuntu", extraRoots: ["/var/lib/barkvisor/images"]))
+        #expect(!DirectoryBrowser.isAllowed("/var/lib/barkvisor", extraRoots: ["/var/lib/barkvisor/images"]))
     }
 
     // MARK: - Repo Type Validation
