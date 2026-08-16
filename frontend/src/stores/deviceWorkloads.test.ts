@@ -1,0 +1,156 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { createPinia, setActivePinia } from 'pinia'
+import api from '../api/client'
+import type { HomeDeviceHealthSnapshot, VM } from '../api/types'
+import { useDeviceWorkloadsStore } from './deviceWorkloads'
+
+const originalGet = api.get
+const originalPost = api.post
+
+function snapshot(partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>): HomeDeviceHealthSnapshot {
+  return {
+    agentPort: 7778,
+    reachability: 'ok',
+    ...partial,
+  }
+}
+
+function vm(partial: Partial<VM> & Pick<VM, 'id' | 'name' | 'state'>): VM {
+  return {
+    vmType: 'linux-arm64',
+    cpuCount: 1,
+    memoryMB: 512,
+    bootDiskId: 'disk-1',
+    isoId: null,
+    isoIds: null,
+    networkId: null,
+    cloudInitPath: null,
+    description: null,
+    bootOrder: null,
+    displayResolution: null,
+    additionalDiskIds: null,
+    uefi: false,
+    tpmEnabled: false,
+    macAddress: null,
+    sharedPaths: null,
+    portForwards: null,
+    usbDevices: null,
+    pendingChanges: false,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...partial,
+  }
+}
+
+describe('deviceWorkloads store (PAS-52)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    api.get = originalGet
+    api.post = originalPost
+  })
+
+  test('self lists and starts through local /vms', async () => {
+    const self = snapshot({ hostId: 'self-1', role: 'self' })
+    const listed = [vm({ id: 'vm-1', name: 'home', state: 'stopped' })]
+    const started = vm({ id: 'vm-1', name: 'home', state: 'running' })
+    const get = mock((url: string) => {
+      if (url === '/vms') return Promise.resolve({ data: listed })
+      if (url === '/vms/vm-1') return Promise.resolve({ data: started })
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string) => {
+      expect(url).toBe('/vms/vm-1/start')
+      return Promise.resolve({ data: {} })
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(self)
+    expect(store.vmsFor('self-1')).toHaveLength(1)
+    await store.start(self, 'vm-1')
+    expect(store.vmsFor('self-1')[0]?.state).toBe('running')
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('members list and stop through the Home proxy', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running' })]
+    const stopped = vm({ id: 'vm-2', name: 'nas', state: 'stopped' })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/peer-1/v1/vms') return Promise.resolve({ data: listed })
+      if (url === '/home/devices/peer-1/v1/vms/vm-2') return Promise.resolve({ data: stopped })
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string, body?: unknown) => {
+      expect(url).toBe('/home/devices/peer-1/v1/vms/vm-2/stop')
+      expect(body).toEqual({ force: false, method: 'acpi' })
+      return Promise.resolve({ data: {} })
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    await store.stop(peer, 'vm-2')
+    expect(store.vmsFor('peer-1')[0]?.state).toBe('stopped')
+    expect(get.mock.calls.map((call) => call[0])).toEqual([
+      '/home/devices/peer-1/v1/vms',
+      '/home/devices/peer-1/v1/vms/vm-2',
+    ])
+  })
+
+  test('members restart through the Home proxy', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running' })]
+    const restarted = vm({ id: 'vm-2', name: 'nas', state: 'running' })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/peer-1/v1/vms') return Promise.resolve({ data: listed })
+      if (url === '/home/devices/peer-1/v1/vms/vm-2') return Promise.resolve({ data: restarted })
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string) => {
+      expect(url).toBe('/home/devices/peer-1/v1/vms/vm-2/restart')
+      return Promise.resolve({ data: {} })
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    await store.restart(peer, 'vm-2')
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('unreachable members do not invent a Workload list', async () => {
+    const get = mock(() => Promise.resolve({ data: [vm({ id: 'ghost', name: 'ghost', state: 'running' })] }))
+    api.get = get as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(snapshot({
+      hostId: 'peer-down',
+      role: 'member',
+      reachability: 'unreachable',
+      workloadCount: 4,
+    }))
+    expect(get).not.toHaveBeenCalled()
+    expect(store.vmsFor('peer-down')).toEqual([])
+    expect(store.errorFor('peer-down')).toBeNull()
+  })
+
+  test('a failed member fetch keeps the previous list and records the error', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running' })]
+    const get = mock()
+      .mockResolvedValueOnce({ data: listed })
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    api.get = get as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    await store.fetchFor(peer)
+    expect(store.vmsFor('peer-1')).toHaveLength(1)
+    expect(store.errorFor('peer-1')).toBeTruthy()
+  })
+})
