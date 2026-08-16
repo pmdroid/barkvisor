@@ -1,11 +1,12 @@
 import BarkVisorCore
 import Foundation
+import GRDB
 import Vapor
 
-/// Home device registry + member proxy (PAS-34).
+/// Home device registry + member proxy (PAS-34) and aggregated health (PAS-52).
 ///
-/// JWT on 7777. Listing is local-only. Proxying a member uses mTLS on
-/// the agent port; this Device stays up if the member does not (PAS-47).
+/// JWT on 7777. Listing is local-only. Health best-effort probes members
+/// over mTLS; this Device stays in the report if a peer is down (PAS-47).
 struct HomeDevicesController: RouteCollection {
     var devices: DeviceRegistry?
     var mtlsClient: (any HomeDeviceProxyClient)?
@@ -13,6 +14,9 @@ struct HomeDevicesController: RouteCollection {
     var dataDir: URL
     var hostId: String
     var localPort: Int
+    var vmManager: VMManager?
+    var healthProbes: HealthProbeService?
+    var localFacts: (@Sendable () async -> HomeDeviceLiveFacts)?
 
     init(
         dataDir: URL = Config.dataDir,
@@ -21,6 +25,9 @@ struct HomeDevicesController: RouteCollection {
         devices: DeviceRegistry? = nil,
         mtlsClient: (any HomeDeviceProxyClient)? = nil,
         localClient: any HomeDeviceProxyClient = LocalHostProxyClient(),
+        vmManager: VMManager? = nil,
+        healthProbes: HealthProbeService? = nil,
+        localFacts: (@Sendable () async -> HomeDeviceLiveFacts)? = nil,
     ) {
         self.dataDir = dataDir
         self.hostId = hostId
@@ -28,10 +35,14 @@ struct HomeDevicesController: RouteCollection {
         self.devices = devices
         self.mtlsClient = mtlsClient
         self.localClient = localClient
+        self.vmManager = vmManager
+        self.healthProbes = healthProbes
+        self.localFacts = localFacts
     }
 
     func boot(routes: any RoutesBuilder) throws {
         let home = routes.grouped("api", "home")
+        home.get("devices", "health", use: health)
         home.get("devices", use: list)
         for method in [HTTPMethod.GET, .POST, .PUT, .PATCH, .DELETE] {
             home.on(method, "devices", ":id", "v1", "**", use: proxy)
@@ -41,7 +52,44 @@ struct HomeDevicesController: RouteCollection {
     @Sendable
     func list(req: Vapor.Request) throws -> HomeDeviceList {
         _ = try req.requireUser
-        return HomeDeviceDirectory.list(
+        return listedDevices()
+    }
+
+    @Sendable
+    func health(req: Vapor.Request) async throws -> HomeDeviceHealthReport {
+        _ = try req.requireUser
+        return await healthReport(
+            listed: listedDevices(),
+            local: resolvedLocalFacts(db: req.db),
+            bearer: req.headers.bearerAuthorization?.token,
+        )
+    }
+
+    /// Probe members in parallel and merge with local facts. Extracted so
+    /// tests can cover URL construction, bearer forwarding, and HTTP mapping
+    /// without constructing a Vapor `Request`.
+    func healthReport(
+        listed: HomeDeviceList,
+        local: HomeDeviceLiveFacts,
+        bearer: String?,
+    ) async -> HomeDeviceHealthReport {
+        let members = listed.devices.filter { $0.role != "self" }
+        var probed: [String: HomeDeviceProbeOutcome] = [:]
+        await withTaskGroup(of: (String, HomeDeviceProbeOutcome).self) { group in
+            for device in members {
+                group.addTask {
+                    await (device.hostId, self.probeMember(device, bearer: bearer))
+                }
+            }
+            for await (id, result) in group {
+                probed[id] = result
+            }
+        }
+        return HomeDeviceHealthAggregator.report(listed: listed, local: local, members: probed)
+    }
+
+    private func listedDevices() -> HomeDeviceList {
+        HomeDeviceDirectory.list(
             dataDir: dataDir,
             hostId: hostId,
             displayName: ProcessInfo.processInfo.hostName,
@@ -146,6 +194,146 @@ struct HomeDevicesController: RouteCollection {
     static func collectedBody(_ req: Vapor.Request) async throws -> Data? {
         let buffer = try await req.body.collect(max: HomeDeviceProxy.maxBodyBytes).get()
         return buffer.map { Data($0.readableBytesView) }
+    }
+
+    func resolvedLocalFacts(db: DatabasePool) async -> HomeDeviceLiveFacts {
+        if let localFacts {
+            return await localFacts()
+        }
+        let slice = HostInventoryService.metricsSlice(dataDir: dataDir, hostId: hostId)
+        var summary: WorkloadHealthSummary?
+        if let vmManager {
+            do {
+                summary = try await Self.localHealthSummary(
+                    db: db, vmManager: vmManager, healthProbes: healthProbes,
+                )
+            } catch {
+                // Leave counts unknown. A DB/projection failure must not
+                // invent 0 workloads on a reachable Device.
+                summary = nil
+            }
+        }
+        return HomeDeviceLiveFacts(
+            displayName: ProcessInfo.processInfo.hostName,
+            collectedAt: slice.collectedAt,
+            platform: HomeDevicePlatformSummary(
+                os: PlatformHost.platformName,
+                arch: PlatformCapabilities.hostArch,
+            ),
+            resources: HomeDeviceResourceSummary(
+                cpuCount: slice.resources.cpuCount,
+                memoryTotalMB: slice.resources.memoryTotalMB,
+                memoryUsedMB: slice.resources.memoryUsedMB,
+                cpuLoadPercent: slice.resources.cpuLoadPercent,
+            ),
+            workloadCount: summary.map(\.items.count),
+            healthCounts: summary?.counts,
+        )
+    }
+
+    static func localHealthSummary(
+        db: DatabasePool,
+        vmManager: VMManager,
+        healthProbes: HealthProbeService?,
+    ) async throws -> WorkloadHealthSummary {
+        let vms = try await db.read { try VM.fetchAll($0) }
+        let lastSeen = try await GuestHealthStore.lastSeen(ids: vms.map(\.id), db: db)
+        var items: [WorkloadHealthSummaryItem] = []
+        items.reserveCapacity(vms.count)
+        for vm in vms {
+            let probes = if let healthProbes {
+                await healthProbes.results(for: vm)
+            } else {
+                HealthProbeResults()
+            }
+            let signals = await vmManager.healthSignals(
+                for: vm, lastSeenAt: lastSeen[vm.id], probes: probes,
+            )
+            let status = WorkloadHealthProjector.project(
+                state: VMState.parse(vm.state),
+                signals: signals,
+                updatedAt: vm.updatedAt,
+            )
+            items.append(
+                WorkloadHealthSummaryItem(
+                    id: vm.id,
+                    name: vm.name,
+                    kind: "vm",
+                    health: status.health,
+                    lastError: status.lastError,
+                ),
+            )
+        }
+        return WorkloadHealthProjector.summarize(
+            items: items,
+            updatedAt: iso8601.string(from: Date()),
+        )
+    }
+
+    func probeMember(
+        _ device: HomeDevice,
+        bearer: String?,
+    ) async -> HomeDeviceProbeOutcome {
+        guard let agentHost = device.agentHost, !agentHost.isEmpty else {
+            return .unreachable("Device has no reachable address")
+        }
+        let client: any HomeDeviceProxyClient
+        if let mtlsClient {
+            client = mtlsClient
+        } else {
+            do {
+                client = try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
+            } catch {
+                return .unreachable("This Device cannot reach members yet; local runtime continues")
+            }
+        }
+        let inventoryURL: URL
+        let summaryURL: URL
+        do {
+            inventoryURL = try HomeDeviceProxy.memberURL(
+                host: agentHost, port: device.agentPort, path: "/api/agent/inventory",
+            )
+            summaryURL = try HomeDeviceProxy.memberURL(
+                host: agentHost, port: device.agentPort, path: "/api/workloads/health-summary",
+            )
+        } catch {
+            return .unreachable("Device address is not reachable")
+        }
+        do {
+            let inventoryData = try await getJSON(url: inventoryURL, client: client, bearer: bearer)
+            let inventory = try HomeDeviceHealthAggregator.decodeInventory(inventoryData)
+            let summary: WorkloadHealthSummary? = if let summaryData = try? await getJSON(url: summaryURL, client: client, bearer: bearer) {
+                try? HomeDeviceHealthAggregator.decodeHealthSummary(summaryData)
+            } else {
+                nil
+            }
+            return .ok(HomeDeviceHealthAggregator.facts(from: inventory, summary: summary))
+        } catch let error as HomeDeviceProxyError {
+            return .unreachable(error.localizedDescription)
+        } catch {
+            return .unreachable("Device is unreachable: \(error.localizedDescription)")
+        }
+    }
+
+    private func getJSON(
+        url: URL,
+        client: any HomeDeviceProxyClient,
+        bearer: String?,
+    ) async throws -> Data {
+        var headers: [(String, String)] = [
+            ("Accept", "application/json"),
+            (APIContract.versionHeaderName, String(APIContract.version)),
+        ]
+        if let bearer {
+            headers.append(("Authorization", "Bearer \(bearer)"))
+        }
+        let result = try await client.send(
+            HomeDeviceProxyRequest(method: "GET", url: url, headers: headers, body: nil),
+        )
+        guard (200 ..< 300).contains(result.status) else {
+            throw HomeDeviceProxyError.unreachable("member returned HTTP \(result.status)")
+        }
+        return result.body
     }
 
     static func response(from result: HomeDeviceProxyResponse) -> Response {

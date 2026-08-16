@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import api from '../api/client'
 import type { APIKeyResponse, AuditEntry, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
 import { useToastStore } from '../stores/toast'
@@ -21,6 +22,7 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 
+const route = useRoute()
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
 const inAppUpdate = useFeature('inAppUpdate')
@@ -409,6 +411,7 @@ function resetUpdateState() {
 
 onMounted(() => {
   fetchKeys()
+  if (route.query.tab === 'home') openHomeTab()
 })
 
 onUnmounted(() => {

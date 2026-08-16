@@ -661,8 +661,7 @@ export interface NetworkModeCapability {
  *
  * Describes the **current host** (the process serving the SPA) — a projection
  * of server-side HostInventory. The SPA calls that machine a Device (PAS-97).
- * Multi-host UI will select a device inventory; until then there is only one
- * host (this process). Prefer these fields over hardcoding platform assumptions.
+ * Create-VM still uses this process. Home-wide health is GET /api/home/devices/health.
  */
 export interface SystemCapabilities {
   platform: 'macOS' | 'Linux' | string
@@ -695,3 +694,48 @@ export interface SystemCapabilities {
 
 /** Alias: capabilities for the host running this BarkVisor process. */
 export type CurrentHostCapabilities = SystemCapabilities
+
+export type HomeDeviceRole = 'self' | 'member'
+export type HomeDeviceReachability = 'ok' | 'unreachable'
+
+export interface HomeDevicePlatformSummary {
+  os: string
+  arch: string
+}
+
+export interface HomeDeviceResourceSummary {
+  cpuCount?: number | null
+  memoryTotalMB?: number | null
+  memoryUsedMB?: number | null
+  cpuLoadPercent?: number | null
+}
+
+export interface HomeDeviceHealthSnapshot {
+  hostId: string
+  role: HomeDeviceRole | string
+  displayName?: string | null
+  fingerprint?: string | null
+  agentHost?: string | null
+  agentPort: number
+  pairedAt?: string | null
+  reachability: HomeDeviceReachability | string
+  reachabilityError?: string | null
+  collectedAt?: string | null
+  platform?: HomeDevicePlatformSummary | null
+  resources?: HomeDeviceResourceSummary | null
+  workloadCount?: number | null
+  healthCounts?: Record<string, number> | null
+}
+
+export interface HomeDeviceHealthTotals {
+  devices: number
+  reachable: number
+  unreachable: number
+  workloadCount: number | null
+  healthCounts: Record<string, number>
+}
+
+export interface HomeDeviceHealthReport {
+  devices: HomeDeviceHealthSnapshot[]
+  totals: HomeDeviceHealthTotals
+}
