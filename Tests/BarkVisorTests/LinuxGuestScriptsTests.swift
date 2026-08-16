@@ -346,4 +346,133 @@ struct LinuxGuestScriptsTests {
         #expect(app.contains("var code: String"))
         #expect(app.contains("LocalPairingJoin.post"))
     }
+
+    @Test func `guest-boot CI helper probes kvm and skips without it`() throws {
+        let path = repoRoot.appendingPathComponent("scripts/ci-guest-boot.sh").path
+        #expect(FileManager.default.fileExists(atPath: path))
+        #expect(FileManager.default.isExecutableFile(atPath: path))
+
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        for needle in [
+            "guest-boot-bdd.sh",
+            "REQUIRE_KVM",
+            "CI_FORCE_NO_KVM",
+            "/dev/kvm",
+            "SKIP: /dev/kvm",
+            "docs/ci-kvm-runner.md",
+            "Workload",
+        ] {
+            #expect(body.contains(needle), "CI helper should reference \(needle)")
+        }
+        #expect(!body.localizedCaseInsensitiveContains("cluster"))
+        #expect(!body.localizedCaseInsensitiveContains("quorum"))
+
+        func run(args: [String], extraEnv: [String: String] = [:]) throws -> (Int32, String) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [path] + args
+            proc.currentDirectoryURL = repoRoot
+            var env = ProcessInfo.processInfo.environment
+            extraEnv.forEach { env[$0.key] = $0.value }
+            proc.environment = env
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        let dry = try run(args: [], extraEnv: ["DRY_RUN": "1"])
+        #expect(dry.0 == 0, "DRY_RUN exit \(dry.0): \(dry.1)")
+        #expect(dry.1.contains("DRY_RUN OK"))
+
+        let skipEnv = ["CI_FORCE_NO_KVM": "1"]
+        let probed = try run(args: ["probe"], extraEnv: skipEnv)
+        #expect(probed.0 == 0, "probe skip exit \(probed.0): \(probed.1)")
+        #expect(probed.1.contains("kvm=no"))
+
+        let skipped = try run(args: ["blank"], extraEnv: skipEnv)
+        #expect(skipped.0 == 0, "blank skip exit \(skipped.0): \(skipped.1)")
+        #expect(skipped.1.contains("SKIP: /dev/kvm is not usable"))
+
+        let required = try run(args: ["probe"], extraEnv: [
+            "CI_FORCE_NO_KVM": "1",
+            "REQUIRE_KVM": "1",
+        ])
+        #expect(required.0 != 0, "REQUIRE_KVM probe should fail without kvm: \(required.1)")
+        #expect(required.1.contains("docs/ci-kvm-runner.md"))
+    }
+
+    @Test func `guest-boot workflow is optional and does not change required CI`() throws {
+        let workflow = try String(
+            contentsOf: repoRoot.appendingPathComponent(".github/workflows/guest-boot.yml"),
+            encoding: .utf8,
+        )
+        for needle in [
+            "name: Guest Boot",
+            "ubuntu-24.04",
+            "/dev/kvm",
+            "KVM_RUNNER_ENABLED",
+            "self-hosted, linux, kvm",
+            "run-guest-boot",
+            "cron:",
+            "upload-artifact",
+            "ci-guest-boot.sh",
+            "NEVER a required status check",
+            "guest-boot-bdd.sh",
+        ] {
+            #expect(workflow.contains(needle), "guest-boot.yml should mention \(needle)")
+        }
+        #expect(workflow.contains("if: vars.KVM_RUNNER_ENABLED == 'true'"))
+        #expect(!workflow.localizedCaseInsensitiveContains("cluster"))
+        #expect(!workflow.localizedCaseInsensitiveContains("quorum"))
+
+        let ci = try String(
+            contentsOf: repoRoot.appendingPathComponent(".github/workflows/ci.yml"),
+            encoding: .utf8,
+        )
+        #expect(ci.contains("name: Lint & Format"))
+        #expect(ci.contains("name: Build"))
+        #expect(ci.contains("name: Test"))
+        #expect(ci.contains("name: Linux Build"))
+        #expect(!ci.contains("guest-boot"))
+        #expect(!ci.contains("KVM_RUNNER_ENABLED"))
+        #expect(!ci.contains("linux-guest-smoke"))
+
+        let docs = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/ci-kvm-runner.md"),
+            encoding: .utf8,
+        )
+        for needle in [
+            "KVM_RUNNER_ENABLED",
+            "self-hosted",
+            "linux",
+            "kvm",
+            "/dev/kvm",
+            "run-guest-boot",
+            "never a required",
+            "Device",
+            "Workload",
+            "Home",
+            "install-swift-linux.sh",
+        ] {
+            #expect(docs.contains(needle), "ci-kvm-runner.md should mention \(needle)")
+        }
+        #expect(!docs.localizedCaseInsensitiveContains("cluster"))
+        #expect(!docs.localizedCaseInsensitiveContains("quorum"))
+
+        let mise = try String(
+            contentsOf: repoRoot.appendingPathComponent("mise.toml"),
+            encoding: .utf8,
+        )
+        let start = try #require(mise.range(of: "[tasks.prepush]\n"))
+        let after = mise[start.upperBound...]
+        let nextHeader = after.range(of: "\n[tasks.")
+        let prepushBlock = nextHeader.map { after[..<$0.lowerBound] } ?? after[...]
+        #expect(!String(prepushBlock).contains("guest-smoke"))
+        #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
+        #expect(!mise.contains("depends = [\"lint\", \"test\", \"frontend-test\", \"guest-smoke\"]"))
+    }
 }

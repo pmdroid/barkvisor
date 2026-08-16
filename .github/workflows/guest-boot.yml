@@ -1,0 +1,263 @@
+# Guest-boot CI (PAS-186). Optional — NEVER a required status check.
+#
+# Tier 1: ubuntu-24.04 probes /dev/kvm, then runs blank guest-smoke if
+# usable, otherwise skips (exit 0). No TCG fallback — TCG REAL_GUEST can
+# take ~15 minutes and must not add PR latency.
+#
+# REAL_GUEST (cloud image + SSH) runs only on:
+#   - schedule (nightly, default branch)
+#   - pull_request labeled run-guest-boot
+#   - workflow_dispatch with real_guest=true
+#
+# Tier 2: runs-on [self-hosted, linux, kvm], gated by repo variable
+# KVM_RUNNER_ENABLED. The job-level if: does not use matrix, so a missing
+# runner never hangs a PR when the variable is unset.
+#
+# Required ci.yml jobs (lint / build / test / linux-build) are untouched.
+name: Guest Boot
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly REAL_GUEST. GitHub only runs schedule on the default branch.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      real_guest:
+        description: "Run REAL_GUEST cloud-image + SSH smoke"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guest-boot-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hosted:
+    name: Hosted ${{ matrix.scenario }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.scenario == 'real' && 60 || 30 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [blank, real]
+    env:
+      BARKVISOR_DATA_DIR: ${{ runner.temp }}/barkvisor-guest-smoke
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Gate REAL_GUEST to nightly, label, or dispatch
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REAL_INPUT: ${{ inputs.real_guest }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          if [ "$SCENARIO" = "blank" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REAL_INPUT" = "true" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case ",$PR_LABELS," in
+            *,run-guest-boot,*)
+              echo "run=yes" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          echo "run=no" >> "$GITHUB_OUTPUT"
+          echo "SKIP: REAL_GUEST only runs nightly, with label run-guest-boot, or workflow_dispatch real_guest"
+
+      - name: Probe /dev/kvm
+        if: steps.gate.outputs.run == 'yes'
+        id: kvm
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci-guest-boot.sh scripts/guest-boot-bdd.sh \
+            scripts/linux-guest-smoke.sh scripts/linux-real-guest-smoke.sh
+          ./scripts/ci-guest-boot.sh probe | tee /tmp/kvm-probe.txt
+          grep -E '^kvm=' /tmp/kvm-probe.txt >> "$GITHUB_OUTPUT"
+
+      - name: Skip without KVM
+        if: steps.gate.outputs.run == 'yes' && steps.kvm.outputs.kvm != 'yes'
+        run: |
+          echo "SKIP: /dev/kvm is not usable on this ubuntu-24.04 runner"
+          echo "Guest-boot is optional and is not a required check."
+
+      - name: Install QEMU + firmware
+        if: steps.gate.outputs.run == 'yes' && steps.kvm.outputs.kvm == 'yes'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            curl ca-certificates binutils \
+            libcurl4-openssl-dev libxml2-dev libsqlite3-dev libncurses-dev \
+            zlib1g-dev libzstd-dev libedit-dev uuid-dev pkg-config \
+            qemu-system-x86 qemu-system-arm qemu-utils ovmf \
+            genisoimage jq python3
+
+      - name: Install Swift 6.2.3
+        if: steps.gate.outputs.run == 'yes' && steps.kvm.outputs.kvm == 'yes'
+        run: |
+          set -euo pipefail
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "x86_64" ]; then
+            URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04.tar.gz"
+          else
+            URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404-aarch64/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04-aarch64.tar.gz"
+          fi
+          curl -fL "$URL" -o /tmp/swift.tar.gz
+          sudo mkdir -p /opt/swift
+          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
+          echo /opt/swift/usr/bin >> "$GITHUB_PATH"
+          /opt/swift/usr/bin/swift --version
+
+      - name: Run guest-boot smoke
+        if: steps.gate.outputs.run == 'yes' && steps.kvm.outputs.kvm == 'yes'
+        run: |
+          set -euo pipefail
+          mkdir -p "$BARKVISOR_DATA_DIR"
+          ./scripts/ci-guest-boot.sh "${{ matrix.scenario }}"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: guest-boot-hosted-${{ matrix.scenario }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/barkvisor-guest-smoke/server.log
+            ${{ runner.temp }}/barkvisor-guest-smoke/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Job-level if: is only the repo variable — never matrix — so an absent
+  # self-hosted runner cannot block PRs when KVM_RUNNER_ENABLED is unset.
+  self-hosted-blank:
+    name: Self-hosted blank
+    if: vars.KVM_RUNNER_ENABLED == 'true'
+    runs-on: [self-hosted, linux, kvm]
+    timeout-minutes: 30
+    env:
+      BARKVISOR_DATA_DIR: ${{ runner.temp }}/barkvisor-guest-smoke
+      REQUIRE_KVM: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Probe /dev/kvm
+        id: kvm
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci-guest-boot.sh scripts/guest-boot-bdd.sh \
+            scripts/linux-guest-smoke.sh scripts/linux-real-guest-smoke.sh
+          ./scripts/ci-guest-boot.sh probe | tee /tmp/kvm-probe.txt
+          grep -E '^kvm=' /tmp/kvm-probe.txt >> "$GITHUB_OUTPUT"
+
+      - name: Ensure QEMU + Swift
+        run: |
+          set -euo pipefail
+          if ! command -v qemu-system-x86_64 >/dev/null 2>&1 \
+            && ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
+            echo "error: qemu-system-* missing on self-hosted runner" >&2
+            echo "See docs/ci-kvm-runner.md" >&2
+            exit 1
+          fi
+          command -v jq >/dev/null 2>&1 || { echo "error: jq is required" >&2; exit 1; }
+          command -v python3 >/dev/null 2>&1 || { echo "error: python3 is required" >&2; exit 1; }
+          if ! command -v swift >/dev/null 2>&1; then
+            ./scripts/install-swift-linux.sh
+            echo /opt/swift/usr/bin >> "$GITHUB_PATH"
+          fi
+          swift --version
+
+      - name: Run blank guest-boot smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "$BARKVISOR_DATA_DIR"
+          ./scripts/ci-guest-boot.sh blank
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: guest-boot-self-hosted-blank-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/barkvisor-guest-smoke/server.log
+            ${{ runner.temp }}/barkvisor-guest-smoke/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  self-hosted-real:
+    name: Self-hosted REAL_GUEST
+    if: >-
+      vars.KVM_RUNNER_ENABLED == 'true'
+      && (
+        github.event_name == 'schedule'
+        || (github.event_name == 'workflow_dispatch' && inputs.real_guest)
+        || (
+          github.event_name == 'pull_request'
+          && contains(join(github.event.pull_request.labels.*.name, ','), 'run-guest-boot')
+        )
+      )
+    runs-on: [self-hosted, linux, kvm]
+    timeout-minutes: 60
+    env:
+      BARKVISOR_DATA_DIR: ${{ runner.temp }}/barkvisor-guest-smoke
+      REQUIRE_KVM: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Probe /dev/kvm
+        id: kvm
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci-guest-boot.sh scripts/guest-boot-bdd.sh \
+            scripts/linux-guest-smoke.sh scripts/linux-real-guest-smoke.sh
+          ./scripts/ci-guest-boot.sh probe | tee /tmp/kvm-probe.txt
+          grep -E '^kvm=' /tmp/kvm-probe.txt >> "$GITHUB_OUTPUT"
+
+      - name: Ensure QEMU + Swift
+        run: |
+          set -euo pipefail
+          if ! command -v qemu-system-x86_64 >/dev/null 2>&1 \
+            && ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
+            echo "error: qemu-system-* missing on self-hosted runner" >&2
+            echo "See docs/ci-kvm-runner.md" >&2
+            exit 1
+          fi
+          command -v jq >/dev/null 2>&1 || { echo "error: jq is required" >&2; exit 1; }
+          command -v python3 >/dev/null 2>&1 || { echo "error: python3 is required" >&2; exit 1; }
+          if ! command -v swift >/dev/null 2>&1; then
+            ./scripts/install-swift-linux.sh
+            echo /opt/swift/usr/bin >> "$GITHUB_PATH"
+          fi
+          swift --version
+
+      - name: Run REAL_GUEST smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "$BARKVISOR_DATA_DIR"
+          ./scripts/ci-guest-boot.sh real
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: guest-boot-self-hosted-real-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/barkvisor-guest-smoke/server.log
+            ${{ runner.temp }}/barkvisor-guest-smoke/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14

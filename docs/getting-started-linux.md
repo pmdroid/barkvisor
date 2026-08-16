@@ -339,3 +339,7 @@ mise run guest-smoke-real   # Ubuntu cloud image + SSH
 Expect **minutes on KVM**, or **up to ~15 minutes on TCG**. If
 `qemu-system-*` is missing the mapper skips with a clear message. See
 [Development — Guest-boot BDD](getting-started-development.md#guest-boot-bdd-opt-in-not-prepush).
+
+Optional GitHub Actions guest-boot lanes probe `/dev/kvm` on
+`ubuntu-24.04` and can use a self-hosted `linux`/`kvm` runner. They are
+**never a required check**. See [Guest-boot CI](ci-kvm-runner.md).
