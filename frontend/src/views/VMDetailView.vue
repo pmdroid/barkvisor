@@ -420,7 +420,13 @@ async function loadMemberDetail() {
       pollInterval = window.setInterval(() => {
         const current = devicesStore.deviceByHostId(hostId.value)
         if (current && canFetchDeviceWorkloads(current)) {
-          homeWorkloads.refreshOne(current, vmId.value).catch(() => {})
+          homeWorkloads.refreshOne(current, vmId.value).catch((e) => {
+            if (loadVersion !== detailLoadVersion) return
+            if (!isNotFoundError(e)) return
+            homeWorkloads.removeOne(current.hostId, vmId.value)
+            memberLoadError.value = apiErrorMessage(e)
+            stopRealtimeSync()
+          })
         }
       }, 15000)
     }
