@@ -1,5 +1,6 @@
 import AsyncHTTPClient
 import Foundation
+import GRDB
 import NIOPosix
 import NIOSSL
 import Testing
@@ -208,6 +209,70 @@ struct AgentTLSServerTests {
         } catch {
             await issuerServer.stop()
             await joinerServer.stop()
+            throw error
+        }
+    }
+
+    @Test func `streams Library image bytes on the agent plane`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let material = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        let pins = PeerPinStore(dataDir: dir)
+
+        let pool = try DatabasePool(path: dir.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let payload = Data("agent-plane-bytes".utf8)
+        let file = dir.appendingPathComponent("cloud.img")
+        try payload.write(to: file)
+        let digest = try ImageFileChecksum.sha256Hex(ofFile: file)
+        let now = "2026-01-01T00:00:00Z"
+        try await pool.write { db in
+            try VMImage(
+                id: "img-stream", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: file.path, sizeBytes: Int64(payload.count), status: "ready", error: nil,
+                sourceUrl: "https://example.com/cloud.img", sha256: digest,
+                createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+
+        let server = AgentTLSServer(
+            material: material,
+            pins: pins,
+            hostname: "127.0.0.1",
+            port: 0,
+            database: pool,
+        )
+        try await server.start()
+        do {
+            let port = try #require(server.boundPort)
+            let client = AgentMTLSClient(material: material, timeoutSeconds: 5)
+            let listURL = try HomeDeviceProxy.memberURL(
+                host: "127.0.0.1",
+                port: port,
+                path: LibraryDepotHTTP.listPath,
+                query: "sourceUrl=https://example.com/cloud.img",
+            )
+            let listed = try await client.send(HomeDeviceProxyRequest(method: "GET", url: listURL))
+            #expect((200 ... 299).contains(listed.status))
+            let infos = try JSONDecoder().decode([LibraryDepotImageInfo].self, from: listed.body)
+            #expect(infos.count == 1)
+            #expect(infos[0].id == "img-stream")
+            #expect(infos[0].sha256 == digest)
+
+            let dest = dir.appendingPathComponent("copied.img")
+            let contentURL = try HomeDeviceProxy.memberURL(
+                host: "127.0.0.1",
+                port: port,
+                path: LibraryDepotHTTP.contentPath(id: "img-stream"),
+            )
+            let streamed = try await client.streamGet(url: contentURL, to: dest)
+            #expect(streamed.status == 200)
+            #expect(streamed.sha256 == digest)
+            #expect(try Data(contentsOf: dest) == payload)
+            await server.stop()
+        } catch {
+            await server.stop()
             throw error
         }
     }

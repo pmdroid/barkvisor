@@ -16,6 +16,8 @@ import {
   revokePairingCode,
   type PairingIssue,
 } from '../api/pairing'
+import { useDevicesStore } from '../stores/devices'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
@@ -48,6 +50,8 @@ async function loadPairingCode() {
 function openHomeTab() {
   tab.value = 'home'
   loadPairingCode()
+  fetchLibrarySettings()
+  devicesStore.fetchHealth()
 }
 
 async function addDevice() {
@@ -124,13 +128,32 @@ function openUpdatesTab() {
 function openLibraryTab() {
   tab.value = 'library'
   fetchLibrarySettings()
+  devicesStore.fetchHealth()
 }
 
-const librarySettings = ref<LibrarySettings>({ imageDirectory: '', isDefault: true })
+const devicesStore = useDevicesStore()
+const librarySettings = ref<LibrarySettings>({
+  imageDirectory: '',
+  isDefault: true,
+  libraryDepotHostId: null,
+})
 const libraryDraft = ref('')
 const libraryLoading = ref(false)
 const librarySaving = ref(false)
 const showLibraryPicker = ref(false)
+const depotDraft = ref('')
+const depotSaving = ref(false)
+
+const depotOptions = computed(() => {
+  const none = { value: '', label: 'None — download from the internet' }
+  const devices = devicesStore.devices.map((device) => {
+    const name = deviceDisplayLabel(device)
+    const self = device.role === 'self' ? ` (this ${DEVICE_LABEL})` : ''
+    const reach = device.reachability === 'ok' ? '' : ' — unreachable'
+    return { value: device.hostId, label: `${name}${self}${reach}` }
+  })
+  return [none, ...devices]
+})
 
 async function fetchLibrarySettings() {
   libraryLoading.value = true
@@ -138,6 +161,7 @@ async function fetchLibrarySettings() {
     const { data } = await api.get<LibrarySettings>('/system/library/settings')
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
+    depotDraft.value = data.libraryDepotHostId ?? ''
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -153,6 +177,7 @@ async function saveLibrarySettings() {
     })
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
+    depotDraft.value = data.libraryDepotHostId ?? ''
     toast.success('Library path saved')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
@@ -169,11 +194,28 @@ async function resetLibrarySettings() {
     })
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
+    depotDraft.value = data.libraryDepotHostId ?? ''
     toast.success('Library path reset to the default')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
     librarySaving.value = false
+  }
+}
+
+async function saveDepotSettings() {
+  depotSaving.value = true
+  try {
+    const { data } = await api.put<LibrarySettings>('/system/library/settings', {
+      libraryDepotHostId: depotDraft.value,
+    })
+    librarySettings.value = data
+    depotDraft.value = data.libraryDepotHostId ?? ''
+    toast.success('Library depot saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    depotSaving.value = false
   }
 }
 
@@ -580,6 +622,36 @@ onUnmounted(() => {
           @click="rejoinThisDevice"
         >
           Re-pair this {{ DEVICE_LABEL }}
+        </AppButton>
+      </div>
+    </div>
+
+    <div class="pairing-card" style="margin-top:16px">
+      <p class="pairing-hint" style="text-align:left;margin:0 0 10px">
+        Fetch images from this {{ DEVICE_LABEL }} first. If that {{ DEVICE_LABEL }} is
+        down or the checksum does not match, this {{ DEVICE_LABEL }} downloads from
+        the internet. Starting a Workload on this {{ DEVICE_LABEL }} never waits on
+        the Library depot.
+      </p>
+      <div class="form-group" style="margin:0;text-align:left">
+        <label>Library depot</label>
+        <AppSelect
+          :modelValue="depotDraft"
+          :options="depotOptions"
+          :disabled="libraryLoading || depotSaving"
+          @update:modelValue="depotDraft = $event"
+        />
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <AppButton
+          size="sm"
+          variant="primary"
+          :loading="depotSaving"
+          loading-text="Saving..."
+          :disabled="libraryLoading"
+          @click="saveDepotSettings"
+        >
+          Save Library depot
         </AppButton>
       </div>
     </div>

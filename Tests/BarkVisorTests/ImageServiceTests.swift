@@ -103,4 +103,59 @@ final class ImageServiceTests {
         #expect(storedImage?.error != nil)
         #expect(storedUpload == nil)
     }
+
+    @Test func `concurrent catalog downloads share one row`() async throws {
+        let library = tmpDir.appendingPathComponent("library")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: library.path)
+                .save(db, onConflict: .replace)
+        }
+        let downloader = RecordingCatalogStartDownloader()
+        let source = "https://example.com/catalog-concurrent.img"
+        let sourceURL = try #require(URL(string: source))
+        let pool = dbPool
+
+        let repoImage = RepositoryImage(
+            id: "ri-concurrent", repositoryId: "repo-1", slug: "cloud",
+            name: "Cloud", description: nil, imageType: "cloud-image", arch: "arm64",
+            version: "1", downloadUrl: source, sizeBytes: nil,
+        )
+        let claims = try await withThrowingTaskGroup(of: CatalogDownloadClaim.self) { group in
+            for _ in 0 ..< 2 {
+                group.addTask {
+                    try await ImageService.startOrDetectCatalogDownload(
+                        repoImage: repoImage,
+                        sourceURL: sourceURL,
+                        checksum: nil,
+                        downloader: downloader,
+                        db: pool,
+                    )
+                }
+            }
+            var rows: [CatalogDownloadClaim] = []
+            for try await claim in group {
+                rows.append(claim)
+            }
+            return rows
+        }
+
+        #expect(claims.count == 2)
+        #expect(claims[0].image.id == claims[1].image.id)
+        #expect(claims[0].image.status == "downloading")
+        let count = try await dbPool.read { db in try VMImage.fetchCount(db) }
+        #expect(count == 1)
+        let started = await downloader.startedIDs
+        #expect(started == [claims[0].image.id])
+    }
+}
+
+private actor RecordingCatalogStartDownloader: ImageDownloadStarting {
+    private(set) var startedIDs: [String] = []
+
+    func start(
+        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+    ) {
+        startedIDs.append(imageID)
+    }
 }

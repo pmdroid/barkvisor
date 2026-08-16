@@ -1,6 +1,18 @@
 import Foundation
 import GRDB
 
+public enum CatalogDownloadClaim: Sendable {
+    case existing(VMImage)
+    case started(VMImage)
+
+    public var image: VMImage {
+        switch self {
+        case let .existing(image), let .started(image):
+            image
+        }
+    }
+}
+
 public struct ImageDownloadRequest: Sendable {
     public let name: String
     public let url: String
@@ -87,6 +99,56 @@ public enum ImageService {
         return image
     }
 
+    /// Insert a downloading Library row or reuse one already in flight for this
+    /// catalog URL. The ready/downloading check and insert run in one write so
+    /// concurrent catalog downloads share a single internet fetch.
+    public static func startOrDetectCatalogDownload(
+        repoImage: RepositoryImage,
+        sourceURL: URL,
+        checksum: ExpectedChecksum?,
+        downloader: any ImageDownloadStarting,
+        db: DatabasePool,
+    ) async throws -> CatalogDownloadClaim {
+        let imageId = UUID().uuidString
+        let ext = imageExtension(from: sourceURL.lastPathComponent, imageType: repoImage.imageType)
+        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        let destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
+
+        enum Action {
+            case existing(VMImage)
+            case startNew(VMImage)
+        }
+
+        let action: Action = try await db.write { db in
+            let rows = try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl).fetchAll(db)
+            if let ready = rows.first(where: { $0.status == "ready" }) {
+                return .existing(ready)
+            }
+            if let downloading = rows.first(where: { $0.status == "downloading" }) {
+                return .existing(downloading)
+            }
+            let now = iso8601.string(from: Date())
+            let image = VMImage(
+                id: imageId, name: repoImage.name, imageType: repoImage.imageType, arch: repoImage.arch,
+                path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                sourceUrl: repoImage.downloadUrl, createdAt: now, updatedAt: now,
+            )
+            try image.insert(db)
+            return .startNew(image)
+        }
+
+        switch action {
+        case let .existing(image):
+            return .existing(image)
+        case let .startNew(image):
+            await downloader.start(
+                imageID: image.id, url: sourceURL, destination: destination, expectedChecksum: checksum,
+            )
+            return .started(image)
+        }
+    }
+
     /// Finalize a completed tus upload: move chunk file to final location, decompress if needed, and update DB.
     public static func finalizeTusUpload(upload: TusUpload, db: DatabasePool) async throws {
         let image = try await db.read { database in
@@ -170,6 +232,13 @@ public enum ImageService {
     // MARK: - Compression Helpers
 
     private static let compressionExtensions = [".xz", ".gz", ".zst", ".bz2"]
+
+    /// Catalog checksums cover the compressed download; the depot stores the decompressed file.
+    static func isCompressedSource(_ sourceUrl: String) -> Bool {
+        let path = URL(string: sourceUrl)?.path ?? sourceUrl
+        let lower = path.lowercased()
+        return compressionExtensions.contains { lower.hasSuffix($0) }
+    }
 
     /// Derive the file extension from a filename, preserving compound extensions for compressed files.
     /// e.g. "manjaro.img.xz" → "img.xz", "ubuntu.qcow2.gz" → "qcow2.gz", "debian.iso" → "iso"

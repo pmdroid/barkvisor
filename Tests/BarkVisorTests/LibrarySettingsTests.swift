@@ -41,6 +41,20 @@ final class LibrarySettingsTests {
         #expect(!LibrarySettings.isDefault(resolved))
     }
 
+    @Test func `depot host id is stored in app_settings`() throws {
+        #expect(try dbPool.read { try LibrarySettings.resolvedDepotHostId(from: $0) } == nil)
+        try dbPool.write { db in
+            try AppSetting(key: LibrarySettings.libraryDepotHostIdKey, value: "depot-1")
+                .save(db, onConflict: .replace)
+        }
+        #expect(try dbPool.read { try LibrarySettings.resolvedDepotHostId(from: $0) } == "depot-1")
+        try dbPool.write { db in
+            try AppSetting(key: LibrarySettings.libraryDepotHostIdKey, value: "  ")
+                .save(db, onConflict: .replace)
+        }
+        #expect(try dbPool.read { try LibrarySettings.resolvedDepotHostId(from: $0) } == nil)
+    }
+
     @Test func `empty setting falls back to default`() throws {
         try dbPool.write { db in
             try AppSetting(key: LibrarySettings.imageDirectoryKey, value: "   ")

@@ -1,3 +1,8 @@
+#if canImport(CryptoKit)
+    import CryptoKit
+#else
+    import Crypto
+#endif
 import AsyncHTTPClient
 import BarkVisorCore
 import Foundation
@@ -5,6 +10,20 @@ import NIOCore
 import NIOHTTP1
 import NIOPosix
 import NIOSSL
+
+public struct LibraryDepotStreamResult: Sendable {
+    public var status: Int
+    public var headers: [(String, String)]
+    public var bytesWritten: Int64
+    public var sha256: String
+
+    public init(status: Int, headers: [(String, String)], bytesWritten: Int64, sha256: String) {
+        self.status = status
+        self.headers = headers
+        self.bytesWritten = bytesWritten
+        self.sha256 = sha256
+    }
+}
 
 /// mTLS HTTP client for member proxy (PAS-34).
 ///
@@ -52,6 +71,84 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         }
     }
 
+    /// Stream a GET onto disk. Used only for Library depot bytes (PAS-176).
+    /// Does not collect the body into the 10 MiB proxy buffer.
+    public func streamGet(
+        url: URL,
+        to destination: URL,
+        connectTimeoutSeconds: Int64 = 10,
+        readTimeoutSeconds: Int64 = 1_800,
+    ) async throws -> LibraryDepotStreamResult {
+        let client = try AgentMTLSRuntime.shared.client(
+            for: material,
+            presentationCertificatePEM: presentationCertificatePEM,
+            trustCertificatePEMs: trustCertificatePEMs,
+            timeoutSeconds: connectTimeoutSeconds,
+            readTimeoutSeconds: readTimeoutSeconds,
+        )
+        var outbound = HTTPClientRequest(url: url.absoluteString)
+        outbound.method = .GET
+        outbound.headers.replaceOrAdd(name: "Accept", value: "application/octet-stream")
+        outbound.headers.replaceOrAdd(
+            name: APIContract.versionHeaderName,
+            value: String(APIContract.version),
+        )
+        let response: HTTPClientResponse
+        do {
+            response = try await client.execute(outbound, timeout: .seconds(readTimeoutSeconds))
+        } catch {
+            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+        }
+        let headers = response.headers.map { ($0.name, $0.value) }
+        let status = Int(response.status.code)
+        guard status == 200 else {
+            _ = try? await collectProxyBody(response.body, maxBytes: 65_536)
+            return LibraryDepotStreamResult(
+                status: status, headers: headers, bytesWritten: 0, sha256: "",
+            )
+        }
+
+        let part = destination.appendingPathExtension("part")
+        if FileManager.default.fileExists(atPath: part.path) {
+            try FileManager.default.removeItem(at: part)
+        }
+        FileManager.default.createFile(atPath: part.path, contents: nil)
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forWritingTo: part)
+        } catch {
+            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+        }
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        var written: Int64 = 0
+        do {
+            for try await buffer in response.body {
+                let data = Data(buffer.readableBytesView)
+                try handle.write(contentsOf: data)
+                hasher.update(data: data)
+                written += Int64(data.count)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: part)
+            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+        }
+        let digest = hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        do {
+            try FileManager.default.moveItem(at: part, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: part)
+            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+        }
+        return LibraryDepotStreamResult(
+            status: status, headers: headers, bytesWritten: written, sha256: digest,
+        )
+    }
+
     private func execute(
         _ request: HomeDeviceProxyRequest,
         on client: HTTPClient,
@@ -94,10 +191,12 @@ private final class AgentMTLSRuntime: @unchecked Sendable {
         presentationCertificatePEM: String,
         trustCertificatePEMs: [String],
         timeoutSeconds: Int64,
+        readTimeoutSeconds: Int64? = nil,
     ) throws -> HTTPClient {
+        let readTimeout = readTimeoutSeconds ?? timeoutSeconds
         let trustKey = trustCertificatePEMs.map(\.count).map(String.init).joined(separator: ",")
         let key =
-            "\(material.caFingerprint)|\(presentationCertificatePEM.count)|\(trustKey)|\(timeoutSeconds)"
+            "\(material.caFingerprint)|\(presentationCertificatePEM.count)|\(trustKey)|\(timeoutSeconds)|\(readTimeout)"
         lock.lock()
         defer { lock.unlock() }
         if let existing = clients[key] {
@@ -108,6 +207,7 @@ private final class AgentMTLSRuntime: @unchecked Sendable {
             presentationCertificatePEM: presentationCertificatePEM,
             trustCertificatePEMs: trustCertificatePEMs,
             timeoutSeconds: timeoutSeconds,
+            readTimeoutSeconds: readTimeout,
         )
         clients[key] = created
         return created
@@ -118,6 +218,7 @@ private final class AgentMTLSRuntime: @unchecked Sendable {
         presentationCertificatePEM: String,
         trustCertificatePEMs: [String],
         timeoutSeconds: Int64,
+        readTimeoutSeconds: Int64,
     ) throws -> HTTPClient {
         let roots = try trustCertificatePEMs.map { pem in
             try NIOSSLCertificate(bytes: Array(pem.utf8), format: .pem)
@@ -140,7 +241,7 @@ private final class AgentMTLSRuntime: @unchecked Sendable {
         config.redirectConfiguration = .disallow
         config.timeout = HTTPClient.Configuration.Timeout(
             connect: .seconds(timeoutSeconds),
-            read: .seconds(timeoutSeconds),
+            read: .seconds(readTimeoutSeconds),
         )
         return HTTPClient(eventLoopGroupProvider: .shared(group), configuration: config)
     }
