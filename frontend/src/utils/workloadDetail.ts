@@ -41,3 +41,27 @@ export function localNetworkForDetail<T extends { id: string; isDefault?: boolea
 export function memberNetworkCaption(networkId: string | null | undefined): string {
   return networkId ? networkId : 'Unknown'
 }
+
+/** Member-restricted chrome only after role is known (or load settled with no self). */
+export function isMemberWorkloadDetail(input: {
+  hostId: string
+  role?: string | null
+  loadSettled?: boolean
+}): boolean {
+  if (!input.hostId) return false
+  if (input.role === 'self') return false
+  if (input.role) return true
+  return Boolean(input.loadSettled)
+}
+
+export type WorkloadDetailVmSource = 'local' | 'member' | 'pending'
+
+/** Until role is known, do not bind a cached VM — self hostId would look like a member. */
+export function workloadDetailVmSource(input: {
+  hostId: string
+  role?: string | null
+}): WorkloadDetailVmSource {
+  if (!input.hostId || input.role === 'self') return 'local'
+  if (input.role) return 'member'
+  return 'pending'
+}
