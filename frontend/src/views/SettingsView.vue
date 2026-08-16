@@ -3,7 +3,7 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/client'
-import type { APIKeyResponse, AuditEntry, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
+import type { APIKeyResponse, AuditEntry, LibrarySettings, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useTaskPoller } from '../composables/useTaskPoller'
@@ -18,6 +18,7 @@ import {
 } from '../api/pairing'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -28,7 +29,7 @@ const route = useRoute()
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
 const inAppUpdate = useFeature('inAppUpdate')
-const tab = ref<'home' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+const tab = ref<'home' | 'library' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
 
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
@@ -117,6 +118,62 @@ function openUpdatesTab() {
   if (inAppUpdate.available) {
     fetchUpdateSettings()
     checkForUpdates()
+  }
+}
+
+function openLibraryTab() {
+  tab.value = 'library'
+  fetchLibrarySettings()
+}
+
+const librarySettings = ref<LibrarySettings>({ imageDirectory: '', isDefault: true })
+const libraryDraft = ref('')
+const libraryLoading = ref(false)
+const librarySaving = ref(false)
+const showLibraryPicker = ref(false)
+
+async function fetchLibrarySettings() {
+  libraryLoading.value = true
+  try {
+    const { data } = await api.get<LibrarySettings>('/system/library/settings')
+    librarySettings.value = data
+    libraryDraft.value = data.imageDirectory
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    libraryLoading.value = false
+  }
+}
+
+async function saveLibrarySettings() {
+  librarySaving.value = true
+  try {
+    const { data } = await api.put<LibrarySettings>('/system/library/settings', {
+      imageDirectory: libraryDraft.value,
+    })
+    librarySettings.value = data
+    libraryDraft.value = data.imageDirectory
+    toast.success('Library path saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    librarySaving.value = false
+  }
+}
+
+async function resetLibrarySettings() {
+  librarySaving.value = true
+  try {
+    const { data } = await api.put<LibrarySettings>('/system/library/settings', {
+      imageDirectory: '',
+    })
+    librarySettings.value = data
+    libraryDraft.value = data.imageDirectory
+    toast.success('Library path reset to the default')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    librarySaving.value = false
   }
 }
 
@@ -449,6 +506,7 @@ onUnmounted(() => {
 
   <div class="tabs">
     <button :class="{ active: tab === 'home' }" @click="openHomeTab">{{ HOME_LABEL }}</button>
+    <button :class="{ active: tab === 'library' }" @click="openLibraryTab">Library</button>
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
@@ -697,6 +755,55 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
+  </div>
+
+  <!-- Library Tab -->
+  <div v-if="tab === 'library'">
+    <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0">
+      Directory used for <strong>new</strong> image downloads and uploads on this
+      {{ DEVICE_LABEL }}. Existing Library images are not migrated.
+    </p>
+    <div class="form-group" style="max-width:640px">
+      <label>Library path</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input
+          v-model="libraryDraft"
+          :disabled="libraryLoading || librarySaving"
+          placeholder="/var/lib/barkvisor/images"
+          style="flex:1"
+        />
+        <AppButton size="sm" :disabled="libraryLoading || librarySaving" @click="showLibraryPicker = true">
+          Browse
+        </AppButton>
+      </div>
+      <p style="color:var(--text-tertiary);font-size:12px;margin:8px 0 0 0">
+        {{ librarySettings.isDefault ? 'Using the default path on this Device.' : 'Using a custom Library path.' }}
+        Absolute path required. Must be writable by the daemon and must not contain a comma.
+      </p>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <AppButton
+        variant="primary"
+        :loading="librarySaving"
+        loading-text="Saving..."
+        :disabled="libraryLoading"
+        @click="saveLibrarySettings"
+      >
+        Save
+      </AppButton>
+      <AppButton
+        :disabled="libraryLoading || librarySaving || librarySettings.isDefault"
+        @click="resetLibrarySettings"
+      >
+        Reset to default
+      </AppButton>
+    </div>
+    <FolderPicker
+      v-if="showLibraryPicker"
+      :model-value="libraryDraft"
+      @update:model-value="libraryDraft = $event"
+      @close="showLibraryPicker = false"
+    />
   </div>
 
   <!-- Updates Tab -->

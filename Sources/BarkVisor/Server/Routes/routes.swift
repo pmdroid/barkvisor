@@ -110,6 +110,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             updateService: deps.updateService, backgroundTasks: deps.backgroundTasks,
         ),
     )
+    try protected.register(collection: LibrarySettingsController())
 
     try protected.register(
         collection: MetricsController(

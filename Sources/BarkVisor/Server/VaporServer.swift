@@ -44,6 +44,10 @@ public final class VaporServer: @unchecked Sendable {
 
         let database = try openDatabase()
         app.database = database
+        let libraryDir = try await database.pool.read { db in
+            try LibrarySettings.resolvedDirectory(from: db)
+        }
+        try Config.ensureDirectories(imagesDir: libraryDir)
         await LogService.shared.setDatabase(database.pool)
 
         if let warning = startupWarning {

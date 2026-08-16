@@ -31,6 +31,11 @@ struct ConfigTests {
         #expect(dbPath.path.hasSuffix("db.sqlite"))
     }
 
+    @Test func `default images dir is under data dir`() {
+        #expect(Config.imagesDir.path == Config.dataDir.appendingPathComponent("images").path)
+        #expect(LibrarySettings.defaultDirectory.path == Config.imagesDir.path)
+    }
+
     @Test func `backup retention days default`() {
         let days = Config.backupRetentionDays
         #expect(days > 0)
