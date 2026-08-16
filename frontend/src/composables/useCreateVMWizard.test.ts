@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import api from '../api/client'
-import type { HomeDeviceHealthReport, HomeDeviceHealthSnapshot, SSHKey } from '../api/types'
+import type { HomeDeviceHealthReport, HomeDeviceHealthSnapshot, Image, SSHKey } from '../api/types'
+import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { useDevicesStore } from '../stores/devices'
 import { useCreateVMWizard } from './useCreateVMWizard'
 
@@ -45,6 +46,32 @@ function sshKey(id: string): SSHKey {
   }
 }
 
+function readyImage(partial: Partial<Image> & Pick<Image, 'id' | 'name' | 'arch'>): Image {
+  return {
+    imageType: 'iso',
+    status: 'ready',
+    sizeBytes: 1,
+    sourceUrl: null,
+    error: null,
+    sha256: null,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...partial,
+  }
+}
+
+function seedLibraryImage(img: Image, hostIds: string[]): string {
+  const store = useHomeLibraryStore()
+  const key = homeImageKey(img)
+  store.images = [{
+    ...img,
+    libraryKey: key,
+    sourceHostIds: [...hostIds],
+    copies: hostIds.map((hostId) => ({ hostId, imageId: `${hostId}-${img.id}` })),
+  }]
+  return key
+}
+
 async function waitForCurrentInventory(
   wizard: ReturnType<typeof useCreateVMWizard>,
   hostId: string,
@@ -68,7 +95,7 @@ async function waitForCurrentInventory(
 function inventoryGet(hostId: string, url: string) {
   const prefix = `/home/devices/${hostId}/v1`
   if (url === `${prefix}/system/capabilities`) {
-    return { data: { hostArch: hostId === 'alpha' ? 'x86_64' : 'arm64' } }
+    return { data: { hostArch: hostId === 'alpha' ? 'x86_64' : 'arm64', hostCpuCount: 4 } }
   }
   if (url === `${prefix}/ssh-keys`) {
     return { data: [sshKey(`key-${hostId}`)] }
@@ -79,7 +106,7 @@ function inventoryGet(hostId: string, url: string) {
   throw new Error(`unexpected GET ${url}`)
 }
 
-describe('useCreateVMWizard (PAS-34)', () => {
+describe('useCreateVMWizard (PAS-182)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     api.post = mock((url: string) => {
@@ -95,7 +122,28 @@ describe('useCreateVMWizard (PAS-34)', () => {
     api.post = originalPost
   })
 
-  test('picker uses the configured guest arch for every Device, not each row host arch', () => {
+  test('wizard order is Basics → Image → Place → Hardware before Drivers/Storage', () => {
+    const wizard = useCreateVMWizard(() => {})
+    expect(wizard.stepLabels.value.slice(0, 4)).toEqual(['Basics', 'Image', 'Place', 'Hardware'])
+    expect(wizard.stepLabels.value.slice(-3)).toEqual(['Storage', 'Network', 'Summary'])
+    expect(wizard.totalSteps.value).toBe(7)
+    wizard.selectOS('windows')
+    expect(wizard.stepLabels.value).toContain('Drivers')
+    expect(wizard.totalSteps.value).toBe(8)
+  })
+
+  test('step 1 has no Device picker requirement and Windows stays selectable', () => {
+    const wizard = useCreateVMWizard(() => {})
+    expect(wizard.currentStepLabel.value).toBe('Basics')
+    expect(wizard.canProceed()).toBe(false)
+    wizard.name.value = 'intent'
+    expect(wizard.canProceed()).toBe(true)
+    wizard.selectOS('windows')
+    expect(wizard.osType.value).toBe('windows')
+    expect(wizard.canProceed()).toBe(true)
+  })
+
+  test('no guest arch or placement lecture until an image is selected', () => {
     const devices = useDevicesStore()
     devices.report = report([
       device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
@@ -108,14 +156,64 @@ describe('useCreateVMWizard (PAS-34)', () => {
     ])
 
     const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    expect(wizard.effectiveGuestArch.value).toBe('')
+    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
+    expect(peer?.compatible).toBe(true)
+    expect(peer?.reasons.some((reason) => reason.includes('arm64'))).toBe(false)
+  })
+
+  test('selecting an image sets effectiveGuestArch and Place reasons from that arch', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'box',
+        role: 'member',
+        displayName: 'box',
+        platform: { os: 'Linux', arch: 'x86_64' },
+      }),
+    ])
+
+    const key = seedLibraryImage(
+      readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64' }),
+      ['desk', 'box'],
+    )
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    wizard.selectedImageId.value = key
     expect(wizard.effectiveGuestArch.value).toBe('arm64')
 
     const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
     expect(peer?.compatible).toBe(false)
     expect(peer?.reasons.some((reason) => reason.includes('arm64'))).toBe(true)
+    expect(peer?.reachable).toBe(true)
 
     const self = wizard.deviceOptions.value.find((row) => row.hostId === 'desk')
     expect(self?.compatible).toBe(true)
+  })
+
+  test('missing local copy is a Place reason and the Device stays pickable', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'box',
+        role: 'member',
+        displayName: 'box',
+        platform: { os: 'Linux', arch: 'arm64' },
+      }),
+    ])
+    const key = seedLibraryImage(readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64' }), ['desk'])
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    wizard.selectedImageId.value = key
+    wizard.step.value = 3
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'copy'
+    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
+    expect(peer?.reasons).toContain("Not in this Device's Library")
+    expect(peer?.reachable).toBe(true)
+    wizard.selectedHostId.value = 'box'
+    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.selectedDeviceIncompatibility()).toBe("Not in this Device's Library")
   })
 
   test('This Device stays selectable when placement recommends a foreign-arch member', () => {
@@ -135,7 +233,9 @@ describe('useCreateVMWizard (PAS-34)', () => {
       }),
     ])
 
+    const key = seedLibraryImage(readyImage({ id: 'iso-1', name: 'debian.iso', arch: 'x86_64' }), ['box', 'orb'])
     const wizard = useCreateVMWizard(() => {})
+    wizard.selectedImageId.value = key
     expect(wizard.effectiveGuestArch.value).toBe('x86_64')
 
     const self = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
@@ -145,6 +245,7 @@ describe('useCreateVMWizard (PAS-34)', () => {
     expect(peer?.reachable).toBe(true)
 
     wizard.pickedDeviceLoading.value = false
+    wizard.step.value = 3
     wizard.name.value = 'anyway'
     wizard.selectedHostId.value = 'orb'
     expect(wizard.canProceed()).toBe(true)
@@ -166,6 +267,7 @@ describe('useCreateVMWizard (PAS-34)', () => {
 
     const wizard = useCreateVMWizard(() => {})
     wizard.pickedDeviceLoading.value = false
+    wizard.step.value = 3
     wizard.name.value = 'anyway'
     wizard.selectedHostId.value = 'orb'
     const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'orb')
@@ -173,13 +275,37 @@ describe('useCreateVMWizard (PAS-34)', () => {
     expect(wizard.canProceed()).toBe(false)
   })
 
-  test('Next and submit stay blocked while the picked Device inventory is loading', async () => {
+  test('Basics Next is not blocked by Device inventory; Place is', async () => {
     const wizard = useCreateVMWizard(() => {})
     wizard.name.value = 'vm'
+    wizard.pickedDeviceLoading.value = true
+    expect(wizard.currentStepLabel.value).toBe('Basics')
+    expect(wizard.canProceed()).toBe(true)
+    wizard.step.value = 3
+    expect(wizard.currentStepLabel.value).toBe('Place')
     expect(wizard.canProceed()).toBe(false)
     await wizard.submit()
     expect(wizard.loading.value).toBe(false)
-    expect(wizard.error.value).toBe('')
+  })
+
+  test('Hardware CPU max follows pickedCaps, not this Device store', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'alpha', role: 'member', displayName: 'alpha' }),
+    ])
+    devices.report = health
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url.startsWith('/home/devices/alpha/')) return Promise.resolve(inventoryGet('alpha', url))
+      if (url === '/images' || url === '/ssh-keys') return Promise.resolve({ data: [] })
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'alpha' })
+    wizard.cpuCount.value = 8
+    await wizard.loadPickedDevice()
+    expect(wizard.hostCpuCount.value).toBe(4)
+    expect(wizard.cpuCount.value).toBeLessThanOrEqual(wizard.hostCpuCount.value)
   })
 
   test('a slower inventory fetch for an earlier Device does not overwrite the current pick', async () => {
@@ -266,7 +392,7 @@ describe('useCreateVMWizard (PAS-34)', () => {
     const get = mock((url: string) => {
       if (url === '/home/devices/health') return Promise.resolve({ data: health })
       if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
-        return Promise.resolve({ data: { hostArch: 'arm64' } })
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
       }
       if (
         url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
@@ -317,6 +443,7 @@ describe('useCreateVMWizard (PAS-34)', () => {
     await wizard.loadPickedDevice()
     expect(wizard.selectedHostId.value).toBe('desk')
     wizard.name.value = 'override-vm'
+    wizard.step.value = 3
     expect(wizard.canProceed()).toBe(true)
   })
 
@@ -330,7 +457,7 @@ describe('useCreateVMWizard (PAS-34)', () => {
     const get = mock((url: string) => {
       if (url === '/home/devices/health') return Promise.resolve({ data: health })
       if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
-        return Promise.resolve({ data: { hostArch: 'arm64' } })
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
       }
       if (
         url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
@@ -378,7 +505,7 @@ describe('useCreateVMWizard (PAS-34)', () => {
     expect(scoreBodies.some((body) => body.requestedMemoryMB === 1024)).toBe(true)
 
     const beforeMemory = scoreBodies.length
-    wizard.step.value = 2
+    wizard.step.value = 4
     wizard.memoryMB.value = 8192
     for (let i = 0; i < 50; i++) {
       if (scoreBodies.length > beforeMemory && scoreBodies.some((body) => body.requestedMemoryMB === 8192)) break

@@ -86,8 +86,8 @@ describe('VM Lifecycle', () => {
     cy.visit('/vms')
     cy.contains('button', 'Create VM').click()
     cy.contains('h2', 'Create Virtual Machine').should('be.visible')
-    // 6-step wizard dots
-    cy.get('.wizard-dot').should('have.length', 6)
+    // 7-step wizard (no Windows drivers): Basics → Image → Place → Hardware → Storage → Network → Summary
+    cy.get('.wizard-dot').should('have.length', 7)
     cy.get('.wizard-dot.active').should('contain', '1')
   })
 
@@ -95,13 +95,14 @@ describe('VM Lifecycle', () => {
     cy.visit('/vms')
     cy.contains('button', 'Create VM').click()
 
-    cy.contains('h3', 'Operating System').should('be.visible')
+    cy.contains('h3', 'Basics').should('be.visible')
     cy.get('input[placeholder="my-vm"]').type(vmName)
     cy.get('.os-card').contains('Linux').should('exist')
     cy.get('.os-card').contains('Linux').parent('.os-card').should('have.class', 'selected')
 
     cy.contains('button', 'Next').click()
     cy.get('.wizard-dot.active').should('contain', '2')
+    cy.contains('h3', 'Image').should('be.visible')
   })
 
   it('Step 1 — Windows OS card is selectable', () => {
@@ -112,19 +113,18 @@ describe('VM Lifecycle', () => {
     cy.get('.os-card').contains('Linux').parent('.os-card').should('not.have.class', 'selected')
   })
 
-  it('Step 2 — Hardware shows CPU and Memory controls', () => {
+  it('Step 2 — Image lists Home Library images without a Device picker', () => {
     cy.visit('/vms')
     cy.contains('button', 'Create VM').click()
     cy.get('input[placeholder="my-vm"]').type(vmName)
     cy.contains('button', 'Next').click()
 
-    cy.contains('h3', 'Hardware').should('be.visible')
-    // CPU and memory controls
-    cy.contains('CPU Cores').should('exist')
-    cy.contains('Memory').should('exist')
+    cy.contains('h3', 'Image').should('be.visible')
+    cy.get('.device-picker').should('not.exist')
+    cy.contains('this device only runs').should('not.exist')
   })
 
-  it('walks through all 6 wizard steps and creates a VM', () => {
+  it('walks through the intent-first wizard and creates a VM', () => {
     // First check if any ISO image is available
     cy.apiLogin().then((token) => {
       cy.request({
@@ -149,39 +149,45 @@ describe('VM Lifecycle', () => {
         cy.visit('/vms')
         cy.contains('button', 'Create VM').click()
 
-        // Step 1 — OS & Name
+        // Step 1 — Basics
         cy.get('input[placeholder="my-vm"]').clear().type(vmName)
         cy.contains('button', 'Next').click()
 
-        // Step 2 — Hardware (defaults are fine)
-        cy.contains('h3', 'Hardware').should('be.visible')
-        cy.contains('button', 'Next').click()
-
-        // Step 3 — Image
+        // Step 2 — Image (Home Library)
         cy.contains('h3', 'Image').should('be.visible')
         if (useCloud) {
           cy.contains('button', 'Cloud Image').click()
         }
         cy.get('select').then(($selects) => {
-          // The image select is the one with "Select an image..." option
           const imageSelect = $selects.filter(':has(option:contains("Select an image"))')
-          cy.wrap(imageSelect).select(image.id)
+          const match = [...imageSelect.find('option')].find((opt) => {
+            const value = opt.getAttribute('value') || ''
+            return value === image.id || value.includes(image.id) || (opt.textContent || '').includes(image.name)
+          })
+          cy.wrap(imageSelect).select(match?.getAttribute('value') || image.id)
         })
         cy.contains('button', 'Next').click()
 
-        // Step 4 — Storage (defaults are fine)
+        // Step 3 — Place
+        cy.contains('h3', 'Place').should('be.visible')
+        cy.contains('button', 'Next').click()
+
+        // Step 4 — Hardware (defaults are fine)
+        cy.contains('h3', 'Hardware').should('be.visible')
+        cy.contains('button', 'Next').click()
+
+        // Step 5 — Storage (defaults are fine)
         cy.contains('h3', 'Storage').should('be.visible')
         cy.contains('button', 'Next').click()
 
-        // Step 5 — Network (defaults are fine)
+        // Step 6 — Network (defaults are fine)
         cy.contains('h3', 'Network').should('be.visible')
         cy.contains('button', 'Next').click()
 
-        // Step 6 — Summary
+        // Step 7 — Summary
         cy.contains('h3', 'Summary').should('be.visible')
         cy.get('.summary-row').contains(vmName).should('exist')
         cy.get('.summary-row').contains('Linux').should('exist')
-        cy.get('.summary-row').contains('ARM64').should('exist')
         cy.get('.summary-row').contains('2 cores').should('exist')
         cy.get('.summary-row').contains('Default NAT').should('exist')
 
