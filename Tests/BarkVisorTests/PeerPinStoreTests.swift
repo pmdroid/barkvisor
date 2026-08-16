@@ -50,6 +50,17 @@ struct PeerPinStoreTests {
         #expect(try store.contains(fingerprint: "deadbeef") == false)
     }
 
+    @Test func `load uses memory cache until a write`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = PeerPinStore(dataDir: dir)
+        try store.pin(hostId: "a", fingerprint: "aa")
+        try Data("[]".utf8).write(to: store.fileURL, options: [.atomic])
+        #expect(try store.load().map(\.hostId) == ["a"])
+        try store.unpin(hostId: "a")
+        #expect(try store.load().isEmpty)
+    }
+
     @Test func `corrupt pins json does not drop existing pins`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -60,14 +71,16 @@ struct PeerPinStoreTests {
         try Data("{".utf8).write(to: store.fileURL, options: [.atomic])
         let truncated = try Data(contentsOf: store.fileURL)
 
-        #expect(throws: PeerPinStoreError.self) {
-            try store.load()
-        }
+        // In-process cache keeps the last good pins for handshake.
+        #expect(try store.load().map(\.hostId).sorted() == ["a", "b"])
+        #expect(try store.contains(fingerprint: "aa"))
+        // Writes still read disk and refuse to clobber the corrupt file.
         #expect(throws: PeerPinStoreError.self) {
             try store.pin(hostId: "c", fingerprint: "cc")
         }
+        let other = PeerPinStore(dataDir: dir)
         #expect(throws: PeerPinStoreError.self) {
-            try store.contains(fingerprint: "aa")
+            try other.load()
         }
         #expect(try Data(contentsOf: store.fileURL) == truncated)
         #expect(before != truncated)

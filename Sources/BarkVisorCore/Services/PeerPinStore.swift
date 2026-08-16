@@ -25,6 +25,9 @@ public final class PeerPinStore: @unchecked Sendable {
 
     public let fileURL: URL
     private let lock = NSLock()
+    /// Handshake reads this cache so the NIO loop does not decode `pins.json`.
+    /// Invalidated (replaced) on every successful write.
+    private var cachedPins: [PeerPin]?
 
     public init(dataDir: URL) {
         self.fileURL = dataDir
@@ -39,7 +42,12 @@ public final class PeerPinStore: @unchecked Sendable {
     public func load() throws -> [PeerPin] {
         lock.lock()
         defer { lock.unlock() }
-        return try loadLocked()
+        if let cachedPins {
+            return cachedPins
+        }
+        let pins = try loadLocked()
+        cachedPins = pins
+        return pins
     }
 
     public func contains(fingerprint: String) throws -> Bool {
@@ -107,6 +115,7 @@ public final class PeerPinStore: @unchecked Sendable {
             [.posixPermissions: 0o600],
             ofItemAtPath: fileURL.path,
         )
+        cachedPins = pins
     }
 }
 

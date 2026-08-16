@@ -101,6 +101,30 @@ struct DeviceTrustTests {
         #expect(decision == .rejected(.invalidPEM))
     }
 
+    @Test func `rejects pinned cert when pin hostId does not match SAN`() throws {
+        let a = try isolatedDir()
+        let b = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: a)
+            try? FileManager.default.removeItem(at: b)
+        }
+        let local = try HomeCAService.loadOrCreate(dataDir: a, hostId: UUID().uuidString)
+        let foreignId = UUID().uuidString
+        let foreign = try HomeCAService.loadOrCreate(dataDir: b, hostId: foreignId)
+        let pin = PeerPin(
+            hostId: UUID().uuidString,
+            fingerprint: foreign.deviceFingerprint,
+            pinnedAt: iso8601.string(from: Date()),
+        )
+
+        let decision = DeviceTrust.evaluate(
+            leafPEM: foreign.deviceCertificatePEM,
+            homeCAPEM: local.caCertificatePEM,
+            pins: [pin],
+        )
+        #expect(decision == .rejected(.untrusted))
+    }
+
     @Test func `rejects pinned cert without device san`() throws {
         let now = Date()
         let (ca, caKey, caPEM) = try mintCA(now: now)

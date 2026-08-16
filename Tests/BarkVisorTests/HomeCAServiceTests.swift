@@ -281,6 +281,78 @@ struct HomeCAServiceTests {
         #expect(first == second)
     }
 
+    @Test func `not-yet-valid home ca is reminted with a new device cert`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let future = now.addingTimeInterval(2 * 24 * 60 * 60)
+
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: future)
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+
+        #expect(first.caFingerprint != second.caFingerprint)
+        #expect(first.deviceFingerprint != second.deviceFingerprint)
+        let ca = try Certificate(pemEncoded: second.caCertificatePEM)
+        let device = try Certificate(pemEncoded: second.deviceCertificatePEM)
+        #expect(HomeCAService.isCurrentlyValid(ca, now: now))
+        #expect(DeviceTrust.isIssuedByHomeCA(leaf: device, ca: ca))
+        #expect(DeviceTrust.hostId(from: device) == hostId)
+    }
+
+    @Test func `pending rotation journal is applied on load`() throws {
+        let dir = try isolatedDir()
+        let otherDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: otherDir)
+        }
+        let hostId = UUID().uuidString
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        let replacement = try HomeCAService.loadOrCreate(dataDir: otherDir, hostId: hostId)
+
+        let staging = HomeCAService.caDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.rotationDirectoryName)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try Data(replacement.caCertificatePEM.utf8).write(
+            to: staging.appendingPathComponent(HomeCAService.caCertificateFileName),
+        )
+        try Data(replacement.caKeyPEM.utf8).write(
+            to: staging.appendingPathComponent(HomeCAService.caKeyFileName),
+        )
+        try Data("3".utf8).write(to: staging.appendingPathComponent(HomeCAService.serialFileName))
+        try Data(replacement.deviceCertificatePEM.utf8).write(
+            to: staging.appendingPathComponent(HomeCAService.deviceCertificateFileName),
+        )
+        try Data(replacement.deviceKeyPEM.utf8).write(
+            to: staging.appendingPathComponent(HomeCAService.deviceKeyFileName),
+        )
+        try Data().write(to: staging.appendingPathComponent(HomeCAService.rotationReadyFileName))
+
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        #expect(second.caFingerprint == replacement.caFingerprint)
+        #expect(second.deviceFingerprint == replacement.deviceFingerprint)
+        #expect(second.caFingerprint != first.caFingerprint)
+        #expect(!FileManager.default.fileExists(atPath: staging.path))
+    }
+
+    @Test func `incomplete rotation staging is discarded`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        let staging = HomeCAService.caDirectory(in: dir)
+            .appendingPathComponent(HomeCAService.rotationDirectoryName)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try Data("not-ready".utf8).write(
+            to: staging.appendingPathComponent(HomeCAService.caCertificateFileName),
+        )
+
+        let second = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        #expect(second == first)
+        #expect(!FileManager.default.fileExists(atPath: staging.path))
+    }
+
     @Test func `expired home ca is reminted with a new device cert`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }

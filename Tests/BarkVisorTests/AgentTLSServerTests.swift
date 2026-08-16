@@ -277,6 +277,57 @@ struct AgentTLSServerTests {
         }
     }
 
+    @Test func `reloadFromDisk presents reminted device certificate`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let pins = PeerPinStore(dataDir: dir)
+        let server = AgentTLSServer(
+            material: first,
+            pins: pins,
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        do {
+            let port = try #require(server.boundPort)
+            try await server.reloadFromDisk(now: now)
+            let reloaded = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+            #expect(reloaded.deviceFingerprint != first.deviceFingerprint)
+            #expect(reloaded.caFingerprint == first.caFingerprint)
+
+            let ca = try NIOSSLCertificate(
+                bytes: Array(reloaded.caCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceCert = try NIOSSLCertificate(
+                bytes: Array(reloaded.deviceCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceKey = try NIOSSLPrivateKey(
+                bytes: Array(reloaded.deviceKeyPEM.utf8),
+                format: .pem,
+            )
+            let body = try await getWhoami(
+                port: port,
+                trust: ca,
+                clientCert: deviceCert,
+                clientKey: deviceKey,
+            )
+            #expect(body.hostId == hostId)
+            #expect(body.fingerprint == reloaded.deviceFingerprint)
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
     @Test func `startDetached failure leaves local runtime independent`() async throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
