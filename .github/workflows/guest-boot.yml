@@ -181,8 +181,10 @@ jobs:
           if ! command -v swift >/dev/null 2>&1; then
             ./scripts/install-swift-linux.sh
             echo /opt/swift/usr/bin >> "$GITHUB_PATH"
+            /opt/swift/usr/bin/swift --version
+          else
+            swift --version
           fi
-          swift --version
 
       - name: Run blank guest-boot smoke
         run: |
@@ -244,8 +246,10 @@ jobs:
           if ! command -v swift >/dev/null 2>&1; then
             ./scripts/install-swift-linux.sh
             echo /opt/swift/usr/bin >> "$GITHUB_PATH"
+            /opt/swift/usr/bin/swift --version
+          else
+            swift --version
           fi
-          swift --version
 
       - name: Run REAL_GUEST smoke
         run: |
