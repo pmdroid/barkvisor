@@ -188,6 +188,43 @@ struct LinuxGuestScriptsTests {
         #expect(skipCount == 2, "all should skip both scenarios when QEMU is absent: \(skippedAll.1)")
     }
 
+    @Test func `api-contract BDD mapper exists and dry-run succeeds`() throws {
+        let path = repoRoot.appendingPathComponent("scripts/api-contract-bdd.sh").path
+        #expect(FileManager.default.fileExists(atPath: path))
+        #expect(FileManager.default.isExecutableFile(atPath: path))
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        for needle in [
+            "features/api-contract.feature",
+            "api-contract-probe.py",
+            "docs/api/openapi.yaml",
+            "DRY_RUN",
+        ] {
+            #expect(body.contains(needle), "api-bdd should reference \(needle)")
+        }
+        let feature = try String(
+            contentsOf: repoRoot.appendingPathComponent("features/api-contract.feature"),
+            encoding: .utf8,
+        )
+        #expect(feature.contains("every documented API operation is probed"))
+        #expect(!feature.localizedCaseInsensitiveContains("cluster"))
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+        proc.arguments = [path]
+        proc.currentDirectoryURL = repoRoot
+        var env = ProcessInfo.processInfo.environment
+        env["DRY_RUN"] = "1"
+        proc.environment = env
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        try proc.run()
+        proc.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        #expect(proc.terminationStatus == 0, "DRY_RUN exit \(proc.terminationStatus): \(out)")
+        #expect(out.contains("DRY_RUN OK"))
+    }
+
     @Test func `mise guest-smoke tasks are opt-in and not in default prepush`() throws {
         let mise = try String(
             contentsOf: repoRoot.appendingPathComponent("mise.toml"),
@@ -198,6 +235,8 @@ struct LinuxGuestScriptsTests {
         #expect(mise.contains("[tasks.prepush-full]"))
         #expect(mise.contains("guest-boot-bdd.sh blank"))
         #expect(mise.contains("guest-boot-bdd.sh real"))
+        #expect(mise.contains("[tasks.api-bdd]"))
+        #expect(mise.contains("api-contract-bdd.sh"))
 
         // Default prepush must stay lint + test + frontend-test (no guest boot).
         #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
