@@ -1,42 +1,55 @@
 # Roadmap
 
-Where BarkVisor is going. Words: **Home**, **Device**, **Workload**, **Library**. Not a cluster.
+Ideas we want to build. Dates are not commitments. Words: **Home**, **Device**, **Workload**, **Library**.
 
-This is a snapshot, not a promise. Dates move. See the [changelog](changelog.md) for what already works.
+The full board is [BarkVisor product ideas](https://linear.app/kyku/project/barkvisor-product-ideas-66fdcb2cf979). What already works is in the [changelog](changelog.md).
 
-## Now
+## Shipping now
 
-Shipped on the current Home stack (draft PRs, not all on `main` yet):
-
-- Pair Devices into one Home. One login. Dashboard talks to members through the Home proxy.
-- Place a Workload on any reachable Device. Recommended is a suggestion.
-- Library on each Device, optional depot fetch, configurable image directory.
-- API-only Device: skip the SPA, `barkvisor join --code` from that host.
-- Each Device keeps running if the others are down.
-
-Guides: [Home and pairing](home-and-pairing.md) · [Create a Workload](create-workload.md).
+A Home of one or more Devices: pair with a code, one login, place a Workload on a picked Device, Library plus optional depot, API-only worker. Each Device keeps its own QEMU and SQLite if the others go away.
 
 ## Next
 
-Open work, in roughly this order:
+Finish the Home you can run today:
 
-| Item | Notes |
-|------|--------|
-| Intent-first Create VM | Name, OS, and image before Device and capability talk ([PAS-182](https://linear.app/kyku/issue/PAS-182)) |
-| Windows on x86 | `windows-amd64` guest — Windows already runs on x86; the profile was missing ([PAS-184](https://linear.app/kyku/issue/PAS-184)) |
-| Workload Device chip | Dashboard shows which Device each Workload runs on ([PAS-181](https://linear.app/kyku/issue/PAS-181)) |
-| Guest-boot checks | Opt-in local smoke and a self-hosted KVM CI lane — not default `prepush` ([PAS-183](https://linear.app/kyku/issue/PAS-183), [PAS-185](https://linear.app/kyku/issue/PAS-185), [PAS-186](https://linear.app/kyku/issue/PAS-186)) |
+- Create VM asks what you want before where it runs
+- Windows on x86 Devices (`windows-amd64`)
+- Dashboard shows which Device each Workload is on
+- Guest-boot checks locally and on a KVM runner
+- Recover and re-pair a Device without losing inventory
 
-## Later
+## Later — availability
 
-Worth doing, not started as product:
+A Home that survives a Device dying, not only a Device that survives the Home going quiet.
 
-- Stopped Workload move between same-arch Devices
-- Stronger Library (content-addressed store, richer templates)
-- Live migration, cross-Device failover — only after place-and-run is boring
+- **Failover** — restart a portable Workload on another Device after a failure
+- **Live migration** — move a running Workload between compatible Devices
+- **Stopped move** — same-architecture migrate when the guest is off
+- **Optional controller** — one Device can coordinate the others without being required
+- **Quorum** — Devices agree who is in the Home and who can place or fail over, so a split brain does not double-start a Workload
+- **Linux appliance** — a dedicated-server image for a Device that only runs BarkVisor
 
-## Not planned
+## Later — storage
 
-No quorum, no Ceph, no dedicated controller appliance, no “cluster” product. One process stays one Device.
+- **Ceph / distributed storage** — Workload disks that more than one Device can see, so failover does not copy a qcow2 first
+- **Content-addressed Library** — one copy of each image, verified by hash
+- **Managed volumes** — disks that outlive a single Workload
+- **Deeper ZFS** — snapshots and send/receive when the Device already uses ZFS
 
-The idea board is [BarkVisor product ideas](https://linear.app/kyku/project/barkvisor-product-ideas-66fdcb2cf979).
+## Later — Workloads and backup
+
+- Portable Application Workloads (not only VMs)
+- Curated home app catalog
+- Scheduled backups, backup verification, restore as a new Workload
+- Portable backup / export bundle you can take to another Device
+- Workload update policies and automatic rollback
+
+## Later — network and access
+
+- Cross-Device private network
+- Tailscale or WireGuard so a Home works off the LAN
+- Friendly service URLs
+- Passkeys and two-factor login
+- Energy-aware placement (prefer the Device that is already awake)
+
+These stay product ideas until the Home you have now is boring to operate.
