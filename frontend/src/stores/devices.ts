@@ -7,6 +7,7 @@ export const useDevicesStore = defineStore('devices', () => {
   const report = ref<HomeDeviceHealthReport | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  let fetchSeq = 0
 
   const devices = computed(() => report.value?.devices ?? [])
   const totals = computed(() => report.value?.totals ?? null)
@@ -19,15 +20,18 @@ export const useDevicesStore = defineStore('devices', () => {
   }
 
   async function fetchHealth(): Promise<void> {
+    const seq = ++fetchSeq
     loading.value = true
     try {
       const { data } = await api.get<HomeDeviceHealthReport>('/home/devices/health')
+      if (seq !== fetchSeq) return
       report.value = data
       error.value = null
     } catch (err) {
+      if (seq !== fetchSeq) return
       error.value = err instanceof Error ? err.message : 'Unable to load Devices'
     } finally {
-      loading.value = false
+      if (seq === fetchSeq) loading.value = false
     }
   }
 

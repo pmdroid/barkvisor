@@ -45,7 +45,7 @@ const showEmptyWorkloads = computed(() =>
   vms.value.length === 0 && !loadingList.value && !listError.value && listSettled.value,
 )
 const showLoadingWorkloads = computed(() =>
-  !listSettled.value && !loadingList.value && !listError.value && vms.value.length === 0,
+  !listSettled.value && loadingList.value && !listError.value && vms.value.length === 0,
 )
 
 const restartLoading = reactive<Record<string, boolean>>({})
@@ -64,13 +64,11 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
   await workloads.fetchFor(row)
 }
 
+let refreshSeq = 0
 async function refresh() {
-  const known = device.value
-  if (known && canFetchDeviceWorkloads(known)) {
-    await Promise.all([devices.fetchHealth(), refreshDevice(known)])
-    return
-  }
+  const seq = ++refreshSeq
   await devices.fetchHealth()
+  if (seq !== refreshSeq) return
   await refreshDevice(devices.deviceByHostId(hostId.value))
 }
 
@@ -79,7 +77,10 @@ onMounted(() => {
   void refresh()
   pollTimer = window.setInterval(() => { void refresh() }, 5000)
 })
-onUnmounted(() => clearInterval(pollTimer))
+onUnmounted(() => {
+  refreshSeq += 1
+  clearInterval(pollTimer)
+})
 watch(hostId, () => {
   clearHostTransientState()
   void refresh()
@@ -197,8 +198,10 @@ async function doStop() {
           title="No workloads on this Device"
         />
 
+        <p v-else-if="showLoadingWorkloads" class="list-loading">Loading workloads...</p>
+
         <DataTable
-          v-else-if="listSettled || loadingList || vms.length > 0"
+          v-else-if="listSettled || vms.length > 0"
           :columns="[
             { key: 'name', label: 'Workload' },
             { key: 'resources', label: 'Resources' },
@@ -254,8 +257,6 @@ async function doStop() {
             </td>
           </tr>
         </DataTable>
-
-        <p v-else-if="showLoadingWorkloads" class="list-loading">Loading workloads...</p>
       </template>
     </template>
 
