@@ -609,6 +609,9 @@ export function useCreateVMWizard(
         return createVMIncompatibilityReasons(row, {
           guestArch: guest,
           osType: osType.value,
+          hasImage: selectedLibraryKey.value
+            ? homeLibrary.deviceHasLibraryImage(selectedLibraryKey.value, row)
+            : undefined,
         }).length === 0
       },
     })
@@ -789,6 +792,15 @@ export function useCreateVMWizard(
       error.value = 'The selected Device is no longer available. Pick a Device again.'
       return
     }
+    const createImage = homeLibrary.resolveImageForCreate(
+      selectedLibraryKey.value,
+      selectedDevice.value,
+      selectedImage.value,
+    )
+    if ((selectedLibraryKey.value || selectedImageId.value) && !createImage) {
+      error.value = "Not in this Device's Library"
+      return
+    }
     loading.value = true
     try {
       // Simple path omits vmType / firmware so the server applies host defaults (PAS-93).
@@ -806,16 +818,11 @@ export function useCreateVMWizard(
       } else {
         req.diskSizeGB = diskSizeGB.value
       }
-      const createImage = homeLibrary.resolveImageForCreate(
-        selectedLibraryKey.value,
-        selectedDevice.value,
-        selectedImage.value,
-      )
-      const imageId = createImage?.id ?? selectedImageId.value
+      const imageId = createImage?.id
       if (mode.value === 'iso') {
-        req.isoId = imageId
+        if (imageId) req.isoId = imageId
       } else {
-        req.cloudImageId = imageId
+        if (imageId) req.cloudImageId = imageId
         const selectedKey = (deviceSSHKeys.value.length ? deviceSSHKeys.value : sshKeyStore.keys)
           .find((k) => k.id === selectedSSHKeyId.value)
         const keys = selectedKey ? [selectedKey.publicKey] : []

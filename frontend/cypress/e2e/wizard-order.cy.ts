@@ -31,7 +31,7 @@ describe('Create VM wizard order (PAS-182)', () => {
         url: '/api/images',
         headers: { Authorization: `Bearer ${token}` },
       }).then((res) => {
-        const images = (res.body as Array<{ id: string; imageType: string; status: string }>)
+        const images = (res.body as Array<{ id: string; name: string; imageType: string; status: string }>)
           .filter((i) => i.status === 'ready')
         const iso = images.find((i) => i.imageType === 'iso')
         const cloud = images.find((i) => i.imageType === 'cloud-image')
@@ -54,11 +54,11 @@ describe('Create VM wizard order (PAS-182)', () => {
         }
         cy.get('select').then(($selects) => {
           const imageSelect = $selects.filter(':has(option:contains("Select an image"))')
-          const value = imageSelect.find('option').filter((_, el) => {
-            const v = el.getAttribute('value') || ''
-            return v.length > 0 && v !== image.id ? true : v === image.id || v.includes(image.id)
-          }).first().attr('value') || image.id
-          cy.wrap(imageSelect).select(value)
+          const match = [...imageSelect.find('option')].find((opt) => {
+            const value = opt.getAttribute('value') || ''
+            return value === image.id || value.includes(image.id) || (opt.textContent || '').includes(image.name)
+          })
+          cy.wrap(imageSelect).select(match?.getAttribute('value') || image.id)
         })
         cy.contains('button', 'Next').click()
 
