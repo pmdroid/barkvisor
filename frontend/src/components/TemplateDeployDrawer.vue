@@ -141,14 +141,6 @@ function plannedMemoryMB(): number {
   return Number.isFinite(planned) ? planned : props.template.memoryMB
 }
 
-function selectedDeviceIncompatibility(): string | null {
-  const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
-  if (option && !option.compatible) {
-    return option.reasons[0] || 'This Device cannot run this template.'
-  }
-  return null
-}
-
 async function refreshPlacement(applyRecommendation = true) {
   const seq = ++placementScoreSeq
   try {
@@ -521,11 +513,6 @@ async function submit() {
     return
   }
   await refreshPlacement(false)
-  const placementBlock = selectedDeviceIncompatibility()
-  if (placementBlock) {
-    error.value = placementBlock
-    return
-  }
   if (platformBridgeUnsupported.value) {
     error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
     return
@@ -566,7 +553,10 @@ async function submit() {
         style="margin-bottom:16px"
       >
         <div>
-          <strong>Not compatible with this device</strong>
+          <strong>Not recommended for this Device</strong>
+          <p style="margin:4px 0 0;font-size:12px;color:var(--text-secondary)">
+            You can still deploy here.
+          </p>
           <p
             v-for="reason in compatibility.reasons"
             :key="reason.code + reason.message"
@@ -731,7 +721,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || !resolvedTemplate || (template.networkMode === 'bridged' && !bridgeAvailable) || compatibility?.compatible === false || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.compatible))" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || !resolvedTemplate || (template.networkMode === 'bridged' && !bridgeAvailable) || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.reachable))" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>

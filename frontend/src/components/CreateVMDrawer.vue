@@ -85,6 +85,7 @@ const {
   selectedHostId,
   deviceOptions,
   selectedDevice,
+  selectedDeviceIncompatibility,
 } = useCreateVMWizard((e) => emit(e), { initialHostId: props.initialHostId })
 
 function openUSBPicker() {
@@ -241,7 +242,15 @@ function openUSBPicker() {
         :selectedUSBDevices="selectedUSBDevices"
         :selectedNetwork="selectedNetwork"
         :deviceLabel="selectedDevice ? (selectedDevice.displayName || selectedDevice.hostId) : ''"
+        :placementWarning="selectedDeviceIncompatibility()"
       />
+
+      <p
+        v-if="selectedDeviceIncompatibility() && currentStepLabel !== 'Summary'"
+        class="placement-override"
+      >
+        {{ selectedDeviceIncompatibility() }} You can still place the VM here.
+      </p>
 
       <!-- Error -->
       <p
@@ -318,5 +327,13 @@ function openUSBPicker() {
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
+}
+.placement-override {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--amber, #d97706);
+  font-size: 13px;
 }
 </style>

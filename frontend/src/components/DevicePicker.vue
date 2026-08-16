@@ -2,7 +2,7 @@
 import type { DevicePickOption } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL } from '../utils/terminology'
 
-defineProps<{
+const props = defineProps<{
   modelValue: string
   options: DevicePickOption[]
   disabled?: boolean
@@ -10,16 +10,20 @@ defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
+function canPick(option: DevicePickOption) {
+  return option.reachable && !props.disabled
+}
+
 function pick(option: DevicePickOption) {
-  if (option.compatible) emit('update:modelValue', option.hostId)
+  if (canPick(option)) emit('update:modelValue', option.hostId)
 }
 </script>
 
 <template>
   <div class="device-picker">
     <label class="device-picker-label">{{ DEVICE_LABEL }}</label>
-    <p v-if="options.some((option) => option.recommended && option.compatible)" class="device-picker-hint">
-      Recommended {{ DEVICE_LABEL }} is pre-selected. Confirm or pick another {{ DEVICE_LABEL }}.
+    <p class="device-picker-hint">
+      Recommended {{ DEVICE_LABEL }} is a suggestion. You can place on any reachable {{ DEVICE_LABEL }}.
     </p>
     <div class="device-picker-list" role="radiogroup" :aria-label="DEVICE_LABEL">
       <button
@@ -30,15 +34,16 @@ function pick(option: DevicePickOption) {
         class="device-picker-option"
         :class="{
           selected: modelValue === option.hostId,
-          disabled: !option.compatible || disabled,
+          disabled: !canPick(option),
+          warning: canPick(option) && !option.compatible,
         }"
         :aria-checked="modelValue === option.hostId"
-        :disabled="!option.compatible || disabled"
+        :disabled="!canPick(option)"
         @click="pick(option)"
       >
         <div class="device-picker-top">
           <span class="device-picker-name">{{ option.label }}</span>
-          <span v-if="option.recommended && option.compatible" class="device-chip recommended">Recommended</span>
+          <span v-if="option.recommended" class="device-chip recommended">Recommended</span>
           <span v-if="option.role === 'self'" class="device-chip self">This {{ DEVICE_LABEL }}</span>
           <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
         </div>
@@ -50,6 +55,7 @@ function pick(option: DevicePickOption) {
         </div>
         <p v-if="!option.compatible && option.reasons.length" class="device-picker-reason">
           {{ option.reasons[0] }}
+          <span v-if="option.reachable"> You can still place here.</span>
         </p>
         <p v-else-if="option.recommended && option.recommendReasons?.length" class="device-picker-reason recommend">
           {{ option.recommendReasons[0] }}
@@ -100,6 +106,9 @@ function pick(option: DevicePickOption) {
 .device-picker-option.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.device-picker-option.warning {
+  border-color: var(--amber, #d97706);
 }
 .device-picker-top {
   display: flex;

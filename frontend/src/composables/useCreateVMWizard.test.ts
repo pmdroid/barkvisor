@@ -142,6 +142,35 @@ describe('useCreateVMWizard (PAS-34)', () => {
     const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'orb')
     expect(self?.compatible).toBe(true)
     expect(peer?.compatible).toBe(false)
+    expect(peer?.reachable).toBe(true)
+
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'anyway'
+    wizard.selectedHostId.value = 'orb'
+    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.selectedDeviceIncompatibility()).toContain('x86_64')
+  })
+
+  test('an unreachable Device cannot be placed on', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'box', role: 'self', displayName: 'agentbox', platform: { os: 'Linux', arch: 'x86_64' } }),
+      device({
+        hostId: 'orb',
+        role: 'member',
+        displayName: 'barkvisor-u24',
+        reachability: 'unreachable',
+        platform: { os: 'Linux', arch: 'arm64' },
+      }),
+    ])
+
+    const wizard = useCreateVMWizard(() => {})
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'anyway'
+    wizard.selectedHostId.value = 'orb'
+    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'orb')
+    expect(peer?.reachable).toBe(false)
+    expect(wizard.canProceed()).toBe(false)
   })
 
   test('Next and submit stay blocked while the picked Device inventory is loading', async () => {
@@ -287,9 +316,11 @@ describe('useCreateVMWizard (PAS-34)', () => {
     await nextTick()
     await wizard.loadPickedDevice()
     expect(wizard.selectedHostId.value).toBe('desk')
+    wizard.name.value = 'override-vm'
+    expect(wizard.canProceed()).toBe(true)
   })
 
-  test('re-scores placement when memory or guest arch changes and blocks submit without headroom', async () => {
+  test('re-scores placement when memory or guest arch changes and still allows place-anyway', async () => {
     const devices = useDevicesStore()
     const health = report([
       device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
@@ -358,9 +389,9 @@ describe('useCreateVMWizard (PAS-34)', () => {
     const desk = wizard.deviceOptions.value.find((row) => row.hostId === 'desk')
     expect(desk?.compatible).toBe(false)
     expect(desk?.reasons.some((reason) => reason.includes('8192'))).toBe(true)
-    expect(wizard.canProceed()).toBe(false)
-    await wizard.submit()
-    expect(wizard.error.value).toContain('8192')
+    wizard.name.value = 'tight-vm'
+    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.selectedDeviceIncompatibility()).toContain('8192')
 
     const beforeArch = scoreBodies.length
     wizard.setGuestArch('x86_64')
