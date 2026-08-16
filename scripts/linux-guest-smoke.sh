@@ -17,6 +17,11 @@
 #   SKIP_BUILD=1 ./scripts/linux-guest-smoke.sh
 #   BARKVISOR_CLOUD_IMAGE_URL=https://...qcow2 ./scripts/linux-guest-smoke.sh
 #
+# Prefer the Gherkin mapper (PAS-183) for named scenarios:
+#   mise run guest-smoke        # blank disk (this script, no REAL_GUEST)
+#   mise run guest-smoke-real   # REAL_GUEST=1 (TCG ~15 min; KVM minutes)
+# Those tasks are NOT in default `mise run prepush`.
+#
 # Env:
 #   BARKVISOR_PORT              Prefer this port (else pick free)
 #   BARKVISOR_DATA_DIR          Override data dir (else mktemp)
