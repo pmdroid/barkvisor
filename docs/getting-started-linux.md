@@ -120,11 +120,37 @@ Common overrides in `/etc/barkvisor/barkvisor.env`:
 | `BARKVISOR_PORT` | `7777` | HTTP listen port |
 | `BARKVISOR_DATA_DIR` | `/var/lib/barkvisor` | Data directory |
 | `BARKVISOR_FRONTEND_DIR` | (share path) | Override SPA location if needed |
+| `BARKVISOR_JOIN_CODE` | (unset) | Pairing offer on **first boot** only (ignored after setup or an existing pair) |
 | `LD_LIBRARY_PATH` | set by package | Swift runtime + optional compat shims |
 
 After edits: `sudo systemctl restart barkvisor.service`.
 
 The unit does **not** enable `NoNewPrivileges` so QEMU can run setuid `qemu-bridge-helper` for bridged networking. Do not re-harden the unit with `NoNewPrivileges=true` if you need bridging.
+
+---
+
+## API-only Device (no SPA)
+
+Release packages still bundle the SPA by default. The daemon is the same binary either way — there is no separate controller or worker process.
+
+To install **API-only** from a source checkout, even if `frontend/dist` exists:
+
+```sh
+sudo SKIP_FRONTEND=1 ./scripts/install-linux.sh
+```
+
+Join a Home **from that Device** (console-local `POST http://127.0.0.1:7777/api/pairing/join` — not through Home):
+
+```sh
+# After the daemon is up:
+barkvisor join --code 'barkvisor://pair/v1?…'
+```
+
+Or set `BARKVISOR_JOIN_CODE` in `/etc/barkvisor/barkvisor.env` before first boot. If the other Device is unreachable, this Device still starts and keeps local SQLite.
+
+Paste the full pairing offer (`barkvisor://pair/v1?…`) issued on the other Device (Settings → Home → Add a Device). The short code alone is not enough.
+
+Then manage Workloads from the other Device’s SPA. See [Product terminology](product-terminology.md) and [First launch](getting-started-first-launch.md).
 
 ---
 
