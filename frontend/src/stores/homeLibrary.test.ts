@@ -190,4 +190,122 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.resolveImageForCreate(key, peer, local)).toBeNull()
     expect(store.resolveImageForCreate(key, self, local)?.id).toBe('local-iso')
   })
+
+  test('homeImageKey does not collapse distinct images that share type+arch+name', () => {
+    const a = img({ id: 'iso-a', name: 'ubuntu.iso', arch: 'arm64', sizeBytes: 1000 })
+    const b = img({ id: 'iso-b', name: 'ubuntu.iso', arch: 'arm64', sizeBytes: 2000 })
+    expect(homeImageKey(a)).toBe('id:iso-a')
+    expect(homeImageKey(b)).toBe('id:iso-b')
+    expect(homeImageKey(a)).not.toBe(homeImageKey(b))
+    const sameSrc = img({
+      id: 'iso-c',
+      name: 'ubuntu.iso',
+      arch: 'arm64',
+      sizeBytes: 3000,
+      sourceUrl: 'https://example.test/ubuntu.iso',
+    })
+    const sameSrcOtherHost = img({
+      id: 'iso-d',
+      name: 'ubuntu.iso',
+      arch: 'arm64',
+      sizeBytes: 3000,
+      sourceUrl: 'https://example.test/ubuntu.iso',
+    })
+    expect(homeImageKey(sameSrc)).toBe(homeImageKey(sameSrcOtherHost))
+    expect(homeImageKey({ ...sameSrc, sha256: 'deadbeef' })).toBe('sha256:deadbeef')
+  })
+
+  test('fetchImages keeps same-name ISOs distinct when they have no checksum', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [img({ id: 'desk-iso', name: 'ubuntu.iso', arch: 'arm64', sizeBytes: 111 })],
+        })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({
+          data: [img({ id: 'studio-iso', name: 'ubuntu.iso', arch: 'arm64', sizeBytes: 222 })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, peer])
+    expect(store.images).toHaveLength(2)
+    expect(store.images.map((row) => row.id).sort()).toEqual(['desk-iso', 'studio-iso'])
+    expect(store.deviceHasImage(homeImageKey(img({ id: 'desk-iso', name: 'ubuntu.iso' })), 'studio')).toBe(false)
+    expect(store.deviceHasImage(homeImageKey(img({ id: 'studio-iso', name: 'ubuntu.iso' })), 'desk')).toBe(false)
+  })
+
+  test('non-ready copies stay in the library but are not deployable', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc', status: 'ready' })],
+        })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({
+          data: [img({ id: 'peer-up', name: 'ubuntu.iso', sha256: 'abc', status: 'uploading' })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, peer])
+    const key = homeImageKey(img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc' }))
+    const row = store.imageByKey(key)
+    expect(row?.status).toBe('ready')
+    expect(row?.copies.map((c) => c.status).sort()).toEqual(['ready', 'uploading'])
+    expect(store.deviceHasImage(key, 'desk')).toBe(true)
+    expect(store.deviceHasImage(key, 'studio')).toBe(false)
+    expect(store.deviceHasLibraryImage(key, peer)).toBe(false)
+    expect(store.imageForDevice(key, 'studio')).toBeNull()
+    expect(store.resolveImageForCreate(key, peer, row ?? null)).toBeNull()
+    expect(store.resolveImageForCreate(key, self, row ?? null)?.id).toBe('local-iso')
+  })
+
+  test('partial image refresh keeps last-good copies from a failed Device', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc' })],
+        })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({
+          data: [img({ id: 'peer-iso', name: 'ubuntu.iso', sha256: 'abc' })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, peer])
+    const key = homeImageKey(img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc' }))
+    expect(store.deviceHasImage(key, 'studio')).toBe(true)
+
+    const refresh = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc' })],
+        })
+      }
+      return Promise.reject(new Error('peer down'))
+    })
+    api.get = refresh as typeof api.get
+    await store.fetchImages([self, peer])
+    expect(store.deviceHasImage(key, 'desk')).toBe(true)
+    expect(store.deviceHasImage(key, 'studio')).toBe(true)
+    expect(store.imageForDevice(key, 'studio')?.id).toBe('peer-iso')
+    expect(store.imagesError).toBeNull()
+  })
 })

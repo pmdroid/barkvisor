@@ -788,6 +788,17 @@ export function useCreateVMWizard(
     return null
   }
 
+  /** Missing Library bytes block Place; arch/capacity still allow place-anyway. */
+  function selectedDeviceBlocksPlacement(): boolean {
+    const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
+    if (!option || option.compatible) return false
+    return !option.placeAnyway
+  }
+
+  function selectedDevicePlaceable(): boolean {
+    return selectedDeviceSelectable() && !selectedDeviceBlocksPlacement()
+  }
+
   const placementStepReached = computed(() => {
     const label = currentStepLabel.value
     return label === 'Place' || label === 'Hardware' || label === 'Drivers'
@@ -809,9 +820,9 @@ export function useCreateVMWizard(
       case 'Image':
         return !!selectedImageId.value
       case 'Place':
-        return selectedDeviceSelectable()
+        return selectedDevicePlaceable()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDeviceSelectable()
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDevicePlaceable()
       case 'Drivers':
         return virtioWinAvailable.value
       case 'Storage':
@@ -819,7 +830,7 @@ export function useCreateVMWizard(
       case 'Network':
         return true
       case 'Summary':
-        return pickedDeviceStillLive() && selectedDeviceSelectable()
+        return pickedDeviceStillLive() && selectedDevicePlaceable()
       default:
         return false
     }
@@ -948,6 +959,7 @@ export function useCreateVMWizard(
     deviceOptions,
     selectedDevice,
     selectedDeviceIncompatibility,
+    selectedDeviceBlocksPlacement,
     hostArch,
     archLabel,
     revealArchOnSummary,
