@@ -74,7 +74,7 @@ function seedLibraryImage(img: Image, hostIds: string[]): string {
     ...img,
     libraryKey: key,
     sourceHostIds: [...hostIds],
-    copies: hostIds.map((hostId) => ({ hostId, imageId: `${hostId}-${img.id}` })),
+    copies: hostIds.map((hostId) => ({ hostId, imageId: `${hostId}-${img.id}`, status: img.status })),
   }]
   return key
 }
@@ -250,7 +250,8 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(peer?.reasons).toContain("Not in this Device's Library")
     expect(peer?.reachable).toBe(true)
     wizard.selectedHostId.value = 'box'
-    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
+    expect(wizard.selectedDeviceBlocksPlacement()).toBe(true)
     expect(wizard.selectedDeviceIncompatibility()).toBe("Not in this Device's Library")
   })
 
@@ -1076,13 +1077,13 @@ describe('useCreateVMWizard (PAS-182)', () => {
         ...winX86,
         libraryKey: homeImageKey(winX86),
         sourceHostIds: ['desk'],
-        copies: [{ hostId: 'desk', imageId: 'desk-win-x86' }],
+        copies: [{ hostId: 'desk', imageId: 'desk-win-x86', status: 'ready' }],
       },
       {
         ...winArm,
         libraryKey: homeImageKey(winArm),
         sourceHostIds: ['desk'],
-        copies: [{ hostId: 'desk', imageId: 'desk-win-arm' }],
+        copies: [{ hostId: 'desk', imageId: 'desk-win-arm', status: 'ready' }],
       },
     ]
     const wizard = useCreateVMWizard(() => {})
