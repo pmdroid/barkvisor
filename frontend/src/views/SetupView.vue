@@ -16,12 +16,20 @@ import {
   completeSetup,
   type InterfaceInfo,
   type RepoSyncStatus,
+  type SetupStatus,
 } from '../api/setup'
+import { joinHome, isPairingPayload, type PairingJoin } from '../api/pairing'
+import {
+  clearSetupJoinProgress,
+  loadSetupJoinProgress,
+  saveSetupJoinProgress,
+  shouldResumeJoinReady,
+} from '../api/setupJoinProgress'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useFeature } from '../composables/useFeature'
 import { clearSetupCache } from '../router'
-import { HOME_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -32,10 +40,23 @@ const step = ref(1)
 /** Setup installs the managed bridge helper (socket_vmnet) — macOS only. */
 const showBridgeStep = computed(() => managedBridge.available)
 
-const totalSteps = computed(() => (showBridgeStep.value ? 5 : 4))
+/** Create-Home wizard vs join-existing-Home branch (same SetupView). */
+const path = ref<'create' | 'join'>('create')
+const qrPayload = ref('')
+const joinResult = ref<PairingJoin | null>(null)
+/** Server-side join (identity complete) so refresh works when sessionStorage is blocked. */
+const resumeJoinReady = ref(false)
+
+const totalSteps = computed(() => {
+  if (path.value === 'join') return 2
+  return showBridgeStep.value ? 5 : 4
+})
 /** Which content panel to show for the current linear index. */
 const panel = computed(() => {
   if (step.value === 1) return 'welcome'
+  if (path.value === 'join') {
+    return joinResult.value || resumeJoinReady.value ? 'join-ready' : 'join'
+  }
   if (step.value === 2) return 'admin'
   if (showBridgeStep.value) {
     if (step.value === 3) return 'bridge'
@@ -64,20 +85,30 @@ let syncPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await caps.fetchCapabilities()
+  let status: SetupStatus = { complete: false }
   try {
-    const status = await getSetupStatus()
-    if (status.complete) {
-      router.replace('/login')
-    }
+    status = await getSetupStatus()
   } catch {
     // Server may not be ready yet
+  }
+  if (status.complete) {
+    clearSetupJoinProgress()
+    router.replace('/login')
+    return
+  }
+  const saved = loadSetupJoinProgress()
+  if (shouldResumeJoinReady(status, saved)) {
+    path.value = 'join'
+    joinResult.value = saved
+    resumeJoinReady.value = status.joined === true
+    step.value = 2
   }
 })
 
 async function nextStep() {
   error.value = ''
   // Leaving admin without a bridge step: record NAT-only skip for setup progress.
-  if (step.value === 2 && !showBridgeStep.value) {
+  if (path.value === 'create' && step.value === 2 && !showBridgeStep.value) {
     try {
       await skipBridge()
     } catch {
@@ -85,6 +116,48 @@ async function nextStep() {
     }
   }
   step.value++
+}
+
+function startCreate() {
+  path.value = 'create'
+  joinResult.value = null
+  resumeJoinReady.value = false
+  clearSetupJoinProgress()
+  nextStep()
+}
+
+function startJoin() {
+  path.value = 'join'
+  error.value = ''
+  nextStep()
+}
+
+function backToWelcome() {
+  path.value = 'create'
+  joinResult.value = null
+  resumeJoinReady.value = false
+  qrPayload.value = ''
+  error.value = ''
+  step.value = 1
+  clearSetupJoinProgress()
+}
+
+async function submitJoin() {
+  error.value = ''
+  const payload = qrPayload.value.trim()
+  if (!isPairingPayload(payload)) {
+    error.value = 'Paste the full pairing code (starts with barkvisor://), not only the short code.'
+    return
+  }
+  loading.value = true
+  try {
+    joinResult.value = await joinHome(payload)
+    saveSetupJoinProgress(joinResult.value)
+  } catch (e: unknown) {
+    error.value = apiErrorMessage(e, 'Failed to join Home')
+  } finally {
+    loading.value = false
+  }
 }
 
 // Step 2: Create admin
@@ -175,6 +248,7 @@ async function finishSetup() {
   loading.value = true
   try {
     const { token } = await completeSetup()
+    clearSetupJoinProgress()
     clearSetupCache()
     authStore.token = token
     localStorage.setItem('token', token)
@@ -206,9 +280,70 @@ async function finishSetup() {
       <div v-if="panel === 'welcome'" class="step-content">
         <h1>Welcome to BarkVisor</h1>
         <p class="step-desc">
-          Let's get your virtual machine server set up. This will only take a minute.
+          Set up this {{ DEVICE_LABEL }} as a new {{ HOME_LABEL }}, or join an existing
+          {{ HOME_LABEL }}.
         </p>
-        <AppButton variant="primary" class="step-btn" @click="nextStep">Get Started</AppButton>
+        <div class="step-actions">
+          <AppButton variant="primary" class="step-btn" @click="startCreate">
+            Set up this {{ DEVICE_LABEL }}
+          </AppButton>
+          <AppButton variant="ghost" class="step-btn" @click="startJoin">
+            Join an existing {{ HOME_LABEL }}
+          </AppButton>
+        </div>
+      </div>
+
+      <!-- Join existing Home (PAS-51) — same SetupView, existing /api/pairing/join -->
+      <div v-if="panel === 'join'" class="step-content">
+        <h2>Join an existing {{ HOME_LABEL }}</h2>
+        <p class="step-desc">
+          Paste the pairing code from the other {{ DEVICE_LABEL }}. This {{ DEVICE_LABEL }} still
+          runs if that {{ DEVICE_LABEL }} is later unreachable.
+        </p>
+        <form @submit.prevent="submitJoin">
+          <div class="form-group">
+            <label>Pairing code</label>
+            <textarea
+              v-model="qrPayload"
+              class="pairing-input"
+              rows="4"
+              placeholder="barkvisor://pair/v1?…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <FormError v-if="error" :message="error" />
+          <div class="step-actions">
+            <AppButton
+              variant="primary"
+              class="step-btn"
+              :loading="loading"
+              loading-text="Joining..."
+            >
+              Join {{ HOME_LABEL }}
+            </AppButton>
+            <AppButton variant="ghost" type="button" @click="backToWelcome">Back</AppButton>
+          </div>
+        </form>
+      </div>
+
+      <div v-if="panel === 'join-ready'" class="step-content">
+        <h2>Joined your {{ HOME_LABEL }}</h2>
+        <p class="step-desc">
+          This {{ DEVICE_LABEL }} is part of your {{ HOME_LABEL }}. You'll be signed in with the
+          same admin account. Local workloads keep running on this {{ DEVICE_LABEL }} if peers are
+          unreachable.
+        </p>
+        <FormError v-if="error" :message="error" />
+        <AppButton
+          variant="primary"
+          class="step-btn"
+          :loading="loading"
+          loading-text="Finishing..."
+          @click="finishSetup"
+        >
+          Launch Dashboard
+        </AppButton>
       </div>
 
       <!-- Admin credentials -->
@@ -304,8 +439,8 @@ async function finishSetup() {
       <div v-if="panel === 'ready'" class="step-content">
         <h2>All Set!</h2>
         <p class="step-desc">
-          This device is your {{ HOME_LABEL }}. You'll be signed in automatically and taken to the
-          dashboard.
+          This {{ DEVICE_LABEL.toLowerCase() }} is your {{ HOME_LABEL }}. You'll be signed in
+          automatically and taken to the dashboard.
         </p>
         <FormError v-if="error" :message="error" />
         <AppButton
@@ -396,7 +531,8 @@ async function finishSetup() {
 .step-content .form-group {
   text-align: left;
 }
-.select-input {
+.select-input,
+.pairing-input {
   width: 100%;
   padding: 8px 10px;
   background: var(--bg-input, var(--bg));
@@ -404,6 +540,11 @@ async function finishSetup() {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
   font-size: 13px;
+}
+.pairing-input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  resize: vertical;
+  line-height: 1.4;
 }
 .sync-message {
   color: var(--text-dim);

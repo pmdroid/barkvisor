@@ -251,4 +251,11 @@ struct ControllerLogicTests {
             try VMLifecycleService.validateCPUCount(0)
         }
     }
+
+    @Test func `setup joined requires receipt and admin identity`() {
+        #expect(!SetupController.shouldReportJoined(hasReceipt: false, hasAdmin: false))
+        #expect(!SetupController.shouldReportJoined(hasReceipt: true, hasAdmin: false))
+        #expect(!SetupController.shouldReportJoined(hasReceipt: false, hasAdmin: true))
+        #expect(SetupController.shouldReportJoined(hasReceipt: true, hasAdmin: true))
+    }
 }
