@@ -250,6 +250,7 @@ enum DeviceURL {
 
     /// Canonical Device origin: scheme + host + port. Paths are stripped so
     /// `makeRequest` never prefixes `/api/...` with a stored SPA or paste path.
+    /// Require an explicit `http`/`https` scheme so a JWT is never sent to an inferred origin.
     static func normalize(_ raw: String) throws -> URL {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasSuffix("/") { value.removeLast() }
