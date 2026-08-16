@@ -5,6 +5,7 @@
 #   ./scripts/api-contract-bdd.sh
 #   DRY_RUN=1 ./scripts/api-contract-bdd.sh
 #   API_BDD_QEMU=1 ./scripts/api-contract-bdd.sh   # also HIT start/stop/restart
+#   API_BDD_USB=1 ./scripts/api-contract-bdd.sh    # attach a connected USB device if any
 #
 # Not in default mise prepush. Fast (no QEMU). mise run api-bdd
 set -euo pipefail
@@ -92,6 +93,7 @@ IMAGE_ID="$(api GET /api/images | jq -r '.[0].id // empty')"
 
 export TOKEN
 export API_CONTRACT_OPENAPI="$OPENAPI"
+export BASE="${BASE:-http://127.0.0.1:${BARKVISOR_PORT}}"
 export SEED_VM_ID="$VM_ID"
 export SEED_DISK_ID="$DISK_ID"
 export SEED_NETWORK_ID="$NETWORK_ID"

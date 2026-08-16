@@ -173,7 +173,8 @@ start_server() {
     export BARKVISOR_AGENT_PORT
   fi
   LOG_FILE="${BARKVISOR_DATA_DIR}/server.log"
-  BASE="http://127.0.0.1:${BARKVISOR_PORT}"
+  # Export so Python/other child probes (api-contract-probe.py) hit this port.
+  export BASE="http://127.0.0.1:${BARKVISOR_PORT}"
 
   log "starting BarkVisorApp (port ${BARKVISOR_PORT}${BARKVISOR_AGENT_PORT:+, agent ${BARKVISOR_AGENT_PORT}})"
   "$bin" >"$LOG_FILE" 2>&1 &

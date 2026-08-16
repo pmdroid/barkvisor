@@ -38,5 +38,6 @@ USB **device** still means a peripheral. A BarkVisor **Device** is the computer.
 - [Home and pairing](/docs/guides/home-and-pairing/) — add a Device, join, CLI worker
 - [Create a Workload](/docs/guides/create-workload/) — place a VM from the Home dashboard
 - [Changelog](/docs/changelog/)
+- [Roadmap](/docs/roadmap/)
 - [First launch](/docs/getting-started/first-launch/) — setup on this Device (a Home of one)
 - [Host process boundary](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md) — one process ↔ one Device ↔ one data directory
