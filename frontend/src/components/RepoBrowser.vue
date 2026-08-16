@@ -3,14 +3,12 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, watch, computed } from 'vue'
 import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
-import { useCapabilitiesStore } from '../stores/capabilities'
 import type { RepositoryImage } from '../api/types'
 
 import AppSelect from './ui/AppSelect.vue'
 
 const props = defineProps<{ repoId: string }>()
 const store = useRepositoryStore()
-const caps = useCapabilitiesStore()
 const images = ref<RepositoryImage[]>([])
 const loading = ref(false)
 const filterType = ref<string>('')
@@ -27,14 +25,8 @@ async function fetchImages() {
 
 watch(() => props.repoId, fetchImages, { immediate: true })
 
-/** Catalog arch gate (PAS-37 fail-closed, current host only). Unknown host → not runnable. */
-function imageArchSupported(arch: string | null | undefined): boolean {
-  return caps.isArchRunnable(arch)
-}
-
 const filteredImages = computed(() => {
   return images.value.filter(img => {
-    if (!imageArchSupported(img.arch)) return false
     if (filterType.value && img.imageType !== filterType.value) return false
     return true
   })
