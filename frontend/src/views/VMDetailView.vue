@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { apiErrorMessage } from '../api/errors'
+import { apiErrorMessage, isNotFoundError } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
@@ -29,7 +29,12 @@ import { formatBytes } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
 import { architectureLabel } from '../utils/architectureDetails'
-import { localNetworkForDetail, memberNetworkCaption } from '../utils/workloadDetail'
+import {
+  isMemberWorkloadDetail,
+  localNetworkForDetail,
+  memberNetworkCaption,
+  workloadDetailVmSource,
+} from '../utils/workloadDetail'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -54,9 +59,15 @@ const hostId = computed(() => {
   const raw = route.params.hostId
   return raw ? String(raw) : ''
 })
-const isMemberDetail = computed(() => Boolean(hostId.value) && !isSelfDevice({
+const memberLoadSettled = ref(false)
+const memberLoadError = ref<string | null>(null)
+const memberRole = computed(() => (
+  hostId.value ? devicesStore.deviceByHostId(hostId.value)?.role : undefined
+))
+const isMemberDetail = computed(() => isMemberWorkloadDetail({
   hostId: hostId.value,
-  role: devicesStore.deviceByHostId(hostId.value)?.role,
+  role: memberRole.value,
+  loadSettled: memberLoadSettled.value,
 }))
 const memberDevice = computed(() => (
   hostId.value ? devicesStore.deviceByHostId(hostId.value) : null
@@ -65,8 +76,6 @@ const memberReachable = computed(() => {
   const device = memberDevice.value
   return Boolean(device && canFetchDeviceWorkloads(device))
 })
-const memberLoadSettled = ref(false)
-const memberLoadError = ref<string | null>(null)
 const tab = ref((route.query.tab as string) || 'overview')
 
 watch(isMemberDetail, (remote) => {
@@ -99,7 +108,9 @@ function openVncWindow() {
 }
 
 const vm = computed(() => {
-  if (isMemberDetail.value) return homeWorkloads.vmFor(hostId.value, vmId.value)
+  const source = workloadDetailVmSource({ hostId: hostId.value, role: memberRole.value })
+  if (source === 'pending') return undefined
+  if (source === 'member') return homeWorkloads.vmFor(hostId.value, vmId.value)
   return store.vms.find(v => v.id === vmId.value)
 })
 const actionLoading = ref('')
@@ -400,7 +411,9 @@ async function loadMemberDetail() {
         await homeWorkloads.refreshOne(device, vmId.value)
         await homeWorkloads.fetchSpec(device, vmId.value).catch(() => {})
       } catch (e: any) {
-        homeWorkloads.removeOne(device.hostId, vmId.value)
+        if (isNotFoundError(e)) {
+          homeWorkloads.removeOne(device.hostId, vmId.value)
+        }
         memberLoadError.value = apiErrorMessage(e)
       }
       if (loadVersion !== detailLoadVersion) return
@@ -674,7 +687,8 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <h1>{{ vmId }}</h1>
         </div>
       </div>
-      <p v-if="!memberReachable">
+      <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
+      <p v-else-if="!memberReachable">
         This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name.
         This {{ DEVICE_LABEL.toLowerCase() }} is still running locally.
       </p>
