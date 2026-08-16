@@ -25,6 +25,7 @@ defineProps<{
   selectedUSBDevices: USBPassthroughDevice[]
   selectedNetwork: Network | null
   deviceLabel?: string
+  placementWarning?: string | null
 }>()
 </script>
 
@@ -36,6 +37,9 @@ defineProps<{
         <span class="summary-label">Device</span>
         <span>{{ deviceLabel }}</span>
       </div>
+      <p v-if="placementWarning" class="placement-override">
+        {{ placementWarning }} You can still place the VM here.
+      </p>
       <div class="summary-row">
         <span class="summary-label">Name</span>
         <span>{{ name }}</span>
@@ -134,5 +138,13 @@ defineProps<{
   text-transform: none;
   letter-spacing: 0;
   font-weight: 500;
+}
+.placement-override {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--amber, #d97706);
+  font-size: 13px;
 }
 </style>

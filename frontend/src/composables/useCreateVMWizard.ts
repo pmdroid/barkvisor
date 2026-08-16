@@ -717,15 +717,15 @@ export function useCreateVMWizard(
     return allNetworks.value.find((n) => n.id === selectedNetworkId.value) || null
   })
 
-  function selectedDeviceCompatible(): boolean {
+  function selectedDeviceSelectable(): boolean {
     if (!deviceOptions.value.length) return true
-    return deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.compatible)
+    return deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.reachable)
   }
 
   function selectedDeviceIncompatibility(): string | null {
     const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
     if (option && !option.compatible) {
-      return option.reasons[0] || 'This Device cannot run this VM.'
+      return option.reasons[0] || 'This Device is not recommended for this VM.'
     }
     return null
   }
@@ -736,9 +736,9 @@ export function useCreateVMWizard(
     const content = stepContent(step.value)
     switch (content) {
       case 'OS':
-        return !!name.value.trim() && selectedDeviceCompatible()
+        return !!name.value.trim() && selectedDeviceSelectable()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value && selectedDeviceCompatible()
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDeviceSelectable()
       case 'Image':
         return !!selectedImageId.value
       case 'Drivers':
@@ -748,7 +748,7 @@ export function useCreateVMWizard(
       case 'Network':
         return true
       case 'Summary':
-        return !archIsProblem.value && pickedDeviceStillLive() && selectedDeviceCompatible()
+        return pickedDeviceStillLive() && selectedDeviceSelectable()
       default:
         return false
     }
@@ -766,9 +766,8 @@ export function useCreateVMWizard(
     error.value = ''
     if (pickedDeviceLoading.value) return
     await refreshPlacement(false)
-    const placementBlock = selectedDeviceIncompatibility()
-    if (placementBlock) {
-      error.value = placementBlock
+    if (!selectedDeviceSelectable()) {
+      error.value = 'Pick a reachable Device to place this VM.'
       return
     }
     if (osType.value === 'windows' && !supportsWindows.value) {
@@ -777,10 +776,6 @@ export function useCreateVMWizard(
     }
     if (selectedNetwork.value?.mode === 'bridged' && !bridged.value.available) {
       error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
-      return
-    }
-    if (archIsProblem.value) {
-      error.value = archProblemText.value || 'This architecture is not supported on this device.'
       return
     }
     if (!pickedDeviceStillLive()) {
@@ -861,6 +856,7 @@ export function useCreateVMWizard(
     placementScore,
     deviceOptions,
     selectedDevice,
+    selectedDeviceIncompatibility,
     hostArch,
     archLabel,
     revealArchOnSummary,
