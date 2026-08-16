@@ -242,6 +242,36 @@ bun run test:e2e    # Alias for cy:run
 E2E specs cover authentication, dashboard, VM lifecycle, disks, images,
 networks, registry, settings, navigation, and logs.
 
+### Guest-boot BDD (opt-in, not prepush)
+
+Gherkin in `features/guest-boot.feature` maps onto the existing smoke
+scripts. A Device still boots a local Workload from SQLite if other Devices
+in the Home are unreachable.
+
+```sh
+mise run guest-smoke        # blank disk → running (fast; no guest OS)
+mise run guest-smoke-real   # Ubuntu cloud image + cloud-init + SSH
+mise run prepush-full       # prepush + guest-smoke (operators who opt in)
+```
+
+`mise run prepush` stays lint + Swift tests + frontend tests. **Never** add
+guest-boot to the default push gate.
+
+| Scenario | Mapper | Runtime |
+|----------|--------|---------|
+| a blank-disk Workload reaches running | `scripts/linux-guest-smoke.sh` | seconds–minutes |
+| a Linux Workload boots from a cloud image and answers SSH | `scripts/linux-real-guest-smoke.sh` (`REAL_GUEST=1`) | **KVM/HVF: minutes; TCG: up to ~15 min** (`SSH_WAIT_SECS=900`) |
+
+If `qemu-system-aarch64` and `qemu-system-x86_64` are both missing, the
+mapper prints `SKIP: qemu-system-* is not on PATH` and exits 0. Set
+`ALLOW_NO_QEMU=1` to exercise API create-only instead of skipping.
+
+```sh
+DRY_RUN=1 ./scripts/guest-boot-bdd.sh   # syntax + scenario inventory, no server
+```
+
+Out of scope here: Windows boot, Cypress, cross-Device Home proxy, CI wiring.
+
 ## Privileged Helper in Debug Builds
 
 The XPC privileged helper (`BarkVisorHelper`) is used for operations that

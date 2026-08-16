@@ -107,6 +107,110 @@ struct LinuxGuestScriptsTests {
         #expect(included.contains(dist.path))
     }
 
+    @Test func `guest-boot feature maps blank and real smoke scripts`() throws {
+        let path = repoRoot.appendingPathComponent("features/guest-boot.feature").path
+        #expect(FileManager.default.fileExists(atPath: path))
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        for needle in [
+            "a blank-disk Workload reaches running",
+            "a Linux Workload boots from a cloud image and answers SSH",
+            "linux-guest-smoke.sh",
+            "linux-real-guest-smoke.sh",
+            "mise run guest-smoke",
+            "Workload",
+            "Device",
+            "Library",
+        ] {
+            #expect(body.contains(needle), "feature should mention \(needle)")
+        }
+        #expect(!body.localizedCaseInsensitiveContains("cluster"))
+        #expect(!body.localizedCaseInsensitiveContains("quorum"))
+        #expect(!body.contains("Scenario: a Windows"))
+    }
+
+    @Test func `guest-boot mapper exists and dry-run succeeds`() throws {
+        let path = repoRoot.appendingPathComponent("scripts/guest-boot-bdd.sh").path
+        #expect(FileManager.default.fileExists(atPath: path))
+        #expect(FileManager.default.isExecutableFile(atPath: path))
+
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        for needle in [
+            "linux-guest-smoke.sh",
+            "linux-real-guest-smoke.sh",
+            "SKIP: qemu-system-*",
+            "ALLOW_NO_QEMU",
+            "BDD_FORCE_NO_QEMU",
+            "features/guest-boot.feature",
+        ] {
+            #expect(body.contains(needle), "mapper should reference \(needle)")
+        }
+
+        func run(args: [String], extraEnv: [String: String] = [:]) throws -> (Int32, String) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [path] + args
+            proc.currentDirectoryURL = repoRoot
+            var env = ProcessInfo.processInfo.environment
+            extraEnv.forEach { env[$0.key] = $0.value }
+            proc.environment = env
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        let dry = try run(args: [], extraEnv: ["DRY_RUN": "1"])
+        #expect(dry.0 == 0, "DRY_RUN exit \(dry.0): \(dry.1)")
+        #expect(dry.1.contains("a blank-disk Workload reaches running"))
+        #expect(dry.1.contains("a Linux Workload boots from a cloud image and answers SSH"))
+        #expect(dry.1.contains("DRY_RUN OK"))
+
+        let listed = try run(args: ["list"])
+        #expect(listed.0 == 0, "list exit \(listed.0): \(listed.1)")
+        #expect(listed.1.contains("a blank-disk Workload reaches running"))
+        #expect(listed.1.contains("a Linux Workload boots from a cloud image and answers SSH"))
+
+        let skipped = try run(args: ["blank"], extraEnv: ["BDD_FORCE_NO_QEMU": "1"])
+        #expect(skipped.0 == 0, "skip exit \(skipped.0): \(skipped.1)")
+        #expect(skipped.1.contains("SKIP: qemu-system-* is not on PATH"))
+        #expect(skipped.1.contains("a blank-disk Workload reaches running"))
+    }
+
+    @Test func `mise guest-smoke tasks are opt-in and not in default prepush`() throws {
+        let mise = try String(
+            contentsOf: repoRoot.appendingPathComponent("mise.toml"),
+            encoding: .utf8,
+        )
+        #expect(mise.contains("[tasks.guest-smoke]"))
+        #expect(mise.contains("[tasks.guest-smoke-real]"))
+        #expect(mise.contains("[tasks.prepush-full]"))
+        #expect(mise.contains("guest-boot-bdd.sh blank"))
+        #expect(mise.contains("guest-boot-bdd.sh real"))
+
+        // Default prepush must stay lint + test + frontend-test (no guest boot).
+        #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
+        #expect(!mise.contains("depends = [\"lint\", \"test\", \"frontend-test\", \"guest-smoke\"]"))
+        let start = try #require(mise.range(of: "[tasks.prepush]\n"))
+        let after = mise[start.upperBound...]
+        let nextHeader = after.range(of: "\n[tasks.")
+        let prepushBlock = nextHeader.map { after[..<$0.lowerBound] } ?? after[...]
+        #expect(!String(prepushBlock).contains("guest-smoke"))
+
+        let docs = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
+            encoding: .utf8,
+        )
+        #expect(docs.contains("mise run guest-smoke"))
+        #expect(docs.contains("TCG"))
+        #expect(docs.contains("~15 min") || docs.contains("~15 minutes"))
+        #expect(docs.contains("KVM"))
+        #expect(!docs.localizedCaseInsensitiveContains("cluster"))
+        #expect(!docs.localizedCaseInsensitiveContains("quorum"))
+    }
+
     @Test func `linux install docs describe API-only join`() throws {
         let linux = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-linux.md"),
