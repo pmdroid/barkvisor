@@ -216,6 +216,144 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(wizard.selectedDeviceIncompatibility()).toBe("Not in this Device's Library")
   })
 
+  test('submit rejects a library key when the picked Device has no local copy', async () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'box',
+        role: 'member',
+        displayName: 'box',
+        platform: { os: 'Linux', arch: 'arm64' },
+      }),
+    ])
+    const key = seedLibraryImage(
+      readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64', sha256: 'abc123' }),
+      ['desk'],
+    )
+    const createPosts: Array<{ url: string; body?: Record<string, unknown> }> = []
+    const post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      createPosts.push({ url, body })
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectedImageId.value = key
+    wizard.selectedHostId.value = 'box'
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'copy'
+    await wizard.submit()
+    expect(wizard.error.value).toBe("Not in this Device's Library")
+    expect(wizard.loading.value).toBe(false)
+    expect(createPosts).toEqual([])
+  })
+
+  test('submit posts the Device-scoped image id, not the library key', async () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+    ])
+    const key = seedLibraryImage(
+      readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64', sha256: 'abc123' }),
+      ['desk'],
+    )
+    const createPosts: Array<{ url: string; body?: Record<string, unknown> }> = []
+    const post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      if (url === '/vms') {
+        createPosts.push({ url, body })
+        return Promise.resolve({ data: { id: 'vm-1', name: 'copy' } })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.post = post as typeof api.post
+
+    let created = false
+    const wizard = useCreateVMWizard(() => { created = true })
+    wizard.selectedImageId.value = key
+    wizard.selectedHostId.value = 'desk'
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'copy'
+    expect(key.startsWith('sha256:')).toBe(true)
+    await wizard.submit()
+    expect(wizard.error.value).toBe('')
+    expect(createPosts).toHaveLength(1)
+    expect(createPosts[0]?.body?.isoId).toBe('desk-iso-1')
+    expect(createPosts[0]?.body?.isoId).not.toBe(key)
+    expect(created).toBe(true)
+  })
+
+  test('placement auto-pick skips a recommended Device that lacks the selected image', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({ hostId: 'studio', role: 'member', displayName: 'studio' }),
+    ])
+    devices.report = health
+    const key = seedLibraryImage(
+      readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64' }),
+      ['desk'],
+    )
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({
+          data: {
+            recommendedHostId: 'studio',
+            candidates: [
+              {
+                hostId: 'studio',
+                role: 'member',
+                eligible: true,
+                recommended: true,
+                rank: 1,
+                score: 90,
+                reasons: [{ code: 'headroom', kind: 'soft', message: '6 GB free, 5% CPU.' }],
+              },
+              {
+                hostId: 'desk',
+                role: 'self',
+                eligible: true,
+                recommended: false,
+                rank: 2,
+                score: 40,
+                reasons: [{ code: 'headroom', kind: 'soft', message: '1 GB free, 40% CPU.' }],
+              },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectedImageId.value = key
+    await wizard.loadPickedDevice()
+    expect(wizard.selectedHostId.value).toBe('desk')
+    expect(wizard.deviceOptions.value.find((row) => row.hostId === 'studio')?.reasons)
+      .toContain("Not in this Device's Library")
+  })
+
   test('This Device stays selectable when placement recommends a foreign-arch member', () => {
     const devices = useDevicesStore()
     devices.report = report([
