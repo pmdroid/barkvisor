@@ -6,10 +6,12 @@ import Vapor
 struct LibrarySettingsResponse: Content {
     let imageDirectory: String
     let isDefault: Bool
+    let libraryDepotHostId: String?
 }
 
 struct LibrarySettingsRequest: Content {
     let imageDirectory: String?
+    let libraryDepotHostId: String?
 }
 
 /// GET/PUT `/api/system/library/settings` — same stack as update settings
@@ -26,9 +28,13 @@ struct LibrarySettingsController: RouteCollection {
         let dir = try await req.db.read { db in
             try LibrarySettings.resolvedDirectory(from: db)
         }
+        let depotHostId = try await req.db.read { db in
+            try LibrarySettings.resolvedDepotHostId(from: db)
+        }
         return LibrarySettingsResponse(
             imageDirectory: dir.path,
             isDefault: LibrarySettings.isDefault(dir),
+            libraryDepotHostId: depotHostId,
         )
     }
 
@@ -52,6 +58,25 @@ struct LibrarySettingsController: RouteCollection {
             try Config.ensureDirectories(
                 imagesDir: prepared ?? LibrarySettings.defaultDirectory,
             )
+        }
+
+        if let libraryDepotHostId = body.libraryDepotHostId {
+            let validated = try LibrarySettings.validateDepotHostId(
+                libraryDepotHostId,
+                localHostId: Config.hostId,
+                devices: DeviceRegistry(dataDir: Config.dataDir),
+            )
+            try await req.db.write { db in
+                if let validated {
+                    let setting = AppSetting(
+                        key: LibrarySettings.libraryDepotHostIdKey,
+                        value: validated,
+                    )
+                    try setting.save(db, onConflict: .replace)
+                } else {
+                    _ = try AppSetting.deleteOne(db, key: LibrarySettings.libraryDepotHostIdKey)
+                }
+            }
         }
 
         return try await getSettings(req: req)

@@ -136,6 +136,7 @@ public final class VaporServer: @unchecked Sendable {
         self.agentTLSServer = await AgentTLSServer.startDetached(
             dataDir: Config.dataDir,
             hostId: Config.hostId,
+            database: database.pool,
         )
     }
 

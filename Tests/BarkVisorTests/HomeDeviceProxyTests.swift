@@ -43,6 +43,21 @@ struct HomeDeviceProxyTests {
             try HomeDeviceProxy.memberAPIPath(components: ["pairing", "redeem"])
                 == "/api/pairing/redeem",
         )
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberAPIPath(
+                components: ["agent", "library", "images", "img-1", "content"],
+            )
+        }
+        #expect(
+            try HomeDeviceProxy.memberAPIPath(components: ["agent", "library", "images"])
+                == "/api/agent/library/images",
+        )
+        let direct = try HomeDeviceProxy.memberURL(
+            host: "192.168.1.9",
+            port: 7_778,
+            path: "/api/agent/library/images/img-1/content",
+        )
+        #expect(direct.path.hasSuffix("/api/agent/library/images/img-1/content"))
     }
 
     @Test func `agent proxy rejects setup and pairing join`() throws {
