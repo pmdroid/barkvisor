@@ -272,6 +272,33 @@ DRY_RUN=1 ./scripts/guest-boot-bdd.sh   # syntax + scenario inventory, no server
 
 Out of scope here: Windows boot, Cypress, cross-Device Home proxy, CI wiring.
 
+### Cross-Device Home proxy smoke (opt-in, not prepush)
+
+Gherkin in `features/cross-device.feature` maps onto
+`scripts/cross-device-smoke.sh`. Two daemons on one host (two data dirs,
+two HTTP ports, two agent ports) pair with a real `/api/pairing/codes` +
+`/api/pairing/join` offer. Create + start a Workload on the member through
+`/api/home/devices/:id/v1` and assert running from the Home proxy and on
+the member locally. Each Device still owns runtime in local SQLite if the
+peer is later unreachable.
+
+```sh
+mise run cross-device-smoke
+DRY_RUN=1 ./scripts/cross-device-smoke.sh   # syntax + endpoint inventory, no server
+```
+
+`mise run prepush` stays lint + Swift tests + frontend tests. **Never** add
+this smoke to the default push gate.
+
+Pairing redeem is LAN-only (not loopback). The host needs an RFC1918
+address. After join the member daemon restarts so the agent plane presents
+the Home-issued Device certificate. Missing `qemu-system-*` SKIPs start
+after pair + create (exit 0). Set `ALLOW_NO_QEMU=1` to treat create-only
+as the intended path.
+
+Out of scope here: more than two Devices, auto-placement, template deploy
+via proxy, UI/Cypress, first-time join only, CI wiring.
+
 ## Privileged Helper in Debug Builds
 
 The XPC privileged helper (`BarkVisorHelper`) is used for operations that

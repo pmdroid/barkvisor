@@ -220,6 +220,111 @@ struct LinuxGuestScriptsTests {
         #expect(!docs.localizedCaseInsensitiveContains("quorum"))
     }
 
+    @Test func `cross-device feature names Home proxy create and start`() throws {
+        let path = repoRoot.appendingPathComponent("features/cross-device.feature").path
+        #expect(FileManager.default.fileExists(atPath: path))
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        for needle in [
+            "a Workload created from the Home runs on a paired Device",
+            "cross-device-smoke.sh",
+            "mise run cross-device-smoke",
+            "/api/pairing/codes",
+            "/api/pairing/join",
+            "/api/home/devices/health",
+            "/api/home/devices/:id/v1",
+            "Home",
+            "Device",
+            "Workload",
+            "Library",
+        ] {
+            #expect(body.contains(needle), "feature should mention \(needle)")
+        }
+        #expect(!body.localizedCaseInsensitiveContains("cluster"))
+        #expect(!body.localizedCaseInsensitiveContains("quorum"))
+        #expect(!body.localizedCaseInsensitiveContains("node"))
+        #expect(!body.localizedCaseInsensitiveContains("re-pair"))
+        #expect(!body.contains("PAS-77"))
+    }
+
+    @Test func `cross-device smoke exists and dry-run succeeds`() throws {
+        let path = repoRoot.appendingPathComponent("scripts/cross-device-smoke.sh").path
+        #expect(FileManager.default.fileExists(atPath: path))
+        #expect(FileManager.default.isExecutableFile(atPath: path))
+
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        for needle in [
+            "linux-smoke-common.sh",
+            "/api/pairing/codes",
+            "/api/pairing/join",
+            "/api/home/devices/health",
+            "/v1/vms",
+            "BARKVISOR_DATA_DIR",
+            "BARKVISOR_AGENT_PORT",
+            "pick_free_port",
+            "features/cross-device.feature",
+            "DRY_RUN",
+        ] {
+            #expect(body.contains(needle), "smoke script should reference \(needle)")
+        }
+        #expect(!body.localizedCaseInsensitiveContains("cluster"))
+        #expect(!body.localizedCaseInsensitiveContains("quorum"))
+        #expect(!body.contains("PAS-77"))
+
+        func run(args: [String], extraEnv: [String: String] = [:]) throws -> (Int32, String) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [path] + args
+            proc.currentDirectoryURL = repoRoot
+            var env = ProcessInfo.processInfo.environment
+            extraEnv.forEach { env[$0.key] = $0.value }
+            proc.environment = env
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        let dry = try run(args: [], extraEnv: ["DRY_RUN": "1"])
+        #expect(dry.0 == 0, "DRY_RUN exit \(dry.0): \(dry.1)")
+        #expect(dry.1.contains("a Workload created from the Home runs on a paired Device"))
+        #expect(dry.1.contains("/api/pairing/codes"))
+        #expect(dry.1.contains("/api/home/devices/health"))
+        #expect(dry.1.contains("DRY_RUN OK"))
+
+        let listed = try run(args: ["list"])
+        #expect(listed.0 == 0, "list exit \(listed.0): \(listed.1)")
+        #expect(listed.1.contains("a Workload created from the Home runs on a paired Device"))
+    }
+
+    @Test func `mise cross-device-smoke is opt-in and not in default prepush`() throws {
+        let mise = try String(
+            contentsOf: repoRoot.appendingPathComponent("mise.toml"),
+            encoding: .utf8,
+        )
+        #expect(mise.contains("[tasks.cross-device-smoke]"))
+        #expect(mise.contains("cross-device-smoke.sh"))
+        #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
+        #expect(!mise.contains("depends = [\"lint\", \"test\", \"frontend-test\", \"cross-device-smoke\"]"))
+        let start = try #require(mise.range(of: "[tasks.prepush]\n"))
+        let after = mise[start.upperBound...]
+        let nextHeader = after.range(of: "\n[tasks.")
+        let prepushBlock = nextHeader.map { after[..<$0.lowerBound] } ?? after[...]
+        #expect(!String(prepushBlock).contains("cross-device-smoke"))
+
+        let docs = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
+            encoding: .utf8,
+        )
+        #expect(docs.contains("mise run cross-device-smoke"))
+        #expect(docs.contains("/api/pairing/codes"))
+        #expect(docs.contains("/api/home/devices/:id/v1"))
+        #expect(!docs.localizedCaseInsensitiveContains("cluster"))
+        #expect(!docs.localizedCaseInsensitiveContains("quorum"))
+    }
+
     @Test func `linux install docs describe API-only join`() throws {
         let linux = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-linux.md"),

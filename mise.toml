@@ -48,6 +48,12 @@ run = "./scripts/guest-boot-bdd.sh real"
 description = "Opt-in: prepush + blank-disk guest-smoke (never the default push gate)"
 depends = ["prepush", "guest-smoke"]
 
+# PAS-185 cross-Device Home proxy smoke is opt-in. Do not add to [tasks.prepush].
+# Two daemons + real pairing; needs an RFC1918 address for join redeem.
+[tasks.cross-device-smoke]
+description = "Opt-in two-Device Home proxy smoke (not in default prepush)"
+run = "./scripts/cross-device-smoke.sh"
+
 [tasks.website]
 description = "Build unified landing + docs site (website/dist)"
 dir = "website"

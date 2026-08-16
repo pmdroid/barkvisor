@@ -3,12 +3,18 @@
 #   # shellcheck source=lib/linux-smoke-common.sh
 #   source "$ROOT/scripts/lib/linux-smoke-common.sh"
 #
-# Provides: die, log, fail, pick_port, find_bin, build_barkvisor, start_server,
-# wait_health, api, api_code, setup_or_login, print_log_tail, smoke_cleanup_trap
+# Provides: die, log, fail, pick_port, pick_free_port, find_bin, build_barkvisor,
+# start_server, stop_server, wait_health, api, api_code, setup_or_login,
+# print_log_tail, smoke_cleanup_trap, smoke_track_pid, smoke_track_log
 #
 # Env used:
-#   BARKVISOR_PORT, BARKVISOR_DATA_DIR, BARKVISOR_ADMIN_USER, BARKVISOR_ADMIN_PASSWORD
+#   BARKVISOR_PORT, BARKVISOR_DATA_DIR, BARKVISOR_AGENT_PORT
+#   BARKVISOR_ADMIN_USER, BARKVISOR_ADMIN_PASSWORD
 #   SKIP_BUILD, TOKEN (set by setup_or_login), SERVER_PID, LOG_FILE, BASE
+#   SMOKE_PIDS / SMOKE_LOG_FILES (multi-daemon; PAS-185)
+
+SMOKE_PIDS=()
+SMOKE_LOG_FILES=()
 
 die() {
   echo "error: $*" >&2
@@ -19,8 +25,8 @@ log() {
   echo "==> $*"
 }
 
-print_log_tail() {
-  local log_file="${LOG_FILE:-${BARKVISOR_DATA_DIR:-}/server.log}"
+print_one_log_tail() {
+  local log_file="$1"
   echo "---- server log tail (${log_file}) ----" >&2
   if [[ -n "${log_file}" && -f "$log_file" ]]; then
     tail -80 "$log_file" >&2 || true
@@ -30,18 +36,65 @@ print_log_tail() {
   echo "---- end log ----" >&2
 }
 
+print_log_tail() {
+  local files=()
+  local f seen=" "
+  if [[ ${#SMOKE_LOG_FILES[@]} -gt 0 ]]; then
+    files+=("${SMOKE_LOG_FILES[@]}")
+  fi
+  if [[ -n "${LOG_FILE:-}" ]]; then
+    files+=("$LOG_FILE")
+  elif [[ -n "${BARKVISOR_DATA_DIR:-}" ]]; then
+    files+=("${BARKVISOR_DATA_DIR}/server.log")
+  fi
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "---- no server logs ----" >&2
+    return
+  fi
+  for f in "${files[@]}"; do
+    case "$seen" in
+      *" $f "*) continue ;;
+    esac
+    seen+="$f "
+    print_one_log_tail "$f"
+  done
+}
+
 fail() {
   echo "error: $*" >&2
   print_log_tail
   exit 1
 }
 
+smoke_track_pid() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 0
+  SMOKE_PIDS+=("$pid")
+}
+
+smoke_track_log() {
+  local log_file="$1"
+  [[ -n "$log_file" ]] || return 0
+  SMOKE_LOG_FILES+=("$log_file")
+}
+
+stop_server() {
+  local pid="${1:-${SERVER_PID:-}}"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
 smoke_cleanup() {
   local code=$?
-  if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
-    kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
+  local pid
+  if [[ ${#SMOKE_PIDS[@]} -gt 0 ]]; then
+    for pid in "${SMOKE_PIDS[@]}"; do
+      stop_server "$pid"
+    done
   fi
+  stop_server "${SERVER_PID:-}"
   if [[ $code -ne 0 ]]; then
     print_log_tail
   fi
@@ -52,11 +105,8 @@ smoke_cleanup_trap() {
   trap smoke_cleanup EXIT
 }
 
-pick_port() {
-  if [[ -n "${BARKVISOR_PORT:-}" ]]; then
-    echo "$BARKVISOR_PORT"
-    return
-  fi
+# Always bind an ephemeral port (ignores BARKVISOR_PORT). For multi-daemon.
+pick_free_port() {
   python3 - <<'PY'
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -64,6 +114,14 @@ s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])
 s.close()
 PY
+}
+
+pick_port() {
+  if [[ -n "${BARKVISOR_PORT:-}" ]]; then
+    echo "$BARKVISOR_PORT"
+    return
+  fi
+  pick_free_port
 }
 
 find_bin() {
@@ -111,12 +169,17 @@ start_server() {
   fi
 
   export BARKVISOR_PORT BARKVISOR_DATA_DIR
+  if [[ -n "${BARKVISOR_AGENT_PORT:-}" ]]; then
+    export BARKVISOR_AGENT_PORT
+  fi
   LOG_FILE="${BARKVISOR_DATA_DIR}/server.log"
   BASE="http://127.0.0.1:${BARKVISOR_PORT}"
 
-  log "starting BarkVisorApp (port ${BARKVISOR_PORT})"
+  log "starting BarkVisorApp (port ${BARKVISOR_PORT}${BARKVISOR_AGENT_PORT:+, agent ${BARKVISOR_AGENT_PORT}})"
   "$bin" >"$LOG_FILE" 2>&1 &
   SERVER_PID=$!
+  smoke_track_pid "$SERVER_PID"
+  smoke_track_log "$LOG_FILE"
 }
 
 # Wait until /api/health succeeds or fail.
