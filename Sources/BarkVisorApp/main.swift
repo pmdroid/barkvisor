@@ -21,7 +21,7 @@ struct BarkVisorCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "barkvisor",
         abstract: "BarkVisor Device daemon",
-        subcommands: [Join.self],
+        subcommands: [Serve.self, Join.self],
         defaultSubcommand: Serve.self,
     )
 }
