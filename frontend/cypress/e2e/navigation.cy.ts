@@ -6,6 +6,7 @@ describe('Navigation', () => {
   // Sidebar uses <router-link to="..."> which renders as <a href="...">
   const sidebarRoutes = [
     { href: '/dashboard', label: 'Dashboard' },
+    { href: '/devices', label: 'Devices' },
     { href: '/vms', label: 'Virtual Machines' },
     { href: '/images', label: 'Images' },
     { href: '/disks', label: 'Disks' },

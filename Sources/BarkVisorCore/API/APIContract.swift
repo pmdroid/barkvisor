@@ -101,6 +101,7 @@ public enum APIContract {
         Route(method: "POST", path: "/api/pairing/redeem", stability: .evolving),
         Route(method: "POST", path: "/api/pairing/join", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices", stability: .evolving),
+        Route(method: "GET", path: "/api/home/devices/health", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
         Route(method: "POST", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
         Route(method: "PUT", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),

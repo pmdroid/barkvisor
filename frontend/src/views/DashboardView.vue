@@ -3,11 +3,15 @@ import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDiskStore } from '../stores/disks'
+import { useDevicesStore } from '../stores/devices'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
+import DeviceCard from '../components/DeviceCard.vue'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { formatTemperatureC } from '../utils/format'
+import { hasKnownHealthCounts, homeWorkloadsRunningLine, resolveHealthCounts } from '../utils/homeDeviceHealth'
+import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
@@ -28,6 +32,7 @@ const MAX_HISTORY = 60
 const router = useRouter()
 const store = useVMStore()
 const diskStore = useDiskStore()
+const devices = useDevicesStore()
 const { disks, summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
 const healthSummary = ref<WorkloadHealthSummary | null>(null)
@@ -40,12 +45,26 @@ const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[]
 const runningVMs = computed(() => store.vms.filter(v => v.state === 'running').length)
 
 const healthStrip = computed(() => {
-  const counts = healthSummary.value?.counts ?? {}
+  const counts = resolveHealthCounts(devices.totals?.healthCounts, healthSummary.value?.counts)
   return (['running', 'starting', 'degraded', 'failed', 'stopped'] as WorkloadHealth[])
     .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
 })
 
-const failedCount = computed(() => healthSummary.value?.counts?.failed ?? 0)
+const failedCount = computed(() => {
+  const counts = devices.totals?.healthCounts
+  if (hasKnownHealthCounts(counts)) return counts.failed ?? 0
+  return healthSummary.value?.counts?.failed ?? 0
+})
+
+const homeRunningCount = computed(() => {
+  const counts = devices.totals?.healthCounts
+  if (hasKnownHealthCounts(counts)) return counts.running ?? 0
+  return runningVMs.value
+})
+
+const homeWorkloadsLine = computed(() =>
+  homeWorkloadsRunningLine(devices.totals, homeRunningCount.value),
+)
 
 const recentVMs = computed(() =>
   [...store.vms].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5)
@@ -112,10 +131,12 @@ onMounted(() => {
   fetchStats()
   fetchStorage()
   fetchHealthSummary()
+  devices.fetchHealth()
   pollTimer = window.setInterval(() => {
     fetchStats()
     fetchHealthSummary()
     store.fetchAll()
+    devices.fetchHealth()
   }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -171,14 +192,35 @@ const memSparkData = computed(() => ({
       <div>
         <h1>Dashboard</h1>
         <p class="welcome-sub">
-          {{ runningVMs }} of {{ store.vms.length }} VMs running
+          <template v-if="devices.totals">
+            {{ devices.totals.devices }} {{ devices.totals.devices === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's' }}
+            <template v-if="homeWorkloadsLine">
+              · {{ homeWorkloadsLine }}
+            </template>
+            <span v-if="devices.totals.unreachable > 0">
+              · {{ devices.totals.unreachable }} unreachable
+            </span>
+          </template>
+          <template v-else>
+            {{ runningVMs }} of {{ store.vms.length }} VMs running
+          </template>
           <span v-if="failedCount > 0"> · {{ failedCount }} failed</span>
         </p>
       </div>
       <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
     </div>
 
-    <div v-if="healthSummary" class="health-strip">
+    <div v-if="devices.devices.length" class="section device-home">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2>{{ HOME_LABEL }}</h2>
+        <AppButton size="sm" @click="router.push('/devices')">View all</AppButton>
+      </div>
+      <div class="device-grid">
+        <DeviceCard v-for="row in devices.devices" :key="row.hostId" :device="row" />
+      </div>
+    </div>
+
+    <div v-if="healthSummary || devices.totals" class="health-strip">
       <div v-for="row in healthStrip" :key="row.key" class="health-chip" :class="row.key">
         <span class="health-chip-count">{{ row.count }}</span>
         <span class="health-chip-label">{{ row.label }}</span>
@@ -435,6 +477,14 @@ const memSparkData = computed(() => ({
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+.device-home {
+  margin-bottom: 28px;
+}
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 @media (max-width: 1024px) {
