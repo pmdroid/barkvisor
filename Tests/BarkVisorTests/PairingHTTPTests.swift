@@ -120,7 +120,8 @@ struct PairingHTTPTests {
     @Test func `pairing HTTP client does not follow redirects`() async throws {
         let server = try LocalRedirectHTTPServer(location: "http://127.0.0.1:9/api/contract")
         defer { server.stop() }
-        let client = URLSessionPairingHTTPClient(timeout: 2)
+        // Default timeout: a 2s budget expires under parallel CI load.
+        let client = URLSessionPairingHTTPClient()
         let url = try #require(URL(string: "http://127.0.0.1:\(server.port)/api/contract"))
         let response = try await client.get(url: url)
         #expect((300 ... 399).contains(response.status))
@@ -172,7 +173,10 @@ private final class LocalRedirectHTTPServer: @unchecked Sendable {
         }
         self.fd = sock
         self.port = Int(UInt16(bigEndian: got.sin_port))
-        DispatchQueue.global().async { [fd = sock, location] in
+        // Dedicated thread: global GCD is starved by parallel Swift Testing.
+        let ready = DispatchSemaphore(value: 0)
+        Thread.detachNewThread { [fd = sock, location] in
+            ready.signal()
             while true {
                 var clientAddr = sockaddr_in()
                 var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -198,6 +202,7 @@ private final class LocalRedirectHTTPServer: @unchecked Sendable {
                 close(client)
             }
         }
+        ready.wait()
     }
 
     func stop() {
