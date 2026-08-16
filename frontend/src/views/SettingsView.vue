@@ -628,10 +628,10 @@ onUnmounted(() => {
 
     <div class="pairing-card" style="margin-top:16px">
       <p class="pairing-hint" style="text-align:left;margin:0 0 10px">
-        Fetch images from this {{ DEVICE_LABEL }} first. If that {{ DEVICE_LABEL }} is
-        down or the checksum does not match, this {{ DEVICE_LABEL }} downloads from
-        the internet. Starting a Workload on this {{ DEVICE_LABEL }} never waits on
-        the Library depot.
+        Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other
+        {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
+        down or the checksum does not match, they download from the internet.
+        Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
       </p>
       <div class="form-group" style="margin:0;text-align:left">
         <label>Library depot</label>
