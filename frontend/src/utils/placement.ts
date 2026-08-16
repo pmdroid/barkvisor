@@ -1,15 +1,30 @@
 /** PAS-44 recommender: pre-select only. Never place a workload. */
 
+import axios from 'axios'
 import api from '../api/client'
 import type { HomePlacementScoreRequest, HomePlacementScoreResponse } from '../api/types'
 
 export const PLACEMENT_SCORE_PATH = '/home/placement/score'
+/** Coalesce memory/arch keystrokes before probing every Home member. */
+export const PLACEMENT_SCORE_DEBOUNCE_MS = 200
 
 export async function scorePlacement(
   request: HomePlacementScoreRequest,
+  opts?: { signal?: AbortSignal },
 ): Promise<HomePlacementScoreResponse> {
-  const { data } = await api.post<HomePlacementScoreResponse>(PLACEMENT_SCORE_PATH, request)
+  const { data } = await api.post<HomePlacementScoreResponse>(
+    PLACEMENT_SCORE_PATH,
+    request,
+    { signal: opts?.signal },
+  )
   return data
+}
+
+export function isPlacementScoreAborted(error: unknown): boolean {
+  if (axios.isCancel(error)) return true
+  return typeof error === 'object' && error !== null
+    && 'code' in error
+    && (error as { code?: string }).code === 'ERR_CANCELED'
 }
 
 function hostIsAllowed(hostId: string, hostAllowed?: (hostId: string) => boolean): boolean {

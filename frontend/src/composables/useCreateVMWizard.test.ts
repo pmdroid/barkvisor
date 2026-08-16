@@ -2,10 +2,17 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import api from '../api/client'
-import type { HomeDeviceHealthReport, HomeDeviceHealthSnapshot, Image, SSHKey } from '../api/types'
+import type {
+  HomeDeviceHealthReport,
+  HomeDeviceHealthSnapshot,
+  HomePlacementScoreResponse,
+  Image,
+  SSHKey,
+} from '../api/types'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { useDevicesStore } from '../stores/devices'
-import { useCreateVMWizard } from './useCreateVMWizard'
+import { cancelLivePlacementScores, useCreateVMWizard } from './useCreateVMWizard'
+import { PLACEMENT_SCORE_DEBOUNCE_MS } from '../utils/placement'
 
 const originalGet = api.get
 const originalPost = api.post
@@ -72,6 +79,20 @@ function seedLibraryImage(img: Image, hostIds: string[]): string {
   return key
 }
 
+async function waitMs(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitUntil(pred: () => boolean, timeoutMs = 1_000) {
+  const start = Date.now()
+  while (!pred()) {
+    if (Date.now() - start >= timeoutMs) return
+    await nextTick()
+    await Promise.resolve()
+    await waitMs(10)
+  }
+}
+
 async function waitForCurrentInventory(
   wizard: ReturnType<typeof useCreateVMWizard>,
   hostId: string,
@@ -109,6 +130,22 @@ function inventoryGet(hostId: string, url: string) {
 describe('useCreateVMWizard (PAS-182)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    api.get = mock((url: string) => {
+      if (url === '/home/devices/health') {
+        // Keep a test-seeded report; fetchHealth only overwrites on success.
+        return Promise.reject(new Error('no default health'))
+      }
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      return Promise.resolve({ data: [] })
+    }) as typeof api.get
     api.post = mock((url: string) => {
       if (url === '/home/placement/score') {
         return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
@@ -118,6 +155,7 @@ describe('useCreateVMWizard (PAS-182)', () => {
   })
 
   afterEach(() => {
+    cancelLivePlacementScores()
     api.get = originalGet
     api.post = originalPost
   })
@@ -651,11 +689,10 @@ describe('useCreateVMWizard (PAS-182)', () => {
     const beforeMemory = scoreBodies.length
     wizard.step.value = 4
     wizard.memoryMB.value = 8192
-    for (let i = 0; i < 50; i++) {
-      if (scoreBodies.length > beforeMemory && scoreBodies.some((body) => body.requestedMemoryMB === 8192)) break
-      await nextTick()
-      await Promise.resolve()
-    }
+    await waitUntil(
+      () => scoreBodies.length > beforeMemory && scoreBodies.some((body) => body.requestedMemoryMB === 8192),
+      PLACEMENT_SCORE_DEBOUNCE_MS + 400,
+    )
     expect(scoreBodies.some((body) => body.requestedMemoryMB === 8192)).toBe(true)
     const desk = wizard.deviceOptions.value.find((row) => row.hostId === 'desk')
     expect(desk?.compatible).toBe(false)
@@ -666,15 +703,132 @@ describe('useCreateVMWizard (PAS-182)', () => {
 
     const beforeArch = scoreBodies.length
     wizard.setGuestArch('x86_64')
-    for (let i = 0; i < 50; i++) {
-      if (scoreBodies.length > beforeArch) break
-      await nextTick()
-      await Promise.resolve()
-    }
+    await waitUntil(
+      () => scoreBodies.length > beforeArch,
+      PLACEMENT_SCORE_DEBOUNCE_MS + 400,
+    )
     expect(scoreBodies.some((body) => {
       const arches = body.declaredArchitectures
       return Array.isArray(arches) && arches.includes('x86_64')
     })).toBe(true)
+  })
+
+  test('first Device pick while initial scoring is in flight is kept', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({ hostId: 'studio', role: 'member', displayName: 'studio' }),
+    ])
+    devices.report = health
+    let resolveScore: ((value: { data: HomePlacementScoreResponse }) => void) | undefined
+    const scorePromise = new Promise<{ data: HomePlacementScoreResponse }>((resolve) => {
+      resolveScore = resolve
+    })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    let scoreCalls = 0
+    const post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        scoreCalls += 1
+        return scorePromise
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    const load = wizard.loadPickedDevice()
+    await waitUntil(() => scoreCalls > 0)
+    expect(wizard.selectedHostId.value).toBe('')
+    wizard.selectedHostId.value = 'desk'
+    await nextTick()
+    resolveScore?.({
+      data: {
+        recommendedHostId: 'studio',
+        candidates: [
+          {
+            hostId: 'studio',
+            role: 'member',
+            eligible: true,
+            recommended: true,
+            rank: 1,
+            score: 90,
+            reasons: [{ code: 'headroom', kind: 'soft', message: 'ok' }],
+          },
+        ],
+      },
+    })
+    await load
+    await nextTick()
+    expect(wizard.selectedHostId.value).toBe('desk')
+  })
+
+  test('memory edits debounce and abort the in-flight score', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+    ])
+    devices.report = health
+    const signals: AbortSignal[] = []
+    const scoreBodies: Array<Record<string, unknown>> = []
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string, body?: Record<string, unknown>, config?: { signal?: AbortSignal }) => {
+      if (url === '/home/placement/score') {
+        scoreBodies.push(body ?? {})
+        if (config?.signal) signals.push(config.signal)
+        return Promise.resolve({
+          data: { recommendedHostId: 'desk', candidates: [] },
+        })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    await wizard.loadPickedDevice()
+    const afterLoad = scoreBodies.length
+    expect(afterLoad).toBeGreaterThan(0)
+
+    wizard.memoryMB.value = 2048
+    wizard.memoryMB.value = 4096
+    wizard.memoryMB.value = 8192
+    await nextTick()
+    expect(scoreBodies.length).toBe(afterLoad)
+
+    await waitUntil(
+      () => scoreBodies.some((body) => body.requestedMemoryMB === 8192),
+      PLACEMENT_SCORE_DEBOUNCE_MS + 400,
+    )
+    const memoryScores = scoreBodies.filter((body) => body.requestedMemoryMB === 8192)
+    expect(memoryScores).toHaveLength(1)
+    expect(scoreBodies.some((body) => body.requestedMemoryMB === 2048)).toBe(false)
+    expect(scoreBodies.some((body) => body.requestedMemoryMB === 4096)).toBe(false)
+    expect(signals.some((signal) => signal.aborted)).toBe(true)
   })
 
   test('re-entering Place applies a new recommendation without locking host override', async () => {

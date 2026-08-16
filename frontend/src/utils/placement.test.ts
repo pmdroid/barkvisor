@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { HomePlacementScoreResponse } from '../api/types'
 import {
   applyRecommendedHostId,
+  isPlacementScoreAborted,
   isRecommendedHost,
   placementReasonsForHost,
 } from './placement'
@@ -74,5 +75,11 @@ describe('placement (PAS-44)', () => {
     })).toBe('desk')
     expect(isRecommendedHost(score, 'studio', hostAllowed)).toBe(false)
     expect(isRecommendedHost(score, 'studio', (hostId) => hostId === 'studio')).toBe(true)
+  })
+
+  test('treats axios cancel and ERR_CANCELED as an aborted score', () => {
+    expect(isPlacementScoreAborted({ code: 'ERR_CANCELED' })).toBe(true)
+    expect(isPlacementScoreAborted(new Error('network'))).toBe(false)
+    expect(isPlacementScoreAborted(undefined)).toBe(false)
   })
 })
