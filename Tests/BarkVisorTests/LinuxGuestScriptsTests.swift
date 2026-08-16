@@ -10,6 +10,43 @@ struct LinuxGuestScriptsTests {
             .deletingLastPathComponent()
     }
 
+    /// Body of a `[tasks.NAME]` table until the next TOML header.
+    private func miseTaskTable(_ mise: String, name: String) -> String? {
+        guard let header = mise.range(of: "[tasks.\(name)]") else { return nil }
+        let rest = mise[header.upperBound...]
+        if let next = rest.range(of: "\n[") {
+            return String(rest[..<next.lowerBound])
+        }
+        return String(rest)
+    }
+
+    private func quotedStrings(in text: String) -> [String] {
+        var out: [String] = []
+        var remaining = text[...]
+        while let start = remaining.firstIndex(of: "\"") {
+            let afterStart = remaining.index(after: start)
+            guard let end = remaining[afterStart...].firstIndex(of: "\"") else { break }
+            out.append(String(remaining[afterStart ..< end]))
+            remaining = remaining[remaining.index(after: end)...]
+        }
+        return out
+    }
+
+    /// `depends = [...]` entries in a mise task table, whitespace-insensitive.
+    private func miseDepends(in table: String) -> [String] {
+        guard let key = table.range(of: "depends") else { return [] }
+        let afterKey = table[key.upperBound...]
+        guard let open = afterKey.firstIndex(of: "["),
+              let close = afterKey[open...].firstIndex(of: "]")
+        else { return [] }
+        return quotedStrings(in: String(afterKey[open ... close]))
+    }
+
+    private func defaultPrepushDepends(_ mise: String) -> Set<String> {
+        guard let table = miseTaskTable(mise, name: "prepush") else { return [] }
+        return Set(miseDepends(in: table))
+    }
+
     @Test func `linux guest smoke script exists and is executable`() throws {
         let path = repoRoot.appendingPathComponent("scripts/linux-guest-smoke.sh").path
         #expect(FileManager.default.fileExists(atPath: path))
@@ -173,6 +210,12 @@ struct LinuxGuestScriptsTests {
         #expect(listed.1.contains("a blank-disk Workload reaches running"))
         #expect(listed.1.contains("a Linux Workload boots from a cloud image and answers SSH"))
 
+        // No args must print help, not start a server / QEMU.
+        let help = try run(args: [], extraEnv: ["DRY_RUN": "0"])
+        #expect(help.0 == 0, "help exit \(help.0): \(help.1)")
+        #expect(help.1.contains("Usage:"))
+        #expect(!help.1.contains("Scenario:"))
+
         // Parent ALLOW_NO_QEMU=1 would take the create-only API branch.
         let skipEnv = ["BDD_FORCE_NO_QEMU": "1", "ALLOW_NO_QEMU": "0"]
         let skipped = try run(args: ["blank"], extraEnv: skipEnv)
@@ -198,9 +241,19 @@ struct LinuxGuestScriptsTests {
             "api-contract-probe.py",
             "docs/api/openapi.yaml",
             "DRY_RUN",
+            "export BASE=",
+            "API_BDD_USB",
         ] {
             #expect(body.contains(needle), "api-bdd should reference \(needle)")
         }
+        let probe = try String(
+            contentsOf: repoRoot.appendingPathComponent("scripts/lib/api-contract-probe.py"),
+            encoding: .utf8,
+        )
+        #expect(probe.contains("BARKVISOR_PORT"))
+        #expect(probe.contains("API_BDD_USB"))
+        #expect(probe.contains("USB attach needs host hardware"))
+        #expect(!probe.contains("\"deviceId\": \"0000:0000\""))
         let feature = try String(
             contentsOf: repoRoot.appendingPathComponent("features/api-contract.feature"),
             encoding: .utf8,
@@ -239,13 +292,10 @@ struct LinuxGuestScriptsTests {
         #expect(mise.contains("api-contract-bdd.sh"))
 
         // Default prepush must stay lint + test + frontend-test (no guest boot).
-        #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
-        #expect(!mise.contains("depends = [\"lint\", \"test\", \"frontend-test\", \"guest-smoke\"]"))
-        let start = try #require(mise.range(of: "[tasks.prepush]\n"))
-        let after = mise[start.upperBound...]
-        let nextHeader = after.range(of: "\n[tasks.")
-        let prepushBlock = nextHeader.map { after[..<$0.lowerBound] } ?? after[...]
-        #expect(!String(prepushBlock).contains("guest-smoke"))
+        let prepushDeps = defaultPrepushDepends(mise)
+        #expect(prepushDeps == ["lint", "test", "frontend-test"])
+        let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
+        #expect(!prepushTable.contains("guest-smoke"))
 
         let docs = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
@@ -345,13 +395,10 @@ struct LinuxGuestScriptsTests {
         )
         #expect(mise.contains("[tasks.cross-device-smoke]"))
         #expect(mise.contains("cross-device-smoke.sh"))
-        #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
-        #expect(!mise.contains("depends = [\"lint\", \"test\", \"frontend-test\", \"cross-device-smoke\"]"))
-        let start = try #require(mise.range(of: "[tasks.prepush]\n"))
-        let after = mise[start.upperBound...]
-        let nextHeader = after.range(of: "\n[tasks.")
-        let prepushBlock = nextHeader.map { after[..<$0.lowerBound] } ?? after[...]
-        #expect(!String(prepushBlock).contains("cross-device-smoke"))
+        let prepushDeps = defaultPrepushDepends(mise)
+        #expect(prepushDeps == ["lint", "test", "frontend-test"])
+        let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
+        #expect(!prepushTable.contains("cross-device-smoke"))
 
         let docs = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
@@ -461,9 +508,12 @@ struct LinuxGuestScriptsTests {
             "ci-guest-boot.sh",
             "NEVER a required status check",
             "guest-boot-bdd.sh",
+            "sha256sum -c",
         ] {
             #expect(workflow.contains(needle), "guest-boot.yml should mention \(needle)")
         }
+        #expect(workflow.contains("3e0b8eaf9210131a1756e6a1a9e9103bac83609a0ae604d6f2e791053f98f115"))
+        #expect(workflow.contains("48dc99bcabc54feadd2942f4830be854ca2396e2db4ca4ec6b6c926a25c87d55"))
         #expect(workflow.contains("if: vars.KVM_RUNNER_ENABLED == 'true'"))
         #expect(!workflow.localizedCaseInsensitiveContains("cluster"))
         #expect(!workflow.localizedCaseInsensitiveContains("quorum"))
@@ -506,12 +556,36 @@ struct LinuxGuestScriptsTests {
             contentsOf: repoRoot.appendingPathComponent("mise.toml"),
             encoding: .utf8,
         )
-        let start = try #require(mise.range(of: "[tasks.prepush]\n"))
-        let after = mise[start.upperBound...]
-        let nextHeader = after.range(of: "\n[tasks.")
-        let prepushBlock = nextHeader.map { after[..<$0.lowerBound] } ?? after[...]
-        #expect(!String(prepushBlock).contains("guest-smoke"))
-        #expect(mise.contains("depends = [\"lint\", \"test\", \"frontend-test\"]"))
-        #expect(!mise.contains("depends = [\"lint\", \"test\", \"frontend-test\", \"guest-smoke\"]"))
+        let prepushDeps = defaultPrepushDepends(mise)
+        #expect(prepushDeps == ["lint", "test", "frontend-test"])
+        let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
+        #expect(!prepushTable.contains("guest-smoke"))
+    }
+
+    @Test func `starlight changelog and terminology keep Roadmap links`() throws {
+        let changelog = try String(
+            contentsOf: repoRoot.appendingPathComponent(
+                "website/src/content/docs/docs/changelog.md",
+            ),
+            encoding: .utf8,
+        )
+        #expect(changelog.contains("/docs/roadmap/"))
+        let terms = try String(
+            contentsOf: repoRoot.appendingPathComponent(
+                "website/src/content/docs/docs/concepts/terminology.md",
+            ),
+            encoding: .utf8,
+        )
+        #expect(terms.contains("/docs/roadmap/"))
+        let srcChange = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/changelog.md"),
+            encoding: .utf8,
+        )
+        #expect(srcChange.contains("roadmap.md"))
+        let srcTerms = try String(
+            contentsOf: repoRoot.appendingPathComponent("docs/product-terminology.md"),
+            encoding: .utf8,
+        )
+        #expect(srcTerms.contains("roadmap.md"))
     }
 }

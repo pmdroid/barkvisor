@@ -6,7 +6,8 @@
 #
 # Fail = documented route returns 404 or 5xx.
 # SKIP is allowed for SSE/WebSocket, VNC/console upgrade, mTLS-only bytes,
-# and Home proxy methods that need a second Device.
+# Home proxy methods that need a second Device, and USB attach when no
+# attachable host USB is present (or API_BDD_USB is unset).
 #
 # Out of scope: guest boot (PAS-183), Cypress, inventing undocumented routes.
 
