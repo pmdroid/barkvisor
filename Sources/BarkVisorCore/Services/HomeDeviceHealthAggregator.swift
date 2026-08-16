@@ -57,6 +57,7 @@ public enum HomeDeviceHealthAggregator {
                 memoryUsedMB: inventory.resources.memoryUsedMB,
                 cpuLoadPercent: inventory.resources.cpuLoadPercent,
             ),
+            features: HomeDeviceFeatureSummary(from: inventory.virtualization.features),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,
         )
@@ -89,6 +90,7 @@ public enum HomeDeviceHealthAggregator {
             collectedAt: facts?.collectedAt,
             platform: facts?.platform,
             resources: reachable ? facts?.resources : nil,
+            features: reachable ? facts?.features : nil,
             workloadCount: reachable ? facts?.workloadCount : nil,
             healthCounts: reachable ? facts?.healthCounts : nil,
         )

@@ -128,5 +128,11 @@ describe('deviceCompatibility (PAS-34)', () => {
     const option = toPickOption(peer, [])
     expect(option.compatible).toBe(true)
     expect(option.label).toBe('studio')
+    const recommended = toPickOption(peer, [], {
+      recommended: true,
+      recommendReasons: ['2048 MB free memory, 10% CPU load.'],
+    })
+    expect(recommended.recommended).toBe(true)
+    expect(recommended.recommendReasons).toEqual(['2048 MB free memory, 10% CPU load.'])
   })
 })

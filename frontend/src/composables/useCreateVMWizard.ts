@@ -18,6 +18,7 @@ import type {
   CreateVMRequest,
   CurrentHostCapabilities,
   Disk,
+  HomePlacementScoreResponse,
   Image,
   Network,
   SSHKey,
@@ -53,6 +54,12 @@ import {
   selectedHostIsLive,
   usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
+import {
+  applyRecommendedHostId,
+  isRecommendedHost,
+  placementReasonsForHost,
+  scorePlacement,
+} from '../utils/placement'
 
 export function useCreateVMWizard(
   emit: (e: 'created') => void,
@@ -68,6 +75,8 @@ export function useCreateVMWizard(
   const devicesStore = useDevicesStore()
 
   const selectedHostId = ref(opts.initialHostId ?? '')
+  const userOverrodeHost = ref(!!opts.initialHostId)
+  const placementScore = ref<HomePlacementScoreResponse | null>(null)
   const pickedCaps = ref<CurrentHostCapabilities>({ ...defaultCapabilities })
   const pickedHostArchKnown = ref(false)
   const deviceImages = ref<Image[]>([])
@@ -138,17 +147,23 @@ export function useCreateVMWizard(
   const deviceOptions = computed<DevicePickOption[]>(() => {
     const rows = devicesStore.devices
     const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
-    return list.map((row) =>
-      toPickOption(
-        row,
-        createVMIncompatibilityReasons(row, {
-          // Configured guest for this create — not each row's host arch.
-          guestArch: effectiveGuestArch.value,
-          osType: osType.value,
-          capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
-        }),
-      ),
-    )
+    return list.map((row) => {
+      const local = createVMIncompatibilityReasons(row, {
+        // Configured guest for this create — not each row's host arch.
+        guestArch: effectiveGuestArch.value,
+        osType: osType.value,
+        capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+      })
+      const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
+      const hard = (scored?.reasons ?? [])
+        .filter((reason) => reason.kind === 'hard')
+        .map((reason) => reason.message)
+      const reasons = [...new Set([...local, ...hard])]
+      return toPickOption(row, reasons, {
+        recommended: isRecommendedHost(placementScore.value, row.hostId),
+        recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
+      })
+    })
   })
 
   const vmType = computed(() => {
@@ -525,11 +540,48 @@ export function useCreateVMWizard(
     deviceSSHKeys.value = []
   }
 
+  let placementScoreSeq = 0
+  const placementRefreshing = ref(false)
+
+  async function refreshPlacement(applyRecommendation = true) {
+    const seq = ++placementScoreSeq
+    placementRefreshing.value = true
+    try {
+      const guest = effectiveGuestArch.value
+      const data = await scorePlacement({
+        declaredArchitectures: guest ? [guest] : [],
+        minMemoryMB: memoryMB.value,
+        requestedMemoryMB: memoryMB.value,
+      })
+      if (seq !== placementScoreSeq) return
+      placementScore.value = data
+    } catch {
+      if (seq !== placementScoreSeq) return
+      placementScore.value = null
+    } finally {
+      if (seq === placementScoreSeq) placementRefreshing.value = false
+    }
+    if (seq !== placementScoreSeq) return
+    if (!applyRecommendation || userOverrodeHost.value) return
+    selectedHostId.value = applyRecommendedHostId({
+      recommendedHostId: placementScore.value?.recommendedHostId,
+      initialHostId: opts.initialHostId,
+      selfHostId: devicesStore.selfDevice?.hostId,
+      currentHostId: selectedHostId.value,
+    })
+  }
+
+  watch([memoryMB, effectiveGuestArch, osType], () => {
+    void refreshPlacement(false)
+  })
+
   async function loadPickedDevice() {
     const seq = ++pickedDeviceLoadSeq
     pickedDeviceLoading.value = true
     try {
       await devicesStore.fetchHealth().catch(() => {})
+      if (!isCurrentPickedDeviceLoad(seq)) return
+      await refreshPlacement()
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
         selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
@@ -597,6 +649,7 @@ export function useCreateVMWizard(
 
   watch(selectedHostId, async (next, prev) => {
     if (!prev || !next || next === prev) return
+    userOverrodeHost.value = true
     selectedImageId.value = ''
     existingDiskId.value = ''
     selectedUSBDevices.value = []
@@ -641,15 +694,28 @@ export function useCreateVMWizard(
     return allNetworks.value.find((n) => n.id === selectedNetworkId.value) || null
   })
 
+  function selectedDeviceCompatible(): boolean {
+    if (!deviceOptions.value.length) return true
+    return deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.compatible)
+  }
+
+  function selectedDeviceIncompatibility(): string | null {
+    const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
+    if (option && !option.compatible) {
+      return option.reasons[0] || 'This Device cannot run this VM.'
+    }
+    return null
+  }
+
   function canProceed(): boolean {
-    if (pickedDeviceLoading.value) return false
+    if (pickedDeviceLoading.value || placementRefreshing.value) return false
     if (osType.value === 'windows' && !supportsWindows.value) return false
     const content = stepContent(step.value)
     switch (content) {
       case 'OS':
-        return !!name.value.trim() && (!deviceOptions.value.length || deviceOptions.value.some((o) => o.hostId === selectedHostId.value && o.compatible))
+        return !!name.value.trim() && selectedDeviceCompatible()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && !archIsProblem.value && selectedDeviceCompatible()
       case 'Image':
         return !!selectedImageId.value
       case 'Drivers':
@@ -659,7 +725,7 @@ export function useCreateVMWizard(
       case 'Network':
         return true
       case 'Summary':
-        return !archIsProblem.value && pickedDeviceStillLive()
+        return !archIsProblem.value && pickedDeviceStillLive() && selectedDeviceCompatible()
       default:
         return false
     }
@@ -676,6 +742,12 @@ export function useCreateVMWizard(
   async function submit() {
     error.value = ''
     if (pickedDeviceLoading.value) return
+    await refreshPlacement(false)
+    const placementBlock = selectedDeviceIncompatibility()
+    if (placementBlock) {
+      error.value = placementBlock
+      return
+    }
     if (osType.value === 'windows' && !supportsWindows.value) {
       error.value = 'Windows VMs are not available on this device architecture.'
       return
@@ -763,6 +835,7 @@ export function useCreateVMWizard(
     sshKeyStore: { keys: deviceSSHKeys },
     sshKeys: deviceSSHKeys,
     selectedHostId,
+    placementScore,
     deviceOptions,
     selectedDevice,
     hostArch,

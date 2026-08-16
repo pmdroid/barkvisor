@@ -44,3 +44,7 @@ extension HomeDeviceList: Content {}
 extension HomeDeviceHealthReport: Content {}
 extension HomeDeviceHealthSnapshot: Content {}
 extension HomeDeviceHealthTotals: Content {}
+extension HomePlacementScoreRequest: Content {}
+extension HomePlacementScoreResponse: Content {}
+extension HomePlacementCandidate: Content {}
+extension HomePlacementReason: Content {}
