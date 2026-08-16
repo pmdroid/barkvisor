@@ -197,7 +197,9 @@ public enum TemplateDeployService {
             pathExtension: sourceURL.pathExtension,
             imageType: repoImage.imageType,
         )
-        let destination = Config.dataDir.appendingPathComponent("images/\(imageId).\(ext)")
+        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        let destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
 
         enum DownloadAction {
             case alreadyDownloading(String)

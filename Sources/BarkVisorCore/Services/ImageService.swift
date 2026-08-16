@@ -68,7 +68,9 @@ public enum ImageService {
 
         let ext = Self.imageExtension(from: sourceURL.lastPathComponent, imageType: request.imageType)
         let filename = "\(id).\(ext)"
-        let destination = Config.dataDir.appendingPathComponent("images/\(filename)")
+        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        let destination = imagesDir.appendingPathComponent(filename)
 
         let image = VMImage(
             id: id, name: request.name, imageType: request.imageType, arch: request.arch,
@@ -97,7 +99,9 @@ public enum ImageService {
         let originalName = metadata["name"] ?? ""
         let ext = imageExtension(from: originalName, imageType: image.imageType)
         let finalName = "\(image.id).\(ext)"
-        let finalPath = Config.dataDir.appendingPathComponent("images/\(finalName)")
+        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        let finalPath = imagesDir.appendingPathComponent(finalName)
         let chunkURL = URL(fileURLWithPath: upload.chunkPath)
 
         do {

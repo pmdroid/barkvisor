@@ -757,6 +757,40 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/library/settings:
+    get:
+      tags: [evolving]
+      operationId: getLibrarySettings
+      x-barkvisor-stability: evolving
+      summary: Library directory used for new image downloads
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibrarySettings"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: updateLibrarySettings
+      x-barkvisor-stability: evolving
+      summary: Set the Library directory (new downloads only; existing images are not migrated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LibrarySettingsRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibrarySettings"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/agent/inventory:
     get:
       tags: [evolving]
@@ -2107,6 +2141,27 @@ components:
           type: string
         processUptimeSeconds:
           type: integer
+
+    LibrarySettings:
+      type: object
+      additionalProperties: false
+      required: [imageDirectory, isDefault]
+      properties:
+        imageDirectory:
+          type: string
+          description: Resolved Library directory used for new downloads
+        isDefault:
+          type: boolean
+          description: True when the path is the default `{dataDir}/images`
+
+    LibrarySettingsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        imageDirectory:
+          type: string
+          nullable: true
+          description: Absolute writable path, or empty to reset to `{dataDir}/images`
 
     PairingIssue:
       type: object

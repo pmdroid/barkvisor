@@ -292,7 +292,9 @@ struct RepositoryController: RouteCollection {
                     ? (repoImage.imageType == "iso" ? "iso" : "img")
                     : sourceURL.pathExtension
         }
-        let destination = Config.dataDir.appendingPathComponent("images/\(imageId).\(ext)")
+        let imagesDir = try await req.db.read { try Config.imagesDir(from: $0) }
+        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        let destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
 
         let image = VMImage(
             id: imageId, name: repoImage.name, imageType: repoImage.imageType,

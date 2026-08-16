@@ -93,6 +93,8 @@ public enum APIContract {
         Route(method: "GET", path: "/api/system/usb-devices", stability: .evolving),
         Route(method: "GET", path: "/api/system/usb", stability: .evolving),
         Route(method: "GET", path: "/api/system/about", stability: .evolving),
+        Route(method: "GET", path: "/api/system/library/settings", stability: .evolving),
+        Route(method: "PUT", path: "/api/system/library/settings", stability: .evolving),
         Route(method: "GET", path: "/api/agent/inventory", stability: .evolving),
         Route(method: "GET", path: "/api/agent/whoami", stability: .outOfBand),
         Route(method: "POST", path: "/api/pairing/codes", stability: .evolving),
