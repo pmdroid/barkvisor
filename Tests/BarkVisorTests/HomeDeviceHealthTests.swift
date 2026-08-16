@@ -59,6 +59,7 @@ struct HomeDeviceHealthTests {
         let peer = try #require(report.devices.first { $0.hostId == peerId })
         #expect(peer.reachability == HomeDeviceHealthAggregator.unreachable)
         #expect(peer.resources == nil)
+        #expect(peer.features == nil)
         #expect(peer.workloadCount == nil)
         #expect(peer.healthCounts == nil)
         #expect(report.totals.devices == 2)
@@ -154,6 +155,9 @@ struct HomeDeviceHealthTests {
         #expect(live.displayName == "desk")
         #expect(live.platform?.arch == "arm64")
         #expect(live.resources?.cpuCount == 2)
+        #expect(live.features?.kvmDevice == false)
+        #expect(live.features?.bridgedNetworking == false)
+        #expect(live.features?.usbPassthrough == false)
         #expect(live.workloadCount == 3)
         #expect(live.healthCounts?["stopped"] == 2)
         let inventoryOnly = HomeDeviceHealthAggregator.facts(from: decoded, summary: nil)
@@ -203,6 +207,7 @@ struct HomeDeviceHealthTests {
         let ghost = report.devices.first { $0.hostId == "ghost" }
         #expect(ghost?.reachability == HomeDeviceHealthAggregator.unreachable)
         #expect(ghost?.resources == nil)
+        #expect(ghost?.features == nil)
         #expect(ghost?.reachabilityError == "Device is unreachable")
     }
 }

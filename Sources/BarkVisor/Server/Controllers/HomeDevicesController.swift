@@ -3,7 +3,8 @@ import Foundation
 import GRDB
 import Vapor
 
-/// Home device registry + member proxy (PAS-34) and aggregated health (PAS-52).
+/// Home device registry + member proxy (PAS-34), aggregated health (PAS-52),
+/// and placement scoring (PAS-44).
 ///
 /// JWT on 7777. Listing is local-only. Health best-effort probes members
 /// over mTLS; this Device stays in the report if a peer is down (PAS-47).
@@ -43,6 +44,7 @@ struct HomeDevicesController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let home = routes.grouped("api", "home")
         home.get("devices", "health", use: health)
+        home.post("placement", "score", use: scorePlacement)
         home.get("devices", use: list)
         for method in [HTTPMethod.GET, .POST, .PUT, .PATCH, .DELETE] {
             home.on(method, "devices", ":id", "v1", "**", use: proxy)
@@ -63,6 +65,30 @@ struct HomeDevicesController: RouteCollection {
             local: resolvedLocalFacts(db: req.db),
             bearer: req.headers.bearerAuthorization?.token,
         )
+    }
+
+    @Sendable
+    func scorePlacement(req: Vapor.Request) async throws -> HomePlacementScoreResponse {
+        _ = try req.requireUser
+        let body = try req.content.decode(HomePlacementScoreRequest.self)
+        return await scorePlacement(
+            request: body,
+            listed: listedDevices(),
+            local: resolvedLocalFacts(db: req.db),
+            bearer: req.headers.bearerAuthorization?.token,
+        )
+    }
+
+    /// Rank Devices from the same probe as health. A down peer is ineligible
+    /// and never blocks scoring this Device (PAS-47 / PAS-90).
+    func scorePlacement(
+        request: HomePlacementScoreRequest,
+        listed: HomeDeviceList,
+        local: HomeDeviceLiveFacts,
+        bearer: String?,
+    ) async -> HomePlacementScoreResponse {
+        let report = await healthReport(listed: listed, local: local, bearer: bearer)
+        return HomePlacementScorer.score(request: request, devices: report.devices)
     }
 
     /// Probe members in parallel and merge with local facts. Extracted so
@@ -225,6 +251,15 @@ struct HomeDevicesController: RouteCollection {
                 memoryTotalMB: slice.resources.memoryTotalMB,
                 memoryUsedMB: slice.resources.memoryUsedMB,
                 cpuLoadPercent: slice.resources.cpuLoadPercent,
+            ),
+            features: HomeDeviceFeatureSummary(
+                kvmDevice: HostInventoryService.kvmDevicePresent(),
+                bridgedNetworking: HostInventoryService.bridgedNetworkingSupported(
+                    platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                    qemuBridgeHelper: HostInventoryService.qemuBridgeHelperPresent(),
+                    os: PlatformHost.platformName,
+                ),
+                usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
             ),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,

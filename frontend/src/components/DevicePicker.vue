@@ -18,6 +18,9 @@ function pick(option: DevicePickOption) {
 <template>
   <div class="device-picker">
     <label class="device-picker-label">{{ DEVICE_LABEL }}</label>
+    <p v-if="options.some((option) => option.recommended && option.compatible)" class="device-picker-hint">
+      Recommended {{ DEVICE_LABEL }} is pre-selected. Confirm or pick another {{ DEVICE_LABEL }}.
+    </p>
     <div class="device-picker-list" role="radiogroup" :aria-label="DEVICE_LABEL">
       <button
         v-for="option in options"
@@ -35,6 +38,7 @@ function pick(option: DevicePickOption) {
       >
         <div class="device-picker-top">
           <span class="device-picker-name">{{ option.label }}</span>
+          <span v-if="option.recommended && option.compatible" class="device-chip recommended">Recommended</span>
           <span v-if="option.role === 'self'" class="device-chip self">This {{ DEVICE_LABEL }}</span>
           <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
         </div>
@@ -46,6 +50,9 @@ function pick(option: DevicePickOption) {
         </div>
         <p v-if="!option.compatible && option.reasons.length" class="device-picker-reason">
           {{ option.reasons[0] }}
+        </p>
+        <p v-else-if="option.recommended && option.recommendReasons?.length" class="device-picker-reason recommend">
+          {{ option.recommendReasons[0] }}
         </p>
       </button>
     </div>
@@ -64,6 +71,11 @@ function pick(option: DevicePickOption) {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   margin-bottom: 8px;
+}
+.device-picker-hint {
+  margin: -2px 0 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 .device-picker-list {
   display: flex;
@@ -124,5 +136,13 @@ function pick(option: DevicePickOption) {
 .device-chip.self {
   border-color: var(--accent);
   color: var(--accent);
+}
+.device-chip.recommended {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+}
+.device-picker-reason.recommend {
+  color: var(--text-secondary);
 }
 </style>

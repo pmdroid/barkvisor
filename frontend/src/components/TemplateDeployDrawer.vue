@@ -18,6 +18,7 @@ import type {
   DeployTemplateResponse,
   TemplateCompatibilityReport,
   CurrentHostCapabilities,
+  HomePlacementScoreResponse,
   SSHKey,
 } from '../api/types'
 import { useTaskPoller } from '../composables/useTaskPoller'
@@ -38,6 +39,12 @@ import {
   isSelfDevice,
   usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
+import {
+  applyRecommendedHostId,
+  isRecommendedHost,
+  placementReasonsForHost,
+  scorePlacement,
+} from '../utils/placement'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -55,6 +62,8 @@ const devicesStore = useDevicesStore()
 const homeLibrary = useHomeLibraryStore()
 
 const selectedHostId = ref(props.initialHostId ?? '')
+const userOverrodeHost = ref(!!props.initialHostId)
+const placementScore = ref<HomePlacementScoreResponse | null>(null)
 const pickedCaps = ref<CurrentHostCapabilities | null>(null)
 const deviceSSHKeys = ref<SSHKey[]>([])
 const selectedSSHKeyId = ref('')
@@ -68,20 +77,31 @@ const resolvedTemplate = computed(() =>
   homeLibrary.resolveTemplateForDeploy(props.template.slug, selectedDevice.value, props.template),
 )
 
+function hostHasDeployableTemplate(hostId: string): boolean {
+  const device = devicesStore.deviceByHostId(hostId)
+  if (!device) return false
+  return homeLibrary.deviceHasDeployableTemplate(props.template.slug, device)
+}
+
 const deviceOptions = computed<DevicePickOption[]>(() => {
   const rows = devicesStore.devices
   const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
-  return list.map((row) =>
-    toPickOption(
-      row,
-      templateIncompatibilityReasons(row, props.template, {
-        capabilities: row.hostId === selectedDevice.value?.hostId
-          ? (pickedCaps.value ?? defaultCapabilities)
-          : undefined,
-        hasTemplate: homeLibrary.deviceHasDeployableTemplate(props.template.slug, row),
-      }),
-    ),
-  )
+  return list.map((row) => {
+    const local = templateIncompatibilityReasons(row, props.template, {
+      capabilities: row.hostId === selectedDevice.value?.hostId
+        ? (pickedCaps.value ?? defaultCapabilities)
+        : undefined,
+      hasTemplate: homeLibrary.deviceHasDeployableTemplate(props.template.slug, row),
+    })
+    const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
+    const hard = (scored?.reasons ?? [])
+      .filter((reason) => reason.kind === 'hard')
+      .map((reason) => reason.message)
+    return toPickOption(row, [...new Set([...local, ...hard])], {
+      recommended: isRecommendedHost(placementScore.value, row.hostId, hostHasDeployableTemplate),
+      recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
+    })
+  })
 })
 
 const bridged = computed(() => ({
@@ -100,9 +120,59 @@ const platformBridgeUnsupported = computed(
 
 const compatibility = ref<TemplateCompatibilityReport | null>(null)
 let pickedDeviceLoadSeq = 0
+let placementScoreSeq = 0
 
 function isCurrentPickedDeviceLoad(seq: number): boolean {
   return seq === pickedDeviceLoadSeq
+}
+
+const vmName = ref('')
+const cpuCount = ref(props.template.cpuCount)
+const memoryMB = ref(props.template.memoryMB)
+const diskSizeGB = ref(props.template.diskSizeGB)
+const memoryFloor = computed(() => props.template.minMemoryMB ?? 128)
+const memoryBelowMinimum = computed(() => {
+  const planned = Number(memoryMB.value)
+  return Number.isFinite(planned) && planned < memoryFloor.value
+})
+
+function plannedMemoryMB(): number {
+  const planned = Number(memoryMB.value)
+  return Number.isFinite(planned) ? planned : props.template.memoryMB
+}
+
+function selectedDeviceIncompatibility(): string | null {
+  const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
+  if (option && !option.compatible) {
+    return option.reasons[0] || 'This Device cannot run this template.'
+  }
+  return null
+}
+
+async function refreshPlacement(applyRecommendation = true) {
+  const seq = ++placementScoreSeq
+  try {
+    const data = await scorePlacement({
+      declaredArchitectures: props.template.architectures ?? [],
+      requiredFeatures: props.template.requiredFeatures ?? [],
+      minMemoryMB: props.template.minMemoryMB,
+      requestedMemoryMB: plannedMemoryMB(),
+    })
+    if (seq !== placementScoreSeq) return
+    placementScore.value = data
+  } catch {
+    if (seq !== placementScoreSeq) return
+    placementScore.value = null
+  }
+  if (seq !== placementScoreSeq) return
+  if (!applyRecommendation || userOverrodeHost.value) return
+  selectedHostId.value = applyRecommendedHostId({
+    recommendedHostId: placementScore.value?.recommendedHostId,
+    initialHostId: props.initialHostId,
+    selfHostId: devicesStore.selfDevice?.hostId,
+    currentHostId: selectedHostId.value,
+    hostAllowed: hostHasDeployableTemplate,
+  })
 }
 
 async function loadPickedDevice() {
@@ -113,6 +183,8 @@ async function loadPickedDevice() {
     await homeLibrary.fetchAll(devicesStore.devices).catch(() => {})
     if (!isCurrentPickedDeviceLoad(seq)) return
   }
+  await refreshPlacement()
+  if (!isCurrentPickedDeviceLoad(seq)) return
   if (!selectedHostId.value) {
     selectedHostId.value = defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId)
   }
@@ -189,23 +261,13 @@ onMounted(async () => {
 
 watch(selectedHostId, async (next, prev) => {
   if (!prev || !next || next === prev) return
+  userOverrodeHost.value = true
   await loadPickedDevice()
   await refreshCompatibility()
 })
 
 const step = ref(1)
 const totalSteps = computed(() => visibleInputs.value.length > 0 ? 3 : 2)
-
-// Step 1: VM Name & Resource overrides
-const vmName = ref('')
-const cpuCount = ref(props.template.cpuCount)
-const memoryMB = ref(props.template.memoryMB)
-const diskSizeGB = ref(props.template.diskSizeGB)
-const memoryFloor = computed(() => props.template.minMemoryMB ?? 128)
-const memoryBelowMinimum = computed(() => {
-  const planned = Number(memoryMB.value)
-  return Number.isFinite(planned) && planned < memoryFloor.value
-})
 
 async function refreshCompatibility(expectedHostId = selectedHostId.value) {
   try {
@@ -230,8 +292,9 @@ async function refreshCompatibility(expectedHostId = selectedHostId.value) {
   }
 }
 
-watch(memoryMB, () => {
+watch(memoryMB, (_next, prev) => {
   void refreshCompatibility()
+  if (prev !== undefined) void refreshPlacement(false)
 }, { immediate: true })
 
 // Step 2: Template inputs (dynamic) — ssh_keys is handled by the dedicated SSH key selector
@@ -455,6 +518,12 @@ async function submit() {
   error.value = ''
   if (!resolvedTemplate.value) {
     error.value = "Not in this Device's Library"
+    return
+  }
+  await refreshPlacement(false)
+  const placementBlock = selectedDeviceIncompatibility()
+  if (placementBlock) {
+    error.value = placementBlock
     return
   }
   if (platformBridgeUnsupported.value) {
