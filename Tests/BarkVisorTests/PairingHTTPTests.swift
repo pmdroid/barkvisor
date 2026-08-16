@@ -3,6 +3,7 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import Dispatch
 import Foundation
 import Testing
 @testable import BarkVisorCore
@@ -202,7 +203,11 @@ private final class LocalRedirectHTTPServer: @unchecked Sendable {
                 close(client)
             }
         }
-        ready.wait()
+        // Bounded so a stuck accept thread fails this test instead of hanging CI.
+        if ready.wait(timeout: .now() + .seconds(5)) != .success {
+            close(sock)
+            throw BarkVisorError.badRequest("accept thread did not start")
+        }
     }
 
     func stop() {
