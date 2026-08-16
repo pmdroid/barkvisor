@@ -35,4 +35,23 @@ describe('deviceForCatalogImage', () => {
   test('unknown image arch does not guess a Device', () => {
     expect(deviceForCatalogImage(null, [agentbox, ubuntu])).toBeNull()
   })
+
+  test('a configured Library depot wins even when This Device matches the arch', () => {
+    expect(deviceForCatalogImage('x86_64', [agentbox, ubuntu], 'arm')?.hostId).toBe('arm')
+  })
+
+  test('depot stores any arch so an x86 Home can land an arm64 image on the depot', () => {
+    expect(deviceForCatalogImage('arm64', [agentbox, ubuntu], 'x86')?.hostId).toBe('x86')
+  })
+
+  test('falls back to arch match when the depot Device is unreachable', () => {
+    expect(
+      deviceForCatalogImage(
+        'arm64',
+        [agentbox, { ...ubuntu, reachability: 'unreachable' }],
+        'arm',
+      )?.hostId,
+    ).toBeUndefined()
+    expect(deviceForCatalogImage('x86_64', [agentbox, { ...ubuntu, reachability: 'unreachable' }], 'arm')?.hostId).toBe('x86')
+  })
 })

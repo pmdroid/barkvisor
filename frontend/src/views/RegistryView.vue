@@ -25,7 +25,7 @@ import { normalizeImageArch } from '../utils/imageArch'
 import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
 import { deviceForCatalogImage } from '../utils/libraryDownloadTarget'
 import api from '../api/client'
-import type { VMTemplate, RepositoryImage, Image } from '../api/types'
+import type { LibrarySettings, VMTemplate, RepositoryImage, Image } from '../api/types'
 
 const router = useRouter()
 const templateStore = useTemplateStore()
@@ -35,6 +35,7 @@ const toast = useToastStore()
 const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
 const homeLibrary = useHomeLibraryStore()
+const libraryDepotHostId = ref<string | null>(null)
 
 // Tab
 const activeTab = ref<'templates' | 'images'>('templates')
@@ -228,6 +229,9 @@ onMounted(async () => {
     templateStore.fetchAll(),
     repoStore.fetchAll(),
     imageStore.fetchAll(),
+    api.get<LibrarySettings>('/system/library/settings').then(({ data }) => {
+      libraryDepotHostId.value = data.libraryDepotHostId ?? null
+    }).catch(() => {}),
   ])
   // Eagerly fetch images for all image repos so the tab count is available
   for (const r of imageRepos.value) {
@@ -401,7 +405,7 @@ async function downloadOnDevice(
 async function download(img: RepositoryImage) {
   downloading.value.add(img.id)
   try {
-    const device = deviceForCatalogImage(img.arch, devicesStore.devices)
+    const device = deviceForCatalogImage(img.arch, devicesStore.devices, libraryDepotHostId.value)
     if (!device) {
       toast.error(`No reachable Device can run ${img.arch || 'this'} guests.`)
       return
