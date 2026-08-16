@@ -68,7 +68,7 @@ SetupMiddleware stops blocking API routes once setup is complete.
 
 ## Words we use
 
-This Device is already a **Home** of one. Later, more Devices join that Home — not a cluster, datacenter, or quorum. See [Product terminology](product-terminology.md).
+This Device is already a **Home** of one. Later, more Devices join that Home — not a cluster, datacenter, or quorum. See [Home and pairing](home-and-pairing.md) and [Product terminology](product-terminology.md). What shipped is in the [Changelog](changelog.md).
 
 ## After Setup
 
