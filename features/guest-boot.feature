@@ -12,7 +12,8 @@
 # When qemu-system-* is missing the mapper SKIPs with a clear message (exit 0).
 # Set ALLOW_NO_QEMU=1 to exercise API create-only instead of skipping.
 #
-# Out of scope: Windows ISO guests, Cypress/UI, cross-Device Home proxy, CI wiring.
+# Out of scope: Windows ISO guests, Cypress/UI, cross-Device Home proxy.
+# CI wiring: .github/workflows/guest-boot.yml + docs/ci-kvm-runner.md (never required).
 
 Feature: Local guest-boot on one Device
   A Device owns its runtime in local SQLite. Creating and starting a Workload
