@@ -80,6 +80,7 @@ enum LibraryDepotClients {
     static func acquire(
         dataDir: URL = Config.dataDir,
         hostId: String = Config.hostId,
+        downloader: ImageDownloader? = nil,
     ) -> LibraryDepotAcquire {
         LibraryDepotAcquire(
             localHostId: hostId,
@@ -88,6 +89,8 @@ enum LibraryDepotClients {
             openClient: { record in
                 try LibraryDepotClients.make(record: record, dataDir: dataDir, hostId: hostId)
             },
+            progress: downloader,
+            internetFallback: downloader,
         )
     }
 }

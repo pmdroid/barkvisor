@@ -14,6 +14,16 @@ export type CatalogDownloadDevice = DeviceApiTarget & {
  * stores files of any arch. Otherwise pick a reachable Device that can run the
  * guest, preferring This Device.
  */
+/** Refuse catalog Download when Device health is missing or the last fetch failed. */
+export function catalogDownloadBlockedReason(opts: {
+  healthError: string | null
+  hasReport: boolean
+}): string | null {
+  if (opts.healthError) return 'Cannot download until Device health is available.'
+  if (!opts.hasReport) return 'Cannot download until Device health is available.'
+  return null
+}
+
 export function deviceForCatalogImage<T extends CatalogDownloadDevice>(
   imageArch: string | null | undefined,
   devices: T[],

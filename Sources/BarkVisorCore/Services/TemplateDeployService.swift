@@ -57,22 +57,22 @@ public enum TemplateDeployService {
         // createVM also guards via validateCreateVMInputs; this is the early gate.
         try PlatformCapabilities.requireCompatibleGuestArch(repoImage.arch)
 
+        let checksum: ExpectedChecksum? =
+            if let sha256 = repoImage.sha256, !sha256.isEmpty {
+                .sha256(sha256)
+            } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
+                .sha512(sha512)
+            } else {
+                nil
+            }
         let localImage = try await db.read { db in
-            try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl)
-                .filter(Column("status") == "ready")
-                .fetchOne(db)
+            try ImageService.readyImage(
+                sourceUrl: repoImage.downloadUrl, expectedChecksum: checksum, db: db,
+            )
         }
 
         if localImage == nil {
             if let depot {
-                let checksum: ExpectedChecksum? =
-                    if let sha256 = repoImage.sha256, !sha256.isEmpty {
-                        .sha256(sha256)
-                    } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
-                        .sha512(sha512)
-                    } else {
-                        nil
-                    }
                 if let fetched = await depot.fetchMatching(
                     LibraryDepotFetchRequest(
                         sourceUrl: repoImage.downloadUrl,

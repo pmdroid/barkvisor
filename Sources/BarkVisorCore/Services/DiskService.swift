@@ -323,10 +323,9 @@ public enum DiskService {
             throw BarkVisorError.conflict("Disk is attached to a VM")
         }
 
-        // Resolve symlinks; allow unlink under dataDir or the configured Library dir.
-        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+        // Resolve symlinks; allow unlink under dataDir, current Library, or a previous Library.
         let resolvedPath = (disk.path as NSString).resolvingSymlinksInPath
-        if LibrarySettings.isManagedStoragePath(disk.path, imagesDir: imagesDir) {
+        if try await db.read({ try LibrarySettings.isManagedStoragePath(disk.path, db: $0) }) {
             do {
                 try FileManager.default.removeItem(atPath: resolvedPath)
             } catch let fileError {

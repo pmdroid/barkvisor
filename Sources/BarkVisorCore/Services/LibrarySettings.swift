@@ -8,6 +8,7 @@ import GRDB
 public enum LibrarySettings {
     public static let imageDirectoryKey = "image_directory"
     public static let libraryDepotHostIdKey = "library_depot_host_id"
+    public static let previousDirectoriesKey = "previous_image_directories"
 
     public static var defaultDirectory: URL {
         Config.dataDir.appendingPathComponent("images")
@@ -18,13 +19,24 @@ public enum LibrarySettings {
     }
 
     /// Configured Library dir, or `{dataDir}/images` when unset/empty.
+    /// Re-validates the stored path on every read (absolute, no comma).
     public static func resolvedDirectory(from db: Database) throws -> URL {
         let stored = try AppSetting.fetchOne(db, key: imageDirectoryKey)?.value ?? ""
         let raw = stored.trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty {
             return defaultDirectory
         }
+        guard isAcceptableStoredPath(raw) else {
+            return defaultDirectory
+        }
         return URL(fileURLWithPath: raw, isDirectory: true).standardizedFileURL
+    }
+
+    /// Absolute path that would pass ``validateAndPrepare`` format checks.
+    public static func isAcceptableStoredPath(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/") else { return false }
+        return (try? QEMUBuilder.sanitizeQEMUArg(trimmed, label: "Library path")) != nil
     }
 
     /// Empty/whitespace ⇒ `nil` (reset to default). Otherwise the prepared directory.
@@ -97,10 +109,53 @@ public enum LibrarySettings {
         return trimmed
     }
 
-    /// Unlink is allowed under `dataDir` or the configured Library dir.
-    public static func isManagedStoragePath(_ path: String, imagesDir: URL) -> Bool {
+    /// Previous Library dirs (still on disk after the setting moved).
+    public static func previousDirectories(from db: Database) throws -> [URL] {
+        let stored = try AppSetting.fetchOne(db, key: previousDirectoriesKey)?.value ?? ""
+        let raw = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let data = raw.data(using: .utf8) else { return [] }
+        let paths = (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        return paths.compactMap { path in
+            let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isAcceptableStoredPath(trimmed) else { return nil }
+            return URL(fileURLWithPath: trimmed, isDirectory: true).standardizedFileURL
+        }
+    }
+
+    /// Remember a Library dir so later deletes can still unlink files there.
+    public static func recordPreviousDirectory(_ url: URL, db: Database) throws {
+        guard !isDefault(url) else { return }
+        let path = url.standardizedFileURL.path
+        guard isAcceptableStoredPath(path) else { return }
+        var paths = try previousDirectories(from: db).map(\.path)
+        if !paths.contains(path) {
+            paths.append(path)
+        }
+        if paths.count > 8 {
+            paths = Array(paths.suffix(8))
+        }
+        let data = try JSONEncoder().encode(paths)
+        let encoded = String(data: data, encoding: .utf8) ?? "[]"
+        try AppSetting(key: previousDirectoriesKey, value: encoded).save(db, onConflict: .replace)
+    }
+
+    /// Unlink is allowed under `dataDir`, the current Library dir, or a previous one.
+    public static func isManagedStoragePath(
+        _ path: String,
+        imagesDir: URL,
+        extraRoots: [URL] = [],
+    ) -> Bool {
         let resolved = (path as NSString).resolvingSymlinksInPath
-        return isPath(resolved, under: Config.dataDir) || isPath(resolved, under: imagesDir)
+        if isPath(resolved, under: Config.dataDir) || isPath(resolved, under: imagesDir) {
+            return true
+        }
+        return extraRoots.contains { isPath(resolved, under: $0) }
+    }
+
+    public static func isManagedStoragePath(_ path: String, db: Database) throws -> Bool {
+        let imagesDir = try resolvedDirectory(from: db)
+        let extraRoots = try previousDirectories(from: db)
+        return isManagedStoragePath(path, imagesDir: imagesDir, extraRoots: extraRoots)
     }
 
     public static func isPath(_ resolvedPath: String, under root: URL) -> Bool {

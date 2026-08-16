@@ -99,6 +99,52 @@ public enum ImageService {
         return image
     }
 
+    /// Ready Library row for `sourceUrl` whose stored digest still matches the catalog.
+    public static func readyImage(
+        sourceUrl: String,
+        expectedChecksum: ExpectedChecksum?,
+        db: Database,
+    ) throws -> VMImage? {
+        let rows = try VMImage
+            .filter(Column("sourceUrl") == sourceUrl)
+            .filter(Column("status") == "ready")
+            .fetchAll(db)
+        for row in rows where matchesCatalogChecksum(row, expected: expectedChecksum) {
+            return row
+        }
+        return nil
+    }
+
+    /// Catalog hashes are of the compressed artifact; stored `sha256` is the
+    /// decompressed file. Skip the compare for `.xz`/`.gz`/`.zst`/`.bz2` URLs.
+    public static func matchesCatalogChecksum(
+        _ image: VMImage,
+        expected: ExpectedChecksum?,
+    ) -> Bool {
+        guard let expected else { return true }
+        if let source = image.sourceUrl, isCompressedSource(source) {
+            return true
+        }
+        switch expected {
+        case let .sha256(hash):
+            let want = hash.lowercased()
+            if let stored = image.sha256, !stored.isEmpty {
+                return stored.lowercased() == want
+            }
+            guard let path = image.path, FileManager.default.fileExists(atPath: path) else {
+                return false
+            }
+            let computed = try? ImageFileChecksum.sha256Hex(ofFile: URL(fileURLWithPath: path))
+            return computed?.lowercased() == want
+        case let .sha512(hash):
+            guard let path = image.path, FileManager.default.fileExists(atPath: path) else {
+                return false
+            }
+            let computed = try? ImageFileChecksum.sha512Hex(ofFile: URL(fileURLWithPath: path))
+            return computed?.lowercased() == hash.lowercased()
+        }
+    }
+
     /// Insert a downloading Library row or reuse one already in flight for this
     /// catalog URL. The ready/downloading check and insert run in one write so
     /// concurrent catalog downloads share a single internet fetch.
@@ -122,7 +168,9 @@ public enum ImageService {
 
         let action: Action = try await db.write { db in
             let rows = try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl).fetchAll(db)
-            if let ready = rows.first(where: { $0.status == "ready" }) {
+            if let ready = try readyImage(
+                sourceUrl: repoImage.downloadUrl, expectedChecksum: checksum, db: db,
+            ) {
                 return .existing(ready)
             }
             if let downloading = rows.first(where: { $0.status == "downloading" }) {

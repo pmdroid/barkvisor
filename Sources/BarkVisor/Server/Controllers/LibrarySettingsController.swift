@@ -45,13 +45,18 @@ struct LibrarySettingsController: RouteCollection {
         if let imageDirectory = body.imageDirectory {
             let prepared = try LibrarySettings.validateAndPrepare(imageDirectory)
             try await req.db.write { db in
+                let previous = try LibrarySettings.resolvedDirectory(from: db)
                 if let prepared {
+                    if previous.standardizedFileURL.path != prepared.standardizedFileURL.path {
+                        try LibrarySettings.recordPreviousDirectory(previous, db: db)
+                    }
                     let setting = AppSetting(
                         key: LibrarySettings.imageDirectoryKey,
                         value: prepared.path,
                     )
                     try setting.save(db, onConflict: .replace)
                 } else {
+                    try LibrarySettings.recordPreviousDirectory(previous, db: db)
                     _ = try AppSetting.deleteOne(db, key: LibrarySettings.imageDirectoryKey)
                 }
             }
