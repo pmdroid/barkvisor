@@ -130,6 +130,21 @@ describe('PAS-82 Home terminology', () => {
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
 
+  test('Device drill-down lists Workloads without a Create picker', () => {
+    const text = readFileSync(join(srcRoot, 'views/DeviceDetailView.vue'), 'utf8')
+    expect(text).toContain('DEVICE_LABEL')
+    expect(text).toContain('useDeviceWorkloadsStore')
+    expect(text).toContain('No workloads on this Device')
+    expect(text).toContain('Loading workloads...')
+    expect(text).toContain('Promise.all')
+    expect(text).not.toContain('CreateVMDrawer')
+    expect(text).not.toContain('cluster')
+    expect(text).not.toMatch(forbiddenTemplateRe)
+    const card = readFileSync(join(srcRoot, 'components/DeviceCard.vue'), 'utf8')
+    expect(card).toContain("name: 'device-detail'")
+    expect(card).toContain('Workloads')
+  })
+
   test('setup ready copy names this device a Home', () => {
     const text = readFileSync(join(srcRoot, 'views/SetupView.vue'), 'utf8')
     expect(text).toContain('HOME_LABEL')
