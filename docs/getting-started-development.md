@@ -249,9 +249,10 @@ scripts. A Device still boots a local Workload from SQLite if other Devices
 in the Home are unreachable.
 
 ```sh
+mise run api-bdd            # every documented API operation (fast; no QEMU)
 mise run guest-smoke        # blank disk → running (fast; no guest OS)
 mise run guest-smoke-real   # Ubuntu cloud image + cloud-init + SSH
-mise run prepush-full       # prepush + guest-smoke (operators who opt in)
+mise run prepush-full       # prepush + api-bdd + guest-smoke (operators who opt in)
 ```
 
 `mise run prepush` stays lint + Swift tests + frontend tests. **Never** add
