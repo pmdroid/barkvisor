@@ -7,6 +7,11 @@ struct ConfigTests {
         #expect(Config.port == 7_777)
     }
 
+    @Test func `default agent port is distinct from spa port`() {
+        #expect(Config.agentPort == 7_778)
+        #expect(Config.agentPort != Config.port)
+    }
+
     @Test func `allowed URL schemes`() {
         #expect(Config.allowedURLSchemes.contains("https"))
         #expect(Config.allowedURLSchemes.contains("http"))
