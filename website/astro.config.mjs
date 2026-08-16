@@ -46,6 +46,14 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Home',
+          items: [
+            { label: 'Home and pairing', link: '/docs/guides/home-and-pairing/' },
+            { label: 'Create a Workload', link: '/docs/guides/create-workload/' },
+            { label: 'Terminology', link: '/docs/concepts/terminology/' },
+          ],
+        },
+        {
           label: 'Build',
           items: [
             { label: 'Development', link: '/docs/getting-started/development/' },
@@ -55,6 +63,7 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
+            { label: 'Changelog', link: '/docs/changelog/' },
             { label: 'Troubleshooting', link: '/docs/getting-started/troubleshooting/' },
           ],
         },

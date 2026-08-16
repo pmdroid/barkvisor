@@ -8,27 +8,27 @@ import PostHog from '../components/posthog.astro';
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BarkVisor — QEMU Virtualization with a Web Interface</title>
+    <title>BarkVisor — Home virtualization for every Device</title>
     <PostHog />
     <meta
       name="description"
-      content="Open-source QEMU virtualization for macOS and Linux with a modern web interface. Create, run, and manage virtual machines with ease."
+      content="Open-source QEMU virtualization for macOS and Linux. One Home, many Devices, a web UI. Pair machines, place Workloads, keep them running locally."
     />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="BarkVisor — QEMU Virtualization with a Web Interface" />
+    <meta property="og:title" content="BarkVisor — Home virtualization for every Device" />
     <meta
       property="og:description"
-      content="Open-source QEMU virtualization for macOS and Linux with a modern web interface."
+      content="Pair Devices into a Home. Create Workloads from one dashboard. Each machine keeps running on its own."
     />
     <meta property="og:image" content="/og-image.png" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="BarkVisor — QEMU Virtualization with a Web Interface" />
+    <meta name="twitter:title" content="BarkVisor — Home virtualization for every Device" />
     <meta
       name="twitter:description"
-      content="Open-source QEMU virtualization for macOS and Linux with a modern web interface."
+      content="Pair Devices into a Home. Create Workloads from one dashboard. Each machine keeps running on its own."
     />
     <meta name="twitter:image" content="/og-image.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -65,6 +65,8 @@ import PostHog from '../components/posthog.astro';
       </button>
       <nav class="nav-links">
         <a href="#features">Features</a>
+        <a href="/docs/guides/home-and-pairing/">Pairing</a>
+        <a href="/docs/changelog/">Changelog</a>
         <a href="/docs/getting-started/quickstart/">Quickstart</a>
         <a href="/docs/">Docs</a>
         <a href="https://github.com/pmdroid/barkvisor">GitHub</a>
@@ -112,11 +114,12 @@ import PostHog from '../components/posthog.astro';
     <section class="hero">
       <img src="/hero.png" alt="BarkVisor mascot" class="hero-img" />
       <div class="hero-badge">Open Source &middot; macOS &amp; Linux</div>
-      <h1>QEMU virtualization,<br /><span>with a modern web interface.</span></h1>
+      <h1>A Home for every Device,<br /><span>and a web UI for QEMU.</span></h1>
       <p>
-        BarkVisor is open-source virtualization software for <strong>macOS</strong> and
-        <strong>Linux</strong> that makes it easy to create, run, and manage QEMU virtual machines through
-        a beautiful web UI.
+        BarkVisor is open-source virtualization for <strong>macOS</strong> and
+        <strong>Linux</strong>. Pair machines into one <strong>Home</strong>, create
+        <strong>Workloads</strong> from a single dashboard, and keep each Device running even when
+        the others are offline.
       </p>
       <div class="hero-buttons">
         <a href="https://github.com/pmdroid/barkvisor/releases" class="btn btn-primary">
@@ -148,8 +151,44 @@ import PostHog from '../components/posthog.astro';
       <div class="features-header">
         <h2>Features</h2>
       </div>
-      <p class="features-desc">Everything you need to run virtual machines on macOS and Linux</p>
+      <p class="features-desc">One Home. Many Devices. Workloads stay on the machine that runs them.</p>
       <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg
+            >
+          </div>
+          <h3>Home and pairing</h3>
+          <p>
+            Add another Mac, PC, or board with a pairing offer. One login across the Home. Join from
+            setup or <code>barkvisor join</code> on an API-only Device.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path></svg
+            >
+          </div>
+          <h3>Place a Workload</h3>
+          <p>
+            Create a VM from the Home dashboard and pick the Device. Recommended is a suggestion —
+            you can still place on any reachable machine.
+          </p>
+        </div>
         <div class="feature-card">
           <div class="feature-icon">
             <svg
