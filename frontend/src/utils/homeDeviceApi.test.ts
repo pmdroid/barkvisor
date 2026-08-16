@@ -10,6 +10,7 @@ import {
   deviceTemplatesPath,
   deviceVmActionPath,
   deviceVmPath,
+  deviceVmSpecPath,
   deviceVmsBasePath,
   defaultPickedHostId,
   isSelfDevice,
@@ -85,5 +86,27 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(usesLocalDeviceInventory(self)).toBe(true)
     expect(usesLocalDeviceInventory(member)).toBe(false)
     expect(usesLocalDeviceInventory(down)).toBe(false)
+  })
+})
+
+describe('homeDeviceApi (PAS-202)', () => {
+  test('GET/PATCH/start/stop/restart use devicePath, never a targetHostId body', () => {
+    expect(deviceVmPath(self, 'vm-9')).toBe('/vms/vm-9')
+    expect(deviceVmSpecPath(self, 'vm-9')).toBe('/vms/vm-9/spec')
+    expect(devicePath(self, '/vms/vm-9')).toBe('/vms/vm-9')
+
+    expect(devicePath(member, '/vms/vm-9')).toBe('/home/devices/peer%2F1/v1/vms/vm-9')
+    expect(deviceVmPath(member, 'vm-9')).toBe('/home/devices/peer%2F1/v1/vms/vm-9')
+    expect(deviceVmSpecPath(member, 'vm-9')).toBe('/home/devices/peer%2F1/v1/vms/vm-9/spec')
+    expect(deviceVmActionPath(member, 'vm-9', 'start')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/start',
+    )
+    expect(deviceVmActionPath(member, 'vm-9', 'stop')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/stop',
+    )
+    expect(deviceVmActionPath(member, 'vm-9', 'restart')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/restart',
+    )
+    expect(devicePath(member, '/vms/vm-9')).not.toContain('targetHostId')
   })
 })
