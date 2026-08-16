@@ -73,7 +73,7 @@ const map = {
   'roadmap.md': {
     out: 'roadmap.md',
     title: 'Roadmap',
-    description: 'What is in the Home stack now, what is next, and what is not a cluster.',
+    description: 'Product ideas ahead: Home HA, quorum, Ceph, live migration, apps, and backups.',
   },
 };
 
