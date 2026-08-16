@@ -70,6 +70,11 @@ const map = {
     title: 'Changelog',
     description: 'What shipped for Home pairing, Library, and Create VM.',
   },
+  'roadmap.md': {
+    out: 'roadmap.md',
+    title: 'Roadmap',
+    description: 'What is in the Home stack now, what is next, and what is not a cluster.',
+  },
 };
 
 function stripFirstH1(body) {
@@ -89,6 +94,7 @@ function fixLinks(body) {
     .replace(/\]\(home-and-pairing\.md(#[^)]*)?\)/g, '](/docs/guides/home-and-pairing/$1)')
     .replace(/\]\(create-workload\.md(#[^)]*)?\)/g, '](/docs/guides/create-workload/$1)')
     .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
+    .replace(/\]\(roadmap\.md(#[^)]*)?\)/g, '](/docs/roadmap/$1)')
     .replace(/\]\(host-process-boundary\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md$1)')
     .replace(/\]\(\.\.\/packaging\/linux\/README\.md\)/g, '](https://github.com/pmdroid/barkvisor/tree/main/packaging/linux)')
     .replace(/\/docs\/([^)#\s]+)\/(#[^)]*)\)/g, '/docs/$1$2)');

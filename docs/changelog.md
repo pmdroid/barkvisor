@@ -41,4 +41,4 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 The first public line is a **Home of one**: one daemon, Vue SPA on port 7777, QEMU Workloads, Library images and templates, NAT and optional bridge, console and VNC, cloud-init, SSH keys.
 
-See [First launch](getting-started-first-launch.md) and [Quickstart](getting-started-quickstart.md).
+See [First launch](getting-started-first-launch.md), [Quickstart](getting-started-quickstart.md), and the [roadmap](roadmap.md).
