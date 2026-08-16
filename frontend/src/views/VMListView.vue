@@ -23,6 +23,7 @@ import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
 import { pct } from '../utils/format'
 import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
+import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 
 const store = useVMStore()
 const homeWorkloads = useDeviceWorkloadsStore()
@@ -167,7 +168,7 @@ async function copyText(key: string, text: string) {
 }
 
 function rowKey(row: HomeWorkloadRow) {
-  return `${row.hostId}:${row.vm.id}`
+  return workloadRowKey(row)
 }
 
 function rowDevice(row: HomeWorkloadRow) {
@@ -175,11 +176,7 @@ function rowDevice(row: HomeWorkloadRow) {
 }
 
 function openRow(row: HomeWorkloadRow) {
-  if (row.role === 'self') {
-    router.push(`/vms/${row.vm.id}`)
-    return
-  }
-  router.push(`/devices/${encodeURIComponent(row.hostId)}`)
+  openWorkloadRow((path) => { router.push(path) }, row)
 }
 
 async function doStart(row: HomeWorkloadRow) {

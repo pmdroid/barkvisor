@@ -2,11 +2,12 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import type { HomeDeviceHealthSnapshot, VM } from '../api/types'
+import type { HomeDeviceHealthSnapshot, UpdateVMRequest, VM, WorkloadSpec } from '../api/types'
 import {
   canFetchDeviceWorkloads,
   deviceVmActionPath,
   deviceVmPath,
+  deviceVmSpecPath,
   deviceVmsBasePath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
@@ -79,9 +80,31 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     vmsByHost.value = { ...vmsByHost.value, [hostId]: next }
   }
 
+  function vmFor(hostId: string, vmId: string): VM | undefined {
+    return vmsFor(hostId).find((row) => row.id === vmId)
+  }
+
   async function refreshOne(device: HomeDeviceHealthSnapshot, vmId: string): Promise<void> {
     const { data } = await api.get<VM>(deviceVmPath(device, vmId))
     await replaceOne(device, data)
+  }
+
+  async function update(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    body: UpdateVMRequest,
+  ): Promise<VM> {
+    const { targetHostId: _ignored, ...patch } = body as UpdateVMRequest & {
+      targetHostId?: string
+    }
+    const { data } = await api.patch<VM>(deviceVmPath(device, vmId), patch)
+    await replaceOne(device, data)
+    return data
+  }
+
+  async function fetchSpec(device: HomeDeviceHealthSnapshot, vmId: string): Promise<WorkloadSpec> {
+    const { data } = await api.get<WorkloadSpec>(deviceVmSpecPath(device, vmId))
+    return data
   }
 
   async function runAction(
@@ -139,9 +162,13 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     fetchHomeAll,
     homeRows,
     vmsFor,
+    vmFor,
     isLoading,
     errorFor,
     isActing,
+    refreshOne,
+    update,
+    fetchSpec,
     start,
     stop,
     restart,

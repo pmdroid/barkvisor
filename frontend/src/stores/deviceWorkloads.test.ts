@@ -6,6 +6,7 @@ import { useDeviceWorkloadsStore } from './deviceWorkloads'
 
 const originalGet = api.get
 const originalPost = api.post
+const originalPatch = api.patch
 
 function snapshot(partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>): HomeDeviceHealthSnapshot {
   return {
@@ -50,6 +51,7 @@ describe('deviceWorkloads store (PAS-52)', () => {
   afterEach(() => {
     api.get = originalGet
     api.post = originalPost
+    api.patch = originalPatch
   })
 
   test('self lists and starts through local /vms', async () => {
@@ -196,5 +198,40 @@ describe('deviceWorkloads store (PAS-52)', () => {
     await store.fetchFor(peer)
     expect(store.vmsFor('peer-1')).toHaveLength(1)
     expect(store.errorFor('peer-1')).toBeTruthy()
+  })
+
+  test('member GET/PATCH go through the Home proxy and drop targetHostId', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running', description: 'old' })]
+    const patched = vm({ id: 'vm-2', name: 'nas', state: 'running', description: 'desk' })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/peer-1/v1/vms') return Promise.resolve({ data: listed })
+      if (url === '/home/devices/peer-1/v1/vms/vm-2') return Promise.resolve({ data: listed[0] })
+      if (url === '/home/devices/peer-1/v1/vms/vm-2/spec') {
+        return Promise.resolve({ data: { apiVersion: 'barkvisor.dev/v1', kind: 'Workload' } })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const patch = mock((url: string, body?: unknown) => {
+      expect(url).toBe('/home/devices/peer-1/v1/vms/vm-2')
+      expect(body).toEqual({ description: 'desk' })
+      expect((body as { targetHostId?: string }).targetHostId).toBeUndefined()
+      return Promise.resolve({ data: patched })
+    })
+    api.get = get as typeof api.get
+    api.patch = patch as typeof api.patch
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    await store.refreshOne(peer, 'vm-2')
+    const spec = await store.fetchSpec(peer, 'vm-2')
+    expect(spec.kind).toBe('Workload')
+    await store.update(peer, 'vm-2', { description: 'desk', targetHostId: 'foreign' } as never)
+    expect(store.vmFor('peer-1', 'vm-2')?.description).toBe('desk')
+    expect(get.mock.calls.map((call) => call[0])).toEqual([
+      '/home/devices/peer-1/v1/vms',
+      '/home/devices/peer-1/v1/vms/vm-2',
+      '/home/devices/peer-1/v1/vms/vm-2/spec',
+    ])
+    expect(patch).toHaveBeenCalledTimes(1)
   })
 })

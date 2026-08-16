@@ -9,6 +9,11 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
     { path: '/devices', name: 'devices', component: () => import('../views/DevicesView.vue') },
     { path: '/devices/:hostId', name: 'device-detail', component: () => import('../views/DeviceDetailView.vue') },
+    {
+      path: '/devices/:hostId/vms/:id',
+      name: 'device-vm-detail',
+      component: () => import('../views/VMDetailView.vue'),
+    },
     { path: '/vms', name: 'vms', component: () => import('../views/VMListView.vue') },
     { path: '/vms/:id', name: 'vm-detail', component: () => import('../views/VMDetailView.vue') },
     {

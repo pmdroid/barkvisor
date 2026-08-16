@@ -82,6 +82,10 @@ export function deviceVmActionPath(
   return `${deviceVmPath(device, vmId)}/${action}`
 }
 
+export function deviceVmSpecPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/spec`
+}
+
 export function deviceTemplatesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/templates')
 }
