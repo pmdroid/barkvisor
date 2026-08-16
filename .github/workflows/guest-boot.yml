@@ -208,7 +208,7 @@ jobs:
         || (github.event_name == 'workflow_dispatch' && inputs.real_guest)
         || (
           github.event_name == 'pull_request'
-          && contains(join(github.event.pull_request.labels.*.name, ','), 'run-guest-boot')
+          && contains(github.event.pull_request.labels.*.name, 'run-guest-boot')
         )
       )
     runs-on: [self-hosted, linux, kvm]
