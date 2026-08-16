@@ -18,6 +18,7 @@ name: Guest Boot
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   schedule:
@@ -32,6 +33,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: guest-boot-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
