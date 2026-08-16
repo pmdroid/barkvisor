@@ -41,8 +41,10 @@ import {
 } from '../utils/homeDeviceApi'
 import {
   applyRecommendedHostId,
+  isPlacementScoreAborted,
   isRecommendedHost,
   placementReasonsForHost,
+  PLACEMENT_SCORE_DEBOUNCE_MS,
   scorePlacement,
 } from '../utils/placement'
 
@@ -64,6 +66,10 @@ const homeLibrary = useHomeLibraryStore()
 const selectedHostId = ref(props.initialHostId ?? '')
 const userOverrodeHost = ref(!!props.initialHostId)
 const placementScore = ref<HomePlacementScoreResponse | null>(null)
+/** True while refreshPlacement assigns selectedHostId — not a user pick. */
+let applyingRecommendedHost = false
+let placementAbort: AbortController | null = null
+let placementDebounce: ReturnType<typeof setTimeout> | undefined
 const pickedCaps = ref<CurrentHostCapabilities | null>(null)
 const deviceSSHKeys = ref<SSHKey[]>([])
 const selectedSSHKeyId = ref('')
@@ -141,7 +147,33 @@ function plannedMemoryMB(): number {
   return Number.isFinite(planned) ? planned : props.template.memoryMB
 }
 
+function assignRecommendedHostId(hostId: string) {
+  if (hostId === selectedHostId.value) return
+  applyingRecommendedHost = true
+  selectedHostId.value = hostId
+}
+
+function cancelPlacementScore() {
+  if (placementDebounce !== undefined) {
+    clearTimeout(placementDebounce)
+    placementDebounce = undefined
+  }
+  placementAbort?.abort()
+  placementAbort = null
+}
+
+function schedulePlacementRefresh(applyRecommendation: boolean) {
+  if (placementDebounce !== undefined) clearTimeout(placementDebounce)
+  placementDebounce = setTimeout(() => {
+    placementDebounce = undefined
+    void refreshPlacement(applyRecommendation)
+  }, PLACEMENT_SCORE_DEBOUNCE_MS)
+}
+
 async function refreshPlacement(applyRecommendation = true) {
+  placementAbort?.abort()
+  const ac = new AbortController()
+  placementAbort = ac
   const seq = ++placementScoreSeq
   try {
     const data = await scorePlacement({
@@ -149,22 +181,22 @@ async function refreshPlacement(applyRecommendation = true) {
       requiredFeatures: props.template.requiredFeatures ?? [],
       minMemoryMB: props.template.minMemoryMB,
       requestedMemoryMB: plannedMemoryMB(),
-    })
+    }, { signal: ac.signal })
     if (seq !== placementScoreSeq) return
     placementScore.value = data
-  } catch {
-    if (seq !== placementScoreSeq) return
+  } catch (error) {
+    if (seq !== placementScoreSeq || isPlacementScoreAborted(error)) return
     placementScore.value = null
   }
   if (seq !== placementScoreSeq) return
   if (!applyRecommendation || userOverrodeHost.value) return
-  selectedHostId.value = applyRecommendedHostId({
+  assignRecommendedHostId(applyRecommendedHostId({
     recommendedHostId: placementScore.value?.recommendedHostId,
     initialHostId: props.initialHostId,
     selfHostId: devicesStore.selfDevice?.hostId,
     currentHostId: selectedHostId.value,
     hostAllowed: hostHasDeployableTemplate,
-  })
+  }))
 }
 
 async function loadPickedDevice() {
@@ -178,7 +210,7 @@ async function loadPickedDevice() {
   await refreshPlacement()
   if (!isCurrentPickedDeviceLoad(seq)) return
   if (!selectedHostId.value) {
-    selectedHostId.value = defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId)
+    assignRecommendedHostId(defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId))
   }
   const device = selectedDevice.value
   if (!device) {
@@ -252,8 +284,11 @@ onMounted(async () => {
 })
 
 watch(selectedHostId, async (next, prev) => {
-  if (!prev || !next || next === prev) return
-  userOverrodeHost.value = true
+  const programmatic = applyingRecommendedHost
+  applyingRecommendedHost = false
+  if (!next || next === prev) return
+  if (!programmatic) userOverrodeHost.value = true
+  if (programmatic) return
   await loadPickedDevice()
   await refreshCompatibility()
 })
@@ -286,7 +321,7 @@ async function refreshCompatibility(expectedHostId = selectedHostId.value) {
 
 watch(memoryMB, (_next, prev) => {
   void refreshCompatibility()
-  if (prev !== undefined) void refreshPlacement(false)
+  if (prev !== undefined) schedulePlacementRefresh(false)
 }, { immediate: true })
 
 // Step 2: Template inputs (dynamic) — ssh_keys is handled by the dedicated SSH key selector
@@ -311,6 +346,7 @@ let drawerClosed = false
 onUnmounted(() => {
   drawerClosed = true
   imageProgress.stop()
+  cancelPlacementScore()
 })
 
 function canProceed(): boolean {
