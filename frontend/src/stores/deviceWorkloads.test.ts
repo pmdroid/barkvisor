@@ -125,6 +125,50 @@ describe('deviceWorkloads store (PAS-52)', () => {
     expect(post).toHaveBeenCalledTimes(1)
   })
 
+  test('Home union lists This Device and a member with a Device chip payload', async () => {
+    const self = snapshot({ hostId: 'box', role: 'self', displayName: 'agentbox' })
+    const peer = snapshot({ hostId: 'orb', role: 'member', displayName: 'barkvisor-u24' })
+    const get = mock((url: string) => {
+      if (url === '/vms') {
+        return Promise.resolve({ data: [vm({ id: 'local-1', name: 'wave1-arch', state: 'stopped' })] })
+      }
+      if (url === '/home/devices/orb/v1/vms') {
+        return Promise.resolve({ data: [vm({ id: 'remote-1', name: 'wave1-ubuntu', state: 'running' })] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    await store.fetchHomeAll([self, peer])
+    const rows = store.homeRows([self, peer])
+    expect(rows.map((row) => row.vm.name)).toEqual(['wave1-arch', 'wave1-ubuntu'])
+    expect(rows[0]?.label).toBe('agentbox')
+    expect(rows[0]?.role).toBe('self')
+    expect(rows[0]?.reachable).toBe(true)
+    expect(rows[1]?.label).toBe('barkvisor-u24')
+    expect(rows[1]?.hostId).toBe('orb')
+    expect(rows[1]?.reachable).toBe(true)
+  })
+
+  test('an unreachable Device keeps last-known Workloads and does not invent new ones', async () => {
+    const peer = snapshot({ hostId: 'orb', role: 'member', displayName: 'barkvisor-u24' })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/orb/v1/vms') {
+        return Promise.resolve({ data: [vm({ id: 'remote-1', name: 'wave1-ubuntu', state: 'running' })] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    await store.fetchFor({ ...peer, reachability: 'unreachable' })
+    expect(get).toHaveBeenCalledTimes(1)
+    const rows = store.homeRows([{ ...peer, reachability: 'unreachable' }])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.reachable).toBe(false)
+    expect(rows[0]?.vm.name).toBe('wave1-ubuntu')
+  })
+
   test('unreachable members do not invent a Workload list', async () => {
     const get = mock(() => Promise.resolve({ data: [vm({ id: 'ghost', name: 'ghost', state: 'running' })] }))
     api.get = get as typeof api.get
