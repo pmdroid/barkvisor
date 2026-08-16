@@ -201,7 +201,7 @@ export function useCreateVMWizard(
     const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
       // Never silently map Windows → Linux. windows-amd64 is PAS-184.
-      return 'windows-arm64'
+      return arch === 'x86_64' ? 'windows-amd64' : 'windows-arm64'
     }
     return `linux-${archSuffix}` as const
   })
@@ -633,6 +633,10 @@ export function useCreateVMWizard(
     void refreshPlacement(false)
   })
 
+  watch(() => homeLibrary.imagesLoading, (loading, wasLoading) => {
+    if (wasLoading && !loading) void refreshPlacement(true)
+  })
+
   async function refreshHomeLibrary() {
     await devicesStore.fetchHealth().catch(() => {})
     await homeLibrary.fetchImages(devicesStore.devices).catch(() => {})
@@ -642,10 +646,9 @@ export function useCreateVMWizard(
     const seq = ++pickedDeviceLoadSeq
     pickedDeviceLoading.value = true
     try {
-      await devicesStore.fetchHealth().catch(() => {})
+      // Placement reads deviceHasLibraryImage — wait so auto-pick is not stale.
+      await refreshHomeLibrary()
       if (!isCurrentPickedDeviceLoad(seq)) return
-      // Don't await: a slow peer Library must not block Place inventory or host switch.
-      void homeLibrary.fetchImages(devicesStore.devices).catch(() => {})
       await refreshPlacement()
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
@@ -763,7 +766,11 @@ export function useCreateVMWizard(
 
   function canProceed(): boolean {
     const content = stepContent(step.value)
-    if (placementStepReached.value && (pickedDeviceLoading.value || placementRefreshing.value)) {
+    if (placementStepReached.value && (
+      pickedDeviceLoading.value
+      || placementRefreshing.value
+      || homeLibrary.imagesLoading
+    )) {
       return false
     }
     switch (content) {
@@ -808,6 +815,11 @@ export function useCreateVMWizard(
     }
     if (osType.value === 'windows' && !supportsWindows.value) {
       error.value = 'Windows VMs are not available on this device architecture.'
+      return
+    }
+    if (archIsProblem.value) {
+      error.value = archProblemText.value
+        || 'VM architecture is not compatible with this device.'
       return
     }
     if (selectedNetwork.value?.mode === 'bridged' && !bridged.value.available) {
