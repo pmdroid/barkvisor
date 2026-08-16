@@ -5,6 +5,8 @@ const setupApi = axios.create({ baseURL: '/api/setup' })
 
 export interface SetupStatus {
   complete: boolean
+  /** Shared identity landed after a pairing join (admin exists). Not receipt-only. */
+  joined?: boolean
 }
 
 export interface InterfaceInfo {

@@ -29,6 +29,7 @@ USB **device** still means a peripheral. A BarkVisor **Device** is the computer.
 - Say **Home** when you mean the person’s set of Devices. One Device is already a Home.
 - Networks live at **Networks** (`/networks`), not Settings → Network.
 - First-run setup is `SetupView` (`/setup`). Do not add a second overlay wizard.
+- Joining an existing Home is a branch of that same `SetupView`, using `/api/pairing/join`. Add a Device from Settings → Home (`/api/pairing/codes`).
 
 ## Related
 

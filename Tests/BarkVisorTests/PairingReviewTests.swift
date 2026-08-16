@@ -344,6 +344,26 @@ struct PairingReviewTests {
         #expect(try PeerPinStore(dataDir: joinerDir).load().isEmpty)
     }
 
+    @Test func `hasPairedReceipt follows a persisted join receipt`() throws {
+        let dir = try isolatedDir("joined-status")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(!PairingService.hasPairedReceipt(dataDir: dir))
+        try PairingService.persistReceipt(
+            PairingPeerReceipt(
+                peerHostId: "peer",
+                peerFingerprint: "fp",
+                caCertificatePEM: "ca",
+                caFingerprint: "cafp",
+                issuedCertificatePEM: "iss",
+                issuedFingerprint: "issfp",
+                agentPort: 7_778,
+                pairedAt: "2020-01-01T00:00:00Z",
+            ),
+            dataDir: dir,
+        )
+        #expect(PairingService.hasPairedReceipt(dataDir: dir))
+    }
+
     @Test func `legacy receipt without agentPort defaults to config`() throws {
         let json = Data(
             """

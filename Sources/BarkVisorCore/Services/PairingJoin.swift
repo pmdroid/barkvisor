@@ -215,6 +215,16 @@ extension PairingService {
         return try JSONDecoder().decode(PairingPeerReceipt.self, from: data)
     }
 
+    /// True after a pairing receipt was persisted. Receipt can exist before
+    /// pin / applySharedIdentity; setup `joined` also requires an admin.
+    public static func hasPairedReceipt(dataDir: URL) -> Bool {
+        do {
+            return try loadReceipt(dataDir: dataDir) != nil
+        } catch {
+            return false
+        }
+    }
+
     static func loadPendingRedeem(dataDir: URL) -> PendingRedeemRecord? {
         let url = pendingRedeemURL(in: dataDir)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }

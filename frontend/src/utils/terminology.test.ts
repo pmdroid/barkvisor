@@ -95,6 +95,8 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toMatch(/\*\*Datacenter\*\*.*Do not use/s)
     expect(text).toMatch(/\*\*Quorum\*\*.*Do not use/s)
     expect(text).toContain('getting-started-first-launch.md')
+    expect(text).toContain('Joining an existing Home')
+    expect(text).toContain('/api/pairing/join')
     expect(text).not.toContain('/api/home/*` — shipped')
   })
 
@@ -122,7 +124,9 @@ describe('PAS-82 Home terminology', () => {
   test('setup ready copy names this device a Home', () => {
     const text = readFileSync(join(srcRoot, 'views/SetupView.vue'), 'utf8')
     expect(text).toContain('HOME_LABEL')
-    expect(text).toContain('This device is your')
+    expect(text).toContain('DEVICE_LABEL')
+    expect(text).toContain('This {{ DEVICE_LABEL.toLowerCase() }} is your')
+    expect(text).toContain('Join an existing')
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
 
