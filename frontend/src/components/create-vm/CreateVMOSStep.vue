@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import DevicePicker from '../DevicePicker.vue'
-import type { DevicePickOption } from '../../utils/deviceCompatibility'
-
 defineProps<{
   name: string
   osType: 'linux' | 'windows'
-  /** False when no Windows guest profile matches the host arch (e.g. x86_64). */
-  supportsWindows?: boolean
-  selectedHostId?: string
-  deviceOptions?: DevicePickOption[]
 }>()
 
 const emit = defineEmits<{
   'update:name': [value: string]
-  'update:selectedHostId': [value: string]
   selectOS: [os: 'linux' | 'windows']
   next: []
 }>()
@@ -21,13 +13,7 @@ const emit = defineEmits<{
 
 <template>
   <div>
-    <h3 class="step-title">Operating System</h3>
-    <DevicePicker
-      v-if="deviceOptions && deviceOptions.length > 0"
-      :model-value="selectedHostId || ''"
-      :options="deviceOptions"
-      @update:model-value="emit('update:selectedHostId', $event)"
-    />
+    <h3 class="step-title">Basics</h3>
     <div class="form-group">
       <label>VM Name</label>
       <input
@@ -47,12 +33,11 @@ const emit = defineEmits<{
         </div>
         <div
           class="os-card"
-          :class="{ selected: osType === 'windows', disabled: supportsWindows === false }"
-          @click="supportsWindows !== false && emit('selectOS', 'windows')"
+          :class="{ selected: osType === 'windows' }"
+          @click="emit('selectOS', 'windows')"
         >
           <span style="font-size:24px">&#x1fa9f;</span>
           <span>Windows</span>
-          <span v-if="supportsWindows === false" class="os-soon">device arch</span>
         </div>
         <div class="os-card disabled">
           <span style="font-size:24px">&#x1f34e;</span>

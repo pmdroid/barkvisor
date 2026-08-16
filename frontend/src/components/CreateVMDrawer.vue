@@ -3,6 +3,7 @@ import { useCreateVMWizard } from '../composables/useCreateVMWizard'
 import CreateVMOSStep from './create-vm/CreateVMOSStep.vue'
 import CreateVMHardwareStep from './create-vm/CreateVMHardwareStep.vue'
 import CreateVMImageStep from './create-vm/CreateVMImageStep.vue'
+import CreateVMPlaceStep from './create-vm/CreateVMPlaceStep.vue'
 import CreateVMDriversStep from './create-vm/CreateVMDriversStep.vue'
 import CreateVMStorageStep from './create-vm/CreateVMStorageStep.vue'
 import CreateVMNetworkStep from './create-vm/CreateVMNetworkStep.vue'
@@ -20,9 +21,9 @@ const {
   prev,
   name,
   osType,
-  supportsWindows,
   selectOS,
   cpuCount,
+  hostCpuCount,
   memoryMB,
   displayResolution,
   tpmEnabled,
@@ -42,8 +43,6 @@ const {
   showCloudInit,
   cloudUserData,
   filteredImages,
-  foreignArchImageCount,
-  hostImageArch,
   selectedImage,
   formatBytes,
   sshKeys,
@@ -86,6 +85,7 @@ const {
   deviceOptions,
   selectedDevice,
   selectedDeviceIncompatibility,
+  placementStepReached,
 } = useCreateVMWizard((e) => emit(e), { initialHostId: props.initialHostId })
 
 function openUSBPicker() {
@@ -113,16 +113,37 @@ function openUSBPicker() {
       </div>
 
       <CreateVMOSStep
-        v-if="currentStepLabel === 'OS'"
+        v-if="currentStepLabel === 'Basics'"
         :name="name"
         :osType="osType"
-        :supportsWindows="supportsWindows"
-        :selectedHostId="selectedHostId"
-        :deviceOptions="deviceOptions"
         @update:name="name = $event"
-        @update:selectedHostId="selectedHostId = $event"
         @selectOS="selectOS"
         @next="next"
+      />
+
+      <CreateVMImageStep
+        v-else-if="currentStepLabel === 'Image'"
+        :osType="osType"
+        :mode="mode"
+        :selectedImageId="selectedImageId"
+        :selectedSSHKeyId="selectedSSHKeyId"
+        :showCloudInit="showCloudInit"
+        :cloudUserData="cloudUserData"
+        :filteredImages="filteredImages"
+        :sshKeys="sshKeys"
+        :formatBytes="formatBytes"
+        @update:mode="mode = $event"
+        @update:selectedImageId="selectedImageId = $event"
+        @update:selectedSSHKeyId="selectedSSHKeyId = $event"
+        @update:showCloudInit="showCloudInit = $event"
+        @update:cloudUserData="cloudUserData = $event"
+      />
+
+      <CreateVMPlaceStep
+        v-else-if="currentStepLabel === 'Place'"
+        :selectedHostId="selectedHostId"
+        :deviceOptions="deviceOptions"
+        @update:selectedHostId="selectedHostId = $event"
       />
 
       <CreateVMHardwareStep
@@ -139,6 +160,7 @@ function openUSBPicker() {
         :tpmEnabled="tpmEnabled"
         :alwaysShowArchDetails="alwaysShowArchDetails"
         :archProblem="archProblemText"
+        :maxCpu="hostCpuCount"
         @update:cpuCount="cpuCount = $event"
         @update:memoryMB="memoryMB = $event"
         @update:displayResolution="displayResolution = $event"
@@ -146,26 +168,6 @@ function openUSBPicker() {
         @update:uefi="uefi = $event"
         @update:tpmEnabled="setTpmEnabled"
         @update:alwaysShowArchDetails="setAlwaysShowArchDetails"
-      />
-
-      <CreateVMImageStep
-        v-else-if="currentStepLabel === 'Image'"
-        :osType="osType"
-        :mode="mode"
-        :selectedImageId="selectedImageId"
-        :selectedSSHKeyId="selectedSSHKeyId"
-        :showCloudInit="showCloudInit"
-        :cloudUserData="cloudUserData"
-        :filteredImages="filteredImages"
-        :foreignArchImageCount="foreignArchImageCount"
-        :hostImageArch="hostImageArch"
-        :sshKeys="sshKeys"
-        :formatBytes="formatBytes"
-        @update:mode="mode = $event"
-        @update:selectedImageId="selectedImageId = $event"
-        @update:selectedSSHKeyId="selectedSSHKeyId = $event"
-        @update:showCloudInit="showCloudInit = $event"
-        @update:cloudUserData="cloudUserData = $event"
       />
 
       <CreateVMDriversStep
@@ -246,7 +248,7 @@ function openUSBPicker() {
       />
 
       <p
-        v-if="selectedDeviceIncompatibility() && currentStepLabel !== 'Summary'"
+        v-if="placementStepReached && selectedDeviceIncompatibility() && currentStepLabel !== 'Summary'"
         class="placement-override"
       >
         {{ selectedDeviceIncompatibility() }} You can still place the VM here.

@@ -49,10 +49,14 @@ export function createVMIncompatibilityReasons(
     osType?: 'linux' | 'windows'
     requiredFeatures?: string[]
     capabilities?: CurrentHostCapabilities | null
+    hasImage?: boolean
   } = {},
 ): string[] {
   if (!isSelfDevice(device) && device.reachability !== 'ok') {
     return ['Device is unreachable']
+  }
+  if (opts.hasImage === false) {
+    return ["Not in this Device's Library"]
   }
   const reasons: string[] = []
   const hostArch = pickedHostArch(device, opts.capabilities)

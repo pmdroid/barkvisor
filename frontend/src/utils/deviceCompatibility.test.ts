@@ -120,9 +120,12 @@ describe('deviceCompatibility (PAS-34)', () => {
     ).toEqual(['Missing usbPassthrough'])
   })
 
-  test('missing Library copy is a hard disable; compatible Devices stay open', () => {
+  test('missing Library copy is a placement reason for templates and Create VM', () => {
     const peer = device({ hostId: 'studio', role: 'member' })
     expect(templateIncompatibilityReasons(peer, template(), { hasTemplate: false })).toEqual([
+      "Not in this Device's Library",
+    ])
+    expect(createVMIncompatibilityReasons(peer, { hasImage: false })).toEqual([
       "Not in this Device's Library",
     ])
     const option = toPickOption(peer, [])
