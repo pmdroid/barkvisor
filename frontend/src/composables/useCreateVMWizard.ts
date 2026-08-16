@@ -29,7 +29,8 @@ import { useTaskPoller } from './useTaskPoller'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
-import { hostArchToImageArch } from '../utils/imageArch'
+import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
+import { hostArchToImageArch, normalizeImageArch } from '../utils/imageArch'
 import {
   architectureIsProblem,
   architectureLabel,
@@ -73,6 +74,7 @@ export function useCreateVMWizard(
   const networkStore = useNetworkStore()
   const diskStore = useDiskStore()
   const devicesStore = useDevicesStore()
+  const homeLibrary = useHomeLibraryStore()
 
   const selectedHostId = ref(opts.initialHostId ?? '')
   const userOverrodeHost = ref(!!opts.initialHostId)
@@ -119,15 +121,15 @@ export function useCreateVMWizard(
   // Wizard step
   const step = ref(1)
 
-  // Step 1: OS & Name
+  // Step 1: Basics (name + OS). Zero arch / capability language.
   const name = ref('')
   const osType = ref<'linux' | 'windows'>('linux')
   /**
    * Windows guest profile exists only for arm64 today (`windows-arm64`).
-   * Until hostArch is known, do not offer Windows (PAS-48 / PAS-37 fail-closed).
+   * Used as a Place-step / submit reason — never to grey the step-1 card (PAS-182).
    */
   const supportsWindows = computed(() => {
-    if (!pickedHostArchKnown.value) return false
+    if (!pickedHostArchKnown.value) return true
     const host = hostArchToImageArch(hostArch.value)
     if (host !== 'arm64') return false
     const types = guestTypes.value ?? []
@@ -139,34 +141,48 @@ export function useCreateVMWizard(
 
   /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
   const guestArchOverride = ref<string | null>(null)
+  const selectedImageId = ref('')
 
   /** Picked Device native arch — used for firmware/omit-vmType and “this pick cannot run…”. */
   const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
 
-  /**
-   * Guest default is THIS Device (the dashboard), not the recommended pick.
-   * Scoring Ubuntu first then adopting its arm64 greys out “This Device” (x86).
-   */
-  const selfImageArch = computed(() => {
-    const fromSelf = devicesStore.selfDevice?.platform?.arch
-    if (fromSelf) return hostArchToImageArch(fromSelf)
-    if (caps.hostArchKnown) return hostArchToImageArch(caps.hostArch)
-    return ''
+  const selectedImage = computed(() => {
+    if (!selectedImageId.value) return null
+    return homeLibrary.images.find((i) => i.libraryKey === selectedImageId.value)
+      || homeLibrary.images.find((i) => i.id === selectedImageId.value)
+      || deviceImages.value.find((i) => i.id === selectedImageId.value)
+      || null
   })
 
-  const effectiveGuestArch = computed(
-    () => guestArchOverride.value ?? (selfImageArch.value || hostImageArch.value),
-  )
+  const selectedLibraryKey = computed(() => {
+    if (!selectedImage.value) return selectedImageId.value
+    return 'libraryKey' in selectedImage.value && selectedImage.value.libraryKey
+      ? selectedImage.value.libraryKey
+      : homeImageKey(selectedImage.value)
+  })
+
+  /**
+   * Guest arch comes from the chosen image (or an explicit override).
+   * Never default a guest from a Device row — that lectures before intent (PAS-182).
+   */
+  const effectiveGuestArch = computed(() => {
+    if (guestArchOverride.value) return guestArchOverride.value
+    const fromImage = normalizeImageArch(selectedImage.value?.arch) ?? selectedImage.value?.arch
+    return fromImage || ''
+  })
 
   const deviceOptions = computed<DevicePickOption[]>(() => {
     const rows = devicesStore.devices
     const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
+    const guest = effectiveGuestArch.value || null
     return list.map((row) => {
       const local = createVMIncompatibilityReasons(row, {
-        // Configured guest for this create — not each row's host arch.
-        guestArch: effectiveGuestArch.value,
+        guestArch: guest,
         osType: osType.value,
         capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+        hasImage: selectedLibraryKey.value
+          ? homeLibrary.deviceHasLibraryImage(selectedLibraryKey.value, row)
+          : undefined,
       })
       const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
       const hard = (scored?.reasons ?? [])
@@ -184,17 +200,10 @@ export function useCreateVMWizard(
     const arch = effectiveGuestArch.value
     const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
-      // Never silently map Windows → Linux. Submit/canProceed require supportsWindows.
+      // Never silently map Windows → Linux. windows-amd64 is PAS-184.
       return 'windows-arm64'
     }
     return `linux-${archSuffix}` as const
-  })
-
-  // If host turns out not to support Windows, drop a stale selection.
-  watch(supportsWindows, (ok) => {
-    if (!ok && osType.value === 'windows') {
-      selectOS('linux')
-    }
   })
 
   // Step 2: Hardware
@@ -207,14 +216,17 @@ export function useCreateVMWizard(
   const alwaysShowArchDetails = ref(readAlwaysShowArchitectureDetails())
 
   const archCustomized = computed(() => {
-    const override = guestArchOverride.value
-    return !!override && override !== hostImageArch.value
+    const guest = effectiveGuestArch.value
+    if (!guest) return false
+    if (guestArchOverride.value) return guestArchOverride.value !== hostImageArch.value
+    return !!hostImageArch.value && guest !== hostImageArch.value
   })
   const uefiCustomized = computed(() => uefi.value !== true)
   const tpmCustomized = computed(() => tpmOverride.value !== null)
   const archRunnable = computed(() => capabilitiesArchRunnable(pickedCaps.value, effectiveGuestArch.value))
+  const imageArchKnown = computed(() => !!effectiveGuestArch.value)
   const archIsProblem = computed(() => {
-    if (!pickedHostArchKnown.value) return false
+    if (!pickedHostArchKnown.value || !imageArchKnown.value) return false
     return architectureIsProblem(effectiveGuestArch.value, archRunnable.value)
   })
   const archProblemText = computed(() => {
@@ -271,14 +283,13 @@ export function useCreateVMWizard(
   }
 
   function selectOS(os: 'linux' | 'windows') {
-    if (os === 'windows' && !supportsWindows.value) return
     osType.value = os
     selectedImageId.value = ''
     tpmOverride.value = null
     if (os === 'windows' && guestArchOverride.value === 'x86_64') {
       guestArchOverride.value = null
     }
-    const maxCpu = hostCpuCount.value
+    const maxCpu = pickedHostArchKnown.value ? hostCpuCount.value : (os === 'windows' ? 4 : 2)
     if (os === 'windows') {
       cpuCount.value = Math.min(4, maxCpu)
       memoryMB.value = 4096
@@ -292,9 +303,12 @@ export function useCreateVMWizard(
     }
   }
 
-  // Step 3: Image
+  watch(hostCpuCount, (max) => {
+    if (pickedHostArchKnown.value && cpuCount.value > max) cpuCount.value = max
+  })
+
+  // Step 2: Image (Home Library)
   const mode = ref<'iso' | 'cloud'>('iso')
-  const selectedImageId = ref('')
   const selectedSSHKeyId = ref('')
   const showCloudInit = ref(false)
   const cloudUserData = ref('')
@@ -307,14 +321,12 @@ export function useCreateVMWizard(
   const virtioWinStatus = ref<string>('')
   const virtioWinError = ref('')
 
-  // Dynamic step mapping
+  // Dynamic step mapping (PAS-182): Basics → Image → Place → Hardware → Drivers? → Storage → Network → Summary
   const needsDriverStep = computed(() => osType.value === 'windows' && !virtioWinAvailable.value)
-  const totalSteps = computed(() => (needsDriverStep.value ? 7 : 6))
+  const totalSteps = computed(() => (needsDriverStep.value ? 8 : 7))
 
-  // Without driver step: 1=OS, 2=HW, 3=Image, 4=Storage, 5=Network, 6=Summary
-  // With driver step:    1=OS, 2=HW, 3=Image, 4=Drivers, 5=Storage, 6=Network, 7=Summary
   const stepLabels = computed(() => {
-    const base = ['OS', 'Hardware', 'Image']
+    const base = ['Basics', 'Image', 'Place', 'Hardware']
     if (needsDriverStep.value) base.push('Drivers')
     base.push('Storage', 'Network', 'Summary')
     return base
@@ -325,6 +337,11 @@ export function useCreateVMWizard(
   }
 
   const currentStepLabel = computed(() => stepContent(step.value))
+
+  async function enterPlace() {
+    await loadPickedDevice()
+    if (osType.value === 'windows') await checkVirtioWinStatus()
+  }
 
   watch(osType, async (os) => {
     if (os === 'windows') {
@@ -518,8 +535,8 @@ export function useCreateVMWizard(
   // State
   const error = ref('')
   const loading = ref(false)
-  /** True while loadPickedDevice is in flight (initial mount and Device switch). */
-  const pickedDeviceLoading = ref(true)
+  /** True while loadPickedDevice is in flight (Place step and Device switch). */
+  const pickedDeviceLoading = ref(false)
   let pickedDeviceLoadSeq = 0
 
   function isCurrentPickedDeviceLoad(seq: number): boolean {
@@ -536,8 +553,11 @@ export function useCreateVMWizard(
       pickedCaps.value = { ...caps.currentHost }
       pickedHostArchKnown.value = caps.hostArchKnown
     }
-    const defaultKey = deviceSSHKeys.value.find((k) => k.isDefault)
-    if (defaultKey) selectedSSHKeyId.value = defaultKey.id
+    const keys = deviceSSHKeys.value
+    if (!keys.some((k) => k.id === selectedSSHKeyId.value)) {
+      const defaultKey = keys.find((k) => k.isDefault)
+      selectedSSHKeyId.value = defaultKey?.id ?? ''
+    }
     const defaultNet =
       deviceNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
       ?? networks.value.find((n) => n.isDefault)
@@ -651,7 +671,6 @@ export function useCreateVMWizard(
         deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
         deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
         deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
-        selectedImageId.value = ''
         existingDiskId.value = ''
         selectedUSBDevices.value = []
         error.value = ''
@@ -667,50 +686,27 @@ export function useCreateVMWizard(
   }
 
   onMounted(async () => {
-    await loadPickedDevice()
+    await devicesStore.fetchHealth().catch(() => {})
+    await Promise.all([
+      homeLibrary.fetchImages(devicesStore.devices).catch(() => {}),
+      sshKeyStore.fetchAll().catch(() => {}),
+    ])
   })
 
   watch(selectedHostId, async (next, prev) => {
     if (!prev || !next || next === prev) return
     userOverrodeHost.value = true
-    selectedImageId.value = ''
     existingDiskId.value = ''
     selectedUSBDevices.value = []
     await loadPickedDevice()
     if (osType.value === 'windows') await checkVirtioWinStatus()
   })
 
-  /** Local ready images of the current mode, unfiltered by arch. */
-  function readyImagesForMode(imageType: 'iso' | 'cloud-image') {
-    return deviceImages.value.filter((i) => i.imageType === imageType && i.status === 'ready')
-  }
-
-  /** Match host-runnable arch; empty arch allowed (e.g. virtio drivers). */
-  function localImageMatchesHost(arch: string | null | undefined): boolean {
-    if (!arch) return true
-    return capabilitiesArchRunnable(pickedCaps.value, arch)
-  }
-
-  const isoImages = computed(() =>
-    readyImagesForMode('iso').filter((i) => localImageMatchesHost(i.arch)),
-  )
-  const cloudImages = computed(() =>
-    readyImagesForMode('cloud-image').filter((i) => localImageMatchesHost(i.arch)),
-  )
-  const filteredImages = computed(() =>
-    mode.value === 'iso' ? isoImages.value : cloudImages.value,
-  )
-  /** Ready images hidden solely because of host arch mismatch (PAS-48 empty-state copy). */
-  const foreignArchImageCount = computed(() => {
-    if (!pickedHostArchKnown.value) return 0
+  const filteredImages = computed(() => {
     const type = mode.value === 'iso' ? 'iso' : 'cloud-image'
-    return readyImagesForMode(type).filter((i) => i.arch && !localImageMatchesHost(i.arch)).length
+    return homeLibrary.images.filter((i) => i.imageType === type && i.status === 'ready')
   })
-
-  const selectedImage = computed(() => {
-    if (!selectedImageId.value) return null
-    return deviceImages.value.find((i) => i.id === selectedImageId.value) || null
-  })
+  const foreignArchImageCount = computed(() => 0)
 
   const selectedNetwork = computed(() => {
     if (!selectedNetworkId.value) return null
@@ -730,17 +726,26 @@ export function useCreateVMWizard(
     return null
   }
 
+  const placementStepReached = computed(() => {
+    const label = currentStepLabel.value
+    return label === 'Place' || label === 'Hardware' || label === 'Drivers'
+      || label === 'Storage' || label === 'Network' || label === 'Summary'
+  })
+
   function canProceed(): boolean {
-    if (pickedDeviceLoading.value || placementRefreshing.value) return false
-    if (osType.value === 'windows' && !supportsWindows.value) return false
     const content = stepContent(step.value)
+    if (placementStepReached.value && (pickedDeviceLoading.value || placementRefreshing.value)) {
+      return false
+    }
     switch (content) {
-      case 'OS':
-        return !!name.value.trim() && selectedDeviceSelectable()
-      case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDeviceSelectable()
+      case 'Basics':
+        return !!name.value.trim()
       case 'Image':
         return !!selectedImageId.value
+      case 'Place':
+        return selectedDeviceSelectable()
+      case 'Hardware':
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDeviceSelectable()
       case 'Drivers':
         return virtioWinAvailable.value
       case 'Storage':
@@ -755,7 +760,9 @@ export function useCreateVMWizard(
   }
 
   function next() {
-    if (canProceed() && step.value < totalSteps.value) step.value++
+    if (!canProceed() || step.value >= totalSteps.value) return
+    step.value++
+    if (stepContent(step.value) === 'Place') void enterPlace()
   }
 
   function prev() {
@@ -799,11 +806,18 @@ export function useCreateVMWizard(
       } else {
         req.diskSizeGB = diskSizeGB.value
       }
+      const createImage = homeLibrary.resolveImageForCreate(
+        selectedLibraryKey.value,
+        selectedDevice.value,
+        selectedImage.value,
+      )
+      const imageId = createImage?.id ?? selectedImageId.value
       if (mode.value === 'iso') {
-        req.isoId = selectedImageId.value
+        req.isoId = imageId
       } else {
-        req.cloudImageId = selectedImageId.value
-        const selectedKey = deviceSSHKeys.value.find((k) => k.id === selectedSSHKeyId.value)
+        req.cloudImageId = imageId
+        const selectedKey = (deviceSSHKeys.value.length ? deviceSSHKeys.value : sshKeyStore.keys)
+          .find((k) => k.id === selectedSSHKeyId.value)
         const keys = selectedKey ? [selectedKey.publicKey] : []
         const userData = cloudUserData.value.trim()
         if (keys.length || userData) {
@@ -851,8 +865,10 @@ export function useCreateVMWizard(
   return {
     // stores exposed for steps that need lists
     sshKeyStore: { keys: deviceSSHKeys },
-    sshKeys: deviceSSHKeys,
+    sshKeys: computed(() => (deviceSSHKeys.value.length > 0 ? deviceSSHKeys.value : sshKeyStore.keys)),
     selectedHostId,
+    hostCpuCount,
+    placementStepReached,
     placementScore,
     deviceOptions,
     selectedDevice,

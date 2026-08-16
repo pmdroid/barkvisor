@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
 import api from '../api/client'
-import type { HomeDeviceHealthSnapshot, VMTemplate } from '../api/types'
-import { useHomeLibraryStore } from './homeLibrary'
+import type { HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
+import { homeImageKey, useHomeLibraryStore } from './homeLibrary'
 
 const originalGet = api.get
 
@@ -32,6 +32,21 @@ function tpl(partial: Partial<VMTemplate> & Pick<VMTemplate, 'id' | 'slug'>): VM
     userDataTemplate: '',
     isBuiltIn: true,
     repositoryId: 'r1',
+    ...partial,
+  }
+}
+
+function img(partial: Partial<Image> & Pick<Image, 'id' | 'name'>): Image {
+  return {
+    imageType: 'iso',
+    arch: 'arm64',
+    status: 'ready',
+    sizeBytes: 1024,
+    sourceUrl: null,
+    error: null,
+    sha256: null,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
     ...partial,
   }
 }
@@ -122,5 +137,57 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.templates).toHaveLength(1)
     expect(store.templates[0]?.slug).toBe('ubuntu')
     expect(store.error).toBeNull()
+  })
+
+  test('unions ready images across Devices by checksum and tracks local copies', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const down = snapshot({ hostId: 'garage', role: 'member', reachability: 'unreachable' })
+    const get = mock((url: string) => {
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [
+            img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64' }),
+            img({ id: 'local-only', name: 'extra.iso', arch: 'arm64' }),
+          ],
+        })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({
+          data: [
+            img({ id: 'peer-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64' }),
+            img({ id: 'peer-x86', name: 'debian.iso', arch: 'x86_64' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, peer, down])
+    expect(store.images.map((row) => row.name).sort()).toEqual(['debian.iso', 'extra.iso', 'ubuntu.iso'])
+    const ubuntuKey = homeImageKey(img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64' }))
+    expect(store.deviceHasImage(ubuntuKey, 'desk')).toBe(true)
+    expect(store.deviceHasImage(ubuntuKey, 'studio')).toBe(true)
+    expect(store.imageForDevice(ubuntuKey, 'studio')?.id).toBe('peer-iso')
+    expect(store.deviceHasLibraryImage(ubuntuKey, self)).toBe(true)
+    const x86Key = homeImageKey(img({ id: 'peer-x86', name: 'debian.iso', arch: 'x86_64' }))
+    expect(store.deviceHasLibraryImage(x86Key, self)).toBe(false)
+    expect(store.deviceHasLibraryImage(x86Key, peer)).toBe(true)
+    expect(get.mock.calls.map((c) => c[0])).toEqual(['/images', '/home/devices/studio/v1/images'])
+  })
+
+  test('empty image library does not treat member Devices as having a local copy', () => {
+    const store = useHomeLibraryStore()
+    const local = img({ id: 'local-iso', name: 'ubuntu.iso', arch: 'arm64' })
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const key = homeImageKey(local)
+    expect(store.images).toHaveLength(0)
+    expect(store.deviceHasLibraryImage(key, self)).toBe(true)
+    expect(store.deviceHasLibraryImage(key, peer)).toBe(false)
+    expect(store.resolveImageForCreate(key, peer, local)).toBeNull()
+    expect(store.resolveImageForCreate(key, self, local)?.id).toBe('local-iso')
   })
 })

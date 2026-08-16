@@ -10,10 +10,7 @@ defineProps<{
   selectedSSHKeyId: string
   showCloudInit: boolean
   cloudUserData: string
-  filteredImages: Image[]
-  /** Ready images hidden because their arch ≠ host (PAS-48). */
-  foreignArchImageCount?: number
-  hostImageArch?: string
+  filteredImages: Array<Image & { libraryKey?: string }>
   sshKeys: SSHKey[]
   formatBytes: (b: number) => string
 }>()
@@ -57,21 +54,17 @@ function setMode(m: 'iso' | 'cloud') {
         @update:modelValue="emit('update:selectedImageId', $event as string)"
       >
         <option value="" disabled>Select an image...</option>
-        <option v-for="img in filteredImages" :key="img.id" :value="img.id">
-          {{ img.name }}{{ img.sizeBytes ? ` (${formatBytes(img.sizeBytes)})` : '' }}
+        <option
+          v-for="img in filteredImages"
+          :key="img.libraryKey || img.id"
+          :value="img.libraryKey || img.id"
+        >
+          {{ img.name }}{{ img.arch ? ` (${img.arch})` : '' }}{{ img.sizeBytes ? ` (${formatBytes(img.sizeBytes)})` : '' }}
         </option>
       </AppSelect>
       <div v-if="filteredImages.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
-        <template v-if="foreignArchImageCount && foreignArchImageCount > 0">
-          {{ foreignArchImageCount }} ready {{ mode === 'iso' ? 'ISO' : 'cloud' }}
-          image{{ foreignArchImageCount === 1 ? '' : 's' }} hidden —
-          this device only runs {{ hostImageArch || 'native-arch' }} guests.
-          Download a matching image in the Images section.
-        </template>
-        <template v-else>
-          No {{ mode === 'iso' ? 'ISO' : 'cloud' }} images available.
-          Upload or download one in the Images section first.
-        </template>
+        No {{ mode === 'iso' ? 'ISO' : 'cloud' }} images in the Home Library.
+        Upload or download one in Images first.
       </div>
     </div>
     <div v-if="mode === 'cloud'" class="form-group">
