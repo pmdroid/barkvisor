@@ -31,7 +31,7 @@ On an **API-only Device** (no SPA), join from that host instead of the wizard:
 barkvisor join --code 'barkvisor://pair/v1?…'
 ```
 
-Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. See [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
+Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. Full walkthrough: [Home and pairing](home-and-pairing.md). See also [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
 
 ### 2. Create admin account
 
@@ -68,7 +68,7 @@ SetupMiddleware stops blocking API routes once setup is complete.
 
 ## Words we use
 
-This Device is already a **Home** of one. Later, more Devices join that Home — not a cluster, datacenter, or quorum. See [Product terminology](product-terminology.md).
+This Device is already a **Home** of one. Later, more Devices join that Home — not a cluster, datacenter, or quorum. See [Home and pairing](home-and-pairing.md) and [Product terminology](product-terminology.md). What shipped is in the [Changelog](changelog.md).
 
 ## After Setup
 

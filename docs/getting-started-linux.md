@@ -150,7 +150,7 @@ Or set `BARKVISOR_JOIN_CODE` in `/etc/barkvisor/barkvisor.env` before first boot
 
 Paste the full pairing offer (`barkvisor://pair/v1?…`) issued on the other Device (Settings → Home → Add a Device). The short code alone is not enough.
 
-Then manage Workloads from the other Device’s SPA. See [Product terminology](product-terminology.md) and [First launch](getting-started-first-launch.md).
+Then manage Workloads from the other Device’s SPA. See [Home and pairing](home-and-pairing.md), [Product terminology](product-terminology.md), and [First launch](getting-started-first-launch.md).
 
 ---
 
