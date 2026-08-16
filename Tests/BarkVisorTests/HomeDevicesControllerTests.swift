@@ -278,6 +278,67 @@ struct HomeDevicesControllerTests {
         #expect(client.calls.allSatisfy { header("Authorization", in: $0.headers) == "Bearer home-jwt" })
     }
 
+    @Test func `probeMember treats health-summary transport and decode failures as unknown`() async throws {
+        let dir = try isolatedDir("summary-unknown")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let peerId = "summary-peer"
+
+        let decodeClient = RecordingProxyClient()
+        try decodeClient.respond(
+            host: "10.0.0.5",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: peerId, name: "desk")),
+        )
+        decodeClient.respond(
+            host: "10.0.0.5",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: Data("{".utf8),
+        )
+        let decoded = await controller(dir: dir, hostId: "self", mtlsClient: decodeClient)
+            .probeMember(
+                HomeDevice(hostId: peerId, role: "member", agentHost: "10.0.0.5", agentPort: 7_778),
+                bearer: nil,
+            )
+        guard case let .ok(decodeFacts) = decoded else {
+            Issue.record("expected reachable member after summary decode failure, got \(decoded)")
+            return
+        }
+        #expect(decodeFacts.workloadCount == nil)
+        #expect(decodeFacts.healthCounts == nil)
+        #expect(decodeFacts.displayName == "desk")
+
+        let transportClient = RecordingProxyClient()
+        try transportClient.respond(
+            host: "10.0.0.5",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: peerId, name: "desk")),
+        )
+        transportClient.fail(
+            host: "10.0.0.5",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            error: HomeDeviceProxyError.unreachable("summary down"),
+        )
+        let transported = await controller(dir: dir, hostId: "self", mtlsClient: transportClient)
+            .probeMember(
+                HomeDevice(hostId: peerId, role: "member", agentHost: "10.0.0.5", agentPort: 7_778),
+                bearer: nil,
+            )
+        guard case let .ok(transportFacts) = transported else {
+            Issue.record("expected reachable member after summary transport failure, got \(transported)")
+            return
+        }
+        #expect(transportFacts.workloadCount == nil)
+        #expect(transportFacts.healthCounts == nil)
+        #expect(transportFacts.resources?.cpuCount == 2)
+    }
+
     @Test func `inventory-only member stays reachable with unknown workload count`() async throws {
         let dir = try isolatedDir("inventory-only")
         defer { try? FileManager.default.removeItem(at: dir) }

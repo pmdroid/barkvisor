@@ -337,16 +337,40 @@ struct HomeDevicesController: RouteCollection {
         do {
             let inventoryData = try await getJSON(url: inventoryURL, client: client, bearer: bearer)
             let inventory = try HomeDeviceHealthAggregator.decodeInventory(inventoryData)
-            let summary: WorkloadHealthSummary? = if let summaryData = try? await getJSON(url: summaryURL, client: client, bearer: bearer) {
-                try? HomeDeviceHealthAggregator.decodeHealthSummary(summaryData)
-            } else {
-                nil
-            }
+            let summary = await loadMemberHealthSummary(
+                url: summaryURL, client: client, bearer: bearer, hostId: device.hostId,
+            )
             return .ok(HomeDeviceHealthAggregator.facts(from: inventory, summary: summary))
         } catch let error as HomeDeviceProxyError {
             return .unreachable(error.localizedDescription)
         } catch {
             return .unreachable("Device is unreachable: \(error.localizedDescription)")
+        }
+    }
+
+    /// Inventory already succeeded; a missing/broken summary is unknown, not empty-ok.
+    func loadMemberHealthSummary(
+        url: URL,
+        client: any HomeDeviceProxyClient,
+        bearer: String?,
+        hostId: String,
+    ) async -> WorkloadHealthSummary? {
+        let summaryData: Data
+        do {
+            summaryData = try await getJSON(url: url, client: client, bearer: bearer)
+        } catch {
+            Log.server.warning(
+                "Device \(hostId) health-summary fetch failed; treating Workload count as unknown: \(error.localizedDescription)",
+            )
+            return nil
+        }
+        do {
+            return try HomeDeviceHealthAggregator.decodeHealthSummary(summaryData)
+        } catch {
+            Log.server.warning(
+                "Device \(hostId) health-summary decode failed; treating Workload count as unknown: \(error.localizedDescription)",
+            )
+            return nil
         }
     }
 
