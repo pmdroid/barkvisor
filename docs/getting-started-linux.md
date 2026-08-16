@@ -325,3 +325,17 @@ To produce `.deb` / `.rpm` / tarball artifacts:
 ./scripts/build-linux-packages.sh
 # or from macOS: ./scripts/build-linux-packages.sh --docker
 ```
+
+### Guest-boot smoke (optional)
+
+From a source checkout, opt-in Gherkin scenarios wrap the existing guest
+smoke scripts. They are **not** part of `mise run prepush`.
+
+```sh
+mise run guest-smoke        # blank disk (fast)
+mise run guest-smoke-real   # Ubuntu cloud image + SSH
+```
+
+Expect **minutes on KVM**, or **up to ~15 minutes on TCG**. If
+`qemu-system-*` is missing the mapper skips with a clear message. See
+[Development — Guest-boot BDD](getting-started-development.md#guest-boot-bdd-opt-in-not-prepush).
