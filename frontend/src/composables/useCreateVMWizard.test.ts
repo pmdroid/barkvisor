@@ -670,4 +670,236 @@ describe('useCreateVMWizard (PAS-182)', () => {
       return Array.isArray(arches) && arches.includes('x86_64')
     })).toBe(true)
   })
+
+  test('re-entering Place applies a new recommendation without locking host override', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({ hostId: 'studio', role: 'member', displayName: 'studio' }),
+    ])
+    devices.report = health
+    const img = readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64', sha256: 'reenter' })
+    const key = seedLibraryImage(img, ['desk', 'studio'])
+    let recommendedHostId = 'studio'
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (url === '/images' || url.endsWith('/images')) {
+        return Promise.resolve({ data: [{ ...img, id: url.includes('studio') ? 'studio-iso-1' : 'desk-iso-1' }] })
+      }
+      if (
+        url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({
+          data: {
+            recommendedHostId,
+            candidates: [
+              {
+                hostId: recommendedHostId,
+                role: recommendedHostId === 'studio' ? 'member' : 'self',
+                eligible: true,
+                recommended: true,
+                rank: 1,
+                score: 90,
+                reasons: [{ code: 'headroom', kind: 'soft', message: 'ok' }],
+              },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    wizard.name.value = 'reenter'
+    wizard.selectedImageId.value = key
+    wizard.next()
+    expect(wizard.currentStepLabel.value).toBe('Image')
+    wizard.next()
+    expect(wizard.currentStepLabel.value).toBe('Place')
+    for (let i = 0; i < 50; i++) {
+      if (!wizard.pickedDeviceLoading.value && wizard.selectedHostId.value === 'studio') break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(wizard.selectedHostId.value).toBe('studio')
+
+    recommendedHostId = 'desk'
+    wizard.prev()
+    expect(wizard.currentStepLabel.value).toBe('Image')
+    wizard.next()
+    expect(wizard.currentStepLabel.value).toBe('Place')
+    for (let i = 0; i < 50; i++) {
+      if (!wizard.pickedDeviceLoading.value && wizard.selectedHostId.value === 'desk') break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(wizard.selectedHostId.value).toBe('desk')
+
+    recommendedHostId = 'studio'
+    wizard.prev()
+    wizard.next()
+    for (let i = 0; i < 50; i++) {
+      if (!wizard.pickedDeviceLoading.value && wizard.selectedHostId.value === 'studio') break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(wizard.selectedHostId.value).toBe('studio')
+  })
+
+  test('Image step refreshes Home Library after additional Devices become reachable', async () => {
+    const devices = useDevicesStore()
+    const desk = device({ hostId: 'desk', role: 'self', displayName: 'desk' })
+    const studio = device({ hostId: 'studio', role: 'member', displayName: 'studio' })
+    devices.report = report([desk])
+    let healthDevices = [desk]
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: report(healthDevices) })
+      if (url === '/images') {
+        return Promise.resolve({
+          data: [readyImage({ id: 'iso-desk', name: 'ubuntu.iso', arch: 'arm64', sha256: 'deskimg' })],
+        })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({
+          data: [readyImage({ id: 'iso-studio', name: 'extra.iso', arch: 'arm64', sha256: 'studioimg' })],
+        })
+      }
+      if (url === '/ssh-keys' || url === '/networks' || url === '/disks' || url === '/system/capabilities') {
+        return Promise.resolve({ data: url === '/system/capabilities' ? { hostArch: 'arm64', hostCpuCount: 4 } : [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const wizard = useCreateVMWizard(() => {})
+    const library = useHomeLibraryStore()
+    healthDevices = [desk, studio]
+    wizard.step.value = 2
+    expect(wizard.currentStepLabel.value).toBe('Image')
+    for (let i = 0; i < 50; i++) {
+      if (library.images.some((img) => img.name === 'extra.iso')) break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(library.images.map((img) => img.name).sort()).toEqual(['extra.iso', 'ubuntu.iso'])
+    expect(wizard.filteredImages.value.some((img) => img.name === 'extra.iso')).toBe(true)
+  })
+
+  test('loadPickedDevice refreshes Home Library after device health updates', async () => {
+    const devices = useDevicesStore()
+    const desk = device({ hostId: 'desk', role: 'self', displayName: 'desk' })
+    const studio = device({ hostId: 'studio', role: 'member', displayName: 'studio' })
+    const img = readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64', sha256: 'shared' })
+    const key = seedLibraryImage(img, ['desk'])
+    devices.report = report([desk, studio])
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: report([desk, studio]) })
+      if (url === '/images') {
+        return Promise.resolve({ data: [{ ...img, id: 'desk-iso-1' }] })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({ data: [{ ...img, id: 'studio-iso-1' }] })
+      }
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (
+        url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const library = useHomeLibraryStore()
+    expect(library.deviceHasLibraryImage(key, studio)).toBe(false)
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectedImageId.value = key
+    await wizard.loadPickedDevice()
+    for (let i = 0; i < 50; i++) {
+      if (library.deviceHasLibraryImage(key, studio)) break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(library.deviceHasLibraryImage(key, studio)).toBe(true)
+  })
+
+  test('Place Next waits for VirtIO status so the Drivers step does not appear mid-advance', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+    ])
+    devices.report = health
+    const key = seedLibraryImage(
+      readyImage({ id: 'iso-win', name: 'windows.iso', arch: 'arm64' }),
+      ['desk'],
+    )
+    let releaseVirtio: (() => void) | undefined
+    const virtioGate = new Promise<void>((resolve) => {
+      releaseVirtio = resolve
+    })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/system/virtio-win/status' || url.endsWith('/system/virtio-win/status')) {
+        return virtioGate.then(() => Promise.resolve({ data: { available: true, imageId: 'virtio-1' } }))
+      }
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (
+        url === '/images' || url === '/networks' || url === '/disks' || url === '/ssh-keys'
+        || url.endsWith('/images') || url.endsWith('/networks') || url.endsWith('/disks') || url.endsWith('/ssh-keys')
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const wizard = useCreateVMWizard(() => {})
+    wizard.name.value = 'win-vm'
+    wizard.selectOS('windows')
+    wizard.selectedImageId.value = key
+    expect(wizard.stepLabels.value).toContain('Drivers')
+    wizard.next()
+    expect(wizard.currentStepLabel.value).toBe('Image')
+    wizard.next()
+    expect(wizard.currentStepLabel.value).toBe('Place')
+    for (let i = 0; i < 20; i++) {
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(wizard.pickedDeviceLoading.value).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
+    expect(wizard.virtioWinAvailable.value).toBe(false)
+    expect(wizard.stepLabels.value).toContain('Drivers')
+
+    releaseVirtio?.()
+    for (let i = 0; i < 50; i++) {
+      if (!wizard.pickedDeviceLoading.value && wizard.virtioWinAvailable.value) break
+      await nextTick()
+      await Promise.resolve()
+    }
+    expect(wizard.pickedDeviceLoading.value).toBe(false)
+    expect(wizard.virtioWinAvailable.value).toBe(true)
+    expect(wizard.stepLabels.value).not.toContain('Drivers')
+    expect(wizard.totalSteps.value).toBe(7)
+    expect(wizard.canProceed()).toBe(true)
+    wizard.next()
+    expect(wizard.currentStepLabel.value).toBe('Hardware')
+  })
 })

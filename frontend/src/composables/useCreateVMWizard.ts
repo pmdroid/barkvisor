@@ -340,7 +340,6 @@ export function useCreateVMWizard(
 
   async function enterPlace() {
     await loadPickedDevice()
-    if (osType.value === 'windows') await checkVirtioWinStatus()
   }
 
   watch(osType, async (os) => {
@@ -349,19 +348,23 @@ export function useCreateVMWizard(
     }
   })
 
+  let virtioCheckSeq = 0
+
   async function checkVirtioWinStatus() {
+    const seq = ++virtioCheckSeq
     try {
       const target = selectedDevice.value
       if (selectedHostId.value && !target) {
-        virtioWinAvailable.value = false
+        if (seq === virtioCheckSeq) virtioWinAvailable.value = false
         return
       }
       const path = target ? devicePath(target, '/system/virtio-win/status') : '/system/virtio-win/status'
       const { data } = await api.get(path)
+      if (seq !== virtioCheckSeq) return
       virtioWinAvailable.value = data.available
       virtioWinImageId.value = data.imageId || null
     } catch {
-      virtioWinAvailable.value = false
+      if (seq === virtioCheckSeq) virtioWinAvailable.value = false
     }
   }
 
@@ -576,6 +579,15 @@ export function useCreateVMWizard(
 
   let placementScoreSeq = 0
   const placementRefreshing = ref(false)
+  /** True while refreshPlacement assigns selectedHostId — not a user pick. */
+  let applyingRecommendedHost = false
+
+  function assignRecommendedHostId(hostId: string) {
+    if (hostId === selectedHostId.value) return
+    // Empty → first recommendation is not a user override; the watcher bails on !prev.
+    if (selectedHostId.value) applyingRecommendedHost = true
+    selectedHostId.value = hostId
+  }
 
   async function refreshPlacement(applyRecommendation = true) {
     const seq = ++placementScoreSeq
@@ -598,7 +610,7 @@ export function useCreateVMWizard(
     if (seq !== placementScoreSeq) return
     if (!applyRecommendation || userOverrodeHost.value) return
     const guest = effectiveGuestArch.value
-    selectedHostId.value = applyRecommendedHostId({
+    assignRecommendedHostId(applyRecommendedHostId({
       recommendedHostId: placementScore.value?.recommendedHostId,
       initialHostId: opts.initialHostId,
       selfHostId: devicesStore.selfDevice?.hostId,
@@ -614,12 +626,17 @@ export function useCreateVMWizard(
             : undefined,
         }).length === 0
       },
-    })
+    }))
   }
 
   watch([memoryMB, effectiveGuestArch, osType], () => {
     void refreshPlacement(false)
   })
+
+  async function refreshHomeLibrary() {
+    await devicesStore.fetchHealth().catch(() => {})
+    await homeLibrary.fetchImages(devicesStore.devices).catch(() => {})
+  }
 
   async function loadPickedDevice() {
     const seq = ++pickedDeviceLoadSeq
@@ -627,6 +644,8 @@ export function useCreateVMWizard(
     try {
       await devicesStore.fetchHealth().catch(() => {})
       if (!isCurrentPickedDeviceLoad(seq)) return
+      // Don't await: a slow peer Library must not block Place inventory or host switch.
+      void homeLibrary.fetchImages(devicesStore.devices).catch(() => {})
       await refreshPlacement()
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
@@ -684,25 +703,32 @@ export function useCreateVMWizard(
         error.value = apiErrorMessage(e, 'Could not load inventory from the picked Device.')
       }
     } finally {
+      if (isCurrentPickedDeviceLoad(seq) && osType.value === 'windows') {
+        await checkVirtioWinStatus()
+      }
       if (isCurrentPickedDeviceLoad(seq)) pickedDeviceLoading.value = false
     }
   }
 
   onMounted(async () => {
-    await devicesStore.fetchHealth().catch(() => {})
-    await Promise.all([
-      homeLibrary.fetchImages(devicesStore.devices).catch(() => {}),
-      sshKeyStore.fetchAll().catch(() => {}),
-    ])
+    await refreshHomeLibrary()
+    await sshKeyStore.fetchAll().catch(() => {})
+  })
+
+  watch(currentStepLabel, (label) => {
+    if (label === 'Image') void refreshHomeLibrary()
   })
 
   watch(selectedHostId, async (next, prev) => {
+    const programmatic = applyingRecommendedHost
+    applyingRecommendedHost = false
     if (!prev || !next || next === prev) return
-    userOverrodeHost.value = true
+    if (!programmatic) userOverrodeHost.value = true
     existingDiskId.value = ''
     selectedUSBDevices.value = []
+    // loadPickedDevice already continues with the new host after refreshPlacement.
+    if (programmatic) return
     await loadPickedDevice()
-    if (osType.value === 'windows') await checkVirtioWinStatus()
   })
 
   const filteredImages = computed(() => {
