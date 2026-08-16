@@ -586,6 +586,15 @@ public enum QEMUBuilder {
                 zeroFillBytes: 540_672,
             )
             return (codeFile, varsFile)
+        case .ovmfSecureBoot:
+            let codeFile = try resolveOVMFSecureBoot()
+            try ensureVarsStore(
+                at: varsFile,
+                codePath: codeFile.path,
+                templateCandidates: PlatformQEMU.ovmfSecureBootVarsCandidates,
+                zeroFillBytes: 540_672,
+            )
+            return (codeFile, varsFile)
         }
     }
 
@@ -599,17 +608,10 @@ public enum QEMUBuilder {
     ) throws {
         guard !FileManager.default.fileExists(atPath: varsFile.path) else { return }
 
-        // Prefer a VARS file that matches the CODE variant (e.g. CODE_4M → VARS_4M).
+        // Prefer a VARS file that matches the CODE variant (4M / secboot).
         var candidates = templateCandidates
-        if codePath.contains("4M") {
-            let fourM = candidates.filter { $0.contains("4M") }
-            let rest = candidates.filter { !$0.contains("4M") }
-            candidates = fourM + rest
-        } else {
-            let non4M = candidates.filter { !$0.contains("4M") }
-            let fourM = candidates.filter { $0.contains("4M") }
-            candidates = non4M + fourM
-        }
+        candidates = preferMatchingFirmwareToken("secboot", in: candidates, codePath: codePath)
+        candidates = preferMatchingFirmwareToken("4M", in: candidates, codePath: codePath)
 
         if let template = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
             try FileManager.default.copyItem(atPath: template, toPath: varsFile.path)
@@ -685,6 +687,20 @@ public enum QEMUBuilder {
         )
     }
 
+    /// Reorder firmware VARS candidates so the CODE variant (secboot / 4M) is tried first.
+    private static func preferMatchingFirmwareToken(
+        _ token: String,
+        in candidates: [String],
+        codePath: String,
+    ) -> [String] {
+        let match = candidates.filter { $0.contains(token) }
+        let rest = candidates.filter { !$0.contains(token) }
+        if codePath.contains(token) {
+            return match + rest
+        }
+        return rest + match
+    }
+
     private static func resolveEDK2X86_64() throws -> URL {
         // Homebrew ships edk2-x86_64-code.fd; Linux packages often use OVMF_CODE.fd.
         if let url = BundleResolver.qemuResource("edk2-x86_64-code.fd") {
@@ -701,6 +717,22 @@ public enum QEMUBuilder {
         throw BarkVisorError.firmwareNotFound(
             "x86_64 UEFI firmware (edk2-x86_64-code.fd / OVMF) not found. Install via: \(PlatformQEMU.firmwareInstallHintX86)",
         )
+    }
+
+    private static func resolveOVMFSecureBoot() throws -> URL {
+        if let url = BundleResolver.qemuResource("OVMF_CODE.secboot.fd") {
+            return url
+        }
+        if let url = BundleResolver.qemuResource("OVMF_CODE_4M.secboot.fd") {
+            return url
+        }
+        if let found = PlatformQEMU.ovmfSecureBootCandidates.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        }) {
+            return URL(fileURLWithPath: found)
+        }
+        // Prefer secboot; fall back to regular OVMF when the host only ships that.
+        return try resolveEDK2X86_64()
     }
 
     private static func resolveAAVMFSecureBoot() throws -> URL {

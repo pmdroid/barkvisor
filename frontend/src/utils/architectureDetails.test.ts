@@ -51,6 +51,7 @@ describe('architectureLabel / defaultMachineType', () => {
     expect(defaultMachineType('windows-arm64')).toBe('virt')
     expect(defaultMachineType('linux-amd64')).toBe('q35')
     expect(defaultMachineType('linux-x86_64')).toBe('q35')
+    expect(defaultMachineType('windows-amd64')).toBe('q35')
     expect(defaultMachineType('x86_64')).toBe('q35')
   })
 })

@@ -3,6 +3,7 @@ import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, VMTemplate } fr
 import { defaultCapabilities } from './capabilitiesParse'
 import {
   createVMIncompatibilityReasons,
+  guestTypesSupportWindows,
   templateIncompatibilityReasons,
   toPickOption,
 } from './deviceCompatibility'
@@ -83,15 +84,42 @@ describe('deviceCompatibility (PAS-34)', () => {
     )
   })
 
-  test('Windows is disabled on non-arm64 Devices', () => {
+  test('Windows follows advertised guestTypes, not an arm64-only host check', () => {
     const x86 = device({
       hostId: 'box',
       role: 'member',
       platform: { os: 'Linux', arch: 'x86_64' },
     })
-    expect(createVMIncompatibilityReasons(x86, { osType: 'windows', capabilities: x86Caps })).toEqual([
-      'Windows guests are not available on this Device architecture.',
-    ])
+    expect(createVMIncompatibilityReasons(x86, { osType: 'windows', capabilities: x86Caps })).toEqual([])
+    expect(
+      createVMIncompatibilityReasons(x86, {
+        osType: 'windows',
+        capabilities: {
+          ...x86Caps,
+          guestTypes: [
+            { id: 'linux-amd64', arch: 'x86_64', machine: 'q35', osFamily: 'linux', qemuBinary: 'qemu-system-x86_64' },
+            { id: 'windows-amd64', arch: 'x86_64', machine: 'q35', osFamily: 'windows', qemuBinary: 'qemu-system-x86_64' },
+          ],
+        },
+      }),
+    ).toEqual([])
+    expect(
+      createVMIncompatibilityReasons(x86, {
+        osType: 'windows',
+        capabilities: {
+          ...x86Caps,
+          guestTypes: [
+            { id: 'linux-amd64', arch: 'x86_64', machine: 'q35', osFamily: 'linux', qemuBinary: 'qemu-system-x86_64' },
+          ],
+        },
+      }),
+    ).toEqual(['Windows guests are not available on this Device architecture.'])
+    expect(guestTypesSupportWindows([
+      { id: 'windows-amd64', arch: 'x86_64', osFamily: 'windows' },
+    ], 'x86_64')).toBe(true)
+    expect(guestTypesSupportWindows([
+      { id: 'windows-arm64', arch: 'arm64', osFamily: 'windows' },
+    ], 'x86_64')).toBe(false)
   })
 
   test('bridged templates fail closed when capabilities are the PAS-37 defaults', () => {

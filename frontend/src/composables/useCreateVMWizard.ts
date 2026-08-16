@@ -41,6 +41,7 @@ import {
 } from '../utils/architectureDetails'
 import {
   createVMIncompatibilityReasons,
+  guestTypesSupportWindows,
   toPickOption,
   type DevicePickOption,
 } from '../utils/deviceCompatibility'
@@ -125,18 +126,13 @@ export function useCreateVMWizard(
   const name = ref('')
   const osType = ref<'linux' | 'windows'>('linux')
   /**
-   * Windows guest profile exists only for arm64 today (`windows-arm64`).
-   * Used as a Place-step / submit reason — never to grey the step-1 card (PAS-182).
+   * Windows is offered when the picked Device advertises a Windows guest profile.
+   * Unknown inventory: do not grey the Basics card (PAS-182).
    */
   const supportsWindows = computed(() => {
-    if (!pickedHostArchKnown.value) return true
-    const host = hostArchToImageArch(hostArch.value)
-    if (host !== 'arm64') return false
     const types = guestTypes.value ?? []
     if (types.length === 0) return true
-    return types.some(
-      (g) => g.id === 'windows-arm64' || (g.osFamily === 'windows' && g.arch === 'arm64'),
-    )
+    return guestTypesSupportWindows(types)
   })
 
   /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
@@ -200,7 +196,7 @@ export function useCreateVMWizard(
     const arch = effectiveGuestArch.value
     const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
     if (osType.value === 'windows') {
-      // Never silently map Windows → Linux. windows-amd64 is PAS-184.
+      // Never silently map Windows → Linux.
       return arch === 'x86_64' ? 'windows-amd64' : 'windows-arm64'
     }
     return `linux-${archSuffix}` as const
@@ -233,9 +229,6 @@ export function useCreateVMWizard(
     if (!archIsProblem.value) return null
     const guest = effectiveGuestArch.value || 'selected'
     const host = hostImageArch.value || 'this device'
-    if (osType.value === 'windows' && guest !== 'arm64') {
-      return `Windows guests are not available on ${guest}. This device runs ${host}.`
-    }
     return `VM architecture (${guest}) is not compatible with this device (${host}). Cross-architecture VMs are not supported.`
   })
   const revealArchOnSummary = computed(() =>
@@ -255,7 +248,6 @@ export function useCreateVMWizard(
       {
         value: 'x86_64',
         label: host === 'x86_64' ? 'x86_64 (this device)' : 'x86_64',
-        disabled: osType.value === 'windows',
       },
     ]
   })

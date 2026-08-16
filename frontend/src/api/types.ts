@@ -213,7 +213,7 @@ export interface VM {
   status?: VMRuntimeStatus
   id: string
   name: string
-  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
+  vmType: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | 'windows-amd64' | string
   state: VMState | string
   health?: WorkloadHealth
   cpuCount: number
@@ -309,7 +309,7 @@ export interface HostUSBDevice {
 
 export interface CreateVMRequest {
   name?: string
-  vmType?: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | string
+  vmType?: 'linux-arm64' | 'windows-arm64' | 'linux-amd64' | 'linux-x86_64' | 'windows-amd64' | string
   /** Used when vmType is omitted so the server can pick a host-native guest (PAS-93). */
   osFamily?: 'linux' | 'windows' | string
   cpuCount?: number
