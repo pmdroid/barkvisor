@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite("HostMetrics")
+@Suite("HostMetrics", .serialized)
 struct HostMetricsTests {
     private static let testHostId = "22222222-2222-2222-2222-222222222222"
 
