@@ -44,9 +44,13 @@ run = "./scripts/guest-boot-bdd.sh blank"
 description = "Opt-in REAL_GUEST Ubuntu cloud-image BDD (long; TCG ~15 min)"
 run = "./scripts/guest-boot-bdd.sh real"
 
+[tasks.api-bdd]
+description = "Opt-in API contract BDD: probe every OpenAPI operation (fast, no QEMU)"
+run = "./scripts/api-contract-bdd.sh"
+
 [tasks.prepush-full]
-description = "Opt-in: prepush + blank-disk guest-smoke (never the default push gate)"
-depends = ["prepush", "guest-smoke"]
+description = "Opt-in: prepush + API contract BDD + blank-disk guest-smoke (never the default push gate)"
+depends = ["prepush", "api-bdd", "guest-smoke"]
 
 # PAS-185 cross-Device Home proxy smoke is opt-in. Do not add to [tasks.prepush].
 # Two daemons + real pairing; needs an RFC1918 address for join redeem.
