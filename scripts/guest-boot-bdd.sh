@@ -10,7 +10,8 @@
 #   ./scripts/guest-boot-bdd.sh list
 #   DRY_RUN=1 ./scripts/guest-boot-bdd.sh
 #
-# Skip: if qemu-system-* is missing, print SKIP and exit 0.
+# Skip: if qemu-system-* is missing, print SKIP and return (exit 0 for
+# standalone blank/real; `all` continues to the next scenario).
 # Set ALLOW_NO_QEMU=1 to run the create-only API path instead.
 # BDD_FORCE_NO_QEMU=1 forces the skip path (used by unit tests).
 #
@@ -48,7 +49,6 @@ skip_no_qemu() {
   echo "SKIP: qemu-system-* is not on PATH; skipping scenario \"$name\"."
   echo "Install qemu-system-aarch64 or qemu-system-x86_64 and re-run."
   echo "Set ALLOW_NO_QEMU=1 to exercise API create-only instead of skipping."
-  exit 0
 }
 
 require_feature() {
@@ -100,6 +100,7 @@ run_blank() {
       return
     fi
     skip_no_qemu "$name"
+    return
   fi
   echo "Step: create and start a blank-disk Workload"
   env -u REAL_GUEST -u BARKVISOR_CLOUD_IMAGE_URL "$BLANK_SCRIPT" \
@@ -117,6 +118,7 @@ run_real() {
       return
     fi
     skip_no_qemu "$name"
+    return
   fi
   echo "Step: download cloud image, create Workload, start, probe SSH"
   echo "Note: TCG can take ~15 minutes; KVM/HVF is typically a few minutes."

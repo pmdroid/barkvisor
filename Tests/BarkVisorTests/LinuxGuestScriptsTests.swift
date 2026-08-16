@@ -173,10 +173,19 @@ struct LinuxGuestScriptsTests {
         #expect(listed.1.contains("a blank-disk Workload reaches running"))
         #expect(listed.1.contains("a Linux Workload boots from a cloud image and answers SSH"))
 
-        let skipped = try run(args: ["blank"], extraEnv: ["BDD_FORCE_NO_QEMU": "1"])
+        // Parent ALLOW_NO_QEMU=1 would take the create-only API branch.
+        let skipEnv = ["BDD_FORCE_NO_QEMU": "1", "ALLOW_NO_QEMU": "0"]
+        let skipped = try run(args: ["blank"], extraEnv: skipEnv)
         #expect(skipped.0 == 0, "skip exit \(skipped.0): \(skipped.1)")
         #expect(skipped.1.contains("SKIP: qemu-system-* is not on PATH"))
         #expect(skipped.1.contains("a blank-disk Workload reaches running"))
+
+        let skippedAll = try run(args: ["all"], extraEnv: skipEnv)
+        #expect(skippedAll.0 == 0, "all skip exit \(skippedAll.0): \(skippedAll.1)")
+        #expect(skippedAll.1.contains("a blank-disk Workload reaches running"))
+        #expect(skippedAll.1.contains("a Linux Workload boots from a cloud image and answers SSH"))
+        let skipCount = skippedAll.1.components(separatedBy: "SKIP: qemu-system-* is not on PATH").count - 1
+        #expect(skipCount == 2, "all should skip both scenarios when QEMU is absent: \(skippedAll.1)")
     }
 
     @Test func `mise guest-smoke tasks are opt-in and not in default prepush`() throws {
