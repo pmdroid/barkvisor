@@ -140,9 +140,23 @@ export function useCreateVMWizard(
   /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
   const guestArchOverride = ref<string | null>(null)
 
+  /** Picked Device native arch — used for firmware/omit-vmType and “this pick cannot run…”. */
   const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
 
-  const effectiveGuestArch = computed(() => guestArchOverride.value ?? hostImageArch.value)
+  /**
+   * Guest default is THIS Device (the dashboard), not the recommended pick.
+   * Scoring Ubuntu first then adopting its arm64 greys out “This Device” (x86).
+   */
+  const selfImageArch = computed(() => {
+    const fromSelf = devicesStore.selfDevice?.platform?.arch
+    if (fromSelf) return hostArchToImageArch(fromSelf)
+    if (caps.hostArchKnown) return hostArchToImageArch(caps.hostArch)
+    return ''
+  })
+
+  const effectiveGuestArch = computed(
+    () => guestArchOverride.value ?? (selfImageArch.value || hostImageArch.value),
+  )
 
   const deviceOptions = computed<DevicePickOption[]>(() => {
     const rows = devicesStore.devices
@@ -563,11 +577,20 @@ export function useCreateVMWizard(
     }
     if (seq !== placementScoreSeq) return
     if (!applyRecommendation || userOverrodeHost.value) return
+    const guest = effectiveGuestArch.value
     selectedHostId.value = applyRecommendedHostId({
       recommendedHostId: placementScore.value?.recommendedHostId,
       initialHostId: opts.initialHostId,
       selfHostId: devicesStore.selfDevice?.hostId,
       currentHostId: selectedHostId.value,
+      hostAllowed: (hostId) => {
+        const row = devicesStore.deviceByHostId(hostId)
+        if (!row) return false
+        return createVMIncompatibilityReasons(row, {
+          guestArch: guest,
+          osType: osType.value,
+        }).length === 0
+      },
     })
   }
 
