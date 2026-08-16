@@ -34,6 +34,10 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('issuePairingCode')
     expect(settings).toContain('Add a Device')
     expect(settings).toContain('HOME_LABEL')
+    expect(settings).toContain('pairingSeq')
+    expect(settings).toContain('pairingHydrating')
+    expect(settings).toContain('isCurrentPairingSeq')
+    expect(settings).toContain('pairingExpiryLabel(pairingOffer.expiresAt, pairingNow)')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
   })
 

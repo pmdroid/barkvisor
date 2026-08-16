@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/client'
 import type { APIKeyResponse, AuditEntry, LibrarySettings, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
@@ -19,6 +19,7 @@ import {
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
+import { isCurrentPairingSeq, pairingExpiryLabel } from '../utils/pairingOffer'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -35,15 +36,45 @@ const tab = ref<'home' | 'library' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'
 
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
+const pairingHydrating = ref(false)
+const pairingSeq = ref(0)
+const pairingNow = ref(Date.now())
 const pairingCopied = ref(false)
 const rejoinPayload = ref('')
 const rejoinLoading = ref(false)
+let pairingTick: ReturnType<typeof setInterval> | null = null
+
+function startPairingTick() {
+  if (pairingTick != null) return
+  pairingNow.value = Date.now()
+  pairingTick = setInterval(() => {
+    pairingNow.value = Date.now()
+  }, 1000)
+}
+
+function stopPairingTick() {
+  if (pairingTick == null) return
+  clearInterval(pairingTick)
+  pairingTick = null
+}
+
+watch(pairingOffer, (offer) => {
+  if (offer) startPairingTick()
+  else stopPairingTick()
+})
 
 async function loadPairingCode() {
+  const seq = pairingSeq.value
+  pairingHydrating.value = true
   try {
-    pairingOffer.value = await getPairingCode()
+    const loaded = await getPairingCode()
+    if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
+    pairingOffer.value = loaded
   } catch (e: unknown) {
+    if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
     toast.error(apiErrorMessage(e))
+  } finally {
+    if (isCurrentPairingSeq(seq, pairingSeq.value)) pairingHydrating.value = false
   }
 }
 
@@ -55,6 +86,8 @@ function openHomeTab() {
 }
 
 async function addDevice() {
+  pairingSeq.value += 1
+  pairingHydrating.value = false
   pairingLoading.value = true
   try {
     pairingOffer.value = await issuePairingCode()
@@ -67,6 +100,8 @@ async function addDevice() {
 }
 
 async function revokeDeviceCode() {
+  pairingSeq.value += 1
+  pairingHydrating.value = false
   pairingLoading.value = true
   try {
     await revokePairingCode()
@@ -90,13 +125,6 @@ async function copyPairingPayload() {
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e, 'Could not copy pairing code'))
   }
-}
-
-function pairingExpiryLabel(offer: PairingIssue) {
-  const seconds = Math.max(0, offer.ttlSeconds)
-  if (seconds === 0) return 'Expired'
-  const minutes = Math.ceil(seconds / 60)
-  return minutes === 1 ? 'Expires in 1 minute' : `Expires in ${minutes} minutes`
 }
 
 async function rejoinThisDevice() {
@@ -537,6 +565,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPoll()
+  stopPairingTick()
   if (healthPollTimer) clearTimeout(healthPollTimer)
 })
 </script>
@@ -568,6 +597,7 @@ onUnmounted(() => {
       <AppButton
         variant="primary"
         icon="plus"
+        :disabled="pairingHydrating"
         :loading="pairingLoading"
         loading-text="Creating..."
         @click="addDevice"
@@ -584,7 +614,7 @@ onUnmounted(() => {
 
     <div v-else class="pairing-card">
       <div class="pairing-code">{{ pairingOffer.code }}</div>
-      <p class="pairing-meta">{{ pairingExpiryLabel(pairingOffer) }}</p>
+      <p class="pairing-meta">{{ pairingExpiryLabel(pairingOffer.expiresAt, pairingNow) }}</p>
       <p class="pairing-hint">
         Paste the full pairing code below on the new {{ DEVICE_LABEL }}. This
         {{ DEVICE_LABEL }} still runs if that {{ DEVICE_LABEL }} is unreachable.
