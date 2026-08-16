@@ -1,5 +1,7 @@
-# Product terminology
-
+---
+title: "Product terminology"
+description: "Home and Device — words for the tenancy and the machine running BarkVisor."
+---
 Shared words for BarkVisor in the UI and getting-started docs. **Home** is the tenancy. **Device** is the machine. Do not invent a second glossary.
 
 A single-device install is a **Home of one**. More Devices join that Home later; they are not a cluster.
@@ -33,8 +35,8 @@ USB **device** still means a peripheral. A BarkVisor **Device** is the computer.
 
 ## Related
 
-- [Home and pairing](home-and-pairing.md) — add a Device, join, CLI worker
-- [Create a Workload](create-workload.md) — place a VM from the Home dashboard
-- [Changelog](changelog.md)
-- [First launch](getting-started-first-launch.md) — setup on this Device (a Home of one)
-- [Host process boundary](host-process-boundary.md) — one process ↔ one Device ↔ one data directory
+- [Home and pairing](/docs/guides/home-and-pairing/) — add a Device, join, CLI worker
+- [Create a Workload](/docs/guides/create-workload/) — place a VM from the Home dashboard
+- [Changelog](/docs/changelog/)
+- [First launch](/docs/getting-started/first-launch/) — setup on this Device (a Home of one)
+- [Host process boundary](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md) — one process ↔ one Device ↔ one data directory

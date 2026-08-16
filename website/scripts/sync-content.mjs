@@ -55,6 +55,21 @@ const map = {
     title: 'Product terminology',
     description: 'Home and Device — words for the tenancy and the machine running BarkVisor.',
   },
+  'home-and-pairing.md': {
+    out: 'guides/home-and-pairing.md',
+    title: 'Home and pairing',
+    description: 'Add a Device to a Home, join from setup or the CLI, and what pairing does not do.',
+  },
+  'create-workload.md': {
+    out: 'guides/create-workload.md',
+    title: 'Create a Workload',
+    description: 'Create a VM on this Device or another paired Device from the Home dashboard.',
+  },
+  'changelog.md': {
+    out: 'changelog.md',
+    title: 'Changelog',
+    description: 'What shipped for Home pairing, Library, and Create VM.',
+  },
 };
 
 function stripFirstH1(body) {
@@ -71,6 +86,9 @@ function fixLinks(body) {
     .replace(/\]\(getting-started-building-releases\.md(#[^)]*)?\)/g, '](/docs/getting-started/building-releases/$1)')
     .replace(/\]\(getting-started-troubleshooting\.md(#[^)]*)?\)/g, '](/docs/getting-started/troubleshooting/$1)')
     .replace(/\]\(product-terminology\.md(#[^)]*)?\)/g, '](/docs/concepts/terminology/$1)')
+    .replace(/\]\(home-and-pairing\.md(#[^)]*)?\)/g, '](/docs/guides/home-and-pairing/$1)')
+    .replace(/\]\(create-workload\.md(#[^)]*)?\)/g, '](/docs/guides/create-workload/$1)')
+    .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
     .replace(/\]\(host-process-boundary\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md$1)')
     .replace(/\]\(\.\.\/packaging\/linux\/README\.md\)/g, '](https://github.com/pmdroid/barkvisor/tree/main/packaging/linux)')
     .replace(/\/docs\/([^)#\s]+)\/(#[^)]*)\)/g, '/docs/$1$2)');

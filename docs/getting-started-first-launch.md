@@ -31,7 +31,7 @@ On an **API-only Device** (no SPA), join from that host instead of the wizard:
 barkvisor join --code 'barkvisor://pair/v1?…'
 ```
 
-Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. See [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
+Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. Full walkthrough: [Home and pairing](home-and-pairing.md). See also [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
 
 ### 2. Create admin account
 
