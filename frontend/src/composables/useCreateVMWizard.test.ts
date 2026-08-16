@@ -118,6 +118,32 @@ describe('useCreateVMWizard (PAS-34)', () => {
     expect(self?.compatible).toBe(true)
   })
 
+  test('This Device stays selectable when placement recommends a foreign-arch member', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({
+        hostId: 'box',
+        role: 'self',
+        displayName: 'agentbox',
+        platform: { os: 'Linux', arch: 'x86_64' },
+      }),
+      device({
+        hostId: 'orb',
+        role: 'member',
+        displayName: 'barkvisor-u24',
+        platform: { os: 'Linux', arch: 'arm64' },
+      }),
+    ])
+
+    const wizard = useCreateVMWizard(() => {})
+    expect(wizard.effectiveGuestArch.value).toBe('x86_64')
+
+    const self = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
+    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'orb')
+    expect(self?.compatible).toBe(true)
+    expect(peer?.compatible).toBe(false)
+  })
+
   test('Next and submit stay blocked while the picked Device inventory is loading', async () => {
     const wizard = useCreateVMWizard(() => {})
     wizard.name.value = 'vm'
