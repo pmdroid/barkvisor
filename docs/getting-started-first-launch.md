@@ -25,6 +25,14 @@ Screenshots below were captured from a first-run setup on **Linux** (OrbStack). 
 
 Choose **Set up this Device** to create a new Home on this machine, or **Join an existing Home** if another Device already issued a pairing code (Settings → Home → Add a Device). Paste the full pairing code (`barkvisor://pair/v1?…`) — the short code alone is not enough. This Device still runs if the other Device is later unreachable.
 
+On an **API-only Device** (no SPA), join from that host instead of the wizard:
+
+```sh
+barkvisor join --code 'barkvisor://pair/v1?…'
+```
+
+Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. See [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
+
 ### 2. Create admin account
 
 ![Create admin account](/docs/onboarding/setup-admin.png)

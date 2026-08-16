@@ -18,7 +18,7 @@ Use the tarball + `install.sh` or Docker if your environment is unusual.
 
 ```
 /usr/local/bin/barkvisor
-/usr/local/share/barkvisor/frontend/dist/   # SPA
+/usr/local/share/barkvisor/frontend/dist/   # SPA (packages still bundle this by default)
 /usr/local/lib/barkvisor/swift/             # bundled Swift runtime
 /usr/local/lib/barkvisor/compat/            # optional SONAME shims
 /usr/lib/systemd/system/barkvisor.service

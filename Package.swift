@@ -88,6 +88,7 @@ packageTargets.append(contentsOf: [
         name: "BarkVisorApp",
         dependencies: [
             "BarkVisor",
+            .product(name: "ArgumentParser", package: "swift-argument-parser"),
             .product(name: "Logging", package: "swift-log"),
             .product(name: "SwiftSentry", package: "swift-sentry"),
         ],
@@ -115,6 +116,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.30.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
     ],
     targets: packageTargets,
 )

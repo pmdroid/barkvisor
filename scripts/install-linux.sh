@@ -5,6 +5,7 @@
 #   sudo ./scripts/install-linux.sh [/path/to/BarkVisorApp]
 #   sudo DRY_RUN=1 ./scripts/install-linux.sh              # print actions only
 #   sudo SKIP_START=1 ./scripts/install-linux.sh           # install unit, do not enable/start
+#   sudo SKIP_FRONTEND=1 ./scripts/install-linux.sh        # API-only; skip SPA even if frontend/dist exists
 #   sudo FRONTEND_DIST=./frontend/dist ./scripts/install-linux.sh
 #
 # Layout (matches Config.prefix when binary is /usr/local/bin/barkvisor):
@@ -25,6 +26,7 @@ source "$ROOT/scripts/lib/linux-swift-compat.sh"
 
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_START="${SKIP_START:-0}"
+SKIP_FRONTEND="${SKIP_FRONTEND:-0}"
 
 PREFIX="${PREFIX:-/usr/local}"
 BIN_DST="${PREFIX}/bin/barkvisor"
@@ -74,17 +76,21 @@ fi
 }
 
 # --- resolve SPA dist (optional) ---
-FRONTEND_SRC="${FRONTEND_DIST:-}"
-if [[ -z "$FRONTEND_SRC" ]]; then
-  for cand in \
-    "$ROOT/frontend/dist" \
-    "$ROOT/Sources/BarkVisor/Resources/frontend/dist" \
-    "${BARKVISOR_FRONTEND_DIR:-}"; do
-    if [[ -n "$cand" && -f "$cand/index.html" ]]; then
-      FRONTEND_SRC="$cand"
-      break
-    fi
-  done
+# SKIP_FRONTEND=1 is API-only even when frontend/dist or FRONTEND_DIST exists.
+FRONTEND_SRC=""
+if [[ "$SKIP_FRONTEND" != "1" ]]; then
+  FRONTEND_SRC="${FRONTEND_DIST:-}"
+  if [[ -z "$FRONTEND_SRC" ]]; then
+    for cand in \
+      "$ROOT/frontend/dist" \
+      "$ROOT/Sources/BarkVisor/Resources/frontend/dist" \
+      "${BARKVISOR_FRONTEND_DIR:-}"; do
+      if [[ -n "$cand" && -f "$cand/index.html" ]]; then
+        FRONTEND_SRC="$cand"
+        break
+      fi
+    done
+  fi
 fi
 
 echo "==> BarkVisor Linux install"
@@ -154,6 +160,8 @@ BARKVISOR_DATA_DIR=${DATA_DIR}
 # SPA is resolved via Config.frontendDir (${FRONTEND_DST}) when installed under ${PREFIX}.
 # Uncomment to force a custom dist path:
 # BARKVISOR_FRONTEND_DIR=${FRONTEND_DST}
+# Optional first-boot join (pairing offer from the other Device). Ignored after setup.
+# BARKVISOR_JOIN_CODE=
 HOME=${DATA_DIR}
 # SONAME shims for hosts newer than the Swift LTS toolchain (see scripts/lib/linux-swift-compat.sh).
 LD_LIBRARY_PATH=${COMPAT_DST}
@@ -188,14 +196,18 @@ else
   fi
 fi
 
-HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 echo
 echo "UI: http://${HOST_IP:-127.0.0.1}:7777"
 echo "Env: $ENV_FILE"
 echo "Logs: journalctl -u barkvisor.service -f"
 if [[ -z "$FRONTEND_SRC" ]]; then
   echo
-  echo "Note: no SPA installed. Build and re-run with FRONTEND_DIST=:"
+  echo "Note: no SPA installed (API-only Device)."
+  echo "Join a Home from this Device after the daemon is up:"
+  echo "  barkvisor join --code 'barkvisor://pair/v1?…'"
+  echo "Or set BARKVISOR_JOIN_CODE in $ENV_FILE before first boot."
+  echo "To add the SPA later:"
   echo "  ./scripts/linux-frontend-serve.sh"
   echo "  sudo FRONTEND_DIST=./frontend/dist $0 $BIN_SRC"
 fi

@@ -177,6 +177,7 @@ server: {
 |-----------------------|-------------------------------------------------------------|
 | `BARKVISOR_LOG_DIR`   | Override the log output directory (default: `<dataDir>/logs`) |
 | `BARKVISOR_LOG_LEVEL` | Minimum log level: `debug`, `info`, `warn`, `error`, `fatal` (default: `info`) |
+| `BARKVISOR_JOIN_CODE` | Pairing offer on first boot only (console-local join; ignored after setup) |
 | `DISABLE_RATE_LIMIT`  | Set to `1` to disable login rate limiting (useful for testing) |
 
 ## Code Quality

@@ -138,6 +138,36 @@ public final class VaporServer: @unchecked Sendable {
             hostId: Config.hostId,
             database: database.pool,
         )
+
+        scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
+    }
+
+    /// PAS-180: console-local first-boot join. Best-effort so a down Home
+    /// never stops this Device (PAS-47 / PAS-90).
+    private func scheduleFirstBootJoin(setupComplete: Bool) {
+        let alreadyPaired = FileManager.default.fileExists(
+            atPath: PairingService.receiptURL(in: Config.dataDir).path,
+        )
+        guard let offer = LocalPairingJoin.firstBootOffer(
+            environment: ProcessInfo.processInfo.environment,
+            setupComplete: setupComplete,
+            alreadyPaired: alreadyPaired,
+        ) else { return }
+        Task {
+            do {
+                let result = try await LocalPairingJoin.post(
+                    offer: offer,
+                    client: URLSessionPairingHTTPClient(),
+                )
+                Log.server.info(
+                    "Joined Home via \(LocalPairingJoin.environmentKey) (peer \(result.peerHostId))",
+                )
+            } catch {
+                Log.server.warning(
+                    "\(LocalPairingJoin.environmentKey) join failed (Device still running): \(error.localizedDescription)",
+                )
+            }
+        }
     }
 
     // MARK: - Bootstrap Helpers
