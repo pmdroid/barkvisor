@@ -1,0 +1,581 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */; };
+		3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D972FFFAF314F1E415F95262 /* Theme.swift */; };
+		B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CCB06D0BEF46910846E84B /* Models.swift */; };
+		4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */; };
+		3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16E71E792A18330E918CE2C /* APIClient.swift */; };
+		4BD46825C0B81C92CC81AD9B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC94B3E12BF8A75C918934D8 /* AppModel.swift */; };
+		DFF9BA2EF5C55A2DA338FA91 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3D16F9314A80FC782E950D /* RootView.swift */; };
+		E82045A66F22735704FF1659 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EDDA117AD453050E0D04717 /* ConnectView.swift */; };
+		93C4E88344ACDF5A9723FCCA /* AppShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958E57141FE4AF286E9FB9DC /* AppShell.swift */; };
+		B5DBFF2632507C489AF3F996 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */; };
+		F3E39ED4F727F96FB8AE08F4 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0845A7F634DD213C8A3643 /* DashboardView.swift */; };
+		2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA85C5946B65A59DFF46D77 /* DevicesView.swift */; };
+		5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */; };
+		09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6851D270665497BF2365DA20 /* LibraryView.swift */; };
+		8D8B2DE73FDE3D090B7BF3A9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4CC16A220D98EE907BF334 /* SettingsView.swift */; };
+		9CB4F17BCA5715D9BAC8F201 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E14E47E20214650F056095 /* Components.swift */; };
+		FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E0E27618A2D2A8FEBDD49F35 /* Assets.xcassets */; };
+		30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		8A247A2079A6E4934CBC47E7 /* BarkVisorConsole.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BarkVisorConsole.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6E48D7EB97B3255A74117B1 /* BarkVisorConsoleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BarkVisorConsoleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkVisorConsoleApp.swift; sourceTree = "<group>"; };
+		D972FFFAF314F1E415F95262 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		69CCB06D0BEF46910846E84B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		C16E71E792A18330E918CE2C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		DC94B3E12BF8A75C918934D8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		9E3D16F9314A80FC782E950D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		4EDDA117AD453050E0D04717 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
+		958E57141FE4AF286E9FB9DC /* AppShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShell.swift; sourceTree = "<group>"; };
+		BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		FF0845A7F634DD213C8A3643 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		6BA85C5946B65A59DFF46D77 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
+		A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadsView.swift; sourceTree = "<group>"; };
+		6851D270665497BF2365DA20 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		3A4CC16A220D98EE907BF334 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E2E14E47E20214650F056095 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
+		D9C6393D6C2EE0244C1E3BAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		6CFFB50779C3195239B4A46F /* BarkVisorConsole.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BarkVisorConsole.entitlements; sourceTree = "<group>"; };
+		AA4ACA445B3FBAF47CDE31AC /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		E0E27618A2D2A8FEBDD49F35 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C19A4328C9961E8F8A7CF4CD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0F194C20A28A320F4CB82888 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DF891E785808226D241F246E /* root */ = {
+			isa = PBXGroup;
+			children = (
+				A9012353AFD6A66EB75D4BE2 /* Sources */,
+				A024F06580C79B7582C3806A /* Resources */,
+				156052F04525D0F710673CF0 /* Tests */,
+				AA4ACA445B3FBAF47CDE31AC /* README.md */,
+				5151B46607EBC8890D8DFCC2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5151B46607EBC8890D8DFCC2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8A247A2079A6E4934CBC47E7 /* BarkVisorConsole.app */,
+				C6E48D7EB97B3255A74117B1 /* BarkVisorConsoleTests.xctest */,
+			);
+			sourceTree = "<group>";
+		};
+		A9012353AFD6A66EB75D4BE2 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				1C48CE29E4E135EE62951B22 /* App */,
+				4ACEE3D9AAF2685CA995A468 /* Theme */,
+				BF657CFE8769AAE6C0570C29 /* Models */,
+				6EE67047A4B2648DDBB08231 /* Services */,
+				58492F208780FA5EF3807E8F /* Views */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		1C48CE29E4E135EE62951B22 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		4ACEE3D9AAF2685CA995A468 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				D972FFFAF314F1E415F95262 /* Theme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		BF657CFE8769AAE6C0570C29 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				69CCB06D0BEF46910846E84B /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		6EE67047A4B2648DDBB08231 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */,
+				C16E71E792A18330E918CE2C /* APIClient.swift */,
+				DC94B3E12BF8A75C918934D8 /* AppModel.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		58492F208780FA5EF3807E8F /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				9E3D16F9314A80FC782E950D /* RootView.swift */,
+				4EDDA117AD453050E0D04717 /* ConnectView.swift */,
+				958E57141FE4AF286E9FB9DC /* AppShell.swift */,
+				BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */,
+				FF0845A7F634DD213C8A3643 /* DashboardView.swift */,
+				6BA85C5946B65A59DFF46D77 /* DevicesView.swift */,
+				A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */,
+				6851D270665497BF2365DA20 /* LibraryView.swift */,
+				3A4CC16A220D98EE907BF334 /* SettingsView.swift */,
+				54FE5E34995DE10F87DF7B85 /* Components */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		54FE5E34995DE10F87DF7B85 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				E2E14E47E20214650F056095 /* Components.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A024F06580C79B7582C3806A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				E0E27618A2D2A8FEBDD49F35 /* Assets.xcassets */,
+				D9C6393D6C2EE0244C1E3BAF /* Info.plist */,
+				6CFFB50779C3195239B4A46F /* BarkVisorConsole.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		156052F04525D0F710673CF0 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		29C7B681C8D62CBAC94D51C0 /* BarkVisorConsole */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1689A671E55010C75B050208 /* Build configuration list for PBXNativeTarget "BarkVisorConsole" */;
+			buildPhases = (
+				D10ECEDA0FB53BA093BEC557 /* Sources */,
+				C19A4328C9961E8F8A7CF4CD /* Frameworks */,
+				C84B5C31679C986BFD935BC6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BarkVisorConsole;
+			productName = BarkVisorConsole;
+			productReference = 8A247A2079A6E4934CBC47E7 /* BarkVisorConsole.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7EC8F98B7A265120217712DE /* BarkVisorConsoleTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E7F8529456AABFA92729563 /* Build configuration list for PBXNativeTarget "BarkVisorConsoleTests" */;
+			buildPhases = (
+				FE3769782B7F5220F0E0D205 /* Sources */,
+				0F194C20A28A320F4CB82888 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9F27D8D1F7C8645BD8115973 /* PBXTargetDependency */,
+			);
+			name = BarkVisorConsoleTests;
+			productName = BarkVisorConsoleTests;
+			productReference = C6E48D7EB97B3255A74117B1 /* BarkVisorConsoleTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 3C17AB3BC4A9FE87F444040C /* Build configuration list for PBXProject "BarkVisorConsole" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = DF891E785808226D241F246E /* root */;
+			productRefGroup = 5151B46607EBC8890D8DFCC2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				29C7B681C8D62CBAC94D51C0 /* BarkVisorConsole */,
+				7EC8F98B7A265120217712DE /* BarkVisorConsoleTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C84B5C31679C986BFD935BC6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D10ECEDA0FB53BA093BEC557 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */,
+				3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */,
+				B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */,
+				4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */,
+				3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */,
+				4BD46825C0B81C92CC81AD9B /* AppModel.swift in Sources */,
+				DFF9BA2EF5C55A2DA338FA91 /* RootView.swift in Sources */,
+				E82045A66F22735704FF1659 /* ConnectView.swift in Sources */,
+				93C4E88344ACDF5A9723FCCA /* AppShell.swift in Sources */,
+				B5DBFF2632507C489AF3F996 /* SidebarView.swift in Sources */,
+				F3E39ED4F727F96FB8AE08F4 /* DashboardView.swift in Sources */,
+				2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */,
+				5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */,
+				09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */,
+				8D8B2DE73FDE3D090B7BF3A9 /* SettingsView.swift in Sources */,
+				9CB4F17BCA5715D9BAC8F201 /* Components.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE3769782B7F5220F0E0D205 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9F27D8D1F7C8645BD8115973 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 29C7B681C8D62CBAC94D51C0 /* BarkVisorConsole */;
+			targetProxy = 2B4D2F8BFE54E9562F422278 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		2B4D2F8BFE54E9562F422278 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 29C7B681C8D62CBAC94D51C0;
+			remoteInfo = BarkVisorConsole;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin XCBuildConfiguration section */
+		E3EBCBBFB33611052F1F254E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)",);
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		45A51FDE45C8C9313F9CC216 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				ENABLE_NS_ASSERTIONS = NO;
+			};
+			name = Release;
+		};
+		754064D2901B6752E802BA06 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Resources/BarkVisorConsole.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.barkvisor.console;
+				PRODUCT_NAME = BarkVisorConsole;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)",);
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		831F0B0E7AD0243B76867D45 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Resources/BarkVisorConsole.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.barkvisor.console;
+				PRODUCT_NAME = BarkVisorConsole;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				ENABLE_NS_ASSERTIONS = NO;
+			};
+			name = Release;
+		};
+		AAC481A5D9FF5736BACF4060 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.barkvisor.console.tests;
+				PRODUCT_NAME = BarkVisorConsoleTests;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BarkVisorConsole.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BarkVisorConsole";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)",);
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		1C8D1750B636EF2A6AE91BF6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.barkvisor.console.tests;
+				PRODUCT_NAME = BarkVisorConsoleTests;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BarkVisorConsole.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BarkVisorConsole";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				ENABLE_NS_ASSERTIONS = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3C17AB3BC4A9FE87F444040C /* Build configuration list for PBXProject "BarkVisorConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E3EBCBBFB33611052F1F254E /* Debug */,
+				45A51FDE45C8C9313F9CC216 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1689A671E55010C75B050208 /* Build configuration list for PBXNativeTarget "BarkVisorConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				754064D2901B6752E802BA06 /* Debug */,
+				831F0B0E7AD0243B76867D45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1E7F8529456AABFA92729563 /* Build configuration list for PBXNativeTarget "BarkVisorConsoleTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC481A5D9FF5736BACF4060 /* Debug */,
+				1C8D1750B636EF2A6AE91BF6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}
