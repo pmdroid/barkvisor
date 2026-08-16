@@ -111,6 +111,7 @@ mise run prepush-full       # prepush + guest-smoke
 
 If `qemu-system-*` is missing the mapper prints `SKIP` and exits 0. See
 [Development — Guest-boot BDD](docs/getting-started-development.md#guest-boot-bdd-opt-in-not-prepush).
+Optional CI (never a required check): [docs/ci-kvm-runner.md](docs/ci-kvm-runner.md).
 
 ### Frontend E2E tests
 
