@@ -11,6 +11,9 @@
 #   ./scripts/linux-real-guest-smoke.sh
 #   SKIP_BUILD=1 ALLOW_SSH_TIMEOUT=1 ./scripts/linux-real-guest-smoke.sh
 #   BARKVISOR_CLOUD_IMAGE_URL=https://… ./scripts/linux-real-guest-smoke.sh
+#   mise run guest-smoke-real   # same path via features/guest-boot.feature
+#
+# TCG boots can take ~15 minutes (SSH_WAIT_SECS=900). KVM/HVF is minutes.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export REAL_GUEST=1

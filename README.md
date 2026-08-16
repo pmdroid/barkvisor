@@ -96,7 +96,21 @@ mise run test       # swift test
 mise run lint       # swiftlint + swiftformat --lint
 swiftformat Sources/ Tests/   # apply formatting
 # CI equivalent: mise run lint && mise run test
+# Default push gate: mise run prepush   (lint + test + frontend-test)
 ```
+
+Guest-boot BDD is **opt-in** (`features/guest-boot.feature` → existing
+smoke scripts). Do not add it to default prepush — TCG Ubuntu boots can
+take ~15 minutes; KVM/HVF is typically a few minutes.
+
+```bash
+mise run guest-smoke        # blank disk, fast
+mise run guest-smoke-real   # REAL_GUEST=1, long
+mise run prepush-full       # prepush + guest-smoke
+```
+
+If `qemu-system-*` is missing the mapper prints `SKIP` and exits 0. See
+[Development — Guest-boot BDD](docs/getting-started-development.md#guest-boot-bdd-opt-in-not-prepush).
 
 ### Frontend E2E tests
 

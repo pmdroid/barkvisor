@@ -34,6 +34,20 @@ run = ["bun install", "bun test"]
 description = "Local CI gate: lint + Swift tests + frontend tests (must pass before push)"
 depends = ["lint", "test", "frontend-test"]
 
+# PAS-183 guest-boot BDD is opt-in. Do not add these to [tasks.prepush]:
+# TCG Ubuntu boots can take ~15 minutes (SSH_WAIT_SECS=900).
+[tasks.guest-smoke]
+description = "Opt-in blank-disk guest-boot BDD (fast; not in default prepush)"
+run = "./scripts/guest-boot-bdd.sh blank"
+
+[tasks.guest-smoke-real]
+description = "Opt-in REAL_GUEST Ubuntu cloud-image BDD (long; TCG ~15 min)"
+run = "./scripts/guest-boot-bdd.sh real"
+
+[tasks.prepush-full]
+description = "Opt-in: prepush + blank-disk guest-smoke (never the default push gate)"
+depends = ["prepush", "guest-smoke"]
+
 [tasks.website]
 description = "Build unified landing + docs site (website/dist)"
 dir = "website"
