@@ -41,6 +41,10 @@ export default defineConfig({
             { label: 'Docs home', link: '/docs/' },
             { label: 'Quickstart', link: '/docs/getting-started/quickstart/' },
             { label: 'First launch', link: '/docs/getting-started/first-launch/' },
+            { label: 'Home and pairing', link: '/docs/guides/home-and-pairing/' },
+            { label: 'Create a Workload', link: '/docs/guides/create-workload/' },
+            { label: 'Changelog', link: '/docs/changelog/' },
+            { label: 'Roadmap', link: '/docs/roadmap/' },
             { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },
             { label: 'Installation (Linux)', link: '/docs/linux/' },
           ],
@@ -56,6 +60,7 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
+            { label: 'Terminology', link: '/docs/concepts/terminology/' },
             { label: 'Troubleshooting', link: '/docs/getting-started/troubleshooting/' },
           ],
         },

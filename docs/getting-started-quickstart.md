@@ -53,6 +53,8 @@ The maximum upload size is 128 GB (`Tus-Max-Size: 137438953472`).
 
 ## Creating a VM from the Wizard
 
+To place the Workload on another paired Device, see [Create a Workload](create-workload.md) and [Home and pairing](home-and-pairing.md).
+
 Click **Create VM** to open the creation wizard. It walks through the
 following steps:
 
