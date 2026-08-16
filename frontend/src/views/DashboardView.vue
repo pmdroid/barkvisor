@@ -4,9 +4,12 @@ import { useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import DeviceCard from '../components/DeviceCard.vue'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
+import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { formatTemperatureC } from '../utils/format'
@@ -33,6 +36,7 @@ const router = useRouter()
 const store = useVMStore()
 const diskStore = useDiskStore()
 const devices = useDevicesStore()
+const homeWorkloads = useDeviceWorkloadsStore()
 const { disks, summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
 const healthSummary = ref<WorkloadHealthSummary | null>(null)
@@ -66,9 +70,21 @@ const homeWorkloadsLine = computed(() =>
   homeWorkloadsRunningLine(devices.totals, homeRunningCount.value),
 )
 
+const homeRows = computed(() => homeWorkloads.homeRows(devices.devices))
+
 const recentVMs = computed(() =>
-  [...store.vms].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5)
+  [...homeRows.value]
+    .sort((a, b) => new Date(b.vm.updatedAt).getTime() - new Date(a.vm.updatedAt).getTime())
+    .slice(0, 5),
 )
+
+function openRow(row: HomeWorkloadRow) {
+  if (row.role === 'self') {
+    router.push(`/vms/${row.vm.id}`)
+    return
+  }
+  router.push(`/devices/${encodeURIComponent(row.hostId)}`)
+}
 
 function emuBadge(vm: (typeof store.vms)[0]) {
   return listBackendBadge(vmBackend(vm))
@@ -125,18 +141,26 @@ async function fetchHealthSummary() {
 }
 
 let pollTimer: number
+async function refreshHomeWorkloads() {
+  await devices.fetchHealth().catch(() => {})
+  const list = devices.devices
+  if (list.length === 0) {
+    await store.fetchAll()
+    return
+  }
+  await homeWorkloads.fetchHomeAll(list)
+}
+
 onMounted(() => {
-  store.fetchAll()
+  void refreshHomeWorkloads()
   fetchHistory()
   fetchStats()
   fetchStorage()
   fetchHealthSummary()
-  devices.fetchHealth()
   pollTimer = window.setInterval(() => {
     fetchStats()
     fetchHealthSummary()
-    store.fetchAll()
-    devices.fetchHealth()
+    void refreshHomeWorkloads()
   }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -299,34 +323,42 @@ const memSparkData = computed(() => ({
       </div>
       <DataTable :columns="[
         { key: 'name', label: 'Name' },
+        { key: 'device', label: 'Device' },
         { key: 'status', label: 'Status' },
         { key: 'type', label: 'Type' },
         { key: 'cpu', label: 'CPU' },
         { key: 'memory', label: 'Memory' },
         { key: 'updated', label: 'Updated' },
       ]">
-        <tr v-for="vm in recentVMs" :key="vm.id" @click="router.push(`/vms/${vm.id}`)" style="cursor:pointer">
+        <tr v-for="row in recentVMs" :key="`${row.hostId}:${row.vm.id}`" @click="openRow(row)" style="cursor:pointer">
           <td>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span style="font-weight:600">{{ vm.name }}</span>
+              <span style="font-weight:600">{{ row.vm.name }}</span>
               <span
-                v-if="emuBadge(vm)"
+                v-if="emuBadge(row.vm)"
                 class="badge badge-amber"
-                :title="emuBadge(vm)!.title"
-              >{{ emuBadge(vm)!.label }}</span>
+                :title="emuBadge(row.vm)!.title"
+              >{{ emuBadge(row.vm)!.label }}</span>
             </div>
+          </td>
+          <td>
+            <WorkloadDeviceChip
+              :label="row.label"
+              :self="row.role === 'self'"
+              :reachable="row.reachable"
+            />
           </td>
           <td>
             <span
               class="status-pill"
-              :class="healthPillClass(vmHealth(vm))"
-              :title="vm.status?.healthError || undefined"
-            >{{ healthLabel(vmHealth(vm)) }}</span>
+              :class="healthPillClass(vmHealth(row.vm))"
+              :title="row.vm.status?.healthError || undefined"
+            >{{ healthLabel(vmHealth(row.vm)) }}</span>
           </td>
-          <td><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></td>
-          <td style="font-variant-numeric:tabular-nums">{{ vm.cpuCount }} cores</td>
-          <td style="font-variant-numeric:tabular-nums">{{ vm.memoryMB >= 1024 ? (vm.memoryMB / 1024).toFixed(1) + ' GB' : vm.memoryMB + ' MB' }}</td>
-          <td style="color:var(--text-dim);font-size:12px">{{ new Date(vm.updatedAt).toLocaleDateString() }}</td>
+          <td><span class="badge badge-gray">{{ row.vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></td>
+          <td style="font-variant-numeric:tabular-nums">{{ row.vm.cpuCount }} cores</td>
+          <td style="font-variant-numeric:tabular-nums">{{ row.vm.memoryMB >= 1024 ? (row.vm.memoryMB / 1024).toFixed(1) + ' GB' : row.vm.memoryMB + ' MB' }}</td>
+          <td style="color:var(--text-dim);font-size:12px">{{ new Date(row.vm.updatedAt).toLocaleDateString() }}</td>
         </tr>
       </DataTable>
     </div>

@@ -8,7 +8,17 @@ import {
   deviceVmActionPath,
   deviceVmPath,
   deviceVmsBasePath,
+  isSelfDevice,
 } from '../utils/homeDeviceApi'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+
+export type HomeWorkloadRow = {
+  vm: VM
+  hostId: string
+  label: string
+  role: string
+  reachable: boolean
+}
 
 function actionKey(hostId: string, vmId: string): string {
   return `${hostId}:${vmId}`
@@ -39,7 +49,10 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
   async function fetchFor(device: HomeDeviceHealthSnapshot): Promise<void> {
     const hostId = device.hostId
     if (!canFetchDeviceWorkloads(device)) {
-      vmsByHost.value = { ...vmsByHost.value, [hostId]: [] }
+      // Keep last-known names (PAS-47). Never invent a list on first miss.
+      if (!(hostId in vmsByHost.value)) {
+        vmsByHost.value = { ...vmsByHost.value, [hostId]: [] }
+      }
       errorByHost.value = { ...errorByHost.value, [hostId]: null }
       return
     }
@@ -103,9 +116,28 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     await runAction(device, vmId, 'restart')
   }
 
+  async function fetchHomeAll(devices: HomeDeviceHealthSnapshot[]): Promise<void> {
+    await Promise.all(devices.map((device) => fetchFor(device)))
+  }
+
+  function homeRows(devices: HomeDeviceHealthSnapshot[]): HomeWorkloadRow[] {
+    const rows: HomeWorkloadRow[] = []
+    for (const device of devices) {
+      const reachable = canFetchDeviceWorkloads(device)
+      const label = deviceDisplayLabel(device)
+      const role = isSelfDevice(device) ? 'self' : String(device.role ?? 'member')
+      for (const vm of vmsFor(device.hostId)) {
+        rows.push({ vm, hostId: device.hostId, label, role, reachable })
+      }
+    }
+    return rows
+  }
+
   return {
     vmsByHost,
     fetchFor,
+    fetchHomeAll,
+    homeRows,
     vmsFor,
     isLoading,
     errorFor,

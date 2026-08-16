@@ -5,6 +5,10 @@ import { useRouter, useRoute } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useToastStore } from '../stores/toast'
 import { useNetworkStore } from '../stores/networks'
+import { useDevicesStore } from '../stores/devices'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
+import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
 import type { SystemStats, GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
@@ -21,6 +25,8 @@ import { pct } from '../utils/format'
 import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
 
 const store = useVMStore()
+const homeWorkloads = useDeviceWorkloadsStore()
+const devicesStore = useDevicesStore()
 const toast = useToastStore()
 const networkStore = useNetworkStore()
 const { byId: networkMap } = storeToRefs(networkStore)
@@ -42,9 +48,21 @@ const healthFilters: Array<{ key: WorkloadHealth | 'all'; label: string }> = [
   { key: 'stopped', label: 'Stopped' },
 ]
 
-const visibleVMs = computed(() => {
-  if (healthFilter.value === 'all') return store.vms
-  return store.vms.filter((vm) => vmHealth(vm) === healthFilter.value)
+const homeRows = computed(() => {
+  const devices = devicesStore.devices
+  if (devices.length > 0) return homeWorkloads.homeRows(devices)
+  return store.vms.map((vm) => ({
+    vm,
+    hostId: devicesStore.selfDevice?.hostId || '',
+    label: '',
+    role: 'self',
+    reachable: true,
+  }))
+})
+
+const visibleRows = computed(() => {
+  if (healthFilter.value === 'all') return homeRows.value
+  return homeRows.value.filter((row) => vmHealth(row.vm) === healthFilter.value)
 })
 
 const healthStrip = computed(() => {
@@ -67,15 +85,27 @@ async function fetchHealthSummary() {
   } catch { /* ignore */ }
 }
 
+async function refreshHomeWorkloads() {
+  await devicesStore.fetchHealth().catch(() => {})
+  const list = devicesStore.devices
+  if (list.length === 0) {
+    await store.fetchAll()
+    return
+  }
+  await homeWorkloads.fetchHomeAll(list)
+}
+
 async function fetchGuestInfo() {
-  for (const vm of store.vms) {
-    if (vm.state === 'running') {
+  const selfId = devicesStore.selfDevice?.hostId
+  for (const row of homeRows.value) {
+    if (row.role !== 'self' && row.hostId !== selfId) continue
+    if (row.vm.state === 'running') {
       try {
-        const { data } = await api.get(`/vms/${vm.id}/guest-info`)
-        guestInfoMap[vm.id] = data
+        const { data } = await api.get(`/vms/${row.vm.id}/guest-info`)
+        guestInfoMap[row.vm.id] = data
       } catch { /* ignore */ }
     } else {
-      delete guestInfoMap[vm.id]
+      delete guestInfoMap[row.vm.id]
     }
   }
 }
@@ -92,7 +122,7 @@ function isNatVM(vm: typeof store.vms[0]): boolean {
 
 let pollTimer: number
 onMounted(async () => {
-  await store.fetchAll()
+  await refreshHomeWorkloads()
   fetchStats()
   fetchHealthSummary()
   fetchGuestInfo()
@@ -100,7 +130,7 @@ onMounted(async () => {
   pollTimer = window.setInterval(() => {
     fetchStats()
     fetchHealthSummary()
-    store.fetchAll().then(fetchGuestInfo)
+    void refreshHomeWorkloads().then(fetchGuestInfo)
   }, 5000)
   if (route.query.create) {
     showCreate.value = true
@@ -136,48 +166,75 @@ async function copyText(key: string, text: string) {
   } catch { /* ignore */ }
 }
 
-async function doStart(id: string) {
-  actionLoading[id] = true
+function rowKey(row: HomeWorkloadRow) {
+  return `${row.hostId}:${row.vm.id}`
+}
+
+function rowDevice(row: HomeWorkloadRow) {
+  return devicesStore.deviceByHostId(row.hostId)
+}
+
+function openRow(row: HomeWorkloadRow) {
+  if (row.role === 'self') {
+    router.push(`/vms/${row.vm.id}`)
+    return
+  }
+  router.push(`/devices/${encodeURIComponent(row.hostId)}`)
+}
+
+async function doStart(row: HomeWorkloadRow) {
+  const device = rowDevice(row)
+  if (!device || !row.reachable) return
+  actionLoading[rowKey(row)] = true
   try {
-    await store.start(id)
+    await homeWorkloads.start(device, row.vm.id)
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
-    actionLoading[id] = false
+    actionLoading[rowKey(row)] = false
   }
 }
 
 const restartLoading = reactive<Record<string, boolean>>({})
 
-async function doRestart(id: string) {
-  restartLoading[id] = true
+async function doRestart(row: HomeWorkloadRow) {
+  const device = rowDevice(row)
+  if (!device || !row.reachable) return
+  restartLoading[rowKey(row)] = true
   try {
-    await store.restart(id)
+    await homeWorkloads.restart(device, row.vm.id)
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
-    restartLoading[id] = false
+    restartLoading[rowKey(row)] = false
   }
 }
 
-const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
+const stopConfirm = ref<{ key: string; hostId: string; id: string; name: string; method: 'acpi' | 'force' } | null>(null)
 
-function requestStop(id: string, method: 'acpi' | 'force') {
-  const vm = store.vms.find(v => v.id === id)
-  stopConfirm.value = { id, name: vm?.name || id, method }
+function requestStop(row: HomeWorkloadRow, method: 'acpi' | 'force') {
+  stopConfirm.value = {
+    key: rowKey(row),
+    hostId: row.hostId,
+    id: row.vm.id,
+    name: row.vm.name,
+    method,
+  }
 }
 
 async function doStop() {
   if (!stopConfirm.value) return
-  const { id, method } = stopConfirm.value
-  actionLoading[id] = true
+  const { key, hostId, id, method } = stopConfirm.value
+  const device = devicesStore.deviceByHostId(hostId)
+  if (!device) return
+  actionLoading[key] = true
   try {
-    await store.stop(id, { method })
+    await homeWorkloads.stop(device, id, { method })
     stopConfirm.value = null
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
-    actionLoading[id] = false
+    actionLoading[key] = false
   }
 }
 
@@ -227,7 +284,7 @@ async function doStop() {
     </button>
   </div>
 
-  <div v-if="store.vms.length > 0" class="health-filters">
+  <div v-if="homeRows.length > 0" class="health-filters">
     <button
       v-for="f in healthFilters"
       :key="f.key"
@@ -238,63 +295,71 @@ async function doStop() {
     >{{ f.label }}</button>
   </div>
 
-  <EmptyState v-if="store.vms.length === 0 && !store.loading" icon="monitor" title="No virtual machines yet">
+  <EmptyState v-if="homeRows.length === 0 && !store.loading && !devicesStore.loading" icon="monitor" title="No virtual machines yet">
     <AppButton variant="primary" @click="showCreate = true">Create your first VM</AppButton>
   </EmptyState>
 
   <DataTable v-else :columns="[
     { key: 'name', label: 'Name' },
+    { key: 'device', label: 'Device' },
     { key: 'os', label: 'OS' },
     { key: 'resources', label: 'Resources' },
     { key: 'ip', label: 'IP / Ports' },
     { key: 'status', label: 'Status' },
     { key: 'actions', label: '' },
   ]">
-        <tr v-for="vm in visibleVMs" :key="vm.id" class="vm-row" @click="router.push(`/vms/${vm.id}`)">
+        <tr v-for="row in visibleRows" :key="rowKey(row)" class="vm-row" @click="openRow(row)">
           <td>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span style="font-weight:500">{{ vm.name }}</span>
+              <span style="font-weight:500">{{ row.vm.name }}</span>
               <span
-                v-if="emuBadge(vm)"
+                v-if="emuBadge(row.vm)"
                 class="badge badge-amber"
-                :title="emuBadge(vm)!.title"
-              >{{ emuBadge(vm)!.label }}</span>
+                :title="emuBadge(row.vm)!.title"
+              >{{ emuBadge(row.vm)!.label }}</span>
             </div>
-            <div v-if="vm.description" style="font-size:12px;color:var(--text-dim);margin-top:2px">{{ vm.description }}</div>
+            <div v-if="row.vm.description" style="font-size:12px;color:var(--text-dim);margin-top:2px">{{ row.vm.description }}</div>
           </td>
           <td>
-            <span style="font-size:13px">{{ osLabel(vm) }}</span>
+            <WorkloadDeviceChip
+              :label="row.label"
+              :self="row.role === 'self'"
+              :reachable="row.reachable"
+            />
           </td>
           <td>
-            <span style="font-size:12px;color:var(--text-secondary)">{{ vm.cpuCount }} CPU &middot; {{ vm.memoryMB >= 1024 ? (vm.memoryMB / 1024).toFixed(vm.memoryMB % 1024 === 0 ? 0 : 1) + ' GB' : vm.memoryMB + ' MB' }}</span>
+            <span style="font-size:13px">{{ osLabel(row.vm) }}</span>
+          </td>
+          <td>
+            <span style="font-size:12px;color:var(--text-secondary)">{{ row.vm.cpuCount }} CPU &middot; {{ row.vm.memoryMB >= 1024 ? (row.vm.memoryMB / 1024).toFixed(row.vm.memoryMB % 1024 === 0 ? 0 : 1) + ' GB' : row.vm.memoryMB + ' MB' }}</span>
           </td>
           <td>
             <!-- Bridged: show IP:port links or plain IP -->
-            <template v-if="!isNatVM(vm) && primaryIp(vm)">
-              <div v-if="vmPortForwards(vm).length > 0" style="display:flex;flex-wrap:wrap;gap:4px">
-                <div v-for="(pf, i) in vmPortForwards(vm)" :key="i" style="display:flex;align-items:center;gap:6px">
-                  <a :href="(pf.guestPort === 443 || pf.guestPort === 9443 ? 'https://' : 'http://') + primaryIp(vm) + (pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort)" target="_blank" class="ip-text" style="text-decoration:none;color:var(--accent)" @click.stop>{{ primaryIp(vm) }}{{ pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort }}</a>
-                  <button class="ip-copy" @click.stop="copyText(`${vm.id}-${pf.guestPort}`, `${primaryIp(vm)}${pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort}`)" :title="copied[`${vm.id}-${pf.guestPort}`] ? 'Copied!' : 'Copy address'">
-                    <AppIcon v-if="!copied[`${vm.id}-${pf.guestPort}`]" name="copy" :size="13" style="stroke-width:2" />
+            <template v-if="!isNatVM(row.vm) && primaryIp(row.vm)">
+              <div v-if="vmPortForwards(row.vm).length > 0" style="display:flex;flex-wrap:wrap;gap:4px">
+                <div v-for="(pf, i) in vmPortForwards(row.vm)" :key="i" style="display:flex;align-items:center;gap:6px">
+                  <a :href="(pf.guestPort === 443 || pf.guestPort === 9443 ? 'https://' : 'http://') + primaryIp(row.vm) + (pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort)" target="_blank" class="ip-text" style="text-decoration:none;color:var(--accent)" @click.stop>{{ primaryIp(row.vm) }}{{ pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort }}</a>
+                  <button class="ip-copy" @click.stop="copyText(`${row.vm.id}-${pf.guestPort}`, `${primaryIp(row.vm)}${pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort}`)" :title="copied[`${row.vm.id}-${pf.guestPort}`] ? 'Copied!' : 'Copy address'">
+                    <AppIcon v-if="!copied[`${row.vm.id}-${pf.guestPort}`]" name="copy" :size="13" style="stroke-width:2" />
                     <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
                   </button>
                 </div>
               </div>
               <div v-else style="display:flex;align-items:center;gap:6px">
-                <code class="ip-text">{{ primaryIp(vm) }}</code>
-                <button class="ip-copy" @click.stop="copyText(vm.id, primaryIp(vm)!)" :title="copied[vm.id] ? 'Copied!' : 'Copy IP'">
-                  <AppIcon v-if="!copied[vm.id]" name="copy" :size="13" style="stroke-width:2" />
+                <code class="ip-text">{{ primaryIp(row.vm) }}</code>
+                <button class="ip-copy" @click.stop="copyText(row.vm.id, primaryIp(row.vm)!)" :title="copied[row.vm.id] ? 'Copied!' : 'Copy IP'">
+                  <AppIcon v-if="!copied[row.vm.id]" name="copy" :size="13" style="stroke-width:2" />
                   <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
                 </button>
               </div>
             </template>
             <!-- NAT: show port forwards -->
-            <template v-else-if="isNatVM(vm) && vmPortForwards(vm).length > 0">
+            <template v-else-if="isNatVM(row.vm) && vmPortForwards(row.vm).length > 0">
               <div style="display:flex;flex-wrap:wrap;gap:4px">
-                <div v-for="(pf, i) in vmPortForwards(vm)" :key="i" style="display:flex;align-items:center;gap:6px">
+                <div v-for="(pf, i) in vmPortForwards(row.vm)" :key="i" style="display:flex;align-items:center;gap:6px">
                   <code class="ip-text">localhost:{{ pf.hostPort }}</code>
-                  <button class="ip-copy" @click.stop="copyText(`${vm.id}-${pf.hostPort}`, `localhost:${pf.hostPort}`)" :title="copied[`${vm.id}-${pf.hostPort}`] ? 'Copied!' : 'Copy address'">
-                    <AppIcon v-if="!copied[`${vm.id}-${pf.hostPort}`]" name="copy" :size="13" style="stroke-width:2" />
+                  <button class="ip-copy" @click.stop="copyText(`${row.vm.id}-${pf.hostPort}`, `localhost:${pf.hostPort}`)" :title="copied[`${row.vm.id}-${pf.hostPort}`] ? 'Copied!' : 'Copy address'">
+                    <AppIcon v-if="!copied[`${row.vm.id}-${pf.hostPort}`]" name="copy" :size="13" style="stroke-width:2" />
                     <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
                   </button>
                 </div>
@@ -306,10 +371,10 @@ async function doStop() {
             <div style="display:flex;align-items:center;gap:6px">
               <span
                 class="status-pill"
-                :class="healthPillClass(vmHealth(vm))"
-                :title="vm.status?.healthError || undefined"
-              >{{ healthLabel(vmHealth(vm)) }}</span>
-              <span v-if="vm.pendingChanges && vm.state === 'running'" class="restart-badge" title="Restart required to apply changes">
+                :class="healthPillClass(vmHealth(row.vm))"
+                :title="row.vm.status?.healthError || undefined"
+              >{{ healthLabel(vmHealth(row.vm)) }}</span>
+              <span v-if="row.vm.pendingChanges && row.vm.state === 'running'" class="restart-badge" title="Restart required to apply changes">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 Restart needed
               </span>
@@ -317,10 +382,10 @@ async function doStop() {
           </td>
           <td>
             <div style="display:flex;gap:6px;justify-content:flex-end" @click.stop>
-              <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary" size="sm" :disabled="actionLoading[vm.id]" @click="doStart(vm.id)">{{ actionLoading[vm.id] ? 'Starting...' : 'Start' }}</AppButton>
-              <template v-else-if="vm.state === 'running'">
-                <AppButton v-if="vm.pendingChanges" variant="warning" size="sm" :disabled="restartLoading[vm.id]" @click="doRestart(vm.id)">{{ restartLoading[vm.id] ? 'Restarting...' : 'Restart' }}</AppButton>
-                <StopButtonGroup size="sm" :loading="actionLoading[vm.id]" @stop="requestStop(vm.id, $event)" />
+              <AppButton v-if="row.reachable && (row.vm.state === 'stopped' || row.vm.state === 'error')" variant="primary" size="sm" :disabled="actionLoading[rowKey(row)]" @click="doStart(row)">{{ actionLoading[rowKey(row)] ? 'Starting...' : 'Start' }}</AppButton>
+              <template v-else-if="row.reachable && row.vm.state === 'running'">
+                <AppButton v-if="row.vm.pendingChanges" variant="warning" size="sm" :disabled="restartLoading[rowKey(row)]" @click="doRestart(row)">{{ restartLoading[rowKey(row)] ? 'Restarting...' : 'Restart' }}</AppButton>
+                <StopButtonGroup size="sm" :loading="actionLoading[rowKey(row)]" @stop="requestStop(row, $event)" />
               </template>
             </div>
           </td>
@@ -333,12 +398,12 @@ async function doStop() {
     :message="`Are you sure you want to ${stopConfirm.method === 'force' ? 'force stop' : 'shut down'} ${stopConfirm.name}?${stopConfirm.method === 'force' ? ' This may cause data loss.' : ''}`"
     :confirm-label="stopConfirm.method === 'force' ? 'Force Stop' : 'Shutdown'"
     :danger="stopConfirm.method === 'force'"
-    :loading="actionLoading[stopConfirm.id]"
+    :loading="actionLoading[stopConfirm.key]"
     @confirm="doStop"
     @cancel="stopConfirm = null"
   />
 
-  <CreateVMDrawer v-if="showCreate" @close="showCreate = false" @created="showCreate = false; store.fetchAll(); fetchStats()" />
+  <CreateVMDrawer v-if="showCreate" @close="showCreate = false" @created="showCreate = false; refreshHomeWorkloads(); fetchStats()" />
 </template>
 
 <style scoped>
