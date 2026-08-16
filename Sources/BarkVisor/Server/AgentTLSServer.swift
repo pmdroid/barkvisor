@@ -63,7 +63,14 @@ public final class AgentTLSServer: @unchecked Sendable {
         await shutdownListener()
     }
 
+    /// Test seam: next N `startListener` calls throw before binding.
+    var testStartListenerFailuresRemaining = 0
+
     /// Re-read Home CA / Device leaf (and pairing receipt) and rebind if they changed.
+    ///
+    /// If the listener is already down, this always attempts to bind — even when
+    /// on-disk certs match in-memory material — so a failed remint/restore does
+    /// not leave the agent plane offline until process restart.
     public func reloadFromDisk(now: Date = Date()) async throws {
         guard let dataDir, let hostId else { return }
         let fresh = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId, now: now)
@@ -72,11 +79,28 @@ public final class AgentTLSServer: @unchecked Sendable {
             material: fresh,
             receipt: receipt,
         )
-        if fresh.deviceCertificatePEM == material.deviceCertificatePEM,
-           fresh.caCertificatePEM == material.caCertificatePEM,
-           presented == presentationCertificatePEM {
+        let certsUnchanged = fresh.deviceCertificatePEM == material.deviceCertificatePEM
+            && fresh.caCertificatePEM == material.caCertificatePEM
+            && presented == presentationCertificatePEM
+        if certsUnchanged {
+            try await ensureListenerRunning()
             return
         }
+
+        // Parse reminted PEMs before dropping the live listener so a corrupt
+        // rotation cannot take the agent plane down by itself.
+        do {
+            _ = try Self.parseTLSIdentity(
+                material: fresh,
+                presentationCertificatePEM: presented,
+            )
+        } catch {
+            Log.server.error(
+                "Agent mTLS reload rejected unusable reminted certs: \(error.localizedDescription). Keeping current listener.",
+            )
+            throw error
+        }
+
         let previousMaterial = material
         let previousPresented = presentationCertificatePEM
         await shutdownListener()
@@ -84,15 +108,43 @@ public final class AgentTLSServer: @unchecked Sendable {
         presentationCertificatePEM = presented
         do {
             try await startListener()
-        } catch {
+        } catch let remintError {
+            Log.server.error(
+                "Agent mTLS listener failed to bind reminted certs: \(remintError.localizedDescription). Restoring previous material.",
+            )
             material = previousMaterial
             presentationCertificatePEM = previousPresented
-            try? await startListener()
+            do {
+                try await startListener()
+            } catch let restoreError {
+                Log.server.error(
+                    """
+                    Agent mTLS listener restore failed: \(restoreError.localizedDescription). \
+                    Agent plane is offline until the next successful reload. Local runtime continues.
+                    """,
+                )
+            }
+            throw remintError
+        }
+    }
+
+    private func ensureListenerRunning() async throws {
+        guard app == nil else { return }
+        do {
+            try await startListener()
+        } catch {
+            Log.server.error(
+                "Agent mTLS listener still down after reload: \(error.localizedDescription). Local runtime continues.",
+            )
             throw error
         }
     }
 
     private func startListener() async throws {
+        if testStartListenerFailuresRemaining > 0 {
+            testStartListenerFailuresRemaining -= 1
+            throw AgentTLSBindError.testForcedFailure
+        }
         var env = Environment(name: "production", arguments: ["barkvisor-agent"])
         env.commandInput = CommandInput(arguments: ["barkvisor-agent"])
         let app = try await Vapor.Application.make(env)
@@ -113,7 +165,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         Log.server.info("BarkVisor agent mTLS listener on port \(boundPort ?? listenPort)")
     }
 
-    private func shutdownListener() async {
+    func shutdownListener() async {
         guard let app else { return }
         try? await app.asyncShutdown()
         self.app = nil
@@ -130,12 +182,27 @@ public final class AgentTLSServer: @unchecked Sendable {
                     break
                 }
                 guard !Task.isCancelled else { break }
-                try? await self?.reloadFromDisk()
+                do {
+                    try await self?.reloadFromDisk()
+                } catch {
+                    Log.server.error(
+                        "Agent mTLS certificate reload failed: \(error.localizedDescription). Will retry on the next interval.",
+                    )
+                }
             }
         }
     }
 
-    private func configure(_ app: Vapor.Application) throws {
+    private struct TLSIdentity {
+        let deviceCert: NIOSSLCertificate
+        let deviceKey: NIOSSLPrivateKey
+        let caCert: NIOSSLCertificate
+    }
+
+    private static func parseTLSIdentity(
+        material: HomeCertificateMaterial,
+        presentationCertificatePEM: String,
+    ) throws -> TLSIdentity {
         let deviceCert = try NIOSSLCertificate(
             bytes: Array(presentationCertificatePEM.utf8),
             format: .pem,
@@ -148,6 +215,17 @@ public final class AgentTLSServer: @unchecked Sendable {
             bytes: Array(material.caCertificatePEM.utf8),
             format: .pem,
         )
+        return TLSIdentity(deviceCert: deviceCert, deviceKey: deviceKey, caCert: caCert)
+    }
+
+    private func configure(_ app: Vapor.Application) throws {
+        let identity = try Self.parseTLSIdentity(
+            material: material,
+            presentationCertificatePEM: presentationCertificatePEM,
+        )
+        let deviceCert = identity.deviceCert
+        let deviceKey = identity.deviceKey
+        let caCert = identity.caCert
 
         var tls = TLSConfiguration.makeServerConfigurationWithMTLS(
             certificateChain: [.certificate(deviceCert)],
@@ -257,6 +335,17 @@ public final class AgentTLSServer: @unchecked Sendable {
                 "Agent mTLS listener not started: \(error.localizedDescription). Local runtime continues on port \(Config.port).",
             )
             return nil
+        }
+    }
+}
+
+private enum AgentTLSBindError: Error, LocalizedError {
+    case testForcedFailure
+
+    var errorDescription: String? {
+        switch self {
+        case .testForcedFailure:
+            "forced test bind failure"
         }
     }
 }
