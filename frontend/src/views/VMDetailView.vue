@@ -29,6 +29,7 @@ import { formatBytes } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
 import { architectureLabel } from '../utils/architectureDetails'
+import { localNetworkForDetail, memberNetworkCaption } from '../utils/workloadDetail'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -192,6 +193,7 @@ async function fetchBridges() {
 
 /** macOS only: socket_vmnet daemon must be active before start. Linux uses host bridges. */
 const bridgeNotReady = computed(() => {
+  if (isMemberDetail.value) return false
   if (!managedBridge.available) return false
   if (!bridged.available) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
@@ -205,7 +207,7 @@ const bridgeStatus = computed(() => {
 })
 
 async function setupBridgeFromDetail() {
-  if (!currentNetwork.value?.bridge) return
+  if (isMemberDetail.value || !currentNetwork.value?.bridge) return
   bridgeLoading.value = currentNetwork.value.bridge
   try {
     await api.post('/system/bridges', { interface: currentNetwork.value.bridge })
@@ -398,6 +400,7 @@ async function loadMemberDetail() {
         await homeWorkloads.refreshOne(device, vmId.value)
         await homeWorkloads.fetchSpec(device, vmId.value).catch(() => {})
       } catch (e: any) {
+        homeWorkloads.removeOne(device.hostId, vmId.value)
         memberLoadError.value = apiErrorMessage(e)
       }
       if (loadVersion !== detailLoadVersion) return
@@ -650,10 +653,11 @@ async function doDetachDisk() {
 const defaultNetwork = computed(() => allNetworks.value.find(n => n.isDefault))
 
 
-const currentNetwork = computed(() => {
-  if (!vm.value?.networkId) return defaultNetwork.value || null
-  return allNetworks.value.find(n => n.id === vm.value!.networkId) || null
-})
+const currentNetwork = computed(() => localNetworkForDetail(
+  isMemberDetail.value,
+  vm.value?.networkId,
+  allNetworks.value,
+))
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
@@ -739,7 +743,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       {{ backend.warning }}
     </div>
 
-    <div v-if="bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
+    <div v-if="!isMemberDetail && bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
@@ -798,7 +802,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <div class="detail-row">
             <span class="detail-label">Network</span>
             <span style="display:flex;align-items:center;gap:6px">
-              <template v-if="currentNetwork">
+              <template v-if="isMemberDetail">
+                <span v-if="vm.networkId" class="mono">{{ memberNetworkCaption(vm.networkId) }}</span>
+                <span v-else style="color:var(--text-dim)">{{ memberNetworkCaption(vm.networkId) }}</span>
+              </template>
+              <template v-else-if="currentNetwork">
                 <span style="color:var(--text-secondary)">{{ currentNetwork.name }}</span>
                 <span class="badge badge-gray">{{ currentNetwork.mode }}</span>
                 <template v-if="currentNetwork.mode === 'bridged' && currentNetwork.bridge">

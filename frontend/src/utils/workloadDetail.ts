@@ -25,3 +25,19 @@ export function openWorkloadRow(
 ): void {
   push(workloadDetailPath(row))
 }
+
+/** Home's /networks inventory is this process only — never resolve a member from it. */
+export function localNetworkForDetail<T extends { id: string; isDefault?: boolean }>(
+  isMemberDetail: boolean,
+  networkId: string | null | undefined,
+  networks: T[],
+): T | null {
+  if (isMemberDetail) return null
+  if (!networkId) return networks.find((n) => n.isDefault) ?? null
+  return networks.find((n) => n.id === networkId) ?? null
+}
+
+/** Member overview has no member network inventory; never claim Default NAT. */
+export function memberNetworkCaption(networkId: string | null | undefined): string {
+  return networkId ? networkId : 'Unknown'
+}

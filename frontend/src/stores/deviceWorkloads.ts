@@ -84,6 +84,15 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     return vmsFor(hostId).find((row) => row.id === vmId)
   }
 
+  function removeOne(hostId: string, vmId: string): void {
+    const current = vmsByHost.value[hostId]
+    if (!current?.some((row) => row.id === vmId)) return
+    vmsByHost.value = {
+      ...vmsByHost.value,
+      [hostId]: current.filter((row) => row.id !== vmId),
+    }
+  }
+
   async function refreshOne(device: HomeDeviceHealthSnapshot, vmId: string): Promise<void> {
     const { data } = await api.get<VM>(deviceVmPath(device, vmId))
     await replaceOne(device, data)
@@ -163,6 +172,7 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     homeRows,
     vmsFor,
     vmFor,
+    removeOne,
     isLoading,
     errorFor,
     isActing,
