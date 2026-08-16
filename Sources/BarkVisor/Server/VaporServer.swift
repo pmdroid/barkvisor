@@ -242,6 +242,13 @@ public final class VaporServer: @unchecked Sendable {
             } catch {
                 Log.server.error("Retry with WAL intact failed: \(error)")
 
+                guard DatabaseOpenRecovery.shouldRestoreFromBackup(error) else {
+                    Log.server.error(
+                        "Leaving the live database in place (not a SQLite corruption): \(error)",
+                    )
+                    throw error
+                }
+
                 if let backupName = BackupService.mostRecentBackup() {
                     Log.server.info("Removing WAL/SHM and restoring from backup: \(backupName)")
                     try? fm.removeItem(at: walURL)
