@@ -234,4 +234,21 @@ describe('deviceWorkloads store (PAS-52)', () => {
     ])
     expect(patch).toHaveBeenCalledTimes(1)
   })
+
+  test('removeOne evicts a cached member Workload so detail can show not-found', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running' })]
+    api.get = mock((url: string) => {
+      if (url === '/home/devices/peer-1/v1/vms') return Promise.resolve({ data: listed })
+      throw new Error(`unexpected GET ${url}`)
+    }) as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor(peer)
+    expect(store.vmFor('peer-1', 'vm-2')?.name).toBe('nas')
+    store.removeOne('peer-1', 'vm-2')
+    expect(store.vmFor('peer-1', 'vm-2')).toBeUndefined()
+    expect(store.vmsFor('peer-1')).toEqual([])
+    store.removeOne('peer-1', 'vm-2')
+    expect(store.vmsFor('peer-1')).toEqual([])
+  })
 })
