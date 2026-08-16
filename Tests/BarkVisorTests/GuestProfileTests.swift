@@ -4,7 +4,9 @@ import Testing
 struct GuestProfileTests {
     @Test func `stable persisted ids are present`() {
         let ids = Set(GuestProfiles.supportedIDs)
-        #expect(ids == Set(["linux-arm64", "windows-arm64", "linux-amd64", "linux-x86_64"]))
+        #expect(ids == Set([
+            "linux-arm64", "windows-arm64", "linux-amd64", "linux-x86_64", "windows-amd64",
+        ]))
     }
 
     @Test func `require known and unknown`() throws {
@@ -24,6 +26,14 @@ struct GuestProfileTests {
         #expect(x86.isX86)
         #expect(try GuestProfiles.require("linux-x86_64").machine == "q35")
 
+        let winX86 = try GuestProfiles.require("windows-amd64")
+        #expect(winX86.isWindows)
+        #expect(winX86.isX86)
+        #expect(winX86.defaultTPMEnabled)
+        #expect(winX86.machine == "q35")
+        #expect(winX86.qemuBinaryName == "qemu-system-x86_64")
+        #expect(winX86.firmware == .ovmfSecureBoot)
+
         #expect(throws: BarkVisorError.self) {
             try GuestProfiles.require("solaris-sparc")
         }
@@ -34,6 +44,8 @@ struct GuestProfileTests {
         #expect(QEMUBuilder.machineType(for: "linux-arm64") == "virt")
         #expect(try QEMUBuilder.binaryName(for: "windows-arm64") == "qemu-system-aarch64")
         #expect(try QEMUBuilder.binaryName(for: "linux-x86_64") == "qemu-system-x86_64")
+        #expect(try QEMUBuilder.binaryName(for: "windows-amd64") == "qemu-system-x86_64")
+        #expect(QEMUBuilder.machineType(for: "windows-amd64") == "q35")
     }
 
     @Test func `default linux id from image arch`() {
@@ -46,11 +58,13 @@ struct GuestProfileTests {
         #expect(GuestProfiles.defaultLinuxID(forImageArch: " AArch64 ") == "linux-arm64")
     }
 
-    @Test func `default windows id only for arm64`() {
+    @Test func `default windows id for arm64 and x86_64`() {
         #expect(GuestProfiles.defaultWindowsID(forImageArch: "arm64") == "windows-arm64")
         #expect(GuestProfiles.defaultWindowsID(forImageArch: "aarch64") == "windows-arm64")
-        #expect(GuestProfiles.defaultWindowsID(forImageArch: "x86_64") == nil)
-        #expect(GuestProfiles.defaultWindowsID(forImageArch: "amd64") == nil)
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "x86_64") == "windows-amd64")
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "amd64") == "windows-amd64")
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "x64") == "windows-amd64")
+        #expect(GuestProfiles.defaultWindowsID(forImageArch: "riscv64") == nil)
     }
 
     @Test func `defaultID uses host linux when family omitted`() throws {
@@ -69,13 +83,12 @@ struct GuestProfileTests {
                     == "windows-arm64",
             )
         } else {
-            #expect(throws: BarkVisorError.self) {
-                try GuestProfiles.defaultID(osFamily: "windows")
-            }
+            #expect(try GuestProfiles.defaultID(osFamily: "windows") == "windows-amd64")
         }
-        #expect(throws: BarkVisorError.self) {
+        #expect(
             try GuestProfiles.defaultID(osFamily: "windows", imageArch: "x86_64")
-        }
+                == "windows-amd64",
+        )
         #expect(throws: BarkVisorError.self) {
             try GuestProfiles.defaultID(osFamily: "solaris")
         }
@@ -93,6 +106,8 @@ struct GuestProfileTests {
         #expect(!x86.isEmpty)
         #expect(x86.allSatisfy { $0.arch == "x86_64" })
         #expect(x86.contains { $0.id == "linux-amd64" })
+        #expect(x86.contains { $0.id == "windows-amd64" })
         #expect(!x86.contains { $0.id == "windows-arm64" })
+        #expect(!arm.contains { $0.id == "windows-amd64" })
     }
 }

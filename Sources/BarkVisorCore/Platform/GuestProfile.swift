@@ -3,7 +3,7 @@ import Foundation
 /// Canonical guest type profile keyed by the **persisted** `vm.vmType` ID.
 ///
 /// Stable IDs (do not rename without a data migration):
-/// - `linux-arm64`, `windows-arm64`, `linux-amd64`, `linux-x86_64`
+/// - `linux-arm64`, `windows-arm64`, `linux-amd64`, `linux-x86_64`, `windows-amd64`
 public struct GuestProfile: Sendable, Equatable, Codable, Hashable {
     /// Persisted VM type string stored in the database / API.
     public let id: String
@@ -24,6 +24,7 @@ public struct GuestProfile: Sendable, Equatable, Codable, Hashable {
         case edk2ARM64
         case aavmfSecureBoot
         case edk2X86
+        case ovmfSecureBoot
     }
 
     public var qemuBinaryName: String {
@@ -83,6 +84,15 @@ public enum GuestProfiles {
             defaultTPMEnabled: false,
             firmware: .edk2X86,
         ),
+        GuestProfile(
+            id: "windows-amd64",
+            arch: "x86_64",
+            qemuArch: "x86_64",
+            machine: "q35",
+            osFamily: "windows",
+            defaultTPMEnabled: true,
+            firmware: .ovmfSecureBoot,
+        ),
     ]
 
     public static let byID: [String: GuestProfile] = Dictionary(
@@ -125,11 +135,12 @@ public enum GuestProfiles {
     }
 
     /// Default Windows guest ID for a host/image arch, if supported.
-    /// Only `windows-arm64` exists today; x86_64 Windows is not a guest profile yet.
     public static func defaultWindowsID(forImageArch arch: String) -> String? {
         switch PlatformCapabilities.normalizedArch(arch) {
         case "arm64":
             return "windows-arm64"
+        case "x86_64":
+            return "windows-amd64"
         default:
             return nil
         }

@@ -42,6 +42,17 @@ struct PlatformQEMUPathTests {
         #expect(candidates.contains("/usr/share/AAVMF/AAVMF_CODE.secboot.fd"))
     }
 
+    @Test func `ovmfSecureBootCandidates prefer secboot and 4M`() {
+        let candidates = PlatformQEMU.ovmfSecureBootCandidates
+        #expect(!candidates.isEmpty)
+        #expect(candidates.contains("/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"))
+        #expect(candidates.contains("/usr/share/OVMF/OVMF_CODE.secboot.fd"))
+        #expect(candidates.first?.contains("secboot") == true)
+        let vars = PlatformQEMU.ovmfSecureBootVarsCandidates
+        #expect(vars.contains("/usr/share/OVMF/OVMF_VARS_4M.secboot.fd"))
+        #expect(vars.contains("/usr/share/OVMF/OVMF_VARS.secboot.fd"))
+    }
+
     // MARK: - Install hints
 
     @Test func `install hints are non-empty`() {

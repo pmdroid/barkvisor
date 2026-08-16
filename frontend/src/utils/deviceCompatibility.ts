@@ -1,6 +1,6 @@
 /** Filter/disable Devices for Create VM and template Deploy (PAS-34). Manual pick only. */
 
-import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, VMTemplate } from '../api/types'
+import type { CurrentHostCapabilities, GuestTypeInfo, HomeDeviceHealthSnapshot, VMTemplate } from '../api/types'
 import {
   capabilitiesArchRunnable,
   capabilitiesFeatureSupported,
@@ -42,6 +42,22 @@ function pickedHostArch(
   return capabilities?.hostArch || device.platform?.arch || null
 }
 
+/** True when capabilities advertise a Windows guest profile (optionally for `guestArch`). */
+export function guestTypesSupportWindows(
+  guestTypes: Array<Pick<GuestTypeInfo, 'id'> & Partial<Pick<GuestTypeInfo, 'osFamily' | 'arch'>>> | null | undefined,
+  guestArch?: string | null,
+): boolean {
+  if (!guestTypes || guestTypes.length === 0) return false
+  const want = guestArch ? (normalizeImageArch(guestArch) ?? guestArch) : null
+  return guestTypes.some((guest) => {
+    const isWindows = guest.osFamily === 'windows' || guest.id.startsWith('windows')
+    if (!isWindows) return false
+    if (!want) return true
+    const profileArch = normalizeImageArch(guest.arch) ?? guest.arch
+    return !profileArch || profileArch === want
+  })
+}
+
 export function createVMIncompatibilityReasons(
   device: HomeDeviceHealthSnapshot,
   opts: {
@@ -66,9 +82,13 @@ export function createVMIncompatibilityReasons(
     reasons.push(`Architecture (${guest}) is not compatible with this Device (${have}).`)
   }
   if (opts.osType === 'windows') {
-    const arch = normalizeImageArch(hostArch)
-    if (arch && arch !== 'arm64') {
-      reasons.push('Windows guests are not available on this Device architecture.')
+    const types = opts.capabilities?.guestTypes
+    if (types && types.length > 0) {
+      const archMismatch = !!(guest && hostArch && !imageArchSupportedOnHost(guest, hostArch))
+      const probe = archMismatch ? null : (opts.guestArch ?? hostArch)
+      if (!guestTypesSupportWindows(types, probe)) {
+        reasons.push('Windows guests are not available on this Device architecture.')
+      }
     }
   }
   if (opts.requiredFeatures && opts.capabilities) {

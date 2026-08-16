@@ -198,7 +198,7 @@ struct WorkloadSpecProjectorTests {
         ))
     }
 
-    @Test func `create params osFamily windows defaults or rejects`() {
+    @Test func `create params osFamily windows defaults to host profile`() throws {
         let body = CreateVMRequest(
             name: "win",
             vmType: nil,
@@ -221,14 +221,9 @@ struct WorkloadSpecProjectorTests {
             tpmEnabled: nil,
             spec: nil,
         )
-        if PlatformCapabilities.hostArch == "arm64" {
-            let params = try? VMController.createParams(from: body)
-            #expect(params?.vmType == "windows-arm64")
-        } else {
-            #expect(throws: BarkVisorError.self) {
-                try VMController.createParams(from: body)
-            }
-        }
+        let params = try VMController.createParams(from: body)
+        let expected = try GuestProfiles.defaultID(osFamily: "windows")
+        #expect(params.vmType == expected)
     }
 
     @Test func `create params explicit vmType wins over osFamily`() throws {

@@ -102,7 +102,7 @@ struct CreateVMRequest: Content, Validatable {
         validations.add(
             "vmType",
             as: String.self,
-            is: .in("linux-arm64", "windows-arm64", "linux-amd64", "linux-x86_64"),
+            is: .in(GuestProfiles.supportedIDs),
             required: false,
         )
         validations.add("cpuCount", as: Int.self, is: .range(1 ... 256), required: false)
