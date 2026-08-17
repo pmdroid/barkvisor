@@ -128,6 +128,10 @@ struct APIDecodingTests {
             try DeviceURL.normalize("http://192.168.30.1:7777/login").absoluteString
                 == "http://192.168.30.1:7777"
         )
+        #expect(
+            try DeviceURL.normalize("http://192.168.30.1:7777/arbitrary/path").absoluteString
+                == "http://192.168.30.1:7777"
+        )
     }
 
     @Test func deviceURLMigratesLegacySchemeLessStoredValue() throws {

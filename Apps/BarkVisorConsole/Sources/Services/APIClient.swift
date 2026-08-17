@@ -241,9 +241,6 @@ enum DeviceURL {
         "http://192.168.30.1:7777"
     }
 
-    /// SPA paths the web UI uses; the native client talks to the Device origin only.
-    private static let spaPathPrefixes = ["/login", "/setup", "/dashboard", "/vms", "/images", "/disks", "/networks", "/registry", "/logs", "/settings"]
-
     /// One-time upgrade for host-only values saved before `normalize` required a scheme.
     static func migrateStored(_ raw: String) -> String {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -251,7 +248,8 @@ enum DeviceURL {
         return "http://\(value)"
     }
 
-    /// Require an explicit `http`/`https` scheme so a JWT is never sent to an inferred origin.
+    /// Canonical Device origin: scheme + host + port. Paths are stripped so
+    /// `makeRequest` never prefixes `/api/...` with a stored SPA or paste path.
     static func normalize(_ raw: String) throws -> URL {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasSuffix("/") { value.removeLast() }
@@ -264,10 +262,7 @@ enum DeviceURL {
         if components.port == nil, components.host != nil {
             components.port = defaultPort
         }
-        let path = components.path
-        if spaPathPrefixes.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
-            components.path = ""
-        }
+        components.path = ""
         components.query = nil
         components.fragment = nil
         guard let url = components.url, url.host != nil else { throw APIError.invalidURL }
