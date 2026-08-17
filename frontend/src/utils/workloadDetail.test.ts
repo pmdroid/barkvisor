@@ -102,5 +102,6 @@ describe('member detail role (PAS-202)', () => {
     )
     expect(view).toContain('memberLoadError.value = null')
     expect(view).toContain('watch(showMemberConnect')
+    expect(view).toContain('!memberDevice.value')
   })
 })

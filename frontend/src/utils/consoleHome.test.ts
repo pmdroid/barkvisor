@@ -78,6 +78,7 @@ describe('consoleHome (PAS-200)', () => {
     expect(detail).toContain(':device="isMemberDetail ? memberDevice : undefined"')
     expect(window).toContain('canConnectDeviceConsole')
     expect(window).toContain(':device="memberDevice"')
+    expect(window).toContain(':key="`${hostId}-${vmId}`"')
     expect(window).toContain("error.value = 'Device not found'")
     expect(window).toContain('isNotFoundError')
     expect(window).toContain('homeWorkloads.removeOne')
