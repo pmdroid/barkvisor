@@ -59,18 +59,10 @@ struct AgentLocalProxyController: RouteCollection {
         localPort: Int,
     ) async {
         let eventLoop = inbound.eventLoop
-        let box = WebSocketPipeBox()
+        let toRemote = WebSocketPipeBox()
+        let toClient = WebSocketPipeBox()
         WebSocketRelay.onEventLoop(inbound) {
-            inbound.onBinary { _, buffer in
-                if !box.sendOrBuffer(.binary(buffer)) {
-                    WebSocketRelay.close(inbound)
-                }
-            }
-            inbound.onText { _, text in
-                if !box.sendOrBuffer(.text(text)) {
-                    WebSocketRelay.close(inbound)
-                }
-            }
+            WebSocketRelay.capture(from: inbound, into: toRemote)
         }
         guard let vmID = req.parameters.get("id") else {
             WebSocketRelay.close(inbound)
@@ -94,9 +86,16 @@ struct AgentLocalProxyController: RouteCollection {
             return
         }
         do {
-            let remote = try await HomeWebSocketDialer.open(url: url, on: eventLoop)
-            box.attach(remote)
-            WebSocketRelay.pipe(local: inbound, remote: remote)
+            let remote = try await HomeWebSocketDialer.open(url: url, on: eventLoop) { ws in
+                WebSocketRelay.capture(from: ws, into: toClient)
+            }
+            if inbound.isClosed {
+                WebSocketRelay.close(remote)
+                return
+            }
+            toRemote.attach(remote)
+            toClient.attach(inbound)
+            WebSocketRelay.bindCloses(local: inbound, remote: remote)
         } catch {
             Log.server.error(
                 "Agent console tunnel failed: \(error.localizedDescription)",

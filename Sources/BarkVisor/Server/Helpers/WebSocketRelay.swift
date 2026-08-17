@@ -72,14 +72,25 @@ final class WebSocketPipeBox: @unchecked Sendable {
 
 enum WebSocketRelay {
     static func pipe(local: WebSocket, remote: WebSocket) {
-        onEventLoop(remote) {
-            remote.onBinary { _, buffer in
-                send(.binary(buffer), on: local)
-            }
-            remote.onText { _, text in
-                send(.text(text), on: local)
+        bindCloses(local: local, remote: remote)
+    }
+
+    /// Install receive handlers. Call this inside `WebSocket.connect` so
+    /// server-first frames (RFB banner, serial scrollback) are not dropped.
+    static func capture(from ws: WebSocket, into box: WebSocketPipeBox) {
+        ws.onBinary { inbound, buffer in
+            if !box.sendOrBuffer(.binary(buffer)) {
+                close(inbound)
             }
         }
+        ws.onText { inbound, text in
+            if !box.sendOrBuffer(.text(text)) {
+                close(inbound)
+            }
+        }
+    }
+
+    static func bindCloses(local: WebSocket, remote: WebSocket) {
         local.onClose.whenComplete { _ in
             close(remote)
         }
@@ -126,17 +137,49 @@ private final class OnceResume<T: Sendable>: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func resume(_ result: Result<T, Error>) {
+    func resume(_ result: Result<T, Error>) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard !resumed else { return }
+        guard !resumed else { return false }
         resumed = true
         continuation.resume(with: result)
+        return true
+    }
+}
+
+/// Closes a late handshake if the 10s dial already failed.
+private final class DialLifetime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var open: WebSocket?
+
+    func accept(_ ws: WebSocket) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if cancelled { return false }
+        open = ws
+        return true
+    }
+
+    func cancel() {
+        let extra: WebSocket?
+        lock.lock()
+        cancelled = true
+        extra = open
+        open = nil
+        lock.unlock()
+        if let extra {
+            WebSocketRelay.close(extra)
+        }
     }
 }
 
 protocol HomeWebSocketDialing: Sendable {
-    func connect(url: URL, on eventLoop: EventLoop) async throws -> WebSocket
+    func connect(
+        url: URL,
+        on eventLoop: EventLoop,
+        configure: @escaping @Sendable (WebSocket) -> Void,
+    ) async throws -> WebSocket
 }
 
 /// Outbound WebSocket client. `ws://` is loopback (This Device / agent hop).
@@ -145,7 +188,13 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
     var dataDir: URL
     var hostId: String
 
-    func connect(url: URL, on eventLoop: EventLoop) async throws -> WebSocket {
+    static let dialTimeoutNanoseconds: UInt64 = 10_000_000_000
+
+    func connect(
+        url: URL,
+        on eventLoop: EventLoop,
+        configure: @escaping @Sendable (WebSocket) -> Void,
+    ) async throws -> WebSocket {
         var configuration = WebSocketClient.Configuration()
         if url.scheme?.lowercased() == "wss" {
             configuration.tlsConfiguration = try Self.mtlsConfiguration(
@@ -153,13 +202,52 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
                 hostId: hostId,
             )
         }
-        return try await Self.open(url: url, configuration: configuration, on: eventLoop)
+        return try await Self.open(
+            url: url,
+            configuration: configuration,
+            on: eventLoop,
+            configure: configure,
+        )
     }
 
     static func open(
         url: URL,
         configuration: WebSocketClient.Configuration = .init(),
         on eventLoop: EventLoop,
+        configure: @escaping @Sendable (WebSocket) -> Void = { _ in },
+    ) async throws -> WebSocket {
+        let lifetime = DialLifetime()
+        do {
+            return try await withThrowingTaskGroup(of: WebSocket.self) { group in
+                group.addTask {
+                    try await connectOnce(
+                        url: url,
+                        configuration: configuration,
+                        on: eventLoop,
+                        lifetime: lifetime,
+                        configure: configure,
+                    )
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: dialTimeoutNanoseconds)
+                    throw Abort(.gatewayTimeout, reason: "Device console did not answer")
+                }
+                let socket = try await group.next()!
+                group.cancelAll()
+                return socket
+            }
+        } catch {
+            lifetime.cancel()
+            throw error
+        }
+    }
+
+    private static func connectOnce(
+        url: URL,
+        configuration: WebSocketClient.Configuration,
+        on eventLoop: EventLoop,
+        lifetime: DialLifetime,
+        configure: @escaping @Sendable (WebSocket) -> Void,
     ) async throws -> WebSocket {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<WebSocket, Error>) in
             let once = OnceResume(cont)
@@ -168,10 +256,16 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
                 configuration: configuration,
                 on: eventLoop,
             ) { ws in
-                once.resume(.success(ws))
+                if lifetime.accept(ws) {
+                    configure(ws)
+                    _ = once.resume(.success(ws))
+                } else {
+                    WebSocketRelay.close(ws)
+                    _ = once.resume(.failure(CancellationError()))
+                }
             }
             future.whenFailure { error in
-                once.resume(.failure(error))
+                _ = once.resume(.failure(error))
             }
         }
     }

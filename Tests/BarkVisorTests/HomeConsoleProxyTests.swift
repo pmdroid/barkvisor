@@ -152,6 +152,48 @@ struct HomeConsoleProxyTests {
         }
     }
 
+    @Test func `server-first banner reaches the client`() async throws {
+        let echo = try await makeApp()
+        echo.webSocket("api", "vms", ":id", "vnc") { _, ws in
+            ws.send("RFB 003.008\n")
+        }
+        try await echo.startup()
+        let tunnel = try await makeApp()
+        do {
+            let echoPort = try boundPort(echo)
+            let dir = try isolatedDir()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let selfId = UUID().uuidString
+            let peerId = "peer-banner"
+            try DeviceRegistry(dataDir: dir).upsert(
+                hostId: peerId,
+                fingerprint: "aa",
+                agentHost: "127.0.0.1",
+                agentPort: echoPort,
+            )
+            tunnel.middleware.use(StubHomeUserMiddleware())
+            HomeConsoleProxyController(
+                dataDir: dir,
+                hostId: selfId,
+                localPort: echoPort,
+                devices: DeviceRegistry(dataDir: dir),
+                dialer: LoopbackWebSocketDialer(),
+            ).register(app: tunnel)
+            try await tunnel.startup()
+            let tunnelPort = try boundPort(tunnel)
+            let url =
+                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=once"
+            let banner = try await echoReceive(url: url)
+            #expect(banner == "RFB 003.008\n")
+            await stop(tunnel)
+            await stop(echo)
+        } catch {
+            await stop(tunnel)
+            await stop(echo)
+            throw error
+        }
+    }
+
     @Test func `this Device console still tunnels to local host API`() async throws {
         let echo = try await makeApp()
         echo.webSocket("api", "vms", ":id", "console") { _, ws in
@@ -227,11 +269,19 @@ private struct StubHomeUserMiddleware: AsyncMiddleware {
 }
 
 private struct LoopbackWebSocketDialer: HomeWebSocketDialing {
-    func connect(url: URL, on eventLoop: EventLoop) async throws -> WebSocket {
+    func connect(
+        url: URL,
+        on eventLoop: EventLoop,
+        configure: @escaping @Sendable (WebSocket) -> Void,
+    ) async throws -> WebSocket {
         var rewritten = URLComponents(url: url, resolvingAgainstBaseURL: false)
         rewritten?.scheme = "ws"
         let target = try #require(rewritten?.url)
-        return try await HomeWebSocketDialer.open(url: target, on: eventLoop)
+        return try await HomeWebSocketDialer.open(
+            url: target,
+            on: eventLoop,
+            configure: configure,
+        )
     }
 }
 
@@ -258,7 +308,11 @@ private enum EchoSend {
     case binary([UInt8])
 }
 
-private func echoRoundTrip(url: String, send: EchoSend) async throws -> String {
+private func echoReceive(url: String) async throws -> String {
+    try await echoRoundTrip(url: url, send: nil)
+}
+
+private func echoRoundTrip(url: String, send: EchoSend?) async throws -> String {
     try await withThrowingTaskGroup(of: String.self) { group in
         group.addTask {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
@@ -272,11 +326,13 @@ private func echoRoundTrip(url: String, send: EchoSend) async throws -> String {
                         once.resume(.success(String(buffer: buffer)))
                         ws.close(promise: nil)
                     }
-                    switch send {
-                    case let .text(text):
-                        ws.send(text)
-                    case let .binary(bytes):
-                        ws.send(raw: bytes, opcode: .binary, fin: true, promise: nil)
+                    if let send {
+                        switch send {
+                        case let .text(text):
+                            ws.send(text)
+                        case let .binary(bytes):
+                            ws.send(raw: bytes, opcode: .binary, fin: true, promise: nil)
+                        }
                     }
                 }
                 future.whenFailure { error in

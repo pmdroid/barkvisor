@@ -48,24 +48,12 @@ describe('consoleHome (PAS-200)', () => {
     expect(canConnectDeviceConsole(null)).toBe(false)
   })
 
-  test('member sockets send session token; self stays ticket-only', () => {
-    const store: Record<string, string> = { token: 'jwt-home' }
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: (key: string) => store[key] ?? null,
-        setItem: (key: string, value: string) => {
-          store[key] = value
-        },
-        removeItem: (key: string) => {
-          delete store[key]
-        },
-      },
-    })
-    expect(consoleSocketQuery('member-ticket', member)).toContain('ticket=member-ticket')
-    expect(consoleSocketQuery('member-ticket', member)).toContain('token=jwt-home')
-    expect(consoleSocketQuery('local-ticket', self)).toBe('ticket=local-ticket')
+  test('member sockets send Home session ticket; self stays ticket-only', () => {
+    expect(consoleSocketQuery('member-ticket', 'home-session')).toContain('ticket=member-ticket')
+    expect(consoleSocketQuery('member-ticket', 'home-session')).toContain('session=home-session')
+    expect(consoleSocketQuery('member-ticket', 'home-session')).not.toContain('token=')
     expect(consoleSocketQuery('local-ticket')).toBe('ticket=local-ticket')
+    expect(consoleSocketQuery('local-ticket', null)).toBe('ticket=local-ticket')
   })
 
   test('SPA mints the ticket on the member and opens Home WS with hostId', () => {
@@ -77,9 +65,13 @@ describe('consoleHome (PAS-200)', () => {
     const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
     expect(client).toContain('wsTicketPath(device)')
     expect(vnc).toContain('getWSTicket(props.vmId, props.device)')
+    expect(vnc).toContain('getWSTicket()')
     expect(vnc).toContain("consoleSocketPath(props.device, props.vmId, 'vnc')")
+    expect(vnc).toContain('consoleSocketQuery(ticket, session)')
     expect(serial).toContain('getWSTicket(props.vmId, props.device)')
+    expect(serial).toContain('getWSTicket()')
     expect(serial).toContain("consoleSocketPath(props.device, props.vmId, 'console')")
+    expect(serial).toContain('consoleSocketQuery(ticket, session)')
     expect(detail).toContain('canConnectDeviceConsole')
     expect(detail).toContain('showMemberConnect')
     expect(detail).toContain('vncWindowPath')

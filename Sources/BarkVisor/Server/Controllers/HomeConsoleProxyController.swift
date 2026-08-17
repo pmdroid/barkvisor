@@ -4,9 +4,9 @@ import Vapor
 
 /// Home WebSocket tunnel for member VNC / serial console (PAS-200).
 ///
-/// Registered on the host API *without* JWT middleware so a member-minted
-/// `?ticket=` is not consumed against This Device's ticket store. The ticket
-/// is forwarded and spent on the owning Device.
+/// Auth is `HomeTunnelAuthMiddleware` (Bearer JWT or Home `?session=` ticket),
+/// not `JWTAuthMiddleware`: that middleware would spend `?ticket=` against
+/// Home's store. The Device ticket is forwarded and spent on the owner.
 struct HomeConsoleProxyController {
     var devices: DeviceRegistry?
     var dataDir: URL
@@ -97,18 +97,10 @@ struct HomeConsoleProxyController {
 
     private func tunnel(req: Vapor.Request, inbound: WebSocket, kind: HomeConsoleKind) async {
         let eventLoop = inbound.eventLoop
-        let box = WebSocketPipeBox()
+        let toRemote = WebSocketPipeBox()
+        let toClient = WebSocketPipeBox()
         WebSocketRelay.onEventLoop(inbound) {
-            inbound.onBinary { _, buffer in
-                if !box.sendOrBuffer(.binary(buffer)) {
-                    WebSocketRelay.close(inbound)
-                }
-            }
-            inbound.onText { _, text in
-                if !box.sendOrBuffer(.text(text)) {
-                    WebSocketRelay.close(inbound)
-                }
-            }
+            WebSocketRelay.capture(from: inbound, into: toRemote)
         }
         let url: URL
         do {
@@ -118,9 +110,16 @@ struct HomeConsoleProxyController {
             return
         }
         do {
-            let remote = try await dialer.connect(url: url, on: eventLoop)
-            box.attach(remote)
-            WebSocketRelay.pipe(local: inbound, remote: remote)
+            let remote = try await dialer.connect(url: url, on: eventLoop) { ws in
+                WebSocketRelay.capture(from: ws, into: toClient)
+            }
+            if inbound.isClosed {
+                WebSocketRelay.close(remote)
+                return
+            }
+            toRemote.attach(remote)
+            toClient.attach(inbound)
+            WebSocketRelay.bindCloses(local: inbound, remote: remote)
         } catch {
             Log.server.error(
                 "Home console tunnel failed: \(error.localizedDescription)",
