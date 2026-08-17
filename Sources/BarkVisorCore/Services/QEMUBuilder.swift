@@ -235,7 +235,7 @@ public enum QEMUBuilder {
         args += try additionalDiskArgs(ctx.additionalDisks)
         let (netArgs, needsSocketVmnetWrap) = try networkArgs(spec: spec, network: ctx.network)
         args += netArgs
-        args += socketArgs(ctx: ctx)
+        args += socketArgs(ctx.sockets)
         args += displayAndInputArgs(spec: spec)
         args += try usbPassthroughArgs(spec: spec)
         args += try miscArgs(spec: spec, vmID: vmID)
@@ -438,19 +438,23 @@ public enum QEMUBuilder {
         return (["-netdev", netdevArgs, "-device", deviceArgs], needsSocketVmnetWrap)
     }
 
-    private static func socketArgs(ctx: QEMUBuildContext) -> [String] {
-        let s = ctx.sockets
-        return [
-            "-chardev", "socket,id=serial0,path=\(s.serial.path),server=on,wait=off",
+    /// Serial, VNC, QMP, guest-agent, and qemu-vdagent (VNC clipboard).
+    /// `-vnc clipboard=on` is not a QEMU 11 VNC option (start fails). Guest
+    /// clipboard goes through qemu-vdagent + spice-vdagent in a desktop guest.
+    static func socketArgs(_ sockets: VMSockets) -> [String] {
+        [
+            "-chardev", "socket,id=serial0,path=\(sockets.serial.path),server=on,wait=off",
             "-serial", "chardev:serial0",
             // lossy=on enables Tight+JPEG in QEMU's VNC server (much less bandwidth/CPU
             // than raw/hextile for typical desktop sessions; noVNC negotiates JPEG quality).
-            "-vnc", "unix:\(s.vnc.path),lossy=on",
-            "-qmp", "unix:\(s.qmp.path),server,nowait",
-            "-qmp", "unix:\(s.event.path),server,nowait",
+            "-vnc", "unix:\(sockets.vnc.path),lossy=on",
+            "-qmp", "unix:\(sockets.qmp.path),server,nowait",
+            "-qmp", "unix:\(sockets.event.path),server,nowait",
             "-device", "virtio-serial-pci",
-            "-chardev", "socket,path=\(s.guestAgent.path),server=on,wait=off,id=qga0",
+            "-chardev", "socket,path=\(sockets.guestAgent.path),server=on,wait=off,id=qga0",
             "-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",
+            "-chardev", "qemu-vdagent,id=vdagent,name=vdagent,clipboard=on",
+            "-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0",
         ]
     }
 

@@ -222,6 +222,21 @@ struct QEMUBuilderValidationTests {
         #expect(WorkloadBackendProjector.project(guestType: native).accelerator == QEMUBuilder.accelerator)
     }
 
+    // MARK: - Sockets / VNC clipboard
+
+    @Test func `socketArgs keep lossy VNC and qemu-vdagent clipboard`() {
+        let sockets = VMSockets(vmID: "01234567-89ab-cdef-0123-456789abcdef")
+        let args = QEMUBuilder.socketArgs(sockets)
+        #expect(args.contains("-vnc"))
+        if let idx = args.firstIndex(of: "-vnc") {
+            #expect(args[idx + 1] == "unix:\(sockets.vnc.path),lossy=on")
+            #expect(!args[idx + 1].contains("clipboard="))
+        }
+        #expect(args.contains("qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"))
+        #expect(args.contains("virtserialport,chardev=vdagent,name=com.redhat.spice.0"))
+        #expect(args.contains("virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"))
+    }
+
     // MARK: - Firmware
 
     @Test func `firmwareArgs omits pflash when UEFI is disabled`() throws {
