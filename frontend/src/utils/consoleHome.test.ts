@@ -49,12 +49,23 @@ describe('consoleHome (PAS-200)', () => {
   })
 
   test('member sockets send session token; self stays ticket-only', () => {
-    localStorage.setItem('token', 'jwt-home')
+    const store: Record<string, string> = { token: 'jwt-home' }
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => store[key] ?? null,
+        setItem: (key: string, value: string) => {
+          store[key] = value
+        },
+        removeItem: (key: string) => {
+          delete store[key]
+        },
+      },
+    })
     expect(consoleSocketQuery('member-ticket', member)).toContain('ticket=member-ticket')
     expect(consoleSocketQuery('member-ticket', member)).toContain('token=jwt-home')
     expect(consoleSocketQuery('local-ticket', self)).toBe('ticket=local-ticket')
     expect(consoleSocketQuery('local-ticket')).toBe('ticket=local-ticket')
-    localStorage.removeItem('token')
   })
 
   test('SPA mints the ticket on the member and opens Home WS with hostId', () => {
