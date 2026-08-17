@@ -95,11 +95,11 @@ struct WorkloadDetailTests {
         )
     }
 
-    @Test func guestInfoRetriesUntilAgentAvailable() {
+    @Test func guestInfoStopsRetryAfterSuccessfulResponse() {
         let missing = GuestInfo(available: false, ipAddresses: ["10.0.2.15"])
         let ready = GuestInfo(available: true, ipAddresses: ["192.168.64.12"], osName: "Ubuntu")
         #expect(GuestInfoRefresh.shouldRetry(guest: nil, running: true))
-        #expect(GuestInfoRefresh.shouldRetry(guest: missing, running: true))
+        #expect(!GuestInfoRefresh.shouldRetry(guest: missing, running: true))
         #expect(!GuestInfoRefresh.shouldRetry(guest: ready, running: true))
         #expect(!GuestInfoRefresh.shouldRetry(guest: nil, running: false))
         #expect(!GuestInfoRefresh.shouldRetry(guest: missing, running: false))
