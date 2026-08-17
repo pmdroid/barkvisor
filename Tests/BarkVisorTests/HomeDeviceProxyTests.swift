@@ -279,14 +279,27 @@ struct HomeDeviceProxyTests {
                 agentPort: 7_778,
                 vmID: "vm-1",
                 kind: .console,
-                query: "token=xyz",
+                query: "ticket=abc&session=home&token=novnc",
             ),
         )
         #expect(member.scheme == "wss")
         #expect(member.host == "10.0.0.9")
         #expect(member.port == 7_778)
         #expect(member.path == "/api/vms/vm-1/console")
-        #expect(member.query == "token=xyz")
+        #expect(member.query == "ticket=abc")
+
+        let rewritten = try HomeDeviceProxy.consoleTargetURL(
+            HomeConsoleTarget(
+                isSelf: true,
+                localPort: 7_777,
+                agentHost: nil,
+                agentPort: 7_778,
+                vmID: "vm-1",
+                kind: .vnc,
+                query: "token=device-ticket&session=home",
+            ),
+        )
+        #expect(rewritten.query == "ticket=device-ticket")
 
         #expect(throws: BarkVisorError.self) {
             try HomeDeviceProxy.consoleTargetURL(

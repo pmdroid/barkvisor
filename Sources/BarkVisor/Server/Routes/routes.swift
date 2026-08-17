@@ -128,7 +128,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
-    // Session JWT (Bearer or ?token=). Member `?ticket=` is forwarded, not spent here.
+    // HomeTunnelAuthMiddleware, not JWTAuthMiddleware: the latter would spend
+    // the Device `?ticket=` on Home. Bearer JWT or Home-minted `?session=`.
     let homeTunnel = app.grouped(HomeTunnelAuthMiddleware(keys: deps.keys))
     HomeConsoleProxyController().register(app: homeTunnel)
 }

@@ -152,12 +152,13 @@ public enum HomeDeviceProxy {
     }
 
     /// Member mTLS (or This Device loopback) URL for VNC / serial console.
-    /// Ticket stays in the query string and is consumed on the owning Device.
+    /// Only the Device ticket is forwarded; Home `session=` stays on Home.
     public static func consoleTargetURL(_ target: HomeConsoleTarget) throws -> URL {
         let path = try memberAPIPath(components: ["vms", target.vmID, target.kind.rawValue])
+        let query = forwardedConsoleQuery(target.query)
         let http: URL
         if target.isSelf {
-            http = try localURL(port: target.localPort, path: path, query: target.query)
+            http = try localURL(port: target.localPort, path: path, query: query)
         } else {
             guard let agentHost = target.agentHost, !agentHost.isEmpty else {
                 throw BarkVisorError.badRequest("Device has no reachable address")
@@ -166,10 +167,24 @@ public enum HomeDeviceProxy {
                 host: agentHost,
                 port: target.agentPort,
                 path: path,
-                query: target.query,
+                query: query,
             )
         }
         return try webSocketURL(from: http)
+    }
+
+    /// Keep the Device ticket (`ticket=` or noVNC's `token=` rewrite). Drop
+    /// Home `session=` so it is never sent to the member.
+    public static func forwardedConsoleQuery(_ query: String?) -> String? {
+        guard let query, !query.isEmpty else { return nil }
+        var parts = URLComponents()
+        parts.percentEncodedQuery = query
+        let items = parts.queryItems ?? []
+        let ticket = items.first { $0.name.lowercased() == "ticket" }?.value
+            ?? items.first { $0.name.lowercased() == "token" }?.value
+        guard let ticket, !ticket.isEmpty else { return nil }
+        parts.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        return parts.percentEncodedQuery
     }
 }
 

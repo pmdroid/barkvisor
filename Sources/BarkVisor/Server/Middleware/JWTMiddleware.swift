@@ -189,33 +189,42 @@ struct JWTAuthMiddleware: AsyncMiddleware {
     }
 }
 
-/// Home VNC/console tunnel: session JWT from Bearer or `?token=`.
-/// Does **not** consume `?ticket=` — that value is forwarded to the owning Device.
+/// Home VNC/console tunnel: Bearer JWT or a Home-minted `?session=` ticket.
+/// Does **not** consume `?ticket=` / `?token=` — those are the Device ticket
+/// (noVNC rewrites `ticket` to `token`). Browser WebSockets cannot set
+/// `Authorization`, so the SPA exchanges the JWT for `session=` first.
 struct HomeTunnelAuthMiddleware: AsyncMiddleware {
     let keys: JWTKeyCollection
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
-        let raw: String
         if let auth = request.headers.bearerAuthorization {
-            raw = auth.token
-        } else if let token = request.query[String.self, at: "token"], !token.isEmpty {
-            raw = token
-        } else {
-            throw Abort(.unauthorized, reason: "Missing authorization")
+            let payload: UserPayload
+            do {
+                payload = try await keys.verify(auth.token, as: UserPayload.self)
+            } catch {
+                throw Abort(.unauthorized, reason: "Invalid or expired token")
+            }
+            request.authenticatedUser = AuthenticatedUser(
+                userId: payload.sub.value,
+                username: payload.username,
+                authMethod: "jwt",
+                apiKeyId: nil,
+            )
+            return try await next.respond(to: request)
         }
-        let payload: UserPayload
-        do {
-            payload = try await keys.verify(raw, as: UserPayload.self)
-        } catch {
-            throw Abort(.unauthorized, reason: "Invalid or expired token")
+        if let session = request.query[String.self, at: "session"], !session.isEmpty {
+            guard let userInfo = await WebSocketTicketStore.shared.validateTicket(session) else {
+                throw Abort(.unauthorized, reason: "Invalid or expired session")
+            }
+            request.authenticatedUser = AuthenticatedUser(
+                userId: userInfo.userID,
+                username: userInfo.username,
+                authMethod: "ticket",
+                apiKeyId: nil,
+            )
+            return try await next.respond(to: request)
         }
-        request.authenticatedUser = AuthenticatedUser(
-            userId: payload.sub.value,
-            username: payload.username,
-            authMethod: "jwt",
-            apiKeyId: nil,
-        )
-        return try await next.respond(to: request)
+        throw Abort(.unauthorized, reason: "Missing authorization")
     }
 }

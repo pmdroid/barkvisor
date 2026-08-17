@@ -6,7 +6,7 @@ import { getWSTicket } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { copyGuestText, readLocalClipboard, textFromPasteEvent } from '../utils/vncClipboard'
 import { consoleSocketPath, consoleSocketQuery, vncWindowPath } from '../utils/consoleHome'
-import type { DeviceApiTarget } from '../utils/homeDeviceApi'
+import { isSelfDevice, type DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const props = withDefaults(
   defineProps<{
@@ -65,8 +65,12 @@ async function connect() {
 
   status.value = 'connecting'
   let ticket: string
+  let session: string | undefined
   try {
     ticket = await getWSTicket(props.vmId, props.device)
+    if (props.device && !isSelfDevice(props.device)) {
+      session = await getWSTicket()
+    }
   } catch {
     status.value = 'ticket failed'
     return
@@ -78,7 +82,7 @@ async function connect() {
 
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws'
   const path = consoleSocketPath(props.device, props.vmId, 'vnc')
-  const url = `${wsProto}://${location.host}/api${path}?${consoleSocketQuery(ticket, props.device)}`
+  const url = `${wsProto}://${location.host}/api${path}?${consoleSocketQuery(ticket, session)}`
   rfb = new RFB(canvasEl.value, url, { credentials: { password: '' } })
   applyPerfSettings(rfb)
 
