@@ -10,18 +10,22 @@ export const useMetricsStore = defineStore('metrics', () => {
   const samples = ref<MetricSample[]>([])
   const stream = useTicketedEventSource()
   let pollTimer: number | undefined
+  let historyGen = 0
 
   async function loadHistory(path: string) {
+    const gen = ++historyGen
     try {
       const { data } = await api.get<MetricSample[]>(path, { params: { minutes: 30 } })
+      if (gen !== historyGen) return
       samples.value = Array.isArray(data) ? data : []
     } catch {
-      samples.value = []
+      /* keep last successful snapshot */
     }
   }
 
   function connect(vmId: string, device?: DeviceApiTarget | null) {
     disconnect()
+    historyGen++
     samples.value = []
 
     if (device && shouldPollDeviceControl(device)) {

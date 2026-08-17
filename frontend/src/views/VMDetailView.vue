@@ -258,44 +258,68 @@ const additionalDiskDetails = computed(() => {
 // Images (for ISO name lookup)
 const allImages = ref<Image[]>([])
 
+function resetMemberInventory() {
+  memberDisks.value = []
+  memberDiskUsages.value = {}
+  memberNetworks.value = []
+  memberImages.value = []
+  memberCaps.value = null
+  hostUSBDevices.value = []
+}
+
 async function fetchMemberInventory() {
   const device = memberDevice.value
-  if (!device || !canFetchDeviceWorkloads(device)) return
+  if (!device || !canFetchDeviceWorkloads(device)) {
+    resetMemberInventory()
+    return
+  }
+  const host = device.hostId
+  const stillThisDevice = () => memberDevice.value?.hostId === host
   const disksPath = disksInventoryFetchPath(device)
   const netsPath = networksInventoryFetchPath(device)
   const usbPath = usbInventoryFetchPath(device)
   await Promise.all([
     disksPath
       ? api.get<Disk[]>(disksPath).then(({ data }) => {
+          if (!stillThisDevice()) return
           memberDisks.value = Array.isArray(data) ? data : []
         }).catch(() => {})
       : Promise.resolve(),
     netsPath
       ? api.get<Network[]>(netsPath).then(({ data }) => {
+          if (!stillThisDevice()) return
           memberNetworks.value = Array.isArray(data) ? data : []
         }).catch(() => {})
       : Promise.resolve(),
     usbPath
       ? api.get<HostUSBDevice[]>(usbPath).then(({ data }) => {
+          if (!stillThisDevice()) return
           hostUSBDevices.value = Array.isArray(data) ? data : []
-        }).catch(() => { hostUSBDevices.value = [] })
+        }).catch(() => {
+          if (!stillThisDevice()) return
+          hostUSBDevices.value = []
+        })
       : Promise.resolve(),
     api.get(deviceCapabilitiesPath(device)).then(({ data }) => {
+      if (!stillThisDevice()) return
       memberCaps.value = parseSystemCapabilities(data)
     }).catch(() => {}),
     api.get<Image[]>(devicePath(device, '/images')).then(({ data }) => {
+      if (!stillThisDevice()) return
       memberImages.value = Array.isArray(data) ? data : []
     }).catch(() => {}),
   ])
+  if (!stillThisDevice()) return
   const vmDiskIds = [vm.value?.bootDiskId, ...(vm.value?.additionalDiskIds || [])].filter(Boolean) as string[]
   if (!vmDiskIds.length) return
-  const next: Record<string, DiskUsage> = { ...memberDiskUsages.value }
+  const next: Record<string, DiskUsage> = {}
   await Promise.all(vmDiskIds.map(async (id) => {
     try {
       const { data } = await api.get<DiskUsage>(deviceDiskUsagePath(device, id))
       next[id] = data
     } catch { /* ignore per-disk usage failures */ }
   }))
+  if (!stillThisDevice()) return
   memberDiskUsages.value = next
 }
 
@@ -680,6 +704,7 @@ onMounted(() => {
 
 watch([vmId, hostId], ([newId, newHost], [oldId, oldHost]) => {
   if (newId !== oldId || newHost !== oldHost) {
+    if (newHost !== oldHost) resetMemberInventory()
     void loadVMDetail()
   }
 })
@@ -800,6 +825,10 @@ async function doRemoveSharedPath() {
 }
 
 function openEditModal() {
+  if (isMemberDetail.value && editCpuMax.value == null) {
+    toast.info('Waiting for Device capabilities')
+    return
+  }
   const current = vm.value?.cpuCount || 1
   const max = editCpuMax.value
   const cpu = max ? Math.min(Math.max(1, current), max) : Math.max(1, current)
@@ -814,6 +843,10 @@ function openEditModal() {
 }
 
 async function saveEdit() {
+  if (isMemberDetail.value && editCpuMax.value == null) {
+    toast.error('Device capabilities not loaded')
+    return
+  }
   editSaving.value = true
   try {
     const rawCpu = Math.max(1, Math.trunc(editDraft.value.cpuCount))
@@ -824,7 +857,7 @@ async function saveEdit() {
       cpuCount: cpu,
       memoryMB: editDraft.value.memoryMB,
       bootOrder: editDraft.value.bootOrder,
-      ...(editDraft.value.networkId ? { networkId: editDraft.value.networkId } : {}),
+      networkId: editDraft.value.networkId || vm.value?.networkId || null,
     } as any)
     showEditModal.value = false
     await refreshWorkload()
@@ -984,7 +1017,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
           <div></div>
-          <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openEditModal">Edit Settings</AppButton>
+          <AppButton size="sm" :disabled="isMemberDetail && (!memberReachable || !editCpuMax)" @click="openEditModal">Edit Settings</AppButton>
         </div>
         <div class="detail-grid">
           <div class="detail-row">
