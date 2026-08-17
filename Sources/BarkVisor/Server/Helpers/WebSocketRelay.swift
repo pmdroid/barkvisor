@@ -24,16 +24,21 @@ final class WebSocketPipeBox: @unchecked Sendable {
     private(set) var overflowed = false
 
     func attach(_ ws: WebSocket) {
-        let buffered: [Frame] = {
-            lock.lock()
-            defer { lock.unlock() }
-            remote = ws
-            let frames = pending
-            pending.removeAll()
-            return frames
-        }()
-        for frame in buffered {
-            WebSocketRelay.send(frame, on: ws)
+        while true {
+            let batch: [Frame] = {
+                lock.lock()
+                defer { lock.unlock() }
+                let frames = pending
+                pending.removeAll()
+                if frames.isEmpty {
+                    remote = ws
+                }
+                return frames
+            }()
+            guard !batch.isEmpty else { return }
+            for frame in batch {
+                sendLive(frame, on: ws)
+            }
         }
     }
 
@@ -57,9 +62,35 @@ final class WebSocketPipeBox: @unchecked Sendable {
             return (nil, true)
         }()
         if let ws = outcome.0 {
-            WebSocketRelay.send(frame, on: ws)
+            return sendLive(frame, on: ws)
         }
         return outcome.1
+    }
+
+    /// Reserve against the same cap after attach; release when the write completes.
+    @discardableResult
+    private func sendLive(_ frame: Frame, on ws: WebSocket) -> Bool {
+        let size = Self.byteCount(frame)
+        let reserved: Bool = {
+            lock.lock()
+            defer { lock.unlock() }
+            if overflowed { return false }
+            if remote != nil, pendingBytes + size > maxPendingBytes {
+                overflowed = true
+                return false
+            }
+            if remote != nil {
+                pendingBytes += size
+            }
+            return true
+        }()
+        guard reserved else { return false }
+        WebSocketRelay.send(frame, on: ws) { [self] in
+            lock.lock()
+            pendingBytes = max(0, pendingBytes - size)
+            lock.unlock()
+        }
+        return true
     }
 
     private static func byteCount(_ frame: Frame) -> Int {
@@ -99,14 +130,25 @@ enum WebSocketRelay {
         }
     }
 
-    static func send(_ frame: WebSocketPipeBox.Frame, on ws: WebSocket) {
+    static func send(
+        _ frame: WebSocketPipeBox.Frame,
+        on ws: WebSocket,
+        completed: (@Sendable () -> Void)? = nil,
+    ) {
         onEventLoop(ws) {
-            guard !ws.isClosed else { return }
+            guard !ws.isClosed else {
+                completed?()
+                return
+            }
+            let promise = ws.eventLoop.makePromise(of: Void.self)
+            promise.futureResult.whenComplete { _ in
+                completed?()
+            }
             switch frame {
             case let .binary(buffer):
-                ws.send(raw: buffer.readableBytesView, opcode: .binary, fin: true, promise: nil)
+                ws.send(raw: buffer.readableBytesView, opcode: .binary, fin: true, promise: promise)
             case let .text(text):
-                ws.send(text)
+                ws.send(text, promise: promise)
             }
         }
     }

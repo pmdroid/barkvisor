@@ -35,9 +35,7 @@ async function refresh() {
   if (!vmId.value) return
   try {
     if (hostId.value) {
-      if (!devicesStore.devices.length) {
-        await devicesStore.fetchHealth()
-      }
+      await devicesStore.fetchHealth()
       const target = devicesStore.deviceByHostId(hostId.value)
       if (!target) {
         error.value = 'Device not found'

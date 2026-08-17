@@ -46,7 +46,7 @@ async function connect() {
   try {
     ticket = await getWSTicket(props.vmId, props.device)
     if (props.device && !isSelfDevice(props.device)) {
-      session = await getWSTicket()
+      session = await getWSTicket(props.vmId)
     }
   } catch (e: any) {
     status.value = `Ticket failed: ${apiErrorMessage(e)}`

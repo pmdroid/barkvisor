@@ -130,6 +130,8 @@ struct HomeConsoleProxyController {
 }
 
 enum HomeConsoleProxy {
+    /// Presence only. The owning Device spends `ticket`/`token` on its store;
+    /// Home must not validate that value (it would consume the wrong ticket).
     static func requireTicket(_ req: Vapor.Request) throws {
         let ticket = req.query[String.self, at: "ticket"] ?? req.query[String.self, at: "token"]
         guard let ticket, !ticket.isEmpty else {
