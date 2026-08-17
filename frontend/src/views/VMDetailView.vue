@@ -68,6 +68,7 @@ import {
   networksInventoryFetchPath,
   usbInventoryFetchPath,
 } from '../utils/editHome'
+import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
@@ -110,6 +111,9 @@ const memberReachable = computed(() => {
   const device = memberDevice.value
   return Boolean(device && canFetchDeviceWorkloads(device))
 })
+const showMemberConnect = computed(() => (
+  !isMemberDetail.value || canConnectDeviceConsole(memberDevice.value)
+))
 const tab = ref((route.query.tab as string) || 'overview')
 
 /** Open VNC in a dedicated resizable window (toolbar button, not tab side-effect). */
@@ -118,12 +122,13 @@ function openVncWindow() {
     toast.info('VM must be running to open VNC')
     return
   }
+  if (isMemberDetail.value && !showMemberConnect.value) return
   const w = Math.min(1400, screen.availWidth - 40)
   const h = Math.min(900, screen.availHeight - 60)
   const left = Math.max(0, Math.floor((screen.availWidth - w) / 2))
   const top = Math.max(0, Math.floor((screen.availHeight - h) / 2))
   window.open(
-    `/vms/${vmId.value}/vnc`,
+    vncWindowPath(isMemberDetail.value ? memberDevice.value : undefined, vmId.value),
     `barkvisor-vnc-${vmId.value}`,
     `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no`,
   )
@@ -138,6 +143,7 @@ const vm = computed(() => {
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
+  if ((value === 'console' || value === 'vnc') && !showMemberConnect.value) return false
   if (!vm.value) return true
   return memberControlTabAllowed(value, vm.value.state)
 }
@@ -1005,7 +1011,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
         <AppButton
-          v-if="!isMemberDetail && (vm.state === 'running' || vm.state === 'stopping')"
+          v-if="showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
           title="Open VNC in a new resizable window"
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
@@ -1024,6 +1030,8 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
+      <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
+      <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
@@ -1384,8 +1392,20 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
     </div>
 
-    <ConsolePanel v-if="!isMemberDetail && tab === 'console'" :key="`console-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
-    <VNCPanel v-if="!isMemberDetail && tab === 'vnc'" :key="`vnc-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
+    <ConsolePanel
+      v-if="tab === 'console' && showMemberConnect"
+      :key="`console-${vmId}-${isMemberDetail ? hostId : 'local'}`"
+      :vm-id="vmId"
+      :vm-state="vm.state"
+      :device="isMemberDetail ? memberDevice : undefined"
+    />
+    <VNCPanel
+      v-if="tab === 'vnc' && showMemberConnect"
+      :key="`vnc-${vmId}-${isMemberDetail ? hostId : 'local'}`"
+      :vm-id="vmId"
+      :vm-state="vm.state"
+      :device="isMemberDetail ? memberDevice : undefined"
+    />
     <MetricsPanel
       v-if="tab === 'metrics' && vm.state === 'running'"
       :key="`metrics-${vmId}-${isMemberDetail ? hostId : 'local'}`"

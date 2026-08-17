@@ -26,8 +26,84 @@ struct AgentLocalProxyController: RouteCollection {
         }
     }
 
+    /// Member-side hop: mTLS `:7778` → This Device host API unix-backed WS.
+    func registerConsoleTunnels(app: Vapor.Application) {
+        registerConsoleTunnel(app: app, kind: .vnc)
+        registerConsoleTunnel(app: app, kind: .console)
+    }
+
+    private func registerConsoleTunnel(app: Vapor.Application, kind: HomeConsoleKind) {
+        let localPort = localPort
+        app.webSocket(
+            "api", "vms", ":id", .constant(kind.rawValue),
+            shouldUpgrade: { req in
+                // Client cert is required by the agent-plane mTLS listener.
+                try HomeConsoleProxy.requireTicket(req)
+                return [:]
+            },
+            onUpgrade: { req, inbound in
+                await Self.tunnelToLocal(
+                    req: req,
+                    inbound: inbound,
+                    kind: kind,
+                    localPort: localPort,
+                )
+            },
+        )
+    }
+
+    private static func tunnelToLocal(
+        req: Vapor.Request,
+        inbound: WebSocket,
+        kind: HomeConsoleKind,
+        localPort: Int,
+    ) async {
+        let eventLoop = inbound.eventLoop
+        let box = WebSocketPipeBox()
+        WebSocketRelay.onEventLoop(inbound) {
+            inbound.onBinary { _, buffer in
+                box.sendOrBuffer(.binary(buffer))
+            }
+            inbound.onText { _, text in
+                box.sendOrBuffer(.text(text))
+            }
+        }
+        guard let vmID = req.parameters.get("id") else {
+            WebSocketRelay.close(inbound)
+            return
+        }
+        let url: URL
+        do {
+            url = try HomeDeviceProxy.consoleTargetURL(
+                HomeConsoleTarget(
+                    isSelf: true,
+                    localPort: localPort,
+                    agentHost: nil,
+                    agentPort: localPort,
+                    vmID: vmID,
+                    kind: kind,
+                    query: req.url.query,
+                ),
+            )
+        } catch {
+            WebSocketRelay.close(inbound)
+            return
+        }
+        do {
+            let remote = try await HomeWebSocketDialer.open(url: url, on: eventLoop)
+            box.attach(remote)
+            WebSocketRelay.pipe(local: inbound, remote: remote)
+        } catch {
+            Log.server.error(
+                "Agent console tunnel failed: \(error.localizedDescription)",
+            )
+            WebSocketRelay.close(inbound)
+        }
+    }
+
     @Sendable
     func forward(req: Vapor.Request) async throws -> Response {
+        try HomeConsoleProxy.rejectStrippedUpgrade(req)
         let peer = try requirePeer(req)
         let path = try HomeDeviceProxy.normalizedAPIPath(req.url.path)
         if path == "/api/agent/whoami" {

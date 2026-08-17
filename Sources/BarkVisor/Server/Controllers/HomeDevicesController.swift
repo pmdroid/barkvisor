@@ -126,6 +126,7 @@ struct HomeDevicesController: RouteCollection {
     @Sendable
     func proxy(req: Vapor.Request) async throws -> Response {
         _ = try req.requireUser
+        try HomeConsoleProxy.rejectStrippedUpgrade(req)
         let id = try req.parameters.require("id")
         let remainder = req.parameters.getCatchall()
         let path = try HomeDeviceProxy.memberAPIPath(components: remainder)

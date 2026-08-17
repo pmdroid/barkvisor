@@ -22,6 +22,12 @@ const router = createRouter({
       component: () => import('../views/VNCWindowView.vue'),
       meta: { bare: true },
     },
+    {
+      path: '/devices/:hostId/vms/:id/vnc',
+      name: 'device-vm-vnc',
+      component: () => import('../views/VNCWindowView.vue'),
+      meta: { bare: true },
+    },
     { path: '/images', name: 'images', component: () => import('../views/ImageLibraryView.vue') },
     { path: '/disks', name: 'disks', component: () => import('../views/DiskView.vue') },
     { path: '/networks', name: 'networks', component: () => import('../views/NetworkView.vue') },

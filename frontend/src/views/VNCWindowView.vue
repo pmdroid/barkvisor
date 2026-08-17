@@ -3,14 +3,27 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import VNCPanel from '../components/VNCPanel.vue'
 import { useVMStore } from '../stores/vms'
+import { useDevicesStore } from '../stores/devices'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import type { VM } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
+import { canConnectDeviceConsole } from '../utils/consoleHome'
+import { isSelfDevice } from '../utils/homeDeviceApi'
 
 const route = useRoute()
 const router = useRouter()
 const store = useVMStore()
+const devicesStore = useDevicesStore()
+const homeWorkloads = useDeviceWorkloadsStore()
 
 const vmId = computed(() => String(route.params.id || ''))
+const hostId = computed(() => route.params.hostId ? String(route.params.hostId) : '')
+const device = computed(() => (
+  hostId.value ? devicesStore.deviceByHostId(hostId.value) : null
+))
+const memberDevice = computed(() => (
+  device.value && !isSelfDevice(device.value) ? device.value : null
+))
 const loading = ref(true)
 const error = ref('')
 const vm = ref<VM | null>(null)
@@ -21,6 +34,28 @@ const vmState = computed(() => vm.value?.state || 'unknown')
 async function refresh() {
   if (!vmId.value) return
   try {
+    if (hostId.value) {
+      if (!devicesStore.devices.length) {
+        await devicesStore.fetchHealth()
+      }
+      const target = devicesStore.deviceByHostId(hostId.value)
+      if (target && !isSelfDevice(target)) {
+        if (!canConnectDeviceConsole(target)) {
+          error.value = 'This Device did not answer. Connect is hidden until it is reachable.'
+          vm.value = null
+          return
+        }
+        await homeWorkloads.refreshOne(target, vmId.value)
+        vm.value = homeWorkloads.vmFor(hostId.value, vmId.value) ?? null
+        if (!vm.value) {
+          error.value = 'Workload not found on that Device'
+          return
+        }
+        error.value = ''
+        document.title = vm.value.name ? `${vm.value.name} — VNC` : 'VNC — BarkVisor'
+        return
+      }
+    }
     vm.value = await store.fetchOne(vmId.value)
     error.value = ''
     document.title = vm.value?.name ? `${vm.value.name} — VNC` : 'VNC — BarkVisor'
@@ -41,6 +76,10 @@ onUnmounted(() => {
 })
 
 function backToDetail() {
+  if (hostId.value) {
+    router.push(`/devices/${encodeURIComponent(hostId.value)}/vms/${vmId.value}?tab=vnc`)
+    return
+  }
   router.push(`/vms/${vmId.value}?tab=vnc`)
 }
 </script>
@@ -56,6 +95,7 @@ function backToDetail() {
       v-else
       :vm-id="vmId"
       :vm-state="vmState"
+      :device="memberDevice"
       fill
       performance-mode
     />

@@ -177,3 +177,16 @@ export function deviceInterfacesPath(device: DeviceApiTarget): string {
 export function deviceBridgesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/bridges')
 }
+
+/** Mint the WS ticket on the owning Device (This Device or member via Home). */
+export function deviceWsTicketPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/auth/ws-ticket')
+}
+
+export function deviceVmVncPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/vnc`
+}
+
+export function deviceVmConsolePath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/console`
+}

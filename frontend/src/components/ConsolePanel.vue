@@ -4,8 +4,10 @@ import { ref, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
 import { Terminal, type WTerm } from '@wterm/vue'
 import '@wterm/vue/css'
 import { getWSTicket } from '../api/client'
+import { consoleSocketPath } from '../utils/consoleHome'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
-const props = defineProps<{ vmId: string; vmState: string }>()
+const props = defineProps<{ vmId: string; vmState: string; device?: DeviceApiTarget | null }>()
 
 const isAlive = () => props.vmState === 'running' || props.vmState === 'stopping'
 
@@ -41,7 +43,7 @@ async function connect() {
   status.value = 'Requesting ticket...'
   let ticket: string
   try {
-    ticket = await getWSTicket(props.vmId)
+    ticket = await getWSTicket(props.vmId, props.device)
   } catch (e: any) {
     status.value = `Ticket failed: ${apiErrorMessage(e)}`
     return
@@ -49,7 +51,8 @@ async function connect() {
 
   status.value = 'Connecting WebSocket...'
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws'
-  ws = new WebSocket(`${wsProto}://${location.host}/api/vms/${props.vmId}/console?ticket=${ticket}`)
+  const path = consoleSocketPath(props.device, props.vmId, 'console')
+  ws = new WebSocket(`${wsProto}://${location.host}/api${path}?ticket=${ticket}`)
   ws.binaryType = 'arraybuffer'
 
   ws.onopen = () => {
