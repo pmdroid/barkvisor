@@ -80,6 +80,14 @@ describe('guestHome (PAS-201)', () => {
     expect(guestPrimaryIp(ubuntu)).toBe('10.0.0.12')
     expect(guestPrimaryIp(null)).toBeNull()
     expect(guestPrimaryIp({ ...ubuntu, ipAddresses: [] })).toBeNull()
+    expect(guestPrimaryIp({
+      ...ubuntu,
+      available: false,
+      ipAddresses: ['10.0.2.15'],
+      ipSource: 'nat-default',
+      osName: null,
+      osVersion: null,
+    })).toBeNull()
     expect(guestServiceLabel('10.0.0.12', 22)).toBe('10.0.0.12:22')
     expect(guestServiceLabel('10.0.0.12', 80)).toBe('10.0.0.12')
     expect(guestServiceHref('10.0.0.12', 443)).toBe('https://10.0.0.12')
@@ -126,6 +134,29 @@ describe('guestHome (PAS-201)', () => {
       guest: null,
       portForwards: [],
     })).toEqual({ kind: 'empty' })
+
+    const natPlaceholder: GuestInfo = {
+      ...ubuntu,
+      available: false,
+      ipAddresses: ['10.0.2.15'],
+      ipSource: 'nat-default',
+      osName: null,
+      osVersion: null,
+    }
+    expect(guestIpPortsView({
+      reachable: true,
+      isMember: true,
+      isLocalNat: true,
+      guest: natPlaceholder,
+      portForwards: [sshForward],
+    })).toEqual({ kind: 'port-map', labels: ['2222→22'] })
+    expect(guestIpPortsView({
+      reachable: true,
+      isMember: true,
+      isLocalNat: true,
+      guest: natPlaceholder,
+      portForwards: [],
+    })).toEqual({ kind: 'empty' })
   })
 
   test('self NAT still shows localhost host ports; bridged uses guest IP', () => {
@@ -159,6 +190,8 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).toContain('guestInfoFetchPath')
     expect(list).toContain('guestIpPortsView')
     expect(detail).toContain('guestOsLabel')
+    expect(detail).toContain('{{ memberOsLabel }}')
+    expect(detail).not.toContain('v-if="guestInfo?.osName"')
     expect(list).not.toMatch(/api\.get\(`\/vms\/\$\{[^}]+}\/guest-info`\)/)
     expect(detail).not.toMatch(/api\.get\(`\/vms\/\$\{[^}]+}\/guest-info`\)/)
     expect(detail).not.toMatch(/if \(isMemberDetail\.value\) \{ guestInfo\.value = null; return \}/)
