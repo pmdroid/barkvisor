@@ -153,6 +153,7 @@ watch(isMemberDetail, (remote) => {
 }, { immediate: true })
 
 watch(showMemberConnect, (ok) => {
+  if (!isMemberDetail.value || !memberDevice.value) return
   if (!ok && (tab.value === 'console' || tab.value === 'vnc')) tab.value = 'overview'
 })
 

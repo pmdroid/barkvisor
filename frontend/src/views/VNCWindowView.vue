@@ -106,6 +106,7 @@ function backToDetail() {
     </div>
     <VNCPanel
       v-else
+      :key="`${hostId}-${vmId}`"
       :vm-id="vmId"
       :vm-state="vmState"
       :device="memberDevice"

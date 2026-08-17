@@ -1250,6 +1250,34 @@ paths:
         "101":
           description: Switching Protocols
 
+  /api/home/devices/{id}/v1/vms/{vmId}/console:
+    get:
+      tags: [out-of-band]
+      operationId: homeDeviceVmConsole
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Home tunnel serial console (`?ticket=` + `?session=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - $ref: "#/components/parameters/vmId"
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/home/devices/{id}/v1/vms/{vmId}/vnc:
+    get:
+      tags: [out-of-band]
+      operationId: homeDeviceVmVNC
+      x-barkvisor-stability: out-of-band
+      x-barkvisor-transport: websocket
+      summary: Home tunnel VNC (`?ticket=` + `?session=`)
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - $ref: "#/components/parameters/vmId"
+      responses:
+        "101":
+          description: Switching Protocols
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1260,6 +1288,12 @@ components:
   parameters:
     id:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    vmId:
+      name: vmId
       in: path
       required: true
       schema:
