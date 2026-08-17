@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Display</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111417; overflow: hidden; }
+    #screen { position: absolute; inset: 0; }
+  </style>
+</head>
+<body>
+  <div id="screen"></div>
+  <script type="module">
+    import RFB from "./core/rfb.js";
+
+    let rfb = null;
+
+    function post(payload) {
+      try {
+        window.webkit.messageHandlers.novnc.postMessage(payload);
+      } catch (_) {
+        /* native host not attached */
+      }
+    }
+
+    window.startVNC = (url) => {
+      if (rfb) {
+        try { rfb.disconnect(); } catch (_) { /* ignore */ }
+        rfb = null;
+      }
+      try {
+        rfb = new RFB(document.getElementById("screen"), url, {
+          credentials: { password: "" }
+        });
+      } catch (_) {
+        post({ type: "disconnect", clean: false });
+        return;
+      }
+      rfb.scaleViewport = true;
+      rfb.resizeSession = true;
+      rfb.focusOnClick = true;
+      rfb.qualityLevel = 4;
+      rfb.compressionLevel = 2;
+      rfb.addEventListener("connect", () => {
+        const width = rfb._fbWidth || 0;
+        const height = rfb._fbHeight || 0;
+        post({ type: "connect", width, height });
+        try { rfb.focus(); } catch (_) { /* ignore */ }
+      });
+      rfb.addEventListener("disconnect", (event) => {
+        const clean = !!(event && event.detail && event.detail.clean);
+        post({ type: "disconnect", clean });
+        rfb = null;
+      });
+    };
+
+    window.sendCtrlAltDel = () => {
+      if (rfb) rfb.sendCtrlAltDel();
+    };
+
+    window.focusVNC = () => {
+      if (rfb) rfb.focus();
+    };
+
+    window.stopVNC = () => {
+      if (!rfb) return;
+      try { rfb.disconnect(); } catch (_) { /* ignore */ }
+      rfb = null;
+    };
+
+    post({ type: "ready" });
+  </script>
+</body>
+</html>
