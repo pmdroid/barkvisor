@@ -140,16 +140,20 @@ function sendTextToGuest(text: string) {
 }
 
 async function pasteFromComputer() {
-  const text = await readLocalClipboard()
-  if (text == null) {
+  const result = await readLocalClipboard()
+  if (result.status === 'unsupported') {
+    toast.error('Clipboard API unavailable — press ⌘V / Ctrl+V in the display')
+    return
+  }
+  if (result.status === 'denied') {
     toast.error('Clipboard permission denied — press ⌘V / Ctrl+V in the display')
     return
   }
-  if (!text) {
+  if (!result.text) {
     toast.info('Clipboard is empty')
     return
   }
-  sendTextToGuest(text)
+  sendTextToGuest(result.text)
 }
 
 async function copyLastGuest() {
@@ -163,11 +167,7 @@ async function copyLastGuest() {
 }
 
 function onPaste(event: ClipboardEvent) {
-  if (!rfb || status.value !== 'connected' || !canvasEl.value) return
-  const root = canvasEl.value.closest('.vnc-root')
-  if (root && !root.contains(event.target as Node) && document.activeElement !== document.body) {
-    return
-  }
+  if (!rfb || status.value !== 'connected') return
   const text = textFromPasteEvent(event)
   if (!text) return
   event.preventDefault()
@@ -175,7 +175,6 @@ function onPaste(event: ClipboardEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener('paste', onPaste, true)
   connect()
 })
 
@@ -188,7 +187,6 @@ watch(() => props.vmState, () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('paste', onPaste, true)
   if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null }
   try { rfb?.disconnect() } catch { /* ignore */ }
   rfb = null
@@ -199,7 +197,7 @@ onUnmounted(() => {
   <div v-if="vmState !== 'running' && vmState !== 'stopping'" class="empty">
     VM must be running to use VNC
   </div>
-  <div v-else class="vnc-root" :class="{ fill }">
+  <div v-else class="vnc-root" :class="{ fill }" @paste.capture="onPaste">
     <div class="vnc-toolbar">
       <span class="vnc-status">VNC: {{ statusLabel }}</span>
       <div class="vnc-actions">

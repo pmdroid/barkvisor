@@ -11,13 +11,18 @@ export async function copyGuestText(text: string): Promise<boolean> {
   }
 }
 
+export type LocalClipboardRead =
+  | { status: 'ok'; text: string }
+  | { status: 'unsupported' }
+  | { status: 'denied' }
+
 /** This computer → guest: read the system clipboard (needs a user gesture). */
-export async function readLocalClipboard(): Promise<string | null> {
-  if (!navigator.clipboard?.readText) return null
+export async function readLocalClipboard(): Promise<LocalClipboardRead> {
+  if (!navigator.clipboard?.readText) return { status: 'unsupported' }
   try {
-    return await navigator.clipboard.readText()
+    return { status: 'ok', text: await navigator.clipboard.readText() }
   } catch {
-    return null
+    return { status: 'denied' }
   }
 }
 
