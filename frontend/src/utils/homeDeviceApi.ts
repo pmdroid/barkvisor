@@ -86,6 +86,10 @@ export function deviceVmSpecPath(device: DeviceApiTarget, vmId: string): string 
   return `${deviceVmPath(device, vmId)}/spec`
 }
 
+export function deviceGuestInfoPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/guest-info`
+}
+
 export function deviceTemplatesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/templates')
 }
