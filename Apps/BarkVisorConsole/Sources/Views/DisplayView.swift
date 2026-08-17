@@ -12,7 +12,7 @@ struct DisplayView: View {
     var body: some View {
         VStack(spacing: 0) {
             if access.allowsOpen {
-                NoVNCWebView(session: session)
+                NoVNCWebView(session: session, pendingScript: session.pendingScript)
                     .background(Color.black)
             } else {
                 ContentUnavailableView(
@@ -48,7 +48,7 @@ struct DisplayView: View {
                 }
             }
         #endif
-        .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
+        .task(id: WorkloadStream.sessionTaskID(deviceID: deviceID, workloadID: workloadID, state: workload.state)) {
             guard let client = model.client, access.allowsOpen else {
                 session.stop()
                 return
@@ -98,8 +98,7 @@ final class DisplaySession {
     private var stopped = true
     private var attempt = 0
     private var loop: Task<Void, Never>?
-    private var waitForDisconnect: CheckedContinuation<Void, Never>?
-    private var connectTimeout: Task<Void, Never>?
+    private var waitingForDisconnect = false
 
     var statusLabel: String {
         if connected, !desktopSize.isEmpty { return "VNC · \(desktopSize)" }
@@ -120,11 +119,32 @@ final class DisplaySession {
     func updateState(_ state: String) {
         self.state = state
         if !WorkloadStream.isLive(state) {
+            loop?.cancel()
+            loop = nil
             pendingScript = "window.stopVNC && window.stopVNC()"
             connected = false
             desktopSize = ""
             status = WorkloadStreamAccess.notLive.reason
+            waitingForDisconnect = false
         }
+    }
+
+    /// Ticket may be used only while this session is still the live stream.
+    func canOpenStream() -> Bool {
+        !stopped && WorkloadStream.isLive(state)
+    }
+
+    /// Test seam: apply a live/not-live state without minting a ticket.
+    func primeForTest(state: String) {
+        self.state = state
+        stopped = false
+    }
+
+    /// Hands the queued script to the web view. Tests use this as the execute path.
+    func consumePendingScript() -> String? {
+        guard pageReady, let script = pendingScript else { return nil }
+        pendingScript = nil
+        return script
     }
 
     func stop() {
@@ -132,7 +152,7 @@ final class DisplaySession {
         loop?.cancel()
         loop = nil
         pendingScript = "window.stopVNC && window.stopVNC()"
-        resumeDisconnectWaiter()
+        waitingForDisconnect = false
         connected = false
         desktopSize = ""
         if status == "connected" || status == "connecting" {
@@ -157,8 +177,6 @@ final class DisplaySession {
             connected = true
             attempt = 0
             status = "connected"
-            connectTimeout?.cancel()
-            connectTimeout = nil
             let width = payload["width"] as? Int ?? 0
             let height = payload["height"] as? Int ?? 0
             desktopSize = width > 0 && height > 0 ? "\(width)×\(height)" : ""
@@ -166,7 +184,7 @@ final class DisplaySession {
             connected = false
             desktopSize = ""
             status = "disconnected"
-            resumeDisconnectWaiter()
+            waitingForDisconnect = false
         default:
             break
         }
@@ -182,6 +200,12 @@ final class DisplaySession {
             do {
                 status = "requesting ticket"
                 let ticket = try await client.createWSTicket(vmID: workloadID)
+                guard canOpenStream(), !Task.isCancelled else {
+                    if !WorkloadStream.isLive(state) {
+                        status = WorkloadStreamAccess.notLive.reason
+                    }
+                    return
+                }
                 let url = try StreamURL.vnc(base: client.baseURL, workloadID: workloadID, ticket: ticket)
                 // Ticket is allowed in the web view only — never log it.
                 let encoded = url.absoluteString.replacingOccurrences(of: "\\", with: "\\\\")
@@ -210,41 +234,31 @@ final class DisplaySession {
     }
 
     func waitUntilDisconnected() async {
-        await withCheckedContinuation { continuation in
-            waitForDisconnect = continuation
-            armConnectTimeout()
+        waitingForDisconnect = true
+        let deadline = ContinuousClock.now + Duration.nanoseconds(Int64(clamping: connectTimeoutNanoseconds))
+        while waitingForDisconnect, !Task.isCancelled {
+            if !connected, ContinuousClock.now >= deadline {
+                expireConnectWaitIfNeeded()
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(5))
         }
     }
 
     /// Resume a stuck connecting wait so the reconnect loop can retry.
     func expireConnectWaitIfNeeded() {
-        guard waitForDisconnect != nil, !connected else { return }
+        guard waitingForDisconnect, !connected else { return }
         status = "timed out"
         pendingScript = "window.stopVNC && window.stopVNC()"
-        resumeDisconnectWaiter()
-    }
-
-    private func armConnectTimeout() {
-        connectTimeout?.cancel()
-        let timeout = connectTimeoutNanoseconds
-        connectTimeout = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: timeout)
-            guard !Task.isCancelled, !stopped else { return }
-            expireConnectWaitIfNeeded()
-        }
-    }
-
-    private func resumeDisconnectWaiter() {
-        connectTimeout?.cancel()
-        connectTimeout = nil
-        waitForDisconnect?.resume()
-        waitForDisconnect = nil
+        waitingForDisconnect = false
     }
 }
 
 #if os(iOS)
 struct NoVNCWebView: UIViewRepresentable {
     var session: DisplaySession
+    /// Read in `DisplayView` so Keyboard / CAD invalidate the representable.
+    var pendingScript: String?
 
     func makeCoordinator() -> Coordinator { Coordinator(session: session) }
 
@@ -255,6 +269,7 @@ struct NoVNCWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
+        _ = pendingScript
         context.coordinator.session = session
         context.coordinator.flush(view)
     }
@@ -262,6 +277,8 @@ struct NoVNCWebView: UIViewRepresentable {
 #else
 struct NoVNCWebView: NSViewRepresentable {
     var session: DisplaySession
+    /// Read in `DisplayView` so Keyboard / CAD invalidate the representable.
+    var pendingScript: String?
 
     func makeCoordinator() -> Coordinator { Coordinator(session: session) }
 
@@ -272,6 +289,7 @@ struct NoVNCWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
+        _ = pendingScript
         context.coordinator.session = session
         context.coordinator.flush(view)
     }
@@ -316,8 +334,7 @@ final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler 
     }
 
     func flush(_ view: WKWebView) {
-        guard session.pageReady, let script = session.pendingScript else { return }
-        session.pendingScript = nil
+        guard let script = session.consumePendingScript() else { return }
         view.evaluateJavaScript(script, completionHandler: nil)
     }
 

@@ -49,7 +49,7 @@ struct SerialConsoleView: View {
                 }
             }
         #endif
-        .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
+        .task(id: WorkloadStream.sessionTaskID(deviceID: deviceID, workloadID: workloadID, state: workload.state)) {
             guard let client = model.client, access.allowsOpen else {
                 session.stop()
                 return

@@ -5,6 +5,12 @@ enum WorkloadStream {
     static func isLive(_ state: String) -> Bool {
         state == "running" || state == "stopping"
     }
+
+    /// SwiftUI `.task` identity. Running and stopping share one session so ACPI
+    /// shutdown does not mint a new ticket or reconnect.
+    static func sessionTaskID(deviceID: String, workloadID: String, state: String) -> String {
+        "\(deviceID)/\(workloadID)/\(isLive(state) ? "live" : "down")"
+    }
 }
 
 enum WorkloadStreamAccess: Equatable {
