@@ -30,6 +30,7 @@ export const useLogStore = defineStore('logs', () => {
   const tail = useTicketedEventSource()
   let pollTimer: number | undefined
   let fetchGen = 0
+  let lastFetchKey = ''
 
   async function fetchLogs(
     params: LogFetchParams = {},
@@ -37,6 +38,18 @@ export const useLogStore = defineStore('logs', () => {
   ) {
     const path = device ? logsHistoryFetchPath(device) : '/logs'
     if (device && !path) return
+    const key = JSON.stringify({
+      path: path ?? '/logs',
+      hostId: device?.hostId ?? '',
+      category: params.category ?? '',
+      level: params.level ?? '',
+      search: params.search ?? '',
+      since: params.since ?? '',
+    })
+    if (key !== lastFetchKey) {
+      lastFetchKey = key
+      fetchGen++
+    }
     const gen = fetchGen
     const showLoading = entries.value.length === 0
     if (showLoading) loading.value = true
@@ -93,6 +106,7 @@ export const useLogStore = defineStore('logs', () => {
   function clear() {
     stopTail()
     fetchGen++
+    lastFetchKey = ''
     entries.value = []
   }
 

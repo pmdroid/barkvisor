@@ -313,6 +313,7 @@ async function fetchMemberInventory() {
     }).catch(() => {}),
   ])
   if (!stillThisDevice()) return
+  memberInventoryHostId = host
   const vmDiskIds = [vm.value?.bootDiskId, ...(vm.value?.additionalDiskIds || [])].filter(Boolean) as string[]
   if (!vmDiskIds.length) return
   const next: Record<string, DiskUsage> = {}
@@ -911,6 +912,8 @@ async function doDetachDisk() {
     await refreshWorkload()
     if (isMemberDetail.value) await fetchMemberInventory()
     else await fetchDisks()
+  } catch (e: any) {
+    toast.error(apiErrorMessage(e))
   } finally {
     detaching.value = false
     confirmDetachDisk.value = null
