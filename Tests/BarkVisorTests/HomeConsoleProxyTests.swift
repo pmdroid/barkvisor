@@ -87,6 +87,20 @@ struct HomeConsoleProxyTests {
         #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("db.sqlite").path))
     }
 
+    @Test func `pre-dial buffer rejects frames over the pending cap`() {
+        let box = WebSocketPipeBox()
+        box.maxPendingBytes = 8
+        var first = ByteBufferAllocator().buffer(capacity: 4)
+        first.writeString("abcd")
+        #expect(box.sendOrBuffer(.binary(first)))
+        #expect(!box.overflowed)
+        var second = ByteBufferAllocator().buffer(capacity: 8)
+        second.writeString("12345678")
+        #expect(!box.sendOrBuffer(.binary(second)))
+        #expect(box.overflowed)
+        #expect(!box.sendOrBuffer(.text("x")))
+    }
+
     @Test func `tunnel relays binary and text to the member and back`() async throws {
         let echo = try await makeApp()
         echo.webSocket("api", "vms", ":id", "vnc") { _, ws in
@@ -113,6 +127,7 @@ struct HomeConsoleProxyTests {
                 agentHost: "127.0.0.1",
                 agentPort: echoPort,
             )
+            tunnel.middleware.use(StubHomeUserMiddleware())
             HomeConsoleProxyController(
                 dataDir: dir,
                 hostId: selfId,
@@ -149,6 +164,7 @@ struct HomeConsoleProxyTests {
         do {
             let echoPort = try boundPort(echo)
             let selfId = UUID().uuidString
+            tunnel.middleware.use(StubHomeUserMiddleware())
             try HomeConsoleProxyController(
                 dataDir: isolatedDir(),
                 hostId: selfId,

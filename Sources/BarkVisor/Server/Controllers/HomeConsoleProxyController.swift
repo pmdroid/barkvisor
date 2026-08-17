@@ -28,15 +28,16 @@ struct HomeConsoleProxyController {
         self.dialer = dialer ?? HomeWebSocketDialer(dataDir: dataDir, hostId: hostId)
     }
 
-    func register(app: Vapor.Application) {
+    func register(app: any RoutesBuilder) {
         register(app: app, kind: .vnc)
         register(app: app, kind: .console)
     }
 
-    private func register(app: Vapor.Application, kind: HomeConsoleKind) {
+    private func register(app: any RoutesBuilder, kind: HomeConsoleKind) {
         app.webSocket(
             "api", "home", "devices", ":id", "v1", "vms", ":vmId", .constant(kind.rawValue),
             shouldUpgrade: { req in
+                _ = try req.requireUser
                 try HomeConsoleProxy.requireTicket(req)
                 _ = try self.targetURL(req: req, kind: kind)
                 return [:]
@@ -99,10 +100,14 @@ struct HomeConsoleProxyController {
         let box = WebSocketPipeBox()
         WebSocketRelay.onEventLoop(inbound) {
             inbound.onBinary { _, buffer in
-                box.sendOrBuffer(.binary(buffer))
+                if !box.sendOrBuffer(.binary(buffer)) {
+                    WebSocketRelay.close(inbound)
+                }
             }
             inbound.onText { _, text in
-                box.sendOrBuffer(.text(text))
+                if !box.sendOrBuffer(.text(text)) {
+                    WebSocketRelay.close(inbound)
+                }
             }
         }
         let url: URL

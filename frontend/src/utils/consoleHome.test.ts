@@ -65,6 +65,8 @@ describe('consoleHome (PAS-200)', () => {
     expect(detail).toContain(':device="isMemberDetail ? memberDevice : undefined"')
     expect(window).toContain('canConnectDeviceConsole')
     expect(window).toContain(':device="memberDevice"')
+    expect(window).toContain("error.value = 'Device not found'")
+    expect(window).not.toMatch(/if \(target && !isSelfDevice/)
     expect(router).toContain("path: '/devices/:hostId/vms/:id/vnc'")
     expect(detail).not.toContain("!isMemberDetail && tab === 'console'")
     expect(vnc).not.toMatch(/\/api\/vms\/\$\{props\.vmId\}\/vnc/)

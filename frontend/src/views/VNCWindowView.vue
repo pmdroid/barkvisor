@@ -39,7 +39,12 @@ async function refresh() {
         await devicesStore.fetchHealth()
       }
       const target = devicesStore.deviceByHostId(hostId.value)
-      if (target && !isSelfDevice(target)) {
+      if (!target) {
+        error.value = 'Device not found'
+        vm.value = null
+        return
+      }
+      if (!isSelfDevice(target)) {
         if (!canConnectDeviceConsole(target)) {
           error.value = 'This Device did not answer. Connect is hidden until it is reachable.'
           vm.value = null
