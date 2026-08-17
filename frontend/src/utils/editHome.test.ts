@@ -119,7 +119,7 @@ describe('editHome (PAS-203)', () => {
     expect(detail).toContain("from '../utils/editHome'")
     expect(detail).toContain('isMemberControlTab')
     expect(detail).toContain('memberControlTabAllowed')
-    expect(detail).toContain('...(editDraft.value.networkId ? { networkId: editDraft.value.networkId } : {})')
+    expect(detail).toContain('networkId: editDraft.value.networkId || vm.value?.networkId || null')
     expect(detail).toContain('usbInventoryFetchPath')
     expect(detail).toContain('disksInventoryFetchPath')
     expect(detail).toContain('networksInventoryFetchPath')

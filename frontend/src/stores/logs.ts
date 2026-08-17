@@ -29,6 +29,7 @@ export const useLogStore = defineStore('logs', () => {
   const loading = ref(false)
   const tail = useTicketedEventSource()
   let pollTimer: number | undefined
+  let fetchGen = 0
 
   async function fetchLogs(
     params: LogFetchParams = {},
@@ -36,13 +37,15 @@ export const useLogStore = defineStore('logs', () => {
   ) {
     const path = device ? logsHistoryFetchPath(device) : '/logs'
     if (device && !path) return
+    const gen = ++fetchGen
     const showLoading = entries.value.length === 0
     if (showLoading) loading.value = true
     try {
       const { data } = await api.get(path ?? '/logs', { params })
+      if (gen !== fetchGen) return
       entries.value = Array.isArray(data) ? data : []
     } catch {
-      entries.value = []
+      /* keep last successful snapshot */
     } finally {
       if (showLoading) loading.value = false
     }
@@ -88,6 +91,7 @@ export const useLogStore = defineStore('logs', () => {
 
   function clear() {
     stopTail()
+    fetchGen++
     entries.value = []
   }
 
