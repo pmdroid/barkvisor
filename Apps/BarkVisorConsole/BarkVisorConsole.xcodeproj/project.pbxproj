@@ -10,6 +10,7 @@
 		17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */; };
 		3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D972FFFAF314F1E415F95262 /* Theme.swift */; };
 		B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CCB06D0BEF46910846E84B /* Models.swift */; };
+		3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */; };
 		4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */; };
 		3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16E71E792A18330E918CE2C /* APIClient.swift */; };
 		4BD46825C0B81C92CC81AD9B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC94B3E12BF8A75C918934D8 /* AppModel.swift */; };
@@ -21,11 +22,15 @@
 		8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40C0E3A9BCA1B51480836FF /* HomeView.swift */; };
 		2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA85C5946B65A59DFF46D77 /* DevicesView.swift */; };
 		5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */; };
+		9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */; };
+		DF4E37A51C3F79D06ECE745F /* SerialConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */; };
+		02D993BF3DB2B3D572704DE7 /* DisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */; };
 		09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6851D270665497BF2365DA20 /* LibraryView.swift */; };
 		8D8B2DE73FDE3D090B7BF3A9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4CC16A220D98EE907BF334 /* SettingsView.swift */; };
 		9CB4F17BCA5715D9BAC8F201 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E14E47E20214650F056095 /* Components.swift */; };
 		FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E0E27618A2D2A8FEBDD49F35 /* Assets.xcassets */; };
 		30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */; };
+		0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +39,7 @@
 		5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkVisorConsoleApp.swift; sourceTree = "<group>"; };
 		D972FFFAF314F1E415F95262 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		69CCB06D0BEF46910846E84B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
 		6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		C16E71E792A18330E918CE2C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		DC94B3E12BF8A75C918934D8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -45,10 +51,14 @@
 		C40C0E3A9BCA1B51480836FF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		6BA85C5946B65A59DFF46D77 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
 		A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadsView.swift; sourceTree = "<group>"; };
+		5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailView.swift; sourceTree = "<group>"; };
+		5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SerialConsoleView.swift; sourceTree = "<group>"; };
+		9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayView.swift; sourceTree = "<group>"; };
 		6851D270665497BF2365DA20 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		3A4CC16A220D98EE907BF334 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E2E14E47E20214650F056095 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
+		D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailTests.swift; sourceTree = "<group>"; };
 		D9C6393D6C2EE0244C1E3BAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6CFFB50779C3195239B4A46F /* BarkVisorConsole.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BarkVisorConsole.entitlements; sourceTree = "<group>"; };
 		AA4ACA445B3FBAF47CDE31AC /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -124,6 +134,7 @@
 			isa = PBXGroup;
 			children = (
 				69CCB06D0BEF46910846E84B /* Models.swift */,
+				B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -149,6 +160,9 @@
 				C40C0E3A9BCA1B51480836FF /* HomeView.swift */,
 				6BA85C5946B65A59DFF46D77 /* DevicesView.swift */,
 				A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */,
+				5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */,
+				5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */,
+				9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */,
 				6851D270665497BF2365DA20 /* LibraryView.swift */,
 				3A4CC16A220D98EE907BF334 /* SettingsView.swift */,
 				54FE5E34995DE10F87DF7B85 /* Components */,
@@ -178,6 +192,7 @@
 			isa = PBXGroup;
 			children = (
 				5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */,
+				D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -267,6 +282,7 @@
 				17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */,
 				3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */,
 				B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */,
+				3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */,
 				4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */,
 				3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */,
 				4BD46825C0B81C92CC81AD9B /* AppModel.swift in Sources */,
@@ -278,6 +294,9 @@
 				8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */,
 				2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */,
 				5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */,
+				9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */,
+				DF4E37A51C3F79D06ECE745F /* SerialConsoleView.swift in Sources */,
+				02D993BF3DB2B3D572704DE7 /* DisplayView.swift in Sources */,
 				09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */,
 				8D8B2DE73FDE3D090B7BF3A9 /* SettingsView.swift in Sources */,
 				9CB4F17BCA5715D9BAC8F201 /* Components.swift in Sources */,
@@ -289,6 +308,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */,
+				0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

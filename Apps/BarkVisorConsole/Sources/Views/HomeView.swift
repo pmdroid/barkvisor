@@ -27,7 +27,11 @@ struct HomeView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(model.homeRows) { row in
-                                HomeWorkloadRowView(row: row)
+                                NavigationLink {
+                                    WorkloadDetailView(row: row)
+                                } label: {
+                                    HomeWorkloadRowView(row: row)
+                                }
                             }
                         }
                     }
