@@ -4,7 +4,7 @@ import { ref, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
 import { Terminal, type WTerm } from '@wterm/vue'
 import '@wterm/vue/css'
 import { getWSTicket } from '../api/client'
-import { consoleSocketPath } from '../utils/consoleHome'
+import { consoleSocketPath, consoleSocketQuery } from '../utils/consoleHome'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const props = defineProps<{ vmId: string; vmState: string; device?: DeviceApiTarget | null }>()
@@ -52,7 +52,9 @@ async function connect() {
   status.value = 'Connecting WebSocket...'
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws'
   const path = consoleSocketPath(props.device, props.vmId, 'console')
-  ws = new WebSocket(`${wsProto}://${location.host}/api${path}?ticket=${ticket}`)
+  ws = new WebSocket(
+    `${wsProto}://${location.host}/api${path}?${consoleSocketQuery(ticket, props.device)}`,
+  )
   ws.binaryType = 'arraybuffer'
 
   ws.onopen = () => {

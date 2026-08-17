@@ -43,3 +43,16 @@ export function wsTicketPath(device: DeviceApiTarget | null | undefined): string
   if (!device) return '/auth/ws-ticket'
   return deviceWsTicketPath(device)
 }
+
+/** Member Home tunnels need the session JWT (`token=`) plus the Device ticket. */
+export function consoleSocketQuery(
+  ticket: string,
+  device?: DeviceApiTarget | null,
+): string {
+  const params = new URLSearchParams({ ticket })
+  if (device && !isSelfDevice(device)) {
+    const session = localStorage.getItem('token')
+    if (session) params.set('token', session)
+  }
+  return params.toString()
+}

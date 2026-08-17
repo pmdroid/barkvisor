@@ -128,8 +128,9 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
-    // JWT on Home; the member-minted ticket is still spent on the owning Device.
-    HomeConsoleProxyController().register(app: protected)
+    // Session JWT (Bearer or ?token=). Member `?ticket=` is forwarded, not spent here.
+    let homeTunnel = app.grouped(HomeTunnelAuthMiddleware(keys: deps.keys))
+    HomeConsoleProxyController().register(app: homeTunnel)
 }
 
 /// Public liveness probe (PAS-79). Database failure is 503; other checks are
