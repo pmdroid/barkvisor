@@ -62,10 +62,14 @@ struct AgentLocalProxyController: RouteCollection {
         let box = WebSocketPipeBox()
         WebSocketRelay.onEventLoop(inbound) {
             inbound.onBinary { _, buffer in
-                box.sendOrBuffer(.binary(buffer))
+                if !box.sendOrBuffer(.binary(buffer)) {
+                    WebSocketRelay.close(inbound)
+                }
             }
             inbound.onText { _, text in
-                box.sendOrBuffer(.text(text))
+                if !box.sendOrBuffer(.text(text)) {
+                    WebSocketRelay.close(inbound)
+                }
             }
         }
         guard let vmID = req.parameters.get("id") else {
@@ -103,8 +107,8 @@ struct AgentLocalProxyController: RouteCollection {
 
     @Sendable
     func forward(req: Vapor.Request) async throws -> Response {
-        try HomeConsoleProxy.rejectStrippedUpgrade(req)
         let peer = try requirePeer(req)
+        try HomeConsoleProxy.rejectStrippedUpgrade(req)
         let path = try HomeDeviceProxy.normalizedAPIPath(req.url.path)
         if path == "/api/agent/whoami" {
             let response = Response(status: .ok)

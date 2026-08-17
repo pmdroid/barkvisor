@@ -14,9 +14,14 @@ final class WebSocketPipeBox: @unchecked Sendable {
         case text(String)
     }
 
+    static let defaultMaxPendingBytes = 256 * 1024
+
     private let lock = NSLock()
     private var remote: WebSocket?
     private var pending: [Frame] = []
+    private var pendingBytes = 0
+    var maxPendingBytes = WebSocketPipeBox.defaultMaxPendingBytes
+    private(set) var overflowed = false
 
     func attach(_ ws: WebSocket) {
         let buffered: [Frame] = {
@@ -32,18 +37,35 @@ final class WebSocketPipeBox: @unchecked Sendable {
         }
     }
 
-    func sendOrBuffer(_ frame: Frame) {
-        let ws: WebSocket? = {
+    func sendOrBuffer(_ frame: Frame) -> Bool {
+        let outcome: (WebSocket?, Bool) = {
             lock.lock()
             defer { lock.unlock() }
+            if overflowed { return (nil, false) }
             if let remote {
-                return remote
+                return (remote, true)
+            }
+            let size = Self.byteCount(frame)
+            if pendingBytes + size > maxPendingBytes {
+                overflowed = true
+                pending.removeAll()
+                pendingBytes = 0
+                return (nil, false)
             }
             pending.append(frame)
-            return nil
+            pendingBytes += size
+            return (nil, true)
         }()
-        if let ws {
+        if let ws = outcome.0 {
             WebSocketRelay.send(frame, on: ws)
+        }
+        return outcome.1
+    }
+
+    private static func byteCount(_ frame: Frame) -> Int {
+        switch frame {
+        case let .binary(buffer): buffer.readableBytes
+        case let .text(text): text.utf8.count
         }
     }
 }
