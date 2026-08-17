@@ -35,6 +35,7 @@ import {
   memberNetworkCaption,
   workloadDetailVmSource,
 } from '../utils/workloadDetail'
+import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -256,14 +257,36 @@ async function doAttachISO() {
   fetchImages()
 }
 
-async function fetchGuestInfo() {
-  if (isMemberDetail.value) { guestInfo.value = null; return }
-  if (vm.value?.state !== 'running') { guestInfo.value = null; return }
-  try {
-    const { data } = await api.get(`/vms/${vmId.value}/guest-info`)
-    guestInfo.value = data
-  } catch { guestInfo.value = null }
+function guestInfoDevice() {
+  if (isMemberDetail.value) return memberDevice.value
+  return devicesStore.selfDevice ?? { hostId: hostId.value || 'self', role: 'self', reachability: 'ok' }
 }
+
+async function fetchGuestInfo() {
+  const requestVersion = detailLoadVersion
+  const requestVmId = vmId.value
+  const requestHostId = hostId.value
+  const stillCurrent = () =>
+    requestVersion === detailLoadVersion
+    && requestVmId === vmId.value
+    && requestHostId === hostId.value
+  const path = guestInfoFetchPath(guestInfoDevice(), requestVmId, vm.value?.state)
+  if (!path) { guestInfo.value = null; return }
+  try {
+    const { data } = await api.get(path)
+    if (!stillCurrent()) return
+    guestInfo.value = data
+  } catch {
+    if (!stillCurrent()) return
+    guestInfo.value = null
+  }
+}
+
+const memberOsLabel = computed(() => guestOsLabel(
+  guestInfo.value,
+  vm.value?.vmType ?? 'linux',
+  memberReachable.value && vm.value?.state === 'running',
+))
 
 async function refreshWorkload() {
   if (isMemberDetail.value) {
@@ -280,6 +303,8 @@ async function startWorkload() {
     const device = memberDevice.value
     if (!device || !canFetchDeviceWorkloads(device)) return
     await homeWorkloads.start(device, vmId.value)
+    guestInfo.value = null
+    await fetchGuestInfo()
     return
   }
   await store.start(vmId.value)
@@ -290,6 +315,8 @@ async function restartWorkload() {
     const device = memberDevice.value
     if (!device || !canFetchDeviceWorkloads(device)) return
     await homeWorkloads.restart(device, vmId.value)
+    guestInfo.value = null
+    await fetchGuestInfo()
     return
   }
   await store.restart(vmId.value)
@@ -404,6 +431,7 @@ async function pollMemberDetail(loadVersion: number) {
     await homeWorkloads.refreshOne(current, vmId.value)
     if (loadVersion !== detailLoadVersion) return
     memberLoadError.value = null
+    await fetchGuestInfo()
   } catch (e: any) {
     if (loadVersion !== detailLoadVersion) return
     memberLoadError.value = apiErrorMessage(e)
@@ -441,6 +469,8 @@ async function loadMemberDetail() {
         }
         memberLoadError.value = apiErrorMessage(e)
       }
+      if (loadVersion !== detailLoadVersion) return
+      await fetchGuestInfo()
     }
     if (loadVersion !== detailLoadVersion) return
     pollInterval = window.setInterval(() => {
@@ -543,6 +573,8 @@ async function confirmStop() {
   try {
     await stopWorkload(method)
     await refreshWorkload()
+    guestInfo.value = null
+    await fetchGuestInfo()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -912,11 +944,19 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">MAC Address</span>
             <span class="mono" style="color:var(--text-secondary)">{{ vm.macAddress }}</span>
           </div>
-          <div v-if="!isMemberDetail && vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
+          <div v-if="isMemberDetail" class="detail-row">
+            <span class="detail-label">OS</span>
+            <span>{{ memberOsLabel }}</span>
+          </div>
+          <div v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
             <span class="detail-label">IP Address</span>
             <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
             </span>
+          </div>
+          <div v-else-if="isMemberDetail" class="detail-row">
+            <span class="detail-label">IP Address</span>
+            <span style="color:var(--text-dim)">—</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Created</span>
