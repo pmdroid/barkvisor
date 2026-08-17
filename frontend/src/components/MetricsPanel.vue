@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onUnmounted, watch } from 'vue'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -19,7 +19,13 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const props = defineProps<{ vmId: string; device?: DeviceApiTarget | null }>()
 const store = useMetricsStore()
 
-onMounted(() => store.connect(props.vmId, props.device))
+watch(
+  () => [props.vmId, props.device?.hostId, props.device?.reachability] as const,
+  () => {
+    store.connect(props.vmId, props.device)
+  },
+  { immediate: true },
+)
 onUnmounted(() => store.disconnect())
 
 const labels = computed(() =>

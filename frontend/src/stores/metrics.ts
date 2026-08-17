@@ -10,13 +10,12 @@ export const useMetricsStore = defineStore('metrics', () => {
   const samples = ref<MetricSample[]>([])
   const stream = useTicketedEventSource()
   let pollTimer: number | undefined
-  let historyGen = 0
+  let epoch = 0
 
-  async function loadHistory(path: string) {
-    const gen = ++historyGen
+  async function loadHistory(path: string, epochAtStart: number) {
     try {
       const { data } = await api.get<MetricSample[]>(path, { params: { minutes: 30 } })
-      if (gen !== historyGen) return
+      if (epochAtStart !== epoch) return
       samples.value = Array.isArray(data) ? data : []
     } catch {
       /* keep last successful snapshot */
@@ -25,20 +24,20 @@ export const useMetricsStore = defineStore('metrics', () => {
 
   function connect(vmId: string, device?: DeviceApiTarget | null) {
     disconnect()
-    historyGen++
+    const myEpoch = ++epoch
     samples.value = []
 
     if (device && shouldPollDeviceControl(device)) {
       const path = metricsHistoryFetchPath(device, vmId, 'running')
       if (!path) return
-      void loadHistory(path)
+      void loadHistory(path, myEpoch)
       pollTimer = globalThis.setInterval(() => {
-        void loadHistory(path)
+        void loadHistory(path, myEpoch)
       }, 5000)
       return
     }
 
-    void loadHistory(`/vms/${encodeURIComponent(vmId)}/metrics`)
+    void loadHistory(`/vms/${encodeURIComponent(vmId)}/metrics`, myEpoch)
     stream.start({
       url: (ticket) => `/api/vms/${vmId}/metrics/stream?ticket=${ticket}`,
       reconnect: true,
@@ -58,6 +57,7 @@ export const useMetricsStore = defineStore('metrics', () => {
   }
 
   function disconnect() {
+    epoch++
     if (pollTimer) {
       clearInterval(pollTimer)
       pollTimer = undefined
