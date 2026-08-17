@@ -3,6 +3,7 @@ import {
   canCallDeviceAPI,
   canFetchDeviceWorkloads,
   deviceCapabilitiesPath,
+  deviceGuestInfoPath,
   devicePath,
   deviceTaskPath,
   deviceTemplateDeployPath,
@@ -108,5 +109,15 @@ describe('homeDeviceApi (PAS-202)', () => {
       '/home/devices/peer%2F1/v1/vms/vm-9/restart',
     )
     expect(devicePath(member, '/vms/vm-9')).not.toContain('targetHostId')
+  })
+})
+
+describe('homeDeviceApi (PAS-201)', () => {
+  test('guest-info uses devicePath, never a new Home API', () => {
+    expect(deviceGuestInfoPath(self, 'vm-9')).toBe('/vms/vm-9/guest-info')
+    expect(deviceGuestInfoPath(member, 'vm-9')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/guest-info',
+    )
+    expect(deviceGuestInfoPath(member, 'vm-9')).not.toContain('cluster')
   })
 })
