@@ -27,4 +27,11 @@ describe('homeSSHKey (PAS-217)', () => {
       name: '  ',
     })).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGk')
   })
+
+  test('strips newlines and control characters from the name comment', () => {
+    expect(authorizedKeyForCloudInit({
+      publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGk',
+      name: 'laptop\nextra',
+    })).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGk laptop extra')
+  })
 })
