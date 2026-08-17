@@ -50,16 +50,19 @@ export const guestResizeCommands: GuestCommandGroup[] = [
   { id: 'lvm', label: 'LVM (any distro)', commands: 'sudo growpart /dev/vda 2\nsudo pvresize /dev/vda2\nsudo lvextend -l +100%FREE /dev/mapper/vg0-root\nsudo resize2fs /dev/mapper/vg0-root  # ext4\nsudo xfs_growfs /                    # XFS' },
 ]
 
-/** Install card: running Workload whose guest-info is not available.
- *  Unreachable members stay empty — we do not claim the agent is missing. */
+/** Install card: running Workload whose guest-info confirmed the agent is missing.
+ *  Fetch errors / not-yet-loaded stay hidden — we do not claim the agent is missing.
+ *  Unreachable members stay empty. */
 export function shouldShowGuestAgentInstall(input: {
   running: boolean
   guestAvailable?: boolean | null
+  guestInfoLoaded?: boolean
   memberUnreachable?: boolean
 }): boolean {
   if (!input.running) return false
   if (input.memberUnreachable) return false
-  return input.guestAvailable !== true
+  if (input.guestInfoLoaded === false) return false
+  return input.guestAvailable === false
 }
 
 /** Pre-open a group only when the guest OS is known. Generic linux stays collapsed. */

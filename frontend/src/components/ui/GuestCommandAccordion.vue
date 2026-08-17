@@ -12,9 +12,7 @@ const openId = ref<string | null>(props.initialOpen ?? null)
 watch(
   () => props.initialOpen,
   (next) => {
-    if (next && props.groups.some((group) => group.id === next)) {
-      openId.value = next
-    }
+    openId.value = next && props.groups.some((group) => group.id === next) ? next : null
   },
 )
 
