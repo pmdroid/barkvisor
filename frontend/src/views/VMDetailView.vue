@@ -55,6 +55,12 @@ import {
 } from '../utils/workloadDetail'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import {
+  guestAgentInstallCommands,
+  guestAgentInstallOpenId,
+  shouldShowGuestAgentInstall,
+} from '../utils/guestAgentInstall'
+import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
+import {
   disksInventoryFetchPath,
   isMemberControlTab,
   memberControlTabAllowed,
@@ -446,6 +452,19 @@ const memberOsLabel = computed(() => guestOsLabel(
   vm.value?.vmType ?? 'linux',
   memberReachable.value && vm.value?.state === 'running',
 ))
+
+const showGuestAgentInstall = computed(() => shouldShowGuestAgentInstall({
+  running: vm.value?.state === 'running',
+  guestAvailable: guestInfo.value?.available,
+  memberUnreachable: isMemberDetail.value && !memberReachable.value,
+}))
+
+const guestAgentOpenId = computed(() => guestAgentInstallOpenId({
+  vmType: vm.value?.vmType,
+  imageName: isoImages.value.map((iso) => iso.name).join(' '),
+  osId: guestInfo.value?.osId,
+  osName: guestInfo.value?.osName,
+}))
 
 async function refreshWorkload() {
   if (isMemberDetail.value) {
@@ -1118,7 +1137,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 <span v-for="(pf, i) in vm.portForwards!.filter(p => p.protocol === 'tcp')" :key="i" class="badge badge-gray" style="font-variant-numeric:tabular-nums">
                   port {{ pf.guestPort }}
                 </span>
-                <span style="color:var(--text-dim);font-size:12px">waiting for guest agent...</span>
+                <span style="color:var(--text-dim);font-size:12px">{{ showGuestAgentInstall ? 'Install the guest agent below' : 'waiting for guest agent...' }}</span>
               </template>
             </span>
           </div>
@@ -1169,6 +1188,24 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">Created</span>
             <span style="color:var(--text-secondary)">{{ new Date(vm.createdAt).toLocaleString() }}</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Guest agent install (PAS-215) -->
+      <div v-if="showGuestAgentInstall" style="margin-top:20px">
+        <h2 style="font-size:16px;font-weight:700;margin-bottom:12px">Guest Agent</h2>
+        <div class="card">
+          <p style="color:var(--text-secondary);font-size:13px;margin:0 0 14px;line-height:1.5">
+            Install the guest agent inside this Workload to show IP and OS, and to shut down cleanly.
+          </p>
+          <GuestCommandAccordion
+            :groups="guestAgentInstallCommands"
+            :initial-open="guestAgentOpenId"
+          />
+          <p style="color:var(--text-dim);font-size:11px;margin:12px 0 0;line-height:1.5">
+            Desktop clipboard still needs <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">spice-vdagent</code>
+            (Linux) or Spice guest tools (Windows).
+          </p>
         </div>
       </div>
 
