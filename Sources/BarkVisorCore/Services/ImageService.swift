@@ -116,14 +116,15 @@ public enum ImageService {
     }
 
     /// Catalog hashes are of the compressed artifact; stored `sha256` is the
-    /// decompressed file. Skip the compare for `.xz`/`.gz`/`.zst`/`.bz2` URLs.
+    /// decompressed file. For compressed sources, verify the recorded digest
+    /// against the on-disk file instead of comparing to the catalog hash.
     public static func matchesCatalogChecksum(
         _ image: VMImage,
         expected: ExpectedChecksum?,
     ) -> Bool {
         guard let expected else { return true }
         if let source = image.sourceUrl, isCompressedSource(source) {
-            return true
+            return matchesRecordedDigest(image)
         }
         switch expected {
         case let .sha256(hash):
@@ -280,6 +281,16 @@ public enum ImageService {
     // MARK: - Compression Helpers
 
     private static let compressionExtensions = [".xz", ".gz", ".zst", ".bz2"]
+
+    /// True when the stored `sha256` still matches the bytes on disk.
+    private static func matchesRecordedDigest(_ image: VMImage) -> Bool {
+        guard let stored = image.sha256, !stored.isEmpty else { return false }
+        guard let path = image.path, FileManager.default.fileExists(atPath: path) else {
+            return false
+        }
+        let computed = try? ImageFileChecksum.sha256Hex(ofFile: URL(fileURLWithPath: path))
+        return computed?.lowercased() == stored.lowercased()
+    }
 
     /// Catalog checksums cover the compressed download; the depot stores the decompressed file.
     static func isCompressedSource(_ sourceUrl: String) -> Bool {

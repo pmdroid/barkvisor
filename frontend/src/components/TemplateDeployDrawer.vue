@@ -449,12 +449,11 @@ function watchDownload(imageId: string) {
     phase.value = 'form'
   }
 
-  // Depot copies update SQLite without ImageDownloader events. Poll the
-  // Library row so deploy still proceeds when SSE never sees ready.
-  void (async () => {
+  const pollLibraryRow = async () => {
     try {
       for (let i = 0; i < 600; i++) {
         if (drawerClosed || settled) return
+        if (imageProgress.isActive()) return
         const { data } = await api.get(`/images/${imageId}`)
         if (drawerClosed || settled) return
         if (data.status === 'ready') {
@@ -471,7 +470,7 @@ function watchDownload(imageId: string) {
     } catch (e: unknown) {
       if (!settled && !drawerClosed) finishError(apiErrorMessage(e, 'Image download failed'))
     }
-  })()
+  }
 
   imageProgress.start(imageId, {
     onProgress: (data) => {
@@ -491,7 +490,12 @@ function watchDownload(imageId: string) {
       finishReady()
     },
     onError: (data) => {
-      finishError(data?.error || 'Image download failed')
+      if (data) {
+        finishError(data.error || 'Image download failed')
+        return
+      }
+      // SSE disconnected; poll the Library row as the single fallback.
+      void pollLibraryRow()
     },
   })
 }
