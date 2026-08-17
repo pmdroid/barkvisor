@@ -26,8 +26,10 @@ public final class PeerPinStore: @unchecked Sendable {
     public let fileURL: URL
     private let lock = NSLock()
     /// Handshake reads this cache so the NIO loop does not decode `pins.json`.
-    /// Invalidated (replaced) on every successful write.
+    /// Reloaded when the on-disk generation (mtime/size) changes so pairing
+    /// and the agent listener stay consistent without sharing an instance.
     private var cachedPins: [PeerPin]?
+    private var cachedGeneration: FileGeneration?
 
     public init(dataDir: URL) {
         self.fileURL = dataDir
@@ -42,12 +44,22 @@ public final class PeerPinStore: @unchecked Sendable {
     public func load() throws -> [PeerPin] {
         lock.lock()
         defer { lock.unlock() }
-        if let cachedPins {
+        let generation = fileGenerationLocked()
+        if let cachedPins, cachedGeneration == generation {
             return cachedPins
         }
-        let pins = try loadLocked()
-        cachedPins = pins
-        return pins
+        do {
+            let pins = try loadLocked()
+            cachedPins = pins
+            cachedGeneration = generation
+            return pins
+        } catch {
+            if let cachedPins {
+                cachedGeneration = generation
+                return cachedPins
+            }
+            throw error
+        }
     }
 
     public func contains(fingerprint: String) throws -> Bool {
@@ -116,6 +128,23 @@ public final class PeerPinStore: @unchecked Sendable {
             ofItemAtPath: fileURL.path,
         )
         cachedPins = pins
+        cachedGeneration = fileGenerationLocked()
+    }
+
+    private struct FileGeneration: Equatable {
+        var exists: Bool
+        var modified: TimeInterval
+        var size: UInt64
+    }
+
+    private func fileGenerationLocked() -> FileGeneration {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        guard let attrs else {
+            return FileGeneration(exists: false, modified: 0, size: 0)
+        }
+        let modified = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
+        return FileGeneration(exists: true, modified: modified, size: size)
     }
 }
 

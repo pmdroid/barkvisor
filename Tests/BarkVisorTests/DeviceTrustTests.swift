@@ -101,6 +101,30 @@ struct DeviceTrustTests {
         #expect(decision == .rejected(.invalidPEM))
     }
 
+    @Test func `accepts pairwise pin when hostId casing differs`() throws {
+        let a = try isolatedDir()
+        let b = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: a)
+            try? FileManager.default.removeItem(at: b)
+        }
+        let local = try HomeCAService.loadOrCreate(dataDir: a, hostId: UUID().uuidString)
+        let foreignId = UUID().uuidString.lowercased()
+        let foreign = try HomeCAService.loadOrCreate(dataDir: b, hostId: foreignId)
+        let pin = PeerPin(
+            hostId: foreignId.uppercased(),
+            fingerprint: foreign.deviceFingerprint,
+            pinnedAt: iso8601.string(from: Date()),
+        )
+
+        let decision = DeviceTrust.evaluate(
+            leafPEM: foreign.deviceCertificatePEM,
+            homeCAPEM: local.caCertificatePEM,
+            pins: [pin],
+        )
+        #expect(decision == .accepted(hostId: foreignId, source: .pinned))
+    }
+
     @Test func `rejects pinned cert when pin hostId does not match SAN`() throws {
         let a = try isolatedDir()
         let b = try isolatedDir()

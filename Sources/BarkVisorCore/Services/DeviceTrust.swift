@@ -107,7 +107,7 @@ public enum DeviceTrust {
             guard let hostId = sanHostId else {
                 return .rejected(.missingDeviceSAN)
             }
-            guard pin.hostId == hostId else {
+            guard pin.hostId.caseInsensitiveCompare(hostId) == .orderedSame else {
                 return .rejected(.untrusted)
             }
             return .accepted(hostId: hostId, source: .pinned)

@@ -50,12 +50,28 @@ struct PeerPinStoreTests {
         #expect(try store.contains(fingerprint: "deadbeef") == false)
     }
 
-    @Test func `load uses memory cache until a write`() throws {
+    @Test func `load sees writes from another store instance`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let reader = PeerPinStore(dataDir: dir)
+        #expect(try reader.load().isEmpty)
+
+        let writer = PeerPinStore(dataDir: dir)
+        try writer.pin(hostId: "a", fingerprint: "aa")
+        #expect(try reader.load().map(\.hostId) == ["a"])
+        #expect(try reader.contains(fingerprint: "aa"))
+
+        try writer.unpin(hostId: "a")
+        #expect(try reader.load().isEmpty)
+        try writer.pin(hostId: "b", fingerprint: "bb")
+        #expect(try reader.pin(forHostId: "b")?.fingerprint == "bb")
+    }
+
+    @Test func `same instance write updates cache`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = PeerPinStore(dataDir: dir)
         try store.pin(hostId: "a", fingerprint: "aa")
-        try Data("[]".utf8).write(to: store.fileURL, options: [.atomic])
         #expect(try store.load().map(\.hostId) == ["a"])
         try store.unpin(hostId: "a")
         #expect(try store.load().isEmpty)
