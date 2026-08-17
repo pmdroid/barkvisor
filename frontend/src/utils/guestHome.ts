@@ -39,7 +39,7 @@ export function guestOsLabel(
 }
 
 export function guestPrimaryIp(guest: GuestInfo | null | undefined): string | null {
-  if (!guest?.ipAddresses?.length) return null
+  if (!guest?.available || !guest.ipAddresses?.length) return null
   return guest.ipAddresses[0]
 }
 
