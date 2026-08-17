@@ -395,7 +395,6 @@ final class AppModel {
         images = []
         disks = []
         networks = []
-<<<<<<< HEAD
     }
 
     private func dropHomeState() {
