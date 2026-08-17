@@ -42,6 +42,12 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
+        // Home console/VNC: Device `?ticket=` is forwarded. Auth is Bearer or
+        // Home-minted `?session=` — never spend the Device ticket here.
+        if Self.isHomeConsoleTunnel(request) {
+            return try await authenticateHomeTunnel(request, chainingTo: next)
+        }
+
         // Accept ticket from ?ticket= query param (short-lived, single-use)
         if let ticketParam = request.query[String.self, at: "ticket"] {
             if let userInfo = await WebSocketTicketStore.shared.validateTicket(ticketParam) {
@@ -170,6 +176,19 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             )
         }
         return matched
+    }
+
+    private static func isHomeConsoleTunnel(_ request: Vapor.Request) -> Bool {
+        let path = request.url.path
+        guard path.contains("/api/home/devices/") else { return false }
+        return path.hasSuffix("/vnc") || path.hasSuffix("/console")
+    }
+
+    private func authenticateHomeTunnel(
+        _ request: Vapor.Request,
+        chainingTo next: any AsyncResponder,
+    ) async throws -> Vapor.Response {
+        try await HomeTunnelAuthMiddleware(keys: keys).respond(to: request, chainingTo: next)
     }
 
     private func authenticateJWT(token: String) async throws -> AuthenticatedUser {

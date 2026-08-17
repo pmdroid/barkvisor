@@ -1,13 +1,11 @@
 import BarkVisorCore
 import Foundation
-import JWTKit
 import Vapor
 
 /// Home WebSocket tunnel for member VNC / serial console (PAS-200).
 ///
-/// Auth is `HomeTunnelAuthMiddleware` (Bearer JWT or Home `?session=` ticket),
-/// not `JWTAuthMiddleware`: that middleware would spend `?ticket=` against
-/// Home's store. The Device ticket is forwarded and spent on the owner.
+/// Registered on the JWT group. `JWTAuthMiddleware` treats this path as
+/// Bearer or Home `?session=` and forwards Device `?ticket=` unspent.
 struct HomeConsoleProxyController {
     var devices: DeviceRegistry?
     var dataDir: URL
@@ -32,12 +30,6 @@ struct HomeConsoleProxyController {
     func register(app: any RoutesBuilder) {
         register(app: app, kind: .vnc)
         register(app: app, kind: .console)
-    }
-
-    /// Production entry: JWT keys + VM-scoped `?session=`. Tests may call
-    /// `register(app:)` on a builder that already has a user middleware.
-    func register(app: Vapor.Application, keys: JWTKeyCollection) {
-        register(app: app.grouped(HomeTunnelAuthMiddleware(keys: keys)))
     }
 
     private func register(app: any RoutesBuilder, kind: HomeConsoleKind) {
