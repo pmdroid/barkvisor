@@ -239,6 +239,10 @@ final class AppModel {
         }
     }
 
+    func guestInfo(for workloadID: String, on device: HomeDeviceHealthSnapshot?) async -> GuestInfo? {
+        await optional { try await requireClient().guestInfo(workloadID, on: device) }
+    }
+
     func refreshHome() async {
         _ = try? await refreshDevices()
         await refreshHomeUnion()

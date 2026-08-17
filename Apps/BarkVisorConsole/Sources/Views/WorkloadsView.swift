@@ -1,9 +1,4 @@
 import SwiftUI
-#if os(macOS)
-import AppKit
-#else
-import UIKit
-#endif
 
 struct WorkloadsView: View {
     @Environment(AppModel.self) private var model
@@ -23,7 +18,16 @@ struct WorkloadsView: View {
                 )
             } else {
                 List(visible) { workload in
-                    WorkloadRow(workload: workload, compact: false)
+                    NavigationLink {
+                        WorkloadDetailView(
+                            workloadID: workload.id,
+                            deviceID: model.selectedDevice?.hostId ?? "self",
+                            fallbackWorkload: workload,
+                            fallbackDevice: model.selectedDevice ?? .placeholderSelf
+                        )
+                    } label: {
+                        WorkloadRow(workload: workload, compact: false)
+                    }
                 }
                 .platformListStyle()
             }
@@ -51,14 +55,13 @@ struct WorkloadRow: View {
     @Environment(AppModel.self) private var model
     var workload: Workload
     var compact: Bool
-    @State private var showVNCHint = false
     @State private var pendingForceStop = false
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(workload.name)
-                Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(osLabel)")
+                Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(workload.guestOSFamily)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -104,10 +107,6 @@ struct WorkloadRow: View {
                         pendingForceStop = true
                     }
                 }
-                Button("Console") { showVNCHint = true }
-                if let url = webURL {
-                    Link("Open in web UI", destination: url)
-                }
             }
         }
         .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {
@@ -118,50 +117,5 @@ struct WorkloadRow: View {
         } message: {
             Text("The guest will not shut down cleanly.")
         }
-        .alert("Console", isPresented: $showVNCHint) {
-            if let url = vncURL {
-                Button(consoleButtonTitle) { open(url) }
-            }
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(consoleMessage)
-        }
-    }
-
-    private var osLabel: String {
-        workload.vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
-    }
-
-    private var webURL: URL? {
-        guard let base = model.connectedURL else { return nil }
-        return WorkloadWebLink.page(base: base, workloadID: workload.id, device: model.selectedDevice)
-    }
-
-    private var vncURL: URL? {
-        guard let base = model.connectedURL else { return nil }
-        return WorkloadWebLink.console(base: base, workloadID: workload.id, device: model.selectedDevice)
-    }
-
-    private var isMemberDevice: Bool {
-        model.selectedDevice?.isSelf == false
-    }
-
-    private var consoleButtonTitle: String {
-        isMemberDevice ? "Open Device page" : "Open web console"
-    }
-
-    private var consoleMessage: String {
-        if isMemberDevice {
-            return "Member Workload console is not a local /vms path. Open this Device in the web UI."
-        }
-        return "VNC is not embedded in this native console. Use the web UI console for this workload."
-    }
-
-    private func open(_ url: URL) {
-        #if os(macOS)
-        NSWorkspace.shared.open(url)
-        #else
-        UIApplication.shared.open(url)
-        #endif
     }
 }

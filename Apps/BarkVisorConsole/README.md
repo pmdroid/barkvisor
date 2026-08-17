@@ -45,17 +45,20 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | --- | --- |
 | Connect | Device URL |
 | Sign in | `POST /api/auth/login` |
-| Home (iOS) | Union of workloads on reachable Devices, with the Device name on each row |
-| Dashboard (Mac) | Counts, selected Device, recent workloads |
+| Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail |
+| Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
-| Workloads (Mac) | List + start / ACPI stop / force stop for the selected Device |
+| Workloads (Mac) | List for the selected Device; a row pushes Workload detail |
+| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display rows exist (placeholders this slice; member stays disabled until PAS-200) |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
 | Settings | URL, logout, about (`/api/system/about`), Add Device pairing code |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-VNC / serial console is not embedded. Workload rows link to the web UI.
+Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Console and Display destinations exist as empty placeholders for the next slice. Member Console / Display stay disabled until PAS-200.
 
 ## Tests
 
 `APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, and Device URL normalization.
+
+`WorkloadDetailTests` covers guest-info OS/IP decode, vmType fallback, and member Console/Display staying closed.
