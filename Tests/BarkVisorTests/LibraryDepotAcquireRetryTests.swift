@@ -297,6 +297,87 @@ final class DepotRetryTests {
         #expect(client.listedURLs.isEmpty)
         #expect(client.fetchedIds.isEmpty)
     }
+
+    @Test func `started depot failure starts internet on the same row`() async throws {
+        try setDepot()
+        let source = "https://example.com/cloud-fallback-now.img"
+        seedReadyRemote(id: "remote-fallback-now", source: source)
+        client.fetchError = BarkVisorError.timeout("copy failed")
+        let downloader = RecordingCatalogDownloader()
+        let progress = RecordingProgress()
+        let acquire = LibraryDepotAcquire(
+            localHostId: localHostId,
+            dataDir: tmpDir,
+            devices: devices,
+            openClient: { [client] _ in client },
+            awaitCopy: true,
+            progress: progress,
+            internetFallback: downloader,
+        )
+
+        let image = await acquire.fetchMatching(request(source), db: dbPool)
+        #expect(image == nil)
+        let started = await downloader.startedURLs
+        #expect(started == [URL(string: source)])
+        let rows = try await dbPool.read { db in try VMImage.fetchAll(db) }
+        #expect(rows.count == 1)
+        #expect(rows[0].status == "downloading")
+        #expect(rows[0].error == nil)
+        let events = await progress.events
+        #expect(events.contains { $0.status == "downloading" })
+        #expect(!events.contains { $0.status == "error" })
+
+        let retry = await acquire.fetchMatching(request(source), db: dbPool)
+        #expect(retry?.id == rows[0].id)
+        #expect(retry?.status == "downloading")
+        #expect(client.listedURLs == [source])
+        #expect(client.fetchedIds == ["remote-fallback-now"])
+    }
+
+    @Test func `ready cache miss when catalog checksum differs`() async throws {
+        try setDepot()
+        let source = "https://example.com/cloud-stale-checksum.img"
+        seedReadyRemote(id: "remote-stale", source: source)
+        let now = "2026-01-01T00:00:00Z"
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-stale", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: "/tmp/stale.img", sizeBytes: 4, status: "ready", error: nil,
+                sourceUrl: source, sha256: "aaa", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+
+        let hashFile = tmpDir.appendingPathComponent("depot-hash.img")
+        try client.bytes.write(to: hashFile)
+        let digest = try ImageFileChecksum.sha256Hex(ofFile: hashFile)
+        let req = LibraryDepotFetchRequest(
+            sourceUrl: source,
+            name: "Cloud",
+            imageType: "cloud-image",
+            arch: "arm64",
+            expectedChecksum: .sha256(digest),
+        )
+        let acquire = LibraryDepotAcquire(
+            localHostId: localHostId,
+            dataDir: tmpDir,
+            devices: devices,
+            openClient: { [client] _ in client },
+            awaitCopy: true,
+        )
+        let image = await acquire.fetchMatching(req, db: dbPool)
+        let stored = try #require(image)
+        #expect(stored.id != "img-stale")
+        #expect(stored.status == "ready")
+        #expect(client.fetchedIds == ["remote-stale"])
+    }
+}
+
+private actor RecordingProgress: ImageProgressPublishing {
+    private(set) var events: [ImageProgressEvent] = []
+
+    func publish(_ event: ImageProgressEvent) {
+        events.append(event)
+    }
 }
 
 private actor RecordingCatalogDownloader: ImageDownloadStarting {

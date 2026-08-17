@@ -6,8 +6,9 @@ import X509
 ///
 /// A peer is accepted when the leaf certificate is **either**
 /// issued by this Device's Home CA **or** its SHA-256 fingerprint
-/// is in the pairwise pin store. Pairing (PAS-45) records pins /
-/// issues Home-CA certs; this type only evaluates existing material.
+/// is in the pairwise pin store **and** the SAN hostId equals `PeerPin.hostId`.
+/// Pairing (PAS-45) records pins / issues Home-CA certs; this type only
+/// evaluates existing material.
 public enum DeviceTrust {
     public static let deviceURIPrefix = "barkvisor://device/"
 
@@ -100,9 +101,14 @@ public enum DeviceTrust {
 
         let sanHostId = hostId(from: leaf)
 
-        if pins.contains(where: { $0.fingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame }) {
+        if let pin = pins.first(where: {
+            $0.fingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame
+        }) {
             guard let hostId = sanHostId else {
                 return .rejected(.missingDeviceSAN)
+            }
+            guard pin.hostId.caseInsensitiveCompare(hostId) == .orderedSame else {
+                return .rejected(.untrusted)
             }
             return .accepted(hostId: hostId, source: .pinned)
         }

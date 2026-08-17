@@ -8,6 +8,8 @@ import {
 import { imageArchSupportedOnHost, normalizeImageArch, templateArchSupportedOnHost, templateDeclaredArches } from './imageArch'
 import { isSelfDevice } from './homeDeviceApi'
 
+export const DEVICE_LIBRARY_MISSING_REASON = "Not in this Device's Library"
+
 export type DevicePickOption = {
   hostId: string
   label: string
@@ -15,9 +17,15 @@ export type DevicePickOption = {
   platformLine: string
   reachable: boolean
   compatible: boolean
+  /** False when missing Library bytes — place-anyway is only for arch/capacity. */
+  placeAnyway: boolean
   reasons: string[]
   recommended?: boolean
   recommendReasons?: string[]
+}
+
+export function reasonsAllowPlaceAnyway(reasons: string[]): boolean {
+  return !reasons.includes(DEVICE_LIBRARY_MISSING_REASON)
 }
 
 export function deviceDisplayLabel(device: {
@@ -72,7 +80,7 @@ export function createVMIncompatibilityReasons(
     return ['Device is unreachable']
   }
   if (opts.hasImage === false) {
-    return ["Not in this Device's Library"]
+    return [DEVICE_LIBRARY_MISSING_REASON]
   }
   const reasons: string[] = []
   const hostArch = pickedHostArch(device, opts.capabilities)
@@ -116,7 +124,7 @@ export function templateIncompatibilityReasons(
     return ['Device is unreachable']
   }
   if (opts.hasTemplate === false) {
-    return ["Not in this Device's Library"]
+    return [DEVICE_LIBRARY_MISSING_REASON]
   }
   const reasons: string[] = []
   const hostArch = pickedHostArch(device, opts.capabilities)
@@ -158,6 +166,7 @@ export function toPickOption(
     platformLine: devicePlatformLine(device),
     reachable: device.reachability === 'ok' || isSelfDevice(device),
     compatible: reasons.length === 0,
+    placeAnyway: reasonsAllowPlaceAnyway(reasons),
     reasons,
     recommended: extra.recommended === true,
     recommendReasons: extra.recommendReasons ?? [],

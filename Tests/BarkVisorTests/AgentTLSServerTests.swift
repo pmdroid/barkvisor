@@ -7,7 +7,7 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite("AgentTLSServer")
+@Suite("AgentTLSServer", .serialized)
 struct AgentTLSServerTests {
     private func isolatedDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -270,6 +270,224 @@ struct AgentTLSServerTests {
             #expect(streamed.status == 200)
             #expect(streamed.sha256 == digest)
             #expect(try Data(contentsOf: dest) == payload)
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    @Test func `reloadFromDisk presents reminted device certificate`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let pins = PeerPinStore(dataDir: dir)
+        let server = AgentTLSServer(
+            material: first,
+            pins: pins,
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        do {
+            let port = try #require(server.boundPort)
+            try await server.reloadFromDisk(now: now)
+            let reloaded = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+            #expect(reloaded.deviceFingerprint != first.deviceFingerprint)
+            #expect(reloaded.caFingerprint == first.caFingerprint)
+
+            let ca = try NIOSSLCertificate(
+                bytes: Array(reloaded.caCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceCert = try NIOSSLCertificate(
+                bytes: Array(reloaded.deviceCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceKey = try NIOSSLPrivateKey(
+                bytes: Array(reloaded.deviceKeyPEM.utf8),
+                format: .pem,
+            )
+            let body = try await getWhoami(
+                port: port,
+                trust: ca,
+                clientCert: deviceCert,
+                clientKey: deviceKey,
+            )
+            #expect(body.hostId == hostId)
+            #expect(body.fingerprint == reloaded.deviceFingerprint)
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    @Test func `reloadFromDisk restore bind keeps previous listener`() async throws {
+        let dir = try isolatedDir()
+        let peerDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.removeItem(at: peerDir)
+        }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        // First device leaf is already expired (that's why remint fires). Handshake
+        // with a still-valid pinned peer so DeviceTrust does not reject expiry.
+        let peerId = UUID().uuidString
+        let peer = try HomeCAService.loadOrCreate(dataDir: peerDir, hostId: peerId)
+        let pins = PeerPinStore(dataDir: dir)
+        try pins.pin(hostId: peerId, fingerprint: peer.deviceFingerprint)
+        let server = AgentTLSServer(
+            material: first,
+            pins: pins,
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        do {
+            _ = try #require(server.boundPort)
+            server.testStartListenerFailuresRemaining = 1
+            do {
+                try await server.reloadFromDisk(now: now)
+                Issue.record("remint bind should fail")
+            } catch {
+                // Remint bind failed; restore should have rebound previous material.
+            }
+            #expect(server.testStartListenerFailuresRemaining == 0)
+            let rebound = try #require(server.boundPort)
+
+            let ca = try NIOSSLCertificate(bytes: Array(first.caCertificatePEM.utf8), format: .pem)
+            let peerCert = try NIOSSLCertificate(
+                bytes: Array(peer.deviceCertificatePEM.utf8),
+                format: .pem,
+            )
+            let peerKey = try NIOSSLPrivateKey(
+                bytes: Array(peer.deviceKeyPEM.utf8),
+                format: .pem,
+            )
+            let body = try await getWhoami(
+                port: rebound,
+                trust: ca,
+                clientCert: peerCert,
+                clientKey: peerKey,
+            )
+            #expect(body.hostId == peerId)
+            #expect(body.trust == "pinned")
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    @Test func `reloadFromDisk recovers after remint and restore bind fail`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let server = AgentTLSServer(
+            material: first,
+            pins: PeerPinStore(dataDir: dir),
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        do {
+            server.testStartListenerFailuresRemaining = 2
+            do {
+                try await server.reloadFromDisk(now: now)
+                Issue.record("reload should fail when remint and restore cannot bind")
+            } catch {
+                // Both binds failed — listener must stay down, not silently swallow.
+            }
+            #expect(server.testStartListenerFailuresRemaining == 0)
+            #expect(server.boundPort == nil)
+
+            // Next reload (hourly loop) must bring the plane back without a restart.
+            try await server.reloadFromDisk(now: now)
+            let port = try #require(server.boundPort)
+            let reloaded = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: now)
+            #expect(reloaded.deviceFingerprint != first.deviceFingerprint)
+
+            let ca = try NIOSSLCertificate(
+                bytes: Array(reloaded.caCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceCert = try NIOSSLCertificate(
+                bytes: Array(reloaded.deviceCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceKey = try NIOSSLPrivateKey(
+                bytes: Array(reloaded.deviceKeyPEM.utf8),
+                format: .pem,
+            )
+            let body = try await getWhoami(
+                port: port,
+                trust: ca,
+                clientCert: deviceCert,
+                clientKey: deviceKey,
+            )
+            #expect(body.hostId == hostId)
+            #expect(body.fingerprint == reloaded.deviceFingerprint)
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
+    @Test func `reloadFromDisk rebinds when listener is already down`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        let server = AgentTLSServer(
+            material: first,
+            pins: PeerPinStore(dataDir: dir),
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        do {
+            await server.shutdownListener()
+            #expect(server.boundPort == nil)
+
+            try await server.reloadFromDisk()
+            let port = try #require(server.boundPort)
+
+            let ca = try NIOSSLCertificate(bytes: Array(first.caCertificatePEM.utf8), format: .pem)
+            let deviceCert = try NIOSSLCertificate(
+                bytes: Array(first.deviceCertificatePEM.utf8),
+                format: .pem,
+            )
+            let deviceKey = try NIOSSLPrivateKey(
+                bytes: Array(first.deviceKeyPEM.utf8),
+                format: .pem,
+            )
+            let body = try await getWhoami(
+                port: port,
+                trust: ca,
+                clientCert: deviceCert,
+                clientKey: deviceKey,
+            )
+            #expect(body.hostId == hostId)
+            #expect(body.fingerprint == first.deviceFingerprint)
             await server.stop()
         } catch {
             await server.stop()

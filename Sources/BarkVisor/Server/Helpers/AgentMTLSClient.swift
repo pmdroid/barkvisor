@@ -78,6 +78,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         to destination: URL,
         connectTimeoutSeconds: Int64 = 10,
         readTimeoutSeconds: Int64 = 1_800,
+        maxBytes: Int64 = LibraryDepotStreamLimits.defaultMaxBytes,
     ) async throws -> LibraryDepotStreamResult {
         let client = try AgentMTLSRuntime.shared.client(
             for: material,
@@ -121,15 +122,33 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         }
         defer { try? handle.close() }
 
+        let contentLength: Int64? = response.headers.first(name: "Content-Length").flatMap { Int64($0) }
+        let cap: Int64
+        do {
+            cap = try LibraryDepotStreamLimits.writeCap(contentLength: contentLength, maxBytes: maxBytes)
+        } catch {
+            try? FileManager.default.removeItem(at: part)
+            throw error
+        }
+
         var hasher = SHA256()
         var written: Int64 = 0
         do {
             for try await buffer in response.body {
                 let data = Data(buffer.readableBytesView)
+                written += Int64(data.count)
+                if written > cap {
+                    try? FileManager.default.removeItem(at: part)
+                    throw BarkVisorError.downloadFailed(
+                        "depot stream exceeded size cap (\(written) > \(cap))",
+                    )
+                }
                 try handle.write(contentsOf: data)
                 hasher.update(data: data)
-                written += Int64(data.count)
             }
+        } catch let error as BarkVisorError {
+            try? FileManager.default.removeItem(at: part)
+            throw error
         } catch {
             try? FileManager.default.removeItem(at: part)
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)

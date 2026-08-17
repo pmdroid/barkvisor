@@ -8,6 +8,7 @@
 #   ./scripts/guest-boot-bdd.sh blank     # mise run guest-smoke
 #   ./scripts/guest-boot-bdd.sh real      # mise run guest-smoke-real
 #   ./scripts/guest-boot-bdd.sh list
+#   ./scripts/guest-boot-bdd.sh           # prints this help; does not boot
 #   DRY_RUN=1 ./scripts/guest-boot-bdd.sh
 #
 # Skip: if qemu-system-* is missing, print SKIP and return (exit 0 for
@@ -126,7 +127,7 @@ run_real() {
   echo "Then: Workload is running and guest SSH answers"
 }
 
-cmd="${1:-blank}"
+cmd="${1:-}"
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   dry_run
@@ -134,6 +135,9 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
 fi
 
 case "$cmd" in
+  "" | -h | --help | help)
+    sed -n '2,20p' "$0"
+    ;;
   blank | guest-smoke)
     require_feature
     run_blank
@@ -149,9 +153,6 @@ case "$cmd" in
     require_feature
     run_blank
     run_real
-    ;;
-  -h | --help | help)
-    sed -n '2,20p' "$0"
     ;;
   *)
     die "unknown scenario '$cmd' (blank|real|list|all)"

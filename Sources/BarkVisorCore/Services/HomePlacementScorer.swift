@@ -86,7 +86,7 @@ public enum HomePlacementScorer {
             }
         }
 
-        let memoryFloor = max(request.minMemoryMB ?? 0, request.requestedMemoryMB ?? 0)
+        let memoryFloor = memoryFloor(request: request)
         let free = device.resources?.freeMemoryMB
         if memoryFloor > 0 {
             guard let free else {

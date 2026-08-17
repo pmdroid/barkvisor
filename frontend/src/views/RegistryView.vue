@@ -23,7 +23,8 @@ import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
 import { normalizeImageArch } from '../utils/imageArch'
 import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
-import { deviceForCatalogImage } from '../utils/libraryDownloadTarget'
+import { catalogDownloadBlockedReason, deviceForCatalogImage } from '../utils/libraryDownloadTarget'
+import { findCatalogImageOnDevice } from '../utils/libraryCatalogDownload'
 import api from '../api/client'
 import type { LibrarySettings, VMTemplate, RepositoryImage, Image } from '../api/types'
 
@@ -381,30 +382,23 @@ async function downloadOnDevice(
   device: NonNullable<ReturnType<typeof deviceForCatalogImage>>,
   img: RepositoryImage,
 ) {
-  const { data: repos } = await api.get(devicePath(device, '/repositories'))
-  const imageRepos = Array.isArray(repos)
-    ? repos.filter((row: { repoType?: string }) => row.repoType === 'images')
-    : []
-  for (const repo of imageRepos) {
-    const { data: catalog } = await api.get(devicePath(device, `/repositories/${repo.id}/images`))
-    const match = Array.isArray(catalog)
-      ? catalog.find((row: RepositoryImage) => row.slug === img.slug && (
-        normalizeImageArch(row.arch) === normalizeImageArch(img.arch)
-      ))
-      : null
-    if (!match) continue
-    await api.post(devicePath(device, `/repositories/images/${match.id}/download`))
-    toast.success(`Download started on ${device.displayName || device.hostId}`)
-    return
-  }
-  throw new Error(
-    `“${img.name}” is not in ${(device.displayName || device.hostId)}'s catalog. Sync repositories on that Device.`,
-  )
+  const match = await findCatalogImageOnDevice(api, device, img)
+  await api.post(devicePath(device, `/repositories/images/${match.id}/download`))
+  toast.success(`Download started on ${device.displayName || device.hostId}`)
 }
 
 async function download(img: RepositoryImage) {
   downloading.value.add(img.id)
   try {
+    await devicesStore.fetchHealth()
+    const blocked = catalogDownloadBlockedReason({
+      healthError: devicesStore.error,
+      hasReport: devicesStore.report !== null,
+    })
+    if (blocked) {
+      toast.error(blocked)
+      return
+    }
     const device = deviceForCatalogImage(img.arch, devicesStore.devices, libraryDepotHostId.value)
     if (!device) {
       toast.error(`No reachable Device can run ${img.arch || 'this'} guests.`)

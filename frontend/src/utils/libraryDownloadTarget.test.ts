@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { deviceForCatalogImage } from './libraryDownloadTarget'
+import { catalogDownloadBlockedReason, deviceForCatalogImage } from './libraryDownloadTarget'
 
 const agentbox = {
   hostId: 'x86',
@@ -53,5 +53,19 @@ describe('deviceForCatalogImage', () => {
       )?.hostId,
     ).toBeUndefined()
     expect(deviceForCatalogImage('x86_64', [agentbox, { ...ubuntu, reachability: 'unreachable' }], 'arm')?.hostId).toBe('x86')
+  })
+})
+
+describe('catalogDownloadBlockedReason', () => {
+  test('blocks when Device health has not loaded', () => {
+    expect(catalogDownloadBlockedReason({ healthError: null, hasReport: false })).toBeTruthy()
+  })
+
+  test('blocks when the last health fetch failed', () => {
+    expect(catalogDownloadBlockedReason({ healthError: 'Failed to fetch', hasReport: true })).toBeTruthy()
+  })
+
+  test('allows download when health is current', () => {
+    expect(catalogDownloadBlockedReason({ healthError: null, hasReport: true })).toBeNull()
   })
 })

@@ -182,3 +182,25 @@ public struct LibraryDepotFetchRequest: Sendable {
 public protocol LibraryDepotFetching: Sendable {
     func fetchMatching(_ request: LibraryDepotFetchRequest, db: DatabasePool) async -> VMImage?
 }
+
+/// Size cap for agent-plane Library depot byte streams.
+public enum LibraryDepotStreamLimits {
+    /// 128 GiB — same order as the tus upload cap.
+    public static let defaultMaxBytes: Int64 = 128 * 1_024 * 1_024 * 1_024
+
+    /// Honor Content-Length when present; never write more than `maxBytes`.
+    public static func writeCap(contentLength: Int64?, maxBytes: Int64 = defaultMaxBytes) throws -> Int64 {
+        if let contentLength {
+            guard contentLength >= 0 else {
+                throw BarkVisorError.downloadFailed("depot response has an invalid Content-Length")
+            }
+            guard contentLength <= maxBytes else {
+                throw BarkVisorError.downloadFailed(
+                    "depot object exceeds size cap (\(contentLength) > \(maxBytes))",
+                )
+            }
+            return contentLength
+        }
+        return maxBytes
+    }
+}

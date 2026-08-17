@@ -33,6 +33,7 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
   const loadingByHost = ref<Record<string, boolean>>({})
   const errorByHost = ref<Record<string, string | null>>({})
   const actionLoading = ref<Record<string, boolean>>({})
+  const fetchSeqByHost: Record<string, number> = {}
 
   function vmsFor(hostId: string): VM[] {
     return vmsByHost.value[hostId] ?? []
@@ -52,26 +53,33 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
 
   async function fetchFor(device: HomeDeviceHealthSnapshot): Promise<void> {
     const hostId = device.hostId
+    const seq = (fetchSeqByHost[hostId] ?? 0) + 1
+    fetchSeqByHost[hostId] = seq
     if (!canFetchDeviceWorkloads(device)) {
       // Keep last-known names (PAS-47). Never invent a list on first miss.
       if (!(hostId in vmsByHost.value)) {
         vmsByHost.value = { ...vmsByHost.value, [hostId]: [] }
       }
       errorByHost.value = { ...errorByHost.value, [hostId]: null }
+      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
       return
     }
     loadingByHost.value = { ...loadingByHost.value, [hostId]: true }
     try {
       const { data } = await api.get<VM[]>(deviceVmsBasePath(device))
+      if (seq !== fetchSeqByHost[hostId]) return
       vmsByHost.value = { ...vmsByHost.value, [hostId]: Array.isArray(data) ? data : [] }
       errorByHost.value = { ...errorByHost.value, [hostId]: null }
     } catch (err) {
+      if (seq !== fetchSeqByHost[hostId]) return
       errorByHost.value = {
         ...errorByHost.value,
         [hostId]: apiErrorMessage(err, 'Unable to load Workloads'),
       }
     } finally {
-      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
+      if (seq === fetchSeqByHost[hostId]) {
+        loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
+      }
     }
   }
 

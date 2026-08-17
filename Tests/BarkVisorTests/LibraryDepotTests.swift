@@ -414,6 +414,19 @@ final class LibraryDepotTests {
     }
 }
 
+struct LibraryDepotStreamLimitsTests {
+    @Test func `write cap honors content length and max bytes`() throws {
+        #expect(try LibraryDepotStreamLimits.writeCap(contentLength: 100, maxBytes: 1_000) == 100)
+        #expect(try LibraryDepotStreamLimits.writeCap(contentLength: nil, maxBytes: 1_000) == 1_000)
+        #expect(throws: BarkVisorError.self) {
+            try LibraryDepotStreamLimits.writeCap(contentLength: 2_000, maxBytes: 1_000)
+        }
+        #expect(throws: BarkVisorError.self) {
+            try LibraryDepotStreamLimits.writeCap(contentLength: -1, maxBytes: 1_000)
+        }
+    }
+}
+
 struct LibraryDepotHTTPTests {
     @Test func `content path is distinct from the Home proxy`() {
         #expect(LibraryDepotHTTP.isImageBytesPath("/api/agent/library/images/img-1/content"))

@@ -81,9 +81,8 @@ extension VMLifecycleService {
         }
 
         if let disk = try await db.read({ db in try Disk.fetchOne(db, key: bootDiskId) }) {
-            let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
             let resolvedPath = (disk.path as NSString).resolvingSymlinksInPath
-            if LibrarySettings.isManagedStoragePath(disk.path, imagesDir: imagesDir) {
+            if try await db.read({ try LibrarySettings.isManagedStoragePath(disk.path, db: $0) }) {
                 try? FileManager.default.removeItem(atPath: resolvedPath)
             } else {
                 Log.vm.warning(
