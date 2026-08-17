@@ -44,8 +44,9 @@ enum WorkloadGuestSummary {
 }
 
 enum GuestInfoRefresh {
-    /// Guest-agent OS/IP typically arrives after the first running fetch.
+    /// Retry only while running and guest-info has not returned a body.
+    /// `available: false` (NAT fallback / no agent) is terminal.
     static func shouldRetry(guest: GuestInfo?, running: Bool) -> Bool {
-        running && guest?.available != true
+        running && guest == nil
     }
 }
