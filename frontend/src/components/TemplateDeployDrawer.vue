@@ -453,7 +453,10 @@ function watchDownload(imageId: string) {
     try {
       for (let i = 0; i < 600; i++) {
         if (drawerClosed || settled) return
-        if (imageProgress.isActive()) return
+        if (imageProgress.isActive()) {
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+          continue
+        }
         const { data } = await api.get(`/images/${imageId}`)
         if (drawerClosed || settled) return
         if (data.status === 'ready') {
