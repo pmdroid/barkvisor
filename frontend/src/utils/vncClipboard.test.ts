@@ -40,11 +40,37 @@ describe('vncClipboard', () => {
     expect(written).toEqual(['guest text'])
   })
 
-  test('readLocalClipboard returns null when the API is missing', async () => {
+  test('readLocalClipboard reports unsupported when the API is missing', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       configurable: true,
       value: {},
     })
-    expect(await readLocalClipboard()).toBeNull()
+    expect(await readLocalClipboard()).toEqual({ status: 'unsupported' })
+  })
+
+  test('readLocalClipboard reports denied when readText throws', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        clipboard: {
+          readText: async () => {
+            throw new Error('denied')
+          },
+        },
+      },
+    })
+    expect(await readLocalClipboard()).toEqual({ status: 'denied' })
+  })
+
+  test('readLocalClipboard returns clipboard text', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        clipboard: {
+          readText: async () => 'from host',
+        },
+      },
+    })
+    expect(await readLocalClipboard()).toEqual({ status: 'ok', text: 'from host' })
   })
 })
