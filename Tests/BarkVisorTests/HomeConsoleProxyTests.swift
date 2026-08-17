@@ -36,6 +36,32 @@ struct HomeConsoleProxyTests {
         try? await app.asyncShutdown()
     }
 
+    @Test func `home checks device ticket uuid shape only`() async throws {
+        let app = try await makeApp()
+        do {
+            func request(_ query: String) -> Request {
+                Request(
+                    application: app,
+                    method: .GET,
+                    url: URI(string: query.isEmpty ? "/t" : "/t?\(query)"),
+                    on: app.eventLoopGroup.next(),
+                )
+            }
+            #expect(throws: Abort.self) {
+                try HomeConsoleProxy.requireTicket(request(""))
+            }
+            #expect(throws: Abort.self) {
+                try HomeConsoleProxy.requireTicket(request("ticket=not-a-uuid"))
+            }
+            try HomeConsoleProxy.requireTicket(request("ticket=\(Self.ticket)"))
+            try HomeConsoleProxy.requireTicket(request("token=\(Self.ticket)"))
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
     @Test func `http proxy refuses websocket upgrade instead of stripping it`() async throws {
         let app = try await makeApp()
         app.middleware.use(StubHomeUserMiddleware())
