@@ -25,6 +25,8 @@ struct DevicesView: View {
                 .platformListStyle()
             }
         }
+        .refreshable { await model.refreshPhoneDevices() }
+        #if os(macOS)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add a \(Copy.device)", systemImage: "plus") {
@@ -32,6 +34,7 @@ struct DevicesView: View {
                 }
             }
         }
+        #endif
     }
 }
 

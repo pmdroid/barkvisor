@@ -17,7 +17,7 @@ struct ConnectView: View {
                 } header: {
                     Text("Connect")
                 } footer: {
-                    Text("Paste a Device origin or a web /login URL. The console talks to port 7777.")
+                    Text("Paste a Device origin including http:// or https://, or a web /login URL. Default port is 7777.")
                 }
 
                 Section {
