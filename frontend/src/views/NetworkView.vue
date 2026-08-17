@@ -306,6 +306,11 @@ function mutateTarget(hostId: string): HomeDeviceHealthSnapshot | null {
     ?? (hostId ? null : devicesStore.selfDevice)
 }
 
+/** Home union must not fall back to the local host when the Device is gone. */
+function homeUnionDeviceBlocked(device: HomeDeviceHealthSnapshot | null): boolean {
+  return useHomeUnion.value && (!device || !canCallDeviceAPI(device))
+}
+
 let bridgePoll: number | undefined
 
 onMounted(() => {
@@ -391,7 +396,7 @@ async function saveNetwork() {
     return
   }
   const device = formDevice.value
-  if (useHomeUnion.value && (!device || !canCallDeviceAPI(device))) {
+  if (homeUnionDeviceBlocked(device)) {
     error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
     return
   }
@@ -428,11 +433,11 @@ async function doDeleteNetwork() {
   deleting.value = true
   try {
     const device = mutateTarget(deleteTarget.value.hostId)
+    if (homeUnionDeviceBlocked(device)) {
+      toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+      return
+    }
     if (useHomeUnion.value && device) {
-      if (!canCallDeviceAPI(device)) {
-        toast.error('Device is unreachable. Workloads on this Device keep running locally.')
-        return
-      }
       await homeNets.remove(device, deleteTarget.value.id)
     } else {
       await networkStore.remove(deleteTarget.value.id)
@@ -458,7 +463,7 @@ function actionDevice(): HomeDeviceHealthSnapshot | null {
 
 async function setupBridge(ifaceName: string) {
   const device = actionDevice()
-  if (device && useHomeUnion.value && !canCallDeviceAPI(device)) {
+  if (homeUnionDeviceBlocked(device)) {
     toast.error('Device is unreachable. Workloads on this Device keep running locally.')
     return
   }
@@ -477,7 +482,7 @@ async function setupBridge(ifaceName: string) {
 
 async function removeBridge(ifaceName: string) {
   const device = actionDevice()
-  if (device && useHomeUnion.value && !canCallDeviceAPI(device)) {
+  if (homeUnionDeviceBlocked(device)) {
     toast.error('Device is unreachable. Workloads on this Device keep running locally.')
     return
   }
@@ -498,7 +503,7 @@ async function removeBridge(ifaceName: string) {
 
 async function startBridge(ifaceName: string) {
   const device = actionDevice()
-  if (device && useHomeUnion.value && !canCallDeviceAPI(device)) {
+  if (homeUnionDeviceBlocked(device)) {
     toast.error('Device is unreachable. Workloads on this Device keep running locally.')
     return
   }
@@ -519,7 +524,7 @@ async function startBridge(ifaceName: string) {
 
 async function stopBridge(ifaceName: string) {
   const device = actionDevice()
-  if (device && useHomeUnion.value && !canCallDeviceAPI(device)) {
+  if (homeUnionDeviceBlocked(device)) {
     toast.error('Device is unreachable. Workloads on this Device keep running locally.')
     return
   }
@@ -541,7 +546,7 @@ async function stopBridge(ifaceName: string) {
 async function setupBridgeInline() {
   if (!newBridge.value) return
   const device = formDevice.value
-  if (device && useHomeUnion.value && !canCallDeviceAPI(device)) {
+  if (homeUnionDeviceBlocked(device)) {
     error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
     return
   }
