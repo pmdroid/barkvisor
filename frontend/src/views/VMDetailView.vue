@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { apiErrorMessage } from '../api/errors'
+import { apiErrorMessage, isNotFoundError } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
+import { useDevicesStore } from '../stores/devices'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import api from '../api/client'
+import { canFetchDeviceWorkloads, isSelfDevice } from '../utils/homeDeviceApi'
+import { DEVICE_LABEL } from '../utils/terminology'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type { Disk, GuestInfo, Image, PortForwardRule, BridgeInfo, HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
@@ -24,6 +29,12 @@ import { formatBytes } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
 import { architectureLabel } from '../utils/architectureDetails'
+import {
+  isMemberWorkloadDetail,
+  localNetworkForDetail,
+  memberNetworkCaption,
+  workloadDetailVmSource,
+} from '../utils/workloadDetail'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -33,6 +44,8 @@ import { useFeature } from '../composables/useFeature'
 const route = useRoute()
 const router = useRouter()
 const store = useVMStore()
+const devicesStore = useDevicesStore()
+const homeWorkloads = useDeviceWorkloadsStore()
 const caps = useCapabilitiesStore()
 const diskStore = useDiskStore()
 const networkStore = useNetworkStore()
@@ -42,9 +55,38 @@ const managedBridge = useFeature('managedBridgeDaemon')
 const { disks: allDisks, usages: diskUsages } = storeToRefs(diskStore)
 const { networks: allNetworks } = storeToRefs(networkStore)
 const vmId = computed(() => route.params.id as string)
+const hostId = computed(() => {
+  const raw = route.params.hostId
+  return raw ? String(raw) : ''
+})
+const memberLoadSettled = ref(false)
+const memberLoadError = ref<string | null>(null)
+const memberRole = computed(() => (
+  hostId.value ? devicesStore.deviceByHostId(hostId.value)?.role : undefined
+))
+const isMemberDetail = computed(() => isMemberWorkloadDetail({
+  hostId: hostId.value,
+  role: memberRole.value,
+  loadSettled: memberLoadSettled.value,
+}))
+const memberDevice = computed(() => (
+  hostId.value ? devicesStore.deviceByHostId(hostId.value) : null
+))
+const memberReachable = computed(() => {
+  const device = memberDevice.value
+  return Boolean(device && canFetchDeviceWorkloads(device))
+})
 const tab = ref((route.query.tab as string) || 'overview')
 
+watch(isMemberDetail, (remote) => {
+  if (remote) tab.value = 'overview'
+}, { immediate: true })
+
 watch(tab, (value) => {
+  if (isMemberDetail.value && value !== 'overview') {
+    tab.value = 'overview'
+    return
+  }
   router.replace({ query: { ...route.query, tab: value === 'overview' ? undefined : value } })
 })
 
@@ -65,8 +107,16 @@ function openVncWindow() {
   )
 }
 
-const vm = computed(() => store.vms.find(v => v.id === vmId.value))
+const vm = computed(() => {
+  const source = workloadDetailVmSource({ hostId: hostId.value, role: memberRole.value })
+  if (source === 'pending') return undefined
+  if (source === 'member') return homeWorkloads.vmFor(hostId.value, vmId.value)
+  return store.vms.find(v => v.id === vmId.value)
+})
 const actionLoading = ref('')
+const controlDisabled = computed(() => (
+  Boolean(actionLoading.value) || (isMemberDetail.value && !memberReachable.value)
+))
 const showEditModal = ref(false)
 const editDraft = ref({
   description: '',
@@ -154,6 +204,7 @@ async function fetchBridges() {
 
 /** macOS only: socket_vmnet daemon must be active before start. Linux uses host bridges. */
 const bridgeNotReady = computed(() => {
+  if (isMemberDetail.value) return false
   if (!managedBridge.available) return false
   if (!bridged.available) return false
   if (!currentNetwork.value || currentNetwork.value.mode !== 'bridged' || !currentNetwork.value.bridge) return false
@@ -167,7 +218,7 @@ const bridgeStatus = computed(() => {
 })
 
 async function setupBridgeFromDetail() {
-  if (!currentNetwork.value?.bridge) return
+  if (isMemberDetail.value || !currentNetwork.value?.bridge) return
   bridgeLoading.value = currentNetwork.value.bridge
   try {
     await api.post('/system/bridges', { interface: currentNetwork.value.bridge })
@@ -206,11 +257,62 @@ async function doAttachISO() {
 }
 
 async function fetchGuestInfo() {
+  if (isMemberDetail.value) { guestInfo.value = null; return }
   if (vm.value?.state !== 'running') { guestInfo.value = null; return }
   try {
     const { data } = await api.get(`/vms/${vmId.value}/guest-info`)
     guestInfo.value = data
   } catch { guestInfo.value = null }
+}
+
+async function refreshWorkload() {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    await homeWorkloads.refreshOne(device, vmId.value)
+    return
+  }
+  await store.fetchOne(vmId.value)
+}
+
+async function startWorkload() {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    await homeWorkloads.start(device, vmId.value)
+    return
+  }
+  await store.start(vmId.value)
+}
+
+async function restartWorkload() {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    await homeWorkloads.restart(device, vmId.value)
+    return
+  }
+  await store.restart(vmId.value)
+}
+
+async function stopWorkload(method: 'acpi' | 'force') {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    await homeWorkloads.stop(device, vmId.value, { method })
+    return
+  }
+  await store.stop(vmId.value, { method })
+}
+
+async function patchWorkload(body: Parameters<typeof store.update>[1]) {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    await homeWorkloads.update(device, vmId.value, body)
+    return
+  }
+  await store.update(vmId.value, body)
 }
 
 
@@ -290,8 +392,67 @@ function connectStateSSE() {
   })
 }
 
-async function loadVMDetail() {
+async function pollMemberDetail(loadVersion: number) {
+  if (loadVersion !== detailLoadVersion) return
+  try {
+    await devicesStore.fetchHealth()
+  } catch { /* keep last health */ }
+  if (loadVersion !== detailLoadVersion) return
+  const current = devicesStore.deviceByHostId(hostId.value)
+  if (!current || isSelfDevice(current) || !canFetchDeviceWorkloads(current)) return
+  try {
+    await homeWorkloads.refreshOne(current, vmId.value)
+    if (loadVersion !== detailLoadVersion) return
+    memberLoadError.value = null
+  } catch (e: any) {
+    if (loadVersion !== detailLoadVersion) return
+    memberLoadError.value = apiErrorMessage(e)
+    if (!isNotFoundError(e)) return
+    homeWorkloads.removeOne(current.hostId, vmId.value)
+    stopRealtimeSync()
+  }
+}
+
+async function loadMemberDetail() {
   const loadVersion = ++detailLoadVersion
+  stopRealtimeSync()
+  guestInfo.value = null
+  memberLoadError.value = null
+  memberLoadSettled.value = false
+  try {
+    await devicesStore.fetchHealth()
+    if (loadVersion !== detailLoadVersion) return
+    const device = devicesStore.deviceByHostId(hostId.value)
+    if (device && isSelfDevice(device)) {
+      await loadLocalDetail(loadVersion)
+      return
+    }
+    if (device && canFetchDeviceWorkloads(device)) {
+      try {
+        await homeWorkloads.refreshOne(device, vmId.value)
+        if (loadVersion !== detailLoadVersion) return
+        memberLoadError.value = null
+        await homeWorkloads.fetchSpec(device, vmId.value).catch(() => {})
+      } catch (e: any) {
+        if (isNotFoundError(e)) {
+          homeWorkloads.removeOne(device.hostId, vmId.value)
+          memberLoadError.value = apiErrorMessage(e)
+          return
+        }
+        memberLoadError.value = apiErrorMessage(e)
+      }
+    }
+    if (loadVersion !== detailLoadVersion) return
+    pollInterval = window.setInterval(() => {
+      void pollMemberDetail(loadVersion)
+    }, 15000)
+  } finally {
+    if (loadVersion === detailLoadVersion) memberLoadSettled.value = true
+  }
+}
+
+async function loadLocalDetail(existingVersion?: number) {
+  const loadVersion = existingVersion ?? ++detailLoadVersion
   stopRealtimeSync()
   guestInfo.value = null
   diskUsages.value = {}
@@ -322,12 +483,21 @@ async function loadVMDetail() {
   }
 }
 
+async function loadVMDetail() {
+  if (hostId.value) {
+    await loadMemberDetail()
+    return
+  }
+  memberLoadSettled.value = true
+  await loadLocalDetail()
+}
+
 onMounted(() => {
   void loadVMDetail()
 })
 
-watch(vmId, (newId, oldId) => {
-  if (newId !== oldId) {
+watch([vmId, hostId], ([newId, newHost], [oldId, oldHost]) => {
+  if (newId !== oldId || newHost !== oldHost) {
     void loadVMDetail()
   }
 })
@@ -360,6 +530,7 @@ const stopConfirm = ref<{ method: 'acpi' | 'force' } | null>(null)
 const stopLoading = ref(false)
 
 function requestStop(method: 'acpi' | 'force') {
+  if (isMemberDetail.value && !memberReachable.value) return
   stopConfirm.value = { method }
 }
 
@@ -370,8 +541,8 @@ async function confirmStop() {
   stopLoading.value = true
   actionLoading.value = method === 'force' ? 'force-stop' : 'stop'
   try {
-    await store.stop(vmId.value, { method })
-    await store.fetchOne(vmId.value)
+    await stopWorkload(method)
+    await refreshWorkload()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -445,11 +616,13 @@ async function doRemoveSharedPath() {
 }
 
 function openEditModal() {
-  const maxCpu = caps.hostCpuCount
   const current = vm.value?.cpuCount || 1
+  const cpu = isMemberDetail.value
+    ? Math.max(1, current)
+    : Math.min(Math.max(1, current), caps.hostCpuCount)
   editDraft.value = {
     description: vm.value?.description || '',
-    cpuCount: Math.min(Math.max(1, current), maxCpu),
+    cpuCount: cpu,
     memoryMB: vm.value?.memoryMB || 512,
     bootOrder: vm.value?.bootOrder || 'cd',
     networkId: vm.value?.networkId || defaultNetwork.value?.id || '',
@@ -460,17 +633,17 @@ function openEditModal() {
 async function saveEdit() {
   editSaving.value = true
   try {
-    const maxCpu = caps.hostCpuCount
-    const cpu = Math.min(Math.max(1, Math.trunc(editDraft.value.cpuCount)), maxCpu)
-    await store.update(vmId.value, {
+    const rawCpu = Math.max(1, Math.trunc(editDraft.value.cpuCount))
+    const cpu = isMemberDetail.value ? rawCpu : Math.min(rawCpu, caps.hostCpuCount)
+    await patchWorkload({
       description: editDraft.value.description,
       cpuCount: cpu,
       memoryMB: editDraft.value.memoryMB,
       bootOrder: editDraft.value.bootOrder,
-      networkId: editDraft.value.networkId,
+      ...(isMemberDetail.value ? {} : { networkId: editDraft.value.networkId }),
     } as any)
     showEditModal.value = false
-    await store.fetchOne(vmId.value)
+    await refreshWorkload()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -515,10 +688,11 @@ async function doDetachDisk() {
 const defaultNetwork = computed(() => allNetworks.value.find(n => n.isDefault))
 
 
-const currentNetwork = computed(() => {
-  if (!vm.value?.networkId) return defaultNetwork.value || null
-  return allNetworks.value.find(n => n.id === vm.value!.networkId) || null
-})
+const currentNetwork = computed(() => localNetworkForDetail(
+  isMemberDetail.value,
+  vm.value?.networkId,
+  allNetworks.value,
+))
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
@@ -526,15 +700,35 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
 <template>
   <div v-if="!vm" class="empty">
-    <p>Loading...</p>
+    <template v-if="isMemberDetail && memberLoadSettled">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="back-icon" @click="router.push('/vms')" title="Back to VMs">
+            <AppIcon name="chevron-left" :size="18" />
+          </button>
+          <h1>{{ vmId }}</h1>
+        </div>
+      </div>
+      <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
+      <p v-else-if="!memberReachable">
+        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Live state unavailable.
+      </p>
+      <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
+    </template>
+    <p v-else>Loading...</p>
   </div>
   <div v-else>
     <div class="page-header">
-      <div style="display:flex;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <button class="back-icon" @click="router.push('/vms')" title="Back to VMs">
           <AppIcon name="chevron-left" :size="18" />
         </button>
         <h1>{{ vm.name }}</h1>
+        <WorkloadDeviceChip
+          v-if="isMemberDetail && memberDevice"
+          :label="devicesStore.deviceLabel(memberDevice)"
+          :reachable="memberReachable"
+        />
       </div>
       <div style="display: flex; gap: 8px; align-items: center">
         <span
@@ -543,26 +737,31 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           :title="vm.status?.healthError || undefined"
         >{{ healthLabel(vmHealth(vm)) }}</span>
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
-          :disabled="!!actionLoading" @click="action('start', () => store.start(vmId))">Start</AppButton>
-        <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="!!actionLoading || stopLoading" @stop="requestStop($event)" />
+          :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
+        <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
         <AppButton
-          v-if="vm.state === 'running' || vm.state === 'stopping'"
+          v-if="!isMemberDetail && (vm.state === 'running' || vm.state === 'stopping')"
           title="Open VNC in a new resizable window"
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
         >VNC</AppButton>
         <AppButton v-if="vm.state === 'running'"
-          :disabled="!!actionLoading" @click="action('restart', () => store.restart(vmId))">Restart</AppButton>
-        <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="danger" :disabled="!!actionLoading" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
+          :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
+        <AppButton v-if="!isMemberDetail && (vm.state === 'stopped' || vm.state === 'error')" variant="danger" :disabled="!!actionLoading" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
       </div>
     </div>
 
-    <div class="tabs">
+    <div v-if="!isMemberDetail" class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
       <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
     </div>
+
+    <div v-if="isMemberDetail && !memberReachable" class="pending-banner">
+      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known data, not live state.
+    </div>
+    <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
 
     <div v-if="vm.pendingChanges" class="pending-banner">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -578,7 +777,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       {{ backend.warning }}
     </div>
 
-    <div v-if="bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
+    <div v-if="!isMemberDetail && bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
@@ -591,7 +790,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
           <div></div>
-          <AppButton size="sm" @click="openEditModal">Edit Settings</AppButton>
+          <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openEditModal">Edit Settings</AppButton>
         </div>
         <div class="detail-grid">
           <div class="detail-row">
@@ -637,7 +836,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <div class="detail-row">
             <span class="detail-label">Network</span>
             <span style="display:flex;align-items:center;gap:6px">
-              <template v-if="currentNetwork">
+              <template v-if="isMemberDetail">
+                <span v-if="vm.networkId" class="mono">{{ memberNetworkCaption(vm.networkId) }}</span>
+                <span v-else style="color:var(--text-dim)">{{ memberNetworkCaption(vm.networkId) }}</span>
+              </template>
+              <template v-else-if="currentNetwork">
                 <span style="color:var(--text-secondary)">{{ currentNetwork.name }}</span>
                 <span class="badge badge-gray">{{ currentNetwork.mode }}</span>
                 <template v-if="currentNetwork.mode === 'bridged' && currentNetwork.bridge">
@@ -659,10 +862,10 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 </span>
               </span>
               <span v-else style="color:var(--text-dim)">None</span>
-              <AppButton size="sm" @click="openPortForwardEditor">Edit</AppButton>
+              <AppButton v-if="!isMemberDetail" size="sm" @click="openPortForwardEditor">Edit</AppButton>
             </span>
           </div>
-          <div v-if="currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
+          <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
             <span class="detail-label">Services</span>
             <span style="display:flex;flex-wrap:wrap;gap:4px">
               <template v-if="guestInfo?.ipAddresses?.length">
@@ -688,13 +891,13 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                   <a href="#" @click.prevent="router.push('/images')" style="color:var(--accent);text-decoration:none;font-size:13px">
                     {{ iso.name }}
                   </a>
-                  <span class="badge badge-gray">{{ iso.arch }}</span>
+                  <span v-if="!isMemberDetail" class="badge badge-gray">{{ iso.arch }}</span>
                 </span>
-                <AppButton size="sm" :disabled="!!actionLoading"
+                <AppButton v-if="!isMemberDetail" size="sm" :disabled="!!actionLoading"
                   @click="action('detach ISO', () => store.detachISO(vmId, iso.id))">Detach</AppButton>
               </div>
               <div v-if="isoImages.length === 0" style="font-size:12px;color:var(--text-dim)">No ISOs attached</div>
-              <div v-if="showIsoAttach" style="display:flex;gap:6px;align-items:end;margin-top:4px">
+              <div v-if="!isMemberDetail && showIsoAttach" style="display:flex;gap:6px;align-items:end;margin-top:4px">
                 <AppSelect v-model="attachIsoId" size="sm" style="flex:1">
                   <option value="" disabled>Select ISO...</option>
                   <option v-for="img in availableIsos" :key="img.id" :value="img.id">{{ img.name }}</option>
@@ -702,14 +905,14 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 <AppButton variant="primary" size="sm" :disabled="!attachIsoId || !!actionLoading" @click="doAttachISO">Attach</AppButton>
                 <AppButton size="sm" @click="showIsoAttach = false; attachIsoId = ''">Cancel</AppButton>
               </div>
-              <AppButton v-else size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
+              <AppButton v-else-if="!isMemberDetail" size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
             </span>
           </div>
           <div v-if="vm.macAddress" class="detail-row">
             <span class="detail-label">MAC Address</span>
             <span class="mono" style="color:var(--text-secondary)">{{ vm.macAddress }}</span>
           </div>
-          <div v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
+          <div v-if="!isMemberDetail && vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
             <span class="detail-label">IP Address</span>
             <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
@@ -723,7 +926,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- Guest Agent Info -->
-      <div v-if="vm.state === 'running' && guestInfo?.available" style="margin-top:20px">
+      <div v-if="!isMemberDetail && vm.state === 'running' && guestInfo?.available" style="margin-top:20px">
         <h2 style="font-size:16px;font-weight:700;margin-bottom:12px">Guest Agent</h2>
         <div class="card">
           <div class="detail-grid">
@@ -782,7 +985,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- Disks Section -->
-      <div style="margin-top:20px">
+      <div v-if="!isMemberDetail" style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">Disks</h2>
           <AppButton size="sm" icon="plus" @click="showAttachDisk = true; fetchDisks()">Attach Disk</AppButton>
@@ -828,7 +1031,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- Shared Folders Section -->
-      <div style="margin-top:20px">
+      <div v-if="!isMemberDetail" style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">Shared Folders</h2>
           <AppButton size="sm" icon="plus" @click="showFolderPicker = true">Add Shared Folder</AppButton>
@@ -850,7 +1053,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- USB Devices Section -->
-      <div style="margin-top:20px">
+      <div v-if="!isMemberDetail" style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
           <AppButton
@@ -881,9 +1084,9 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
     </div>
 
-    <ConsolePanel v-if="tab === 'console'" :key="`console-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
-    <VNCPanel v-if="tab === 'vnc'" :key="`vnc-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
-    <MetricsPanel v-if="tab === 'metrics' && vm.state === 'running'" :key="`metrics-${vmId}`" :vm-id="vmId" />
+    <ConsolePanel v-if="!isMemberDetail && tab === 'console'" :key="`console-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
+    <VNCPanel v-if="!isMemberDetail && tab === 'vnc'" :key="`vnc-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
+    <MetricsPanel v-if="!isMemberDetail && tab === 'metrics' && vm.state === 'running'" :key="`metrics-${vmId}`" :vm-id="vmId" />
 
     <!-- Attach USB Device Modal -->
     <div v-if="usb.available && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
@@ -991,12 +1194,12 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <input v-model="editDraft.description" placeholder="Add a description..." />
         </div>
         <div class="edit-field">
-          <label>CPU Cores (max {{ caps.hostCpuCount }})</label>
+          <label>CPU Cores<template v-if="!isMemberDetail"> (max {{ caps.hostCpuCount }})</template></label>
           <input
             v-model.number="editDraft.cpuCount"
             type="number"
             min="1"
-            :max="caps.hostCpuCount"
+            :max="isMemberDetail ? undefined : caps.hostCpuCount"
           />
         </div>
         <div class="edit-field">
@@ -1014,7 +1217,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <option value="nc">Network, then disk (nc)</option>
           </AppSelect>
         </div>
-        <div class="edit-field">
+        <div v-if="!isMemberDetail" class="edit-field">
           <label>Network</label>
           <AppSelect v-model="editDraft.networkId">
             <option v-for="n in allNetworks" :key="n.id" :value="n.id">{{ n.name }} ({{ n.mode }})</option>
@@ -1064,6 +1267,13 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 </template>
 
 <style scoped>
+.empty p,
+.list-error {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.list-error { margin: 0 0 16px; }
 .edit-form {
   display: flex;
   flex-direction: column;

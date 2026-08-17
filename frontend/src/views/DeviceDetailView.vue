@@ -14,6 +14,7 @@ import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import { canFetchDeviceWorkloads } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
+import { openWorkloadRow } from '../utils/workloadDetail'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 
 const route = useRoute()
@@ -107,6 +108,15 @@ async function doRestart(id: string) {
   }
 }
 
+function openWorkload(vm: (typeof vms.value)[number]) {
+  if (!device.value) return
+  openWorkloadRow((path) => { router.push(path) }, {
+    hostId: device.value.hostId,
+    role: device.value.role,
+    vm,
+  })
+}
+
 function requestStop(id: string, method: 'acpi' | 'force') {
   const vm = vms.value.find((row) => row.id === id)
   stopConfirm.value = { id, name: vm?.name || id, method }
@@ -196,7 +206,7 @@ async function doStop() {
             { key: 'actions', label: '' },
           ]"
         >
-          <tr v-for="vm in vms" :key="vm.id">
+          <tr v-for="vm in vms" :key="vm.id" class="vm-row" @click="openWorkload(vm)">
             <td>
               <div class="vm-name">{{ vm.name }}</div>
               <div v-if="vm.description" class="vm-desc">{{ vm.description }}</div>
@@ -215,7 +225,7 @@ async function doStop() {
               >{{ healthLabel(vmHealth(vm)) }}</span>
             </td>
             <td>
-              <div class="vm-actions">
+              <div class="vm-actions" @click.stop>
                 <AppButton
                   v-if="vm.state === 'stopped' || vm.state === 'error'"
                   variant="primary"
@@ -336,6 +346,8 @@ async function doStop() {
   margin: 0 0 8px;
   font-size: 28px;
 }
+.vm-row { cursor: pointer; }
+.vm-row:hover { background: var(--bg-hover); }
 .vm-name { font-weight: 500; }
 .vm-desc {
   font-size: 12px;

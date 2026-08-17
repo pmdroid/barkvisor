@@ -17,6 +17,7 @@ import { hasKnownHealthCounts, homeWorkloadsRunningLine, resolveHealthCounts } f
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
+import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 import { storeToRefs } from 'pinia'
 import { Line } from 'vue-chartjs'
 import {
@@ -79,11 +80,7 @@ const recentVMs = computed(() =>
 )
 
 function openRow(row: HomeWorkloadRow) {
-  if (row.role === 'self') {
-    router.push(`/vms/${row.vm.id}`)
-    return
-  }
-  router.push(`/devices/${encodeURIComponent(row.hostId)}`)
+  openWorkloadRow((path) => { router.push(path) }, row)
 }
 
 function emuBadge(vm: (typeof store.vms)[0]) {
@@ -330,7 +327,7 @@ const memSparkData = computed(() => ({
         { key: 'memory', label: 'Memory' },
         { key: 'updated', label: 'Updated' },
       ]">
-        <tr v-for="row in recentVMs" :key="`${row.hostId}:${row.vm.id}`" @click="openRow(row)" style="cursor:pointer">
+        <tr v-for="row in recentVMs" :key="workloadRowKey(row)" @click="openRow(row)" style="cursor:pointer">
           <td>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
               <span style="font-weight:600">{{ row.vm.name }}</span>

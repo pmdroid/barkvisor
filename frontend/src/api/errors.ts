@@ -22,3 +22,8 @@ export function apiErrorMessage(error: unknown, fallback = 'Request failed'): st
   }
   return fallback
 }
+
+/** Confirmed HTTP 404 / not-found. Network and 5xx must not evict last-known data. */
+export function isNotFoundError(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 404
+}
