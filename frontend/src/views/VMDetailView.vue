@@ -434,9 +434,9 @@ async function pollMemberDetail(loadVersion: number) {
     await fetchGuestInfo()
   } catch (e: any) {
     if (loadVersion !== detailLoadVersion) return
+    memberLoadError.value = apiErrorMessage(e)
     if (!isNotFoundError(e)) return
     homeWorkloads.removeOne(current.hostId, vmId.value)
-    memberLoadError.value = apiErrorMessage(e)
     stopRealtimeSync()
   }
 }
@@ -743,7 +743,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
       <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
       <p v-else-if="!memberReachable">
-        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name, not live state.
+        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Live state unavailable.
       </p>
       <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
     </template>
@@ -791,7 +791,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     </div>
 
     <div v-if="isMemberDetail && !memberReachable" class="pending-banner">
-      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name, not live state.
+      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known data, not live state.
     </div>
     <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
 
