@@ -134,7 +134,7 @@ function sendCtrlAltDel() {
 }
 
 function sendTextToGuest(text: string) {
-  if (!rfb || !text) return
+  if (!rfb || status.value !== 'connected' || !text) return
   rfb.clipboardPasteFrom(text)
   clipboardHint.value = 'Pasted into guest'
 }
@@ -163,7 +163,7 @@ async function copyLastGuest() {
 }
 
 function onPaste(event: ClipboardEvent) {
-  if (!rfb || !canvasEl.value) return
+  if (!rfb || status.value !== 'connected' || !canvasEl.value) return
   const root = canvasEl.value.closest('.vnc-root')
   if (root && !root.contains(event.target as Node) && document.activeElement !== document.body) {
     return
