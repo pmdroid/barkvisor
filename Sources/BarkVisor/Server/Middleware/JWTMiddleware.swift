@@ -189,10 +189,10 @@ struct JWTAuthMiddleware: AsyncMiddleware {
     }
 }
 
-/// Home VNC/console tunnel: Bearer JWT or a Home-minted `?session=` ticket.
-/// Does **not** consume `?ticket=` / `?token=` — those are the Device ticket
-/// (noVNC rewrites `ticket` to `token`). Browser WebSockets cannot set
-/// `Authorization`, so the SPA exchanges the JWT for `session=` first.
+/// Home VNC/console tunnel: Bearer JWT or a Home-minted `?session=` ticket
+/// scoped to `:vmId`. Does **not** consume `?ticket=` / `?token=` — those are
+/// the Device ticket (noVNC rewrites `ticket` to `token`). Browser WebSockets
+/// cannot set `Authorization`, so the SPA exchanges the JWT for `session=`.
 struct HomeTunnelAuthMiddleware: AsyncMiddleware {
     let keys: JWTKeyCollection
 
@@ -214,7 +214,11 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
             return try await next.respond(to: request)
         }
         if let session = request.query[String.self, at: "session"], !session.isEmpty {
-            guard let userInfo = await WebSocketTicketStore.shared.validateTicket(session) else {
+            guard let vmID = request.parameters.get("vmId"), !vmID.isEmpty else {
+                throw Abort(.unauthorized, reason: "Missing vm")
+            }
+            guard let userInfo = await WebSocketTicketStore.shared.validateTicket(session, forVMID: vmID)
+            else {
                 throw Abort(.unauthorized, reason: "Invalid or expired session")
             }
             request.authenticatedUser = AuthenticatedUser(
