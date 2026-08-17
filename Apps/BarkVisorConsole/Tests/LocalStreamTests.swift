@@ -11,6 +11,18 @@ struct LocalStreamTests {
         #expect(!WorkloadStream.isLive("error"))
     }
 
+    @Test func sessionTaskIDIgnoresRunningToStopping() {
+        let running = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-1", state: "running")
+        let stopping = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-1", state: "stopping")
+        let stopped = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-1", state: "stopped")
+        let other = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-2", state: "running")
+        #expect(running == stopping)
+        #expect(running != stopped)
+        #expect(running != other)
+        #expect(running.hasSuffix("/live"))
+        #expect(stopped.hasSuffix("/down"))
+    }
+
     @Test func memberStreamsStayDisabled() {
         #expect(WorkloadStreamAccess.resolve(isSelfDevice: false, state: "running") == .memberDisabled)
         #expect(!WorkloadStreamAccess.resolve(isSelfDevice: false, state: "running").allowsOpen)
@@ -91,6 +103,45 @@ struct LocalStreamTests {
         #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
         session.focusKeyboard()
         #expect(session.pendingScript == "window.focusVNC && window.focusVNC()")
+    }
+
+    @Test @MainActor func displayControlScriptsExecuteOnlyWhenPageReady() {
+        let session = DisplaySession()
+        session.sendCtrlAltDel()
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+
+        session.pageReady = true
+        #expect(session.consumePendingScript() == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+        #expect(session.pendingScript == nil)
+
+        session.focusKeyboard()
+        #expect(session.consumePendingScript() == "window.focusVNC && window.focusVNC()")
+        #expect(session.pendingScript == nil)
+        #expect(session.consumePendingScript() == nil)
+    }
+
+    @Test @MainActor func displayDropsTicketWhenWorkloadLeavesLive() {
+        let session = DisplaySession()
+        session.primeForTest(state: "running")
+        #expect(session.canOpenStream())
+        session.updateState("stopping")
+        #expect(session.canOpenStream())
+        session.updateState("stopped")
+        #expect(!session.canOpenStream())
+        #expect(session.status == WorkloadStreamAccess.notLive.reason)
+        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+    }
+
+    @Test @MainActor func consoleDropsTicketWhenWorkloadLeavesLive() {
+        let session = ConsoleSession()
+        session.primeForTest(state: "running")
+        #expect(session.canOpenStream())
+        session.updateState("stopping")
+        #expect(session.canOpenStream())
+        session.updateState("stopped")
+        #expect(!session.canOpenStream())
+        #expect(session.status == WorkloadStreamAccess.notLive.reason)
     }
 
     @Test func streamURLUsesTicketAndNeverJWT() throws {

@@ -39,9 +39,22 @@ final class ConsoleSession {
     func updateState(_ state: String) {
         self.state = state
         if !WorkloadStream.isLive(state) {
+            loop?.cancel()
+            loop = nil
             closeSocket()
             status = WorkloadStreamAccess.notLive.reason
         }
+    }
+
+    /// Ticket may be used only while this session is still the live stream.
+    func canOpenStream() -> Bool {
+        !stopped && WorkloadStream.isLive(state)
+    }
+
+    /// Test seam: apply a live/not-live state without opening a socket.
+    func primeForTest(state: String) {
+        self.state = state
+        stopped = false
     }
 
     func stop() {
@@ -71,6 +84,12 @@ final class ConsoleSession {
             do {
                 status = "Requesting ticket…"
                 let ticket = try await client.createWSTicket(vmID: workloadID)
+                guard canOpenStream(), !Task.isCancelled else {
+                    if !WorkloadStream.isLive(state) {
+                        status = WorkloadStreamAccess.notLive.reason
+                    }
+                    return
+                }
                 let url = try StreamURL.console(base: client.baseURL, workloadID: workloadID, ticket: ticket)
                 status = "Connecting…"
                 let task = urlSession.webSocketTask(with: url)
