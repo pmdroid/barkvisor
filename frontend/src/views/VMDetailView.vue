@@ -956,7 +956,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           </div>
           <div v-else-if="isMemberDetail" class="detail-row">
             <span class="detail-label">IP Address</span>
-            <span style="color:var(--text-dim)">-</span>
+            <span style="color:var(--text-dim)">—</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Created</span>
