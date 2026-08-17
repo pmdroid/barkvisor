@@ -303,6 +303,8 @@ async function startWorkload() {
     const device = memberDevice.value
     if (!device || !canFetchDeviceWorkloads(device)) return
     await homeWorkloads.start(device, vmId.value)
+    guestInfo.value = null
+    await fetchGuestInfo()
     return
   }
   await store.start(vmId.value)
@@ -313,6 +315,8 @@ async function restartWorkload() {
     const device = memberDevice.value
     if (!device || !canFetchDeviceWorkloads(device)) return
     await homeWorkloads.restart(device, vmId.value)
+    guestInfo.value = null
+    await fetchGuestInfo()
     return
   }
   await store.restart(vmId.value)
@@ -569,6 +573,8 @@ async function confirmStop() {
   try {
     await stopWorkload(method)
     await refreshWorkload()
+    guestInfo.value = null
+    await fetchGuestInfo()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {

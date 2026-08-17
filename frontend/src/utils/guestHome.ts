@@ -26,6 +26,15 @@ export function guestInfoFetchPath(
   return deviceGuestInfoPath(device, vmId)
 }
 
+/** Cached guest-info is only valid while the Workload is running. */
+export function guestInfoIfRunning(
+  guest: GuestInfo | null | undefined,
+  vmState: string | undefined,
+): GuestInfo | null {
+  if (vmState !== 'running') return null
+  return guest ?? null
+}
+
 export function guestOsLabel(
   guest: GuestInfo | null | undefined,
   vmType: string,
