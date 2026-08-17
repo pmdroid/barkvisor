@@ -188,7 +188,18 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         _ request: Vapor.Request,
         chainingTo next: any AsyncResponder,
     ) async throws -> Vapor.Response {
-        try await HomeTunnelAuthMiddleware(keys: keys).respond(to: request, chainingTo: next)
+        if let auth = request.headers.bearerAuthorization {
+            if auth.token.hasPrefix("barkvisor_") {
+                request.authenticatedUser = try await authenticateAPIKey(
+                    token: auth.token,
+                    request: request,
+                )
+            } else {
+                request.authenticatedUser = try await authenticateJWT(token: auth.token)
+            }
+            return try await next.respond(to: request)
+        }
+        return try await HomeTunnelAuthMiddleware(keys: keys).respond(to: request, chainingTo: next)
     }
 
     private func authenticateJWT(token: String) async throws -> AuthenticatedUser {
