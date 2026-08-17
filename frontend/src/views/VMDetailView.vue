@@ -35,6 +35,7 @@ import {
   memberNetworkCaption,
   workloadDetailVmSource,
 } from '../utils/workloadDetail'
+import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -256,14 +257,25 @@ async function doAttachISO() {
   fetchImages()
 }
 
+function guestInfoDevice() {
+  if (isMemberDetail.value) return memberDevice.value
+  return devicesStore.selfDevice ?? { hostId: hostId.value || 'self', role: 'self', reachability: 'ok' }
+}
+
 async function fetchGuestInfo() {
-  if (isMemberDetail.value) { guestInfo.value = null; return }
-  if (vm.value?.state !== 'running') { guestInfo.value = null; return }
+  const path = guestInfoFetchPath(guestInfoDevice(), vmId.value, vm.value?.state)
+  if (!path) { guestInfo.value = null; return }
   try {
-    const { data } = await api.get(`/vms/${vmId.value}/guest-info`)
+    const { data } = await api.get(path)
     guestInfo.value = data
   } catch { guestInfo.value = null }
 }
+
+const memberOsLabel = computed(() => guestOsLabel(
+  guestInfo.value,
+  vm.value?.vmType ?? 'linux',
+  memberReachable.value && vm.value?.state === 'running',
+))
 
 async function refreshWorkload() {
   if (isMemberDetail.value) {
@@ -404,6 +416,7 @@ async function pollMemberDetail(loadVersion: number) {
     await homeWorkloads.refreshOne(current, vmId.value)
     if (loadVersion !== detailLoadVersion) return
     memberLoadError.value = null
+    await fetchGuestInfo()
   } catch (e: any) {
     if (loadVersion !== detailLoadVersion) return
     if (!isNotFoundError(e)) return
@@ -441,6 +454,8 @@ async function loadMemberDetail() {
         }
         memberLoadError.value = apiErrorMessage(e)
       }
+      if (loadVersion !== detailLoadVersion) return
+      await fetchGuestInfo()
     }
     if (loadVersion !== detailLoadVersion) return
     pollInterval = window.setInterval(() => {
@@ -912,11 +927,20 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">MAC Address</span>
             <span class="mono" style="color:var(--text-secondary)">{{ vm.macAddress }}</span>
           </div>
-          <div v-if="!isMemberDetail && vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
+          <div v-if="isMemberDetail" class="detail-row">
+            <span class="detail-label">OS</span>
+            <span v-if="guestInfo?.osName">{{ memberOsLabel }}</span>
+            <span v-else style="color:var(--text-dim)">-</span>
+          </div>
+          <div v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
             <span class="detail-label">IP Address</span>
             <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
             </span>
+          </div>
+          <div v-else-if="isMemberDetail" class="detail-row">
+            <span class="detail-label">IP Address</span>
+            <span style="color:var(--text-dim)">-</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Created</span>

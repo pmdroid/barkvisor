@@ -24,6 +24,11 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import { pct } from '../utils/format'
 import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
+import {
+  guestInfoFetchPath,
+  guestIpPortsView,
+  guestOsLabel,
+} from '../utils/guestHome'
 
 const store = useVMStore()
 const homeWorkloads = useDeviceWorkloadsStore()
@@ -96,18 +101,33 @@ async function refreshHomeWorkloads() {
   await homeWorkloads.fetchHomeAll(list)
 }
 
+function guestDeviceForRow(row: HomeWorkloadRow) {
+  return rowDevice(row) ?? {
+    hostId: row.hostId,
+    role: row.role,
+    reachability: row.reachable ? 'ok' : 'unreachable',
+  }
+}
+
+let guestInfoInFlight = false
 async function fetchGuestInfo() {
-  const selfId = devicesStore.selfDevice?.hostId
-  for (const row of homeRows.value) {
-    if (row.role !== 'self' && row.hostId !== selfId) continue
-    if (row.vm.state === 'running') {
+  if (guestInfoInFlight) return
+  guestInfoInFlight = true
+  try {
+    for (const row of homeRows.value) {
+      const key = rowKey(row)
+      const path = guestInfoFetchPath(guestDeviceForRow(row), row.vm.id, row.vm.state)
+      if (!path) {
+        delete guestInfoMap[key]
+        continue
+      }
       try {
-        const { data } = await api.get(`/vms/${row.vm.id}/guest-info`)
-        guestInfoMap[row.vm.id] = data
-      } catch { /* ignore */ }
-    } else {
-      delete guestInfoMap[row.vm.id]
+        const { data } = await api.get(path)
+        guestInfoMap[key] = data
+      } catch { /* keep last-known */ }
     }
+  } finally {
+    guestInfoInFlight = false
   }
 }
 
@@ -140,24 +160,28 @@ onMounted(async () => {
 })
 onUnmounted(() => clearInterval(pollTimer))
 
-function osLabel(vm: typeof store.vms[0]) {
-  const gi = guestInfoMap[vm.id]
-  if (gi?.osName) {
-    return gi.osVersion ? `${gi.osName} ${gi.osVersion}` : gi.osName
-  }
-  return vm.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+function osLabel(row: HomeWorkloadRow) {
+  return guestOsLabel(
+    guestInfoMap[rowKey(row)],
+    row.vm.vmType,
+    row.reachable && row.vm.state === 'running',
+  )
+}
+
+function ipPortsFor(row: HomeWorkloadRow) {
+  return guestIpPortsView({
+    reachable: row.reachable,
+    isMember: row.role !== 'self',
+    isLocalNat: row.role === 'self' && isNatVM(row.vm),
+    guest: guestInfoMap[rowKey(row)],
+    portForwards: vmPortForwards(row.vm),
+  })
 }
 
 function emuBadge(vm: typeof store.vms[0]) {
   return listBackendBadge(vmBackend(vm))
 }
 
-
-function primaryIp(vm: typeof store.vms[0]): string | null {
-  const gi = guestInfoMap[vm.id]
-  if (!gi?.ipAddresses?.length) return null
-  return gi.ipAddresses[0]
-}
 
 async function copyText(key: string, text: string) {
   try {
@@ -325,41 +349,38 @@ async function doStop() {
             />
           </td>
           <td>
-            <span style="font-size:13px">{{ osLabel(row.vm) }}</span>
+            <span style="font-size:13px">{{ osLabel(row) }}</span>
           </td>
           <td>
             <span style="font-size:12px;color:var(--text-secondary)">{{ row.vm.cpuCount }} CPU &middot; {{ row.vm.memoryMB >= 1024 ? (row.vm.memoryMB / 1024).toFixed(row.vm.memoryMB % 1024 === 0 ? 0 : 1) + ' GB' : row.vm.memoryMB + ' MB' }}</span>
           </td>
           <td>
-            <!-- Bridged: show IP:port links or plain IP -->
-            <template v-if="!isNatVM(row.vm) && primaryIp(row.vm)">
-              <div v-if="vmPortForwards(row.vm).length > 0" style="display:flex;flex-wrap:wrap;gap:4px">
-                <div v-for="(pf, i) in vmPortForwards(row.vm)" :key="i" style="display:flex;align-items:center;gap:6px">
-                  <a :href="(pf.guestPort === 443 || pf.guestPort === 9443 ? 'https://' : 'http://') + primaryIp(row.vm) + (pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort)" target="_blank" class="ip-text" style="text-decoration:none;color:var(--accent)" @click.stop>{{ primaryIp(row.vm) }}{{ pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort }}</a>
-                  <button class="ip-copy" @click.stop="copyText(`${row.vm.id}-${pf.guestPort}`, `${primaryIp(row.vm)}${pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort}`)" :title="copied[`${row.vm.id}-${pf.guestPort}`] ? 'Copied!' : 'Copy address'">
-                    <AppIcon v-if="!copied[`${row.vm.id}-${pf.guestPort}`]" name="copy" :size="13" style="stroke-width:2" />
+            <template v-if="ipPortsFor(row).kind === 'bridged-ip'">
+              <div style="display:flex;flex-wrap:wrap;gap:4px">
+                <div v-for="(link, i) in ipPortsFor(row).links" :key="i" style="display:flex;align-items:center;gap:6px">
+                  <a v-if="link.href" :href="link.href" target="_blank" class="ip-text" style="text-decoration:none;color:var(--accent)" @click.stop>{{ link.label }}</a>
+                  <code v-else class="ip-text">{{ link.label }}</code>
+                  <button class="ip-copy" @click.stop="copyText(`${rowKey(row)}-${i}`, link.copyText)" :title="copied[`${rowKey(row)}-${i}`] ? 'Copied!' : 'Copy address'">
+                    <AppIcon v-if="!copied[`${rowKey(row)}-${i}`]" name="copy" :size="13" style="stroke-width:2" />
                     <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
                   </button>
                 </div>
-              </div>
-              <div v-else style="display:flex;align-items:center;gap:6px">
-                <code class="ip-text">{{ primaryIp(row.vm) }}</code>
-                <button class="ip-copy" @click.stop="copyText(row.vm.id, primaryIp(row.vm)!)" :title="copied[row.vm.id] ? 'Copied!' : 'Copy IP'">
-                  <AppIcon v-if="!copied[row.vm.id]" name="copy" :size="13" style="stroke-width:2" />
-                  <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
-                </button>
               </div>
             </template>
-            <!-- NAT: show port forwards -->
-            <template v-else-if="isNatVM(row.vm) && vmPortForwards(row.vm).length > 0">
+            <template v-else-if="ipPortsFor(row).kind === 'nat-localhost'">
               <div style="display:flex;flex-wrap:wrap;gap:4px">
-                <div v-for="(pf, i) in vmPortForwards(row.vm)" :key="i" style="display:flex;align-items:center;gap:6px">
-                  <code class="ip-text">localhost:{{ pf.hostPort }}</code>
-                  <button class="ip-copy" @click.stop="copyText(`${row.vm.id}-${pf.hostPort}`, `localhost:${pf.hostPort}`)" :title="copied[`${row.vm.id}-${pf.hostPort}`] ? 'Copied!' : 'Copy address'">
-                    <AppIcon v-if="!copied[`${row.vm.id}-${pf.hostPort}`]" name="copy" :size="13" style="stroke-width:2" />
+                <div v-for="port in ipPortsFor(row).hostPorts" :key="port" style="display:flex;align-items:center;gap:6px">
+                  <code class="ip-text">localhost:{{ port }}</code>
+                  <button class="ip-copy" @click.stop="copyText(`${rowKey(row)}-${port}`, `localhost:${port}`)" :title="copied[`${rowKey(row)}-${port}`] ? 'Copied!' : 'Copy address'">
+                    <AppIcon v-if="!copied[`${rowKey(row)}-${port}`]" name="copy" :size="13" style="stroke-width:2" />
                     <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
                   </button>
                 </div>
+              </div>
+            </template>
+            <template v-else-if="ipPortsFor(row).kind === 'port-map'">
+              <div style="display:flex;flex-wrap:wrap;gap:4px">
+                <code v-for="label in ipPortsFor(row).labels" :key="label" class="ip-text">{{ label }}</code>
               </div>
             </template>
             <span v-else style="color:var(--text-dim);font-size:12px">-</span>
