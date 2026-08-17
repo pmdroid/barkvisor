@@ -27,6 +27,10 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - `SKIP_FRONTEND=1` install skips the SPA. Same daemon, no extra process role.
 - `barkvisor` always has a `serve` command so systemd does not exit 64.
 
+### VNC
+
+- Copy and paste text between this computer and a desktop guest (Paste / Copy on the VNC toolbar, or ⌘V / Ctrl+V). Linux guests need `spice-vdagent`; Windows guests need Spice guest tools. Restart the Workload after upgrade so QEMU adds the vdagent channel.
+
 ### Create VM
 
 - Place on This Device or any reachable member. Incompatibility is a warning, not a lock.

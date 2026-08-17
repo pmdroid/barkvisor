@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import rfbModule from '@novnc/novnc/lib/rfb.js'
 const RFB = (rfbModule as any).default || rfbModule
 import { getWSTicket } from '../api/client'
+import { useToastStore } from '../stores/toast'
+import { copyGuestText, readLocalClipboard, textFromPasteEvent } from '../utils/vncClipboard'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +23,9 @@ const isAlive = () => props.vmState === 'running' || props.vmState === 'stopping
 const canvasEl = ref<HTMLElement>()
 const status = ref('disconnected')
 const desktopSize = ref('')
+const lastGuestClipboard = ref('')
+const clipboardHint = ref('')
+const toast = useToastStore()
 let rfb: any = null
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let reconnectDelay = 1000
@@ -89,6 +94,15 @@ async function connect() {
     if (e?.detail?.name) document.title = `${e.detail.name} — VNC`
   })
 
+  rfb.addEventListener('clipboard', async (e: Event) => {
+    const text = String((e as CustomEvent<{ text?: string }>).detail?.text ?? '')
+    lastGuestClipboard.value = text
+    if (!text) return
+    const ok = await copyGuestText(text)
+    clipboardHint.value = ok ? 'Copied from guest' : 'Guest copy ready — use Copy'
+    if (ok) toast.info('Copied from guest')
+  })
+
   rfb.addEventListener('disconnect', () => {
     status.value = 'disconnected'
     desktopSize.value = ''
@@ -119,7 +133,50 @@ function sendCtrlAltDel() {
   rfb?.sendCtrlAltDel?.()
 }
 
-onMounted(() => connect())
+function sendTextToGuest(text: string) {
+  if (!rfb || status.value !== 'connected' || !text) return
+  rfb.clipboardPasteFrom(text)
+  clipboardHint.value = 'Pasted into guest'
+}
+
+async function pasteFromComputer() {
+  const result = await readLocalClipboard()
+  if (result.status === 'unsupported') {
+    toast.error('Clipboard API unavailable — press ⌘V / Ctrl+V in the display')
+    return
+  }
+  if (result.status === 'denied') {
+    toast.error('Clipboard permission denied — press ⌘V / Ctrl+V in the display')
+    return
+  }
+  if (!result.text) {
+    toast.info('Clipboard is empty')
+    return
+  }
+  sendTextToGuest(result.text)
+}
+
+async function copyLastGuest() {
+  if (!lastGuestClipboard.value) {
+    toast.info('Nothing copied in the guest yet')
+    return
+  }
+  const ok = await copyGuestText(lastGuestClipboard.value)
+  clipboardHint.value = ok ? 'Copied from guest' : 'Could not write clipboard'
+  if (!ok) toast.error('Could not copy — allow clipboard access')
+}
+
+function onPaste(event: ClipboardEvent) {
+  if (!rfb || status.value !== 'connected') return
+  const text = textFromPasteEvent(event)
+  if (!text) return
+  event.preventDefault()
+  sendTextToGuest(text)
+}
+
+onMounted(() => {
+  connect()
+})
 
 watch(() => props.vmState, () => {
   if (isAlive() && !rfb) {
@@ -140,10 +197,29 @@ onUnmounted(() => {
   <div v-if="vmState !== 'running' && vmState !== 'stopping'" class="empty">
     VM must be running to use VNC
   </div>
-  <div v-else class="vnc-root" :class="{ fill }">
+  <div v-else class="vnc-root" :class="{ fill }" @paste.capture="onPaste">
     <div class="vnc-toolbar">
       <span class="vnc-status">VNC: {{ statusLabel }}</span>
       <div class="vnc-actions">
+        <span v-if="clipboardHint" class="vnc-clip-hint">{{ clipboardHint }}</span>
+        <button
+          type="button"
+          class="vnc-btn"
+          title="Paste this computer's clipboard into the guest (desktop guests need spice-vdagent)"
+          :disabled="status !== 'connected'"
+          @click="pasteFromComputer"
+        >
+          Paste
+        </button>
+        <button
+          type="button"
+          class="vnc-btn"
+          title="Copy the last text the guest put on the clipboard"
+          :disabled="!lastGuestClipboard"
+          @click="copyLastGuest"
+        >
+          Copy
+        </button>
         <button type="button" class="vnc-btn" title="Send Ctrl+Alt+Del" @click="sendCtrlAltDel">
           Ctrl+Alt+Del
         </button>
@@ -195,6 +271,13 @@ onUnmounted(() => {
 }
 .vnc-status {
   font-variant-numeric: tabular-nums;
+}
+.vnc-clip-hint {
+  color: var(--text-dim, #999);
+}
+.vnc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .vnc-actions {
   display: flex;
