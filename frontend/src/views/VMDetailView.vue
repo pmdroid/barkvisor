@@ -57,6 +57,7 @@ import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import {
   disksInventoryFetchPath,
   isMemberControlTab,
+  memberControlTabAllowed,
   memberNetworkForDetail,
   networksInventoryFetchPath,
   usbInventoryFetchPath,
@@ -105,18 +106,6 @@ const memberReachable = computed(() => {
 })
 const tab = ref((route.query.tab as string) || 'overview')
 
-watch(isMemberDetail, (remote) => {
-  if (remote && !isMemberControlTab(tab.value)) tab.value = 'overview'
-}, { immediate: true })
-
-watch(tab, (value) => {
-  if (isMemberDetail.value && !isMemberControlTab(value)) {
-    tab.value = 'overview'
-    return
-  }
-  router.replace({ query: { ...route.query, tab: value === 'overview' ? undefined : value } })
-})
-
 /** Open VNC in a dedicated resizable window (toolbar button, not tab side-effect). */
 function openVncWindow() {
   if (vm.value?.state !== 'running' && vm.value?.state !== 'stopping') {
@@ -140,6 +129,30 @@ const vm = computed(() => {
   if (source === 'member') return homeWorkloads.vmFor(hostId.value, vmId.value)
   return store.vms.find(v => v.id === vmId.value)
 })
+
+function memberTabPermitted(value: string): boolean {
+  if (!isMemberControlTab(value)) return false
+  if (!vm.value) return true
+  return memberControlTabAllowed(value, vm.value.state)
+}
+
+watch(isMemberDetail, (remote) => {
+  if (remote && !memberTabPermitted(tab.value)) tab.value = 'overview'
+}, { immediate: true })
+
+watch(tab, (value) => {
+  if (isMemberDetail.value && !memberTabPermitted(value)) {
+    tab.value = 'overview'
+    return
+  }
+  router.replace({ query: { ...route.query, tab: value === 'overview' ? undefined : value } })
+})
+
+watch(() => vm.value?.state, (state) => {
+  if (!isMemberDetail.value || state === undefined) return
+  if (!memberControlTabAllowed(tab.value, state)) tab.value = 'overview'
+})
+
 const actionLoading = ref('')
 const controlDisabled = computed(() => (
   Boolean(actionLoading.value) || (isMemberDetail.value && !memberReachable.value)
@@ -811,7 +824,7 @@ async function saveEdit() {
       cpuCount: cpu,
       memoryMB: editDraft.value.memoryMB,
       bootOrder: editDraft.value.bootOrder,
-      networkId: editDraft.value.networkId,
+      ...(editDraft.value.networkId ? { networkId: editDraft.value.networkId } : {}),
     } as any)
     showEditModal.value = false
     await refreshWorkload()

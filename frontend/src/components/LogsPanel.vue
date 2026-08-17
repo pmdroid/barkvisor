@@ -27,12 +27,14 @@ async function refresh() {
 }
 
 function toggleLiveTail() {
-  liveTail.value = !liveTail.value
   if (liveTail.value) {
-    store.startTail(props.device)
-  } else {
+    liveTail.value = false
     store.stopTail()
     refresh()
+    return
+  }
+  if (store.startTail(props.device)) {
+    liveTail.value = true
   }
 }
 

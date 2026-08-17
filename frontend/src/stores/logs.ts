@@ -48,17 +48,17 @@ export const useLogStore = defineStore('logs', () => {
     }
   }
 
-  function startTail(device?: DeviceApiTarget | null) {
+  function startTail(device?: DeviceApiTarget | null): boolean {
     stopTail()
     if (device && shouldPollDeviceControl(device)) {
       const path = logsHistoryFetchPath(device)
-      if (!path) return
+      if (!path) return false
       const poll = () => {
         void fetchLogs({ limit: 1000 }, device)
       }
       poll()
       pollTimer = globalThis.setInterval(poll, 4000)
-      return
+      return true
     }
     tail.start({
       url: (ticket) => `/api/logs/stream?ticket=${ticket}`,
@@ -75,6 +75,7 @@ export const useLogStore = defineStore('logs', () => {
         }
       },
     })
+    return true
   }
 
   function stopTail() {
