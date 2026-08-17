@@ -49,7 +49,7 @@ export function canCallDeviceAPI(device: DeviceApiTarget): boolean {
   return canFetchDeviceWorkloads(device)
 }
 
-/** Local images/networks/keys belong to this process only. */
+/** Local images/networks/disks belong to this process only. SSH keys live on Home. */
 export function usesLocalDeviceInventory(device: DeviceApiTarget): boolean {
   return isSelfDevice(device)
 }

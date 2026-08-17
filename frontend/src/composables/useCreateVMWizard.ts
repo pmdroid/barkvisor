@@ -21,7 +21,6 @@ import type {
   HomePlacementScoreResponse,
   Image,
   Network,
-  SSHKey,
 } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
 import { useImageProgress } from './useTicketedEventSource'
@@ -64,6 +63,7 @@ import {
   PLACEMENT_SCORE_DEBOUNCE_MS,
   scorePlacement,
 } from '../utils/placement'
+import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
 
 const livePlacementCancels = new Set<() => void>()
 
@@ -95,7 +95,6 @@ export function useCreateVMWizard(
   const deviceImages = ref<Image[]>([])
   const deviceNetworks = ref<Network[]>([])
   const deviceDisks = ref<Disk[]>([])
-  const deviceSSHKeys = ref<SSHKey[]>([])
 
   const selectedDevice = computed(() =>
     resolveSelectedDevice(
@@ -548,21 +547,23 @@ export function useCreateVMWizard(
     return seq === pickedDeviceLoadSeq
   }
 
+  function applyHomeSSHKeySelection() {
+    const keys = sshKeyStore.keys
+    if (!keys.some((k) => k.id === selectedSSHKeyId.value)) {
+      selectedSSHKeyId.value = keys.find((k) => k.isDefault)?.id ?? ''
+    }
+  }
+
   async function applyLoadedResources(deviceIsSelf: boolean, seq: number) {
     if (!isCurrentPickedDeviceLoad(seq)) return
     if (deviceIsSelf) {
       deviceImages.value = imageStore.images
       deviceNetworks.value = networkStore.networks
       deviceDisks.value = diskStore.disks
-      deviceSSHKeys.value = sshKeyStore.keys
       pickedCaps.value = { ...caps.currentHost }
       pickedHostArchKnown.value = caps.hostArchKnown
     }
-    const keys = deviceSSHKeys.value
-    if (!keys.some((k) => k.id === selectedSSHKeyId.value)) {
-      const defaultKey = keys.find((k) => k.isDefault)
-      selectedSSHKeyId.value = defaultKey?.id ?? ''
-    }
+    applyHomeSSHKeySelection()
     const defaultNet =
       deviceNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
       ?? networks.value.find((n) => n.isDefault)
@@ -576,7 +577,6 @@ export function useCreateVMWizard(
     deviceImages.value = []
     deviceNetworks.value = []
     deviceDisks.value = []
-    deviceSSHKeys.value = []
   }
 
   let placementScoreSeq = 0
@@ -675,6 +675,9 @@ export function useCreateVMWizard(
       // Placement reads deviceHasLibraryImage — wait so auto-pick is not stale.
       await refreshHomeLibrary()
       if (!isCurrentPickedDeviceLoad(seq)) return
+      await sshKeyStore.fetchAll().catch(() => {})
+      if (!isCurrentPickedDeviceLoad(seq)) return
+      applyHomeSSHKeySelection()
       await refreshPlacement()
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
@@ -708,12 +711,11 @@ export function useCreateVMWizard(
         return
       }
       try {
-        const [capsRes, imagesRes, netsRes, disksRes, keysRes] = await Promise.all([
+        const [capsRes, imagesRes, netsRes, disksRes] = await Promise.all([
           api.get(deviceCapabilitiesPath(device)),
           api.get(devicePath(device, '/images')),
           api.get(devicePath(device, '/networks')),
           api.get(devicePath(device, '/disks')),
-          api.get(devicePath(device, '/ssh-keys')),
         ])
         if (!isCurrentPickedDeviceLoad(seq)) return
         pickedCaps.value = parseSystemCapabilities(capsRes.data)
@@ -721,7 +723,6 @@ export function useCreateVMWizard(
         deviceImages.value = Array.isArray(imagesRes.data) ? imagesRes.data : []
         deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
         deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
-        deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
         existingDiskId.value = ''
         selectedUSBDevices.value = []
         error.value = ''
@@ -742,6 +743,7 @@ export function useCreateVMWizard(
   onMounted(async () => {
     await refreshHomeLibrary()
     await sshKeyStore.fetchAll().catch(() => {})
+    applyHomeSSHKeySelection()
   })
 
   onUnmounted(() => {
@@ -902,9 +904,8 @@ export function useCreateVMWizard(
         if (imageId) req.isoId = imageId
       } else {
         if (imageId) req.cloudImageId = imageId
-        const selectedKey = (deviceSSHKeys.value.length ? deviceSSHKeys.value : sshKeyStore.keys)
-          .find((k) => k.id === selectedSSHKeyId.value)
-        const keys = selectedKey ? [selectedKey.publicKey] : []
+        const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
+        const keys = selectedKey ? [authorizedKeyForCloudInit(selectedKey)] : []
         const userData = cloudUserData.value.trim()
         if (keys.length || userData) {
           req.cloudInit = {
@@ -950,8 +951,8 @@ export function useCreateVMWizard(
 
   return {
     // stores exposed for steps that need lists
-    sshKeyStore: { keys: deviceSSHKeys },
-    sshKeys: computed(() => (deviceSSHKeys.value.length > 0 ? deviceSSHKeys.value : sshKeyStore.keys)),
+    sshKeyStore,
+    sshKeys: computed(() => sshKeyStore.keys),
     selectedHostId,
     hostCpuCount,
     placementStepReached,
