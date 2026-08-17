@@ -8,9 +8,12 @@ import {
   deviceVmActionPath,
   deviceVmPath,
   deviceVmSpecPath,
+  deviceVmUsbDevicePath,
+  deviceVmUsbPath,
   deviceVmsBasePath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
+import { hardwarePatchBody } from '../utils/editHome'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 
 export type HomeWorkloadRow = {
@@ -103,9 +106,7 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     vmId: string,
     body: UpdateVMRequest,
   ): Promise<VM> {
-    const { targetHostId: _ignored, ...patch } = body as UpdateVMRequest & {
-      targetHostId?: string
-    }
+    const patch = hardwarePatchBody(body as UpdateVMRequest & { targetHostId?: string })
     const { data } = await api.patch<VM>(deviceVmPath(device, vmId), patch)
     await replaceOne(device, data)
     return data
@@ -113,6 +114,26 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
 
   async function fetchSpec(device: HomeDeviceHealthSnapshot, vmId: string): Promise<WorkloadSpec> {
     const { data } = await api.get<WorkloadSpec>(deviceVmSpecPath(device, vmId))
+    return data
+  }
+
+  async function attachUSB(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    deviceId: string,
+  ): Promise<VM> {
+    const { data } = await api.post<VM>(deviceVmUsbPath(device, vmId), { deviceId })
+    await replaceOne(device, data)
+    return data
+  }
+
+  async function detachUSB(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    deviceId: string,
+  ): Promise<VM> {
+    const { data } = await api.delete<VM>(deviceVmUsbDevicePath(device, vmId, deviceId))
+    await replaceOne(device, data)
     return data
   }
 
@@ -179,6 +200,8 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     refreshOne,
     update,
     fetchSpec,
+    attachUSB,
+    detachUSB,
     start,
     stop,
     restart,

@@ -1,27 +1,43 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import api from '../api/client'
 import type { MetricSample } from '../api/types'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
+import { metricsHistoryFetchPath, shouldPollDeviceControl } from '../utils/editHome'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 export const useMetricsStore = defineStore('metrics', () => {
   const samples = ref<MetricSample[]>([])
   const stream = useTicketedEventSource()
+  let pollTimer: number | undefined
+  let epoch = 0
 
-  function connect(vmId: string) {
+  async function loadHistory(path: string, epochAtStart: number) {
+    try {
+      const { data } = await api.get<MetricSample[]>(path, { params: { minutes: 30 } })
+      if (epochAtStart !== epoch) return
+      samples.value = Array.isArray(data) ? data : []
+    } catch {
+      /* keep last successful snapshot */
+    }
+  }
+
+  function connect(vmId: string, device?: DeviceApiTarget | null) {
     disconnect()
+    const myEpoch = ++epoch
     samples.value = []
 
-    // First fetch history
-    const token = localStorage.getItem('token')
-    fetch(`/api/vms/${vmId}/metrics?minutes=30`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then((data: MetricSample[]) => {
-        samples.value = data
-      })
-      .catch(() => {})
+    if (device && shouldPollDeviceControl(device)) {
+      const path = metricsHistoryFetchPath(device, vmId, 'running')
+      if (!path) return
+      void loadHistory(path, myEpoch)
+      pollTimer = globalThis.setInterval(() => {
+        void loadHistory(path, myEpoch)
+      }, 5000)
+      return
+    }
 
+    void loadHistory(`/vms/${encodeURIComponent(vmId)}/metrics`, myEpoch)
     stream.start({
       url: (ticket) => `/api/vms/${vmId}/metrics/stream?ticket=${ticket}`,
       reconnect: true,
@@ -41,6 +57,11 @@ export const useMetricsStore = defineStore('metrics', () => {
   }
 
   function disconnect() {
+    epoch++
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = undefined
+    }
     stream.stop()
     samples.value = []
   }

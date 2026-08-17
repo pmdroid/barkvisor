@@ -121,3 +121,19 @@ describe('homeDeviceApi (PAS-201)', () => {
     expect(deviceGuestInfoPath(member, 'vm-9')).not.toContain('cluster')
   })
 })
+
+describe('homeDeviceApi (PAS-203)', () => {
+  test('logs, metrics, USB, disks, and networks use devicePath', () => {
+    expect(devicePath(self, '/logs')).toBe('/logs')
+    expect(devicePath(member, '/logs')).toBe('/home/devices/peer%2F1/v1/logs')
+    expect(devicePath(member, '/vms/vm-9/metrics')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/metrics',
+    )
+    expect(devicePath(member, '/system/usb-devices')).toBe(
+      '/home/devices/peer%2F1/v1/system/usb-devices',
+    )
+    expect(devicePath(member, '/disks')).toBe('/home/devices/peer%2F1/v1/disks')
+    expect(devicePath(member, '/networks')).toBe('/home/devices/peer%2F1/v1/networks')
+    expect(devicePath(member, '/logs')).not.toContain('targetHostId')
+  })
+})

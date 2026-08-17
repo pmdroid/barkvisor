@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useLogStore } from '../stores/logs'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 import AppButton from './ui/AppButton.vue'
 import AppSelect from './ui/AppSelect.vue'
 
-const props = defineProps<{ vmId: string }>()
+const props = defineProps<{ vmId: string; device?: DeviceApiTarget | null }>()
 const store = useLogStore()
 
 const level = ref('')
@@ -22,16 +23,18 @@ async function refresh() {
     level: level.value || undefined,
     search: search.value || undefined,
     limit: 1000,
-  })
+  }, props.device)
 }
 
 function toggleLiveTail() {
-  liveTail.value = !liveTail.value
   if (liveTail.value) {
-    store.startTail()
-  } else {
+    liveTail.value = false
     store.stopTail()
     refresh()
+    return
+  }
+  if (store.startTail(props.device)) {
+    liveTail.value = true
   }
 }
 
@@ -61,6 +64,17 @@ watch(search, () => {
     if (!liveTail.value) refresh()
   }, 300)
 })
+
+watch(
+  () => [props.device?.hostId, props.device?.reachability] as const,
+  () => {
+    if (liveTail.value) {
+      store.stopTail()
+      liveTail.value = false
+    }
+    void refresh()
+  },
+)
 
 onMounted(() => refresh())
 onUnmounted(() => store.clear())
