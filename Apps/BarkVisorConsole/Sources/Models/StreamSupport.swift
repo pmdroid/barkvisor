@@ -35,6 +35,8 @@ enum StreamReconnect {
     static let maxAttempts = 10
     static let initialDelayNanoseconds: UInt64 = 1_000_000_000
     static let maxDelayNanoseconds: UInt64 = 30_000_000_000
+    /// Bound for a VNC "connecting" wait so a missed startVNC/disconnect can retry.
+    static let connectTimeoutNanoseconds: UInt64 = 15_000_000_000
 
     static func shouldRetry(attempt: Int) -> Bool {
         attempt >= 1 && attempt <= maxAttempts

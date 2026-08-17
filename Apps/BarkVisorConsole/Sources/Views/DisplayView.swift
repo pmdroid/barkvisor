@@ -78,7 +78,9 @@ final class DisplaySession {
     var desktopSize = ""
     var connected = false
     var pendingScript: String?
+    /// True only after the noVNC module posts `ready` (`startVNC` is defined).
     var pageReady = false
+    var connectTimeoutNanoseconds: UInt64 = StreamReconnect.connectTimeoutNanoseconds
 
     private var client: APIClient?
     private var workloadID = ""
@@ -87,6 +89,7 @@ final class DisplaySession {
     private var attempt = 0
     private var loop: Task<Void, Never>?
     private var waitForDisconnect: CheckedContinuation<Void, Never>?
+    private var connectTimeout: Task<Void, Never>?
 
     var statusLabel: String {
         if connected, !desktopSize.isEmpty { return "VNC · \(desktopSize)" }
@@ -119,8 +122,7 @@ final class DisplaySession {
         loop?.cancel()
         loop = nil
         pendingScript = "window.stopVNC && window.stopVNC()"
-        waitForDisconnect?.resume()
-        waitForDisconnect = nil
+        resumeDisconnectWaiter()
         connected = false
     }
 
@@ -137,14 +139,15 @@ final class DisplaySession {
             connected = true
             attempt = 0
             status = "connected"
+            connectTimeout?.cancel()
+            connectTimeout = nil
             let width = payload["width"] as? Int ?? 0
             let height = payload["height"] as? Int ?? 0
             desktopSize = width > 0 && height > 0 ? "\(width)×\(height)" : ""
         case "disconnect":
             connected = false
             desktopSize = ""
-            waitForDisconnect?.resume()
-            waitForDisconnect = nil
+            resumeDisconnectWaiter()
         default:
             break
         }
@@ -187,10 +190,36 @@ final class DisplaySession {
         }
     }
 
-    private func waitUntilDisconnected() async {
+    func waitUntilDisconnected() async {
         await withCheckedContinuation { continuation in
             waitForDisconnect = continuation
+            armConnectTimeout()
         }
+    }
+
+    /// Resume a stuck connecting wait so the reconnect loop can retry.
+    func expireConnectWaitIfNeeded() {
+        guard waitForDisconnect != nil, !connected else { return }
+        status = "timed out"
+        pendingScript = "window.stopVNC && window.stopVNC()"
+        resumeDisconnectWaiter()
+    }
+
+    private func armConnectTimeout() {
+        connectTimeout?.cancel()
+        let timeout = connectTimeoutNanoseconds
+        connectTimeout = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: timeout)
+            guard !Task.isCancelled, !stopped else { return }
+            expireConnectWaitIfNeeded()
+        }
+    }
+
+    private func resumeDisconnectWaiter() {
+        connectTimeout?.cancel()
+        connectTimeout = nil
+        waitForDisconnect?.resume()
+        waitForDisconnect = nil
     }
 }
 
@@ -274,15 +303,19 @@ final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler 
 
     nonisolated func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         Task { @MainActor in
-            session.pageReady = true
+            // HTML load is not enough: startVNC is assigned after the module import.
             flush(webView)
         }
     }
 
     nonisolated func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
         let body = message.body
+        let webView = message.webView
         Task { @MainActor in
             session.handleMessage(body)
+            if let webView {
+                flush(webView)
+            }
         }
     }
 

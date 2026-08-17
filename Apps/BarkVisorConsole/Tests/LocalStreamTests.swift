@@ -34,6 +34,43 @@ struct LocalStreamTests {
         #expect(StreamReconnect.delayNanoseconds(attempt: 3) == 4_000_000_000)
         #expect(StreamReconnect.delayNanoseconds(attempt: 6) == 30_000_000_000)
         #expect(StreamReconnect.delayNanoseconds(attempt: 10) == 30_000_000_000)
+        #expect(StreamReconnect.connectTimeoutNanoseconds == 15_000_000_000)
+        #expect(StreamReconnect.connectTimeoutNanoseconds < StreamReconnect.maxDelayNanoseconds)
+    }
+
+    @Test @MainActor func displayReadyMessageMarksModuleReady() {
+        let session = DisplaySession()
+        session.pendingScript = "window.startVNC && window.startVNC('ws://example')"
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        #expect(!session.pageReady)
+        #expect(session.pendingScript != nil)
+        session.handleMessage(["type": "ready"])
+        #expect(session.pageReady)
+        #expect(session.pendingScript != nil)
+    }
+
+    @Test @MainActor func displayConnectTimeoutResumesWaiter() async {
+        let session = DisplaySession()
+        session.connectTimeoutNanoseconds = 10_000_000
+        session.status = "connecting"
+        await session.waitUntilDisconnected()
+        #expect(session.status == "timed out")
+        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(!session.connected)
+    }
+
+    @Test @MainActor func displayConnectTimeoutSkippedAfterConnect() async {
+        let session = DisplaySession()
+        session.connectTimeoutNanoseconds = 20_000_000
+        async let wait: Void = session.waitUntilDisconnected()
+        session.handleMessage(["type": "connect", "width": 1024, "height": 768])
+        try? await Task.sleep(nanoseconds: 40_000_000)
+        #expect(session.connected)
+        #expect(session.status == "connected")
+        session.handleMessage(["type": "disconnect"])
+        await wait
+        #expect(!session.connected)
+        #expect(session.status == "connected")
     }
 
     @Test func streamURLUsesTicketAndNeverJWT() throws {
