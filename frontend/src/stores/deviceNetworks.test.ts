@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import api from '../api/client'
 import type { HomeDeviceHealthSnapshot, HostInterface, Network } from '../api/types'
 import { useDeviceNetworksStore } from './deviceNetworks'
+import { useNetworkStore } from './networks'
 
 const originalGet = api.get
 const originalPost = api.post
@@ -59,7 +60,42 @@ describe('deviceNetworks store (PAS-216)', () => {
     expect(store.networksFor('self-1')).toHaveLength(1)
     await store.create(self, { name: 'lab', mode: 'isolated' })
     expect(store.networksFor('self-1').map((row) => row.name)).toEqual(['Default NAT', 'lab'])
+    expect(useNetworkStore().networks.map((row) => row.name)).toEqual(['lab'])
     expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('self update and delete also patch networkStore for other surfaces', async () => {
+    const self = snapshot({ hostId: 'self-1', role: 'self' })
+    const created = net({ id: 'lab-1', name: 'lab', mode: 'isolated' })
+    const patched = net({ id: 'lab-1', name: 'lab-edit', mode: 'isolated' })
+    api.post = mock(() => Promise.resolve({ data: created })) as typeof api.post
+    api.patch = mock(() => Promise.resolve({ data: patched })) as typeof api.patch
+    api.delete = mock(() => Promise.resolve({ data: {} })) as typeof api.delete
+
+    const home = useDeviceNetworksStore()
+    const local = useNetworkStore()
+    await home.create(self, { name: 'lab', mode: 'isolated' })
+    expect(local.networks.map((row) => row.name)).toEqual(['lab'])
+    await home.update(self, 'lab-1', { name: 'lab-edit' })
+    expect(local.networks.map((row) => row.name)).toEqual(['lab-edit'])
+    await home.remove(self, 'lab-1')
+    expect(local.networks).toEqual([])
+    expect(home.networksFor('self-1')).toEqual([])
+  })
+
+  test('member mutations do not write into the local networkStore', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const created = net({ id: 'br-1', name: 'lan', mode: 'bridged', bridge: 'br0' })
+    api.post = mock(() => Promise.resolve({ data: created })) as typeof api.post
+    api.delete = mock(() => Promise.resolve({ data: {} })) as typeof api.delete
+
+    const home = useDeviceNetworksStore()
+    const local = useNetworkStore()
+    local.applyOne(net({ id: 'keep', name: 'Default NAT', mode: 'nat', isDefault: true }))
+    await home.create(peer, { name: 'lan', mode: 'bridged', bridge: 'br0' })
+    expect(local.networks.map((row) => row.id)).toEqual(['keep'])
+    await home.remove(peer, 'br-1')
+    expect(local.networks.map((row) => row.id)).toEqual(['keep'])
   })
 
   test('members list and mutate through the Home proxy', async () => {

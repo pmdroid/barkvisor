@@ -42,23 +42,31 @@ export const useNetworkStore = defineStore('networks', () => {
     }
   }
 
+  function applyOne(network: Network) {
+    const idx = networks.value.findIndex(n => n.id === network.id)
+    if (idx >= 0) networks.value[idx] = network
+    else networks.value.push(network)
+  }
+
+  function applyRemove(id: string) {
+    networks.value = networks.value.filter(n => n.id !== id)
+  }
+
   async function create(body: NetworkWriteBody): Promise<Network> {
     const { data } = await api.post<Network>('/networks', body)
-    networks.value.push(data)
+    applyOne(data)
     return data
   }
 
   async function update(id: string, body: Partial<NetworkWriteBody>): Promise<Network> {
     const { data } = await api.patch<Network>(`/networks/${id}`, body)
-    const idx = networks.value.findIndex(n => n.id === id)
-    if (idx >= 0) networks.value[idx] = data
-    else networks.value.push(data)
+    applyOne(data)
     return data
   }
 
   async function remove(id: string) {
     await api.delete(`/networks/${id}`)
-    networks.value = networks.value.filter(n => n.id !== id)
+    applyRemove(id)
   }
 
   function getById(id: string | null | undefined): Network | undefined {
@@ -73,6 +81,8 @@ export const useNetworkStore = defineStore('networks', () => {
     byId,
     defaultNAT,
     fetchAll,
+    applyOne,
+    applyRemove,
     create,
     update,
     remove,

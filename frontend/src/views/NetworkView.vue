@@ -86,9 +86,20 @@ const formDevice = computed(() => {
   return devicesStore.selfDevice
 })
 
+/** Per-device caps, falling back to already-loaded self inventory (not fail-closed defaults). */
+function deviceCapsFor(hostId: string) {
+  const loaded = hostId ? homeNets.capsFor(hostId) : null
+  if (loaded) return loaded
+  const device = hostId
+    ? devicesStore.deviceByHostId(hostId)
+    : devicesStore.selfDevice
+  if (device && isSelfDevice(device)) return caps.currentHost
+  return defaultCapabilities
+}
+
 const formCaps = computed(() => {
   if (useHomeUnion.value && formHostId.value) {
-    return homeNets.capsFor(formHostId.value) ?? defaultCapabilities
+    return deviceCapsFor(formHostId.value)
   }
   return caps.currentHost
 })
@@ -129,7 +140,7 @@ const bridgeDevice = computed(() => {
 
 const bridgeCaps = computed(() => {
   if (useHomeUnion.value && bridgeHostId.value) {
-    return homeNets.capsFor(bridgeHostId.value) ?? defaultCapabilities
+    return deviceCapsFor(bridgeHostId.value)
   }
   return caps.currentHost
 })
@@ -139,7 +150,7 @@ const canManageBridges = computed(() => {
   if (!useHomeUnion.value) return managedBridge.available
   return devicesStore.devices.some((device) => {
     if (!canCallDeviceAPI(device)) return false
-    return homeNets.capsFor(device.hostId)?.supportsManagedBridgeDaemon === true
+    return deviceCapsFor(device.hostId).supportsManagedBridgeDaemon === true
   })
 })
 
@@ -305,7 +316,7 @@ watch(showBridges, (open) => {
   if (open) {
     if (!bridgeHostId.value) {
       const managed = devicesStore.devices.find((device) =>
-        canCallDeviceAPI(device) && homeNets.capsFor(device.hostId)?.supportsManagedBridgeDaemon,
+        canCallDeviceAPI(device) && deviceCapsFor(device.hostId).supportsManagedBridgeDaemon,
       )
       bridgeHostId.value = managed?.hostId || defaultFormHostId()
     }

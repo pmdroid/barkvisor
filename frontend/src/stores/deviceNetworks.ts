@@ -21,6 +21,7 @@ import {
   deviceNetworksPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
+import { useNetworkStore } from './networks'
 
 export type NetworkWriteBody = {
   name: string
@@ -92,6 +93,16 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
     const idx = current.findIndex((row) => row.id === network.id)
     const next = idx >= 0 ? current.map((row, i) => (i === idx ? network : row)) : [...current, network]
     replaceList(hostId, next)
+  }
+
+  function syncSelfNetwork(device: HomeDeviceHealthSnapshot, network: Network): void {
+    if (!isSelfDevice(device)) return
+    useNetworkStore().applyOne(network)
+  }
+
+  function syncSelfRemove(device: HomeDeviceHealthSnapshot, id: string): void {
+    if (!isSelfDevice(device)) return
+    useNetworkStore().applyRemove(id)
   }
 
   async function fetchFor(device: HomeDeviceHealthSnapshot): Promise<void> {
@@ -171,6 +182,7 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
   async function create(device: HomeDeviceHealthSnapshot, body: NetworkWriteBody): Promise<Network> {
     const { data } = await api.post<Network>(deviceNetworksPath(device), body)
     replaceOne(device.hostId, data)
+    syncSelfNetwork(device, data)
     return data
   }
 
@@ -181,12 +193,14 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
   ): Promise<Network> {
     const { data } = await api.patch<Network>(deviceNetworkPath(device, id), body)
     replaceOne(device.hostId, data)
+    syncSelfNetwork(device, data)
     return data
   }
 
   async function remove(device: HomeDeviceHealthSnapshot, id: string): Promise<void> {
     await api.delete(deviceNetworkPath(device, id))
     replaceList(device.hostId, networksFor(device.hostId).filter((row) => row.id !== id))
+    syncSelfRemove(device, id)
   }
 
   return {
