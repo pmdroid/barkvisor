@@ -209,12 +209,9 @@ describe('guestHome (PAS-201)', () => {
     expect(fetchFn).toContain('hostId.value')
     expect(fetchFn).toContain('stillCurrent')
     expect(fetchFn).toMatch(/guestInfo\.value = data/)
+    expect(detail).toContain('pollMemberDetail')
     expect(detail).toMatch(
-      /refreshOne\([^)]+\)\.then\(\(\) => \{[\s\S]*?fetchGuestInfo\(\)[\s\S]*?\}\)\.catch\(\(e\) => \{/,
-    )
-    expect(detail).not.toMatch(/void fetchGuestInfo\(\)/)
-    expect(detail).not.toMatch(
-      /refreshOne\([^)]+\)\.catch\([\s\S]*?\}\)\s*void fetchGuestInfo\(\)/,
+      /memberLoadError\.value = null\s*await fetchGuestInfo\(\)/,
     )
   })
 
@@ -224,7 +221,7 @@ describe('guestHome (PAS-201)', () => {
     expect(guestInfoIfRunning(ubuntu, 'starting')).toBeNull()
     expect(guestInfoIfRunning(ubuntu, undefined)).toBeNull()
     expect(guestInfoIfRunning(null, 'running')).toBeNull()
-    expect(guestOsLabel(guestInfoIfRunning(ubuntu, 'stopped'), 'linux')).toBe('Linux')
+    expect(guestOsLabel(guestInfoIfRunning(ubuntu, 'stopped'), 'linux', false)).toBe('—')
     expect(guestIpPortsView({
       reachable: true,
       isMember: true,
