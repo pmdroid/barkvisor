@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { wsTicketPath } from '../utils/consoleHome'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const api = axios.create({
   baseURL: '/api',
@@ -49,8 +51,11 @@ api.interceptors.response.use(
  * suitable for use in URL query parameters (WebSocket, SSE, downloads).
  * Tickets expire after 30 seconds and can only be used once.
  */
-export async function getWSTicket(vmID?: string): Promise<string> {
-  const { data } = await api.post('/auth/ws-ticket', vmID ? { vmID } : {})
+export async function getWSTicket(
+  vmID?: string,
+  device?: DeviceApiTarget | null,
+): Promise<string> {
+  const { data } = await api.post(wsTicketPath(device), vmID ? { vmID } : {})
   return data.ticket
 }
 

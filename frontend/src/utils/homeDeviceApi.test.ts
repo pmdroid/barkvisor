@@ -19,9 +19,12 @@ import {
   deviceTemplateDryRunPath,
   deviceTemplatesPath,
   deviceVmActionPath,
+  deviceVmConsolePath,
   deviceVmPath,
   deviceVmSpecPath,
+  deviceVmVncPath,
   deviceVmsBasePath,
+  deviceWsTicketPath,
   defaultPickedHostId,
   isSelfDevice,
   resolveSelectedDevice,
@@ -47,6 +50,10 @@ describe('homeDeviceApi (PAS-52)', () => {
     expect(deviceVmActionPath(member, 'vm-9', 'restart')).toBe(
       '/home/devices/peer%2F1/v1/vms/vm-9/restart',
     )
+    expect(deviceWsTicketPath(self)).toBe('/auth/ws-ticket')
+    expect(deviceWsTicketPath(member)).toBe('/home/devices/peer%2F1/v1/auth/ws-ticket')
+    expect(deviceVmVncPath(member, 'vm-9')).toBe('/home/devices/peer%2F1/v1/vms/vm-9/vnc')
+    expect(deviceVmConsolePath(self, 'vm-9')).toBe('/vms/vm-9/console')
   })
 
   test('unreachable members are not fetched; self still is', () => {

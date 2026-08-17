@@ -256,7 +256,9 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
         try app.register(collection: AgentMTLSController())
         try app.register(collection: AgentLibraryController(db: database))
-        try app.register(collection: AgentLocalProxyController())
+        let localProxy = AgentLocalProxyController()
+        try app.register(collection: localProxy)
+        localProxy.registerConsoleTunnels(app: app)
     }
 
     static func verifyClient(

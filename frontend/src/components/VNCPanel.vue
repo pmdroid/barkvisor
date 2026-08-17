@@ -5,11 +5,14 @@ const RFB = (rfbModule as any).default || rfbModule
 import { getWSTicket } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { copyGuestText, readLocalClipboard, textFromPasteEvent } from '../utils/vncClipboard'
+import { consoleSocketPath, vncWindowPath } from '../utils/consoleHome'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const props = withDefaults(
   defineProps<{
     vmId: string
     vmState: string
+    device?: DeviceApiTarget | null
     /** Fill parent (popup window); otherwise fixed-height embed */
     fill?: boolean
     /** Prefer lower quality / higher JPEG for smoother remote display */
@@ -63,7 +66,7 @@ async function connect() {
   status.value = 'connecting'
   let ticket: string
   try {
-    ticket = await getWSTicket(props.vmId)
+    ticket = await getWSTicket(props.vmId, props.device)
   } catch {
     status.value = 'ticket failed'
     return
@@ -74,7 +77,8 @@ async function connect() {
   rfb = null
 
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws'
-  const url = `${wsProto}://${location.host}/api/vms/${props.vmId}/vnc?ticket=${ticket}`
+  const path = consoleSocketPath(props.device, props.vmId, 'vnc')
+  const url = `${wsProto}://${location.host}/api${path}?ticket=${ticket}`
   rfb = new RFB(canvasEl.value, url, { credentials: { password: '' } })
   applyPerfSettings(rfb)
 
@@ -126,7 +130,7 @@ function openInNewWindow() {
   const left = Math.max(0, Math.floor((screen.availWidth - w) / 2))
   const top = Math.max(0, Math.floor((screen.availHeight - h) / 2))
   const features = `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no`
-  window.open(`/vms/${props.vmId}/vnc`, `barkvisor-vnc-${props.vmId}`, features)
+  window.open(vncWindowPath(props.device, props.vmId), `barkvisor-vnc-${props.vmId}`, features)
 }
 
 function sendCtrlAltDel() {

@@ -128,6 +128,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
+    // Outside JWT: member tickets live on the owning Device, not here.
+    HomeConsoleProxyController().register(app: app)
 }
 
 /// Public liveness probe (PAS-79). Database failure is 503; other checks are
