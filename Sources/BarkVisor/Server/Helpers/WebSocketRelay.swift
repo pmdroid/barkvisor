@@ -14,7 +14,7 @@ final class WebSocketPipeBox: @unchecked Sendable {
         case text(String)
     }
 
-    static let defaultMaxPendingBytes = 256 * 1024
+    static let defaultMaxPendingBytes = 262_144
 
     private let lock = NSLock()
     private var remote: WebSocket?
