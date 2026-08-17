@@ -244,6 +244,13 @@ enum DeviceURL {
     /// SPA paths the web UI uses; the native client talks to the Device origin only.
     private static let spaPathPrefixes = ["/login", "/setup", "/dashboard", "/vms", "/images", "/disks", "/networks", "/registry", "/logs", "/settings"]
 
+    /// One-time upgrade for host-only values saved before `normalize` required a scheme.
+    static func migrateStored(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.contains("://") else { return raw }
+        return "http://\(value)"
+    }
+
     /// Require an explicit `http`/`https` scheme so a JWT is never sent to an inferred origin.
     static func normalize(_ raw: String) throws -> URL {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
