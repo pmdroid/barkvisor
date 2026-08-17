@@ -96,8 +96,10 @@ describe('member detail role (PAS-202)', () => {
     expect(view).toMatch(/v-if="!vm"[\s\S]*memberLoadError/)
     expect(view).toMatch(/source === 'pending'[\s\S]*return undefined/)
     expect(view).not.toMatch(/refreshOne\([^)]+\)\.catch\(\(\) => \{\}\)/)
+    expect(view).toContain('pollMemberDetail')
     expect(view).toMatch(
-      /refreshOne\([^)]+\)\.catch\(\(e\) => \{[\s\S]*?isNotFoundError\(e\)[\s\S]*?homeWorkloads\.removeOne/,
+      /if \(isNotFoundError\(e\)\) \{\s*homeWorkloads\.removeOne[\s\S]*?return/,
     )
+    expect(view).toContain('memberLoadError.value = null')
   })
 })

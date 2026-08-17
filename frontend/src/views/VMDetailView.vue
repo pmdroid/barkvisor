@@ -392,6 +392,27 @@ function connectStateSSE() {
   })
 }
 
+async function pollMemberDetail(loadVersion: number) {
+  if (loadVersion !== detailLoadVersion) return
+  try {
+    await devicesStore.fetchHealth()
+  } catch { /* keep last health */ }
+  if (loadVersion !== detailLoadVersion) return
+  const current = devicesStore.deviceByHostId(hostId.value)
+  if (!current || isSelfDevice(current) || !canFetchDeviceWorkloads(current)) return
+  try {
+    await homeWorkloads.refreshOne(current, vmId.value)
+    if (loadVersion !== detailLoadVersion) return
+    memberLoadError.value = null
+  } catch (e: any) {
+    if (loadVersion !== detailLoadVersion) return
+    if (!isNotFoundError(e)) return
+    homeWorkloads.removeOne(current.hostId, vmId.value)
+    memberLoadError.value = apiErrorMessage(e)
+    stopRealtimeSync()
+  }
+}
+
 async function loadMemberDetail() {
   const loadVersion = ++detailLoadVersion
   stopRealtimeSync()
@@ -409,27 +430,22 @@ async function loadMemberDetail() {
     if (device && canFetchDeviceWorkloads(device)) {
       try {
         await homeWorkloads.refreshOne(device, vmId.value)
+        if (loadVersion !== detailLoadVersion) return
+        memberLoadError.value = null
         await homeWorkloads.fetchSpec(device, vmId.value).catch(() => {})
       } catch (e: any) {
         if (isNotFoundError(e)) {
           homeWorkloads.removeOne(device.hostId, vmId.value)
+          memberLoadError.value = apiErrorMessage(e)
+          return
         }
         memberLoadError.value = apiErrorMessage(e)
       }
-      if (loadVersion !== detailLoadVersion) return
-      pollInterval = window.setInterval(() => {
-        const current = devicesStore.deviceByHostId(hostId.value)
-        if (current && canFetchDeviceWorkloads(current)) {
-          homeWorkloads.refreshOne(current, vmId.value).catch((e) => {
-            if (loadVersion !== detailLoadVersion) return
-            if (!isNotFoundError(e)) return
-            homeWorkloads.removeOne(current.hostId, vmId.value)
-            memberLoadError.value = apiErrorMessage(e)
-            stopRealtimeSync()
-          })
-        }
-      }, 15000)
     }
+    if (loadVersion !== detailLoadVersion) return
+    pollInterval = window.setInterval(() => {
+      void pollMemberDetail(loadVersion)
+    }, 15000)
   } finally {
     if (loadVersion === detailLoadVersion) memberLoadSettled.value = true
   }
@@ -695,8 +711,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
       <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
       <p v-else-if="!memberReachable">
-        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name.
-        This {{ DEVICE_LABEL.toLowerCase() }} is still running locally.
+        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name, not live state.
       </p>
       <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
     </template>
@@ -744,8 +759,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     </div>
 
     <div v-if="isMemberDetail && !memberReachable" class="pending-banner">
-      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name.
-      This {{ DEVICE_LABEL.toLowerCase() }} is still running locally.
+      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known name, not live state.
     </div>
     <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
 
