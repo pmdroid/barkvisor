@@ -1,5 +1,6 @@
 import BarkVisorCore
 import Foundation
+import JWTKit
 import Vapor
 
 /// Home WebSocket tunnel for member VNC / serial console (PAS-200).
@@ -31,6 +32,12 @@ struct HomeConsoleProxyController {
     func register(app: any RoutesBuilder) {
         register(app: app, kind: .vnc)
         register(app: app, kind: .console)
+    }
+
+    /// Production entry: JWT keys + VM-scoped `?session=`. Tests may call
+    /// `register(app:)` on a builder that already has a user middleware.
+    func register(app: Vapor.Application, keys: JWTKeyCollection) {
+        register(app: app.grouped(HomeTunnelAuthMiddleware(keys: keys)))
     }
 
     private func register(app: any RoutesBuilder, kind: HomeConsoleKind) {
@@ -130,8 +137,8 @@ struct HomeConsoleProxyController {
 }
 
 enum HomeConsoleProxy {
-    /// Presence only. The owning Device spends `ticket`/`token` on its store;
-    /// Home must not validate that value (it would consume the wrong ticket).
+    /// Presence + UUID shape. The owning Device spends `ticket`/`token` on its
+    /// store; Home must not `validateTicket` that value (wrong store).
     static func requireTicket(_ req: Vapor.Request) throws {
         let ticket = req.query[String.self, at: "ticket"] ?? req.query[String.self, at: "token"]
         guard let ticket, !ticket.isEmpty else {
@@ -139,6 +146,9 @@ enum HomeConsoleProxy {
                 .unauthorized,
                 reason: "Missing ticket. Use POST /api/auth/ws-ticket to obtain one.",
             )
+        }
+        guard UUID(uuidString: ticket) != nil else {
+            throw Abort(.unauthorized, reason: "Invalid ticket")
         }
     }
 

@@ -152,6 +152,10 @@ watch(isMemberDetail, (remote) => {
   if (remote && !memberTabPermitted(tab.value)) tab.value = 'overview'
 }, { immediate: true })
 
+watch(showMemberConnect, (ok) => {
+  if (!ok && (tab.value === 'console' || tab.value === 'vnc')) tab.value = 'overview'
+})
+
 watch(tab, (value) => {
   if (isMemberDetail.value && !memberTabPermitted(value)) {
     tab.value = 'overview'
