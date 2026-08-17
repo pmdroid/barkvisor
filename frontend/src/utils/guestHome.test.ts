@@ -7,6 +7,7 @@ import {
   canFetchGuestInfo,
   deviceGuestInfoPath,
   guestInfoFetchPath,
+  guestInfoIfRunning,
   guestIpPortsView,
   guestOsLabel,
   guestPrimaryIp,
@@ -188,6 +189,7 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).toContain("from '../utils/guestHome'")
     expect(list).toContain('guestInfoFetchPath')
     expect(detail).toContain('guestInfoFetchPath')
+    expect(list).toContain('guestInfoIfRunning')
     expect(list).toContain('guestIpPortsView')
     expect(detail).toContain('guestOsLabel')
     expect(detail).toContain('{{ memberOsLabel }}')
@@ -214,5 +216,44 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).not.toMatch(
       /refreshOne\([^)]+\)\.catch\([\s\S]*?\}\)\s*void fetchGuestInfo\(\)/,
     )
+  })
+
+  test('cached guest-info is ignored unless the Workload is running', () => {
+    expect(guestInfoIfRunning(ubuntu, 'running')).toEqual(ubuntu)
+    expect(guestInfoIfRunning(ubuntu, 'stopped')).toBeNull()
+    expect(guestInfoIfRunning(ubuntu, 'starting')).toBeNull()
+    expect(guestInfoIfRunning(ubuntu, undefined)).toBeNull()
+    expect(guestInfoIfRunning(null, 'running')).toBeNull()
+    expect(guestOsLabel(guestInfoIfRunning(ubuntu, 'stopped'), 'linux')).toBe('Linux')
+    expect(guestIpPortsView({
+      reachable: true,
+      isMember: true,
+      isLocalNat: false,
+      guest: guestInfoIfRunning(ubuntu, 'stopped'),
+      portForwards: [sshForward],
+    })).toEqual({ kind: 'port-map', labels: ['2222→22'] })
+    expect(guestIpPortsView({
+      reachable: true,
+      isMember: false,
+      isLocalNat: false,
+      guest: guestInfoIfRunning(ubuntu, 'stopped'),
+      portForwards: [],
+    })).toEqual({ kind: 'empty' })
+  })
+
+  test('member detail lifecycle actions refresh guest-info', () => {
+    const detail = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    const startFn = detail.match(/async function startWorkload\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    const restartFn = detail.match(/async function restartWorkload\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    const stopFn = detail.match(/async function confirmStop\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(startFn).toContain('homeWorkloads.start')
+    expect(startFn).toContain('guestInfo.value = null')
+    expect(startFn).toContain('fetchGuestInfo()')
+    expect(restartFn).toContain('homeWorkloads.restart')
+    expect(restartFn).toContain('guestInfo.value = null')
+    expect(restartFn).toContain('fetchGuestInfo()')
+    expect(stopFn).toContain('refreshWorkload()')
+    expect(stopFn).toContain('guestInfo.value = null')
+    expect(stopFn).toContain('fetchGuestInfo()')
   })
 })

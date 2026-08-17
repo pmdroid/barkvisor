@@ -26,6 +26,7 @@ import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 import {
   guestInfoFetchPath,
+  guestInfoIfRunning,
   guestIpPortsView,
   guestOsLabel,
 } from '../utils/guestHome'
@@ -160,9 +161,13 @@ onMounted(async () => {
 })
 onUnmounted(() => clearInterval(pollTimer))
 
+function rowGuestInfo(row: HomeWorkloadRow) {
+  return guestInfoIfRunning(guestInfoMap[rowKey(row)], row.vm.state)
+}
+
 function osLabel(row: HomeWorkloadRow) {
   return guestOsLabel(
-    guestInfoMap[rowKey(row)],
+    rowGuestInfo(row),
     row.vm.vmType,
     row.reachable && row.vm.state === 'running',
   )
@@ -173,7 +178,7 @@ function ipPortsFor(row: HomeWorkloadRow) {
     reachable: row.reachable,
     isMember: row.role !== 'self',
     isLocalNat: row.role === 'self' && isNatVM(row.vm),
-    guest: guestInfoMap[rowKey(row)],
+    guest: rowGuestInfo(row),
     portForwards: vmPortForwards(row.vm),
   })
 }
