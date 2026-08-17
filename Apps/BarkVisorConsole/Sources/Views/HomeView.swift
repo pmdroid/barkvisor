@@ -55,7 +55,6 @@ struct HomeView: View {
             }
         }
         .refreshable { await model.refreshHome() }
-        .task { await model.refreshHome() }
     }
 
     private var allUnreachable: Bool {

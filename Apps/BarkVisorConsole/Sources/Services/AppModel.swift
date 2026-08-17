@@ -91,14 +91,15 @@ final class AppModel {
     init() {
         let storedURL = UserDefaults.standard.string(forKey: "serverURL") ?? DeviceURL.default
         let migrated = DeviceURL.migrateStored(storedURL)
-        let resolved: String
-        if migrated != storedURL, let url = try? DeviceURL.normalize(migrated) {
-            resolved = url.absoluteString
-            UserDefaults.standard.set(resolved, forKey: "serverURL")
+        if let url = try? DeviceURL.normalize(migrated) {
+            let resolved = url.absoluteString
+            serverURLText = resolved
+            if resolved != storedURL {
+                UserDefaults.standard.set(resolved, forKey: "serverURL")
+            }
         } else {
-            resolved = migrated
+            serverURLText = migrated
         }
-        serverURLText = resolved
         username = UserDefaults.standard.string(forKey: "username") ?? ""
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
         token = KeychainStore.readToken()
@@ -406,6 +407,7 @@ final class AppModel {
 
     private func refreshHomeUnion() async {
         guard let client else { return }
+        homeGeneration += 1
         let generation = homeGeneration
         let directory = devices
         var loads: [String: Result<[Workload], Error>] = [:]

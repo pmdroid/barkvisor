@@ -19,8 +19,8 @@ struct SettingsView: View {
                     .onSubmit { applyURL() }
                 Text("Include http:// or https://. Default port is 7777. Changing origin signs you out.")
                     .foregroundStyle(.secondary)
-                Button("Disconnect") { model.disconnect() }
-                Button("Logout", role: .destructive) { model.logout() }
+                Button("Disconnect") { applyThen { model.disconnect() } }
+                Button("Logout", role: .destructive) { applyThen { model.logout() } }
             } header: {
                 Text("Connection")
             }
@@ -84,6 +84,13 @@ struct SettingsView: View {
     private func applyURL() {
         model.applyServerURL(urlDraft)
         urlDraft = model.serverURLText
+    }
+
+    /// Persist a visible URL edit before tearing Settings down. Skip the follow-up
+    /// action when a different origin already signed the session out.
+    private func applyThen(_ action: () -> Void) {
+        applyURL()
+        if model.phase == .ready { action() }
     }
 
     #if os(macOS)
