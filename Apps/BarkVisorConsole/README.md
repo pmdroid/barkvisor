@@ -49,13 +49,18 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Dashboard (Mac) | Counts, selected Device, recent workloads |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List + start / ACPI stop / force stop for the selected Device |
+| Workload | Status, Device, guest, Start / Stop / Force Stop |
+| Console | Self-Device serial via SwiftTerm + `URLSessionWebSocketTask` (`POST /api/auth/ws-ticket`, then `/api/vms/{id}/console?ticket=`) |
+| Display | Self-Device VNC via bundled noVNC 1.6.0 in `WKWebView` (`/api/vms/{id}/vnc?ticket=`). Ctrl+Alt+Del on the toolbar. |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
-| Settings | URL, logout, about (`/api/system/about`), Add Device pairing code |
+| Settings | URL, logout, about (`/api/system/about`), Add Device pairing code (Mac) |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-VNC / serial console is not embedded. Workload rows link to the web UI.
+Self-Device Console and Display open only while the Workload is `running` or `stopping`. Member Console / Display stay disabled. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket query enters the web view.
 
 ## Tests
 
 `APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, and Device URL normalization.
+
+`LocalStreamTests` covers live-state gating, member-stream lockout, reconnect backoff (≤10), and ticket-only WebSocket URLs (JWT never in the URL).

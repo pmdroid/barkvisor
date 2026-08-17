@@ -116,6 +116,26 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var isSelf: Bool { role == "self" }
     var isReachable: Bool { reachability == "ok" }
 
+    /// Fallback when a Mac Workloads list has no selected Device snapshot yet.
+    static var placeholderSelf: HomeDeviceHealthSnapshot {
+        HomeDeviceHealthSnapshot(
+            hostId: "self",
+            role: "self",
+            displayName: "This Device",
+            fingerprint: nil,
+            agentHost: nil,
+            agentPort: DeviceURL.defaultPort,
+            pairedAt: nil,
+            reachability: "ok",
+            reachabilityError: nil,
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil
+        )
+    }
+
     var platformLabel: String {
         if let os = platform?.os, let arch = platform?.arch { return "\(os) · \(arch)" }
         if let os = platform?.os { return os }

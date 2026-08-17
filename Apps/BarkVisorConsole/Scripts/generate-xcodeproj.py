@@ -13,9 +13,11 @@ APP_SOURCES = [
     "Sources/App/BarkVisorConsoleApp.swift",
     "Sources/Theme/Theme.swift",
     "Sources/Models/Models.swift",
+    "Sources/Models/StreamSupport.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
     "Sources/Services/AppModel.swift",
+    "Sources/Services/ConsoleSession.swift",
     "Sources/Views/RootView.swift",
     "Sources/Views/ConnectView.swift",
     "Sources/Views/AppShell.swift",
@@ -24,11 +26,14 @@ APP_SOURCES = [
     "Sources/Views/HomeView.swift",
     "Sources/Views/DevicesView.swift",
     "Sources/Views/WorkloadsView.swift",
+    "Sources/Views/WorkloadDetailView.swift",
+    "Sources/Views/SerialConsoleView.swift",
+    "Sources/Views/DisplayView.swift",
     "Sources/Views/LibraryView.swift",
     "Sources/Views/SettingsView.swift",
     "Sources/Views/Components/Components.swift",
 ]
-TEST_SOURCES = ["Tests/APIDecodingTests.swift"]
+TEST_SOURCES = ["Tests/APIDecodingTests.swift", "Tests/LocalStreamTests.swift"]
 
 
 def uid(name: str) -> str:
@@ -170,6 +175,14 @@ def main() -> None:
         f"\t\t{uid('build:assets')} /* Assets.xcassets in Resources */ = "
         f"{{isa = PBXBuildFile; fileRef = {uid('file:Resources/Assets.xcassets')} /* Assets.xcassets */; }};\n"
     )
+    pbx.append(
+        f"\t\t{uid('build:Resources/noVNC')} /* noVNC in Resources */ = "
+        f"{{isa = PBXBuildFile; fileRef = {uid('file:Resources/noVNC')} /* noVNC */; }};\n"
+    )
+    pbx.append(
+        f"\t\t{uid('build:SwiftTerm')} /* SwiftTerm in Frameworks */ = "
+        f"{{isa = PBXBuildFile; productRef = {uid('prod:SwiftTerm')} /* SwiftTerm */; }};\n"
+    )
     for path in TEST_SOURCES:
         pbx.append(build_file(path))
     pbx.append("/* End PBXBuildFile section */\n\n/* Begin PBXFileReference section */\n")
@@ -191,15 +204,27 @@ def main() -> None:
         f"\t\t{uid('file:Resources/Assets.xcassets')} /* Assets.xcassets */ = "
         "{isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = \"<group>\"; };\n"
     )
+    pbx.append(
+        f"\t\t{uid('file:Resources/noVNC')} /* noVNC */ = "
+        "{isa = PBXFileReference; lastKnownFileType = folder; path = noVNC; sourceTree = \"<group>\"; };\n"
+    )
     pbx.append("/* End PBXFileReference section */\n\n/* Begin PBXFrameworksBuildPhase section */\n")
-    for name in ("app", "tests"):
-        pbx.append(
-            f"\t\t{uid('frameworks:' + name)} /* Frameworks */ = {{\n"
-            "\t\t\tisa = PBXFrameworksBuildPhase;\n"
-            "\t\t\tbuildActionMask = 2147483647;\n"
-            "\t\t\tfiles = (\n\t\t\t);\n"
-            "\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};\n"
-        )
+    pbx.append(
+        f"\t\t{uid('frameworks:app')} /* Frameworks */ = {{\n"
+        "\t\t\tisa = PBXFrameworksBuildPhase;\n"
+        "\t\t\tbuildActionMask = 2147483647;\n"
+        "\t\t\tfiles = (\n"
+        f"\t\t\t\t{uid('build:SwiftTerm')} /* SwiftTerm in Frameworks */,\n"
+        "\t\t\t);\n"
+        "\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};\n"
+    )
+    pbx.append(
+        f"\t\t{uid('frameworks:tests')} /* Frameworks */ = {{\n"
+        "\t\t\tisa = PBXFrameworksBuildPhase;\n"
+        "\t\t\tbuildActionMask = 2147483647;\n"
+        "\t\t\tfiles = (\n\t\t\t);\n"
+        "\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};\n"
+    )
     pbx.append("/* End PBXFrameworksBuildPhase section */\n\n/* Begin PBXGroup section */\n")
     pbx.append(
         group(
@@ -237,7 +262,16 @@ def main() -> None:
     )
     pbx.append(group("App", [child_file("Sources/App/BarkVisorConsoleApp.swift")], "App"))
     pbx.append(group("Theme", [child_file("Sources/Theme/Theme.swift")], "Theme"))
-    pbx.append(group("Models", [child_file("Sources/Models/Models.swift")], "Models"))
+    pbx.append(
+        group(
+            "Models",
+            [
+                child_file("Sources/Models/Models.swift"),
+                child_file("Sources/Models/StreamSupport.swift"),
+            ],
+            "Models",
+        )
+    )
     pbx.append(
         group(
             "Services",
@@ -245,6 +279,7 @@ def main() -> None:
                 child_file("Sources/Services/KeychainStore.swift"),
                 child_file("Sources/Services/APIClient.swift"),
                 child_file("Sources/Services/AppModel.swift"),
+                child_file("Sources/Services/ConsoleSession.swift"),
             ],
             "Services",
         )
@@ -261,6 +296,9 @@ def main() -> None:
                 child_file("Sources/Views/HomeView.swift"),
                 child_file("Sources/Views/DevicesView.swift"),
                 child_file("Sources/Views/WorkloadsView.swift"),
+                child_file("Sources/Views/WorkloadDetailView.swift"),
+                child_file("Sources/Views/SerialConsoleView.swift"),
+                child_file("Sources/Views/DisplayView.swift"),
                 child_file("Sources/Views/LibraryView.swift"),
                 child_file("Sources/Views/SettingsView.swift"),
                 child_group("Components"),
@@ -274,13 +312,23 @@ def main() -> None:
             "Resources",
             [
                 f"{uid('file:Resources/Assets.xcassets')} /* Assets.xcassets */",
+                f"{uid('file:Resources/noVNC')} /* noVNC */",
                 child_file("Resources/Info.plist"),
                 child_file("Resources/BarkVisorConsole.entitlements"),
             ],
             "Resources",
         )
     )
-    pbx.append(group("Tests", [child_file("Tests/APIDecodingTests.swift")], "Tests"))
+    pbx.append(
+        group(
+            "Tests",
+            [
+                child_file("Tests/APIDecodingTests.swift"),
+                child_file("Tests/LocalStreamTests.swift"),
+            ],
+            "Tests",
+        )
+    )
     pbx.append("/* End PBXGroup section */\n\n/* Begin PBXNativeTarget section */\n")
     pbx.append(
         f"\t\t{uid('target:app')} /* BarkVisorConsole */ = {{\n"
@@ -295,6 +343,9 @@ def main() -> None:
         "\t\t\tbuildRules = (\n\t\t\t);\n"
         "\t\t\tdependencies = (\n\t\t\t);\n"
         "\t\t\tname = BarkVisorConsole;\n"
+        "\t\t\tpackageProductDependencies = (\n"
+        f"\t\t\t\t{uid('prod:SwiftTerm')} /* SwiftTerm */,\n"
+        "\t\t\t);\n"
         "\t\t\tproductName = BarkVisorConsole;\n"
         f"\t\t\tproductReference = {uid('file:app')} /* BarkVisorConsole.app */;\n"
         "\t\t\tproductType = \"com.apple.product-type.application\";\n"
@@ -334,6 +385,9 @@ def main() -> None:
         "\t\t\thasScannedForEncodings = 0;\n"
         "\t\t\tknownRegions = (\n\t\t\t\ten,\n\t\t\t\tBase,\n\t\t\t);\n"
         f"\t\t\tmainGroup = {uid('group:root')} /* root */;\n"
+        "\t\t\tpackageReferences = (\n"
+        f"\t\t\t\t{uid('pkg:SwiftTerm')} /* XCRemoteSwiftPackageReference \"SwiftTerm\" */,\n"
+        "\t\t\t);\n"
         "\t\t\tproductRefGroup = "
         f"{uid('group:Products')} /* Products */;\n"
         "\t\t\tprojectDirPath = \"\";\n"
@@ -351,6 +405,7 @@ def main() -> None:
         "\t\t\tbuildActionMask = 2147483647;\n"
         "\t\t\tfiles = (\n"
         f"\t\t\t\t{uid('build:assets')} /* Assets.xcassets in Resources */,\n"
+        f"\t\t\t\t{uid('build:Resources/noVNC')} /* noVNC in Resources */,\n"
         "\t\t\t);\n"
         "\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};\n"
     )
@@ -416,8 +471,27 @@ def main() -> None:
     pbx.append(cfglist("cfgs:project", "PBXProject \"BarkVisorConsole\"", "cfg:project:debug", "cfg:project:release"))
     pbx.append(cfglist("cfgs:app", "PBXNativeTarget \"BarkVisorConsole\"", "cfg:app:debug", "cfg:app:release"))
     pbx.append(cfglist("cfgs:tests", "PBXNativeTarget \"BarkVisorConsoleTests\"", "cfg:tests:debug", "cfg:tests:release"))
+    pbx.append("/* End XCConfigurationList section */\n\n/* Begin XCRemoteSwiftPackageReference section */\n")
     pbx.append(
-        "/* End XCConfigurationList section */\n\t};\n"
+        f"\t\t{uid('pkg:SwiftTerm')} /* XCRemoteSwiftPackageReference \"SwiftTerm\" */ = {{\n"
+        "\t\t\tisa = XCRemoteSwiftPackageReference;\n"
+        "\t\t\trepositoryURL = \"https://github.com/migueldeicaza/SwiftTerm.git\";\n"
+        "\t\t\trequirement = {\n"
+        "\t\t\t\tkind = exactVersion;\n"
+        "\t\t\t\tversion = 1.18.0;\n"
+        "\t\t\t};\n"
+        "\t\t};\n"
+    )
+    pbx.append("/* End XCRemoteSwiftPackageReference section */\n\n/* Begin XCSwiftPackageProductDependency section */\n")
+    pbx.append(
+        f"\t\t{uid('prod:SwiftTerm')} /* SwiftTerm */ = {{\n"
+        "\t\t\tisa = XCSwiftPackageProductDependency;\n"
+        f"\t\t\tpackage = {uid('pkg:SwiftTerm')} /* XCRemoteSwiftPackageReference \"SwiftTerm\" */;\n"
+        "\t\t\tproductName = SwiftTerm;\n"
+        "\t\t};\n"
+    )
+    pbx.append(
+        "/* End XCSwiftPackageProductDependency section */\n\t};\n"
         f"\trootObject = {uid('project')} /* Project object */;\n}}\n"
     )
 

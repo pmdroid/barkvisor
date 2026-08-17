@@ -27,7 +27,16 @@ struct HomeView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(model.homeRows) { row in
-                                HomeWorkloadRowView(row: row)
+                                NavigationLink {
+                                    WorkloadDetailView(
+                                        workloadID: row.workload.id,
+                                        deviceID: row.device.hostId,
+                                        fallbackWorkload: row.workload,
+                                        fallbackDevice: row.device
+                                    )
+                                } label: {
+                                    HomeWorkloadRowView(row: row)
+                                }
                             }
                         }
                     }
