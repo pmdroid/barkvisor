@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../api/client'
 import type { SSHKey } from '../api/types'
+import { HOME_SSH_KEYS_PATH } from '../utils/homeSSHKey'
 
+/** Home SSH public keys (This Device / Home). Workers do not own this table. */
 export const useSSHKeyStore = defineStore('sshKeys', () => {
   const keys = ref<SSHKey[]>([])
   const loading = ref(false)
@@ -12,7 +14,7 @@ export const useSSHKeyStore = defineStore('sshKeys', () => {
   async function fetchAll() {
     loading.value = true
     try {
-      const { data } = await api.get('/ssh-keys')
+      const { data } = await api.get(HOME_SSH_KEYS_PATH)
       keys.value = data
     } finally {
       loading.value = false
@@ -20,7 +22,7 @@ export const useSSHKeyStore = defineStore('sshKeys', () => {
   }
 
   async function create(name: string, publicKey: string): Promise<SSHKey> {
-    const { data } = await api.post('/ssh-keys', { name, publicKey })
+    const { data } = await api.post(HOME_SSH_KEYS_PATH, { name, publicKey })
     keys.value.unshift(data)
     return data
   }

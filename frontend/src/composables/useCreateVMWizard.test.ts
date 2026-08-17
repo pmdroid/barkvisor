@@ -11,7 +11,9 @@ import type {
 } from '../api/types'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { useDevicesStore } from '../stores/devices'
+import { useSSHKeyStore } from '../stores/sshKeys'
 import { cancelLivePlacementScores, useCreateVMWizard } from './useCreateVMWizard'
+import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
 import { PLACEMENT_SCORE_DEBOUNCE_MS } from '../utils/placement'
 
 const originalGet = api.get
@@ -102,14 +104,13 @@ async function waitForCurrentInventory(
       !wizard.pickedDeviceLoading.value
       && wizard.selectedHostId.value === hostId
       && wizard.hostArch.value === (hostId === 'alpha' ? 'x86_64' : 'arm64')
-      && wizard.sshKeys.value[0]?.id === `key-${hostId}`
     ) {
       return
     }
     await nextTick()
   }
   throw new Error(
-    `inventory for ${hostId} did not settle (loading=${wizard.pickedDeviceLoading.value} arch=${wizard.hostArch.value} keys=${wizard.sshKeys.value.map((k) => k.id).join(',')})`,
+    `inventory for ${hostId} did not settle (loading=${wizard.pickedDeviceLoading.value} arch=${wizard.hostArch.value})`,
   )
 }
 
@@ -117,9 +118,6 @@ function inventoryGet(hostId: string, url: string) {
   const prefix = `/home/devices/${hostId}/v1`
   if (url === `${prefix}/system/capabilities`) {
     return { data: { hostArch: hostId === 'alpha' ? 'x86_64' : 'arm64', hostCpuCount: 4 } }
-  }
-  if (url === `${prefix}/ssh-keys`) {
-    return { data: [sshKey(`key-${hostId}`)] }
   }
   if (url === `${prefix}/images` || url === `${prefix}/networks` || url === `${prefix}/disks`) {
     return { data: [{ id: `${hostId}-res` }] }
@@ -497,8 +495,10 @@ describe('useCreateVMWizard (PAS-182)', () => {
     const slowGate = new Promise<void>((resolve) => {
       releaseSlow = resolve
     })
+    const homeKeys = [sshKey('home-laptop')]
     const get = mock((url: string) => {
       if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/ssh-keys') return Promise.resolve({ data: homeKeys })
       if (url.startsWith('/home/devices/alpha/') && url.endsWith('/images')) {
         return Promise.resolve(inventoryGet('alpha', url))
       }
@@ -523,7 +523,8 @@ describe('useCreateVMWizard (PAS-182)', () => {
 
     expect(wizard.selectedHostId.value).toBe('beta')
     expect(wizard.hostArch.value).toBe('arm64')
-    expect(wizard.sshKeys.value.map((key) => key.id)).toEqual(['key-beta'])
+    expect(wizard.sshKeys.value.map((key) => key.id)).toEqual(['home-laptop'])
+    expect(get.mock.calls.some(([url]) => String(url).endsWith('/ssh-keys') && String(url) !== '/ssh-keys')).toBe(false)
     expect(wizard.error.value).toBe('')
   })
 
@@ -540,8 +541,10 @@ describe('useCreateVMWizard (PAS-182)', () => {
       rejectSlow = reject
     })
     void slowFail.catch(() => {})
+    const homeKeys = [sshKey('home-laptop')]
     const get = mock((url: string) => {
       if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/ssh-keys') return Promise.resolve({ data: homeKeys })
       if (url.startsWith('/home/devices/alpha/') && url.endsWith('/images')) {
         return Promise.resolve(inventoryGet('alpha', url))
       }
@@ -561,7 +564,8 @@ describe('useCreateVMWizard (PAS-182)', () => {
     await stale
 
     expect(wizard.hostArch.value).toBe('arm64')
-    expect(wizard.sshKeys.value.map((key) => key.id)).toEqual(['key-beta'])
+    expect(wizard.sshKeys.value.map((key) => key.id)).toEqual(['home-laptop'])
+    expect(get.mock.calls.some(([url]) => String(url).endsWith('/ssh-keys') && String(url) !== '/ssh-keys')).toBe(false)
     expect(wizard.error.value).toBe('')
   })
 
@@ -1228,5 +1232,102 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(library.deviceHasLibraryImage(key, studio)).toBe(true)
     expect(wizard.selectedHostId.value).toBe('studio')
     expect(wizard.canProceed()).toBe(true)
+  })
+
+  test('create on a worker lists Home SSH keys and never fetches the worker table', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({ hostId: 'studio', role: 'member', displayName: 'studio' }),
+    ])
+    devices.report = health
+    const home = sshKey('laptop')
+    home.name = 'laptop'
+    home.publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGk'
+    const img = readyImage({
+      id: 'cloud-1',
+      name: 'ubuntu.img',
+      arch: 'arm64',
+      sha256: 'cloud-lib',
+      imageType: 'cloud-image',
+    })
+    const key = seedLibraryImage(img, ['studio'])
+    const createPosts: Array<{ url: string; body?: Record<string, unknown> }> = []
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/ssh-keys') return Promise.resolve({ data: [home] })
+      if (url === '/images' || url === '/networks' || url === '/disks' || url === '/system/capabilities') {
+        return Promise.resolve({ data: url === '/system/capabilities' ? { hostArch: 'arm64', hostCpuCount: 4 } : [] })
+      }
+      if (url === '/home/devices/studio/v1/system/capabilities') {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (url === '/home/devices/studio/v1/images') {
+        return Promise.resolve({ data: [{ ...img, id: 'studio-cloud-1' }] })
+      }
+      if (
+        url === '/home/devices/studio/v1/networks'
+        || url === '/home/devices/studio/v1/disks'
+      ) {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    const post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: 'studio', candidates: [] } })
+      }
+      if (url === '/home/devices/studio/v1/vms') {
+        createPosts.push({ url, body })
+        return Promise.resolve({ data: { id: 'vm-1', name: 'ssh-home' } })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.get = get as typeof api.get
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'studio' })
+    wizard.mode.value = 'cloud'
+    wizard.selectedImageId.value = key
+    wizard.name.value = 'ssh-home'
+    await wizard.loadPickedDevice()
+    expect(wizard.sshKeys.value.map((k) => k.id)).toEqual(['laptop'])
+    expect(wizard.selectedSSHKeyId.value).toBe('laptop')
+    expect(get.mock.calls.some(([url]) => String(url).includes('/ssh-keys') && String(url) !== '/ssh-keys')).toBe(false)
+
+    await wizard.submit()
+    expect(wizard.error.value).toBe('')
+    expect(createPosts).toHaveLength(1)
+    const cloudInit = createPosts[0]?.body?.cloudInit as { sshAuthorizedKeys?: string[] } | undefined
+    expect(cloudInit?.sshAuthorizedKeys).toEqual([authorizedKeyForCloudInit(home)])
+    expect(JSON.stringify(createPosts[0]?.body)).not.toContain('"sshKeyId"')
+    expect(JSON.stringify(createPosts[0]?.body)).not.toMatch(/key-studio|worker-key/)
+  })
+
+  test('self-only create still uses the local Home SSH key table', async () => {
+    const devices = useDevicesStore()
+    const health = report([device({ hostId: 'desk', role: 'self', displayName: 'desk' })])
+    devices.report = health
+    const home = sshKey('desk-key')
+    const get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url === '/ssh-keys') return Promise.resolve({ data: [home] })
+      if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
+        return Promise.resolve({ data: { hostArch: 'arm64', hostCpuCount: 4 } })
+      }
+      if (url === '/images' || url === '/networks' || url === '/disks') {
+        return Promise.resolve({ data: [] })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    await wizard.loadPickedDevice()
+    expect(useSSHKeyStore().keys.map((k) => k.id)).toEqual(['desk-key'])
+    expect(wizard.sshKeys.value.map((k) => k.id)).toEqual(['desk-key'])
+    const sshGets = get.mock.calls.filter(([url]) => String(url).includes('ssh-keys')).map(([url]) => url)
+    expect(sshGets.length).toBeGreaterThan(0)
+    expect(sshGets.every((url) => url === '/ssh-keys')).toBe(true)
   })
 })
