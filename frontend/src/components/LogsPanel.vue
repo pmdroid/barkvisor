@@ -65,6 +65,17 @@ watch(search, () => {
   }, 300)
 })
 
+watch(
+  () => [props.device?.hostId, props.device?.reachability] as const,
+  () => {
+    if (liveTail.value) {
+      store.stopTail()
+      liveTail.value = false
+    }
+    void refresh()
+  },
+)
+
 onMounted(() => refresh())
 onUnmounted(() => store.clear())
 </script>

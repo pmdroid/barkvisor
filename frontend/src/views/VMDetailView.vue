@@ -258,7 +258,10 @@ const additionalDiskDetails = computed(() => {
 // Images (for ISO name lookup)
 const allImages = ref<Image[]>([])
 
+let memberInventoryHostId = ''
+
 function resetMemberInventory() {
+  memberInventoryHostId = ''
   memberDisks.value = []
   memberDiskUsages.value = {}
   memberNetworks.value = []
@@ -321,6 +324,7 @@ async function fetchMemberInventory() {
   }))
   if (!stillThisDevice()) return
   memberDiskUsages.value = next
+  memberInventoryHostId = host
 }
 
 async function fetchDisks() {
@@ -489,7 +493,9 @@ async function stopWorkload(method: 'acpi' | 'force') {
 async function patchWorkload(body: Parameters<typeof store.update>[1]) {
   if (isMemberDetail.value) {
     const device = memberDevice.value
-    if (!device || !canFetchDeviceWorkloads(device)) return
+    if (!device || !canFetchDeviceWorkloads(device)) {
+      throw new Error('This Device did not answer')
+    }
     await homeWorkloads.update(device, vmId.value, body)
     return
   }
@@ -607,6 +613,10 @@ async function pollMemberDetail(loadVersion: number) {
     if (loadVersion !== detailLoadVersion) return
     memberLoadError.value = null
     await fetchGuestInfo()
+    if (loadVersion !== detailLoadVersion) return
+    if (memberInventoryHostId !== current.hostId) {
+      await fetchMemberInventory()
+    }
   } catch (e: any) {
     if (loadVersion !== detailLoadVersion) return
     memberLoadError.value = apiErrorMessage(e)
@@ -1150,7 +1160,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           </div>
           <div v-else-if="isMemberDetail" class="detail-row">
             <span class="detail-label">IP Address</span>
-            <span style="color:var(--text-dim)">-</span>
+            <span style="color:var(--text-dim)">—</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Created</span>

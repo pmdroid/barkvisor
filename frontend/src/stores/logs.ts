@@ -37,7 +37,7 @@ export const useLogStore = defineStore('logs', () => {
   ) {
     const path = device ? logsHistoryFetchPath(device) : '/logs'
     if (device && !path) return
-    const gen = ++fetchGen
+    const gen = fetchGen
     const showLoading = entries.value.length === 0
     if (showLoading) loading.value = true
     try {
@@ -53,6 +53,7 @@ export const useLogStore = defineStore('logs', () => {
 
   function startTail(device?: DeviceApiTarget | null): boolean {
     stopTail()
+    fetchGen++
     if (device && shouldPollDeviceControl(device)) {
       const path = logsHistoryFetchPath(device)
       if (!path) return false
