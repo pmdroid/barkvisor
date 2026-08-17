@@ -121,6 +121,15 @@ struct APIClient: Sendable {
         return response.token
     }
 
+    /// Single-use ticket for WebSocket query params. The session JWT stays on this POST.
+    func createWSTicket(vmID: String) async throws -> String {
+        let response: WSTicketResponse = try await post(
+            "/api/auth/ws-ticket",
+            body: WSTicketRequest(vmID: vmID)
+        )
+        return response.ticket
+    }
+
     func healthReport() async throws -> HomeDeviceHealthReport {
         try await get("/api/home/devices/health")
     }

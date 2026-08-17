@@ -1,0 +1,121 @@
+import Foundation
+
+/// Native serial console: mint a one-use ticket, then `URLSessionWebSocketTask`
+/// to `/api/vms/{id}/console?ticket=`. The session JWT is never placed on the
+/// WebSocket URL.
+@Observable
+@MainActor
+final class ConsoleSession {
+    var status = ""
+
+    private var client: APIClient?
+    private var workloadID = ""
+    private var state = ""
+    private var stopped = true
+    private var attempt = 0
+    private var socket: URLSessionWebSocketTask?
+    private var loop: Task<Void, Never>?
+    private let urlSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpAdditionalHeaders = nil
+        configuration.timeoutIntervalForRequest = 30
+        return URLSession(configuration: configuration)
+    }()
+
+    /// Terminal feed hook so UI tests do not need SwiftTerm.
+    var onBytes: ((ArraySlice<UInt8>) -> Void)?
+    var onText: ((String) -> Void)?
+
+    func start(client: APIClient, workloadID: String, state: String) {
+        stop()
+        self.client = client
+        self.workloadID = workloadID
+        self.state = state
+        stopped = false
+        attempt = 0
+        loop = Task { await run() }
+    }
+
+    func updateState(_ state: String) {
+        self.state = state
+        if !WorkloadStream.isLive(state) {
+            closeSocket()
+            status = WorkloadStreamAccess.notLive.reason
+        }
+    }
+
+    func stop() {
+        stopped = true
+        loop?.cancel()
+        loop = nil
+        closeSocket()
+    }
+
+    func send(_ data: ArraySlice<UInt8>) {
+        guard let socket else { return }
+        socket.send(.data(Data(data))) { _ in }
+    }
+
+    private func closeSocket() {
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
+    }
+
+    private func run() async {
+        while !stopped, !Task.isCancelled {
+            guard WorkloadStream.isLive(state) else {
+                status = WorkloadStreamAccess.notLive.reason
+                return
+            }
+            guard let client else { return }
+            do {
+                status = "Requesting ticket…"
+                let ticket = try await client.createWSTicket(vmID: workloadID)
+                let url = try StreamURL.console(base: client.baseURL, workloadID: workloadID, ticket: ticket)
+                status = "Connecting…"
+                let task = urlSession.webSocketTask(with: url)
+                socket = task
+                task.resume()
+                attempt = 0
+                status = ""
+                await receive(task)
+            } catch is CancellationError {
+                return
+            } catch {
+                status = error.localizedDescription
+            }
+            // Cancel the finished task so reconnect does not leave a live socket.
+            closeSocket()
+            guard !stopped, !Task.isCancelled else { return }
+            guard WorkloadStream.isLive(state) else {
+                status = WorkloadStreamAccess.notLive.reason
+                return
+            }
+            attempt += 1
+            guard StreamReconnect.shouldRetry(attempt: attempt) else {
+                status = "Disconnected — max reconnect attempts reached"
+                return
+            }
+            status = "Disconnected, reconnecting (\(attempt)/\(StreamReconnect.maxAttempts))…"
+            try? await Task.sleep(nanoseconds: StreamReconnect.delayNanoseconds(attempt: attempt))
+        }
+    }
+
+    private func receive(_ task: URLSessionWebSocketTask) async {
+        while !stopped, !Task.isCancelled, socket === task {
+            do {
+                let message = try await task.receive()
+                switch message {
+                case let .data(data):
+                    onBytes?(Array(data)[...])
+                case let .string(text):
+                    onText?(text)
+                @unknown default:
+                    break
+                }
+            } catch {
+                return
+            }
+        }
+    }
+}

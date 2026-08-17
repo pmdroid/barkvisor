@@ -49,16 +49,20 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List for the selected Device; a row pushes Workload detail |
-| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display rows exist (placeholders this slice; member stays disabled until PAS-200) |
+| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display open for this Device while the Workload is running or stopping (member stays disabled until PAS-200) |
+| Console | Self-Device serial via SwiftTerm + `URLSessionWebSocketTask` (`POST /api/auth/ws-ticket`, then `/api/vms/{id}/console?ticket=`). Type into the guest. |
+| Display | Self-Device VNC control via bundled noVNC 1.6.0 in `WKWebView` (`/api/vms/{id}/vnc?ticket=`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
 | Settings | URL, logout, about (`/api/system/about`), Add Device pairing code |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Console and Display destinations exist as empty placeholders for the next slice. Member Console / Display stay disabled until PAS-200.
+Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Self-Device Console and Display stream only while the Workload is `running` or `stopping`. Member Console / Display stay disabled until PAS-200. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket query enters the web view.
 
 ## Tests
 
 `APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, and Device URL normalization.
 
 `WorkloadDetailTests` covers guest-info OS/IP decode, vmType fallback, and member Console/Display staying closed.
+
+`LocalStreamTests` covers live-state gating, member-stream lockout, reconnect backoff (≤10), VNC control scripts, and ticket-only WebSocket URLs (JWT never in the URL).
