@@ -198,4 +198,21 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).toContain('detail-label">OS')
     expect(detail).toContain('detail-label">IP Address')
   })
+
+  test('member detail poll waits for refresh and drops stale guest-info', () => {
+    const detail = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
+    const fetchFn = detail.match(/async function fetchGuestInfo\(\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(fetchFn).toContain('detailLoadVersion')
+    expect(fetchFn).toContain('vmId.value')
+    expect(fetchFn).toContain('hostId.value')
+    expect(fetchFn).toContain('stillCurrent')
+    expect(fetchFn).toMatch(/guestInfo\.value = data/)
+    expect(detail).toMatch(
+      /refreshOne\([^)]+\)\.then\(\(\) => \{[\s\S]*?fetchGuestInfo\(\)[\s\S]*?\}\)\.catch\(\(e\) => \{/,
+    )
+    expect(detail).not.toMatch(/void fetchGuestInfo\(\)/)
+    expect(detail).not.toMatch(
+      /refreshOne\([^)]+\)\.catch\([\s\S]*?\}\)\s*void fetchGuestInfo\(\)/,
+    )
+  })
 })

@@ -263,12 +263,23 @@ function guestInfoDevice() {
 }
 
 async function fetchGuestInfo() {
-  const path = guestInfoFetchPath(guestInfoDevice(), vmId.value, vm.value?.state)
+  const requestVersion = detailLoadVersion
+  const requestVmId = vmId.value
+  const requestHostId = hostId.value
+  const stillCurrent = () =>
+    requestVersion === detailLoadVersion
+    && requestVmId === vmId.value
+    && requestHostId === hostId.value
+  const path = guestInfoFetchPath(guestInfoDevice(), requestVmId, vm.value?.state)
   if (!path) { guestInfo.value = null; return }
   try {
     const { data } = await api.get(path)
+    if (!stillCurrent()) return
     guestInfo.value = data
-  } catch { guestInfo.value = null }
+  } catch {
+    if (!stillCurrent()) return
+    guestInfo.value = null
+  }
 }
 
 const memberOsLabel = computed(() => guestOsLabel(
