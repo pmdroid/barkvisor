@@ -78,7 +78,13 @@ struct WorkloadDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
         .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
-            guest = await model.guestInfo(for: workload.id, on: device)
+            while !Task.isCancelled {
+                guest = await model.guestInfo(for: workload.id, on: device)
+                if !GuestInfoRefresh.shouldRetry(guest: guest, running: workload.isRunning) {
+                    return
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
         }
         .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {
             Button("Force Stop", role: .destructive) {
@@ -109,7 +115,8 @@ struct WorkloadDetailView: View {
     }
 
     private var busy: Bool {
-        model.actionIDs.contains("\(device.hostId)/\(workload.id)") || model.actionIDs.contains(workload.id)
+        let key = WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id)
+        return model.actionIDs.contains(key) || model.actionIDs.contains(workload.id)
     }
 
     @ViewBuilder

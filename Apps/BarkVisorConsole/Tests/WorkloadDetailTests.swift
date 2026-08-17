@@ -82,6 +82,29 @@ struct WorkloadDetailTests {
         #expect(HomeDeviceHealthSnapshot.placeholderSelf.title == "This Device")
     }
 
+    @Test func actionKeyMatchesHomeRowAndFallsBackToBareID() {
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
+        let haos = fixtureWorkload(id: "vm-1", name: "haos")
+        #expect(WorkloadActionKey.id(hostID: "self", workloadID: "vm-1") == "self/vm-1")
+        #expect(WorkloadActionKey.id(hostID: "peer", workloadID: "vm-1") == "peer/vm-1")
+        #expect(WorkloadActionKey.id(hostID: nil, workloadID: "vm-1") == "vm-1")
+        #expect(WorkloadActionKey.id(hostID: "", workloadID: "vm-1") == "vm-1")
+        #expect(
+            HomeWorkloadRow(workload: haos, device: living).id
+                == WorkloadActionKey.id(hostID: "peer", workloadID: "vm-1")
+        )
+    }
+
+    @Test func guestInfoRetriesUntilAgentAvailable() {
+        let missing = GuestInfo(available: false, ipAddresses: ["10.0.2.15"])
+        let ready = GuestInfo(available: true, ipAddresses: ["192.168.64.12"], osName: "Ubuntu")
+        #expect(GuestInfoRefresh.shouldRetry(guest: nil, running: true))
+        #expect(GuestInfoRefresh.shouldRetry(guest: missing, running: true))
+        #expect(!GuestInfoRefresh.shouldRetry(guest: ready, running: true))
+        #expect(!GuestInfoRefresh.shouldRetry(guest: nil, running: false))
+        #expect(!GuestInfoRefresh.shouldRetry(guest: missing, running: false))
+    }
+
     private func snapshot(
         hostId: String,
         role: String,

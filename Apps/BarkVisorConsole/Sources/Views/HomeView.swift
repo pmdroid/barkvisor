@@ -27,11 +27,7 @@ struct HomeView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(model.homeRows) { row in
-                                NavigationLink {
-                                    WorkloadDetailView(row: row)
-                                } label: {
-                                    HomeWorkloadRowView(row: row)
-                                }
+                                HomeWorkloadRowView(row: row)
                             }
                         }
                     }
@@ -72,17 +68,21 @@ struct HomeWorkloadRowView: View {
     @State private var pendingForceStop = false
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.workload.name)
-                Text("\(row.device.title) · \(row.workload.cpuCount) vCPU · \(row.workload.memoryMB) MB")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            StatusLabel.health(row.workload.resolvedHealth)
-            if model.actionIDs.contains(row.id) {
-                ProgressView().controlSize(.small)
+        NavigationLink {
+            WorkloadDetailView(row: row)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.workload.name)
+                    Text("\(row.device.title) · \(row.workload.cpuCount) vCPU · \(row.workload.memoryMB) MB")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                StatusLabel.health(row.workload.resolvedHealth)
+                if busy {
+                    ProgressView().controlSize(.small)
+                }
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
