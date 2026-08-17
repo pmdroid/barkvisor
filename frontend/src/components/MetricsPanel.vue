@@ -12,13 +12,14 @@ import {
   Filler,
 } from 'chart.js'
 import { useMetricsStore } from '../stores/metrics'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler)
 
-const props = defineProps<{ vmId: string }>()
+const props = defineProps<{ vmId: string; device?: DeviceApiTarget | null }>()
 const store = useMetricsStore()
 
-onMounted(() => store.connect(props.vmId))
+onMounted(() => store.connect(props.vmId, props.device))
 onUnmounted(() => store.disconnect())
 
 const labels = computed(() =>

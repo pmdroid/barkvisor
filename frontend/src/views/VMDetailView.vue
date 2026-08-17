@@ -7,15 +7,33 @@ import { useDevicesStore } from '../stores/devices'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import api from '../api/client'
-import { canFetchDeviceWorkloads, isSelfDevice } from '../utils/homeDeviceApi'
+import {
+  canFetchDeviceWorkloads,
+  deviceCapabilitiesPath,
+  deviceDiskUsagePath,
+  devicePath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
-import type { Disk, GuestInfo, Image, PortForwardRule, BridgeInfo, HostUSBDevice, USBPassthroughDevice } from '../api/types'
+import type {
+  CurrentHostCapabilities,
+  Disk,
+  DiskUsage,
+  GuestInfo,
+  Image,
+  Network,
+  PortForwardRule,
+  BridgeInfo,
+  HostUSBDevice,
+  USBPassthroughDevice,
+} from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
 import ConsolePanel from '../components/ConsolePanel.vue'
 import VNCPanel from '../components/VNCPanel.vue'
 import MetricsPanel from '../components/MetricsPanel.vue'
+import LogsPanel from '../components/LogsPanel.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -36,6 +54,14 @@ import {
   workloadDetailVmSource,
 } from '../utils/workloadDetail'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
+import {
+  disksInventoryFetchPath,
+  isMemberControlTab,
+  memberNetworkForDetail,
+  networksInventoryFetchPath,
+  usbInventoryFetchPath,
+} from '../utils/editHome'
+import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -80,11 +106,11 @@ const memberReachable = computed(() => {
 const tab = ref((route.query.tab as string) || 'overview')
 
 watch(isMemberDetail, (remote) => {
-  if (remote) tab.value = 'overview'
+  if (remote && !isMemberControlTab(tab.value)) tab.value = 'overview'
 }, { immediate: true })
 
 watch(tab, (value) => {
-  if (isMemberDetail.value && value !== 'overview') {
+  if (isMemberDetail.value && !isMemberControlTab(value)) {
     tab.value = 'overview'
     return
   }
@@ -144,6 +170,39 @@ const hostUSBDevices = ref<HostUSBDevice[]>([])
 const showAttachUSB = ref(false)
 const usbLoading = ref(false)
 
+const memberDisks = ref<Disk[]>([])
+const memberDiskUsages = ref<Record<string, DiskUsage>>({})
+const memberNetworks = ref<Network[]>([])
+const memberImages = ref<Image[]>([])
+const memberCaps = ref<CurrentHostCapabilities | null>(null)
+
+const detailDisks = computed(() => (isMemberDetail.value ? memberDisks.value : allDisks.value))
+const detailDiskUsages = computed(() => (
+  isMemberDetail.value ? memberDiskUsages.value : diskUsages.value
+))
+const detailNetworks = computed(() => (
+  isMemberDetail.value ? memberNetworks.value : allNetworks.value
+))
+const detailImages = computed(() => (isMemberDetail.value ? memberImages.value : allImages.value))
+const memberUsbAvailable = computed(() => memberCaps.value?.supportsUSBPassthrough === true)
+const memberUsbExplanation = computed(() => (
+  memberCaps.value?.details?.find((d) => d.code === 'usbPassthrough' && !d.supported)?.remediation
+  || undefined
+))
+const usbAvailable = computed(() => (
+  isMemberDetail.value ? memberUsbAvailable.value : usb.available
+))
+const usbExplanation = computed(() => (
+  isMemberDetail.value ? memberUsbExplanation.value : usb.explanation
+))
+const editCpuMax = computed(() => {
+  if (isMemberDetail.value) {
+    const n = memberCaps.value?.hostCpuCount
+    return typeof n === 'number' && n >= 1 ? n : undefined
+  }
+  return caps.hostCpuCount
+})
+
 // Port forwards
 const showPortForwardEditor = ref(false)
 const editPortForwards = ref<PortForwardRule[]>([])
@@ -157,9 +216,9 @@ function openPortForwardEditor() {
 async function savePortForwards() {
   pfSaving.value = true
   try {
-    await store.update(vmId.value, { portForwards: editPortForwards.value } as any)
+    await patchWorkload({ portForwards: editPortForwards.value } as any)
     showPortForwardEditor.value = false
-    await store.fetchOne(vmId.value)
+    await refreshWorkload()
     if (vm.value?.state === 'running') {
       toast.show('Port forward changes require a VM restart to take effect.', { type: 'info' })
     }
@@ -173,26 +232,75 @@ async function savePortForwards() {
 const availableDisks = computed(() => {
   if (!vm.value) return []
   const attached = new Set([vm.value.bootDiskId, ...(vm.value.additionalDiskIds || [])])
-  return allDisks.value.filter(d => !attached.has(d.id))
+  return detailDisks.value.filter(d => !attached.has(d.id))
 })
 
 const additionalDiskDetails = computed(() => {
   if (!vm.value?.additionalDiskIds) return []
   return vm.value.additionalDiskIds
-    .map(diskId => allDisks.value.find(d => d.id === diskId))
+    .map(diskId => detailDisks.value.find(d => d.id === diskId))
     .filter(Boolean) as Disk[]
 })
 
 // Images (for ISO name lookup)
 const allImages = ref<Image[]>([])
 
+async function fetchMemberInventory() {
+  const device = memberDevice.value
+  if (!device || !canFetchDeviceWorkloads(device)) return
+  const disksPath = disksInventoryFetchPath(device)
+  const netsPath = networksInventoryFetchPath(device)
+  const usbPath = usbInventoryFetchPath(device)
+  await Promise.all([
+    disksPath
+      ? api.get<Disk[]>(disksPath).then(({ data }) => {
+          memberDisks.value = Array.isArray(data) ? data : []
+        }).catch(() => {})
+      : Promise.resolve(),
+    netsPath
+      ? api.get<Network[]>(netsPath).then(({ data }) => {
+          memberNetworks.value = Array.isArray(data) ? data : []
+        }).catch(() => {})
+      : Promise.resolve(),
+    usbPath
+      ? api.get<HostUSBDevice[]>(usbPath).then(({ data }) => {
+          hostUSBDevices.value = Array.isArray(data) ? data : []
+        }).catch(() => { hostUSBDevices.value = [] })
+      : Promise.resolve(),
+    api.get(deviceCapabilitiesPath(device)).then(({ data }) => {
+      memberCaps.value = parseSystemCapabilities(data)
+    }).catch(() => {}),
+    api.get<Image[]>(devicePath(device, '/images')).then(({ data }) => {
+      memberImages.value = Array.isArray(data) ? data : []
+    }).catch(() => {}),
+  ])
+  const vmDiskIds = [vm.value?.bootDiskId, ...(vm.value?.additionalDiskIds || [])].filter(Boolean) as string[]
+  if (!vmDiskIds.length) return
+  const next: Record<string, DiskUsage> = { ...memberDiskUsages.value }
+  await Promise.all(vmDiskIds.map(async (id) => {
+    try {
+      const { data } = await api.get<DiskUsage>(deviceDiskUsagePath(device, id))
+      next[id] = data
+    } catch { /* ignore per-disk usage failures */ }
+  }))
+  memberDiskUsages.value = next
+}
+
 async function fetchDisks() {
+  if (isMemberDetail.value) {
+    await fetchMemberInventory()
+    return
+  }
   await diskStore.fetchAll()
   const vmDiskIds = [vm.value?.bootDiskId, ...(vm.value?.additionalDiskIds || [])].filter(Boolean) as string[]
   if (vmDiskIds.length) await diskStore.fetchUsages(vmDiskIds)
 }
 
 async function fetchNetworks() {
+  if (isMemberDetail.value) {
+    await fetchMemberInventory()
+    return
+  }
   await networkStore.fetchAll()
 }
 
@@ -233,17 +341,26 @@ async function setupBridgeFromDetail() {
 }
 
 async function fetchImages() {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    try {
+      const { data } = await api.get<Image[]>(devicePath(device, '/images'))
+      memberImages.value = Array.isArray(data) ? data : []
+    } catch { /* keep last-known */ }
+    return
+  }
   const { data } = await api.get('/images')
   allImages.value = data
 }
 
 const isoImages = computed(() => {
   const ids = vm.value?.isoIds ?? (vm.value?.isoId ? [vm.value.isoId] : [])
-  return ids.map(id => allImages.value.find(i => i.id === id) || { id, name: id.slice(0, 8) + '...', arch: 'arm64' } as any)
+  return ids.map(id => detailImages.value.find(i => i.id === id) || { id, name: id.slice(0, 8) + '...', arch: 'arm64' } as any)
 })
 
 const availableIsos = computed(() =>
-  allImages.value.filter(i => i.imageType === 'iso' && i.status === 'ready' && !isoImages.value.some(iso => iso.id === i.id))
+  detailImages.value.filter(i => i.imageType === 'iso' && i.status === 'ready' && !isoImages.value.some(iso => iso.id === i.id))
 )
 
 const showIsoAttach = ref(false)
@@ -351,6 +468,15 @@ function usbDeviceKey(dev: { deviceId?: string | null; vendorId: string; product
 }
 
 async function fetchUSBDevices() {
+  if (isMemberDetail.value) {
+    const path = usbInventoryFetchPath(memberDevice.value)
+    if (!path) { hostUSBDevices.value = []; return }
+    try {
+      const { data } = await api.get<HostUSBDevice[]>(path)
+      hostUSBDevices.value = Array.isArray(data) ? data : []
+    } catch { hostUSBDevices.value = [] }
+    return
+  }
   try {
     const { data } = await api.get('/system/usb-devices')
     hostUSBDevices.value = data
@@ -360,8 +486,14 @@ async function fetchUSBDevices() {
 async function usbAttach(dev: HostUSBDevice) {
   usbLoading.value = true
   try {
-    await store.attachUSB(vmId.value, usbDeviceKey(dev))
-    await store.fetchOne(vmId.value)
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.attachUSB(device, vmId.value, usbDeviceKey(dev))
+    } else {
+      await store.attachUSB(vmId.value, usbDeviceKey(dev))
+      await store.fetchOne(vmId.value)
+    }
     await fetchUSBDevices()
     showAttachUSB.value = false
     const label = dev.productName || dev.name
@@ -377,8 +509,14 @@ async function usbAttach(dev: HostUSBDevice) {
 async function usbDetach(dev: USBPassthroughDevice) {
   usbLoading.value = true
   try {
-    await store.detachUSB(vmId.value, usbDeviceKey(dev))
-    await store.fetchOne(vmId.value)
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.detachUSB(device, vmId.value, usbDeviceKey(dev))
+    } else {
+      await store.detachUSB(vmId.value, usbDeviceKey(dev))
+      await store.fetchOne(vmId.value)
+    }
     await fetchUSBDevices()
     if (vm.value?.state === 'running') {
       toast.show('USB device removed — restart the VM to apply.', { type: 'info' })
@@ -461,6 +599,7 @@ async function loadMemberDetail() {
         if (loadVersion !== detailLoadVersion) return
         memberLoadError.value = null
         await homeWorkloads.fetchSpec(device, vmId.value).catch(() => {})
+        await fetchMemberInventory()
       } catch (e: any) {
         if (isNotFoundError(e)) {
           homeWorkloads.removeOne(device.hostId, vmId.value)
@@ -649,9 +788,8 @@ async function doRemoveSharedPath() {
 
 function openEditModal() {
   const current = vm.value?.cpuCount || 1
-  const cpu = isMemberDetail.value
-    ? Math.max(1, current)
-    : Math.min(Math.max(1, current), caps.hostCpuCount)
+  const max = editCpuMax.value
+  const cpu = max ? Math.min(Math.max(1, current), max) : Math.max(1, current)
   editDraft.value = {
     description: vm.value?.description || '',
     cpuCount: cpu,
@@ -666,13 +804,14 @@ async function saveEdit() {
   editSaving.value = true
   try {
     const rawCpu = Math.max(1, Math.trunc(editDraft.value.cpuCount))
-    const cpu = isMemberDetail.value ? rawCpu : Math.min(rawCpu, caps.hostCpuCount)
+    const max = editCpuMax.value
+    const cpu = max ? Math.min(rawCpu, max) : rawCpu
     await patchWorkload({
       description: editDraft.value.description,
       cpuCount: cpu,
       memoryMB: editDraft.value.memoryMB,
       bootOrder: editDraft.value.bootOrder,
-      ...(isMemberDetail.value ? {} : { networkId: editDraft.value.networkId }),
+      networkId: editDraft.value.networkId,
     } as any)
     showEditModal.value = false
     await refreshWorkload()
@@ -687,9 +826,11 @@ async function attachDisk(diskId: string) {
   attachLoading.value = true
   try {
     const current = vm.value?.additionalDiskIds || []
-    await store.update(vmId.value, { additionalDiskIds: [...current, diskId] } as any)
+    await patchWorkload({ additionalDiskIds: [...current, diskId] } as any)
     showAttachDisk.value = false
-    await store.fetchOne(vmId.value)
+    await refreshWorkload()
+    if (isMemberDetail.value) await fetchMemberInventory()
+    else await fetchDisks()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -710,21 +851,24 @@ async function doDetachDisk() {
   detaching.value = true
   try {
     const current = vm.value?.additionalDiskIds || []
-    await store.update(vmId.value, { additionalDiskIds: current.filter(d => d !== diskId) } as any).then(() => store.fetchOne(vmId.value))
+    await patchWorkload({ additionalDiskIds: current.filter(d => d !== diskId) } as any)
+    await refreshWorkload()
+    if (isMemberDetail.value) await fetchMemberInventory()
+    else await fetchDisks()
   } finally {
     detaching.value = false
     confirmDetachDisk.value = null
   }
 }
 
-const defaultNetwork = computed(() => allNetworks.value.find(n => n.isDefault))
+const defaultNetwork = computed(() => detailNetworks.value.find(n => n.isDefault))
 
-
-const currentNetwork = computed(() => localNetworkForDetail(
-  isMemberDetail.value,
-  vm.value?.networkId,
-  allNetworks.value,
-))
+const currentNetwork = computed(() => {
+  if (isMemberDetail.value) {
+    return memberNetworkForDetail(vm.value?.networkId, memberNetworks.value)
+  }
+  return localNetworkForDetail(false, vm.value?.networkId, allNetworks.value)
+})
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
@@ -788,6 +932,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
       <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
+    </div>
+    <div v-else class="tabs">
+      <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
+      <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
+      <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
 
     <div v-if="isMemberDetail && !memberReachable" class="pending-banner">
@@ -868,20 +1017,19 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <div class="detail-row">
             <span class="detail-label">Network</span>
             <span style="display:flex;align-items:center;gap:6px">
-              <template v-if="isMemberDetail">
-                <span v-if="vm.networkId" class="mono">{{ memberNetworkCaption(vm.networkId) }}</span>
-                <span v-else style="color:var(--text-dim)">{{ memberNetworkCaption(vm.networkId) }}</span>
-              </template>
-              <template v-else-if="currentNetwork">
+              <template v-if="currentNetwork">
                 <span style="color:var(--text-secondary)">{{ currentNetwork.name }}</span>
                 <span class="badge badge-gray">{{ currentNetwork.mode }}</span>
-                <template v-if="currentNetwork.mode === 'bridged' && currentNetwork.bridge">
+                <template v-if="!isMemberDetail && currentNetwork.mode === 'bridged' && currentNetwork.bridge">
                   <span class="mono" style="color:var(--text-dim);font-size:12px">{{ currentNetwork.bridge }}</span>
                   <span v-if="bridgeStatus === 'active'" class="badge badge-green">active</span>
                   <span v-else-if="bridgeStatus === 'installed'" class="badge badge-accent">installed</span>
                   <span v-else class="badge badge-gray">no bridge</span>
                 </template>
               </template>
+              <span v-else-if="isMemberDetail" :class="vm.networkId ? 'mono' : ''" :style="vm.networkId ? undefined : 'color:var(--text-dim)'">
+                {{ memberNetworkCaption(vm.networkId) }}
+              </span>
               <span v-else style="color:var(--text-dim)">Default NAT</span>
             </span>
           </div>
@@ -894,7 +1042,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 </span>
               </span>
               <span v-else style="color:var(--text-dim)">None</span>
-              <AppButton v-if="!isMemberDetail" size="sm" @click="openPortForwardEditor">Edit</AppButton>
+              <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor">Edit</AppButton>
             </span>
           </div>
           <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
@@ -1025,23 +1173,26 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- Disks Section -->
-      <div v-if="!isMemberDetail" style="margin-top:20px">
+      <div style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">Disks</h2>
-          <AppButton size="sm" icon="plus" @click="showAttachDisk = true; fetchDisks()">Attach Disk</AppButton>
+          <AppButton size="sm" icon="plus" :disabled="isMemberDetail && !memberReachable" @click="showAttachDisk = true; fetchDisks()">Attach Disk</AppButton>
         </div>
         <DataTable :columns="[{ key: 'name', label: 'Name' }, { key: 'format', label: 'Format' }, { key: 'provisioned', label: 'Provisioned' }, { key: 'used', label: 'Used' }, { key: 'role', label: 'Role' }, { key: 'actions', label: '' }]">
               <!-- Boot disk -->
               <tr>
                 <td style="font-weight:500">
-                  <a href="#" @click.prevent="router.push('/disks')" style="color:var(--accent);text-decoration:none">
-                    {{ allDisks.find(d => d.id === vm!.bootDiskId)?.name || vm!.bootDiskId.slice(0,8) + '...' }}
+                  <a v-if="!isMemberDetail" href="#" @click.prevent="router.push('/disks')" style="color:var(--accent);text-decoration:none">
+                    {{ detailDisks.find(d => d.id === vm!.bootDiskId)?.name || vm!.bootDiskId.slice(0,8) + '...' }}
                   </a>
+                  <span v-else>
+                    {{ detailDisks.find(d => d.id === vm!.bootDiskId)?.name || vm!.bootDiskId.slice(0,8) + '...' }}
+                  </span>
                 </td>
                 <td><span class="badge badge-gray">qcow2</span></td>
-                <td class="mono">{{ allDisks.find(d => d.id === vm!.bootDiskId) ? formatBytes(allDisks.find(d => d.id === vm!.bootDiskId)!.sizeBytes) : '-' }}</td>
+                <td class="mono">{{ detailDisks.find(d => d.id === vm!.bootDiskId) ? formatBytes(detailDisks.find(d => d.id === vm!.bootDiskId)!.sizeBytes) : '-' }}</td>
                 <td class="mono">
-                  <template v-if="diskUsages[vm!.bootDiskId]">{{ formatBytes(diskUsages[vm!.bootDiskId].actualSizeBytes) }}</template>
+                  <template v-if="detailDiskUsages[vm!.bootDiskId]">{{ formatBytes(detailDiskUsages[vm!.bootDiskId].actualSizeBytes) }}</template>
                   <span v-else style="color:var(--text-dim)">-</span>
                 </td>
                 <td><span class="badge badge-accent">Boot</span></td>
@@ -1050,18 +1201,19 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <!-- Additional disks -->
               <tr v-for="disk in additionalDiskDetails" :key="disk.id">
                 <td style="font-weight:500">
-                  <a href="#" @click.prevent="router.push('/disks')" style="color:var(--accent);text-decoration:none">{{ disk.name }}</a>
+                  <a v-if="!isMemberDetail" href="#" @click.prevent="router.push('/disks')" style="color:var(--accent);text-decoration:none">{{ disk.name }}</a>
+                  <span v-else>{{ disk.name }}</span>
                 </td>
                 <td><span class="badge badge-gray">{{ disk.format }}</span></td>
                 <td class="mono">{{ formatBytes(disk.sizeBytes) }}</td>
                 <td class="mono">
-                  <template v-if="diskUsages[disk.id]">{{ formatBytes(diskUsages[disk.id].actualSizeBytes) }}</template>
+                  <template v-if="detailDiskUsages[disk.id]">{{ formatBytes(detailDiskUsages[disk.id].actualSizeBytes) }}</template>
                   <span v-else style="color:var(--text-dim)">-</span>
                 </td>
                 <td><span class="badge badge-blue">Extra</span></td>
                 <td style="text-align:right">
                   <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
-                  <AppButton v-else size="sm" @click="detachDisk(disk.id)">Detach</AppButton>
+                  <AppButton v-else size="sm" :disabled="isMemberDetail && !memberReachable" @click="detachDisk(disk.id)">Detach</AppButton>
                 </td>
               </tr>
               <tr v-if="!additionalDiskDetails.length">
@@ -1093,18 +1245,18 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- USB Devices Section -->
-      <div v-if="!isMemberDetail" style="margin-top:20px">
+      <div style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
           <AppButton
             size="sm"
             icon="plus"
-            :disabled="!usb.available"
-            :title="usb.available ? undefined : usb.explanation"
+            :disabled="!usbAvailable || (isMemberDetail && !memberReachable)"
+            :title="usbAvailable ? undefined : usbExplanation"
             @click="showAttachUSB = true; fetchUSBDevices()"
           >Attach USB Device</AppButton>
         </div>
-        <UnsupportedHint v-if="!usb.available" :text="usb.explanation" />
+        <UnsupportedHint v-if="!usbAvailable" :text="usbExplanation" />
         <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'id', label: 'ID' }, { key: 'actions', label: '' }]">
               <tr v-for="dev in (vm.usbDevices || [])" :key="usbDeviceKey(dev)">
                 <td>
@@ -1114,11 +1266,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ usbDeviceKey(dev) }}</span></td>
                 <td style="text-align:right">
                   <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
-                  <AppButton v-else size="sm" variant="danger" :disabled="usbLoading" @click="usbDetach(dev)">Detach</AppButton>
+                  <AppButton v-else size="sm" variant="danger" :disabled="usbLoading || (isMemberDetail && !memberReachable)" @click="usbDetach(dev)">Detach</AppButton>
                 </td>
               </tr>
               <tr v-if="!vm.usbDevices?.length">
-                <td colspan="4"><EmptyState title="No USB devices attached" subtitle="Click &quot;Attach USB Device&quot; to pass through a USB device from this device." /></td>
+                <td colspan="4"><EmptyState title="No USB devices attached" :subtitle="isMemberDetail ? 'Attach a USB device from that Device.' : 'Click &quot;Attach USB Device&quot; to pass through a USB device from this device.'" /></td>
               </tr>
         </DataTable>
       </div>
@@ -1126,13 +1278,24 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
     <ConsolePanel v-if="!isMemberDetail && tab === 'console'" :key="`console-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
     <VNCPanel v-if="!isMemberDetail && tab === 'vnc'" :key="`vnc-${vmId}`" :vm-id="vmId" :vm-state="vm.state" />
-    <MetricsPanel v-if="!isMemberDetail && tab === 'metrics' && vm.state === 'running'" :key="`metrics-${vmId}`" :vm-id="vmId" />
+    <MetricsPanel
+      v-if="tab === 'metrics' && vm.state === 'running'"
+      :key="`metrics-${vmId}-${isMemberDetail ? hostId : 'local'}`"
+      :vm-id="vmId"
+      :device="isMemberDetail ? memberDevice : undefined"
+    />
+    <LogsPanel
+      v-if="isMemberDetail && tab === 'logs'"
+      :key="`logs-${hostId}-${vmId}`"
+      :vm-id="vmId"
+      :device="memberDevice"
+    />
 
     <!-- Attach USB Device Modal -->
-    <div v-if="usb.available && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
+    <div v-if="usbAvailable && showAttachUSB" class="modal-overlay" @click.self="showAttachUSB = false">
       <div class="modal">
         <h2>Attach USB Device</h2>
-        <EmptyState v-if="hostUSBDevices.length === 0" title="No USB devices detected on this device." />
+        <EmptyState v-if="hostUSBDevices.length === 0" :title="isMemberDetail ? 'No USB devices detected on that Device.' : 'No USB devices detected on this device.'" />
         <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'id', label: 'ID' }, { key: 'actions', label: '' }]">
               <tr
                 v-for="dev in hostUSBDevices"
@@ -1234,12 +1397,12 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <input v-model="editDraft.description" placeholder="Add a description..." />
         </div>
         <div class="edit-field">
-          <label>CPU Cores<template v-if="!isMemberDetail"> (max {{ caps.hostCpuCount }})</template></label>
+          <label>CPU Cores<template v-if="editCpuMax"> (max {{ editCpuMax }})</template></label>
           <input
             v-model.number="editDraft.cpuCount"
             type="number"
             min="1"
-            :max="isMemberDetail ? undefined : caps.hostCpuCount"
+            :max="editCpuMax"
           />
         </div>
         <div class="edit-field">
@@ -1257,10 +1420,10 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <option value="nc">Network, then disk (nc)</option>
           </AppSelect>
         </div>
-        <div v-if="!isMemberDetail" class="edit-field">
+        <div class="edit-field">
           <label>Network</label>
-          <AppSelect v-model="editDraft.networkId">
-            <option v-for="n in allNetworks" :key="n.id" :value="n.id">{{ n.name }} ({{ n.mode }})</option>
+          <AppSelect v-model="editDraft.networkId" :disabled="isMemberDetail && !memberReachable">
+            <option v-for="n in detailNetworks" :key="n.id" :value="n.id">{{ n.name }} ({{ n.mode }})</option>
           </AppSelect>
         </div>
       </div>

@@ -113,3 +113,39 @@ export function deviceCapabilitiesPath(device: DeviceApiTarget): string {
 export function deviceImagePath(device: DeviceApiTarget, imageId: string): string {
   return devicePath(device, `/images/${encodeURIComponent(imageId)}`)
 }
+
+export function deviceLogsPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/logs')
+}
+
+export function deviceVmMetricsPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/metrics`
+}
+
+export function deviceUsbDevicesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/usb-devices')
+}
+
+export function deviceVmUsbPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/usb`
+}
+
+export function deviceVmUsbDevicePath(
+  device: DeviceApiTarget,
+  vmId: string,
+  usbId: string,
+): string {
+  return `${deviceVmUsbPath(device, vmId)}/${encodeURIComponent(usbId)}`
+}
+
+export function deviceDisksPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/disks')
+}
+
+export function deviceDiskUsagePath(device: DeviceApiTarget, diskId: string): string {
+  return `${deviceDisksPath(device)}/${encodeURIComponent(diskId)}/usage`
+}
+
+export function deviceNetworksPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/networks')
+}

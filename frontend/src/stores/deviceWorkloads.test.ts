@@ -7,6 +7,7 @@ import { useDeviceWorkloadsStore } from './deviceWorkloads'
 const originalGet = api.get
 const originalPost = api.post
 const originalPatch = api.patch
+const originalDelete = api.delete
 
 function snapshot(partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>): HomeDeviceHealthSnapshot {
   return {
@@ -52,6 +53,7 @@ describe('deviceWorkloads store (PAS-52)', () => {
     api.get = originalGet
     api.post = originalPost
     api.patch = originalPatch
+    api.delete = originalDelete
   })
 
   test('self lists and starts through local /vms', async () => {
@@ -250,5 +252,34 @@ describe('deviceWorkloads store (PAS-52)', () => {
     expect(store.vmsFor('peer-1')).toEqual([])
     store.removeOne('peer-1', 'vm-2')
     expect(store.vmsFor('peer-1')).toEqual([])
+  })
+
+  test('member USB attach/detach use the Home proxy, never This Device', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const attached = vm({
+      id: 'vm-2',
+      name: 'nas',
+      state: 'stopped',
+      usbDevices: [{ vendorId: 'dead', productId: 'beef', deviceId: 'dead:beef' }],
+    })
+    const detached = vm({ id: 'vm-2', name: 'nas', state: 'stopped', usbDevices: [] })
+    const post = mock((url: string, body?: unknown) => {
+      expect(url).toBe('/home/devices/peer-1/v1/vms/vm-2/usb')
+      expect(body).toEqual({ deviceId: 'dead:beef' })
+      return Promise.resolve({ data: attached })
+    })
+    const del = mock((url: string) => {
+      expect(url).toBe('/home/devices/peer-1/v1/vms/vm-2/usb/dead%3Abeef')
+      return Promise.resolve({ data: detached })
+    })
+    api.post = post as typeof api.post
+    api.delete = del as typeof api.delete
+    const store = useDeviceWorkloadsStore()
+    await store.attachUSB(peer, 'vm-2', 'dead:beef')
+    expect(store.vmFor('peer-1', 'vm-2')?.usbDevices).toHaveLength(1)
+    await store.detachUSB(peer, 'vm-2', 'dead:beef')
+    expect(store.vmFor('peer-1', 'vm-2')?.usbDevices).toEqual([])
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(del).toHaveBeenCalledTimes(1)
   })
 })
