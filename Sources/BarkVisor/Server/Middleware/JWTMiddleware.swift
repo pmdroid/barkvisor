@@ -188,3 +188,34 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         )
     }
 }
+
+/// Home VNC/console tunnel: session JWT from Bearer or `?token=`.
+/// Does **not** consume `?ticket=` — that value is forwarded to the owning Device.
+struct HomeTunnelAuthMiddleware: AsyncMiddleware {
+    let keys: JWTKeyCollection
+
+    func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
+        -> Vapor.Response {
+        let raw: String
+        if let auth = request.headers.bearerAuthorization {
+            raw = auth.token
+        } else if let token = request.query[String.self, at: "token"], !token.isEmpty {
+            raw = token
+        } else {
+            throw Abort(.unauthorized, reason: "Missing authorization")
+        }
+        let payload: UserPayload
+        do {
+            payload = try await keys.verify(raw, as: UserPayload.self)
+        } catch {
+            throw Abort(.unauthorized, reason: "Invalid or expired token")
+        }
+        request.authenticatedUser = AuthenticatedUser(
+            userId: payload.sub.value,
+            username: payload.username,
+            authMethod: "jwt",
+            apiKeyId: nil,
+        )
+        return try await next.respond(to: request)
+    }
+}

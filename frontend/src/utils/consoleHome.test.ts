@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import {
   canConnectDeviceConsole,
   consoleSocketPath,
+  consoleSocketQuery,
   deviceVmConsolePath,
   deviceVmVncPath,
   deviceWsTicketPath,
@@ -45,6 +46,15 @@ describe('consoleHome (PAS-200)', () => {
     expect(canConnectDeviceConsole(member)).toBe(true)
     expect(canConnectDeviceConsole(down)).toBe(false)
     expect(canConnectDeviceConsole(null)).toBe(false)
+  })
+
+  test('member sockets send session token; self stays ticket-only', () => {
+    localStorage.setItem('token', 'jwt-home')
+    expect(consoleSocketQuery('member-ticket', member)).toContain('ticket=member-ticket')
+    expect(consoleSocketQuery('member-ticket', member)).toContain('token=jwt-home')
+    expect(consoleSocketQuery('local-ticket', self)).toBe('ticket=local-ticket')
+    expect(consoleSocketQuery('local-ticket')).toBe('ticket=local-ticket')
+    localStorage.removeItem('token')
   })
 
   test('SPA mints the ticket on the member and opens Home WS with hostId', () => {

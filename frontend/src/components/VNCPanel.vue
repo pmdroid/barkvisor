@@ -5,7 +5,7 @@ const RFB = (rfbModule as any).default || rfbModule
 import { getWSTicket } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { copyGuestText, readLocalClipboard, textFromPasteEvent } from '../utils/vncClipboard'
-import { consoleSocketPath, vncWindowPath } from '../utils/consoleHome'
+import { consoleSocketPath, consoleSocketQuery, vncWindowPath } from '../utils/consoleHome'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const props = withDefaults(
@@ -78,7 +78,7 @@ async function connect() {
 
   const wsProto = location.protocol === 'https:' ? 'wss' : 'ws'
   const path = consoleSocketPath(props.device, props.vmId, 'vnc')
-  const url = `${wsProto}://${location.host}/api${path}?ticket=${ticket}`
+  const url = `${wsProto}://${location.host}/api${path}?${consoleSocketQuery(ticket, props.device)}`
   rfb = new RFB(canvasEl.value, url, { credentials: { password: '' } })
   applyPerfSettings(rfb)
 
