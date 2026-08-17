@@ -161,6 +161,7 @@ private struct SerialTerminalView: NSViewRepresentable {
         context.coordinator.attach(view)
     }
 
+    @MainActor
     final class Coordinator: NSObject, TerminalViewDelegate {
         var session: ConsoleSession
         weak var terminal: TerminalView?
@@ -177,20 +178,23 @@ private struct SerialTerminalView: NSViewRepresentable {
             }
         }
 
-        func sizeChanged(source _: TerminalView, newCols _: Int, newRows _: Int) {}
-        func setTerminalTitle(source _: TerminalView, title _: String) {}
-        func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
-        func send(source _: TerminalView, data: ArraySlice<UInt8>) { session.send(data) }
-        func scrolled(source _: TerminalView, position _: Double) {}
-        func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
-        func bell(source _: TerminalView) {}
-        func clipboardCopy(source _: TerminalView, content: Data) {
+        nonisolated func sizeChanged(source _: TerminalView, newCols _: Int, newRows _: Int) {}
+        nonisolated func setTerminalTitle(source _: TerminalView, title _: String) {}
+        nonisolated func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
+        nonisolated func send(source _: TerminalView, data: ArraySlice<UInt8>) {
+            let copy = Array(data)
+            Task { @MainActor in self.session.send(copy[...]) }
+        }
+        nonisolated func scrolled(source _: TerminalView, position _: Double) {}
+        nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
+        nonisolated func bell(source _: TerminalView) {}
+        nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(String(data: content, encoding: .utf8) ?? "", forType: .string)
         }
-        func clipboardRead(source _: TerminalView) -> Data? { nil }
-        func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
-        func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
+        nonisolated func clipboardRead(source _: TerminalView) -> Data? { nil }
+        nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
+        nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
     }
 }
 #endif

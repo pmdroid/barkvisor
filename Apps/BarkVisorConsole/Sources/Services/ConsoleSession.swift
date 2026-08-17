@@ -84,7 +84,8 @@ final class ConsoleSession {
             } catch {
                 status = error.localizedDescription
             }
-            socket = nil
+            // Cancel the finished task so reconnect does not leave a live socket.
+            closeSocket()
             guard !stopped, !Task.isCancelled else { return }
             guard WorkloadStream.isLive(state) else {
                 status = WorkloadStreamAccess.notLive.reason

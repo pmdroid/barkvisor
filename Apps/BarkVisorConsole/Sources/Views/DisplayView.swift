@@ -147,6 +147,7 @@ final class DisplaySession {
         case "disconnect":
             connected = false
             desktopSize = ""
+            status = "disconnected"
             resumeDisconnectWaiter()
         default:
             break

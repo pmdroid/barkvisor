@@ -70,7 +70,7 @@ struct LocalStreamTests {
         session.handleMessage(["type": "disconnect"])
         await wait
         #expect(!session.connected)
-        #expect(session.status == "connected")
+        #expect(session.status == "disconnected")
     }
 
     @Test func streamURLUsesTicketAndNeverJWT() throws {
