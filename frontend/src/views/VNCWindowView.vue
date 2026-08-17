@@ -6,7 +6,7 @@ import { useVMStore } from '../stores/vms'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import type { VM } from '../api/types'
-import { apiErrorMessage } from '../api/errors'
+import { apiErrorMessage, isNotFoundError } from '../api/errors'
 import { canConnectDeviceConsole } from '../utils/consoleHome'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 
@@ -48,7 +48,17 @@ async function refresh() {
           vm.value = null
           return
         }
-        await homeWorkloads.refreshOne(target, vmId.value)
+        try {
+          await homeWorkloads.refreshOne(target, vmId.value)
+        } catch (e) {
+          if (isNotFoundError(e)) {
+            homeWorkloads.removeOne(hostId.value, vmId.value)
+            error.value = 'Workload not found on that Device'
+            vm.value = null
+            return
+          }
+          throw e
+        }
         vm.value = homeWorkloads.vmFor(hostId.value, vmId.value) ?? null
         if (!vm.value) {
           error.value = 'Workload not found on that Device'

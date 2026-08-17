@@ -8,6 +8,8 @@ import Vapor
 
 @Suite("Home console WebSocket tunnel (PAS-200)", .serialized)
 struct HomeConsoleProxyTests {
+    private static let ticket = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
     private func isolatedDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "console-proxy-\(UUID().uuidString)",
@@ -138,7 +140,7 @@ struct HomeConsoleProxyTests {
             try await tunnel.startup()
             let tunnelPort = try boundPort(tunnel)
             let url =
-                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=once"
+                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=\(Self.ticket)"
             let text = try await echoRoundTrip(url: url, send: .text("ping"))
             #expect(text == "echo:ping")
             let binary = try await echoRoundTrip(url: url, send: .binary(Array("rfb".utf8)))
@@ -182,7 +184,7 @@ struct HomeConsoleProxyTests {
             try await tunnel.startup()
             let tunnelPort = try boundPort(tunnel)
             let url =
-                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=once"
+                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=\(Self.ticket)"
             let banner = try await echoReceive(url: url)
             #expect(banner == "RFB 003.008\n")
             await stop(tunnel)
@@ -216,7 +218,7 @@ struct HomeConsoleProxyTests {
             try await tunnel.startup()
             let tunnelPort = try boundPort(tunnel)
             let url =
-                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(selfId)/v1/vms/vm-local/console?ticket=local"
+                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(selfId)/v1/vms/vm-local/console?ticket=\(Self.ticket)"
             let text = try await echoRoundTrip(url: url, send: .text("hi"))
             #expect(text == "local:hi")
             await stop(tunnel)
@@ -243,7 +245,7 @@ struct HomeConsoleProxyTests {
             proxy.registerConsoleTunnels(app: agent)
             try await agent.startup()
             let agentPort = try boundPort(agent)
-            let url = "ws://127.0.0.1:\(agentPort)/api/vms/vm-9/vnc?ticket=member"
+            let url = "ws://127.0.0.1:\(agentPort)/api/vms/vm-9/vnc?ticket=\(Self.ticket)"
             let text = try await echoRoundTrip(url: url, send: .text("frame"))
             #expect(text == "agent:frame")
             await stop(agent)
