@@ -1,32 +1,31 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
-#else
-import UIKit
 #endif
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    @State private var sharePayload: String?
+    @State private var urlDraft = ""
 
     var body: some View {
-        @Bindable var model = model
         Form {
             Section {
-                TextField("Device URL", text: $model.serverURLText)
+                TextField("Device URL", text: $urlDraft)
                     #if os(iOS)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
                     #endif
-                Text("Default port is 7777. Sign out and reconnect after changing the URL.")
+                    .onSubmit { applyURL() }
+                Text("Include http:// or https://. Default port is 7777. Changing origin signs you out.")
                     .foregroundStyle(.secondary)
-                Button("Disconnect") { model.disconnect() }
-                Button("Logout", role: .destructive) { model.logout() }
+                Button("Disconnect") { applyThen { model.disconnect() } }
+                Button("Logout", role: .destructive) { applyThen { model.logout() } }
             } header: {
                 Text("Connection")
             }
 
+            #if os(macOS)
             Section {
                 Text("Issue a pairing code on this \(Copy.home). The joining \(Copy.device.lowercased()) finishes setup in the web UI.")
                     .foregroundStyle(.secondary)
@@ -36,15 +35,14 @@ struct SettingsView: View {
                             .font(.title2.monospaced().weight(.bold))
                             .textSelection(.enabled)
                     }
-                    LabeledContent("Expires", value: expiry(pairing))
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        LabeledContent("Expires", value: PairingExpiry.label(expiresAt: pairing.expiresAt, now: context.date))
+                    }
                     Text(pairing.qrPayload)
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                         .foregroundStyle(.secondary)
                     Button("Copy payload") { copy(pairing.qrPayload) }
-                    #if os(iOS)
-                    Button("Share") { sharePayload = pairing.qrPayload }
-                    #endif
                     Button("Revoke", role: .destructive) {
                         Task { await model.revokePairing() }
                     }
@@ -56,6 +54,7 @@ struct SettingsView: View {
             } header: {
                 Text("Add a \(Copy.device)")
             }
+            #endif
 
             Section {
                 LabeledContent("Console", value: "BarkVisor native console")
@@ -74,37 +73,30 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { urlDraft = model.serverURLText }
         .task {
+            #if os(macOS)
             await model.loadPairing()
+            #endif
         }
-        #if os(iOS)
-        .sheet(item: Binding(
-            get: { sharePayload.map(IdentifiedString.init) },
-            set: { sharePayload = $0?.value }
-        )) { item in
-            ShareSheet(items: [item.value])
-        }
-        #endif
     }
 
-    private func expiry(_ offer: PairingIssue) -> String {
-        let seconds = max(0, offer.ttlSeconds)
-        if seconds == 0 { return "Expired" }
-        let minutes = Int(ceil(Double(seconds) / 60))
-        return minutes == 1 ? "Expires in 1 minute" : "Expires in \(minutes) minutes"
+    private func applyURL() {
+        model.applyServerURL(urlDraft)
+        urlDraft = model.serverURLText
     }
 
+    /// Persist a visible URL edit before tearing Settings down. Skip the follow-up
+    /// action when a different origin already signed the session out.
+    private func applyThen(_ action: () -> Void) {
+        applyURL()
+        if model.phase == .ready { action() }
+    }
+
+    #if os(macOS)
     private func copy(_ text: String) {
-        #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        #else
-        UIPasteboard.general.string = text
-        #endif
     }
-}
-
-private struct IdentifiedString: Identifiable {
-    var id: String { value }
-    var value: String
+    #endif
 }

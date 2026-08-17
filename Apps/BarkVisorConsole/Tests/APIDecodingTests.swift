@@ -112,15 +112,176 @@ struct APIDecodingTests {
         #expect(setup.joined == true)
     }
 
-    @Test func deviceURLNormalizesHostAndPort() throws {
-        let url = try DeviceURL.normalize("192.168.1.20")
-        #expect(url.scheme == "http")
+    @Test func deviceURLRequiresSchemeAndNormalizesPort() throws {
+        #expect(throws: APIError.invalidURL) {
+            try DeviceURL.normalize("192.168.1.20")
+        }
+        #expect(throws: APIError.invalidURL) {
+            try DeviceURL.normalize("ftp://home.local:7777")
+        }
+        let url = try DeviceURL.normalize("https://192.168.1.20")
+        #expect(url.scheme == "https")
         #expect(url.host == "192.168.1.20")
         #expect(url.port == 7777)
         #expect(try DeviceURL.normalize("http://home.local:7777/").absoluteString == "http://home.local:7777")
         #expect(
             try DeviceURL.normalize("http://192.168.30.1:7777/login").absoluteString
                 == "http://192.168.30.1:7777"
+        )
+        #expect(
+            try DeviceURL.normalize("http://192.168.30.1:7777/arbitrary/path").absoluteString
+                == "http://192.168.30.1:7777"
+        )
+    }
+
+    @Test func deviceURLMigratesLegacySchemeLessStoredValue() throws {
+        #expect(DeviceURL.migrateStored("192.168.1.20") == "http://192.168.1.20")
+        #expect(DeviceURL.migrateStored("  home.local:7777 ") == "http://home.local:7777")
+        #expect(DeviceURL.migrateStored("http://192.168.1.20") == "http://192.168.1.20")
+        #expect(DeviceURL.migrateStored("https://home.local:7777") == "https://home.local:7777")
+        #expect(
+            try DeviceURL.normalize(DeviceURL.migrateStored("192.168.1.20")).absoluteString
+                == "http://192.168.1.20:7777"
+        )
+    }
+
+    @Test func deviceURLSameOriginIgnoresPath() throws {
+        let session = try DeviceURL.normalize("http://192.168.30.1:7777/login")
+        let same = try DeviceURL.normalize("http://192.168.30.1:7777/settings")
+        let otherHost = try DeviceURL.normalize("http://192.168.30.2:7777")
+        let otherScheme = try DeviceURL.normalize("https://192.168.30.1:7777")
+        #expect(DeviceURL.sameOrigin(session, same))
+        #expect(!DeviceURL.sameOrigin(session, otherHost))
+        #expect(!DeviceURL.sameOrigin(session, otherScheme))
+    }
+
+    @Test func pairingExpiryTicksFromExpiresAt() throws {
+        let expiresAt = "2026-08-16T22:10:00.000Z"
+        let issued = iso("2026-08-16T22:00:00.000Z")
+        #expect(PairingExpiry.remainingSeconds(expiresAt: expiresAt, now: issued) == 600)
+        #expect(PairingExpiry.label(expiresAt: expiresAt, now: issued) == "Expires in 10 minutes")
+        #expect(PairingExpiry.label(expiresAt: expiresAt, now: issued.addingTimeInterval(9 * 60)) == "Expires in 1 minute")
+        #expect(PairingExpiry.label(expiresAt: expiresAt, now: iso("2026-08-16T22:10:00.000Z")) == "Expired")
+        #expect(PairingExpiry.label(expiresAt: "not-a-date", now: issued) == "Expired")
+    }
+
+    @Test func memberWorkloadLinksOpenDevicePage() throws {
+        let base = try DeviceURL.normalize("http://192.168.30.1:7777")
+        let selfDevice = snapshot(hostId: "self", role: "self")
+        let member = snapshot(hostId: "dev-peer", role: "member")
+        #expect(
+            WorkloadWebLink.page(base: base, workloadID: "vm-1", device: selfDevice).absoluteString
+                == "http://192.168.30.1:7777/vms/vm-1"
+        )
+        #expect(
+            WorkloadWebLink.console(base: base, workloadID: "vm-1", device: selfDevice).absoluteString
+                == "http://192.168.30.1:7777/vms/vm-1/vnc"
+        )
+        #expect(
+            WorkloadWebLink.page(base: base, workloadID: "vm-1", device: member).absoluteString
+                == "http://192.168.30.1:7777/devices/dev-peer"
+        )
+        #expect(
+            WorkloadWebLink.console(base: base, workloadID: "vm-1", device: member).absoluteString
+                == "http://192.168.30.1:7777/devices/dev-peer"
+        )
+    }
+
+    @Test func homeUnionMergesReachableWorkloadsAndKeepsUnreachableExplicit() {
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: true)
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
+        let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        let haos = workload(id: "vm-1", name: "haos")
+        let nas = workload(id: "vm-2", name: "nas")
+
+        let merged = HomeWorkloadUnion.build(
+            devices: [studio, living, garage],
+            loads: [
+                studio.hostId: .success([haos, nas]),
+                living.hostId: .failure("Device timed out"),
+            ] as [String: HomeWorkloadUnion.Load]
+        )
+
+        #expect(merged.rows.map(\.id) == ["self/vm-1", "self/vm-2"])
+        #expect(merged.rows.map(\.device.title) == ["Studio", "Studio"])
+        #expect(merged.loadErrors.map(\.device.hostId) == ["peer"])
+        #expect(merged.loadErrors.first?.message == "Device timed out")
+        #expect(merged.unreachable.map(\.hostId) == ["down"])
+        #expect(!merged.rows.contains { $0.device.hostId == "down" })
+    }
+
+    @Test func homeUnionDoesNotInventRowsWhenLoadIsMissing() {
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: true)
+        let merged = HomeWorkloadUnion.build(devices: [studio], loads: [:])
+        #expect(merged.rows.isEmpty)
+        #expect(merged.loadErrors.isEmpty)
+        #expect(merged.unreachable.isEmpty)
+    }
+
+    @Test func homeDeviceDirectoryDoesNotMaskNon404() throws {
+        #expect(try HomeDeviceDirectory.resolution(healthStatus: nil, listStatus: nil, aboutSucceeded: true) == .health)
+        #expect(try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: nil, aboutSucceeded: true) == .registry)
+        #expect(
+            try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: 404, aboutSucceeded: true) == .preHome
+        )
+        #expect(throws: APIError.http(status: 500, reason: "Device health request failed")) {
+            try HomeDeviceDirectory.resolution(healthStatus: 500, listStatus: nil, aboutSucceeded: true)
+        }
+        #expect(throws: APIError.http(status: 503, reason: "Device list request failed")) {
+            try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: 503, aboutSucceeded: true)
+        }
+        #expect(throws: APIError.http(status: 404, reason: "Home Device list is unavailable")) {
+            try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: 404, aboutSucceeded: false)
+        }
+    }
+
+    private func iso(_ raw: String) -> Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: raw)!
+    }
+
+    private func snapshot(
+        hostId: String,
+        role: String,
+        title: String? = nil,
+        reachable: Bool = true
+    ) -> HomeDeviceHealthSnapshot {
+        HomeDeviceHealthSnapshot(
+            hostId: hostId,
+            role: role,
+            displayName: title ?? hostId,
+            fingerprint: nil,
+            agentHost: nil,
+            agentPort: 7777,
+            pairedAt: nil,
+            reachability: reachable ? "ok" : "unreachable",
+            reachabilityError: reachable ? nil : "Device is unreachable",
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil
+        )
+    }
+
+    private func workload(id: String, name: String) -> Workload {
+        Workload(
+            id: id,
+            name: name,
+            vmType: "linux-arm64",
+            state: "running",
+            health: "running",
+            cpuCount: 2,
+            memoryMB: 1024,
+            bootDiskId: "disk-1",
+            isoId: nil,
+            networkId: nil,
+            description: nil,
+            pendingChanges: nil,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-02T00:00:00Z",
+            status: nil
         )
     }
 }
