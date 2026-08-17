@@ -20,6 +20,8 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
     /// When true, `fetchMatching` waits for the byte copy so tests can observe
     /// the terminal row. Production leaves this false.
     public var awaitCopy: Bool
+    public var progress: (any ImageProgressPublishing)?
+    public var internetFallback: (any ImageDownloadStarting)?
 
     public init(
         localHostId: String,
@@ -27,12 +29,16 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         devices: DeviceRegistry,
         openClient: @escaping @Sendable (DeviceRecord) throws -> any LibraryDepotClient,
         awaitCopy: Bool = false,
+        progress: (any ImageProgressPublishing)? = nil,
+        internetFallback: (any ImageDownloadStarting)? = nil,
     ) {
         self.localHostId = localHostId
         self.dataDir = dataDir
         self.devices = devices
         self.openClient = openClient
         self.awaitCopy = awaitCopy
+        self.progress = progress
+        self.internetFallback = internetFallback
     }
 
     public func fetchMatching(_ request: LibraryDepotFetchRequest, db: DatabasePool) async -> VMImage? {
@@ -54,6 +60,20 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
                 reason: "depot copy was interrupted; using internet",
             )
             return nil
+        }
+        if let existing = await existingLocal(request: request, db: db) {
+            switch existing {
+            case let .ready(image), let .inFlight(image):
+                return image
+            case .depotFailed:
+                await fallback(
+                    db: db, sourceUrl: request.sourceUrl,
+                    reason: "previous depot fetch failed; using internet",
+                )
+                return nil
+            case .started:
+                break
+            }
         }
         guard let client = await client(for: depotHostId, sourceUrl: request.sourceUrl, db: db) else {
             return nil
@@ -150,6 +170,31 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         case depotFailed
     }
 
+    /// Local ready / in-flight / failed depot row without talking to the depot.
+    private func existingLocal(
+        request: LibraryDepotFetchRequest,
+        db: DatabasePool,
+    ) async -> DownloadClaim? {
+        let rows = try? await db.read { db in
+            try VMImage.filter(Column("sourceUrl") == request.sourceUrl).fetchAll(db)
+        }
+        guard let rows else { return nil }
+        if let ready = rows.first(where: { $0.status == "ready" }),
+           ImageService.matchesCatalogChecksum(ready, expected: request.expectedChecksum) {
+            return .ready(ready)
+        }
+        if let downloading = rows.first(where: { $0.status == "downloading" }) {
+            if Self.isDepotCopy(downloading), !LiveDepotCopies.contains(downloading.id) {
+                return nil
+            }
+            return .inFlight(downloading)
+        }
+        if rows.contains(where: { $0.status == "error" && Self.isDepotCopyFailure($0.error) }) {
+            return .depotFailed
+        }
+        return nil
+    }
+
     /// Insert or reuse the Library row for this catalog URL in one write so
     /// concurrent download/deploy requests share a single depot copy.
     private func claimDownload(request: LibraryDepotFetchRequest, db: DatabasePool) async -> DownloadClaim? {
@@ -172,7 +217,8 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
                 let rows = try VMImage
                     .filter(Column("sourceUrl") == request.sourceUrl)
                     .fetchAll(db)
-                if let ready = rows.first(where: { $0.status == "ready" }) {
+                if let ready = rows.first(where: { $0.status == "ready" }),
+                   ImageService.matchesCatalogChecksum(ready, expected: request.expectedChecksum) {
                     return .ready(ready)
                 }
                 if let downloading = rows.first(where: { $0.status == "downloading" }) {
@@ -222,6 +268,13 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         db: DatabasePool,
     ) async {
         defer { LiveDepotCopies.end(job.imageId) }
+        await emitProgress(
+            ImageProgressEvent(
+                id: job.imageId, status: "downloading",
+                bytesReceived: 0, totalBytes: job.remote.sizeBytes,
+                percent: 0, error: nil,
+            ),
+        )
         let destination: URL
         do {
             let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
@@ -232,7 +285,21 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             let ext = ImageService.imageExtension(from: filename, imageType: job.request.imageType)
             destination = imagesDir.appendingPathComponent("\(job.imageId).\(ext)")
         } catch {
+            if await startInternetFallback(job, db: db) {
+                await fallback(
+                    db: db, sourceUrl: job.request.sourceUrl,
+                    reason: "Library directory unavailable; using internet: \(error.localizedDescription)",
+                )
+                return
+            }
             await markFailed(imageId: job.imageId, db: db, message: error.localizedDescription)
+            await emitProgress(
+                ImageProgressEvent(
+                    id: job.imageId, status: "error",
+                    bytesReceived: 0, totalBytes: nil,
+                    percent: nil, error: error.localizedDescription,
+                ),
+            )
             await fallback(
                 db: db, sourceUrl: job.request.sourceUrl,
                 reason: "Library directory unavailable: \(error.localizedDescription)",
@@ -252,7 +319,21 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
             )
         } catch {
             try? FileManager.default.removeItem(at: destination)
+            if await startInternetFallback(job, db: db) {
+                await fallback(
+                    db: db, sourceUrl: job.request.sourceUrl,
+                    reason: "depot fetch failed; using internet: \(error.localizedDescription)",
+                )
+                return
+            }
             await markFailed(imageId: job.imageId, db: db, message: error.localizedDescription)
+            await emitProgress(
+                ImageProgressEvent(
+                    id: job.imageId, status: "error",
+                    bytesReceived: 0, totalBytes: nil,
+                    percent: nil, error: error.localizedDescription,
+                ),
+            )
             await fallback(
                 db: db, sourceUrl: job.request.sourceUrl,
                 reason: "depot fetch failed: \(error.localizedDescription)",
@@ -310,6 +391,51 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         Log.images.info(
             "Library depot fetch ready for \(job.request.sourceUrl) from Device \(job.depotHostId)",
         )
+        await emitProgress(
+            ImageProgressEvent(
+                id: job.imageId, status: "ready",
+                bytesReceived: sizeBytes, totalBytes: sizeBytes,
+                percent: 100, error: nil,
+            ),
+        )
+    }
+
+    private func startInternetFallback(_ job: CopyJob, db: DatabasePool) async -> Bool {
+        guard let starter = internetFallback,
+              let url = URL(string: job.request.sourceUrl)
+        else {
+            return false
+        }
+        let destination: URL
+        do {
+            let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
+            try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+            let filename = URL(string: job.request.sourceUrl)?.lastPathComponent ?? "image"
+            let ext = ImageService.imageExtension(from: filename, imageType: job.request.imageType)
+            destination = imagesDir.appendingPathComponent("\(job.imageId).\(ext)")
+            try await db.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE images SET status = 'downloading', error = NULL, updatedAt = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [iso8601.string(from: Date()), job.imageId],
+                )
+            }
+        } catch {
+            return false
+        }
+        await starter.start(
+            imageID: job.imageId,
+            url: url,
+            destination: destination,
+            expectedChecksum: job.request.expectedChecksum,
+        )
+        return true
+    }
+
+    private func emitProgress(_ event: ImageProgressEvent) async {
+        await progress?.publish(event)
     }
 
     private func verify(

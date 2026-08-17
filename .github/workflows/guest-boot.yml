@@ -118,10 +118,15 @@ jobs:
           ARCH=$(uname -m)
           if [ "$ARCH" = "x86_64" ]; then
             URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04.tar.gz"
+            # Official download.swift.org tarball (2026-08-16).
+            SHA256="3e0b8eaf9210131a1756e6a1a9e9103bac83609a0ae604d6f2e791053f98f115"
           else
             URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404-aarch64/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04-aarch64.tar.gz"
+            # Official download.swift.org tarball (2026-08-16).
+            SHA256="48dc99bcabc54feadd2942f4830be854ca2396e2db4ca4ec6b6c926a25c87d55"
           fi
           curl -fL "$URL" -o /tmp/swift.tar.gz
+          echo "${SHA256}  /tmp/swift.tar.gz" | sha256sum -c -
           sudo mkdir -p /opt/swift
           sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
           echo /opt/swift/usr/bin >> "$GITHUB_PATH"

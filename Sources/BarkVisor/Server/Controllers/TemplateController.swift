@@ -177,7 +177,7 @@ struct TemplateController: RouteCollection {
             imageDownloader: imageDownloader,
             backgroundTasks: backgroundTasks,
             db: req.db,
-            depot: LibraryDepotClients.acquire(),
+            depot: LibraryDepotClients.acquire(downloader: imageDownloader),
         )
 
         switch result {

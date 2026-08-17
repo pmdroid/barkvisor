@@ -163,4 +163,26 @@ struct HomePlacementScorerTests {
         #expect(scored.candidates.contains { !$0.eligible } == false)
         #expect(scored.candidates.count(where: \.recommended) == 1)
     }
+
+    @Test func `encodes missing recommendedHostId as json null`() throws {
+        let scored = HomePlacementScorer.score(
+            request: HomePlacementScoreRequest(requestedMemoryMB: 65_536),
+            devices: [device(hostId: "tight", memoryTotalMB: 2_048, memoryUsedMB: 1_024)],
+        )
+        #expect(scored.recommendedHostId == nil)
+        let data = try JSONEncoder().encode(scored)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["recommendedHostId"] is NSNull)
+        #expect(object["candidates"] is [Any])
+    }
+
+    @Test func `memoryFloor is the max of min and requested`() {
+        #expect(HomePlacementScorer.memoryFloor(request: HomePlacementScoreRequest()) == 0)
+        #expect(HomePlacementScorer.memoryFloor(
+            request: HomePlacementScoreRequest(minMemoryMB: 512, requestedMemoryMB: 2_048),
+        ) == 2_048)
+        #expect(HomePlacementScorer.memoryFloor(
+            request: HomePlacementScoreRequest(minMemoryMB: 4_096, requestedMemoryMB: 1_024),
+        ) == 4_096)
+    }
 }

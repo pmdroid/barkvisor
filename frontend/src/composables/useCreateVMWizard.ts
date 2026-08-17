@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useVMStore } from '../stores/vms'
 import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
@@ -58,10 +58,20 @@ import {
 } from '../utils/homeDeviceApi'
 import {
   applyRecommendedHostId,
+  isPlacementScoreAborted,
   isRecommendedHost,
   placementReasonsForHost,
+  PLACEMENT_SCORE_DEBOUNCE_MS,
   scorePlacement,
 } from '../utils/placement'
+
+const livePlacementCancels = new Set<() => void>()
+
+/** Abort in-flight placement scores. Tests call this in afterEach. */
+export function cancelLivePlacementScores() {
+  for (const cancel of [...livePlacementCancels]) cancel()
+  livePlacementCancels.clear()
+}
 
 export function useCreateVMWizard(
   emit: (e: 'created') => void,
@@ -573,15 +583,39 @@ export function useCreateVMWizard(
   const placementRefreshing = ref(false)
   /** True while refreshPlacement assigns selectedHostId — not a user pick. */
   let applyingRecommendedHost = false
+  let placementAbort: AbortController | null = null
+  let placementDebounce: ReturnType<typeof setTimeout> | undefined
 
   function assignRecommendedHostId(hostId: string) {
     if (hostId === selectedHostId.value) return
-    // Empty → first recommendation is not a user override; the watcher bails on !prev.
-    if (selectedHostId.value) applyingRecommendedHost = true
+    applyingRecommendedHost = true
     selectedHostId.value = hostId
   }
 
+  function cancelPlacementScore() {
+    if (placementDebounce !== undefined) {
+      clearTimeout(placementDebounce)
+      placementDebounce = undefined
+    }
+    placementAbort?.abort()
+    placementAbort = null
+    livePlacementCancels.delete(cancelPlacementScore)
+  }
+
+  livePlacementCancels.add(cancelPlacementScore)
+
+  function schedulePlacementRefresh(applyRecommendation: boolean) {
+    if (placementDebounce !== undefined) clearTimeout(placementDebounce)
+    placementDebounce = setTimeout(() => {
+      placementDebounce = undefined
+      void refreshPlacement(applyRecommendation)
+    }, PLACEMENT_SCORE_DEBOUNCE_MS)
+  }
+
   async function refreshPlacement(applyRecommendation = true) {
+    placementAbort?.abort()
+    const ac = new AbortController()
+    placementAbort = ac
     const seq = ++placementScoreSeq
     placementRefreshing.value = true
     try {
@@ -590,11 +624,11 @@ export function useCreateVMWizard(
         declaredArchitectures: guest ? [guest] : [],
         minMemoryMB: memoryMB.value,
         requestedMemoryMB: memoryMB.value,
-      })
+      }, { signal: ac.signal })
       if (seq !== placementScoreSeq) return
       placementScore.value = data
-    } catch {
-      if (seq !== placementScoreSeq) return
+    } catch (error) {
+      if (seq !== placementScoreSeq || isPlacementScoreAborted(error)) return
       placementScore.value = null
     } finally {
       if (seq === placementScoreSeq) placementRefreshing.value = false
@@ -622,7 +656,7 @@ export function useCreateVMWizard(
   }
 
   watch([memoryMB, effectiveGuestArch, osType], () => {
-    void refreshPlacement(false)
+    schedulePlacementRefresh(false)
   })
 
   watch(() => homeLibrary.imagesLoading, (loading, wasLoading) => {
@@ -644,7 +678,7 @@ export function useCreateVMWizard(
       await refreshPlacement()
       if (!isCurrentPickedDeviceLoad(seq)) return
       if (!selectedHostId.value) {
-        selectedHostId.value = defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId)
+        assignRecommendedHostId(defaultPickedHostId(opts.initialHostId, devicesStore.selfDevice?.hostId))
       }
       if (!pickedDeviceStillLive()) {
         clearPickedInventory()
@@ -710,6 +744,10 @@ export function useCreateVMWizard(
     await sshKeyStore.fetchAll().catch(() => {})
   })
 
+  onUnmounted(() => {
+    cancelPlacementScore()
+  })
+
   watch(currentStepLabel, (label) => {
     if (label === 'Image') void refreshHomeLibrary()
   })
@@ -717,7 +755,7 @@ export function useCreateVMWizard(
   watch(selectedHostId, async (next, prev) => {
     const programmatic = applyingRecommendedHost
     applyingRecommendedHost = false
-    if (!prev || !next || next === prev) return
+    if (!next || next === prev) return
     if (!programmatic) userOverrodeHost.value = true
     existingDiskId.value = ''
     selectedUSBDevices.value = []
@@ -750,6 +788,17 @@ export function useCreateVMWizard(
     return null
   }
 
+  /** Missing Library bytes block Place; arch/capacity still allow place-anyway. */
+  function selectedDeviceBlocksPlacement(): boolean {
+    const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
+    if (!option || option.compatible) return false
+    return !option.placeAnyway
+  }
+
+  function selectedDevicePlaceable(): boolean {
+    return selectedDeviceSelectable() && !selectedDeviceBlocksPlacement()
+  }
+
   const placementStepReached = computed(() => {
     const label = currentStepLabel.value
     return label === 'Place' || label === 'Hardware' || label === 'Drivers'
@@ -771,9 +820,9 @@ export function useCreateVMWizard(
       case 'Image':
         return !!selectedImageId.value
       case 'Place':
-        return selectedDeviceSelectable()
+        return selectedDevicePlaceable()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDeviceSelectable()
+        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDevicePlaceable()
       case 'Drivers':
         return virtioWinAvailable.value
       case 'Storage':
@@ -781,7 +830,7 @@ export function useCreateVMWizard(
       case 'Network':
         return true
       case 'Summary':
-        return pickedDeviceStillLive() && selectedDeviceSelectable()
+        return pickedDeviceStillLive() && selectedDevicePlaceable()
       default:
         return false
     }
@@ -910,6 +959,7 @@ export function useCreateVMWizard(
     deviceOptions,
     selectedDevice,
     selectedDeviceIncompatibility,
+    selectedDeviceBlocksPlacement,
     hostArch,
     archLabel,
     revealArchOnSummary,

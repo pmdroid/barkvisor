@@ -11,7 +11,17 @@ import urllib.error
 import urllib.request
 
 OPENAPI = os.environ.get("API_CONTRACT_OPENAPI", "")
-BASE = os.environ.get("BASE", "http://127.0.0.1:7777").rstrip("/")
+
+
+def _base_url() -> str:
+    if base := os.environ.get("BASE"):
+        return base.rstrip("/")
+    if port := os.environ.get("BARKVISOR_PORT"):
+        return f"http://127.0.0.1:{port}"
+    return "http://127.0.0.1:7777"
+
+
+BASE = _base_url()
 TOKEN = os.environ.get("TOKEN", "")
 VM_ID = os.environ.get("SEED_VM_ID", "")
 DISK_ID = os.environ.get("SEED_DISK_ID", "")
@@ -34,6 +44,14 @@ if os.environ.get("API_BDD_QEMU", "0") != "1":
     SKIP[("POST", "/api/vms/{id}/start")] = "QEMU start is PAS-183; set API_BDD_QEMU=1"
     SKIP[("POST", "/api/vms/{id}/stop")] = "QEMU stop is PAS-183; set API_BDD_QEMU=1"
     SKIP[("POST", "/api/vms/{id}/restart")] = "QEMU restart is PAS-183; set API_BDD_QEMU=1"
+
+# USB attach needs a connected attachable host device. A fabricated
+# 0000:0000 id is a resource 404 (not a missing route). Opt in with
+# API_BDD_USB=1; the probe then picks the first unused attachable id.
+if os.environ.get("API_BDD_USB", "0") != "1" and not os.environ.get("USB_DEVICE_ID"):
+    SKIP[("POST", "/api/vms/{id}/usb")] = (
+        "USB attach needs host hardware; set API_BDD_USB=1"
+    )
 
 
 def parse_openapi(path: str) -> list[tuple[str, str]]:
@@ -122,12 +140,41 @@ def body_for(method: str, path: str) -> bytes | None:
     if "/attach-iso" in path or "/detach-iso" in path:
         return b"{}"
     if path.endswith("/usb") and method == "POST":
-        return json.dumps({"deviceId": "0000:0000"}).encode()
+        device_id = os.environ.get("USB_DEVICE_ID", "")
+        if not device_id:
+            return None
+        return json.dumps({"deviceId": device_id}).encode()
     if "/resize" in path:
         return json.dumps({"sizeGB": 3}).encode()
     if method == "PATCH":
         return b"{}"
     return b"{}"
+
+
+def pick_usb_id() -> str:
+    """First unused attachable host USB id, or empty if none."""
+    if preset := os.environ.get("USB_DEVICE_ID"):
+        return preset
+    status = 0
+    try:
+        url = BASE + "/api/system/usb-devices"
+        headers = {}
+        if TOKEN:
+            headers["Authorization"] = f"Bearer {TOKEN}"
+        req = urllib.request.Request(url, method="GET", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            status = int(resp.status)
+            payload = json.loads(resp.read().decode())
+    except Exception:
+        return ""
+    if status != 200 or not isinstance(payload, list):
+        return ""
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        if item.get("attachable") and not item.get("busy") and item.get("id"):
+            return str(item["id"])
+    return ""
 
 
 def request(method: str, path: str) -> int:
@@ -169,12 +216,33 @@ def main() -> int:
             print(f"SKIP {method:6} {spec_path}  (seeded once in the runner)")
             skips += 1
             continue
+        if method == "POST" and spec_path == "/api/vms/{id}/usb":
+            usb_id = pick_usb_id()
+            if not usb_id:
+                print(
+                    f"SKIP {method:6} {spec_path}  "
+                    "(no attachable unused host USB; not a missing route)"
+                )
+                skips += 1
+                continue
+            os.environ["USB_DEVICE_ID"] = usb_id
         real = fill(spec_path)
         if real is None:
             print(f"SKIP {method:6} {spec_path}  (no seed id for this path)")
             skips += 1
             continue
         status = request(method, real)
+        if (
+            status == 404
+            and method == "POST"
+            and spec_path == "/api/vms/{id}/usb"
+        ):
+            print(
+                f"SKIP {method:6} {spec_path}  -> 404 "
+                "(USB device not connected; route exists)"
+            )
+            skips += 1
+            continue
         if status == 404 or status >= 500 or status == 0:
             print(f"FAIL {method:6} {spec_path}  -> {status or 'network'}  ({real})")
             fails += 1

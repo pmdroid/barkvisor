@@ -86,8 +86,25 @@ public struct HomePlacementScoreResponse: Codable, Sendable, Equatable {
     public var recommendedHostId: String?
     public var candidates: [HomePlacementCandidate]
 
+    enum CodingKeys: String, CodingKey {
+        case recommendedHostId
+        case candidates
+    }
+
     public init(recommendedHostId: String?, candidates: [HomePlacementCandidate]) {
         self.recommendedHostId = recommendedHostId
         self.candidates = candidates
+    }
+
+    /// Always emit `recommendedHostId` so the OpenAPI required+nullable contract
+    /// is met when no Device is eligible (JSON null, not an omitted key).
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let recommendedHostId {
+            try container.encode(recommendedHostId, forKey: .recommendedHostId)
+        } else {
+            try container.encodeNil(forKey: .recommendedHostId)
+        }
+        try container.encode(candidates, forKey: .candidates)
     }
 }

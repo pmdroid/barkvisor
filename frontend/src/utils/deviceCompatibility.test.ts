@@ -3,6 +3,7 @@ import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, VMTemplate } fr
 import { defaultCapabilities } from './capabilitiesParse'
 import {
   createVMIncompatibilityReasons,
+  DEVICE_LIBRARY_MISSING_REASON,
   guestTypesSupportWindows,
   templateIncompatibilityReasons,
   toPickOption,
@@ -158,7 +159,14 @@ describe('deviceCompatibility (PAS-34)', () => {
     ])
     const option = toPickOption(peer, [])
     expect(option.compatible).toBe(true)
+    expect(option.placeAnyway).toBe(true)
     expect(option.label).toBe('studio')
+    const missing = toPickOption(peer, [DEVICE_LIBRARY_MISSING_REASON])
+    expect(missing.compatible).toBe(false)
+    expect(missing.placeAnyway).toBe(false)
+    const archOnly = toPickOption(peer, ['Architecture (x86_64) is not compatible with this Device (arm64).'])
+    expect(archOnly.compatible).toBe(false)
+    expect(archOnly.placeAnyway).toBe(true)
     const recommended = toPickOption(peer, [], {
       recommended: true,
       recommendReasons: ['2048 MB free memory, 10% CPU load.'],

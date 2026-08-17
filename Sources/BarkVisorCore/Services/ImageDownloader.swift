@@ -49,9 +49,15 @@ public protocol ImageDownloadStarting: Actor {
     )
 }
 
-public actor ImageDownloader: ImageDownloadStarting {
+/// Publishes Library download progress (internet or depot) onto SSE subscribers.
+public protocol ImageProgressPublishing: Actor {
+    func publish(_ event: ImageProgressEvent)
+}
+
+public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private var tasks: [String: Task<Void, Never>] = [:]
     private var continuations: [String: [UUID: AsyncStream<ImageProgressEvent>.Continuation]] = [:]
+    private var libraryPollers: [String: Task<Void, Never>] = [:]
     private let dbPool: () -> GRDB.DatabasePool
 
     /// Shared session for all downloads (reuses connections, avoids per-download overhead)
@@ -319,12 +325,65 @@ public actor ImageDownloader: ImageDownloadStarting {
         return try ImageService.decompressIfNeeded(destination)
     }
 
+    public func publish(_ event: ImageProgressEvent) {
+        emit(imageID: event.id, event: event)
+        if event.status == "ready" || event.status == "error" {
+            finish(imageID: event.id)
+        }
+    }
+
     public func progressStream(imageID: String) -> AsyncStream<ImageProgressEvent> {
         let id = UUID()
+        startLibraryPollIfNeeded(imageID)
         return AsyncStream { continuation in
             continuations[imageID, default: [:]][id] = continuation
             continuation.onTermination = { _ in
                 Task { await self.removeContinuation(imageID: imageID, id: id) }
+            }
+        }
+    }
+
+    /// Depot copies write SQLite only. Poll the Library row so SSE/deploy
+    /// subscribers still see ready/error when ImageDownloader never ran.
+    private func startLibraryPollIfNeeded(_ imageID: String) {
+        guard libraryPollers[imageID] == nil else { return }
+        libraryPollers[imageID] = Task { [weak self] in
+            await self?.pollLibraryRow(imageID)
+        }
+    }
+
+    private func pollLibraryRow(_ imageID: String) async {
+        defer { libraryPollers[imageID] = nil }
+        for attempt in 0 ..< 1_800 {
+            if Task.isCancelled { return }
+            if attempt > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            if Task.isCancelled { return }
+            let image = try? await dbPool().read { db in
+                try VMImage.fetchOne(db, key: imageID)
+            }
+            guard let image else { continue }
+            if image.status == "ready" {
+                publish(
+                    ImageProgressEvent(
+                        id: imageID, status: "ready",
+                        bytesReceived: image.sizeBytes ?? 0,
+                        totalBytes: image.sizeBytes,
+                        percent: 100, error: nil,
+                    ),
+                )
+                return
+            }
+            if image.status == "error" {
+                publish(
+                    ImageProgressEvent(
+                        id: imageID, status: "error",
+                        bytesReceived: 0, totalBytes: nil,
+                        percent: nil, error: image.error,
+                    ),
+                )
+                return
             }
         }
     }
@@ -344,6 +403,7 @@ public actor ImageDownloader: ImageDownloadStarting {
 
     private func finish(imageID: String) {
         tasks.removeValue(forKey: imageID)
+        libraryPollers.removeValue(forKey: imageID)?.cancel()
         if let conts = continuations.removeValue(forKey: imageID) {
             for cont in conts.values {
                 cont.finish()

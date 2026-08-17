@@ -25,6 +25,9 @@ public enum HomeCAService {
     public static let serialFileName = "serial"
     public static let deviceCertificateFileName = "device.crt"
     public static let deviceKeyFileName = "device.key"
+    /// Staging dir for atomic Home CA + local leaf rotation.
+    public static let rotationDirectoryName = ".rotation"
+    public static let rotationReadyFileName = "ready"
 
     public static let caValidity: TimeInterval = 10 * 365 * 24 * 60 * 60
     public static let deviceValidity: TimeInterval = 365 * 24 * 60 * 60
@@ -50,6 +53,7 @@ public enum HomeCAService {
             at: agentDirectory(in: dataDir),
             withIntermediateDirectories: true,
         )
+        try completePendingRotation(dataDir: dataDir)
 
         let ca = try loadOrCreateCA(dataDir: dataDir, now: now)
         let device = try loadOrCreateDeviceCert(dataDir: dataDir, hostId: hostId, ca: ca, now: now)
@@ -122,6 +126,7 @@ public enum HomeCAService {
             at: caDirectory(in: dataDir),
             withIntermediateDirectories: true,
         )
+        try completePendingRotation(dataDir: dataDir)
         let ca = try loadOrCreateCA(dataDir: dataDir, now: now)
         let issued = try issueDeviceCert(
             hostId: hostId,
@@ -167,16 +172,13 @@ public enum HomeCAService {
                     "unable to load Home CA: \(error.localizedDescription)",
                 )
             }
-            if !isExpired(loaded.certificate, now: now) {
+            if isCurrentlyValid(loaded.certificate, now: now) {
                 return loaded
             }
+            return try rotateCAAndLocalDevice(dataDir: dataDir, now: now)
         }
 
-        let created = try mintAndPersistCA(dataDir: dataDir, now: now)
-        if certExists || keyExists {
-            try remintPersistedLocalDeviceIfPresent(dataDir: dataDir, ca: created, now: now)
-        }
-        return created
+        return try mintAndPersistCA(dataDir: dataDir, now: now)
     }
 
     private static func loadCA(certURL: URL, keyURL: URL) throws -> CAFiles {
@@ -310,10 +312,7 @@ public enum HomeCAService {
         )
     }
 
-    private static func mintAndPersistCA(dataDir: URL, now: Date) throws -> CAFiles {
-        let dir = caDirectory(in: dataDir)
-        let certURL = dir.appendingPathComponent(caCertificateFileName)
-        let keyURL = dir.appendingPathComponent(caKeyFileName)
+    private static func mintCAInMemory(now: Date) throws -> CAFiles {
         let key = P256.Signing.PrivateKey()
         let privateKey = Certificate.PrivateKey(key)
         let name = try DistinguishedName {
@@ -336,12 +335,163 @@ public enum HomeCAService {
             },
             issuerPrivateKey: privateKey,
         )
-        let certPEM = try cert.serializeAsPEM().pemString
-        let keyPEM = try privateKey.serializeAsPEM().pemString
-        try writeAtomic(Data(certPEM.utf8), to: certURL, permissions: 0o644)
-        try writeAtomic(Data(keyPEM.utf8), to: keyURL, permissions: 0o600)
-        try writeAtomic(Data("2".utf8), to: dir.appendingPathComponent(serialFileName), permissions: 0o644)
-        return CAFiles(certificatePEM: certPEM, keyPEM: keyPEM, certificate: cert, key: privateKey)
+        return try CAFiles(
+            certificatePEM: cert.serializeAsPEM().pemString,
+            keyPEM: privateKey.serializeAsPEM().pemString,
+            certificate: cert,
+            key: privateKey,
+        )
+    }
+
+    private static func mintAndPersistCA(dataDir: URL, now: Date) throws -> CAFiles {
+        let created = try mintCAInMemory(now: now)
+        try persistCAFiles(created, dataDir: dataDir, serial: 2)
+        return created
+    }
+
+    /// Mint a replacement Home CA and local leaf, then persist them together.
+    /// A crash mid-write is recovered by ``completePendingRotation``.
+    private static func rotateCAAndLocalDevice(
+        dataDir: URL,
+        now: Date,
+    ) throws -> CAFiles {
+        let created = try mintCAInMemory(now: now)
+        let certURL = agentDirectory(in: dataDir)
+            .appendingPathComponent(deviceCertificateFileName)
+        let device: DeviceFiles?
+        if FileManager.default.fileExists(atPath: certURL.path) {
+            let certPEM = try String(contentsOf: certURL, encoding: .utf8)
+            let cert = try Certificate(pemEncoded: certPEM)
+            guard let rotationHostId = DeviceTrust.hostId(from: cert) else {
+                throw HomeCAError.corruptMaterial("device.crt SAN missing after Home CA rotation")
+            }
+            let issued = try issueDeviceCert(
+                hostId: rotationHostId,
+                csrPEM: nil,
+                caCert: created.certificate,
+                caKey: created.key,
+                now: now,
+            )
+            guard let keyPEM = issued.privateKeyPEM else {
+                throw HomeCAError.persistFailed("Issued local device cert without a private key")
+            }
+            device = DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
+        } else {
+            device = nil
+        }
+        try persistRotatedMaterial(dataDir: dataDir, ca: created, device: device)
+        return created
+    }
+
+    private static func persistCAFiles(_ ca: CAFiles, dataDir: URL, serial: Int) throws {
+        let dir = caDirectory(in: dataDir)
+        try writeAtomic(
+            Data(ca.certificatePEM.utf8),
+            to: dir.appendingPathComponent(caCertificateFileName),
+            permissions: 0o644,
+        )
+        try writeAtomic(
+            Data(ca.keyPEM.utf8),
+            to: dir.appendingPathComponent(caKeyFileName),
+            permissions: 0o600,
+        )
+        try writeAtomic(
+            Data("\(serial)".utf8),
+            to: dir.appendingPathComponent(serialFileName),
+            permissions: 0o644,
+        )
+    }
+
+    private static func rotationDirectory(in dataDir: URL) -> URL {
+        caDirectory(in: dataDir).appendingPathComponent(rotationDirectoryName)
+    }
+
+    private static func persistRotatedMaterial(
+        dataDir: URL,
+        ca: CAFiles,
+        device: DeviceFiles?,
+    ) throws {
+        let staging = rotationDirectory(in: dataDir)
+        try? FileManager.default.removeItem(at: staging)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try writeAtomic(
+            Data(ca.certificatePEM.utf8),
+            to: staging.appendingPathComponent(caCertificateFileName),
+            permissions: 0o644,
+        )
+        try writeAtomic(
+            Data(ca.keyPEM.utf8),
+            to: staging.appendingPathComponent(caKeyFileName),
+            permissions: 0o600,
+        )
+        let serial = device == nil ? 2 : 3
+        try writeAtomic(
+            Data("\(serial)".utf8),
+            to: staging.appendingPathComponent(serialFileName),
+            permissions: 0o644,
+        )
+        if let device {
+            try writeAtomic(
+                Data(device.certificatePEM.utf8),
+                to: staging.appendingPathComponent(deviceCertificateFileName),
+                permissions: 0o644,
+            )
+            try writeAtomic(
+                Data(device.keyPEM.utf8),
+                to: staging.appendingPathComponent(deviceKeyFileName),
+                permissions: 0o600,
+            )
+        }
+        try writeAtomic(
+            Data(),
+            to: staging.appendingPathComponent(rotationReadyFileName),
+            permissions: 0o644,
+        )
+        try applyRotationStaging(dataDir: dataDir, staging: staging)
+        try? FileManager.default.removeItem(at: staging)
+    }
+
+    private static func applyRotationStaging(dataDir: URL, staging: URL) throws {
+        let caPEM = try Data(
+            contentsOf: staging.appendingPathComponent(caCertificateFileName),
+        )
+        let caKey = try Data(contentsOf: staging.appendingPathComponent(caKeyFileName))
+        let serial = try Data(contentsOf: staging.appendingPathComponent(serialFileName))
+        let dir = caDirectory(in: dataDir)
+        try writeAtomic(caPEM, to: dir.appendingPathComponent(caCertificateFileName), permissions: 0o644)
+        try writeAtomic(caKey, to: dir.appendingPathComponent(caKeyFileName), permissions: 0o600)
+        try writeAtomic(serial, to: dir.appendingPathComponent(serialFileName), permissions: 0o644)
+
+        let deviceCertURL = staging.appendingPathComponent(deviceCertificateFileName)
+        let deviceKeyURL = staging.appendingPathComponent(deviceKeyFileName)
+        if FileManager.default.fileExists(atPath: deviceCertURL.path) {
+            let devicePEM = try Data(contentsOf: deviceCertURL)
+            let deviceKey = try Data(contentsOf: deviceKeyURL)
+            let agent = agentDirectory(in: dataDir)
+            try writeAtomic(
+                devicePEM,
+                to: agent.appendingPathComponent(deviceCertificateFileName),
+                permissions: 0o644,
+            )
+            try writeAtomic(
+                deviceKey,
+                to: agent.appendingPathComponent(deviceKeyFileName),
+                permissions: 0o600,
+            )
+        }
+    }
+
+    static func completePendingRotation(dataDir: URL) throws {
+        let staging = rotationDirectory(in: dataDir)
+        let ready = staging.appendingPathComponent(rotationReadyFileName)
+        guard FileManager.default.fileExists(atPath: ready.path) else {
+            if FileManager.default.fileExists(atPath: staging.path) {
+                try? FileManager.default.removeItem(at: staging)
+            }
+            return
+        }
+        try applyRotationStaging(dataDir: dataDir, staging: staging)
+        try? FileManager.default.removeItem(at: staging)
     }
 
     private static func mintAndPersistDeviceCert(
@@ -375,24 +525,12 @@ public enum HomeCAService {
         return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
     }
 
-    /// After a Home CA rotation, rewrite this Device's leaf so it is issued by the new CA.
-    private static func remintPersistedLocalDeviceIfPresent(
-        dataDir: URL,
-        ca: CAFiles,
-        now: Date,
-    ) throws {
-        let certURL = agentDirectory(in: dataDir).appendingPathComponent(deviceCertificateFileName)
-        guard FileManager.default.fileExists(atPath: certURL.path) else { return }
-        let certPEM = try String(contentsOf: certURL, encoding: .utf8)
-        let cert = try Certificate(pemEncoded: certPEM)
-        guard let hostId = DeviceTrust.hostId(from: cert) else {
-            throw HomeCAError.corruptMaterial("device.crt SAN missing after Home CA rotation")
-        }
-        _ = try mintAndPersistDeviceCert(dataDir: dataDir, hostId: hostId, ca: ca, now: now)
-    }
-
     static func isExpired(_ certificate: Certificate, now: Date) -> Bool {
         now > certificate.notValidAfter
+    }
+
+    static func isCurrentlyValid(_ certificate: Certificate, now: Date) -> Bool {
+        now >= certificate.notValidBefore && now <= certificate.notValidAfter
     }
 
     static func certificateNeedsRenewal(

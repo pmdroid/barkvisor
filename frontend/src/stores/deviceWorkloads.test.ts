@@ -282,4 +282,49 @@ describe('deviceWorkloads store (PAS-52)', () => {
     expect(post).toHaveBeenCalledTimes(1)
     expect(del).toHaveBeenCalledTimes(1)
   })
+
+  test('an unreachable refresh does not leave loading stuck after a stale list arrives', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    let resolveOlder!: (value: { data: VM[] }) => void
+    const older = new Promise<{ data: VM[] }>((resolve) => {
+      resolveOlder = resolve
+    })
+    api.get = mock().mockReturnValueOnce(older) as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    const first = store.fetchFor(peer)
+    expect(store.isLoading('peer-1')).toBe(true)
+    await store.fetchFor({ ...peer, reachability: 'unreachable' })
+    expect(store.isLoading('peer-1')).toBe(false)
+    resolveOlder({ data: [vm({ id: 'vm-stale', name: 'stale', state: 'running' })] })
+    await first
+    expect(store.vmsFor('peer-1')).toEqual([])
+    expect(store.isLoading('peer-1')).toBe(false)
+  })
+
+  test('a stale Workload list does not overwrite a newer fetch', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const olderList = [vm({ id: 'vm-old', name: 'old', state: 'running' })]
+    const newerList = [vm({ id: 'vm-new', name: 'new', state: 'stopped' })]
+    let resolveOlder!: (value: { data: VM[] }) => void
+    let resolveNewer!: (value: { data: VM[] }) => void
+    const older = new Promise<{ data: VM[] }>((resolve) => {
+      resolveOlder = resolve
+    })
+    const newer = new Promise<{ data: VM[] }>((resolve) => {
+      resolveNewer = resolve
+    })
+    api.get = mock()
+      .mockReturnValueOnce(older)
+      .mockReturnValueOnce(newer) as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    const first = store.fetchFor(peer)
+    const second = store.fetchFor(peer)
+    resolveNewer({ data: newerList })
+    await second
+    resolveOlder({ data: olderList })
+    await first
+    expect(store.vmsFor('peer-1').map((row) => row.id)).toEqual(['vm-new'])
+    expect(store.isLoading('peer-1')).toBe(false)
+    expect(store.errorFor('peer-1')).toBeNull()
+  })
 })

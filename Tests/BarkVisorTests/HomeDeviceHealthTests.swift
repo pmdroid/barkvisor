@@ -210,4 +210,24 @@ struct HomeDeviceHealthTests {
         #expect(ghost?.features == nil)
         #expect(ghost?.reachabilityError == "Device is unreachable")
     }
+
+    @Test func `freeMemoryMB rejects invalid metrics and saturates instead of overflowing`() {
+        let missing = HomeDeviceResourceSummary(memoryTotalMB: 4_096, memoryUsedMB: nil)
+        #expect(missing.freeMemoryMB == nil)
+
+        let negativeUsed = HomeDeviceResourceSummary(memoryTotalMB: Int.max, memoryUsedMB: -1)
+        #expect(negativeUsed.freeMemoryMB == nil)
+
+        let negativeTotal = HomeDeviceResourceSummary(memoryTotalMB: -8, memoryUsedMB: 1)
+        #expect(negativeTotal.freeMemoryMB == nil)
+
+        let overused = HomeDeviceResourceSummary(memoryTotalMB: 1_024, memoryUsedMB: 4_096)
+        #expect(overused.freeMemoryMB == 0)
+
+        let normal = HomeDeviceResourceSummary(memoryTotalMB: 4_096, memoryUsedMB: 1_024)
+        #expect(normal.freeMemoryMB == 3_072)
+
+        let maxed = HomeDeviceResourceSummary(memoryTotalMB: Int.max, memoryUsedMB: 0)
+        #expect(maxed.freeMemoryMB == Int.max)
+    }
 }

@@ -62,7 +62,10 @@ public struct HomeDeviceResourceSummary: Codable, Sendable, Equatable {
 
     public var freeMemoryMB: Int? {
         guard let total = memoryTotalMB, let used = memoryUsedMB else { return nil }
-        return max(0, total - used)
+        guard total >= 0, used >= 0 else { return nil }
+        let (diff, overflow) = total.subtractingReportingOverflow(used)
+        if overflow { return 0 }
+        return max(0, diff)
     }
 }
 

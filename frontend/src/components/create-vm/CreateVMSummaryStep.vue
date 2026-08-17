@@ -26,6 +26,7 @@ defineProps<{
   selectedNetwork: Network | null
   deviceLabel?: string
   placementWarning?: string | null
+  placementBlocking?: boolean
 }>()
 </script>
 
@@ -38,7 +39,8 @@ defineProps<{
         <span>{{ deviceLabel }}</span>
       </div>
       <p v-if="placementWarning" class="placement-override">
-        {{ placementWarning }} You can still place the VM here.
+        {{ placementWarning }}
+        <template v-if="!placementBlocking"> You can still place the VM here.</template>
       </p>
       <div class="summary-row">
         <span class="summary-label">Name</span>

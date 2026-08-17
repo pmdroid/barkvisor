@@ -74,6 +74,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { urlDraft = model.serverURLText }
+        .onDisappear { applyURL() }
         .task {
             #if os(macOS)
             await model.loadPairing()

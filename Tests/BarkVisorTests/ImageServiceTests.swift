@@ -148,6 +148,79 @@ final class ImageServiceTests {
         let started = await downloader.startedIDs
         #expect(started == [claims[0].image.id])
     }
+
+    @Test func `ready image is ignored when catalog checksum differs`() throws {
+        let now = "2026-01-01T00:00:00Z"
+        let source = "https://example.com/cloud-checksum.img"
+        try dbPool.write { db in
+            try VMImage(
+                id: "img-wrong-hash", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: "/tmp/cloud.img", sizeBytes: 4, status: "ready", error: nil,
+                sourceUrl: source, sha256: "aaa", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let miss = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256("bbb"), db: db,
+            )
+        }
+        #expect(miss == nil)
+        let hit = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256("aaa"), db: db,
+            )
+        }
+        #expect(hit?.id == "img-wrong-hash")
+    }
+
+    @Test func `compressed ready image verifies recorded digest not catalog hash`() throws {
+        let now = "2026-01-01T00:00:00Z"
+        let file = tmpDir.appendingPathComponent("cloud.img")
+        let content = Data("decompressed-cloud".utf8)
+        try content.write(to: file)
+        let digest = try ImageFileChecksum.sha256Hex(ofFile: file)
+        let source = "https://cdn.example/cloud.img.xz?token=abc"
+        try dbPool.write { db in
+            try VMImage(
+                id: "img-xz", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: file.path, sizeBytes: Int64(content.count), status: "ready", error: nil,
+                sourceUrl: source, sha256: digest, createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let catalogHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let hit = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256(catalogHash), db: db,
+            )
+        }
+        #expect(hit?.id == "img-xz")
+
+        try Data("tampered".utf8).write(to: file)
+        let miss = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256(catalogHash), db: db,
+            )
+        }
+        #expect(miss == nil)
+    }
+
+    @Test func `compressed ready image without recorded digest is not reused`() throws {
+        let now = "2026-01-01T00:00:00Z"
+        let source = "https://example.com/cloud.img.gz"
+        try dbPool.write { db in
+            try VMImage(
+                id: "img-gz-nodigest", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: "/tmp/missing-cloud.img", sizeBytes: 4, status: "ready", error: nil,
+                sourceUrl: source, sha256: nil, createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let miss = try dbPool.read { db in
+            try ImageService.readyImage(
+                sourceUrl: source, expectedChecksum: .sha256("bbbbbbbb"), db: db,
+            )
+        }
+        #expect(miss == nil)
+    }
 }
 
 private actor RecordingCatalogStartDownloader: ImageDownloadStarting {
