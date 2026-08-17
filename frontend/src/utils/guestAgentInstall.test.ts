@@ -12,12 +12,13 @@ import {
 const here = dirname(fileURLToPath(import.meta.url))
 
 describe('guestAgentInstall (PAS-215)', () => {
-  test('shows only while running and the agent is not available', () => {
-    expect(shouldShowGuestAgentInstall({ running: true, guestAvailable: false })).toBe(true)
-    expect(shouldShowGuestAgentInstall({ running: true, guestAvailable: null })).toBe(true)
-    expect(shouldShowGuestAgentInstall({ running: true })).toBe(true)
-    expect(shouldShowGuestAgentInstall({ running: true, guestAvailable: true })).toBe(false)
-    expect(shouldShowGuestAgentInstall({ running: false, guestAvailable: false })).toBe(false)
+  test('shows only while running and the agent is confirmed missing', () => {
+    expect(shouldShowGuestAgentInstall({ running: true, guestAvailable: false, guestInfoLoaded: true })).toBe(true)
+    expect(shouldShowGuestAgentInstall({ running: true, guestAvailable: null, guestInfoLoaded: true })).toBe(false)
+    expect(shouldShowGuestAgentInstall({ running: true, guestInfoLoaded: false })).toBe(false)
+    expect(shouldShowGuestAgentInstall({ running: true })).toBe(false)
+    expect(shouldShowGuestAgentInstall({ running: true, guestAvailable: true, guestInfoLoaded: true })).toBe(false)
+    expect(shouldShowGuestAgentInstall({ running: false, guestAvailable: false, guestInfoLoaded: true })).toBe(false)
     expect(shouldShowGuestAgentInstall({ running: false, guestAvailable: true })).toBe(false)
   })
 
@@ -61,6 +62,8 @@ describe('guestAgentInstall (PAS-215)', () => {
     expect(detail).toContain('guestAgentInstallCommands')
     expect(detail).toContain('Install the guest agent inside this Workload')
     expect(detail).toContain('spice-vdagent')
+    expect(detail).toContain('PAS-214')
+    expect(detail).toContain('guestInfoLoaded')
     expect(disks).toContain('GuestCommandAccordion')
     expect(disks).toContain('guestResizeCommands')
     expect(disks).not.toContain('class="guest-cmds"')
