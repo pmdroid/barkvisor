@@ -18,16 +18,7 @@ struct WorkloadsView: View {
                 )
             } else {
                 List(visible) { workload in
-                    NavigationLink {
-                        WorkloadDetailView(
-                            workloadID: workload.id,
-                            deviceID: model.selectedDevice?.hostId ?? "self",
-                            fallbackWorkload: workload,
-                            fallbackDevice: model.selectedDevice ?? .placeholderSelf
-                        )
-                    } label: {
-                        WorkloadRow(workload: workload, compact: false)
-                    }
+                    WorkloadListRow(workload: workload)
                 }
                 .platformListStyle()
             }
@@ -51,61 +42,53 @@ struct WorkloadsView: View {
     }
 }
 
-struct WorkloadRow: View {
+struct WorkloadListRow: View {
     @Environment(AppModel.self) private var model
     var workload: Workload
-    var compact: Bool
     @State private var pendingForceStop = false
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(workload.name)
-                Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(workload.guestOSFamily)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            StatusLabel.health(workload.resolvedHealth)
-            if model.actionIDs.contains(workload.id) {
-                ProgressView().controlSize(.small)
-            }
+        NavigationLink {
+            WorkloadDetailView(
+                workloadID: workload.id,
+                deviceID: model.selectedDevice?.hostId ?? "self",
+                fallbackWorkload: workload,
+                fallbackDevice: model.selectedDevice ?? .placeholderSelf
+            )
+        } label: {
+            WorkloadRow(workload: workload)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if !compact {
-                if workload.canStart {
-                    Button("Start") {
-                        Task { await model.startWorkload(workload) }
-                    }
-                    .tint(.green)
-                    .disabled(model.actionIDs.contains(workload.id))
+            if workload.canStart {
+                Button("Start") {
+                    Task { await model.startWorkload(workload) }
                 }
-                if workload.canStop {
-                    Button("Stop") {
-                        Task { await model.stopWorkload(workload) }
-                    }
-                    .disabled(model.actionIDs.contains(workload.id))
-                    Button("Force Stop", role: .destructive) {
-                        pendingForceStop = true
-                    }
-                    .disabled(model.actionIDs.contains(workload.id))
+                .tint(.green)
+                .disabled(busy)
+            }
+            if workload.canStop {
+                Button("Stop") {
+                    Task { await model.stopWorkload(workload) }
                 }
+                .disabled(busy)
+                Button("Force Stop", role: .destructive) {
+                    pendingForceStop = true
+                }
+                .disabled(busy)
             }
         }
         .contextMenu {
-            if !compact {
-                if workload.canStart {
-                    Button("Start") {
-                        Task { await model.startWorkload(workload) }
-                    }
+            if workload.canStart {
+                Button("Start") {
+                    Task { await model.startWorkload(workload) }
                 }
-                if workload.canStop {
-                    Button("Stop") {
-                        Task { await model.stopWorkload(workload) }
-                    }
-                    Button("Force Stop", role: .destructive) {
-                        pendingForceStop = true
-                    }
+            }
+            if workload.canStop {
+                Button("Stop") {
+                    Task { await model.stopWorkload(workload) }
+                }
+                Button("Force Stop", role: .destructive) {
+                    pendingForceStop = true
                 }
             }
         }
@@ -117,5 +100,39 @@ struct WorkloadRow: View {
         } message: {
             Text("The guest will not shut down cleanly.")
         }
+    }
+
+    private var busy: Bool {
+        WorkloadRow.isBusy(workload, model: model)
+    }
+}
+
+struct WorkloadRow: View {
+    @Environment(AppModel.self) private var model
+    var workload: Workload
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workload.name)
+                Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(workload.guestOSFamily)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            StatusLabel.health(workload.resolvedHealth)
+            if busy {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    private var busy: Bool {
+        Self.isBusy(workload, model: model)
+    }
+
+    static func isBusy(_ workload: Workload, model: AppModel) -> Bool {
+        let key = WorkloadActionKey.id(hostID: model.selectedDevice?.hostId, workloadID: workload.id)
+        return model.actionIDs.contains(key) || model.actionIDs.contains(workload.id)
     }
 }

@@ -55,7 +55,7 @@ struct DashboardView: View {
                                 fallbackDevice: model.selectedDevice ?? .placeholderSelf
                             )
                         } label: {
-                            WorkloadRow(workload: workload, compact: true)
+                            WorkloadRow(workload: workload)
                         }
                     }
                     Button("Open workloads") {

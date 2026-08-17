@@ -394,11 +394,18 @@ struct EmptyJSON: Encodable {}
 
 // MARK: - Home tab union (reachable Devices only)
 
+enum WorkloadActionKey {
+    static func id(hostID: String?, workloadID: String) -> String {
+        guard let hostID, !hostID.isEmpty else { return workloadID }
+        return "\(hostID)/\(workloadID)"
+    }
+}
+
 struct HomeWorkloadRow: Identifiable, Hashable {
     var workload: Workload
     var device: HomeDeviceHealthSnapshot
 
-    var id: String { "\(device.hostId)/\(workload.id)" }
+    var id: String { WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id) }
 }
 
 struct HomeDeviceLoadError: Identifiable, Hashable {

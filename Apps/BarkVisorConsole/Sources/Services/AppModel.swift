@@ -453,8 +453,7 @@ final class AppModel {
     }
 
     private func actionID(for workload: Workload, explicit device: HomeDeviceHealthSnapshot?) -> String {
-        if let device { return "\(device.hostId)/\(workload.id)" }
-        return workload.id
+        WorkloadActionKey.id(hostID: (device ?? selectedDevice)?.hostId, workloadID: workload.id)
     }
 
     private func refreshAbout() async {

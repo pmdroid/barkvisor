@@ -42,3 +42,10 @@ enum WorkloadGuestSummary {
         guest?.primaryIP
     }
 }
+
+enum GuestInfoRefresh {
+    /// Guest-agent OS/IP typically arrives after the first running fetch.
+    static func shouldRetry(guest: GuestInfo?, running: Bool) -> Bool {
+        running && guest?.available != true
+    }
+}
