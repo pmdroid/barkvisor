@@ -89,7 +89,16 @@ final class AppModel {
     var connectedURL: URL? { sessionURL ?? (try? DeviceURL.normalize(serverURLText)) }
 
     init() {
-        serverURLText = UserDefaults.standard.string(forKey: "serverURL") ?? DeviceURL.default
+        let storedURL = UserDefaults.standard.string(forKey: "serverURL") ?? DeviceURL.default
+        let migrated = DeviceURL.migrateStored(storedURL)
+        let resolved: String
+        if migrated != storedURL, let url = try? DeviceURL.normalize(migrated) {
+            resolved = url.absoluteString
+            UserDefaults.standard.set(resolved, forKey: "serverURL")
+        } else {
+            resolved = migrated
+        }
+        serverURLText = resolved
         username = UserDefaults.standard.string(forKey: "username") ?? ""
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
         token = KeychainStore.readToken()

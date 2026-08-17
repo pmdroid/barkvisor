@@ -130,6 +130,17 @@ struct APIDecodingTests {
         )
     }
 
+    @Test func deviceURLMigratesLegacySchemeLessStoredValue() throws {
+        #expect(DeviceURL.migrateStored("192.168.1.20") == "http://192.168.1.20")
+        #expect(DeviceURL.migrateStored("  home.local:7777 ") == "http://home.local:7777")
+        #expect(DeviceURL.migrateStored("http://192.168.1.20") == "http://192.168.1.20")
+        #expect(DeviceURL.migrateStored("https://home.local:7777") == "https://home.local:7777")
+        #expect(
+            try DeviceURL.normalize(DeviceURL.migrateStored("192.168.1.20")).absoluteString
+                == "http://192.168.1.20:7777"
+        )
+    }
+
     @Test func deviceURLSameOriginIgnoresPath() throws {
         let session = try DeviceURL.normalize("http://192.168.30.1:7777/login")
         let same = try DeviceURL.normalize("http://192.168.30.1:7777/settings")
