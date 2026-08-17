@@ -82,9 +82,6 @@ struct APIClient: Sendable {
         if T.self == DiscardBody.self {
             return DiscardBody() as! T
         }
-        if data.isEmpty, T.self == DiscardBody.self {
-            return DiscardBody() as! T
-        }
         do {
             return try Self.decoder.decode(T.self, from: data)
         } catch {
@@ -247,11 +244,16 @@ enum DeviceURL {
     /// SPA paths the web UI uses; the native client talks to the Device origin only.
     private static let spaPathPrefixes = ["/login", "/setup", "/dashboard", "/vms", "/images", "/disks", "/networks", "/registry", "/logs", "/settings"]
 
+    /// Require an explicit `http`/`https` scheme so a JWT is never sent to an inferred origin.
     static func normalize(_ raw: String) throws -> URL {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasSuffix("/") { value.removeLast() }
-        if !value.contains("://") { value = "http://\(value)" }
+        guard value.contains("://") else { throw APIError.invalidURL }
         guard var components = URLComponents(string: value) else { throw APIError.invalidURL }
+        guard let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            throw APIError.invalidURL
+        }
+        components.scheme = scheme
         if components.port == nil, components.host != nil {
             components.port = defaultPort
         }
@@ -263,5 +265,45 @@ enum DeviceURL {
         components.fragment = nil
         guard let url = components.url, url.host != nil else { throw APIError.invalidURL }
         return url
+    }
+
+    static func sameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+            && lhs.host?.lowercased() == rhs.host?.lowercased()
+            && (lhs.port ?? defaultPort) == (rhs.port ?? defaultPort)
+    }
+}
+
+/// Classifies Home Device directory fallbacks. A 404 on health/list is only
+/// "pre-Home" when `/api/system/about` proves this origin is a Device.
+enum HomeDeviceDirectory {
+    enum Resolution: Equatable {
+        case health
+        case registry
+        case preHome
+    }
+
+    static func resolution(
+        healthStatus: Int?,
+        listStatus: Int?,
+        aboutSucceeded: Bool
+    ) throws -> Resolution {
+        if healthStatus == nil { return .health }
+        guard healthStatus == 404 else {
+            throw APIError.http(status: healthStatus ?? 0, reason: "Device health request failed")
+        }
+        if listStatus == nil { return .registry }
+        guard listStatus == 404 else {
+            throw APIError.http(status: listStatus ?? 0, reason: "Device list request failed")
+        }
+        guard aboutSucceeded else {
+            throw APIError.http(status: 404, reason: "Home Device list is unavailable")
+        }
+        return .preHome
+    }
+
+    static func httpStatus(from error: Error) -> Int? {
+        guard let api = error as? APIError, case let .http(status, _) = api else { return nil }
+        return status
     }
 }

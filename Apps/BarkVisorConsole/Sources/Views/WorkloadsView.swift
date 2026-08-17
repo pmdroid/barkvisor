@@ -52,6 +52,7 @@ struct WorkloadRow: View {
     var workload: Workload
     var compact: Bool
     @State private var showVNCHint = false
+    @State private var pendingForceStop = false
 
     var body: some View {
         HStack {
@@ -82,7 +83,7 @@ struct WorkloadRow: View {
                     }
                     .disabled(model.actionIDs.contains(workload.id))
                     Button("Force Stop", role: .destructive) {
-                        Task { await model.stopWorkload(workload, force: true) }
+                        pendingForceStop = true
                     }
                     .disabled(model.actionIDs.contains(workload.id))
                 }
@@ -100,7 +101,7 @@ struct WorkloadRow: View {
                         Task { await model.stopWorkload(workload) }
                     }
                     Button("Force Stop", role: .destructive) {
-                        Task { await model.stopWorkload(workload, force: true) }
+                        pendingForceStop = true
                     }
                 }
                 Button("Console") { showVNCHint = true }
@@ -109,13 +110,21 @@ struct WorkloadRow: View {
                 }
             }
         }
+        .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {
+            Button("Force Stop", role: .destructive) {
+                Task { await model.stopWorkload(workload, force: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The guest will not shut down cleanly.")
+        }
         .alert("Console", isPresented: $showVNCHint) {
             if let url = vncURL {
-                Button("Open web console") { open(url) }
+                Button(consoleButtonTitle) { open(url) }
             }
             Button("OK", role: .cancel) {}
         } message: {
-            Text("VNC is not embedded in this native console. Use the web UI console for this workload.")
+            Text(consoleMessage)
         }
     }
 
@@ -124,11 +133,28 @@ struct WorkloadRow: View {
     }
 
     private var webURL: URL? {
-        model.connectedURL?.appending(path: "vms").appending(path: workload.id)
+        guard let base = model.connectedURL else { return nil }
+        return WorkloadWebLink.page(base: base, workloadID: workload.id, device: model.selectedDevice)
     }
 
     private var vncURL: URL? {
-        webURL?.appending(path: "vnc")
+        guard let base = model.connectedURL else { return nil }
+        return WorkloadWebLink.console(base: base, workloadID: workload.id, device: model.selectedDevice)
+    }
+
+    private var isMemberDevice: Bool {
+        model.selectedDevice?.isSelf == false
+    }
+
+    private var consoleButtonTitle: String {
+        isMemberDevice ? "Open Device page" : "Open web console"
+    }
+
+    private var consoleMessage: String {
+        if isMemberDevice {
+            return "Member Workload console is not a local /vms path. Open this Device in the web UI."
+        }
+        return "VNC is not embedded in this native console. Use the web UI console for this workload."
     }
 
     private func open(_ url: URL) {

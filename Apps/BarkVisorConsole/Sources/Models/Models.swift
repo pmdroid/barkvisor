@@ -277,9 +277,107 @@ struct PairingIssue: Decodable, Hashable {
     var apiVersion: Int
 }
 
+enum PairingExpiry {
+    /// Remaining TTL from the offer's absolute `expiresAt`, not the issued `ttlSeconds` snapshot.
+    static func remainingSeconds(expiresAt: String, now: Date = Date()) -> Int {
+        guard let expiry = parseISO8601(expiresAt) else { return 0 }
+        return max(0, Int(expiry.timeIntervalSince(now)))
+    }
+
+    static func label(expiresAt: String, now: Date = Date()) -> String {
+        let seconds = remainingSeconds(expiresAt: expiresAt, now: now)
+        if seconds == 0 { return "Expired" }
+        let minutes = Int(ceil(Double(seconds) / 60))
+        return minutes == 1 ? "Expires in 1 minute" : "Expires in \(minutes) minutes"
+    }
+
+    private static func parseISO8601(_ raw: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) { return date }
+        let whole = ISO8601DateFormatter()
+        whole.formatOptions = [.withInternetDateTime]
+        return whole.date(from: raw)
+    }
+}
+
+/// Web UI links for a Workload. Member detail/VNC is not `/vms/:id` until PAS-202/200 land.
+enum WorkloadWebLink {
+    static func page(base: URL, workloadID: String, device: HomeDeviceHealthSnapshot?) -> URL {
+        if let device, !device.isSelf {
+            return base.appending(path: "devices").appending(path: device.hostId)
+        }
+        return base.appending(path: "vms").appending(path: workloadID)
+    }
+
+    static func console(base: URL, workloadID: String, device: HomeDeviceHealthSnapshot?) -> URL {
+        let page = page(base: base, workloadID: workloadID, device: device)
+        if let device, !device.isSelf { return page }
+        return page.appending(path: "vnc")
+    }
+}
+
 struct WorkloadStopBody: Encodable {
     var force: Bool
     var method: String
 }
 
 struct EmptyJSON: Encodable {}
+
+// MARK: - Home tab union (reachable Devices only)
+
+struct HomeWorkloadRow: Identifiable, Hashable {
+    var workload: Workload
+    var device: HomeDeviceHealthSnapshot
+
+    var id: String { "\(device.hostId)/\(workload.id)" }
+}
+
+struct HomeDeviceLoadError: Identifiable, Hashable {
+    var device: HomeDeviceHealthSnapshot
+    var message: String
+
+    var id: String { device.hostId }
+}
+
+/// Cross-Device Workload list. Unreachable Devices never contribute invented rows.
+enum HomeWorkloadUnion {
+    enum Load: Equatable {
+        case success([Workload])
+        case failure(String)
+    }
+
+    struct Snapshot: Equatable {
+        var rows: [HomeWorkloadRow]
+        var loadErrors: [HomeDeviceLoadError]
+        var unreachable: [HomeDeviceHealthSnapshot]
+    }
+
+    static func build(
+        devices: [HomeDeviceHealthSnapshot],
+        loads: [String: Load]
+    ) -> Snapshot {
+        var rows: [HomeWorkloadRow] = []
+        var loadErrors: [HomeDeviceLoadError] = []
+        var unreachable: [HomeDeviceHealthSnapshot] = []
+        for device in devices {
+            if !device.isReachable {
+                unreachable.append(device)
+                continue
+            }
+            guard let load = loads[device.hostId] else { continue }
+            switch load {
+            case let .success(workloads):
+                rows.append(contentsOf: workloads.map { HomeWorkloadRow(workload: $0, device: device) })
+            case let .failure(message):
+                loadErrors.append(HomeDeviceLoadError(device: device, message: message))
+            }
+        }
+        rows.sort { lhs, rhs in
+            if lhs.device.title != rhs.device.title { return lhs.device.title < rhs.device.title }
+            if lhs.workload.name != rhs.workload.name { return lhs.workload.name < rhs.workload.name }
+            return lhs.id < rhs.id
+        }
+        return Snapshot(rows: rows, loadErrors: loadErrors, unreachable: unreachable)
+    }
+}

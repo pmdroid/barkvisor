@@ -1,14 +1,14 @@
 # BarkVisor Console
 
-Native SwiftUI console for macOS 14+ and iOS 17+. It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol.
+Native SwiftUI console for macOS 14+ and iOS 26+. It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol.
 
-The UI is stock SwiftUI: `NavigationSplitView`, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
+The UI is stock SwiftUI: `NavigationSplitView` on Mac, a three-tab `TabView` (Home / Devices / Settings) on iOS, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
 
 Product words in the UI: **Home**, **Device**, **Workload**, **Library**.
 
 ## Open
 
-1. Open `Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj` in Xcode 15 or later.
+1. Open `Apps/BarkVisorConsole/BarkVisorConsole.xcodeproj` in Xcode 26 or later.
 2. Choose the **BarkVisorConsole** scheme.
 3. Destination: **My Mac**, or an **iOS Simulator** (iPhone / iPad).
 
@@ -45,9 +45,10 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | --- | --- |
 | Connect | Device URL |
 | Sign in | `POST /api/auth/login` |
-| Dashboard | Counts, selected Device, recent workloads |
+| Home (iOS) | Union of workloads on reachable Devices, with the Device name on each row |
+| Dashboard (Mac) | Counts, selected Device, recent workloads |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
-| Workloads | List + start / ACPI stop / force stop for the selected Device |
+| Workloads (Mac) | List + start / ACPI stop / force stop for the selected Device |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
 | Settings | URL, logout, about (`/api/system/about`), Add Device pairing code |
 
