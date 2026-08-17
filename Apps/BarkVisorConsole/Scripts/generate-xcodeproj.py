@@ -21,6 +21,7 @@ APP_SOURCES = [
     "Sources/Views/AppShell.swift",
     "Sources/Views/SidebarView.swift",
     "Sources/Views/DashboardView.swift",
+    "Sources/Views/HomeView.swift",
     "Sources/Views/DevicesView.swift",
     "Sources/Views/WorkloadsView.swift",
     "Sources/Views/LibraryView.swift",
@@ -102,7 +103,7 @@ COMMON_BUILD = """
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -257,6 +258,7 @@ def main() -> None:
                 child_file("Sources/Views/AppShell.swift"),
                 child_file("Sources/Views/SidebarView.swift"),
                 child_file("Sources/Views/DashboardView.swift"),
+                child_file("Sources/Views/HomeView.swift"),
                 child_file("Sources/Views/DevicesView.swift"),
                 child_file("Sources/Views/WorkloadsView.swift"),
                 child_file("Sources/Views/LibraryView.swift"),

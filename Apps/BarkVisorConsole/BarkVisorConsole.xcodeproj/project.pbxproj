@@ -18,6 +18,7 @@
 		93C4E88344ACDF5A9723FCCA /* AppShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958E57141FE4AF286E9FB9DC /* AppShell.swift */; };
 		B5DBFF2632507C489AF3F996 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */; };
 		F3E39ED4F727F96FB8AE08F4 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0845A7F634DD213C8A3643 /* DashboardView.swift */; };
+		8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40C0E3A9BCA1B51480836FF /* HomeView.swift */; };
 		2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA85C5946B65A59DFF46D77 /* DevicesView.swift */; };
 		5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */; };
 		09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6851D270665497BF2365DA20 /* LibraryView.swift */; };
@@ -41,6 +42,7 @@
 		958E57141FE4AF286E9FB9DC /* AppShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShell.swift; sourceTree = "<group>"; };
 		BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		FF0845A7F634DD213C8A3643 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		C40C0E3A9BCA1B51480836FF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		6BA85C5946B65A59DFF46D77 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
 		A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadsView.swift; sourceTree = "<group>"; };
 		6851D270665497BF2365DA20 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
@@ -144,6 +146,7 @@
 				958E57141FE4AF286E9FB9DC /* AppShell.swift */,
 				BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */,
 				FF0845A7F634DD213C8A3643 /* DashboardView.swift */,
+				C40C0E3A9BCA1B51480836FF /* HomeView.swift */,
 				6BA85C5946B65A59DFF46D77 /* DevicesView.swift */,
 				A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */,
 				6851D270665497BF2365DA20 /* LibraryView.swift */,
@@ -272,6 +275,7 @@
 				93C4E88344ACDF5A9723FCCA /* AppShell.swift in Sources */,
 				B5DBFF2632507C489AF3F996 /* SidebarView.swift in Sources */,
 				F3E39ED4F727F96FB8AE08F4 /* DashboardView.swift in Sources */,
+				8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */,
 				2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */,
 				5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */,
 				09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */,
@@ -321,7 +325,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -350,7 +354,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -375,7 +379,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -425,7 +429,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -471,7 +475,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -516,7 +520,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
