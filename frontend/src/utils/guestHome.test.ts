@@ -93,6 +93,9 @@ describe('guestHome (PAS-201)', () => {
     expect(guestServiceLabel('10.0.0.12', 80)).toBe('10.0.0.12')
     expect(guestServiceHref('10.0.0.12', 443)).toBe('https://10.0.0.12')
     expect(guestServiceHref('10.0.0.12', 8080)).toBe('http://10.0.0.12:8080')
+    expect(guestServiceLabel('fd00::12', 22)).toBe('[fd00::12]:22')
+    expect(guestServiceHref('fd00::12', 8080)).toBe('http://[fd00::12]:8080')
+    expect(guestServiceHref('fd00::12', 443)).toBe('https://[fd00::12]')
   })
 
   test('member IP/ports stay empty when unreachable; never localhost', () => {

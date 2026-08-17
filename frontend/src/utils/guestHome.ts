@@ -52,14 +52,20 @@ export function guestPrimaryIp(guest: GuestInfo | null | undefined): string | nu
   return guest.ipAddresses[0]
 }
 
+function hostForUrl(ip: string): string {
+  return ip.includes(':') ? `[${ip}]` : ip
+}
+
 export function guestServiceHref(ip: string, guestPort: number): string {
   const proto = guestPort === 443 || guestPort === 9443 ? 'https' : 'http'
+  const host = hostForUrl(ip)
   const port = guestPort === 80 || guestPort === 443 ? '' : `:${guestPort}`
-  return `${proto}://${ip}${port}`
+  return `${proto}://${host}${port}`
 }
 
 export function guestServiceLabel(ip: string, guestPort: number): string {
-  return guestPort === 80 || guestPort === 443 ? ip : `${ip}:${guestPort}`
+  const host = hostForUrl(ip)
+  return guestPort === 80 || guestPort === 443 ? host : `${host}:${guestPort}`
 }
 
 export type GuestPortLink = {
