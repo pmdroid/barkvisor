@@ -170,6 +170,11 @@ that connects over a WebSocket to the QEMU VNC socket (proxied through the
 server at `/api/vms/:id/vnc`). This gives you a full graphical console in the
 browser -- useful for OS installation and desktop environments.
 
+Copy and paste text with **Paste** / **Copy** on the VNC toolbar, or ⌘V /
+Ctrl+V while the display is focused. Guest copy needs `spice-vdagent` (Linux
+desktop) or Spice guest tools (Windows) inside the Workload, and a restart so
+QEMU picks up the vdagent channel.
+
 ### Serial Console
 
 Click the **Console** tab. BarkVisor embeds a [wterm](https://wterm.dev) terminal that
