@@ -54,6 +54,7 @@ import {
   workloadDetailVmSource,
 } from '../utils/workloadDetail'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
+import { guestListeningPortAccessLabel, guestListeningPortHref } from '../utils/guestListeningPorts'
 import {
   guestAgentInstallCommands,
   guestAgentInstallOpenId,
@@ -484,6 +485,24 @@ const guestAgentOpenId = computed(() => guestAgentInstallOpenId({
   osId: guestInfo.value?.osId,
   osName: guestInfo.value?.osName,
 }))
+
+const guestListeningPortRows = computed(() => {
+  const guest = guestInfo.value
+  if (!guest?.listeningPorts) return []
+  const ips = guest.ipAddresses ?? []
+  return guest.listeningPorts.map((item) => ({
+    key: `${item.proto}-${item.address}-${item.port}`,
+    port: item.port,
+    address: item.address,
+    label: item.label,
+    access: guestListeningPortAccessLabel(item),
+    href: guestListeningPortHref(item, ips, {
+      isMember: isMemberDetail.value,
+      guestIpsReachable: currentNetwork.value?.mode === 'bridged',
+      portForwards: vm.value?.portForwards ?? [],
+    }),
+  }))
+})
 
 async function refreshWorkload() {
   if (isMemberDetail.value) {
@@ -1235,7 +1254,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- Guest Agent Info -->
-      <div v-if="!isMemberDetail && vm.state === 'running' && guestInfo?.available" style="margin-top:20px">
+      <div v-if="vm.state === 'running' && guestInfo?.available" style="margin-top:20px">
         <h2 style="font-size:16px;font-weight:700;margin-bottom:12px">Guest Agent</h2>
         <div class="card">
           <div class="detail-grid">
@@ -1275,6 +1294,24 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 <span v-for="u in guestInfo.users" :key="u.name" class="badge badge-gray">{{ u.name }}</span>
               </span>
             </div>
+          </div>
+
+          <div style="margin-top:16px">
+            <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Listening ports</h3>
+            <p v-if="guestInfo.listeningPorts == null" style="color:var(--text-dim);font-size:12px;margin:0">Unavailable</p>
+            <p v-else-if="guestInfo.listeningPorts.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
+            <DataTable v-else :columns="[{ key: 'port', label: 'Port' }, { key: 'address', label: 'Address' }, { key: 'label', label: 'Service' }, { key: 'access', label: 'Access' }]">
+              <tr v-for="row in guestListeningPortRows" :key="row.key">
+                <td class="mono" style="font-variant-numeric:tabular-nums">{{ row.port }}</td>
+                <td class="mono">{{ row.address }}</td>
+                <td><span v-if="row.label" class="badge badge-gray">{{ row.label }}</span><span v-else style="color:var(--text-dim)">—</span></td>
+                <td>
+                  <span v-if="row.access === 'Internal'" class="badge badge-gray">Internal</span>
+                  <a v-else-if="row.href" :href="row.href" target="_blank" class="badge badge-accent" style="text-decoration:none">{{ row.href.replace(/^https?:\/\//, '') }}</a>
+                  <span v-else class="mono">{{ row.access }}</span>
+                </td>
+              </tr>
+            </DataTable>
           </div>
 
           <!-- Filesystems sub-table -->

@@ -107,7 +107,12 @@ extension MetricsCollector {
         guard let gaResult = try? gaClient.execute("guest-network-get-interfaces") else { return }
 
         let (ips, mac) = parseNetworkInterfaces(gaResult)
-        let record = buildGuestInfoRecord(gaClient: gaClient, vmID: vmID, ips: ips, mac: mac)
+        let previous = try? dbPool.read { db in
+            try GuestInfoRecord.fetchOne(db, key: vmID)
+        }
+        let record = buildGuestInfoRecord(
+            gaClient: gaClient, vmID: vmID, ips: ips, mac: mac, previous: previous,
+        )
 
         do {
             try dbPool.write { db in
@@ -142,7 +147,11 @@ extension MetricsCollector {
     }
 
     private static func buildGuestInfoRecord(
-        gaClient: QMPClient, vmID: String, ips: [String], mac: String?,
+        gaClient: QMPClient,
+        vmID: String,
+        ips: [String],
+        mac: String?,
+        previous: GuestInfoRecord?,
     ) -> GuestInfoRecord {
         let hostnameResult = try? gaClient.execute("guest-get-host-name")
         let osInfoResult = try? gaClient.execute("guest-get-osinfo")
@@ -165,6 +174,18 @@ extension MetricsCollector {
 
         let parsedUsers = parseGuestUsers(usersResult)
         let parsedFS = parseGuestFilesystems(fsResult)
+        let now = iso8601.string(from: Date())
+        var collectedPorts: [GuestListeningPortDTO]?
+        if GuestListeningPorts.shouldCollect(vmID: vmID) {
+            collectedPorts = GuestListeningPorts.collect(using: gaClient)
+            GuestListeningPorts.markCollected(vmID: vmID, succeeded: collectedPorts != nil)
+        }
+        let persistedPorts = GuestListeningPorts.persistFields(
+            collected: collectedPorts,
+            previousJSON: previous?.listeningPorts,
+            previousCollectedAt: previous?.portsCollectedAt,
+            now: now,
+        )
 
         let encoder = JSONEncoder()
         return GuestInfoRecord(
@@ -188,7 +209,9 @@ extension MetricsCollector {
             filesystems: String(
                 data: (try? encoder.encode(parsedFS)) ?? Data("[]".utf8), encoding: .utf8,
             ),
-            updatedAt: iso8601.string(from: Date()),
+            updatedAt: now,
+            listeningPorts: persistedPorts.json,
+            portsCollectedAt: persistedPorts.collectedAt,
         )
     }
 

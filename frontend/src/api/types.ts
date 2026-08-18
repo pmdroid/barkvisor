@@ -427,6 +427,14 @@ export interface GuestFilesystem {
   usedBytes: number | null
 }
 
+export interface GuestListeningPort {
+  proto: string
+  address: string
+  port: number
+  scope: 'internal' | 'network' | string
+  label: string | null
+}
+
 export interface GuestInfo {
   available: boolean
   ipAddresses: string[]
@@ -443,6 +451,9 @@ export interface GuestInfo {
   timezoneOffset: number | null
   users: GuestUser[] | null
   filesystems: GuestFilesystem[] | null
+  /** null = unavailable, [] = none. */
+  listeningPorts?: GuestListeningPort[] | null
+  portsCollectedAt?: string | null
 }
 
 export interface MetricSample {

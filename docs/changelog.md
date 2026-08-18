@@ -36,6 +36,10 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Place on This Device or any reachable member. Incompatibility is a warning, not a lock.
 - Guest default follows This Device’s arch so a recommended ARM64 member does not grey out an x86 Home.
 
+### Guest ports
+
+- Workload detail shows TCP listening ports from the guest addon (SSH, HTTP, and common dev servers). Loopback stays internal and is never a URL. Members use the same guest-info hop as This Device.
+
 ### Platform
 
 - Restarting the Device daemon no longer stops Workloads. systemd signals only BarkVisor; QEMU stays up and is reattached. Use Workload Stop to shut a guest down.
