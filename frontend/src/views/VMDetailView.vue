@@ -496,7 +496,11 @@ const guestListeningPortRows = computed(() => {
     address: item.address,
     label: item.label,
     access: guestListeningPortAccessLabel(item),
-    href: guestListeningPortHref(item, ips),
+    href: guestListeningPortHref(item, ips, {
+      isMember: isMemberDetail.value,
+      guestIpsReachable: currentNetwork.value?.mode === 'bridged',
+      portForwards: vm.value?.portForwards ?? [],
+    }),
   }))
 })
 
