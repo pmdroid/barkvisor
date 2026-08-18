@@ -6,6 +6,7 @@ export const defaultCapabilities: CurrentHostCapabilities = {
   platform: '',
   supportsBridgedNetworking: false,
   supportsManagedBridgeDaemon: false,
+  supportsHostBridgeManagement: false,
   supportsUSBPassthrough: false,
   supportsInAppUpdate: false,
   accelerator: '',
@@ -29,6 +30,7 @@ export function parseSystemCapabilities(data: Partial<SystemCapabilities> | null
     platform: doc.platform ?? defaultCapabilities.platform,
     supportsBridgedNetworking: !!doc.supportsBridgedNetworking,
     supportsManagedBridgeDaemon: !!doc.supportsManagedBridgeDaemon,
+    supportsHostBridgeManagement: !!doc.supportsHostBridgeManagement,
     supportsUSBPassthrough: !!doc.supportsUSBPassthrough,
     supportsInAppUpdate: !!doc.supportsInAppUpdate,
     accelerator: doc.accelerator ?? defaultCapabilities.accelerator,
@@ -67,6 +69,8 @@ export function capabilitiesFeatureSupported(
       return caps.supportsBridgedNetworking
     case 'managedBridgeDaemon':
       return caps.supportsManagedBridgeDaemon
+    case 'hostBridgeManagement':
+      return !!caps.supportsHostBridgeManagement
     case 'usbPassthrough':
       return caps.supportsUSBPassthrough
     case 'inAppUpdate':

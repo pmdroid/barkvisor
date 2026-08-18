@@ -2,7 +2,8 @@
 import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
-import type { BridgeInfo, HomeDeviceHealthSnapshot, HostInterface } from '../api/types'
+import type { BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeReadiness, HostInterface } from '../api/types'
+import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -24,8 +25,14 @@ import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
   deviceBridgesPath,
+  deviceHostBridgeReadinessPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
+import {
+  linuxBridgeFallbackReadiness,
+  linuxBridgeSetupGroups,
+  linuxBridgeStatusSummary,
+} from '../utils/linuxBridgeSetup'
 import { DEVICE_LABEL } from '../utils/terminology'
 
 const toast = useToastStore()
@@ -146,13 +153,39 @@ const bridgeCaps = computed(() => {
 })
 
 const selectedManagedBridge = computed(() => bridgeCaps.value.supportsManagedBridgeDaemon)
+const selectedHostBridgeManagement = computed(() => {
+  const device = bridgeDevice.value
+  if (device) return deviceOffersLinuxBridgeGuide(device)
+  return (
+    caps.currentHost.supportsHostBridgeManagement === true
+    || (caps.currentHost.platform || '').toLowerCase() === 'linux'
+  )
+})
+function deviceOffersLinuxBridgeGuide(device: HomeDeviceHealthSnapshot): boolean {
+  const c = deviceCapsFor(device.hostId)
+  if (c.supportsHostBridgeManagement === true) return true
+  return (device.platform?.os || c.platform || '').toLowerCase() === 'linux'
+}
+
 const canManageBridges = computed(() => {
-  if (!useHomeUnion.value) return managedBridge.available
+  if (!useHomeUnion.value) {
+    return (
+      managedBridge.available
+      || caps.currentHost.supportsHostBridgeManagement === true
+      || (caps.currentHost.platform || '').toLowerCase() === 'linux'
+    )
+  }
   return devicesStore.devices.some((device) => {
     if (!canCallDeviceAPI(device)) return false
     return deviceCapsFor(device.hostId).supportsManagedBridgeDaemon === true
+      || deviceOffersLinuxBridgeGuide(device)
   })
 })
+const linuxReadiness = ref<HostBridgeReadiness | null>(null)
+const linuxReadinessLoading = ref(false)
+const linuxSetupGroups = computed(() =>
+  linuxReadiness.value ? linuxBridgeSetupGroups(linuxReadiness.value) : [],
+)
 
 const bridgeDeviceOptions = computed(() =>
   devicesStore.devices
@@ -295,10 +328,29 @@ async function loadBridgeContext() {
   const device = bridgeDevice.value
   if (device && useHomeUnion.value) {
     await homeNets.fetchContext(device)
+    if (selectedHostBridgeManagement.value) await fetchLinuxReadiness()
     return
   }
   await fetchLocalInterfaces()
   if (managedBridge.available) await fetchLocalBridges()
+  if (selectedHostBridgeManagement.value) await fetchLinuxReadiness()
+}
+
+async function fetchLinuxReadiness() {
+  linuxReadinessLoading.value = true
+  try {
+    const device = bridgeDevice.value
+    const path =
+      device && useHomeUnion.value
+        ? deviceHostBridgeReadinessPath(device)
+        : '/system/host-bridge-readiness'
+    const { data } = await api.get<HostBridgeReadiness>(path)
+    linuxReadiness.value = data
+  } catch {
+    linuxReadiness.value = linuxBridgeFallbackReadiness
+  } finally {
+    linuxReadinessLoading.value = false
+  }
 }
 
 function mutateTarget(hostId: string): HomeDeviceHealthSnapshot | null {
@@ -320,9 +372,11 @@ onMounted(() => {
 watch(showBridges, (open) => {
   if (open) {
     if (!bridgeHostId.value) {
-      const managed = devicesStore.devices.find((device) =>
-        canCallDeviceAPI(device) && deviceCapsFor(device.hostId).supportsManagedBridgeDaemon,
-      )
+      const managed = devicesStore.devices.find((device) => {
+        if (!canCallDeviceAPI(device)) return false
+        const c = deviceCapsFor(device.hostId)
+        return c.supportsManagedBridgeDaemon === true || deviceOffersLinuxBridgeGuide(device)
+      })
       bridgeHostId.value = managed?.hostId || defaultFormHostId()
     }
     void loadBridgeContext()
@@ -633,8 +687,33 @@ async function setupBridgeInline() {
       <label>{{ DEVICE_LABEL }}</label>
       <AppSelect v-model="bridgeHostId" :options="bridgeDeviceOptions" />
     </div>
+    <div v-if="selectedHostBridgeManagement" class="linux-bridge-guide">
+      <p v-if="linuxReadinessLoading" style="color:var(--text-secondary);font-size:13px">Checking this Device…</p>
+      <template v-else-if="linuxReadiness">
+        <p style="font-size:13px;margin:0 0 12px">{{ linuxBridgeStatusSummary(linuxReadiness) }}</p>
+        <ul v-if="linuxReadiness.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in linuxReadiness.bridges" :key="br.name">
+            <span class="mono">{{ br.name }}</span>
+            <span v-if="br.enslaved.length" style="color:var(--text-secondary)">
+              — {{ br.enslaved.join(', ') }}
+            </span>
+          </li>
+        </ul>
+        <GuestCommandAccordion
+          v-if="linuxSetupGroups.length"
+          :groups="linuxSetupGroups"
+          :initial-open="linuxSetupGroups[0]?.id ?? null"
+        />
+        <p v-if="linuxReadiness.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
+          Do not enslave the only uplink. Prefer NAT on this Device.
+        </p>
+      </template>
+      <p v-else style="color:var(--text-secondary);font-size:13px">
+        Could not read host-bridge status on this Device.
+      </p>
+    </div>
     <UnsupportedHint
-      v-if="!selectedManagedBridge"
+      v-else-if="!selectedManagedBridge"
       :text="bridgeCaps.details?.find((d) => d.code === 'managedBridgeDaemon' && !d.supported)?.remediation || managedBridge.explanation"
     />
     <EmptyState v-else-if="hostInterfaces.length === 0" title="Loading interfaces..." style="padding:24px" />
@@ -678,6 +757,11 @@ async function setupBridgeInline() {
       </tr>
     </DataTable>
     <template #actions>
+      <AppButton
+        v-if="selectedHostBridgeManagement"
+        :disabled="linuxReadinessLoading"
+        @click="fetchLinuxReadiness"
+      >Re-check</AppButton>
       <AppButton @click="showBridges = false">Close</AppButton>
     </template>
   </AppModal>
