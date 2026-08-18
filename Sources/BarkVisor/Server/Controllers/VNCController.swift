@@ -1,59 +1,7 @@
 import BarkVisorCore
 import Foundation
 import JWTKit
-import NIOCore
-import NIOPosix
 import Vapor
-
-/// Thread-safe box for the VNC TCP channel reference
-private final class ChannelBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _channel: Channel?
-    private var _pending: [ByteBuffer] = []
-
-    var channel: Channel? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _channel
-    }
-
-    func set(_ channel: Channel) {
-        let buffered: [ByteBuffer] = {
-            lock.lock()
-            defer { lock.unlock() }
-            _channel = channel
-            let b = _pending
-            _pending.removeAll()
-            return b
-        }()
-
-        // Flush buffered frames
-        for buf in buffered {
-            var copy = channel.allocator.buffer(capacity: buf.readableBytes)
-            copy.writeBytes(buf.readableBytesView)
-            channel.writeAndFlush(copy, promise: nil)
-        }
-    }
-
-    func sendOrBuffer(_ buf: ByteBuffer) {
-        let channel: Channel? = {
-            lock.lock()
-            defer { lock.unlock() }
-            if let ch = _channel {
-                return ch
-            } else {
-                _pending.append(buf)
-                return nil
-            }
-        }()
-
-        if let channel {
-            var copy = channel.allocator.buffer(capacity: buf.readableBytes)
-            copy.writeBytes(buf.readableBytesView)
-            channel.writeAndFlush(copy, promise: nil)
-        }
-    }
-}
 
 struct VNCController {
     let vmState: any VMStateQuerying
@@ -81,14 +29,6 @@ struct VNCController {
             onUpgrade: { req, ws in
                 let vmState = vmState
                 let eventLoop = req.eventLoop
-                let box = ChannelBox()
-
-                // Register WS handlers on the event loop (required by NIOLoopBound)
-                eventLoop.execute {
-                    ws.onBinary { _, buf in
-                        box.sendOrBuffer(buf)
-                    }
-                }
 
                 Task {
                     guard let vmID = req.parameters.get("id") else {
@@ -106,25 +46,7 @@ struct VNCController {
                         return
                     }
 
-                    do {
-                        let channel = try await ClientBootstrap(group: eventLoop)
-                            .channelInitializer { channel in
-                                channel.pipeline.addHandler(SocketToWSHandler(ws: ws))
-                            }
-                            .connect(unixDomainSocketPath: vncSocketPath)
-                            .get()
-
-                        box.set(channel)
-
-                        ws.onClose.whenComplete { _ in
-                            channel.close(mode: .all, promise: nil)
-                        }
-                    } catch {
-                        Log.vm.error(
-                            "VNC connection failed for VM \(vmID) at \(vncSocketPath): \(error)", vm: vmID,
-                        )
-                        eventLoop.execute { ws.close(code: .unexpectedServerError, promise: nil) }
-                    }
+                    await WebSocketHop.run(inbound: ws, unixSocketPath: vncSocketPath)
                 }
             },
         )
