@@ -55,6 +55,12 @@ import {
 } from '../utils/workloadDetail'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import {
+  guestAgentInstallCommands,
+  guestAgentInstallOpenId,
+  shouldShowGuestAgentInstall,
+} from '../utils/guestAgentInstall'
+import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
+import {
   disksInventoryFetchPath,
   isMemberControlTab,
   memberControlTabAllowed,
@@ -177,6 +183,7 @@ const bridgeLoading = ref<string | null>(null)
 
 // Guest agent info (includes IP, OS, filesystem, etc.)
 const guestInfo = ref<GuestInfo | null>(null)
+const guestInfoLoaded = ref(false)
 
 // USB passthrough
 const hostUSBDevices = ref<HostUSBDevice[]>([])
@@ -430,14 +437,20 @@ async function fetchGuestInfo() {
     && requestVmId === vmId.value
     && requestHostId === hostId.value
   const path = guestInfoFetchPath(guestInfoDevice(), requestVmId, vm.value?.state)
-  if (!path) { guestInfo.value = null; return }
+  if (!path) {
+    guestInfo.value = null
+    guestInfoLoaded.value = false
+    return
+  }
   try {
     const { data } = await api.get(path)
     if (!stillCurrent()) return
     guestInfo.value = data
+    guestInfoLoaded.value = true
   } catch {
     if (!stillCurrent()) return
     guestInfo.value = null
+    guestInfoLoaded.value = false
   }
 }
 
@@ -446,6 +459,20 @@ const memberOsLabel = computed(() => guestOsLabel(
   vm.value?.vmType ?? 'linux',
   memberReachable.value && vm.value?.state === 'running',
 ))
+
+const showGuestAgentInstall = computed(() => shouldShowGuestAgentInstall({
+  running: vm.value?.state === 'running',
+  guestAvailable: guestInfo.value?.available,
+  guestInfoLoaded: guestInfoLoaded.value,
+  memberUnreachable: isMemberDetail.value && !memberReachable.value,
+}))
+
+const guestAgentOpenId = computed(() => guestAgentInstallOpenId({
+  vmType: vm.value?.vmType,
+  imageName: isoImages.value.map((iso) => iso.name).join(' '),
+  osId: guestInfo.value?.osId,
+  osName: guestInfo.value?.osName,
+}))
 
 async function refreshWorkload() {
   if (isMemberDetail.value) {
@@ -463,6 +490,7 @@ async function startWorkload() {
     if (!device || !canFetchDeviceWorkloads(device)) return
     await homeWorkloads.start(device, vmId.value)
     guestInfo.value = null
+    guestInfoLoaded.value = false
     await fetchGuestInfo()
     return
   }
@@ -475,6 +503,7 @@ async function restartWorkload() {
     if (!device || !canFetchDeviceWorkloads(device)) return
     await homeWorkloads.restart(device, vmId.value)
     guestInfo.value = null
+    guestInfoLoaded.value = false
     await fetchGuestInfo()
     return
   }
@@ -762,6 +791,7 @@ async function confirmStop() {
     await stopWorkload(method)
     await refreshWorkload()
     guestInfo.value = null
+    guestInfoLoaded.value = false
     await fetchGuestInfo()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
@@ -1118,7 +1148,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 <span v-for="(pf, i) in vm.portForwards!.filter(p => p.protocol === 'tcp')" :key="i" class="badge badge-gray" style="font-variant-numeric:tabular-nums">
                   port {{ pf.guestPort }}
                 </span>
-                <span style="color:var(--text-dim);font-size:12px">waiting for guest agent...</span>
+                <span style="color:var(--text-dim);font-size:12px">{{ showGuestAgentInstall ? 'Install the guest agent below' : 'waiting for guest agent...' }}</span>
               </template>
             </span>
           </div>
@@ -1169,6 +1199,25 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">Created</span>
             <span style="color:var(--text-secondary)">{{ new Date(vm.createdAt).toLocaleString() }}</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Guest agent install (PAS-215) -->
+      <div v-if="showGuestAgentInstall" style="margin-top:20px">
+        <h2 style="font-size:16px;font-weight:700;margin-bottom:12px">Guest Agent</h2>
+        <div class="card">
+          <p style="color:var(--text-secondary);font-size:13px;margin:0 0 14px;line-height:1.5">
+            Install the guest agent inside this Workload to show IP and OS, and to shut down cleanly.
+          </p>
+          <GuestCommandAccordion
+            :groups="guestAgentInstallCommands"
+            :initial-open="guestAgentOpenId"
+          />
+          <!-- PAS-214: clipboard is spice-vdagent / Spice guest tools, not qemu-guest-agent -->
+          <p style="color:var(--text-dim);font-size:11px;margin:12px 0 0;line-height:1.5">
+            Desktop clipboard still needs <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">spice-vdagent</code>
+            (Linux) or Spice guest tools (Windows).
+          </p>
         </div>
       </div>
 

@@ -12,6 +12,8 @@ import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
+import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
+import { guestResizeCommands } from '../utils/guestAgentInstall'
 import { formatBytes } from '../utils/format'
 import { storeToRefs } from 'pinia'
 
@@ -34,7 +36,6 @@ const resizeSizeGB = ref(0)
 const resizeLoading = ref(false)
 const resizeError = ref('')
 const resizeDone = ref(false)
-const guestCmdsOpen = ref<string | null>(null)
 
 onMounted(() => {
   void diskStore.fetchAll({ withUsage: true })
@@ -101,15 +102,6 @@ async function resizeDisk() {
   } catch (e: any) { resizeError.value = apiErrorMessage(e) }
   finally { resizeLoading.value = false }
 }
-
-const guestResizeCommands = [
-  { id: 'ubuntu', label: 'Ubuntu / Debian', commands: 'sudo growpart /dev/vda 1\nsudo resize2fs /dev/vda1' },
-  { id: 'alpine', label: 'Alpine Linux', commands: 'apk add growpart\ngrowpart /dev/vda 1\nresize2fs /dev/vda1' },
-  { id: 'arch', label: 'Arch Linux', commands: 'sudo growpart /dev/vda 1\nsudo resize2fs /dev/vda1' },
-  { id: 'rhel', label: 'RHEL / Fedora / CentOS', commands: 'sudo growpart /dev/vda 1\nsudo xfs_growfs /      # XFS (default)\nsudo resize2fs /dev/vda1  # ext4' },
-  { id: 'suse', label: 'openSUSE / SLES', commands: 'sudo growpart /dev/vda 1\nsudo xfs_growfs /      # XFS\nsudo resize2fs /dev/vda1  # ext4' },
-  { id: 'lvm', label: 'LVM (any distro)', commands: 'sudo growpart /dev/vda 2\nsudo pvresize /dev/vda2\nsudo lvextend -l +100%FREE /dev/mapper/vg0-root\nsudo resize2fs /dev/mapper/vg0-root  # ext4\nsudo xfs_growfs /                    # XFS' },
-]
 
 </script>
 
@@ -231,17 +223,7 @@ const guestResizeCommands = [
           The virtual disk has been resized. To use the new space, you need to grow the partition and filesystem inside the guest VM.
         </p>
 
-        <div class="guest-cmds">
-          <div v-for="cmd in guestResizeCommands" :key="cmd.id" class="guest-cmd-group">
-            <button class="guest-cmd-header" @click="guestCmdsOpen = guestCmdsOpen === cmd.id ? null : cmd.id">
-              <span>{{ cmd.label }}</span>
-              <svg :class="{ rotated: guestCmdsOpen === cmd.id }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div v-if="guestCmdsOpen === cmd.id" class="guest-cmd-body">
-              <pre><code>{{ cmd.commands }}</code></pre>
-            </div>
-          </div>
-        </div>
+        <GuestCommandAccordion :groups="guestResizeCommands" />
 
         <p style="color:var(--text-dim);font-size:11px;margin-top:12px">
           Replace <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">/dev/vda</code> with your actual device (e.g. <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">/dev/sda</code>) if different. Use <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">lsblk</code> to check.
@@ -342,59 +324,5 @@ const guestResizeCommands = [
   height: 100%;
   background: var(--purple);
   transition: width 0.5s ease;
-}
-.guest-cmds {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  overflow: hidden;
-}
-.guest-cmd-group {
-  background: var(--bg);
-}
-.guest-cmd-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: background var(--transition);
-}
-.guest-cmd-header:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.guest-cmd-header svg {
-  transition: transform 0.2s ease;
-  color: var(--text-dim);
-}
-.guest-cmd-header svg.rotated {
-  transform: rotate(180deg);
-}
-.guest-cmd-body {
-  padding: 0 14px 12px;
-}
-.guest-cmd-body pre {
-  background: rgba(0,0,0,0.3);
-  border-radius: var(--radius-xs);
-  padding: 10px 14px;
-  margin: 0;
-  overflow-x: auto;
-}
-.guest-cmd-body code {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--green);
-  white-space: pre;
 }
 </style>
