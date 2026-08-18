@@ -4,6 +4,11 @@ import {
   canFetchDeviceWorkloads,
   deviceBridgesPath,
   deviceCapabilitiesPath,
+  deviceDiskPath,
+  deviceDiskResizePath,
+  deviceDiskSummaryPath,
+  deviceDiskUsagePath,
+  deviceDisksPath,
   deviceGuestInfoPath,
   deviceInterfacesPath,
   deviceNetworkPath,
@@ -139,6 +144,23 @@ describe('homeDeviceApi (PAS-203)', () => {
     expect(devicePath(member, '/disks')).toBe('/home/devices/peer%2F1/v1/disks')
     expect(devicePath(member, '/networks')).toBe('/home/devices/peer%2F1/v1/networks')
     expect(devicePath(member, '/logs')).not.toContain('targetHostId')
+  })
+})
+
+describe('homeDeviceApi (PAS-218)', () => {
+  test('disk list, usage, summary, and resize stay on devicePath', () => {
+    expect(deviceDisksPath(self)).toBe('/disks')
+    expect(deviceDiskPath(self, 'd-1')).toBe('/disks/d-1')
+    expect(deviceDiskUsagePath(self, 'd-1')).toBe('/disks/d-1/usage')
+    expect(deviceDiskResizePath(self, 'd-1')).toBe('/disks/d-1/resize')
+    expect(deviceDiskSummaryPath(self)).toBe('/disks/summary')
+
+    expect(deviceDisksPath(member)).toBe('/home/devices/peer%2F1/v1/disks')
+    expect(deviceDiskPath(member, 'd/1')).toBe('/home/devices/peer%2F1/v1/disks/d%2F1')
+    expect(deviceDiskUsagePath(member, 'd/1')).toBe('/home/devices/peer%2F1/v1/disks/d%2F1/usage')
+    expect(deviceDiskResizePath(member, 'd/1')).toBe('/home/devices/peer%2F1/v1/disks/d%2F1/resize')
+    expect(deviceDiskSummaryPath(member)).toBe('/home/devices/peer%2F1/v1/disks/summary')
+    expect(deviceDiskPath(member, 'd-1')).not.toContain('targetHostId')
   })
 })
 
