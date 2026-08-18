@@ -1119,6 +1119,10 @@ paths:
       responses:
         "200":
           description: Guest agent snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestInfo"
         default:
           $ref: "#/components/responses/Error"
 
@@ -1371,6 +1375,92 @@ components:
             type: array
             items:
               type: string
+
+    GuestListeningPort:
+      type: object
+      required: [proto, address, port, scope]
+      description: >
+        TCP LISTEN from the guest addon. proto is always tcp. scope is
+        internal for loopback (never a URL) and network otherwise.
+        label is SSH, HTTP, HTTPS, or Dev when the port is well-known.
+      properties:
+        proto:
+          type: string
+          enum: [tcp]
+        address:
+          type: string
+        port:
+          type: integer
+        scope:
+          type: string
+          enum: [internal, network]
+        label:
+          type: string
+          nullable: true
+
+    GuestInfo:
+      type: object
+      required: [available, ipAddresses, ipSource]
+      description: >
+        Guest addon snapshot. listeningPorts is null when unavailable and
+        [] when the guest reported none. Do not invent ports.
+      properties:
+        available:
+          type: boolean
+        ipAddresses:
+          type: array
+          items:
+            type: string
+        macAddress:
+          type: string
+          nullable: true
+        ipSource:
+          type: string
+        hostname:
+          type: string
+          nullable: true
+        osName:
+          type: string
+          nullable: true
+        osVersion:
+          type: string
+          nullable: true
+        osId:
+          type: string
+          nullable: true
+        kernelVersion:
+          type: string
+          nullable: true
+        kernelRelease:
+          type: string
+          nullable: true
+        machine:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          nullable: true
+        timezoneOffset:
+          type: integer
+          nullable: true
+        users:
+          type: array
+          nullable: true
+          items:
+            type: object
+        filesystems:
+          type: array
+          nullable: true
+          items:
+            type: object
+        listeningPorts:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/GuestListeningPort"
+        portsCollectedAt:
+          type: string
+          nullable: true
 
     ProcessHealth:
       type: object

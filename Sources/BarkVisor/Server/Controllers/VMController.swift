@@ -161,6 +161,8 @@ struct GuestInfoResponse: Content {
     let timezoneOffset: Int?
     let users: [GuestUserDTO]?
     let filesystems: [GuestFilesystemDTO]?
+    let listeningPorts: [GuestListeningPortDTO]?
+    let portsCollectedAt: String?
 
     init(from r: GuestInfoResult) {
         self.available = r.available
@@ -178,6 +180,8 @@ struct GuestInfoResponse: Content {
         self.timezoneOffset = r.timezoneOffset
         self.users = r.users
         self.filesystems = r.filesystems
+        self.listeningPorts = r.listeningPorts
+        self.portsCollectedAt = r.portsCollectedAt
     }
 }
 

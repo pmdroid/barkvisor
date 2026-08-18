@@ -276,6 +276,55 @@ final class ModelDBRoundTripTests {
         let fetched = try dbPool.read { db in try GuestInfoRecord.fetchOne(db, key: "vm-1") }
         #expect(fetched?.hostname == "myhost")
         #expect(fetched?.osName == "Ubuntu")
+        #expect(fetched?.listeningPorts == nil)
+        #expect(fetched?.portsCollectedAt == nil)
+    }
+
+    @Test func `guest info listening ports round trip`() throws {
+        try dbPool.write { db in
+            try Disk(
+                id: "d-ports",
+                name: "boot",
+                path: "/tmp/d-ports.qcow2",
+                sizeBytes: 1_000_000,
+                format: "qcow2",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+            try VM(
+                id: "vm-ports", name: "test", vmType: "linux-arm64", state: "stopped",
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d-ports", networkId: nil,
+                cloudInitPath: nil, description: nil, bootOrder: "cd",
+                displayResolution: "1280x800", additionalDiskIds: nil, uefi: true,
+                tpmEnabled: false, macAddress: "52:54:00:12:34:58", sharedPaths: nil,
+                portForwards: nil, autoCreated: false, pendingChanges: false,
+                createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+        }
+
+        let ssh = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 22))
+        let ports = GuestListeningPorts.encodeJSON([ssh])
+        try dbPool.write { db in
+            try GuestInfoRecord(
+                vmId: "vm-ports", hostname: "myhost", osName: "Ubuntu",
+                osVersion: "24.04", osId: "ubuntu", kernelVersion: "6.8",
+                kernelRelease: "6.8.0-generic", machine: "aarch64",
+                timezone: "UTC", timezoneOffset: 0, ipAddresses: "[\"192.168.1.5\"]",
+                macAddress: "52:54:00:12:34:56", users: "[]", filesystems: "[]",
+                updatedAt: "2025-01-01T00:00:00Z",
+                listeningPorts: ports,
+                portsCollectedAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        let fetched = try dbPool.read { db in try GuestInfoRecord.fetchOne(db, key: "vm-ports") }
+        #expect(fetched?.listeningPorts == ports)
+        #expect(fetched?.portsCollectedAt == "2025-01-01T00:00:00Z")
+        let decoded = JSONColumnCoding.decodeArray(
+            GuestListeningPortDTO.self, from: fetched?.listeningPorts,
+        )
+        #expect(decoded?.first?.label == "SSH")
     }
 
     @Test func `guest info cascade on VM delete`() throws {

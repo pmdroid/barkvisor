@@ -202,6 +202,9 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).not.toMatch(/if \(isMemberDetail\.value\) \{ guestInfo\.value = null; return \}/)
     expect(detail).toContain('detail-label">OS')
     expect(detail).toContain('detail-label">IP Address')
+    expect(detail).toContain('Listening ports')
+    expect(detail).toContain('guestListeningPortHref')
+    expect(detail).not.toContain('!isMemberDetail && vm.state === \'running\' && guestInfo?.available')
   })
 
   test('member detail poll waits for refresh and drops stale guest-info', () => {

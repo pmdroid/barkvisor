@@ -24,6 +24,27 @@ struct WorkloadDetailView: View {
                 }
             }
 
+            if guest?.available == true {
+                Section("Listening ports") {
+                    if let ports = guest?.listeningPorts {
+                        if ports.isEmpty {
+                            Text("None")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(ports, id: \.self) { port in
+                                LabeledContent(port.displayLabel) {
+                                    Text(port.isInternal ? "Internal" : "\(port.address):\(port.port)")
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Unavailable")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             Section {
                 streamRow(
                     title: "Console",
@@ -81,14 +102,12 @@ struct WorkloadDetailView: View {
                 while !Task.isCancelled {
                     if !device.isReachable { return }
                     guest = await model.guestInfo(for: workload.id, on: device)
-                    if !GuestInfoRefresh.shouldRetry(
+                    guard let interval = GuestInfoRefresh.pollIntervalSeconds(
                         guest: guest,
                         running: workload.isRunning,
                         reachable: device.isReachable,
-                    ) {
-                        return
-                    }
-                    try? await Task.sleep(for: .seconds(5))
+                    ) else { return }
+                    try? await Task.sleep(for: .seconds(interval))
                 }
             }
             .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {

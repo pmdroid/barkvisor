@@ -21,6 +21,40 @@ struct WorkloadDetailTests {
         #expect(guest.osLabel == "Ubuntu 24.04")
         #expect(guest.primaryIP == "192.168.64.12")
         #expect(WorkloadGuestSummary.ipLabel(guest: guest) == "192.168.64.12")
+        #expect(guest.listeningPorts == nil)
+    }
+
+    @Test func `guest info decodes listening ports`() throws {
+        let json = """
+        {
+          "available": true,
+          "ipAddresses": ["192.168.64.12"],
+          "listeningPorts": [
+            {"proto":"tcp","address":"0.0.0.0","port":22,"scope":"network","label":"SSH"},
+            {"proto":"tcp","address":"127.0.0.1","port":3000,"scope":"internal","label":"Dev"}
+          ],
+          "portsCollectedAt": "2026-08-18T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let guest = try decoder.decode(GuestInfo.self, from: json)
+        #expect(guest.listeningPorts?.count == 2)
+        #expect(guest.listeningPorts?.first?.label == "SSH")
+        #expect(guest.listeningPorts?.last?.isInternal == true)
+        #expect(guest.portsCollectedAt == "2026-08-18T00:00:00Z")
+        #expect(guest.listeningPorts?.last?.displayLabel == "Dev")
+    }
+
+    @Test func `empty listening ports is none not unavailable`() throws {
+        let json = """
+        {
+          "available": true,
+          "ipAddresses": ["192.168.64.12"],
+          "listeningPorts": []
+        }
+        """.data(using: .utf8)!
+        let guest = try decoder.decode(GuestInfo.self, from: json)
+        #expect(guest.listeningPorts?.isEmpty == true)
     }
 
     @Test func `guest info keeps nat fallback address when agent missing`() throws {
@@ -117,6 +151,9 @@ struct WorkloadDetailTests {
         #expect(!GuestInfoRefresh.shouldRetry(guest: nil, running: false))
         #expect(!GuestInfoRefresh.shouldRetry(guest: missing, running: false))
         #expect(!GuestInfoRefresh.shouldRetry(guest: nil, running: true, reachable: false))
+        #expect(GuestInfoRefresh.pollIntervalSeconds(guest: nil, running: true) == 5)
+        #expect(GuestInfoRefresh.pollIntervalSeconds(guest: ready, running: true) == 30)
+        #expect(GuestInfoRefresh.pollIntervalSeconds(guest: ready, running: false) == nil)
     }
 
     private func snapshot(

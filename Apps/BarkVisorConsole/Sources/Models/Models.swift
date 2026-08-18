@@ -198,25 +198,48 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
 }
 
+struct GuestListeningPort: Decodable, Hashable {
+    var proto: String
+    var address: String
+    var port: Int
+    var scope: String
+    var label: String?
+
+    var isInternal: Bool {
+        scope == "internal" || address.hasPrefix("127.") || address == "::1" || address == "localhost"
+    }
+
+    var displayLabel: String {
+        if let label, !label.isEmpty { return label }
+        return "TCP \(port)"
+    }
+}
+
 struct GuestInfo: Decodable, Hashable {
     var available: Bool
     var ipAddresses: [String]
     var osName: String?
     var osVersion: String?
     var hostname: String?
+    var listeningPorts: [GuestListeningPort]?
+    var portsCollectedAt: String?
 
     init(
         available: Bool,
         ipAddresses: [String],
         osName: String? = nil,
         osVersion: String? = nil,
-        hostname: String? = nil
+        hostname: String? = nil,
+        listeningPorts: [GuestListeningPort]? = nil,
+        portsCollectedAt: String? = nil
     ) {
         self.available = available
         self.ipAddresses = ipAddresses
         self.osName = osName
         self.osVersion = osVersion
         self.hostname = hostname
+        self.listeningPorts = listeningPorts
+        self.portsCollectedAt = portsCollectedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -226,6 +249,8 @@ struct GuestInfo: Decodable, Hashable {
         osName = try container.decodeIfPresent(String.self, forKey: .osName)
         osVersion = try container.decodeIfPresent(String.self, forKey: .osVersion)
         hostname = try container.decodeIfPresent(String.self, forKey: .hostname)
+        listeningPorts = try container.decodeIfPresent([GuestListeningPort].self, forKey: .listeningPorts)
+        portsCollectedAt = try container.decodeIfPresent(String.self, forKey: .portsCollectedAt)
     }
 
     var osLabel: String? {
@@ -240,6 +265,7 @@ struct GuestInfo: Decodable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case available, ipAddresses, osName, osVersion, hostname
+        case listeningPorts, portsCollectedAt
     }
 }
 

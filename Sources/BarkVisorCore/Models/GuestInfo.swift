@@ -17,6 +17,8 @@ public struct GuestInfoRecord: Codable, Sendable, FetchableRecord, PersistableRe
     public var macAddress: String?
     public var users: String? // JSON-encoded [GuestUserDTO]
     public var filesystems: String? // JSON-encoded [GuestFilesystemDTO]
+    public var listeningPorts: String? // JSON-encoded [GuestListeningPortDTO]; nil = unavailable, [] = none
+    public var portsCollectedAt: String?
     public var updatedAt: String
 
     public init(
@@ -35,6 +37,8 @@ public struct GuestInfoRecord: Codable, Sendable, FetchableRecord, PersistableRe
         users: String?,
         filesystems: String?,
         updatedAt: String,
+        listeningPorts: String? = nil,
+        portsCollectedAt: String? = nil,
     ) {
         self.vmId = vmId
         self.hostname = hostname
@@ -50,6 +54,8 @@ public struct GuestInfoRecord: Codable, Sendable, FetchableRecord, PersistableRe
         self.macAddress = macAddress
         self.users = users
         self.filesystems = filesystems
+        self.listeningPorts = listeningPorts
+        self.portsCollectedAt = portsCollectedAt
         self.updatedAt = updatedAt
     }
 }
