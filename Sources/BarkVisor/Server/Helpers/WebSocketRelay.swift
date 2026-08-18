@@ -254,6 +254,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
         configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
     ) async throws -> any WebSocketHopPeer {
         var configuration = WebSocketClient.Configuration()
+        configuration.maxFrameSize = 8_388_608
         if url.scheme?.lowercased() == "wss" {
             configuration.tlsConfiguration = try Self.mtlsConfiguration(
                 dataDir: dataDir,
@@ -271,7 +272,11 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
 
     static func open(
         url: URL,
-        configuration: WebSocketClient.Configuration = .init(),
+        configuration: WebSocketClient.Configuration = {
+            var configuration = WebSocketClient.Configuration()
+            configuration.maxFrameSize = 8_388_608
+            return configuration
+        }(),
         on eventLoopGroup: EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         configure: @escaping @Sendable (WebSocket) -> Void = { _ in },
     ) async throws -> WebSocket {
