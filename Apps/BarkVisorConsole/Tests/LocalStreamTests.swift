@@ -103,6 +103,33 @@ struct LocalStreamTests {
         #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
         session.focusKeyboard()
         #expect(session.pendingScript == "window.focusVNC && window.focusVNC()")
+        session.resetZoom()
+        #expect(session.pendingScript == "window.resetZoom && window.resetZoom()")
+    }
+
+    @Test @MainActor func displayControlScriptsStayQueuedInOrder() {
+        let session = DisplaySession()
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.focusKeyboard()
+        session.resetZoom()
+        #expect(session.consumePendingScript() == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+        #expect(session.consumePendingScript() == "window.focusVNC && window.focusVNC()")
+        #expect(session.consumePendingScript() == "window.resetZoom && window.resetZoom()")
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.pendingScript == nil)
+    }
+
+    @Test @MainActor func displayZoomMessageTogglesFit() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "zoom", "scale": 2])
+        #expect(session.zoomed)
+        session.handleMessage(["type": "zoom", "scale": 1])
+        #expect(!session.zoomed)
+        session.handleMessage(["type": "zoom", "scale": 1.5])
+        #expect(session.zoomed)
+        session.handleMessage(["type": "disconnect"])
+        #expect(!session.zoomed)
     }
 
     @Test @MainActor func displayControlScriptsExecuteOnlyWhenPageReady() {
@@ -178,5 +205,48 @@ struct LocalStreamTests {
             from: Data(#"{"ticket":"one-shot"}"#.utf8)
         )
         #expect(body.ticket == "one-shot")
+    }
+}
+
+@Suite(.serialized)
+struct DisplayClipboardTests {
+    @Test @MainActor func displayClipboardBuffersGuestText() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        #expect(session.guestClipboard == "guest-copy")
+        #expect(session.clipboardHint == "Guest copy ready — use Copy")
+        session.copyGuestToHost()
+        #expect(HostPasteboard.readString() == "guest-copy")
+        #expect(session.clipboardHint == "Copied from guest")
+    }
+
+    @Test @MainActor func displayPasteUsesStructuredQueueNotScriptInterpolation() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        HostPasteboard.writeString("line 1\nquote ' \" emoji 🙂")
+        session.pasteFromHost()
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == "line 1\nquote ' \" emoji 🙂")
+        #expect(session.clipboardHint == "Pasted into guest")
+        #expect(session.consumePendingPaste() == nil)
+        session.pageReady = true
+        #expect(session.consumePendingPaste() == "line 1\nquote ' \" emoji 🙂")
+        #expect(session.pendingPaste == nil)
+    }
+
+    @Test @MainActor func displayPasteEmptyClipboardIsHint() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        HostPasteboard.clear()
+        session.pasteFromHost()
+        #expect(session.pendingPaste == nil)
+        #expect(session.clipboardHint == "Clipboard is empty")
+    }
+
+    @Test @MainActor func hostPasteboardRoundTrip() {
+        let token = "pas-220-\(UUID().uuidString)"
+        HostPasteboard.writeString(token)
+        #expect(HostPasteboard.readString() == token)
+        #expect(HostPasteboard.readData() == Data(token.utf8))
     }
 }
