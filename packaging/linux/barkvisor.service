@@ -11,12 +11,22 @@ Group=barkvisor
 WorkingDirectory=/var/lib/barkvisor
 Environment=HOME=/var/lib/barkvisor
 Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
+Environment=BARKVISOR_SOCKET_DIR=/var/run/barkvisor
 Environment=BARKVISOR_PORT=7777
 Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/swift:/usr/local/lib/barkvisor/compat
 EnvironmentFile=-/etc/barkvisor/barkvisor.env
 ExecStart=/usr/local/bin/barkvisor
 Restart=on-failure
 RestartSec=3
+# Only signal the daemon. Default control-group would SIGTERM QEMU children
+# on restart and stop Workloads (PAS-223). detachAll + reconnectOrCleanup
+# reattach after the new PID is up.
+KillMode=process
+# Recreate /run/barkvisor after reboot (/run is tmpfs). Preserve=yes keeps
+# QEMU sockets across daemon restart so reconnectOrCleanup can reattach.
+RuntimeDirectory=barkvisor
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 # QEMU bridged networking launches setuid qemu-bridge-helper. NoNewPrivileges=true
 # blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
 # Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.
