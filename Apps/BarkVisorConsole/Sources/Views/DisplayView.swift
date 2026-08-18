@@ -205,7 +205,7 @@ final class DisplaySession {
         if !WorkloadStream.isLive(state) {
             loop?.cancel()
             loop = nil
-            enqueueScript("window.stopVNC && window.stopVNC()")
+            discardQueuedWork(resetPageReady: true)
             connected = false
             desktopSize = ""
             zoomed = false
@@ -235,6 +235,18 @@ final class DisplaySession {
         pendingPaste = text
     }
 
+    /// DisplayView keeps `@State session` across live→down→live. Drop queued
+    /// JS/paste so a remounted web view cannot flush a prior session.
+    private func discardQueuedWork(resetPageReady: Bool) {
+        scriptQueue.removeAll()
+        pasteQueue.removeAll()
+        pendingScript = nil
+        pendingPaste = nil
+        if resetPageReady {
+            pageReady = false
+        }
+    }
+
     /// Hands the queued script to the web view. Tests use this as the execute path.
     func consumePendingScript() -> String? {
         guard pageReady else { return nil }
@@ -259,7 +271,7 @@ final class DisplaySession {
         stopped = true
         loop?.cancel()
         loop = nil
-        enqueueScript("window.stopVNC && window.stopVNC()")
+        discardQueuedWork(resetPageReady: true)
         waitingForDisconnect = false
         connected = false
         desktopSize = ""
@@ -409,6 +421,7 @@ final class DisplaySession {
     func expireConnectWaitIfNeeded() {
         guard waitingForDisconnect, !connected else { return }
         status = "timed out"
+        discardQueuedWork(resetPageReady: false)
         enqueueScript("window.stopVNC && window.stopVNC()")
         waitingForDisconnect = false
     }
