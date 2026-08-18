@@ -19,6 +19,8 @@ public struct GuestInfoResult {
     public let timezoneOffset: Int?
     public let users: [GuestUserDTO]?
     public let filesystems: [GuestFilesystemDTO]?
+    public let listeningPorts: [GuestListeningPortDTO]?
+    public let portsCollectedAt: String?
 
     public init(
         available: Bool,
@@ -36,6 +38,8 @@ public struct GuestInfoResult {
         timezoneOffset: Int?,
         users: [GuestUserDTO]?,
         filesystems: [GuestFilesystemDTO]?,
+        listeningPorts: [GuestListeningPortDTO]? = nil,
+        portsCollectedAt: String? = nil,
     ) {
         self.available = available
         self.ipAddresses = ipAddresses
@@ -52,6 +56,8 @@ public struct GuestInfoResult {
         self.timezoneOffset = timezoneOffset
         self.users = users
         self.filesystems = filesystems
+        self.listeningPorts = listeningPorts
+        self.portsCollectedAt = portsCollectedAt
     }
 
     static func unavailable(
@@ -64,6 +70,7 @@ public struct GuestInfoResult {
             ipSource: ipSource, hostname: nil, osName: nil, osVersion: nil,
             osId: nil, kernelVersion: nil, kernelRelease: nil, machine: nil,
             timezone: nil, timezoneOffset: nil, users: nil, filesystems: nil,
+            listeningPorts: nil, portsCollectedAt: nil,
         )
     }
 }
@@ -97,6 +104,9 @@ extension VMLifecycleService {
         let filesystems = JSONColumnCoding.decodeArray(
             GuestFilesystemDTO.self, from: record.filesystems,
         )
+        let listeningPorts = JSONColumnCoding.decodeArray(
+            GuestListeningPortDTO.self, from: record.listeningPorts,
+        )
 
         return GuestInfoResult(
             available: true,
@@ -114,6 +124,8 @@ extension VMLifecycleService {
             timezoneOffset: record.timezoneOffset,
             users: users,
             filesystems: filesystems,
+            listeningPorts: listeningPorts,
+            portsCollectedAt: record.portsCollectedAt,
         )
     }
 

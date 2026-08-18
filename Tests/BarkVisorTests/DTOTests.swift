@@ -330,6 +330,27 @@ struct DTOTests {
         #expect(response.hostname == "ubuntu-vm")
         #expect(response.osName == "Ubuntu")
         #expect(response.osVersion == "24.04")
+        #expect(response.listeningPorts == nil)
+        #expect(response.portsCollectedAt == nil)
+    }
+
+    @Test func `guest info response carries listening ports`() {
+        let ssh = GuestListeningPortDTO(
+            proto: "tcp", address: "0.0.0.0", port: 22, scope: "network", label: "SSH",
+        )
+        let result = GuestInfoResult(
+            available: true, ipAddresses: ["10.0.0.5"],
+            macAddress: nil, ipSource: "guest-agent",
+            hostname: nil, osName: nil, osVersion: nil,
+            osId: nil, kernelVersion: nil, kernelRelease: nil, machine: nil,
+            timezone: nil, timezoneOffset: nil, users: nil, filesystems: nil,
+            listeningPorts: [ssh], portsCollectedAt: "2026-08-18T00:00:00Z",
+        )
+        let response = GuestInfoResponse(from: result)
+        #expect(response.listeningPorts?.count == 1)
+        #expect(response.listeningPorts?.first?.port == 22)
+        #expect(response.listeningPorts?.first?.label == "SSH")
+        #expect(response.portsCollectedAt == "2026-08-18T00:00:00Z")
     }
 
     @Test func `guest info response unavailable`() {
@@ -345,6 +366,7 @@ struct DTOTests {
         #expect(!response.available)
         #expect(response.ipAddresses.isEmpty)
         #expect(response.hostname == nil)
+        #expect(response.listeningPorts == nil)
     }
 }
 

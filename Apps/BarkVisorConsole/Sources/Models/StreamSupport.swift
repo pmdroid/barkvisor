@@ -73,6 +73,23 @@ enum GuestInfoRefresh {
     static func shouldRetry(guest: GuestInfo?, running: Bool, reachable: Bool = true) -> Bool {
         reachable && running && guest == nil
     }
+
+    /// Keep polling while running so listening ports can appear after the first snapshot.
+    static func pollIntervalSeconds(guest: GuestInfo?, running: Bool, reachable: Bool = true) -> Double? {
+        guard reachable, running else { return nil }
+        return shouldRetry(guest: guest, running: running, reachable: reachable) ? 5 : 30
+    }
+
+    /// SwiftUI `.task` identity. Reachability is part of the id so a member
+    /// going down stops polling and recovery starts it again.
+    static func taskID(
+        deviceID: String,
+        workloadID: String,
+        state: String,
+        reachable: Bool,
+    ) -> String {
+        "\(deviceID)/\(workloadID)/\(state)/\(reachable ? "up" : "down")"
+    }
 }
 
 enum StreamReconnect {
