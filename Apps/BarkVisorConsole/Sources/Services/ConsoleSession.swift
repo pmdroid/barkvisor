@@ -1,8 +1,9 @@
 import Foundation
 
-/// Native serial console: mint a one-use ticket, then `URLSessionWebSocketTask`
-/// to `/api/vms/{id}/console?ticket=`. The session JWT is never placed on the
-/// WebSocket URL.
+/// Native serial console: mint a one-use ticket, then `URLSessionWebSocketTask`.
+/// This Device uses `/api/vms/{id}/console?ticket=`. A member uses the Home
+/// tunnel (`/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`).
+/// The session JWT is never placed on the WebSocket URL.
 @Observable
 @MainActor
 final class ConsoleSession {
@@ -10,6 +11,7 @@ final class ConsoleSession {
 
     private var client: APIClient?
     private var workloadID = ""
+    private var device: HomeDeviceHealthSnapshot?
     private var state = ""
     private var stopped = true
     private var attempt = 0
@@ -26,10 +28,16 @@ final class ConsoleSession {
     var onBytes: ((ArraySlice<UInt8>) -> Void)?
     var onText: ((String) -> Void)?
 
-    func start(client: APIClient, workloadID: String, state: String) {
+    func start(
+        client: APIClient,
+        workloadID: String,
+        state: String,
+        device: HomeDeviceHealthSnapshot? = nil,
+    ) {
         stop()
         self.client = client
         self.workloadID = workloadID
+        self.device = device
         self.state = state
         stopped = false
         attempt = 0
@@ -83,14 +91,20 @@ final class ConsoleSession {
             guard let client else { return }
             do {
                 status = "Requesting ticket…"
-                let ticket = try await client.createWSTicket(vmID: workloadID)
+                let tickets = try await client.mintStreamTickets(vmID: workloadID, on: device)
                 guard canOpenStream(), !Task.isCancelled else {
                     if !WorkloadStream.isLive(state) {
                         status = WorkloadStreamAccess.notLive.reason
                     }
                     return
                 }
-                let url = try StreamURL.console(base: client.baseURL, workloadID: workloadID, ticket: ticket)
+                let url = try StreamURL.console(
+                    base: client.baseURL,
+                    workloadID: workloadID,
+                    ticket: tickets.ticket,
+                    device: device,
+                    session: tickets.session,
+                )
                 status = "Connecting…"
                 let task = urlSession.webSocketTask(with: url)
                 socket = task
