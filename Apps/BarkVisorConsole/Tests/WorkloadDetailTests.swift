@@ -103,6 +103,7 @@ struct WorkloadDetailTests {
         #expect(!GuestInfoRefresh.shouldRetry(guest: ready, running: true))
         #expect(!GuestInfoRefresh.shouldRetry(guest: nil, running: false))
         #expect(!GuestInfoRefresh.shouldRetry(guest: missing, running: false))
+        #expect(!GuestInfoRefresh.shouldRetry(guest: nil, running: true, reachable: false))
     }
 
     private func snapshot(
