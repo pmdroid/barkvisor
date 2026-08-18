@@ -152,6 +152,7 @@ public actor MetricsCollector {
         prevDiskRead.removeValue(forKey: vmID)
         prevDiskWrite.removeValue(forKey: vmID)
         prevCPUTime.removeValue(forKey: vmID)
+        GuestListeningPorts.clearAttempt(vmID: vmID)
 
         // Remove guest info from DB
         do {

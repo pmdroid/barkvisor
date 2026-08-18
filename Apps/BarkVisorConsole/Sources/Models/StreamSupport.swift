@@ -73,6 +73,12 @@ enum GuestInfoRefresh {
     static func shouldRetry(guest: GuestInfo?, running: Bool, reachable: Bool = true) -> Bool {
         reachable && running && guest == nil
     }
+
+    /// Keep polling while running so listening ports can appear after the first snapshot.
+    static func pollIntervalSeconds(guest: GuestInfo?, running: Bool, reachable: Bool = true) -> Double? {
+        guard reachable, running else { return nil }
+        return shouldRetry(guest: guest, running: running, reachable: reachable) ? 5 : 30
+    }
 }
 
 enum StreamReconnect {

@@ -172,6 +172,15 @@ struct DatabaseMigrationTests {
         }
     }
 
+    @Test func `m008 adds listening port columns on guest_info`() throws {
+        let queue = try migratedQueue()
+        try queue.read { db in
+            let columns = try db.columns(in: "guest_info").map(\.name)
+            #expect(columns.contains("listeningPorts"))
+            #expect(columns.contains("portsCollectedAt"))
+        }
+    }
+
     @Test func `m006 adds sha256 column on images`() throws {
         let queue = try migratedQueue()
         try queue.read { db in

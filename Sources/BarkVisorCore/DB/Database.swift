@@ -89,6 +89,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M007_RepairOrphanAuditFKs.identifier) { db in
             try M007_RepairOrphanAuditFKs.migrate(db)
         }
+        migrator.registerMigration(M008_GuestListeningPorts.identifier) { db in
+            try M008_GuestListeningPorts.migrate(db)
+        }
     }
 }
 
