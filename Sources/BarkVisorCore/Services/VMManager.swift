@@ -9,6 +9,8 @@ public struct RunningVM: @unchecked Sendable {
     public let qmpSocketPath: String
     public let qmpEventSocketPath: String // dedicated socket for persistent event listening
     public let swtpmProcess: Process?
+    /// PID of swtpm when this VM was adopted (`process` / `swtpmProcess` are nil).
+    public let swtpmPid: Int32?
     public let reconnected: Bool // true = adopted from previous app session
 
     public init(
@@ -20,6 +22,7 @@ public struct RunningVM: @unchecked Sendable {
         qmpEventSocketPath: String,
         swtpmProcess: Process?,
         reconnected: Bool,
+        swtpmPid: Int32? = nil,
     ) {
         self.process = process
         self.pid = pid
@@ -29,6 +32,37 @@ public struct RunningVM: @unchecked Sendable {
         self.qmpEventSocketPath = qmpEventSocketPath
         self.swtpmProcess = swtpmProcess
         self.reconnected = reconnected
+        if let swtpmPid, swtpmPid > 0 {
+            self.swtpmPid = swtpmPid
+        } else if let swtpmProcess {
+            self.swtpmPid = swtpmProcess.processIdentifier
+        } else {
+            self.swtpmPid = nil
+        }
+    }
+}
+
+/// QEMU + optional swtpm PIDs written as two lines under `pids/`.
+public struct VMPidFile: Equatable, Sendable {
+    public let qemuPid: Int32
+    public let swtpmPid: Int32?
+
+    public init(qemuPid: Int32, swtpmPid: Int32?) {
+        self.qemuPid = qemuPid
+        self.swtpmPid = swtpmPid
+    }
+
+    public static func parse(_ content: String) -> VMPidFile? {
+        let lines = content.split(whereSeparator: \.isNewline).compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        guard let first = lines.first, let qemu = Int32(first), qemu > 0 else { return nil }
+        var swtpm: Int32?
+        if lines.count > 1, let second = Int32(lines[1]), second > 0 {
+            swtpm = second
+        }
+        return VMPidFile(qemuPid: qemu, swtpmPid: swtpm)
     }
 }
 

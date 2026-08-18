@@ -48,10 +48,41 @@ struct DaemonRestartIsolationTests {
         let text = try Self.readRepoFile("Resources/barkvisor.service")
         #expect(text.contains("KillMode=process"))
         #expect(text.contains("BARKVISOR_SOCKET_DIR=/var/run/barkvisor"))
+        #expect(text.contains("RuntimeDirectory=barkvisor"))
+        #expect(text.contains("RuntimeDirectoryPreserve=yes"))
         #expect(!text.contains("KillMode=control-group"))
         let packaged = try Self.readRepoFile("packaging/linux/barkvisor.service")
         #expect(packaged.contains("KillMode=process"))
         #expect(packaged.contains("BARKVISOR_SOCKET_DIR=/var/run/barkvisor"))
+        #expect(packaged.contains("RuntimeDirectory=barkvisor"))
+        #expect(packaged.contains("RuntimeDirectoryPreserve=yes"))
+    }
+
+    @Test func `pid file parses qemu and swtpm lines`() {
+        let both = VMPidFile.parse("1234\n5678\n")
+        #expect(both?.qemuPid == 1_234)
+        #expect(both?.swtpmPid == 5_678)
+        let qemuOnly = VMPidFile.parse("90\n-1\n")
+        #expect(qemuOnly?.qemuPid == 90)
+        #expect(qemuOnly?.swtpmPid == nil)
+        #expect(VMPidFile.parse("not-a-pid") == nil)
+        #expect(VMPidFile.parse("") == nil)
+    }
+
+    @Test func `reconnected running vm keeps swtpm pid`() {
+        let running = RunningVM(
+            process: nil,
+            pid: 11,
+            serialSocketPath: "/tmp/s",
+            vncSocketPath: "/tmp/v",
+            qmpSocketPath: "/tmp/q",
+            qmpEventSocketPath: "/tmp/e",
+            swtpmProcess: nil,
+            reconnected: true,
+            swtpmPid: 22,
+        )
+        #expect(running.swtpmPid == 22)
+        #expect(running.swtpmProcess == nil)
     }
 
     @Test func `launchd does not reap the process group`() throws {

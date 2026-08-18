@@ -25,18 +25,7 @@ extension VMManager {
                 kill(running.pid, SIGKILL)
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
-            // Also kill swtpm if it's still running
-            if let swtpm = running.swtpmProcess, swtpm.isRunning {
-                swtpm.terminate()
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if swtpm.isRunning {
-                    Log.vm.warning(
-                        "swtpm (PID \(swtpm.processIdentifier)) for VM \(vmID) did not exit after SIGTERM, sending SIGKILL",
-                        vm: vmID,
-                    )
-                    kill(swtpm.processIdentifier, SIGKILL)
-                }
-            }
+            terminateSwtpm(running, vmID: vmID)
             cleanup(vmID: vmID)
 
             // Update DB state (including reconnected VMs that have no terminationHandler)
