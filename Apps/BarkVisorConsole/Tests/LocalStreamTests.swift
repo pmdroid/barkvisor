@@ -94,7 +94,8 @@ struct LocalStreamTests {
         #expect(session.desktopSize.isEmpty)
         #expect(session.status == "disconnected")
         #expect(session.statusLabel == "VNC · disconnected")
-        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(session.pendingScript == nil)
+        #expect(!session.pageReady)
     }
 
     @Test @MainActor func displayControlScriptsTargetGuest() {
@@ -103,6 +104,33 @@ struct LocalStreamTests {
         #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
         session.focusKeyboard()
         #expect(session.pendingScript == "window.focusVNC && window.focusVNC()")
+        session.resetZoom()
+        #expect(session.pendingScript == "window.resetZoom && window.resetZoom()")
+    }
+
+    @Test @MainActor func displayControlScriptsStayQueuedInOrder() {
+        let session = DisplaySession()
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.focusKeyboard()
+        session.resetZoom()
+        #expect(session.consumePendingScript() == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+        #expect(session.consumePendingScript() == "window.focusVNC && window.focusVNC()")
+        #expect(session.consumePendingScript() == "window.resetZoom && window.resetZoom()")
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.pendingScript == nil)
+    }
+
+    @Test @MainActor func displayZoomMessageTogglesFit() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "zoom", "scale": 2])
+        #expect(session.zoomed)
+        session.handleMessage(["type": "zoom", "scale": 1])
+        #expect(!session.zoomed)
+        session.handleMessage(["type": "zoom", "scale": 1.5])
+        #expect(session.zoomed)
+        session.handleMessage(["type": "disconnect"])
+        #expect(!session.zoomed)
     }
 
     @Test @MainActor func displayControlScriptsExecuteOnlyWhenPageReady() {
@@ -121,6 +149,99 @@ struct LocalStreamTests {
         #expect(session.consumePendingScript() == nil)
     }
 
+    @Test @MainActor func displayStopDiscardsQueuedScriptsAndPaste() {
+        let session = DisplaySession()
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.enqueuePaste("leftover-paste")
+        #expect(session.pendingScript != nil)
+        #expect(session.pendingPaste == "leftover-paste")
+
+        session.stop()
+        #expect(!session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        session.pageReady = true
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+    }
+
+    @Test @MainActor func displayStartDiscardsQueuedWorkFromPriorSession() {
+        let session = DisplaySession()
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.enqueuePaste("stale-paste")
+
+        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:9")!, token: nil)
+        session.start(client: client, workloadID: "vm-1", state: "running")
+        #expect(!session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        session.pageReady = true
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+        session.stop()
+    }
+
+    @Test @MainActor func displayNotLiveDiscardsQueuedWorkAndPageReady() {
+        let session = DisplaySession()
+        session.primeForTest(state: "running")
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.enqueuePaste("stale-paste")
+
+        session.updateState("stopped")
+        #expect(!session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        session.pageReady = true
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+    }
+
+    @Test @MainActor func displayDisconnectDiscardsQueuedWorkThenReconnectStartsClean() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        session.handleMessage(["type": "ready"])
+        session.sendCtrlAltDel()
+        session.enqueuePaste("prior-session-paste")
+        #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+        #expect(session.pendingPaste == "prior-session-paste")
+
+        session.handleMessage(["type": "disconnect"])
+        #expect(!session.connected)
+        #expect(session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+
+        session.enqueueScript("window.startVNC && window.startVNC('ws://example')")
+        #expect(session.consumePendingScript() == "window.startVNC && window.startVNC('ws://example')")
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+        #expect(session.pendingPaste == nil)
+    }
+
+    @Test @MainActor func displayConnectTimeoutDropsLeftoversThenStopsVNC() async {
+        let session = DisplaySession()
+        session.connectTimeoutNanoseconds = 10_000_000
+        session.pageReady = true
+        session.enqueuePaste("stale-paste")
+        session.sendCtrlAltDel()
+        #expect(session.pendingPaste == "stale-paste")
+        #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+
+        await session.waitUntilDisconnected()
+        #expect(session.status == "timed out")
+        #expect(session.pageReady)
+        #expect(session.pendingPaste == nil)
+        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(session.consumePendingPaste() == nil)
+        #expect(session.consumePendingScript() == "window.stopVNC && window.stopVNC()")
+        #expect(session.consumePendingScript() == nil)
+    }
+
     @Test @MainActor func displayDropsTicketWhenWorkloadLeavesLive() {
         let session = DisplaySession()
         session.primeForTest(state: "running")
@@ -130,7 +251,8 @@ struct LocalStreamTests {
         session.updateState("stopped")
         #expect(!session.canOpenStream())
         #expect(session.status == WorkloadStreamAccess.notLive.reason)
-        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(session.pendingScript == nil)
+        #expect(!session.pageReady)
     }
 
     @Test @MainActor func consoleDropsTicketWhenWorkloadLeavesLive() {
@@ -178,5 +300,112 @@ struct LocalStreamTests {
             from: Data(#"{"ticket":"one-shot"}"#.utf8)
         )
         #expect(body.ticket == "one-shot")
+    }
+}
+
+@Suite(.serialized)
+struct DisplayClipboardTests {
+    @Test @MainActor func displayClipboardBuffersGuestText() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        #expect(session.guestClipboard == "guest-copy")
+        #expect(session.clipboardHint == "Guest copy ready — use Copy")
+        session.copyGuestToHost()
+        #expect(HostPasteboard.readString() == "guest-copy")
+        #expect(session.clipboardHint == "Copied from guest")
+    }
+
+    @Test @MainActor func displayClipboardClearsOnDisconnect() {
+        let session = DisplaySession()
+        let sentinel = "pas-220-host-\(UUID().uuidString)"
+        HostPasteboard.writeString(sentinel)
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        session.handleMessage(["type": "disconnect"])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+        session.copyGuestToHost()
+        #expect(HostPasteboard.readString() == sentinel)
+    }
+
+    @Test @MainActor func displayClipboardClearsOnConnect() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "stale-guest"])
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+    }
+
+    @Test @MainActor func displayClipboardClearsOnStop() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        session.stop()
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+    }
+
+    @Test @MainActor func displayClipboardClearsWhenNotLive() {
+        let session = DisplaySession()
+        session.primeForTest(state: "running")
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        session.updateState("stopped")
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+    }
+
+    @Test @MainActor func displayClipboardRejectsOversizedGuestPayload() {
+        let session = DisplaySession()
+        let sentinel = "pas-220-host-\(UUID().uuidString)"
+        HostPasteboard.writeString(sentinel)
+        let oversized = String(repeating: "a", count: HostPasteboard.maxPasteCharacters + 1)
+        session.handleMessage(["type": "clipboard", "text": oversized])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint == "Guest clipboard is too large")
+        session.copyGuestToHost()
+        #expect(HostPasteboard.readString() == sentinel)
+    }
+
+    @Test @MainActor func displayClipboardRejectsOversizedFlagWithoutBody() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "tiny", "oversized": true])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint == "Guest clipboard is too large")
+    }
+
+    @Test @MainActor func displayClipboardAcceptsMaxSizedGuestPayload() {
+        let session = DisplaySession()
+        let text = String(repeating: "b", count: HostPasteboard.maxPasteCharacters)
+        session.handleMessage(["type": "clipboard", "text": text])
+        #expect(session.guestClipboard.count == HostPasteboard.maxPasteCharacters)
+        #expect(session.clipboardHint == "Guest copy ready — use Copy")
+    }
+
+    @Test @MainActor func displayPasteUsesStructuredQueueNotScriptInterpolation() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        HostPasteboard.writeString("line 1\nquote ' \" emoji 🙂")
+        session.pasteFromHost()
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == "line 1\nquote ' \" emoji 🙂")
+        #expect(session.clipboardHint == "Pasted into guest")
+        #expect(session.consumePendingPaste() == nil)
+        session.pageReady = true
+        #expect(session.consumePendingPaste() == "line 1\nquote ' \" emoji 🙂")
+        #expect(session.pendingPaste == nil)
+    }
+
+    @Test @MainActor func displayPasteEmptyClipboardIsHint() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        HostPasteboard.clear()
+        session.pasteFromHost()
+        #expect(session.pendingPaste == nil)
+        #expect(session.clipboardHint == "Clipboard is empty")
+    }
+
+    @Test @MainActor func hostPasteboardRoundTrip() {
+        let token = "pas-220-\(UUID().uuidString)"
+        HostPasteboard.writeString(token)
+        #expect(HostPasteboard.readString() == token)
+        #expect(HostPasteboard.readData() == Data(token.utf8))
     }
 }
