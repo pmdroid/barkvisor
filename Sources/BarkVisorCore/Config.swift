@@ -39,8 +39,26 @@ public struct DBLogger: Sendable {
     }
 }
 
-/// Shared ISO 8601 date formatter — thread-safe, avoids repeated allocation.
-public nonisolated(unsafe) let iso8601 = ISO8601DateFormatter()
+/// Shared ISO 8601 date formatter. `ISO8601DateFormatter` is not thread-safe
+/// (Linux ICU SIGSEGV under parallel Swift Testing).
+public let iso8601 = LockedISO8601Formatter()
+
+public final class LockedISO8601Formatter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let formatter = ISO8601DateFormatter()
+
+    public func string(from date: Date) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.string(from: date)
+    }
+
+    public func date(from string: String) -> Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.date(from: string)
+    }
+}
 
 /// Host `systemUptime` when BarkVisorCore first loaded. Subtracted from later
 /// readings so diagnostics report **daemon** uptime, not host/OS uptime.
