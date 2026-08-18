@@ -157,6 +157,7 @@ else
 # BarkVisor daemon environment (systemd EnvironmentFile)
 BARKVISOR_PORT=7777
 BARKVISOR_DATA_DIR=${DATA_DIR}
+BARKVISOR_SOCKET_DIR=${RUN_DIR}
 # SPA is resolved via Config.frontendDir (${FRONTEND_DST}) when installed under ${PREFIX}.
 # Uncomment to force a custom dist path:
 # BARKVISOR_FRONTEND_DIR=${FRONTEND_DST}
