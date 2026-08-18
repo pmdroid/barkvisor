@@ -144,6 +144,10 @@ struct APIClient: Sendable {
         )
     }
 
+    func guestInfo(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> GuestInfo {
+        try await get(scoped("/vms/\(id)/guest-info", on: device))
+    }
+
     func stats(on device: HomeDeviceHealthSnapshot?) async throws -> SystemStats {
         try await get(scoped("/system/stats", on: device))
     }

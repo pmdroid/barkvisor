@@ -13,6 +13,7 @@ APP_SOURCES = [
     "Sources/App/BarkVisorConsoleApp.swift",
     "Sources/Theme/Theme.swift",
     "Sources/Models/Models.swift",
+    "Sources/Models/StreamSupport.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
     "Sources/Services/AppModel.swift",
@@ -24,11 +25,14 @@ APP_SOURCES = [
     "Sources/Views/HomeView.swift",
     "Sources/Views/DevicesView.swift",
     "Sources/Views/WorkloadsView.swift",
+    "Sources/Views/WorkloadDetailView.swift",
+    "Sources/Views/SerialConsoleView.swift",
+    "Sources/Views/DisplayView.swift",
     "Sources/Views/LibraryView.swift",
     "Sources/Views/SettingsView.swift",
     "Sources/Views/Components/Components.swift",
 ]
-TEST_SOURCES = ["Tests/APIDecodingTests.swift"]
+TEST_SOURCES = ["Tests/APIDecodingTests.swift", "Tests/WorkloadDetailTests.swift"]
 
 
 def uid(name: str) -> str:
@@ -237,7 +241,16 @@ def main() -> None:
     )
     pbx.append(group("App", [child_file("Sources/App/BarkVisorConsoleApp.swift")], "App"))
     pbx.append(group("Theme", [child_file("Sources/Theme/Theme.swift")], "Theme"))
-    pbx.append(group("Models", [child_file("Sources/Models/Models.swift")], "Models"))
+    pbx.append(
+        group(
+            "Models",
+            [
+                child_file("Sources/Models/Models.swift"),
+                child_file("Sources/Models/StreamSupport.swift"),
+            ],
+            "Models",
+        )
+    )
     pbx.append(
         group(
             "Services",
@@ -261,6 +274,9 @@ def main() -> None:
                 child_file("Sources/Views/HomeView.swift"),
                 child_file("Sources/Views/DevicesView.swift"),
                 child_file("Sources/Views/WorkloadsView.swift"),
+                child_file("Sources/Views/WorkloadDetailView.swift"),
+                child_file("Sources/Views/SerialConsoleView.swift"),
+                child_file("Sources/Views/DisplayView.swift"),
                 child_file("Sources/Views/LibraryView.swift"),
                 child_file("Sources/Views/SettingsView.swift"),
                 child_group("Components"),
@@ -280,7 +296,16 @@ def main() -> None:
             "Resources",
         )
     )
-    pbx.append(group("Tests", [child_file("Tests/APIDecodingTests.swift")], "Tests"))
+    pbx.append(
+        group(
+            "Tests",
+            [
+                child_file("Tests/APIDecodingTests.swift"),
+                child_file("Tests/WorkloadDetailTests.swift"),
+            ],
+            "Tests",
+        )
+    )
     pbx.append("/* End PBXGroup section */\n\n/* Begin PBXNativeTarget section */\n")
     pbx.append(
         f"\t\t{uid('target:app')} /* BarkVisorConsole */ = {{\n"
