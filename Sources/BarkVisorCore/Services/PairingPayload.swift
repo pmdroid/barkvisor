@@ -338,17 +338,27 @@ public struct PairingPayload: Sendable, Equatable {
     }
 }
 
-/// Private IPv4 addresses to advertise in a pairing offer (RFC1918 and
-/// CGNAT `100.64.0.0/10`, excluding metadata).
+/// Addresses to advertise in a pairing offer: RFC1918, IPv6 ULA, and
+/// CGNAT `100.64.0.0/10`, excluding metadata. IPv4 is listed first so
+/// the default pick stays a LAN IPv4 when both families are present.
 public enum PairingAddresses {
     public static func advertisedIPv4(
-        from interfaces: [HostInterfaceInfo] = HostInfoService.listInterfaces(),
+        from interfaces: [HostInterfaceInfo] = HostInfoService.listInterfaceAddresses(),
     ) -> [String] {
-        interfaces.compactMap { iface -> String? in
+        var seen = Set<String>()
+        var v4: [String] = []
+        var v6: [String] = []
+        for iface in interfaces {
             let ip = iface.ipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !ip.isEmpty else { return nil }
-            if PairingPayload.isBlockedJoinHost(ip) { return nil }
-            return ip
+            guard !ip.isEmpty else { continue }
+            if PairingPayload.isBlockedJoinHost(ip) { continue }
+            guard seen.insert(ip).inserted else { continue }
+            if ip.contains(":") {
+                v6.append(ip)
+            } else {
+                v4.append(ip)
+            }
         }
+        return v4 + v6
     }
 }

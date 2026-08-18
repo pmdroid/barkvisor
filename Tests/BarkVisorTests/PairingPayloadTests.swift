@@ -160,6 +160,24 @@ struct PairingPayloadTests {
         #expect(PairingAddresses.advertisedIPv4(from: ifaces) == ["192.168.0.4"])
     }
 
+    @Test func `advertised addresses include ULA and drop blocked IPv6`() {
+        let ifaces = [
+            HostInterfaceInfo(name: "lo0", ipAddress: "127.0.0.1"),
+            HostInterfaceInfo(name: "lo0", ipAddress: "::1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "192.168.0.4"),
+            HostInterfaceInfo(name: "en0", ipAddress: "fd12:3456:789a::1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "fe80::1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "fd00:ec2::254"),
+            HostInterfaceInfo(name: "en0", ipAddress: "2001:db8::1"),
+        ]
+        #expect(
+            PairingAddresses.advertisedIPv4(from: ifaces) == [
+                "192.168.0.4",
+                "fd12:3456:789a::1",
+            ],
+        )
+    }
+
     @Test func `join host policy allows CGNAT and carves out metadata`() throws {
         #expect(!PairingPayload.isBlockedJoinHost("100.64.0.1"))
         #expect(!PairingPayload.isBlockedJoinHost("100.127.255.254"))
