@@ -47,7 +47,16 @@ struct DashboardView: View {
                     )
                 } else {
                     ForEach(recent) { workload in
-                        WorkloadRow(workload: workload, compact: true)
+                        NavigationLink {
+                            WorkloadDetailView(
+                                workloadID: workload.id,
+                                deviceID: model.selectedDevice?.hostId ?? "self",
+                                fallbackWorkload: workload,
+                                fallbackDevice: model.selectedDevice ?? .placeholderSelf
+                            )
+                        } label: {
+                            WorkloadRow(workload: workload)
+                        }
                     }
                     Button("Open workloads") {
                         Task { await model.open(.workloads) }

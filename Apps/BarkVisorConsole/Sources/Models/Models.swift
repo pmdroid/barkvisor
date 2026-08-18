@@ -116,6 +116,25 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var isSelf: Bool { role == "self" }
     var isReachable: Bool { reachability == "ok" }
 
+    static var placeholderSelf: HomeDeviceHealthSnapshot {
+        HomeDeviceHealthSnapshot(
+            hostId: "self",
+            role: "self",
+            displayName: "This Device",
+            fingerprint: nil,
+            agentHost: nil,
+            agentPort: DeviceURL.defaultPort,
+            pairedAt: nil,
+            reachability: "ok",
+            reachabilityError: nil,
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil
+        )
+    }
+
     var platformLabel: String {
         if let os = platform?.os, let arch = platform?.arch { return "\(os) · \(arch)" }
         if let os = platform?.os { return os }
@@ -173,6 +192,55 @@ struct Workload: Decodable, Identifiable, Hashable {
     var isRunning: Bool { state == "running" }
     var canStart: Bool { state == "stopped" || state == "error" }
     var canStop: Bool { state == "running" || state == "starting" }
+
+    var guestOSFamily: String {
+        vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
+    }
+}
+
+struct GuestInfo: Decodable, Hashable {
+    var available: Bool
+    var ipAddresses: [String]
+    var osName: String?
+    var osVersion: String?
+    var hostname: String?
+
+    init(
+        available: Bool,
+        ipAddresses: [String],
+        osName: String? = nil,
+        osVersion: String? = nil,
+        hostname: String? = nil
+    ) {
+        self.available = available
+        self.ipAddresses = ipAddresses
+        self.osName = osName
+        self.osVersion = osVersion
+        self.hostname = hostname
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        available = try container.decode(Bool.self, forKey: .available)
+        ipAddresses = try container.decodeIfPresent([String].self, forKey: .ipAddresses) ?? []
+        osName = try container.decodeIfPresent(String.self, forKey: .osName)
+        osVersion = try container.decodeIfPresent(String.self, forKey: .osVersion)
+        hostname = try container.decodeIfPresent(String.self, forKey: .hostname)
+    }
+
+    var osLabel: String? {
+        guard let osName, !osName.isEmpty else { return nil }
+        if let osVersion, !osVersion.isEmpty { return "\(osName) \(osVersion)" }
+        return osName
+    }
+
+    var primaryIP: String? {
+        ipAddresses.first { !$0.isEmpty }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case available, ipAddresses, osName, osVersion, hostname
+    }
 }
 
 struct WorkloadRuntimeStatus: Decodable, Hashable {
@@ -326,11 +394,18 @@ struct EmptyJSON: Encodable {}
 
 // MARK: - Home tab union (reachable Devices only)
 
+enum WorkloadActionKey {
+    static func id(hostID: String?, workloadID: String) -> String {
+        guard let hostID, !hostID.isEmpty else { return workloadID }
+        return "\(hostID)/\(workloadID)"
+    }
+}
+
 struct HomeWorkloadRow: Identifiable, Hashable {
     var workload: Workload
     var device: HomeDeviceHealthSnapshot
 
-    var id: String { "\(device.hostId)/\(workload.id)" }
+    var id: String { WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id) }
 }
 
 struct HomeDeviceLoadError: Identifiable, Hashable {

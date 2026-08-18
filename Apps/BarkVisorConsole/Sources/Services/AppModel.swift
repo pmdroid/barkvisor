@@ -239,6 +239,10 @@ final class AppModel {
         }
     }
 
+    func guestInfo(for workloadID: String, on device: HomeDeviceHealthSnapshot?) async -> GuestInfo? {
+        await optional { try await requireClient().guestInfo(workloadID, on: device) }
+    }
+
     func refreshHome() async {
         _ = try? await refreshDevices()
         await refreshHomeUnion()
@@ -449,8 +453,7 @@ final class AppModel {
     }
 
     private func actionID(for workload: Workload, explicit device: HomeDeviceHealthSnapshot?) -> String {
-        if let device { return "\(device.hostId)/\(workload.id)" }
-        return workload.id
+        WorkloadActionKey.id(hostID: (device ?? selectedDevice)?.hostId, workloadID: workload.id)
     }
 
     private func refreshAbout() async {
