@@ -341,6 +341,9 @@ final class DisplaySession {
             resetGuestClipboard()
             status = "disconnected"
             waitingForDisconnect = false
+            // Web view stays mounted (pageReady kept). Drop unconsumed
+            // paste/scripts so auto-reconnect cannot replay them.
+            discardQueuedWork(resetPageReady: false)
         case "zoom":
             let scale = zoomScale(payload["scale"])
             zoomed = scale > 1.001
