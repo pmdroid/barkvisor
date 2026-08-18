@@ -81,18 +81,18 @@ describe('editHome (PAS-203)', () => {
     expect(shouldPollDeviceControl(null)).toBe(false)
   })
 
-  test('member tabs are overview, metrics, and logs — never console or VNC', () => {
+  test('member tabs include overview, metrics, logs, and Connect', () => {
     expect(isMemberControlTab('overview')).toBe(true)
     expect(isMemberControlTab('metrics')).toBe(true)
     expect(isMemberControlTab('logs')).toBe(true)
-    expect(isMemberControlTab('console')).toBe(false)
-    expect(isMemberControlTab('vnc')).toBe(false)
+    expect(isMemberControlTab('console')).toBe(true)
+    expect(isMemberControlTab('vnc')).toBe(true)
     expect(memberControlTabAllowed('overview', 'stopped')).toBe(true)
     expect(memberControlTabAllowed('logs', 'stopped')).toBe(true)
     expect(memberControlTabAllowed('metrics', 'running')).toBe(true)
     expect(memberControlTabAllowed('metrics', 'stopped')).toBe(false)
-    expect(memberControlTabAllowed('console', 'running')).toBe(false)
-    expect(memberControlTabAllowed('vnc', 'running')).toBe(false)
+    expect(memberControlTabAllowed('console', 'running')).toBe(true)
+    expect(memberControlTabAllowed('vnc', 'stopped')).toBe(true)
   })
 
   test('member network comes from that Device inventory, not Home', () => {
@@ -127,8 +127,8 @@ describe('editHome (PAS-203)', () => {
     expect(detail).toContain(':device="isMemberDetail ? memberDevice : undefined"')
     expect(detail).toContain('homeWorkloads.attachUSB')
     expect(detail).toContain('homeWorkloads.detachUSB')
-    expect(detail).toContain('!isMemberDetail && tab === \'console\'')
-    expect(detail).toContain('!isMemberDetail && tab === \'vnc\'')
+    expect(detail).toContain("tab === 'console' && showMemberConnect")
+    expect(detail).toContain("tab === 'vnc' && showMemberConnect")
     expect(detail).toContain('usbInventoryFetchPath(memberDevice.value)')
     expect(detail).toContain("api.get('/system/usb-devices')")
     expect(detail).toMatch(/if \(isMemberDetail\.value\) \{[\s\S]*usbInventoryFetchPath/)

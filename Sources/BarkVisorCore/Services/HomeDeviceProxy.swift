@@ -112,6 +112,115 @@ public enum HomeDeviceProxy {
         path == "/api/setup" || path.hasPrefix("/api/setup/")
             || path == "/api/pairing/join" || path.hasPrefix("/api/pairing/join/")
     }
+
+    /// VNC / serial console on a Device. Home tunnels these as WebSocket;
+    /// the HTTP proxy must not wrap them (it strips `Upgrade`).
+    public static func consoleKind(components: [String]) -> HomeConsoleKind? {
+        guard components.count == 3, components[0] == "vms" else { return nil }
+        switch components[2] {
+        case "vnc": return .vnc
+        case "console": return .console
+        default: return nil
+        }
+    }
+
+    public static func consoleKind(apiPath: String) throws -> HomeConsoleKind? {
+        let normalized = try normalizedAPIPath(apiPath)
+        let parts = normalized.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard parts.count == 4, parts[0] == "api" else { return nil }
+        return consoleKind(components: Array(parts.dropFirst()))
+    }
+
+    public static func webSocketURL(from url: URL) throws -> URL {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw BarkVisorError.badRequest("Unable to build Device URL")
+        }
+        switch parts.scheme {
+        case "https":
+            parts.scheme = "wss"
+        case "http":
+            parts.scheme = "ws"
+        case "wss", "ws":
+            break
+        default:
+            throw BarkVisorError.badRequest("Unable to build Device URL")
+        }
+        guard let converted = parts.url else {
+            throw BarkVisorError.badRequest("Unable to build Device URL")
+        }
+        return converted
+    }
+
+    /// Member mTLS (or This Device loopback) URL for VNC / serial console.
+    /// Only the Device ticket is forwarded; Home `session=` stays on Home.
+    public static func consoleTargetURL(_ target: HomeConsoleTarget) throws -> URL {
+        let path = try memberAPIPath(components: ["vms", target.vmID, target.kind.rawValue])
+        let query = forwardedConsoleQuery(target.query)
+        let http: URL
+        if target.isSelf {
+            http = try localURL(port: target.localPort, path: path, query: query)
+        } else {
+            guard let agentHost = target.agentHost, !agentHost.isEmpty else {
+                throw BarkVisorError.badRequest("Device has no reachable address")
+            }
+            http = try memberURL(
+                host: agentHost,
+                port: target.agentPort,
+                path: path,
+                query: query,
+            )
+        }
+        return try webSocketURL(from: http)
+    }
+
+    /// Keep the Device ticket (`ticket=` or noVNC's `token=` rewrite). Drop
+    /// Home `session=` so it is never sent to the member.
+    public static func forwardedConsoleQuery(_ query: String?) -> String? {
+        guard let query, !query.isEmpty else { return nil }
+        var parts = URLComponents()
+        parts.percentEncodedQuery = query
+        let items = parts.queryItems ?? []
+        let ticket = items.first { $0.name.lowercased() == "ticket" }?.value
+            ?? items.first { $0.name.lowercased() == "token" }?.value
+        guard let ticket, !ticket.isEmpty else { return nil }
+        parts.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        return parts.percentEncodedQuery
+    }
+}
+
+/// Display or serial console for a Workload. Raw value is the API path tail.
+public enum HomeConsoleKind: String, Sendable {
+    case vnc
+    case console
+}
+
+/// Where Home (or the agent hop) should open the console WebSocket.
+public struct HomeConsoleTarget: Sendable {
+    public var isSelf: Bool
+    public var localPort: Int
+    public var agentHost: String?
+    public var agentPort: Int
+    public var vmID: String
+    public var kind: HomeConsoleKind
+    public var query: String?
+
+    public init(
+        isSelf: Bool,
+        localPort: Int,
+        agentHost: String?,
+        agentPort: Int,
+        vmID: String,
+        kind: HomeConsoleKind,
+        query: String?,
+    ) {
+        self.isSelf = isSelf
+        self.localPort = localPort
+        self.agentHost = agentHost
+        self.agentPort = agentPort
+        self.vmID = vmID
+        self.kind = kind
+        self.query = query
+    }
 }
 
 /// Outbound request used by the host-API → member mTLS client.

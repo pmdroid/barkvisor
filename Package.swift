@@ -29,31 +29,32 @@ var testDependencies: [Target.Dependency] = [
     .product(name: "NIOPosix", package: "swift-nio"),
     .product(name: "AsyncHTTPClient", package: "async-http-client"),
     .product(name: "JWTKit", package: "jwt-kit"),
+    .product(name: "Vapor", package: "vapor"),
 ]
 
 #if os(macOS)
-coreDependencies.insert("BarkVisorHelperProtocol", at: 0)
-testDependencies.append("BarkVisorHelperProtocol")
+    coreDependencies.insert("BarkVisorHelperProtocol", at: 0)
+    testDependencies.append("BarkVisorHelperProtocol")
 #endif
 
 var packageTargets: [Target] = []
 
 #if os(macOS)
-packageTargets.append(contentsOf: [
-    .target(
-        name: "BarkVisorHelperProtocol",
-        path: "Sources/BarkVisorHelperProtocol",
-    ),
-    .executableTarget(
-        name: "BarkVisorHelper",
-        dependencies: [
-            "BarkVisorHelperProtocol",
-            .product(name: "Logging", package: "swift-log"),
-            .product(name: "SwiftSentry", package: "swift-sentry"),
-        ],
-        path: "Sources/BarkVisorHelper",
-    ),
-])
+    packageTargets.append(contentsOf: [
+        .target(
+            name: "BarkVisorHelperProtocol",
+            path: "Sources/BarkVisorHelperProtocol",
+        ),
+        .executableTarget(
+            name: "BarkVisorHelper",
+            dependencies: [
+                "BarkVisorHelperProtocol",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "SwiftSentry", package: "swift-sentry"),
+            ],
+            path: "Sources/BarkVisorHelper",
+        ),
+    ])
 #endif
 
 packageTargets.append(contentsOf: [

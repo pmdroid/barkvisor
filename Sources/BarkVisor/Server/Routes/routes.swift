@@ -128,6 +128,8 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
+    // JWTAuthMiddleware skips Device `?ticket=` on this path (Bearer / session=).
+    HomeConsoleProxyController().register(app: protected)
 }
 
 /// Public liveness probe (PAS-79). Database failure is 503; other checks are

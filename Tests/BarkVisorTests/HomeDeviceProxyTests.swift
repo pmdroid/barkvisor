@@ -235,6 +235,99 @@ struct HomeDeviceProxyTests {
         #expect(response.status == 200)
         #expect(response.body == Data("ok".utf8))
     }
+
+    @Test func `console path is vnc or serial and not a nested home hop`() throws {
+        #expect(HomeDeviceProxy.consoleKind(components: ["vms", "vm-1", "vnc"]) == .vnc)
+        #expect(HomeDeviceProxy.consoleKind(components: ["vms", "vm-1", "console"]) == .console)
+        #expect(HomeDeviceProxy.consoleKind(components: ["vms", "vm-1", "start"]) == nil)
+        #expect(try HomeDeviceProxy.consoleKind(apiPath: "/api/vms/vm-1/vnc") == .vnc)
+        #expect(try HomeDeviceProxy.consoleKind(apiPath: "/api/vms/vm-1/console") == .console)
+        #expect(try HomeDeviceProxy.consoleKind(apiPath: "/api/auth/ws-ticket") == nil)
+        #expect(
+            try HomeDeviceProxy.memberAPIPath(components: ["vms", "vm-1", "vnc"])
+                == "/api/vms/vm-1/vnc",
+        )
+        #expect(
+            try HomeDeviceProxy.memberAPIPath(components: ["auth", "ws-ticket"])
+                == "/api/auth/ws-ticket",
+        )
+    }
+
+    @Test func `console target URL is ws on this Device and wss on a member`() throws {
+        let local = try HomeDeviceProxy.consoleTargetURL(
+            HomeConsoleTarget(
+                isSelf: true,
+                localPort: 7_777,
+                agentHost: nil,
+                agentPort: 7_778,
+                vmID: "vm-1",
+                kind: .vnc,
+                query: "ticket=abc",
+            ),
+        )
+        #expect(local.scheme == "ws")
+        #expect(local.host == "127.0.0.1")
+        #expect(local.port == 7_777)
+        #expect(local.path == "/api/vms/vm-1/vnc")
+        #expect(local.query == "ticket=abc")
+
+        let member = try HomeDeviceProxy.consoleTargetURL(
+            HomeConsoleTarget(
+                isSelf: false,
+                localPort: 7_777,
+                agentHost: "10.0.0.9",
+                agentPort: 7_778,
+                vmID: "vm-1",
+                kind: .console,
+                query: "ticket=abc&session=home&token=novnc",
+            ),
+        )
+        #expect(member.scheme == "wss")
+        #expect(member.host == "10.0.0.9")
+        #expect(member.port == 7_778)
+        #expect(member.path == "/api/vms/vm-1/console")
+        #expect(member.query == "ticket=abc")
+
+        let rewritten = try HomeDeviceProxy.consoleTargetURL(
+            HomeConsoleTarget(
+                isSelf: true,
+                localPort: 7_777,
+                agentHost: nil,
+                agentPort: 7_778,
+                vmID: "vm-1",
+                kind: .vnc,
+                query: "token=device-ticket&session=home",
+            ),
+        )
+        #expect(rewritten.query == "ticket=device-ticket")
+
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.consoleTargetURL(
+                HomeConsoleTarget(
+                    isSelf: false,
+                    localPort: 7_777,
+                    agentHost: nil,
+                    agentPort: 7_778,
+                    vmID: "vm-1",
+                    kind: .vnc,
+                    query: "ticket=abc",
+                ),
+            )
+        }
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.consoleTargetURL(
+                HomeConsoleTarget(
+                    isSelf: false,
+                    localPort: 7_777,
+                    agentHost: "8.8.8.8",
+                    agentPort: 7_778,
+                    vmID: "vm-1",
+                    kind: .vnc,
+                    query: "ticket=abc",
+                ),
+            )
+        }
+    }
 }
 
 private struct FailingProxyClient: HomeDeviceProxyClient {
