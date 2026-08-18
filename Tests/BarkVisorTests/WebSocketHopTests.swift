@@ -125,6 +125,26 @@ struct WebSocketHopTests {
         #expect(inbound.isClosed)
     }
 
+    @Test func `unix hop splits a 40 KiB read under the 16 KiB WS frame cap`() async throws {
+        let fixture = try await UnixHopFixture.make()
+        defer { fixture.shutdown() }
+        let inbound = FakeHopPeer()
+        let task = Task {
+            await WebSocketHop.run(inbound: inbound, unixSocketPath: fixture.path)
+        }
+        let accepted = try await fixture.takeAccepted()
+        var payload = ByteBufferAllocator().buffer(capacity: 40_000)
+        payload.writeRepeatingByte(0x5A, count: 40_000)
+        accepted.writeAndFlush(payload, promise: nil)
+        try await waitUntil { inbound.sentBinaryByteCount() == 40_000 }
+        let sizes = inbound.sentBinarySizes()
+        #expect(!sizes.isEmpty)
+        #expect(sizes.allSatisfy { $0 <= WebSocketHop.maxBinaryFrameBytes })
+        #expect(sizes.reduce(0, +) == 40_000)
+        inbound.close()
+        await task.value
+    }
+
     @Test func `client close closes the unix socket`() async throws {
         let fixture = try await UnixHopFixture.make()
         defer { fixture.shutdown() }
@@ -298,6 +318,15 @@ private final class FakeHopPeer: WebSocketHopPeer, @unchecked Sendable {
         defer { lock.unlock() }
         return sent.compactMap { frame in
             if case let .binary(buffer) = frame { return String(buffer: buffer) }
+            return nil
+        }
+    }
+
+    func sentBinarySizes() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.compactMap { frame in
+            if case let .binary(buffer) = frame { return buffer.readableBytes }
             return nil
         }
     }

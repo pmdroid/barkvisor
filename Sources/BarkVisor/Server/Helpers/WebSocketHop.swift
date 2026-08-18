@@ -11,6 +11,10 @@ import Vapor
 /// the inbound-closed-before-dial race. WebSocket dials always use
 /// `MultiThreadedEventLoopGroup.singleton`, never the inbound loop.
 enum WebSocketHop {
+    /// websocket-kit clients default to 16 KiB frames. A Tight framebuffer
+    /// read grows past that and the Home hop (NIO client) closes mid-picture.
+    static let maxBinaryFrameBytes = 12_288
+
     static var dialEventLoopGroup: EventLoopGroup {
         MultiThreadedEventLoopGroup.singleton
     }
@@ -317,8 +321,17 @@ final class UnixSocketHopPeer: WebSocketHopPeer, @unchecked Sendable {
             defer { lock.unlock() }
             return self.box
         }()
-        if let box, !box.sendOrBuffer(.binary(buffer)) {
-            close()
+        guard let box else { return }
+        var remaining = buffer
+        while remaining.readableBytes > 0 {
+            let n = min(remaining.readableBytes, WebSocketHop.maxBinaryFrameBytes)
+            guard var slice = remaining.readSlice(length: n) else { break }
+            var owned = ByteBufferAllocator().buffer(capacity: n)
+            owned.writeBuffer(&slice)
+            if !box.sendOrBuffer(.binary(owned)) {
+                close()
+                return
+            }
         }
     }
 
