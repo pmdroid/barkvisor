@@ -25,33 +25,38 @@
     }
 
     window.startVNC = (url) => {
-      if (rfb) {
-        try { rfb.disconnect(); } catch (_) { /* ignore */ }
-        rfb = null;
+      const previous = rfb;
+      rfb = null;
+      if (previous) {
+        try { previous.disconnect(); } catch (_) { /* ignore */ }
       }
+      let mine;
       try {
-        rfb = new RFB(document.getElementById("screen"), url, {
+        mine = new RFB(document.getElementById("screen"), url, {
           credentials: { password: "" }
         });
       } catch (_) {
         post({ type: "disconnect", clean: false });
         return;
       }
-      rfb.scaleViewport = true;
-      rfb.resizeSession = true;
-      rfb.focusOnClick = true;
-      rfb.qualityLevel = 4;
-      rfb.compressionLevel = 2;
-      rfb.addEventListener("connect", () => {
-        const width = rfb._fbWidth || 0;
-        const height = rfb._fbHeight || 0;
+      rfb = mine;
+      mine.scaleViewport = true;
+      mine.resizeSession = true;
+      mine.focusOnClick = true;
+      mine.qualityLevel = 4;
+      mine.compressionLevel = 2;
+      mine.addEventListener("connect", () => {
+        if (rfb !== mine) return;
+        const width = mine._fbWidth || 0;
+        const height = mine._fbHeight || 0;
         post({ type: "connect", width, height });
-        try { rfb.focus(); } catch (_) { /* ignore */ }
+        try { mine.focus(); } catch (_) { /* ignore */ }
       });
-      rfb.addEventListener("disconnect", (event) => {
+      mine.addEventListener("disconnect", (event) => {
+        if (rfb !== mine) return;
         const clean = !!(event && event.detail && event.detail.clean);
-        post({ type: "disconnect", clean });
         rfb = null;
+        post({ type: "disconnect", clean });
       });
     };
 
