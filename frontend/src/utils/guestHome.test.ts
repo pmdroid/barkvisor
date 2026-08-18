@@ -204,6 +204,8 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).toContain('detail-label">IP Address')
     expect(detail).toContain('Listening ports')
     expect(detail).toContain('guestListeningPortHref')
+    expect(detail).toContain('guestIpsReachable')
+    expect(detail).toContain("currentNetwork.value?.mode === 'bridged'")
     expect(detail).not.toContain('!isMemberDetail && vm.state === \'running\' && guestInfo?.available')
   })
 

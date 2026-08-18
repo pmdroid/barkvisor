@@ -54,6 +54,41 @@ describe('guestListeningPorts (PAS-225)', () => {
     }), ['10.0.0.5'])).toBe('http://10.0.0.5:3000')
   })
 
+  test('HTTPS label uses https even when the port is not 443 or 9443', () => {
+    expect(guestListeningPortHref(port({
+      address: '10.0.0.5',
+      port: 8443,
+      label: 'HTTPS',
+    }), ['10.0.0.5'])).toBe('https://10.0.0.5:8443')
+  })
+
+  test('NAT slirp guest IPs are not linked; This Device uses hostfwd localhost', () => {
+    const http = port({ address: '0.0.0.0', port: 80, label: 'HTTP' })
+    const https = port({ address: '0.0.0.0', port: 8443, label: 'HTTPS' })
+    const slirp = ['10.0.2.15']
+    const natThisDevice = {
+      isMember: false,
+      guestIpsReachable: false,
+      portForwards: [
+        { protocol: 'tcp' as const, hostPort: 8080, guestPort: 80 },
+        { protocol: 'tcp' as const, hostPort: 18443, guestPort: 8443 },
+      ],
+    }
+    expect(guestListeningPortHref(http, slirp)).toBeNull()
+    expect(guestListeningPortHref(http, slirp, {
+      isMember: false,
+      guestIpsReachable: false,
+      portForwards: [],
+    })).toBeNull()
+    expect(guestListeningPortHref(http, slirp, natThisDevice)).toBe('http://127.0.0.1:8080')
+    expect(guestListeningPortHref(https, slirp, natThisDevice)).toBe('https://127.0.0.1:18443')
+    expect(guestListeningPortHref(http, slirp, {
+      isMember: true,
+      guestIpsReachable: false,
+      portForwards: natThisDevice.portForwards,
+    })).toBeNull()
+  })
+
   test('SSH is labeled but not a browser URL', () => {
     expect(guestListeningPortHref(port({
       address: '0.0.0.0',
