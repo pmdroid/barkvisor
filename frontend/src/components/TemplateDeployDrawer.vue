@@ -19,7 +19,6 @@ import type {
   TemplateCompatibilityReport,
   CurrentHostCapabilities,
   HomePlacementScoreResponse,
-  SSHKey,
 } from '../api/types'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useImageProgress } from '../composables/useTicketedEventSource'
@@ -37,7 +36,6 @@ import {
   deviceTaskPath,
   deviceVmActionPath,
   isSelfDevice,
-  usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
 import {
   applyRecommendedHostId,
@@ -47,6 +45,7 @@ import {
   PLACEMENT_SCORE_DEBOUNCE_MS,
   scorePlacement,
 } from '../utils/placement'
+import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -71,7 +70,6 @@ let applyingRecommendedHost = false
 let placementAbort: AbortController | null = null
 let placementDebounce: ReturnType<typeof setTimeout> | undefined
 const pickedCaps = ref<CurrentHostCapabilities | null>(null)
-const deviceSSHKeys = ref<SSHKey[]>([])
 const selectedSSHKeyId = ref('')
 
 const selectedDevice = computed(() => {
@@ -213,50 +211,28 @@ async function loadPickedDevice() {
     assignRecommendedHostId(defaultPickedHostId(props.initialHostId, devicesStore.selfDevice?.hostId))
   }
   const device = selectedDevice.value
+  await sshKeyStore.fetchAll().catch(() => {})
+  if (!isCurrentPickedDeviceLoad(seq)) return
+  if (!selectedSSHKeyId.value || !sshKeyStore.keys.some((k) => k.id === selectedSSHKeyId.value)) {
+    selectedSSHKeyId.value = sshKeyStore.defaultKey?.id ?? ''
+  }
   if (!device) {
-    await sshKeyStore.fetchAll()
-    if (!isCurrentPickedDeviceLoad(seq)) return
-    deviceSSHKeys.value = sshKeyStore.keys
-    if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
     pickedCaps.value = null
     return
   }
   if (!canCallDeviceAPI(device)) {
     pickedCaps.value = null
-    deviceSSHKeys.value = []
-    selectedSSHKeyId.value = ''
     bridgeAvailable.value = false
     bridgeChecked.value = true
     return
   }
-  if (usesLocalDeviceInventory(device)) {
-    try {
-      const { data } = await api.get(deviceCapabilitiesPath(device))
-      if (!isCurrentPickedDeviceLoad(seq)) return
-      pickedCaps.value = parseSystemCapabilities(data)
-    } catch {
-      if (!isCurrentPickedDeviceLoad(seq)) return
-      pickedCaps.value = null
-    }
-    await sshKeyStore.fetchAll()
+  try {
+    const { data } = await api.get(deviceCapabilitiesPath(device))
     if (!isCurrentPickedDeviceLoad(seq)) return
-    deviceSSHKeys.value = sshKeyStore.keys
-    if (sshKeyStore.defaultKey) selectedSSHKeyId.value = sshKeyStore.defaultKey.id
-  } else {
-    try {
-      const [capsRes, keysRes] = await Promise.all([
-        api.get(deviceCapabilitiesPath(device)),
-        api.get(devicePath(device, '/ssh-keys')),
-      ])
-      if (!isCurrentPickedDeviceLoad(seq)) return
-      pickedCaps.value = parseSystemCapabilities(capsRes.data)
-      deviceSSHKeys.value = Array.isArray(keysRes.data) ? keysRes.data : []
-      const def = deviceSSHKeys.value.find((k) => k.isDefault)
-      if (def) selectedSSHKeyId.value = def.id
-    } catch {
-      if (!isCurrentPickedDeviceLoad(seq)) return
-      pickedCaps.value = null
-    }
+    pickedCaps.value = parseSystemCapabilities(data)
+  } catch {
+    if (!isCurrentPickedDeviceLoad(seq)) return
+    pickedCaps.value = null
   }
   if (props.template.networkMode === 'bridged' && bridged.value.available && device) {
     try {
@@ -378,9 +354,9 @@ function buildRequest(): DeployTemplateRequest {
     throw new Error("Not in this Device's Library")
   }
   const inputs = { ...inputValues.value }
-  const selectedKey = deviceSSHKeys.value.find(k => k.id === selectedSSHKeyId.value)
+  const selectedKey = sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
   if (selectedKey) {
-    inputs.ssh_keys = selectedKey.publicKey
+    inputs.ssh_keys = authorizedKeyForCloudInit(selectedKey)
   }
   return {
     templateId: resolved.id,
@@ -724,12 +700,12 @@ async function submit() {
             <label>SSH Key</label>
             <AppSelect v-model="selectedSSHKeyId">
               <option value="">None</option>
-              <option v-for="sk in deviceSSHKeys" :key="sk.id" :value="sk.id">
+              <option v-for="sk in sshKeyStore.keys" :key="sk.id" :value="sk.id">
                 {{ sk.name }}
               </option>
             </AppSelect>
-            <div v-if="deviceSSHKeys.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
-              No SSH keys stored yet. Add keys in Settings first.
+            <div v-if="sshKeyStore.keys.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
+              No SSH keys on Home yet. Add keys in Settings first.
             </div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:12px;color:var(--text-dim)">
@@ -787,7 +763,7 @@ async function submit() {
             <div><strong>Memory:</strong> {{ memoryMB }} MB</div>
             <div><strong>Disk:</strong> {{ diskSizeGB }} GB</div>
             <div><strong>Network:</strong> {{ networkModeLabel(template.networkMode) }}</div>
-            <div><strong>SSH Key:</strong> {{ deviceSSHKeys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
+            <div><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
             <div><strong>Image:</strong> {{ compatibility?.resolvedImageSlug || template.imageSlug }}</div>
           </div>
         </div>
