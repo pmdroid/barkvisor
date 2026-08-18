@@ -133,17 +133,35 @@ extension VMManager {
         return path.contains("qemu-system")
     }
 
-    // MARK: - Cleanup
+    public static func isSwtpmProcess(pid: Int32) -> Bool {
+        guard kill(pid, 0) == 0 else { return false }
+        guard let path = PlatformProcess.executablePath(pid: pid) else { return false }
+        return (path as NSString).lastPathComponent.contains("swtpm")
+    }
 
-    public func cleanup(vmID: String) {
-        // Terminate swtpm if we have a reference to it
-        if let swtpm = runningVMs[vmID]?.swtpmProcess, swtpm.isRunning {
+    /// Stop swtpm by Process handle or adopted PID. Guards against PID reuse.
+    public static func terminateSwtpm(pid: Int32, vmID: String) {
+        guard isSwtpmProcess(pid: pid) else { return }
+        kill(pid, SIGTERM)
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if isSwtpmProcess(pid: pid) {
+                Log.vm.warning(
+                    "swtpm (PID \(pid)) for VM \(vmID) did not exit after SIGTERM, sending SIGKILL",
+                    vm: vmID,
+                )
+                kill(pid, SIGKILL)
+            }
+        }
+    }
+
+    public func terminateSwtpm(_ running: RunningVM, vmID: String) {
+        if let swtpm = running.swtpmProcess, swtpm.isRunning {
             swtpm.terminate()
-            // Give swtpm up to 2s to exit, then SIGKILL
             let pid = swtpm.processIdentifier
             Task {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if swtpm.isRunning {
+                if swtpm.isRunning, Self.isSwtpmProcess(pid: pid) {
                     Log.vm.warning(
                         "swtpm (PID \(pid)) for VM \(vmID) did not exit after SIGTERM, sending SIGKILL",
                         vm: vmID,
@@ -151,6 +169,18 @@ extension VMManager {
                     kill(pid, SIGKILL)
                 }
             }
+            return
+        }
+        if let pid = running.swtpmPid {
+            Self.terminateSwtpm(pid: pid, vmID: vmID)
+        }
+    }
+
+    // MARK: - Cleanup
+
+    public func cleanup(vmID: String) {
+        if let running = runningVMs[vmID] {
+            terminateSwtpm(running, vmID: vmID)
         }
         // Remove PID file
         try? FileManager.default.removeItem(at: pidsDir.appendingPathComponent("\(vmID).pid"))
