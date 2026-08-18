@@ -94,7 +94,8 @@ struct LocalStreamTests {
         #expect(session.desktopSize.isEmpty)
         #expect(session.status == "disconnected")
         #expect(session.statusLabel == "VNC · disconnected")
-        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(session.pendingScript == nil)
+        #expect(!session.pageReady)
     }
 
     @Test @MainActor func displayControlScriptsTargetGuest() {
@@ -148,6 +149,75 @@ struct LocalStreamTests {
         #expect(session.consumePendingScript() == nil)
     }
 
+    @Test @MainActor func displayStopDiscardsQueuedScriptsAndPaste() {
+        let session = DisplaySession()
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.enqueuePaste("leftover-paste")
+        #expect(session.pendingScript != nil)
+        #expect(session.pendingPaste == "leftover-paste")
+
+        session.stop()
+        #expect(!session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        session.pageReady = true
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+    }
+
+    @Test @MainActor func displayStartDiscardsQueuedWorkFromPriorSession() {
+        let session = DisplaySession()
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.enqueuePaste("stale-paste")
+
+        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:9")!, token: nil)
+        session.start(client: client, workloadID: "vm-1", state: "running")
+        #expect(!session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        session.pageReady = true
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+        session.stop()
+    }
+
+    @Test @MainActor func displayNotLiveDiscardsQueuedWorkAndPageReady() {
+        let session = DisplaySession()
+        session.primeForTest(state: "running")
+        session.pageReady = true
+        session.sendCtrlAltDel()
+        session.enqueuePaste("stale-paste")
+
+        session.updateState("stopped")
+        #expect(!session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        session.pageReady = true
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+    }
+
+    @Test @MainActor func displayConnectTimeoutDropsLeftoversThenStopsVNC() async {
+        let session = DisplaySession()
+        session.connectTimeoutNanoseconds = 10_000_000
+        session.pageReady = true
+        session.enqueuePaste("stale-paste")
+        session.sendCtrlAltDel()
+        #expect(session.pendingPaste == "stale-paste")
+        #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+
+        await session.waitUntilDisconnected()
+        #expect(session.status == "timed out")
+        #expect(session.pageReady)
+        #expect(session.pendingPaste == nil)
+        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(session.consumePendingPaste() == nil)
+        #expect(session.consumePendingScript() == "window.stopVNC && window.stopVNC()")
+        #expect(session.consumePendingScript() == nil)
+    }
+
     @Test @MainActor func displayDropsTicketWhenWorkloadLeavesLive() {
         let session = DisplaySession()
         session.primeForTest(state: "running")
@@ -157,7 +227,8 @@ struct LocalStreamTests {
         session.updateState("stopped")
         #expect(!session.canOpenStream())
         #expect(session.status == WorkloadStreamAccess.notLive.reason)
-        #expect(session.pendingScript == "window.stopVNC && window.stopVNC()")
+        #expect(session.pendingScript == nil)
+        #expect(!session.pageReady)
     }
 
     @Test @MainActor func consoleDropsTicketWhenWorkloadLeavesLive() {
