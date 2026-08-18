@@ -142,8 +142,20 @@ export function deviceDisksPath(device: DeviceApiTarget): string {
   return devicePath(device, '/disks')
 }
 
+export function deviceDiskPath(device: DeviceApiTarget, diskId: string): string {
+  return `${deviceDisksPath(device)}/${encodeURIComponent(diskId)}`
+}
+
 export function deviceDiskUsagePath(device: DeviceApiTarget, diskId: string): string {
-  return `${deviceDisksPath(device)}/${encodeURIComponent(diskId)}/usage`
+  return `${deviceDiskPath(device, diskId)}/usage`
+}
+
+export function deviceDiskResizePath(device: DeviceApiTarget, diskId: string): string {
+  return `${deviceDiskPath(device, diskId)}/resize`
+}
+
+export function deviceDiskSummaryPath(device: DeviceApiTarget): string {
+  return `${deviceDisksPath(device)}/summary`
 }
 
 export function deviceNetworksPath(device: DeviceApiTarget): string {
