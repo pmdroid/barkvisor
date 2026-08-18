@@ -95,6 +95,11 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
     replaceList(hostId, next)
   }
 
+  function invalidateFetch(hostId: string): void {
+    fetchSeqByHost[hostId] = (fetchSeqByHost[hostId] ?? 0) + 1
+    loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
+  }
+
   function syncSelfNetwork(device: HomeDeviceHealthSnapshot, network: Network): void {
     if (!isSelfDevice(device)) return
     useNetworkStore().applyOne(network)
@@ -181,6 +186,7 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
 
   async function create(device: HomeDeviceHealthSnapshot, body: NetworkWriteBody): Promise<Network> {
     const { data } = await api.post<Network>(deviceNetworksPath(device), body)
+    invalidateFetch(device.hostId)
     replaceOne(device.hostId, data)
     syncSelfNetwork(device, data)
     return data
@@ -192,6 +198,7 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
     body: Partial<NetworkWriteBody>,
   ): Promise<Network> {
     const { data } = await api.patch<Network>(deviceNetworkPath(device, id), body)
+    invalidateFetch(device.hostId)
     replaceOne(device.hostId, data)
     syncSelfNetwork(device, data)
     return data
@@ -199,6 +206,7 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
 
   async function remove(device: HomeDeviceHealthSnapshot, id: string): Promise<void> {
     await api.delete(deviceNetworkPath(device, id))
+    invalidateFetch(device.hostId)
     replaceList(device.hostId, networksFor(device.hostId).filter((row) => row.id !== id))
     syncSelfRemove(device, id)
   }

@@ -273,6 +273,26 @@ describe('deviceNetworks store (PAS-216)', () => {
     expect(store.isLoading('peer-1')).toBe(false)
   })
 
+  test('a stale fetch does not overwrite a create that finished first', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [net({ id: 'nat-2', name: 'Default NAT', mode: 'nat', isDefault: true })]
+    const created = net({ id: 'br-1', name: 'lan', mode: 'bridged', bridge: 'br0' })
+    let resolveOlder!: (value: { data: Network[] }) => void
+    const older = new Promise<{ data: Network[] }>((resolve) => {
+      resolveOlder = resolve
+    })
+    api.get = mock().mockReturnValueOnce(older) as typeof api.get
+    api.post = mock(() => Promise.resolve({ data: created })) as typeof api.post
+    const store = useDeviceNetworksStore()
+    const first = store.fetchFor(peer)
+    await store.create(peer, { name: 'lan', mode: 'bridged', bridge: 'br0' })
+    expect(store.networksFor('peer-1').map((row) => row.id)).toEqual(['br-1'])
+    resolveOlder({ data: listed })
+    await first
+    expect(store.networksFor('peer-1').map((row) => row.id)).toEqual(['br-1'])
+    expect(store.isLoading('peer-1')).toBe(false)
+  })
+
   test('a stale network list does not overwrite a newer fetch', async () => {
     const peer = snapshot({ hostId: 'peer-1', role: 'member' })
     const olderList = [net({ id: 'old', name: 'old', mode: 'nat' })]
