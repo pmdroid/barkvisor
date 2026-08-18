@@ -21,6 +21,21 @@ struct LocalStreamTests {
         #expect(running != other)
         #expect(running.hasSuffix("/live"))
         #expect(stopped.hasSuffix("/down"))
+        let memberLive = WorkloadStream.sessionTaskID(
+            deviceID: "peer",
+            workloadID: "vm-1",
+            state: "running",
+            deviceReachable: true,
+        )
+        let memberDown = WorkloadStream.sessionTaskID(
+            deviceID: "peer",
+            workloadID: "vm-1",
+            state: "running",
+            deviceReachable: false,
+        )
+        #expect(memberLive.hasSuffix("/live"))
+        #expect(memberDown.hasSuffix("/down"))
+        #expect(memberLive != memberDown)
     }
 
     @Test func `using A workload is the same on self and reachable member`() {

@@ -89,7 +89,12 @@ struct DisplayView: View {
                 }
             }
         #endif
-            .task(id: WorkloadStream.sessionTaskID(deviceID: deviceID, workloadID: workloadID, state: workload.state)) {
+            .task(id: WorkloadStream.sessionTaskID(
+                deviceID: deviceID,
+                workloadID: workloadID,
+                state: workload.state,
+                deviceReachable: device.isSelf || device.isReachable,
+            )) {
                 guard let client = model.client, access.allowsOpen else {
                     session.stop()
                     return
