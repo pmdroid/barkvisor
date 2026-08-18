@@ -33,8 +33,8 @@ struct WorkloadDetailView: View {
                         workloadID: workload.id,
                         deviceID: device.hostId,
                         fallbackWorkload: workload,
-                        fallbackDevice: device
-                    )
+                        fallbackDevice: device,
+                    ),
                 )
                 streamRow(
                     title: "Display",
@@ -44,8 +44,8 @@ struct WorkloadDetailView: View {
                         workloadID: workload.id,
                         deviceID: device.hostId,
                         fallbackWorkload: workload,
-                        fallbackDevice: device
-                    )
+                        fallbackDevice: device,
+                    ),
                 )
             }
 
@@ -77,28 +77,28 @@ struct WorkloadDetailView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
-            while !Task.isCancelled {
-                if !device.isReachable { return }
-                guest = await model.guestInfo(for: workload.id, on: device)
-                if !GuestInfoRefresh.shouldRetry(
-                    guest: guest,
-                    running: workload.isRunning,
-                    reachable: device.isReachable
-                ) {
-                    return
+            .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
+                while !Task.isCancelled {
+                    if !device.isReachable { return }
+                    guest = await model.guestInfo(for: workload.id, on: device)
+                    if !GuestInfoRefresh.shouldRetry(
+                        guest: guest,
+                        running: workload.isRunning,
+                        reachable: device.isReachable,
+                    ) {
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(5))
                 }
-                try? await Task.sleep(for: .seconds(5))
             }
-        }
-        .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {
-            Button("Force Stop", role: .destructive) {
-                Task { await model.stopWorkload(workload, force: true, on: device) }
+            .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {
+                Button("Force Stop", role: .destructive) {
+                    Task { await model.stopWorkload(workload, force: true, on: device) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The guest will not shut down cleanly.")
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The guest will not shut down cleanly.")
-        }
     }
 
     private var workload: Workload {
@@ -116,7 +116,7 @@ struct WorkloadDetailView: View {
     }
 
     private var access: WorkloadStreamAccess {
-        WorkloadStreamAccess.resolve(isSelfDevice: device.isSelf, state: workload.state)
+        WorkloadStreamAccess.resolve(device: device, state: workload.state)
     }
 
     private var busy: Bool {
@@ -125,11 +125,11 @@ struct WorkloadDetailView: View {
     }
 
     @ViewBuilder
-    private func streamRow<Destination: View>(
+    private func streamRow(
         title: String,
         subtitle: String,
         systemImage: String,
-        destination: Destination
+        destination: some View,
     ) -> some View {
         if access.allowsOpen {
             NavigationLink {
@@ -168,7 +168,7 @@ extension WorkloadDetailView {
             workloadID: row.workload.id,
             deviceID: row.device.hostId,
             fallbackWorkload: row.workload,
-            fallbackDevice: row.device
+            fallbackDevice: row.device,
         )
     }
 }

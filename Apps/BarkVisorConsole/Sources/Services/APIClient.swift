@@ -20,19 +20,13 @@ enum APIError: LocalizedError, Equatable {
     }
 }
 
-struct APIClient: Sendable {
+struct APIClient {
     var baseURL: URL
     var token: String?
 
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        return decoder
-    }()
+    private static let decoder: JSONDecoder = .init()
 
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        return encoder
-    }()
+    private static let encoder: JSONEncoder = .init()
 
     /// Device-scoped Device APIs (VMs, metrics, start/stop).
     /// `self` stays on `/api/...`. Members go through `/api/home/devices/{id}/v1/...`.
@@ -45,20 +39,20 @@ struct APIClient: Sendable {
     func get<T: Decodable>(
         _ path: String,
         query: [URLQueryItem] = [],
-        as type: T.Type = T.self
+        as type: T.Type = T.self,
     ) async throws -> T {
         try await send(method: "GET", path: path, query: query, body: nil as EmptyJSON?, as: type)
     }
 
-    func post<Body: Encodable, T: Decodable>(
+    func post<T: Decodable>(
         _ path: String,
-        body: Body,
-        as type: T.Type = T.self
+        body: some Encodable,
+        as type: T.Type = T.self,
     ) async throws -> T {
         try await send(method: "POST", path: path, body: body, as: type)
     }
 
-    func post<Body: Encodable>(_ path: String, body: Body) async throws {
+    func post(_ path: String, body: some Encodable) async throws {
         let _: DiscardBody = try await send(method: "POST", path: path, body: body, as: DiscardBody.self)
     }
 
@@ -66,12 +60,12 @@ struct APIClient: Sendable {
         let _: DiscardBody = try await send(method: "DELETE", path: path, body: nil as EmptyJSON?, as: DiscardBody.self)
     }
 
-    func send<Body: Encodable, T: Decodable>(
+    func send<T: Decodable>(
         method: String,
         path: String,
         query: [URLQueryItem] = [],
-        body: Body?,
-        as _: T.Type
+        body: (some Encodable)?,
+        as _: T.Type,
     ) async throws -> T {
         var request = try makeRequest(method: method, path: path, query: query)
         if let body {
@@ -109,25 +103,42 @@ struct APIClient: Sendable {
             platform: about.map { HomeDevicePlatformSummary(os: $0.platform, arch: $0.hostArch) },
             resources: nil,
             workloadCount: nil,
-            healthCounts: nil
+            healthCounts: nil,
         )
     }
 
     func login(username: String, password: String) async throws -> String {
         let response: LoginResponse = try await post(
             "/api/auth/login",
-            body: LoginRequest(username: username, password: password)
+            body: LoginRequest(username: username, password: password),
         )
         return response.token
     }
 
     /// Single-use ticket for WebSocket query params. The session JWT stays on this POST.
-    func createWSTicket(vmID: String) async throws -> String {
+    /// Members mint on the owning Device (`/api/home/devices/{id}/v1/auth/ws-ticket`).
+    func createWSTicket(vmID: String, on device: HomeDeviceHealthSnapshot? = nil) async throws -> String {
         let response: WSTicketResponse = try await post(
-            "/api/auth/ws-ticket",
-            body: WSTicketRequest(vmID: vmID)
+            scoped("/auth/ws-ticket", on: device),
+            body: WSTicketRequest(vmID: vmID),
         )
         return response.ticket
+    }
+
+    /// Home-minted `session=` so the WKWebView tunnel can auth without an Authorization header.
+    func createHomeSessionTicket(vmID: String) async throws -> String {
+        try await createWSTicket(vmID: vmID, on: nil)
+    }
+
+    func mintStreamTickets(
+        vmID: String,
+        on device: HomeDeviceHealthSnapshot?,
+    ) async throws -> (ticket: String, session: String?) {
+        let ticket = try await createWSTicket(vmID: vmID, on: device)
+        if let device, !device.isSelf {
+            return try await (ticket, createHomeSessionTicket(vmID: vmID))
+        }
+        return (ticket, nil)
     }
 
     func healthReport() async throws -> HomeDeviceHealthReport {
@@ -149,7 +160,7 @@ struct APIClient: Sendable {
     func stopWorkload(_ id: String, force: Bool, on device: HomeDeviceHealthSnapshot?) async throws {
         try await post(
             scoped("/vms/\(id)/stop", on: device),
-            body: WorkloadStopBody(force: force, method: force ? "force" : "acpi")
+            body: WorkloadStopBody(force: force, method: force ? "force" : "acpi"),
         )
     }
 
@@ -231,7 +242,10 @@ struct APIClient: Sendable {
             throw APIError.setupRequired
         }
         guard (200 ..< 300).contains(http.statusCode) else {
-            throw APIError.http(status: http.statusCode, reason: reason(from: data) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
+            throw APIError.http(
+                status: http.statusCode,
+                reason: reason(from: data) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            )
         }
         return (data, http)
     }
@@ -244,11 +258,13 @@ struct APIClient: Sendable {
 /// Used when the caller ignores the response body (204 / empty JSON).
 struct DiscardBody: Decodable {
     init() {}
-    init(from _: Decoder) throws { self.init() }
+    init(from _: Decoder) throws {
+        self.init()
+    }
 }
 
 enum DeviceURL {
-    static let defaultPort = 7777
+    static let defaultPort = 7_777
 
     static var `default`: String {
         "http://192.168.30.1:7777"
@@ -302,7 +318,7 @@ enum HomeDeviceDirectory {
     static func resolution(
         healthStatus: Int?,
         listStatus: Int?,
-        aboutSucceeded: Bool
+        aboutSucceeded: Bool,
     ) throws -> Resolution {
         if healthStatus == nil { return .health }
         guard healthStatus == 404 else {

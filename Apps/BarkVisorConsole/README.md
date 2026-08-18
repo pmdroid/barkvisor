@@ -49,20 +49,20 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List for the selected Device; a row pushes Workload detail |
-| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display open for this Device while the Workload is running or stopping (member stays disabled until PAS-200) |
-| Console | Self-Device serial via SwiftTerm + `URLSessionWebSocketTask` (`POST /api/auth/ws-ticket`, then `/api/vms/{id}/console?ticket=`). Type into the guest. |
-| Display | Self-Device VNC control via bundled noVNC 1.6.0 in `WKWebView` (`/api/vms/{id}/vnc?ticket=`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
+| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
+| Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
+| Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
 | Settings | URL, logout, about (`/api/system/about`), Add Device pairing code |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Self-Device Console and Display stream only while the Workload is `running` or `stopping`. Member Console / Display stay disabled until PAS-200. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket query enters the web view.
+Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Using a Workload (start/stop, Console, Display) matches the Home web UI on This Device and on a reachable member. Create VM is not in this app. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
 
 ## Tests
 
 `APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, and Device URL normalization.
 
-`WorkloadDetailTests` covers guest-info OS/IP decode, vmType fallback, and member Console/Display staying closed.
+`WorkloadDetailTests` covers guest-info OS/IP decode, vmType fallback, and Console/Display opening on a reachable member the same as This Device.
 
 `LocalStreamTests` covers live-state gating, member-stream lockout, reconnect backoff (≤10), VNC control scripts, and ticket-only WebSocket URLs (JWT never in the URL).

@@ -1,6 +1,7 @@
 import Foundation
 
-/// Serial / VNC stay local to this Device. Member Devices wait for PAS-200.
+/// Using a Workload (start/stop, serial, VNC) is the same on This Device and
+/// a reachable member. Create VM is not part of this surface.
 enum WorkloadStream {
     static func isLive(_ state: String) -> Bool {
         state == "running" || state == "stopping"
@@ -15,23 +16,33 @@ enum WorkloadStream {
 
 enum WorkloadStreamAccess: Equatable {
     case available
-    case memberDisabled
+    case deviceUnreachable
     case notLive
 
-    static func resolve(isSelfDevice: Bool, state: String) -> WorkloadStreamAccess {
-        guard isSelfDevice else { return .memberDisabled }
+    static func resolve(
+        isSelfDevice: Bool,
+        deviceReachable: Bool,
+        state: String,
+    ) -> WorkloadStreamAccess {
+        if !isSelfDevice, !deviceReachable { return .deviceUnreachable }
         return WorkloadStream.isLive(state) ? .available : .notLive
     }
 
-    /// Self-Device Console / Display while running or stopping. Member stays closed.
-    var allowsOpen: Bool { self == .available }
+    static func resolve(device: HomeDeviceHealthSnapshot, state: String) -> WorkloadStreamAccess {
+        resolve(isSelfDevice: device.isSelf, deviceReachable: device.isReachable, state: state)
+    }
+
+    /// Console / Display while the Workload is live on This Device or a reachable member.
+    var allowsOpen: Bool {
+        self == .available
+    }
 
     var reason: String {
         switch self {
         case .available:
             return ""
-        case .memberDisabled:
-            return "Console and Display on a member Device are not available yet."
+        case .deviceUnreachable:
+            return "That Device is unreachable."
         case .notLive:
             return "The Workload must be running."
         }
@@ -78,15 +89,58 @@ enum StreamReconnect {
 }
 
 enum StreamURL {
-    static func console(base: URL, workloadID: String, ticket: String) throws -> URL {
-        try websocket(base: base, path: "/api/vms/\(workloadID)/console", ticket: ticket)
+    static func console(
+        base: URL,
+        workloadID: String,
+        ticket: String,
+        device: HomeDeviceHealthSnapshot? = nil,
+        session: String? = nil,
+    ) throws -> URL {
+        try websocket(
+            base: base,
+            path: path(kind: "console", workloadID: workloadID, device: device),
+            ticket: ticket,
+            session: session,
+        )
     }
 
-    static func vnc(base: URL, workloadID: String, ticket: String) throws -> URL {
-        try websocket(base: base, path: "/api/vms/\(workloadID)/vnc", ticket: ticket)
+    static func vnc(
+        base: URL,
+        workloadID: String,
+        ticket: String,
+        device: HomeDeviceHealthSnapshot? = nil,
+        session: String? = nil,
+    ) throws -> URL {
+        try websocket(
+            base: base,
+            path: path(kind: "vnc", workloadID: workloadID, device: device),
+            ticket: ticket,
+            session: session,
+        )
     }
 
-    static func websocket(base: URL, path: String, ticket: String) throws -> URL {
+    /// Same mapping as the SPA: self `/api/vms/:id/{kind}`, member Home tunnel.
+    static func path(
+        kind: String,
+        workloadID: String,
+        device: HomeDeviceHealthSnapshot?,
+    ) -> String {
+        if let device, !device.isSelf {
+            let host = device.hostId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                ?? device.hostId
+            let vm = workloadID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                ?? workloadID
+            return "/api/home/devices/\(host)/v1/vms/\(vm)/\(kind)"
+        }
+        return "/api/vms/\(workloadID)/\(kind)"
+    }
+
+    static func websocket(
+        base: URL,
+        path: String,
+        ticket: String,
+        session: String? = nil,
+    ) throws -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL
         }
@@ -98,7 +152,11 @@ enum StreamURL {
         let prefix = components.path.hasSuffix("/") ? String(components.path.dropLast()) : components.path
         let trimmed = path.hasPrefix("/") ? path : "/\(path)"
         components.path = prefix + trimmed
-        components.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        var items = [URLQueryItem(name: "ticket", value: ticket)]
+        if let session, !session.isEmpty {
+            items.append(URLQueryItem(name: "session", value: session))
+        }
+        components.queryItems = items
         components.fragment = nil
         guard let url = components.url else { throw APIError.invalidURL }
         return url
