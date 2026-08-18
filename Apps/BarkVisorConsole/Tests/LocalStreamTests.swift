@@ -199,6 +199,30 @@ struct LocalStreamTests {
         #expect(session.consumePendingPaste() == nil)
     }
 
+    @Test @MainActor func displayDisconnectDiscardsQueuedWorkThenReconnectStartsClean() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        session.handleMessage(["type": "ready"])
+        session.sendCtrlAltDel()
+        session.enqueuePaste("prior-session-paste")
+        #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
+        #expect(session.pendingPaste == "prior-session-paste")
+
+        session.handleMessage(["type": "disconnect"])
+        #expect(!session.connected)
+        #expect(session.pageReady)
+        #expect(session.pendingScript == nil)
+        #expect(session.pendingPaste == nil)
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+
+        session.enqueueScript("window.startVNC && window.startVNC('ws://example')")
+        #expect(session.consumePendingScript() == "window.startVNC && window.startVNC('ws://example')")
+        #expect(session.consumePendingScript() == nil)
+        #expect(session.consumePendingPaste() == nil)
+        #expect(session.pendingPaste == nil)
+    }
+
     @Test @MainActor func displayConnectTimeoutDropsLeftoversThenStopsVNC() async {
         let session = DisplaySession()
         session.connectTimeoutNanoseconds = 10_000_000
