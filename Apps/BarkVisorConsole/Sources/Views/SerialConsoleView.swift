@@ -1,10 +1,5 @@
 import SwiftTerm
 import SwiftUI
-#if os(iOS)
-import UIKit
-#else
-import AppKit
-#endif
 
 struct SerialConsoleView: View {
     @Environment(AppModel.self) private var model
@@ -135,10 +130,12 @@ private struct SerialTerminalView: UIViewRepresentable {
         nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
         nonisolated func bell(source _: TerminalView) {}
         nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
-            UIPasteboard.general.string = String(data: content, encoding: .utf8)
+            HostPasteboard.writeString(String(data: content, encoding: .utf8) ?? "")
         }
 
-        nonisolated func clipboardRead(source _: TerminalView) -> Data? { nil }
+        nonisolated func clipboardRead(source _: TerminalView) -> Data? {
+            HostPasteboard.readData()
+        }
         nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
         nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
     }
@@ -192,11 +189,12 @@ private struct SerialTerminalView: NSViewRepresentable {
         nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
         nonisolated func bell(source _: TerminalView) {}
         nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(String(data: content, encoding: .utf8) ?? "", forType: .string)
+            HostPasteboard.writeString(String(data: content, encoding: .utf8) ?? "")
         }
 
-        nonisolated func clipboardRead(source _: TerminalView) -> Data? { nil }
+        nonisolated func clipboardRead(source _: TerminalView) -> Data? {
+            HostPasteboard.readData()
+        }
         nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
         nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
     }
