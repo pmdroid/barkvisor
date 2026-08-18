@@ -15,7 +15,9 @@ final class WebSocketPipeBox: @unchecked Sendable {
         case text(String)
     }
 
-    static let defaultMaxPendingBytes = 262_144
+    /// Large enough for a QEMU Tight/RFB framebuffer chunk. 256 KiB closed
+    /// live VNC (PAS-224) as soon as the first update exceeded the cap.
+    static let defaultMaxPendingBytes = 8_388_608
 
     private let lock = NSLock()
     private var remote: (any WebSocketHopPeer)?
