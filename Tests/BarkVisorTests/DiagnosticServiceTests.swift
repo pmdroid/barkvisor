@@ -35,11 +35,16 @@ struct DiagnosticServiceTests {
         let expectedId = UUID()
         try Data(expectedId.uuidString.utf8).write(to: HostIdentity.fileURL(in: dir))
 
+        // Capture around generateBundle: later tar extracts can take tens of
+        // seconds on a loaded Linux runner, so current process uptime is not
+        // a tight stand-in for the value written into the archive.
+        let uptimeBefore = Config.processUptimeSeconds
         let archivePath = try await DiagnosticService.generateBundle(
             vmState: EmptyVMState(),
             dataDir: dir,
             version: "9.9.9-test",
         )
+        let uptimeAfter = Config.processUptimeSeconds
         defer { try? FileManager.default.removeItem(atPath: archivePath) }
 
         #expect(FileManager.default.fileExists(atPath: archivePath))
@@ -88,7 +93,8 @@ struct DiagnosticServiceTests {
         if let reported {
             #expect(reported >= 0)
             #expect(reported <= ProcessInfo.processInfo.systemUptime + 1)
-            #expect(abs(reported - Config.processUptimeSeconds) < 2)
+            #expect(reported >= uptimeBefore - 1)
+            #expect(reported <= uptimeAfter + 1)
         }
     }
 }

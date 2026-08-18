@@ -1,105 +1,289 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { Disk } from '../api/types'
-import { useToastStore } from '../stores/toast'
-import { useVMStore } from '../stores/vms'
-import { useDiskStore } from '../stores/disks'
+import type { HomeDeviceHealthSnapshot, StorageSummary } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
+import { useDevicesStore } from '../stores/devices'
+import { useDeviceDisksStore, type HomeDiskRow } from '../stores/deviceDisks'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import { useDiskStore } from '../stores/disks'
+import { useToastStore } from '../stores/toast'
+import { useVMStore } from '../stores/vms'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { guestResizeCommands } from '../utils/guestAgentInstall'
 import { formatBytes } from '../utils/format'
+import { canCallDeviceAPI, isSelfDevice } from '../utils/homeDeviceApi'
+import { DEVICE_LABEL } from '../utils/terminology'
+import { openWorkloadRow, workloadDetailPath } from '../utils/workloadDetail'
 import { storeToRefs } from 'pinia'
 
 const router = useRouter()
 const toast = useToastStore()
 const vmStore = useVMStore()
 const diskStore = useDiskStore()
+const devicesStore = useDevicesStore()
+const homeDisks = useDeviceDisksStore()
+const homeWorkloads = useDeviceWorkloadsStore()
 const { disks, usages: diskUsages, summary: storageSummary } = storeToRefs(diskStore)
 
 const showCreate = ref(false)
+const formHostId = ref('')
 const newName = ref('')
 const newSizeGB = ref(10)
 const newFormat = ref('qcow2')
 const loading = ref(false)
 const error = ref('')
 
-// Resize
-const resizingDisk = ref<Disk | null>(null)
+const resizingRow = ref<HomeDiskRow | null>(null)
 const resizeSizeGB = ref(0)
 const resizeLoading = ref(false)
 const resizeError = ref('')
 const resizeDone = ref(false)
 
-onMounted(() => {
-  void diskStore.fetchAll({ withUsage: true })
-  void diskStore.fetchSummary()
-  void vmStore.fetchAll()
+const deleteTarget = ref<{ id: string; name: string; hostId: string } | null>(null)
+const deleting = ref(false)
+
+const useHomeUnion = computed(() => devicesStore.devices.length > 0)
+
+const homeRows = computed<HomeDiskRow[]>(() => {
+  if (useHomeUnion.value) return homeDisks.homeRows(devicesStore.devices)
+  return disks.value.map((disk) => ({
+    disk,
+    hostId: devicesStore.selfDevice?.hostId || '',
+    label: '',
+    role: 'self',
+    reachable: true,
+  }))
 })
+
+const pageLoading = computed(() => {
+  if (devicesStore.loading || diskStore.loading) return true
+  return devicesStore.devices.some((device) => homeDisks.isLoading(device.hostId))
+})
+
+const loadErrors = computed(() =>
+  devicesStore.devices
+    .map((device) => homeDisks.errorFor(device.hostId))
+    .filter((message): message is string => Boolean(message)),
+)
+
+type SummaryCard = {
+  hostId: string
+  label: string
+  role: string
+  reachable: boolean
+  summary: StorageSummary
+}
+
+const summaryCards = computed<SummaryCard[]>(() => {
+  if (useHomeUnion.value) return homeDisks.homeSummaries(devicesStore.devices)
+  if (!storageSummary.value) return []
+  return [{
+    hostId: devicesStore.selfDevice?.hostId || '',
+    label: '',
+    role: 'self',
+    reachable: true,
+    summary: storageSummary.value,
+  }]
+})
+
+const formDevice = computed(() => {
+  if (formHostId.value) return devicesStore.deviceByHostId(formHostId.value)
+  return devicesStore.selfDevice
+})
+
+const formDeviceOptions = computed(() =>
+  devicesStore.devices.map((device) => ({
+    value: device.hostId,
+    label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    disabled: !canCallDeviceAPI(device),
+  })),
+)
+
+function rowKey(row: HomeDiskRow): string {
+  return `${row.hostId}:${row.disk.id}`
+}
+
+function canMutate(row: HomeDiskRow): boolean {
+  return row.reachable
+}
+
+function defaultFormHostId(): string {
+  return devicesStore.selfDevice?.hostId
+    || devicesStore.devices.find((device) => canCallDeviceAPI(device))?.hostId
+    || ''
+}
+
+function mutateTarget(hostId: string): HomeDeviceHealthSnapshot | null {
+  return devicesStore.deviceByHostId(hostId)
+    ?? (hostId ? null : devicesStore.selfDevice)
+}
+
+function homeUnionDeviceBlocked(device: HomeDeviceHealthSnapshot | null): boolean {
+  return useHomeUnion.value && (!device || !canCallDeviceAPI(device))
+}
+
+function usageFor(row: HomeDiskRow) {
+  if (useHomeUnion.value) return homeDisks.usageFor(row.hostId, row.disk.id)
+  return diskUsages.value[row.disk.id]
+}
+
+function workloadName(row: HomeDiskRow): string {
+  const vmId = row.disk.vmId
+  if (!vmId) return ''
+  if (useHomeUnion.value) {
+    return homeWorkloads.vmFor(row.hostId, vmId)?.name || `${vmId.slice(0, 8)}...`
+  }
+  return vmStore.vms.find((vm) => vm.id === vmId)?.name || `${vmId.slice(0, 8)}...`
+}
+
+function workloadHref(row: HomeDiskRow): string {
+  if (!row.disk.vmId) return ''
+  return workloadDetailPath({ hostId: row.hostId, role: row.role, vm: { id: row.disk.vmId } })
+}
+
+function openWorkload(row: HomeDiskRow) {
+  if (!row.disk.vmId) return
+  openWorkloadRow((path) => { router.push(path) }, {
+    hostId: row.hostId,
+    role: row.role,
+    vm: { id: row.disk.vmId },
+  })
+}
+
+function barPct(used: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min((used / total) * 100, 100)
+}
+
+function volumeOtherPct(summary: StorageSummary): number {
+  if (summary.volumeTotalBytes <= 0) return 0
+  const other = summary.volumeTotalBytes - summary.volumeAvailableBytes - summary.totalActualBytes
+  return Math.min((Math.max(other, 0) / summary.volumeTotalBytes) * 100, 100)
+}
+
+async function refreshHomeDisks() {
+  await devicesStore.fetchHealth().catch(() => {})
+  if (!useHomeUnion.value) {
+    await Promise.all([
+      diskStore.fetchAll({ withUsage: true }),
+      diskStore.fetchSummary(),
+      vmStore.fetchAll(),
+    ])
+    return
+  }
+  await Promise.all([
+    homeDisks.fetchHomeAll(devicesStore.devices),
+    homeWorkloads.fetchHomeAll(devicesStore.devices),
+  ])
+}
+
+onMounted(() => {
+  void refreshHomeDisks()
+})
+
+function resetForm() {
+  newName.value = ''
+  newSizeGB.value = 10
+  newFormat.value = 'qcow2'
+  error.value = ''
+  formHostId.value = defaultFormHostId()
+}
+
+function openCreate() {
+  resetForm()
+  showCreate.value = true
+}
 
 async function createDisk() {
   error.value = ''
   if (!newName.value.trim()) { error.value = 'Name required'; return }
+  const device = formDevice.value
+  if (homeUnionDeviceBlocked(device)) {
+    error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+    return
+  }
   loading.value = true
   try {
-    await diskStore.create({
+    const body = {
       name: newName.value.trim(),
       sizeGB: newSizeGB.value,
       format: newFormat.value,
-    })
+    }
+    if (useHomeUnion.value && device) {
+      await homeDisks.create(device, body)
+    } else {
+      await diskStore.create(body)
+      await diskStore.fetchAll({ withUsage: true })
+    }
     showCreate.value = false
-    newName.value = ''
-    newFormat.value = 'qcow2'
-    await diskStore.fetchAll({ withUsage: true })
-  } catch (e: any) { error.value = apiErrorMessage(e) }
+    resetForm()
+  } catch (e: unknown) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
 
-const deleteTarget = ref<{ id: string; name: string } | null>(null)
-const deleting = ref(false)
-
-function deleteDisk(id: string, name: string) {
-  deleteTarget.value = { id, name }
+function deleteDisk(row: HomeDiskRow) {
+  deleteTarget.value = { id: row.disk.id, name: row.disk.name, hostId: row.hostId }
 }
 
 async function doDeleteDisk() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await diskStore.remove(deleteTarget.value.id)
-  } catch (e: any) { toast.error(apiErrorMessage(e)) }
+    const device = mutateTarget(deleteTarget.value.hostId)
+    if (homeUnionDeviceBlocked(device)) {
+      toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+      return
+    }
+    if (useHomeUnion.value && device) {
+      await homeDisks.remove(device, deleteTarget.value.id)
+    } else {
+      await diskStore.remove(deleteTarget.value.id)
+    }
+  } catch (e: unknown) { toast.error(apiErrorMessage(e)) }
   finally {
     deleting.value = false
     deleteTarget.value = null
   }
 }
 
-function openResize(disk: Disk) {
-  resizingDisk.value = disk
-  resizeSizeGB.value = Math.ceil(disk.sizeBytes / (1024 * 1024 * 1024)) + 1
+function openResize(row: HomeDiskRow) {
+  resizingRow.value = row
+  resizeSizeGB.value = Math.ceil(row.disk.sizeBytes / (1024 * 1024 * 1024)) + 1
   resizeError.value = ''
   resizeDone.value = false
 }
 
 function closeResize() {
-  resizingDisk.value = null
+  resizingRow.value = null
   resizeDone.value = false
 }
 
 async function resizeDisk() {
-  if (!resizingDisk.value) return
+  if (!resizingRow.value) return
+  const device = mutateTarget(resizingRow.value.hostId)
+  if (homeUnionDeviceBlocked(device)) {
+    resizeError.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+    return
+  }
   resizeError.value = ''
   resizeLoading.value = true
   try {
-    await diskStore.resize(resizingDisk.value.id, resizeSizeGB.value)
+    if (useHomeUnion.value && device) {
+      await homeDisks.resize(device, resizingRow.value.disk.id, resizeSizeGB.value)
+    } else {
+      await diskStore.resize(resizingRow.value.disk.id, resizeSizeGB.value)
+    }
     resizeDone.value = true
-  } catch (e: any) { resizeError.value = apiErrorMessage(e) }
+  } catch (e: unknown) { resizeError.value = apiErrorMessage(e) }
   finally { resizeLoading.value = false }
 }
 
@@ -108,28 +292,41 @@ async function resizeDisk() {
 <template>
   <div class="page-header">
     <h1>Disks</h1>
-    <AppButton variant="primary" icon="plus" @click="showCreate = true">Create Disk</AppButton>
+    <AppButton variant="primary" icon="plus" @click="openCreate">Create Disk</AppButton>
   </div>
 
-  <!-- Storage Summary -->
-  <div v-if="storageSummary" class="storage-summary">
+  <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
+    {{ loadErrors[0] }}
+  </p>
+
+  <div
+    v-for="card in summaryCards"
+    :key="card.hostId || 'local'"
+    class="storage-summary"
+  >
     <div class="storage-summary-header">
       <div>
-        <span class="storage-label">Disk Usage</span>
-        <span class="storage-actual">{{ formatBytes(storageSummary.totalActualBytes) }}</span>
+        <WorkloadDeviceChip
+          v-if="useHomeUnion"
+          :label="card.label"
+          :self="card.role === 'self'"
+          :reachable="card.reachable"
+        />
+        <span class="storage-label" :class="{ 'storage-label-after-chip': useHomeUnion }">Disk Usage</span>
+        <span class="storage-actual">{{ formatBytes(card.summary.totalActualBytes) }}</span>
         <span class="storage-dim"> used on disk</span>
-        <span class="storage-dim"> / {{ formatBytes(storageSummary.totalVirtualBytes) }} provisioned</span>
+        <span class="storage-dim"> / {{ formatBytes(card.summary.totalVirtualBytes) }} provisioned</span>
       </div>
       <div>
         <span class="storage-label">System Volume</span>
-        <span class="storage-actual">{{ formatBytes(storageSummary.volumeTotalBytes - storageSummary.volumeAvailableBytes) }}</span>
-        <span class="storage-dim"> / {{ formatBytes(storageSummary.volumeTotalBytes) }}</span>
-        <span class="storage-dim"> ({{ formatBytes(storageSummary.volumeAvailableBytes) }} free)</span>
+        <span class="storage-actual">{{ formatBytes(card.summary.volumeTotalBytes - card.summary.volumeAvailableBytes) }}</span>
+        <span class="storage-dim"> / {{ formatBytes(card.summary.volumeTotalBytes) }}</span>
+        <span class="storage-dim"> ({{ formatBytes(card.summary.volumeAvailableBytes) }} free)</span>
       </div>
     </div>
     <div class="storage-bar">
-      <div class="storage-bar-vm" :style="{ width: Math.min(storageSummary.totalActualBytes / storageSummary.volumeTotalBytes * 100, 100) + '%' }" />
-      <div class="storage-bar-other" :style="{ width: Math.min(((storageSummary.volumeTotalBytes - storageSummary.volumeAvailableBytes - storageSummary.totalActualBytes) / storageSummary.volumeTotalBytes) * 100, 100) + '%' }" />
+      <div class="storage-bar-vm" :style="{ width: barPct(card.summary.totalActualBytes, card.summary.volumeTotalBytes) + '%' }" />
+      <div class="storage-bar-other" :style="{ width: volumeOtherPct(card.summary) + '%' }" />
     </div>
     <div class="storage-legend">
       <span><span class="legend-dot" style="background:var(--purple)"></span>VM disks</span>
@@ -138,47 +335,71 @@ async function resizeDisk() {
     </div>
   </div>
 
-  <EmptyState v-if="disks.length === 0" icon="disk" title="No disks. Disks are created automatically when you create a VM." />
+  <EmptyState
+    v-if="homeRows.length === 0 && !pageLoading"
+    icon="disk"
+    title="No disks. Disks are created automatically when you create a VM."
+  />
 
-  <DataTable v-else :columns="[
-     { key: 'name', label: 'Name' },
-     { key: 'format', label: 'Format' },
-     { key: 'provisioned', label: 'Provisioned' },
-     { key: 'used', label: 'Used on Disk' },
-     { key: 'vm', label: 'VM' },
-     { key: 'actions', label: '' },
-   ]">
-        <tr v-for="d in disks" :key="d.id">
-          <td style="font-weight:500">{{ d.name }}</td>
-          <td><span class="badge badge-gray">{{ d.format }}</span></td>
-          <td class="mono">{{ formatBytes(d.sizeBytes) }}</td>
-          <td class="mono">
-            <template v-if="diskUsages[d.id]">
-              {{ formatBytes(diskUsages[d.id].actualSizeBytes) }}
-              <div class="usage-bar">
-                <div class="usage-bar-fill" :style="{ width: Math.min(diskUsages[d.id].actualSizeBytes / diskUsages[d.id].virtualSizeBytes * 100, 100) + '%' }" />
-              </div>
-            </template>
-            <span v-else style="color:var(--text-dim)">-</span>
-          </td>
-          <td>
-            <a v-if="d.vmId" href="#" @click.prevent="router.push(`/vms/${d.vmId}`)" style="color:var(--accent);text-decoration:none">
-              {{ vmStore.vms.find(v => v.id === d.vmId)?.name || d.vmId.slice(0,8) + '...' }}
-            </a>
-            <span v-else class="badge badge-gray">Unattached</span>
-          </td>
-          <td style="text-align:right">
-            <div style="display:flex;gap:4px;justify-content:flex-end">
-              <AppButton size="sm" @click="openResize(d)">Resize</AppButton>
-              <AppButton v-if="!d.vmId" size="sm" @click="deleteDisk(d.id, d.name)">Delete</AppButton>
-            </div>
-          </td>
-        </tr>
+  <DataTable v-else-if="homeRows.length > 0" :columns="[
+    { key: 'name', label: 'Name' },
+    { key: 'device', label: 'Device' },
+    { key: 'format', label: 'Format' },
+    { key: 'provisioned', label: 'Provisioned' },
+    { key: 'used', label: 'Used on Disk' },
+    { key: 'vm', label: 'VM' },
+    { key: 'actions', label: '' },
+  ]">
+    <tr v-for="row in homeRows" :key="rowKey(row)">
+      <td style="font-weight:500">{{ row.disk.name }}</td>
+      <td>
+        <WorkloadDeviceChip
+          :label="row.label"
+          :self="row.role === 'self'"
+          :reachable="row.reachable"
+        />
+      </td>
+      <td><span class="badge badge-gray">{{ row.disk.format }}</span></td>
+      <td class="mono">{{ formatBytes(row.disk.sizeBytes) }}</td>
+      <td class="mono">
+        <template v-if="usageFor(row)">
+          {{ formatBytes(usageFor(row)!.actualSizeBytes) }}
+          <div class="usage-bar">
+            <div
+              class="usage-bar-fill"
+              :style="{ width: barPct(usageFor(row)!.actualSizeBytes, usageFor(row)!.virtualSizeBytes) + '%' }"
+            />
+          </div>
+        </template>
+        <span v-else style="color:var(--text-dim)">-</span>
+      </td>
+      <td>
+        <a
+          v-if="row.disk.vmId"
+          :href="workloadHref(row)"
+          @click.prevent="openWorkload(row)"
+          style="color:var(--accent);text-decoration:none"
+        >
+          {{ workloadName(row) }}
+        </a>
+        <span v-else class="badge badge-gray">Unattached</span>
+      </td>
+      <td style="text-align:right">
+        <div v-if="canMutate(row)" style="display:flex;gap:4px;justify-content:flex-end">
+          <AppButton size="sm" @click="openResize(row)">Resize</AppButton>
+          <AppButton v-if="!row.disk.vmId" size="sm" @click="deleteDisk(row)">Delete</AppButton>
+        </div>
+      </td>
+    </tr>
   </DataTable>
 
   <div v-if="showCreate" class="modal-overlay" @click.self="showCreate = false">
     <div class="modal">
       <h2>Create Disk</h2>
+      <div v-if="formDeviceOptions.length > 0" class="form-group">
+        <label>{{ DEVICE_LABEL }}</label>
+        <AppSelect v-model="formHostId" :options="formDeviceOptions" />
+      </div>
       <div class="form-group"><label>Name</label><input v-model="newName" placeholder="data-disk" /></div>
       <div class="form-group"><label>Size (GB)</label><input v-model.number="newSizeGB" type="number" min="1" /></div>
       <div class="form-group">
@@ -196,19 +417,19 @@ async function resizeDisk() {
     </div>
   </div>
 
-  <div v-if="resizingDisk" class="modal-overlay" @click.self="closeResize">
+  <div v-if="resizingRow" class="modal-overlay" @click.self="closeResize">
     <div class="modal" :style="resizeDone ? { maxWidth: '560px' } : {}">
       <h2>{{ resizeDone ? 'Disk Resized' : 'Resize Disk' }}</h2>
 
       <!-- Before resize -->
       <template v-if="!resizeDone">
         <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
-          Resize <strong>{{ resizingDisk.name }}</strong> (currently {{ formatBytes(resizingDisk.sizeBytes) }}).
+          Resize <strong>{{ resizingRow.disk.name }}</strong> (currently {{ formatBytes(resizingRow.disk.sizeBytes) }}).
           Disks can only grow, not shrink.
         </p>
         <div class="form-group">
           <label>New Size (GB)</label>
-          <input v-model.number="resizeSizeGB" type="number" :min="Math.ceil(resizingDisk.sizeBytes / (1024*1024*1024)) + 1" />
+          <input v-model.number="resizeSizeGB" type="number" :min="Math.ceil(resizingRow.disk.sizeBytes / (1024*1024*1024)) + 1" />
         </div>
         <FormError v-if="resizeError" :message="resizeError" />
         <div class="modal-actions">
@@ -217,7 +438,7 @@ async function resizeDisk() {
         </div>
       </template>
 
-      <!-- After resize: show guest commands -->
+      <!-- After resize: show guest commands (PAS-215) -->
       <template v-else>
         <p style="color:var(--green);font-size:13px;margin-bottom:16px">
           The virtual disk has been resized. To use the new space, you need to grow the partition and filesystem inside the guest VM.
@@ -269,6 +490,9 @@ async function resizeDisk() {
   font-weight: 600;
   color: var(--text-secondary);
   margin-right: 8px;
+}
+.storage-label-after-chip {
+  margin-left: 8px;
 }
 .storage-actual {
   font-size: 13px;
