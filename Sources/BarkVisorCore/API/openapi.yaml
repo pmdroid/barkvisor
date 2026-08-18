@@ -2356,6 +2356,10 @@ components:
           type: array
           items:
             type: string
+          description: |
+            Selectable issuer addresses: RFC1918 IPv4, IPv6 ULA, and CGNAT
+            `100.64.0.0/10`. Loopback, link-local, public, and metadata are
+            omitted.
         apiVersion:
           type: integer
 

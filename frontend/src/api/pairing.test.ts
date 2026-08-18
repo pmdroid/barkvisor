@@ -45,6 +45,7 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('pairingSeq')
     expect(settings).toContain('pairingHydrating')
     expect(settings).toContain('isCurrentPairingSeq')
+    expect(settings).toContain('nextPairingLoadSeq')
     expect(settings).toContain('pairingExpiryLabel(pairingOffer.expiresAt, pairingNow)')
     expect(settings).toContain('pairing-steps')
     expect(settings).toContain('CUSTOM_ADVERTISED_HOST')

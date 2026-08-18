@@ -21,7 +21,7 @@ import {
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
-import { isCurrentPairingSeq, pairingExpiryLabel } from '../utils/pairingOffer'
+import { isCurrentPairingSeq, nextPairingLoadSeq, pairingExpiryLabel } from '../utils/pairingOffer'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -92,7 +92,9 @@ watch(pairingOffer, (offer) => {
 })
 
 async function loadPairingCode() {
-  const seq = pairingSeq.value
+  const seq = nextPairingLoadSeq(pairingLoading.value, pairingSeq.value)
+  if (seq == null) return
+  pairingSeq.value = seq
   pairingHydrating.value = true
   try {
     const loaded = await getPairingCode()
