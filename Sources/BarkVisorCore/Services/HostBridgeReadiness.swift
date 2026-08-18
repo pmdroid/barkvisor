@@ -75,11 +75,10 @@ public enum HostBridgeReadinessService {
             }
             let def = LinuxHostNetwork.defaultRouteInterface()
             let enslaved = Set(bridges.flatMap(\.enslaved))
-            let onlyUplink: Bool
-            if let def, !def.isEmpty {
-                onlyUplink = !enslaved.contains(def)
+            let onlyUplink: Bool = if let def, !def.isEmpty {
+                !enslaved.contains(def)
             } else {
-                onlyUplink = false
+                false
             }
             let acl = LinuxHostNetwork.bridgeACLDecision(suggestedBridgeName)
             let hasBridge = !bridges.isEmpty

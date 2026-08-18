@@ -192,6 +192,8 @@ struct APIContractTests {
         #expect(oob.contains("/api/vms/{id}/state"))
         #expect(oob.contains("/api/vms/{id}/console"))
         #expect(oob.contains("/api/vms/{id}/vnc"))
+        #expect(oob.contains("/api/home/devices/{id}/v1/vms/{vmId}/console"))
+        #expect(oob.contains("/api/home/devices/{id}/v1/vms/{vmId}/vnc"))
         #expect(oob.contains("/api/auth/ws-ticket"))
 
         let yaml = try loadSpecYAML()

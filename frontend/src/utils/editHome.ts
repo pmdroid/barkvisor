@@ -73,16 +73,17 @@ export function networksInventoryFetchPath(
   return deviceNetworksPath(device)
 }
 
-/** Member detail may open overview, metrics, and logs. Never console/vnc. */
+/** Member detail may open overview, metrics, logs, and Connect when reachable. */
 export function isMemberControlTab(tab: string): boolean {
   return tab === 'overview' || tab === 'metrics' || tab === 'logs'
+    || tab === 'console' || tab === 'vnc'
 }
 
 export function memberControlTabAllowed(
   tab: string,
   vmState: string | undefined,
 ): boolean {
-  if (tab === 'overview' || tab === 'logs') return true
+  if (tab === 'overview' || tab === 'logs' || tab === 'console' || tab === 'vnc') return true
   if (tab === 'metrics') return vmState === 'running'
   return false
 }

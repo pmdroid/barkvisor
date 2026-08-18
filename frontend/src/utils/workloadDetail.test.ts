@@ -101,5 +101,7 @@ describe('member detail role (PAS-202)', () => {
       /if \(isNotFoundError\(e\)\) \{\s*homeWorkloads\.removeOne[\s\S]*?return/,
     )
     expect(view).toContain('memberLoadError.value = null')
+    expect(view).toContain('watch(showMemberConnect')
+    expect(view).toContain('!memberDevice.value')
   })
 })

@@ -123,6 +123,8 @@ public enum APIContract {
         Route(method: "POST", path: "/api/auth/ws-ticket", stability: .outOfBand),
         Route(method: "GET", path: "/api/vms/{id}/console", stability: .outOfBand),
         Route(method: "GET", path: "/api/vms/{id}/vnc", stability: .outOfBand),
+        Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/console", stability: .outOfBand),
+        Route(method: "GET", path: "/api/home/devices/{id}/v1/vms/{vmId}/vnc", stability: .outOfBand),
     ]
 
     /// Prefixes reserved for later waves — not implemented as routes today.

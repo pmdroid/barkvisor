@@ -42,6 +42,12 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
+        // Home console/VNC: Device `?ticket=` is forwarded. Auth is Bearer or
+        // Home-minted `?session=` — never spend the Device ticket here.
+        if Self.isHomeConsoleTunnel(request) {
+            return try await authenticateHomeTunnel(request, chainingTo: next)
+        }
+
         // Accept ticket from ?ticket= query param (short-lived, single-use)
         if let ticketParam = request.query[String.self, at: "ticket"] {
             if let userInfo = await WebSocketTicketStore.shared.validateTicket(ticketParam) {
@@ -172,6 +178,30 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         return matched
     }
 
+    private static func isHomeConsoleTunnel(_ request: Vapor.Request) -> Bool {
+        let path = request.url.path
+        guard path.contains("/api/home/devices/") else { return false }
+        return path.hasSuffix("/vnc") || path.hasSuffix("/console")
+    }
+
+    private func authenticateHomeTunnel(
+        _ request: Vapor.Request,
+        chainingTo next: any AsyncResponder,
+    ) async throws -> Vapor.Response {
+        if let auth = request.headers.bearerAuthorization {
+            if auth.token.hasPrefix("barkvisor_") {
+                request.authenticatedUser = try await authenticateAPIKey(
+                    token: auth.token,
+                    request: request,
+                )
+            } else {
+                request.authenticatedUser = try await authenticateJWT(token: auth.token)
+            }
+            return try await next.respond(to: request)
+        }
+        return try await HomeTunnelAuthMiddleware(keys: keys).respond(to: request, chainingTo: next)
+    }
+
     private func authenticateJWT(token: String) async throws -> AuthenticatedUser {
         let payload: UserPayload
         do {
@@ -186,5 +216,49 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             authMethod: "jwt",
             apiKeyId: nil,
         )
+    }
+}
+
+/// Home VNC/console tunnel: Bearer JWT or a Home-minted `?session=` ticket
+/// scoped to `:vmId`. Does **not** consume `?ticket=` / `?token=` — those are
+/// the Device ticket (noVNC rewrites `ticket` to `token`). Browser WebSockets
+/// cannot set `Authorization`, so the SPA exchanges the JWT for `session=`.
+struct HomeTunnelAuthMiddleware: AsyncMiddleware {
+    let keys: JWTKeyCollection
+
+    func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
+        -> Vapor.Response {
+        if let auth = request.headers.bearerAuthorization {
+            let payload: UserPayload
+            do {
+                payload = try await keys.verify(auth.token, as: UserPayload.self)
+            } catch {
+                throw Abort(.unauthorized, reason: "Invalid or expired token")
+            }
+            request.authenticatedUser = AuthenticatedUser(
+                userId: payload.sub.value,
+                username: payload.username,
+                authMethod: "jwt",
+                apiKeyId: nil,
+            )
+            return try await next.respond(to: request)
+        }
+        if let session = request.query[String.self, at: "session"], !session.isEmpty {
+            guard let vmID = request.parameters.get("vmId"), !vmID.isEmpty else {
+                throw Abort(.unauthorized, reason: "Missing vm")
+            }
+            guard let userInfo = await WebSocketTicketStore.shared.validateTicket(session, forVMID: vmID)
+            else {
+                throw Abort(.unauthorized, reason: "Invalid or expired session")
+            }
+            request.authenticatedUser = AuthenticatedUser(
+                userId: userInfo.userID,
+                username: userInfo.username,
+                authMethod: "ticket",
+                apiKeyId: nil,
+            )
+            return try await next.respond(to: request)
+        }
+        throw Abort(.unauthorized, reason: "Missing authorization")
     }
 }
