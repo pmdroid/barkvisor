@@ -101,6 +101,16 @@ struct GuestListeningPortsTests {
         )
         #expect(failed.json == json)
         #expect(failed.collectedAt == "t1")
+
+        let reshuffled = #"[{"scope":"network","port":22,"label":"SSH","address":"0.0.0.0","proto":"tcp"}]"#
+        let sameKeys = GuestListeningPorts.persistFields(
+            collected: [ssh],
+            previousJSON: reshuffled,
+            previousCollectedAt: "t1",
+            now: "t2",
+        )
+        #expect(sameKeys.json == reshuffled)
+        #expect(sameKeys.collectedAt == "t1")
     }
 
     @Test func `loopback is never a network scope`() {
@@ -119,5 +129,10 @@ struct GuestListeningPortsTests {
         GuestListeningPorts.markCollected(vmID: id, now: t0)
         #expect(!GuestListeningPorts.shouldCollect(vmID: id, now: t0.addingTimeInterval(10), interval: 30))
         #expect(GuestListeningPorts.shouldCollect(vmID: id, now: t0.addingTimeInterval(31), interval: 30))
+
+        GuestListeningPorts.markCollected(vmID: id, now: t0, succeeded: false)
+        #expect(!GuestListeningPorts.shouldCollect(vmID: id, now: t0.addingTimeInterval(30)))
+        #expect(!GuestListeningPorts.shouldCollect(vmID: id, now: t0.addingTimeInterval(299)))
+        #expect(GuestListeningPorts.shouldCollect(vmID: id, now: t0.addingTimeInterval(301)))
     }
 }

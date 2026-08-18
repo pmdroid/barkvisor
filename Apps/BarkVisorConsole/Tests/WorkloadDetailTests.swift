@@ -154,6 +154,22 @@ struct WorkloadDetailTests {
         #expect(GuestInfoRefresh.pollIntervalSeconds(guest: nil, running: true) == 5)
         #expect(GuestInfoRefresh.pollIntervalSeconds(guest: ready, running: true) == 30)
         #expect(GuestInfoRefresh.pollIntervalSeconds(guest: ready, running: false) == nil)
+        #expect(GuestInfoRefresh.pollIntervalSeconds(guest: ready, running: true, reachable: false) == nil)
+        let live = GuestInfoRefresh.taskID(
+            deviceID: "peer",
+            workloadID: "vm-1",
+            state: "running",
+            reachable: true,
+        )
+        let down = GuestInfoRefresh.taskID(
+            deviceID: "peer",
+            workloadID: "vm-1",
+            state: "running",
+            reachable: false,
+        )
+        #expect(live != down)
+        #expect(live.hasSuffix("/up"))
+        #expect(down.hasSuffix("/down"))
     }
 
     private func snapshot(
