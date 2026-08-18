@@ -79,8 +79,13 @@ struct WorkloadDetailView: View {
         #endif
         .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
             while !Task.isCancelled {
+                if !device.isReachable { return }
                 guest = await model.guestInfo(for: workload.id, on: device)
-                if !GuestInfoRefresh.shouldRetry(guest: guest, running: workload.isRunning) {
+                if !GuestInfoRefresh.shouldRetry(
+                    guest: guest,
+                    running: workload.isRunning,
+                    reachable: device.isReachable
+                ) {
                     return
                 }
                 try? await Task.sleep(for: .seconds(5))
