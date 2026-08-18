@@ -24,6 +24,8 @@ struct HomeConsoleProxyTests {
         let app = try await Application.make(env)
         app.http.server.configuration.hostname = "127.0.0.1"
         app.http.server.configuration.port = 0
+        app.http.server.configuration.supportVersions = [.one]
+        app.http.server.configuration.shutdownTimeout = .seconds(2)
         app.logger.logLevel = .error
         return app
     }
@@ -32,8 +34,20 @@ struct HomeConsoleProxyTests {
         try #require(app.http.server.shared.localAddress?.port)
     }
 
+    /// Do not await a stuck `asyncShutdown` — leftover WS/HTTP can ignore cancellation
+    /// and park the Swift Testing suite for the whole CI job.
     private func stop(_ app: Application) async {
-        try? await app.asyncShutdown()
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            let once = ShutdownOnce(cont)
+            Task {
+                try? await app.asyncShutdown()
+                once.finish()
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                once.finish()
+            }
+        }
     }
 
     @Test func `home checks device ticket uuid shape only`() async throws {
@@ -74,18 +88,22 @@ struct HomeConsoleProxyTests {
         try await app.startup()
         do {
             let port = try boundPort(app)
-            var headers = HTTPHeaders()
-            headers.replaceOrAdd(name: .authorization, value: "Bearer unused")
-            headers.replaceOrAdd(name: .connection, value: "Upgrade")
-            headers.replaceOrAdd(name: .upgrade, value: "websocket")
-            let response = try await app.client.get(
-                URI(
-                    string:
-                    "http://127.0.0.1:\(port)/api/home/devices/peer-1/v1/vms/vm-1/vnc?ticket=t",
+            // URLSession, not `app.client`: AsyncHTTPClient waits forever for 101
+            // when the request carries Upgrade: websocket.
+            var request = try URLRequest(
+                url: #require(
+                    URL(
+                        string:
+                        "http://127.0.0.1:\(port)/api/home/devices/peer-1/v1/vms/vm-1/vnc?ticket=t",
+                    ),
                 ),
-                headers: headers,
             )
-            #expect(response.status == .upgradeRequired)
+            request.setValue("Bearer unused", forHTTPHeaderField: "Authorization")
+            request.setValue("Upgrade", forHTTPHeaderField: "Connection")
+            request.setValue("websocket", forHTTPHeaderField: "Upgrade")
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let http = try #require(response as? HTTPURLResponse)
+            #expect(http.statusCode == 426)
             await stop(app)
         } catch {
             await stop(app)
@@ -313,6 +331,24 @@ private struct LoopbackWebSocketDialer: HomeWebSocketDialing {
     }
 }
 
+private final class ShutdownOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+    private let continuation: CheckedContinuation<Void, Never>
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume()
+    }
+}
+
 private final class EchoOnce: @unchecked Sendable {
     private let lock = NSLock()
     private var resumed = false
@@ -341,39 +377,35 @@ private func echoReceive(url: String) async throws -> String {
 }
 
 private func echoRoundTrip(url: String, send: EchoSend?) async throws -> String {
-    try await withThrowingTaskGroup(of: String.self) { group in
-        group.addTask {
-            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-                let once = EchoOnce(cont)
-                let future = WebSocket.connect(to: url, on: MultiThreadedEventLoopGroup.singleton) { ws in
-                    ws.onText { ws, text in
-                        once.resume(.success(text))
-                        ws.close(promise: nil)
-                    }
-                    ws.onBinary { ws, buffer in
-                        once.resume(.success(String(buffer: buffer)))
-                        ws.close(promise: nil)
-                    }
-                    if let send {
-                        switch send {
-                        case let .text(text):
-                            ws.send(text)
-                        case let .binary(bytes):
-                            ws.send(raw: bytes, opcode: .binary, fin: true, promise: nil)
-                        }
-                    }
-                }
-                future.whenFailure { error in
-                    once.resume(.failure(error))
+    // Resume the continuation on timeout. A TaskGroup child that parks on an
+    // unresumed CheckedContinuation is not cancelled by a sibling throw, and
+    // that hung the whole `swift test` job on CI.
+    try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+        let once = EchoOnce(cont)
+        let future = WebSocket.connect(to: url, on: MultiThreadedEventLoopGroup.singleton) { ws in
+            ws.onText { ws, text in
+                once.resume(.success(text))
+                ws.close(promise: nil)
+            }
+            ws.onBinary { ws, buffer in
+                once.resume(.success(String(buffer: buffer)))
+                ws.close(promise: nil)
+            }
+            if let send {
+                switch send {
+                case let .text(text):
+                    ws.send(text)
+                case let .binary(bytes):
+                    ws.send(raw: bytes, opcode: .binary, fin: true, promise: nil)
                 }
             }
         }
-        group.addTask {
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-            throw BarkVisorError.timeout("console tunnel echo")
+        future.whenFailure { error in
+            once.resume(.failure(error))
         }
-        let result = try await group.next()
-        group.cancelAll()
-        return try #require(result)
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            once.resume(.failure(BarkVisorError.timeout("console tunnel echo")))
+        }
     }
 }
