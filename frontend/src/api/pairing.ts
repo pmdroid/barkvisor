@@ -20,8 +20,27 @@ export interface PairingIssue {
   caFingerprint: string
   port: number
   agentPort: number
+  advertisedHost?: string
   advertisedHosts: string[]
   apiVersion: number
+}
+
+export const CUSTOM_ADVERTISED_HOST = '__custom__'
+
+/** Host baked into a pairing URI (`host=`). */
+export function pairingHostFromPayload(qrPayload: string): string | null {
+  try {
+    const host = new URL(qrPayload.trim()).searchParams.get('host')
+    return host && host.length > 0 ? host : null
+  } catch {
+    return null
+  }
+}
+
+export function issuedAdvertisedHost(offer: Pick<PairingIssue, 'advertisedHost' | 'qrPayload'>): string | null {
+  const persisted = offer.advertisedHost?.trim()
+  if (persisted) return persisted
+  return pairingHostFromPayload(offer.qrPayload)
 }
 
 export interface PairingJoin {
@@ -52,8 +71,10 @@ export async function joinHome(qrPayload: string): Promise<PairingJoin> {
 }
 
 /** POST /api/pairing/codes — Add a Device on an existing Home. */
-export async function issuePairingCode(): Promise<PairingIssue> {
-  const { data } = await api.post<PairingIssue>('/pairing/codes', {})
+export async function issuePairingCode(advertisedHost?: string): Promise<PairingIssue> {
+  const trimmed = advertisedHost?.trim()
+  const body = trimmed ? { advertisedHost: trimmed } : {}
+  const { data } = await api.post<PairingIssue>('/pairing/codes', body)
   return data
 }
 
