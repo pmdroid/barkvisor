@@ -104,14 +104,10 @@ const vmOptions = computed(() => {
 const displayRows = computed<HomeLogRow[]>(() => {
   const limit = liveTail.value ? LOG_TAIL_CAP : LOG_HISTORY_LIMIT
   if (useHomeUnion.value) {
-    let rows = homeLogs.homeRows(devicesStore.devices, limit)
-    if (deviceFilter.value) {
-      rows = rows.filter((row) => row.hostId === deviceFilter.value)
-    }
-    if (vmFilter.value) {
-      rows = rows.filter((row) => row.entry.vm === vmFilter.value)
-    }
-    return rows
+    return homeLogs.homeRows(devicesStore.devices, limit, {
+      hostId: deviceFilter.value || undefined,
+      vm: vmFilter.value || undefined,
+    })
   }
   const entries = vmFilter.value
     ? store.entries.filter((item) => item.vm === vmFilter.value)

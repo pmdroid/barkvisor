@@ -118,13 +118,18 @@ export const useDeviceLogsStore = defineStore('deviceLogs', () => {
   function homeRows(
     devices: HomeDeviceHealthSnapshot[],
     limit = LOG_HISTORY_LIMIT,
+    filters: { hostId?: string; vm?: string } = {},
   ): HomeLogRow[] {
+    const scoped = filters.hostId
+      ? devices.filter((device) => device.hostId === filters.hostId)
+      : devices
     const rows: HomeLogRow[] = []
-    for (const device of devices) {
+    for (const device of scoped) {
       if (!logsHistoryFetchPath(device)) continue
       const label = deviceDisplayLabel(device)
       const role = isSelfDevice(device) ? 'self' : String(device.role ?? 'member')
       for (const entry of entriesFor(device.hostId)) {
+        if (filters.vm && entry.vm !== filters.vm) continue
         rows.push({
           entry,
           hostId: device.hostId,

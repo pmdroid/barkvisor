@@ -121,6 +121,39 @@ describe('deviceLogs store (PAS-219)', () => {
     expect(LOG_HISTORY_LIMIT).toBe(1000)
   })
 
+  test('device and VM filters apply before the union cap', async () => {
+    const self = snapshot({ hostId: 'box', role: 'self', displayName: 'agentbox' })
+    const peer = snapshot({ hostId: 'orb', role: 'member', displayName: 'barkvisor-u24' })
+    const get = mock((url: string) => {
+      if (url === '/logs') {
+        return Promise.resolve({
+          data: [
+            entry({ ts: '2026-08-17T12:00:05Z', msg: 'self-5', vm: 'vm-loud' }),
+            entry({ ts: '2026-08-17T12:00:04Z', msg: 'self-4', vm: 'vm-loud' }),
+            entry({ ts: '2026-08-17T12:00:03Z', msg: 'self-3', vm: 'vm-loud' }),
+          ],
+        })
+      }
+      if (url === '/home/devices/orb/v1/logs') {
+        return Promise.resolve({
+          data: [entry({ ts: '2026-08-17T11:00:00Z', msg: 'orb-quiet', vm: 'vm-quiet' })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useDeviceLogsStore()
+    await store.fetchHomeAll([self, peer], { limit: 1000 })
+    const devices = [self, peer]
+    expect(store.homeRows(devices, 2).map((item) => item.entry.msg)).toEqual(['self-5', 'self-4'])
+    expect(store.homeRows(devices, 2, { hostId: 'orb' }).map((item) => item.entry.msg)).toEqual([
+      'orb-quiet',
+    ])
+    expect(store.homeRows(devices, 2, { vm: 'vm-quiet' }).map((item) => item.entry.msg)).toEqual([
+      'orb-quiet',
+    ])
+  })
+
   test('an unreachable Device omits live rows after a successful fetch', async () => {
     const peer = snapshot({ hostId: 'orb', role: 'member', displayName: 'barkvisor-u24' })
     const get = mock((url: string) => {
@@ -224,6 +257,8 @@ describe('deviceLogs store (PAS-219)', () => {
     expect(page).toContain('WorkloadDeviceChip')
     expect(page).toContain('All Devices')
     expect(page).toContain('startHomeTail')
+    expect(page).toContain('homeLogs.homeRows(devicesStore.devices, limit, {')
+    expect(page).not.toContain('rows.filter((row) => row.hostId === deviceFilter.value)')
     expect(page).not.toContain('cluster')
     expect(page).not.toContain('/api/logs/stream?tunnel')
     expect(panel).toContain("from '../stores/logs'")
