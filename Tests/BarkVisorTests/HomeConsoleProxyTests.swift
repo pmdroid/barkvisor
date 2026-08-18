@@ -320,7 +320,7 @@ private struct StubHomeUserMiddleware: AsyncMiddleware {
 private struct LoopbackWebSocketDialer: HomeWebSocketDialing {
     func connect(
         url: URL,
-        on eventLoop: EventLoop,
+        on eventLoopGroup: EventLoopGroup,
         configure: @escaping @Sendable (WebSocket) -> Void,
     ) async throws -> WebSocket {
         var rewritten = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -328,7 +328,7 @@ private struct LoopbackWebSocketDialer: HomeWebSocketDialing {
         let target = try #require(rewritten?.url)
         return try await HomeWebSocketDialer.open(
             url: target,
-            on: eventLoop,
+            on: eventLoopGroup,
             configure: configure,
         )
     }

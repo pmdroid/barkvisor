@@ -1,4 +1,5 @@
 import BarkVisorCore
+import NIOPosix
 import Vapor
 
 /// Agent-plane catch-all: forward mTLS `/api/*` to this Device's host API.
@@ -60,7 +61,6 @@ struct AgentLocalProxyController: RouteCollection {
         kind: HomeConsoleKind,
         localPort: Int,
     ) async {
-        let eventLoop = inbound.eventLoop
         let toRemote = WebSocketPipeBox()
         let toClient = WebSocketPipeBox()
         WebSocketRelay.onEventLoop(inbound) {
@@ -88,11 +88,12 @@ struct AgentLocalProxyController: RouteCollection {
             return
         }
         do {
-            let remote = try await Task {
-                try await HomeWebSocketDialer.open(url: url, on: eventLoop) { ws in
-                    WebSocketRelay.capture(from: ws, into: toClient)
-                }
-            }.value
+            let remote = try await HomeWebSocketDialer.open(
+                url: url,
+                on: MultiThreadedEventLoopGroup.singleton,
+            ) { ws in
+                WebSocketRelay.capture(from: ws, into: toClient)
+            }
             if inbound.isClosed {
                 WebSocketRelay.close(remote)
                 return
