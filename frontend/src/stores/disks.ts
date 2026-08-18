@@ -60,18 +60,40 @@ export const useDiskStore = defineStore('disks', () => {
     }
   }
 
+  function applyList(next: Disk[]) {
+    disks.value = next
+  }
+
+  function applyOne(disk: Disk) {
+    const idx = disks.value.findIndex(d => d.id === disk.id)
+    if (idx >= 0) disks.value[idx] = disk
+    else disks.value.push(disk)
+  }
+
+  function applyRemove(id: string) {
+    disks.value = disks.value.filter(d => d.id !== id)
+    const { [id]: _, ...rest } = usages.value
+    usages.value = rest
+  }
+
+  function applyUsage(id: string, usage: DiskUsage) {
+    usages.value = { ...usages.value, [id]: usage }
+  }
+
+  function applySummary(next: StorageSummary) {
+    summary.value = next
+  }
+
   async function create(body: { name: string; sizeGB: number; format: string }): Promise<Disk> {
     const { data } = await api.post<Disk>('/disks', body)
-    disks.value.push(data)
+    applyOne(data)
     await fetchSummary()
     return data
   }
 
   async function remove(id: string) {
     await api.delete(`/disks/${id}`)
-    disks.value = disks.value.filter(d => d.id !== id)
-    const { [id]: _, ...rest } = usages.value
-    usages.value = rest
+    applyRemove(id)
     await fetchSummary()
   }
 
@@ -96,6 +118,11 @@ export const useDiskStore = defineStore('disks', () => {
     fetchAll,
     fetchUsages,
     fetchSummary,
+    applyList,
+    applyOne,
+    applyRemove,
+    applyUsage,
+    applySummary,
     create,
     remove,
     resize,
