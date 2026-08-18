@@ -98,6 +98,9 @@ enum WebSocketHop {
                 }
             }
             if inbound.isClosed || remote.isClosed || toRemote.overflowed || toClient.overflowed {
+                if toRemote.overflowed || toClient.overflowed {
+                    logOverflow(logTarget)
+                }
                 inbound.close()
                 remote.close()
                 return
@@ -106,6 +109,7 @@ enum WebSocketHop {
             toClient.attach(inbound)
             bindCloses(local: inbound, remote: remote)
             if toRemote.overflowed || toClient.overflowed {
+                logOverflow(logTarget)
                 inbound.close()
                 remote.close()
             }
@@ -114,6 +118,11 @@ enum WebSocketHop {
             Log.server.error("Console hop failed\(whereTo): \(error.localizedDescription)")
             inbound.close()
         }
+    }
+
+    private static func logOverflow(_ logTarget: String?) {
+        let whereTo = logTarget.map { " (\($0))" } ?? ""
+        Log.server.error("Console hop overflow\(whereTo): pending frames exceeded the pipe cap")
     }
 
     /// Scheme/host/port/path only — tickets and sessions stay off the log line.

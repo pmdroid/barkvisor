@@ -97,6 +97,20 @@ struct WebSocketHopTests {
         #expect(remote.isClosed)
     }
 
+    @Test func `default cap holds a one-megabyte VNC banner`() async {
+        var buffer = ByteBufferAllocator().buffer(capacity: 1_000_000)
+        buffer.writeRepeatingByte(0x41, count: 1_000_000)
+        let inbound = FakeHopPeer()
+        let remote = FakeHopPeer()
+        await WebSocketHop.run(
+            inbound: inbound,
+            farEnd: BannerHopFarEnd(peer: remote, banner: .binary(buffer)),
+        )
+        #expect(!inbound.isClosed)
+        #expect(!remote.isClosed)
+        #expect(inbound.sentBinaryByteCount() == 1_000_000)
+    }
+
     @Test func `unix socket close closes the client`() async throws {
         let fixture = try await UnixHopFixture.make()
         defer { fixture.shutdown() }
@@ -268,6 +282,15 @@ private final class FakeHopPeer: WebSocketHopPeer, @unchecked Sendable {
         return sent.compactMap { frame in
             if case let .binary(buffer) = frame { return String(buffer: buffer) }
             return nil
+        }
+    }
+
+    func sentBinaryByteCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.reduce(0) { count, frame in
+            if case let .binary(buffer) = frame { return count + buffer.readableBytes }
+            return count
         }
     }
 
