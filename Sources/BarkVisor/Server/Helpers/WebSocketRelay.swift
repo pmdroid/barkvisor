@@ -46,6 +46,7 @@ final class WebSocketPipeBox: @unchecked Sendable {
     }
 
     func sendOrBuffer(_ frame: Frame) -> Bool {
+        let frame = Self.owned(frame)
         let outcome: ((any WebSocketHopPeer)?, Bool) = {
             lock.lock()
             defer { lock.unlock() }
@@ -68,6 +69,18 @@ final class WebSocketPipeBox: @unchecked Sendable {
             return sendLive(frame, on: peer)
         }
         return outcome.1
+    }
+
+    /// NIO may recycle the inbound ByteBuffer after `channelRead` returns.
+    private static func owned(_ frame: Frame) -> Frame {
+        switch frame {
+        case let .binary(buffer):
+            var copy = ByteBufferAllocator().buffer(capacity: buffer.readableBytes)
+            copy.writeImmutableBuffer(buffer)
+            return .binary(copy)
+        case .text:
+            return frame
+        }
     }
 
     /// Reserve against the same cap after attach; release when the write completes.
