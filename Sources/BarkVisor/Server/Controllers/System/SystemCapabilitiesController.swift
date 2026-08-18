@@ -21,6 +21,7 @@ enum SystemCapabilitiesController {
             platform: inv.platform.os,
             supportsBridgedNetworking: inv.virtualization.features.bridgedNetworking,
             supportsManagedBridgeDaemon: inv.virtualization.features.managedBridgeDaemon,
+            supportsHostBridgeManagement: PlatformCapabilities.supportsHostBridgeManagement,
             supportsUSBPassthrough: inv.virtualization.features.usbPassthrough,
             supportsInAppUpdate: inv.virtualization.features.inAppUpdate,
             accelerator: inv.virtualization.accelerator,

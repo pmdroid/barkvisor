@@ -217,6 +217,7 @@ struct ControllerLogicTests {
                 ),
         )
         #expect(caps.supportsManagedBridgeDaemon == PlatformCapabilities.supportsManagedBridgeDaemon)
+        #expect(caps.supportsHostBridgeManagement == PlatformCapabilities.supportsHostBridgeManagement)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
         #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
         #expect(caps.details.count == CapabilityCode.allCases.count)
@@ -227,9 +228,11 @@ struct ControllerLogicTests {
         #expect(caps.inventorySchemaVersion == HostInventoryService.currentSchemaVersion)
         #if os(macOS)
             #expect(caps.supportsManagedBridgeDaemon)
+            #expect(!caps.supportsHostBridgeManagement)
         #elseif os(Linux)
             #expect(caps.supportsBridgedNetworking == HostInventoryService.qemuBridgeHelperPresent())
             #expect(!caps.supportsManagedBridgeDaemon)
+            #expect(caps.supportsHostBridgeManagement)
         #endif
     }
 

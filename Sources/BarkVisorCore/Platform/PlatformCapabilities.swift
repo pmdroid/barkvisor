@@ -34,6 +34,15 @@ public enum PlatformCapabilities {
         #endif
     }
 
+    /// Linux Manage Bridges shows host-bridge setup guidance (no mutation).
+    public static var supportsHostBridgeManagement: Bool {
+        #if os(Linux)
+            true
+        #else
+            false
+        #endif
+    }
+
     /// USB device passthrough into guests (`usb-host` device).
     /// - macOS: ioreg enumeration
     /// - Linux: `lsusb` enumeration (permissions via udev / plugdev)

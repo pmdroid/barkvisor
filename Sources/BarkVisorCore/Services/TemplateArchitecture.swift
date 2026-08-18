@@ -216,6 +216,8 @@ public enum TemplateCompatibility {
             return features.bridgedNetworking
         case CapabilityCode.managedBridgeDaemon.rawValue:
             return features.managedBridgeDaemon
+        case CapabilityCode.hostBridgeManagement.rawValue:
+            return inventory.platform.os.caseInsensitiveCompare("Linux") == .orderedSame
         case CapabilityCode.usbPassthrough.rawValue:
             return features.usbPassthrough
         case CapabilityCode.inAppUpdate.rawValue:

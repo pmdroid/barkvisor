@@ -37,6 +37,58 @@ public enum LinuxHostNetwork {
         return entries.filter { isBridgeInterface($0) }.sorted()
     }
 
+    /// Ports enslaved to `bridge` (`/sys/class/net/<bridge>/brif`).
+    public static func enslavedInterfaces(onBridge name: String) -> [String] {
+        guard isBridgeInterface(name) else { return [] }
+        let path = "\(netClassPath)/\(name)/brif"
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: path) else {
+            return []
+        }
+        return entries.filter { !$0.hasPrefix(".") }.sorted()
+    }
+
+    /// Distro paths for qemu-bridge-helper.
+    public static let qemuBridgeHelperCandidates = [
+        "/usr/lib/qemu/qemu-bridge-helper",
+        "/usr/libexec/qemu-bridge-helper",
+        "/usr/local/libexec/qemu/qemu-bridge-helper",
+    ]
+
+    /// First existing helper path, if any.
+    public static func resolvedQemuBridgeHelperPath() -> String? {
+        qemuBridgeHelperCandidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// True when `path` is a setuid executable (`u+s`).
+    public static func isSetuidExecutable(at path: String) -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let perms = attrs[.posixPermissions] as? NSNumber
+        else {
+            return false
+        }
+        return (perms.uint16Value & 0o4000) != 0
+    }
+
+    /// Interface that owns the default IPv4 route (`/proc/net/route`), if readable.
+    public static func defaultRouteInterface(routeTable: String? = nil) -> String? {
+        let table: String
+        if let routeTable {
+            table = routeTable
+        } else if let contents = try? String(contentsOfFile: "/proc/net/route", encoding: .utf8) {
+            table = contents
+        } else {
+            return nil
+        }
+        for raw in table.split(whereSeparator: \.isNewline).dropFirst() {
+            let cols = raw.split(whereSeparator: \.isWhitespace)
+            guard cols.count >= 2 else { continue }
+            if cols[1] == "00000000" {
+                return String(cols[0])
+            }
+        }
+        return nil
+    }
+
     /// Default qemu-bridge-helper ACL (`allow br0` / `allow all`).
     public static let defaultBridgeACLPath = "/etc/qemu/bridge.conf"
 

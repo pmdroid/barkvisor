@@ -678,6 +678,8 @@ export interface SystemCapabilities {
   supportsBridgedNetworking: boolean
   /** Install/start/stop privileged bridge daemons (macOS only). */
   supportsManagedBridgeDaemon: boolean
+  /** Linux Manage Bridges shows host-bridge setup guidance (no mutation). */
+  supportsHostBridgeManagement?: boolean
   supportsUSBPassthrough: boolean
   supportsInAppUpdate: boolean
   accelerator: 'hvf' | 'kvm' | string
@@ -699,6 +701,22 @@ export interface SystemCapabilities {
   runnableArches?: string[]
   /** Per-mode support (PAS-57 / PAS-67): nat, bridged, isolated. */
   networkModes?: NetworkModeCapability[]
+}
+
+export type HostBridgeSnapshot = {
+  name: string
+  enslaved: string[]
+}
+
+export type HostBridgeReadiness = {
+  helperPath: string | null
+  helperSetuid: boolean
+  suggestedBridge: string
+  aclAllowsSuggested: boolean | null
+  bridges: HostBridgeSnapshot[]
+  defaultRouteInterface: string | null
+  onlyUplink: boolean
+  ready: boolean
 }
 
 /** Alias: capabilities for the host running this BarkVisor process. */
