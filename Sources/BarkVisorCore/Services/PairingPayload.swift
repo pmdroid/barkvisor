@@ -153,9 +153,10 @@ public struct PairingPayload: Sendable, Equatable {
         }
     }
 
-    /// Join egress is LAN-only: RFC1918 IPv4 and IPv6 ULA.
-    /// Loopback, link-local, cloud-metadata, and public/WAN addresses
-    /// are not valid pairing hosts.
+    /// Join egress is private-network only: RFC1918 IPv4, CGNAT
+    /// `100.64.0.0/10`, and IPv6 ULA. Loopback, link-local, cloud-metadata
+    /// (`169.254.169.254`, `100.100.100.200`, `fd00:ec2::/32`), and
+    /// public/WAN addresses are not valid pairing hosts.
     ///
     /// IPv4 is parsed with `inet_aton` so shorthand (`127.1`), decimal,
     /// octal, and hex encodings that normalize to loopback are rejected.
@@ -163,7 +164,7 @@ public struct PairingPayload: Sendable, Equatable {
         let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
         if isBlockedJoinHostname(host) { return true }
         if let octets = parseIPv4Octets(host) {
-            return !isRFC1918(octets)
+            return !isAllowedJoinIPv4(octets)
         }
         if let addr = parseIPv6(host) {
             return isBlockedJoinIPv6(addr)
@@ -268,12 +269,30 @@ public struct PairingPayload: Sendable, Equatable {
         return false
     }
 
+    /// Shared address space used by overlay VPNs (`100.64.0.0/10`).
+    /// `100.100.100.200` (Alibaba metadata) is inside this range and is
+    /// carved out by ``isAllowedJoinIPv4``.
+    private static func isCGNAT(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
+        parts.0 == 100 && (64 ... 127).contains(parts.1)
+    }
+
+    private static func isAlibabaMetadataIPv4(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
+        parts == (100, 100, 100, 200)
+    }
+
+    private static func isAllowedJoinIPv4(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
+        if isAlibabaMetadataIPv4(parts) { return false }
+        if isRFC1918(parts) { return true }
+        if isCGNAT(parts) { return true }
+        return false
+    }
+
     private static func isBlockedJoinIPv6(_ addr: in6_addr) -> Bool {
         withUnsafeBytes(of: addr) { raw in
             let bytes = Array(raw)
             guard bytes.count == 16 else { return true }
             if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xFF, bytes[11] == 0xFF {
-                return !isRFC1918((bytes[12], bytes[13], bytes[14], bytes[15]))
+                return !isAllowedJoinIPv4((bytes[12], bytes[13], bytes[14], bytes[15]))
             }
             // ULA fc00::/7, except AWS metadata fd00:ec2::/32.
             let isULA = (bytes[0] & 0xFE) == 0xFC
@@ -319,7 +338,8 @@ public struct PairingPayload: Sendable, Equatable {
     }
 }
 
-/// RFC1918 IPv4 addresses to advertise in a pairing QR.
+/// Private IPv4 addresses to advertise in a pairing offer (RFC1918 and
+/// CGNAT `100.64.0.0/10`, excluding metadata).
 public enum PairingAddresses {
     public static func advertisedIPv4(
         from interfaces: [HostInterfaceInfo] = HostInfoService.listInterfaces(),

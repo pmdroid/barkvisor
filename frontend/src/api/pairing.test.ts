@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isPairingPayload, PAIRING_URI_PREFIX } from './pairing'
+import {
+  CUSTOM_ADVERTISED_HOST,
+  isPairingPayload,
+  issuedAdvertisedHost,
+  pairingHostFromPayload,
+  PAIRING_URI_PREFIX,
+} from './pairing'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -24,6 +30,8 @@ describe('PAS-51 pairing client', () => {
     expect(setup).toContain('Join an existing {{ HOME_LABEL }}')
     expect(setup).toContain('HOME_LABEL')
     expect(setup).toContain('DEVICE_LABEL')
+    expect(setup).toContain('pairing-steps')
+    expect(setup).toContain("barkvisor join --code 'barkvisor://pair/v1?…'")
     expect(setup).not.toMatch(/\b(?:nodes?|clusters?)\b/i)
     expect(setup).not.toContain('/api/pairing/redeem')
     expect(setup).not.toContain('OnboardingWizard')
@@ -38,6 +46,10 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('pairingHydrating')
     expect(settings).toContain('isCurrentPairingSeq')
     expect(settings).toContain('pairingExpiryLabel(pairingOffer.expiresAt, pairingNow)')
+    expect(settings).toContain('pairing-steps')
+    expect(settings).toContain('CUSTOM_ADVERTISED_HOST')
+    expect(settings).toContain('onAdvertisedHostChange')
+    expect(settings).toContain('Other / DNS name')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
   })
 
@@ -55,5 +67,28 @@ describe('PAS-51 pairing client', () => {
     expect(settings).not.toContain('OnboardingWizard')
     expect(settings).not.toContain('/api/pairing/redeem')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
+  })
+
+  test('POST pairing codes sends advertisedHost when picked', () => {
+    const pairing = readFileSync(join(here, 'pairing.ts'), 'utf8')
+    expect(pairing).toContain('{ advertisedHost: trimmed }')
+    expect(pairing).toContain('advertisedHost?: string')
+    expect(CUSTOM_ADVERTISED_HOST).toBe('__custom__')
+    expect(
+      pairingHostFromPayload(
+        'barkvisor://pair/v1?code=ABCD-EFGH&host=100.64.0.8&port=7777&hostId=h&fp=abc',
+      ),
+    ).toBe('100.64.0.8')
+    expect(
+      issuedAdvertisedHost({
+        advertisedHost: 'box.home.example',
+        qrPayload: 'barkvisor://pair/v1?code=ABCD-EFGH&host=192.168.0.8&port=7777',
+      }),
+    ).toBe('box.home.example')
+    expect(
+      issuedAdvertisedHost({
+        qrPayload: 'barkvisor://pair/v1?code=ABCD-EFGH&host=192.168.0.8&port=7777',
+      }),
+    ).toBe('192.168.0.8')
   })
 })

@@ -40,10 +40,19 @@ struct Serve: AsyncParsableCommand {
 /// Device's host API — not through Home.
 struct Join: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Join a Home from this Device (POST /api/pairing/join on localhost).",
+        abstract: "Join a Home from this Device.",
+        discussion: """
+        1. On the other Device, Settings → Home → Add a Device, pick the \
+        address this Device can reach, and copy the full barkvisor:// offer.
+        2. Run this command with that offer (not the short printed code).
+        3. This posts to http://127.0.0.1:7777/api/pairing/join on this Device.
+        """,
     )
 
-    @Option(name: .long, help: "Pairing offer from the other Device (barkvisor://pair/v1?…).")
+    @Option(
+        name: .long,
+        help: "Full barkvisor://pair/v1?… offer from the other Device (not the short code).",
+    )
     var code: String
 
     func run() async throws {

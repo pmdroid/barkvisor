@@ -431,6 +431,9 @@ struct LinuxGuestScriptsTests {
         #expect(app.contains("struct Join"))
         #expect(app.contains("var code: String"))
         #expect(app.contains("LocalPairingJoin.post"))
+        #expect(app.contains("http://127.0.0.1:7777/api/pairing/join"))
+        #expect(app.contains("not the short printed code"))
+        #expect(app.contains("Full barkvisor://pair/v1?"))
     }
 
     @Test func `guest-boot CI helper probes kvm and skips without it`() throws {
