@@ -716,7 +716,7 @@ onUnmounted(() => {
   <div v-if="tab === 'sshkeys'">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0">
-        SSH public keys are automatically injected into cloud image VMs via cloud-init.
+        SSH public keys live on Home and are automatically injected into cloud image VMs via cloud-init.
       </p>
       <AppButton variant="primary" icon="plus" @click="showAddSSHKey = true">Add Key</AppButton>
     </div>

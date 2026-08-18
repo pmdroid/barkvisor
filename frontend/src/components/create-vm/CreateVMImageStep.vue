@@ -79,7 +79,7 @@ function setMode(m: 'iso' | 'cloud') {
         </option>
       </AppSelect>
       <div v-if="sshKeys.length === 0" style="margin-top:6px;font-size:12px;color:var(--text-dim)">
-        No SSH keys stored yet. Add keys in Settings first.
+        No SSH keys on Home yet. Add keys in Settings first.
       </div>
     </div>
     <div v-if="mode === 'cloud'">
