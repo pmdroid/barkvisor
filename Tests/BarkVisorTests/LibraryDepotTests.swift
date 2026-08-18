@@ -333,7 +333,9 @@ final class LibraryDepotTests {
                 await live.fetchMatching(Self.cloudRequest(sourceUrl: source), db: pool)
             }
             group.addTask {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                // 1s expires under parallel CI load (macOS runners have 3 CPUs).
+                // Copy is gated, so a real block still fails this budget.
+                try await Task.sleep(nanoseconds: 8_000_000_000)
                 throw BarkVisorError.timeout("fetchMatching blocked on depot copy")
             }
             let first = try await group.next()!

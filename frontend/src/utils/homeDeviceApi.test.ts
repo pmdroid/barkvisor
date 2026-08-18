@@ -2,8 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import {
   canCallDeviceAPI,
   canFetchDeviceWorkloads,
+  deviceBridgesPath,
   deviceCapabilitiesPath,
   deviceGuestInfoPath,
+  deviceInterfacesPath,
+  deviceNetworkPath,
+  deviceNetworksPath,
   devicePath,
   deviceTaskPath,
   deviceTemplateDeployPath,
@@ -135,5 +139,20 @@ describe('homeDeviceApi (PAS-203)', () => {
     expect(devicePath(member, '/disks')).toBe('/home/devices/peer%2F1/v1/disks')
     expect(devicePath(member, '/networks')).toBe('/home/devices/peer%2F1/v1/networks')
     expect(devicePath(member, '/logs')).not.toContain('targetHostId')
+  })
+})
+
+describe('homeDeviceApi (PAS-216)', () => {
+  test('network, interface, and bridge paths stay on devicePath', () => {
+    expect(deviceNetworksPath(self)).toBe('/networks')
+    expect(deviceNetworkPath(self, 'net-1')).toBe('/networks/net-1')
+    expect(deviceInterfacesPath(self)).toBe('/system/interfaces')
+    expect(deviceBridgesPath(self)).toBe('/system/bridges')
+
+    expect(deviceNetworksPath(member)).toBe('/home/devices/peer%2F1/v1/networks')
+    expect(deviceNetworkPath(member, 'net/1')).toBe('/home/devices/peer%2F1/v1/networks/net%2F1')
+    expect(deviceInterfacesPath(member)).toBe('/home/devices/peer%2F1/v1/system/interfaces')
+    expect(deviceBridgesPath(member)).toBe('/home/devices/peer%2F1/v1/system/bridges')
+    expect(deviceNetworkPath(member, 'net-1')).not.toContain('targetHostId')
   })
 })

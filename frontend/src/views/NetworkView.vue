@@ -2,8 +2,9 @@
 import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
-import type { Network, HostInterface, BridgeInfo } from '../api/types'
+import type { BridgeInfo, HomeDeviceHealthSnapshot, HostInterface } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -13,48 +14,178 @@ import AppModal from '../components/ui/AppModal.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useDevicesStore } from '../stores/devices'
+import { useDeviceNetworksStore, type HomeNetworkRow, type NetworkWriteBody } from '../stores/deviceNetworks'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
 import { useFeature } from '../composables/useFeature'
+import { defaultCapabilities } from '../utils/capabilitiesParse'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import {
+  canCallDeviceAPI,
+  deviceBridgesPath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
+import { DEVICE_LABEL } from '../utils/terminology'
 
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
+const devicesStore = useDevicesStore()
+const homeNets = useDeviceNetworksStore()
 const networkStore = useNetworkStore()
 const bridged = useFeature('bridgedNetworking')
 const managedBridge = useFeature('managedBridgeDaemon')
 const { networks } = storeToRefs(networkStore)
 
-// Host-only data (not shared via network store)
-const hostInterfaces = ref<HostInterface[]>([])
-const bridges = ref<BridgeInfo[]>([])
+const localInterfaces = ref<HostInterface[]>([])
+const localBridges = ref<BridgeInfo[]>([])
 
-// Network form
 const showCreate = ref(false)
 const editingId = ref<string | null>(null)
+const formHostId = ref('')
 const newName = ref('')
 const newMode = ref<'nat' | 'bridged' | 'isolated'>('nat')
-const { networkModes } = storeToRefs(caps)
 const newBridge = ref('')
 const newDns = ref('')
 const loading = ref(false)
 const error = ref('')
 
-// Bridge management
 const showBridges = ref(false)
+const bridgeHostId = ref('')
 const bridgeLoading = ref<string | null>(null)
 
-// Delete
-const deleteTarget = ref<{ id: string; name: string } | null>(null)
+const deleteTarget = ref<{ id: string; name: string; hostId: string } | null>(null)
 const deleting = ref(false)
 
-// Helpers
-function getBridgeStatus(ifaceName: string): BridgeInfo | undefined {
-  return bridges.value.find(b => b.interface === ifaceName)
+const useHomeUnion = computed(() => devicesStore.devices.length > 0)
+
+const homeRows = computed<HomeNetworkRow[]>(() => {
+  if (useHomeUnion.value) return homeNets.homeRows(devicesStore.devices)
+  return networks.value.map((network) => ({
+    network,
+    hostId: devicesStore.selfDevice?.hostId || '',
+    label: '',
+    role: 'self',
+    reachable: true,
+  }))
+})
+
+const pageLoading = computed(() => {
+  if (devicesStore.loading || networkStore.loading) return true
+  return devicesStore.devices.some((device) => homeNets.isLoading(device.hostId))
+})
+
+const loadErrors = computed(() =>
+  devicesStore.devices
+    .map((device) => homeNets.errorFor(device.hostId))
+    .filter((message): message is string => Boolean(message)),
+)
+
+const formDevice = computed(() => {
+  if (formHostId.value) return devicesStore.deviceByHostId(formHostId.value)
+  return devicesStore.selfDevice
+})
+
+/** Per-device caps, falling back to already-loaded self inventory (not fail-closed defaults). */
+function deviceCapsFor(hostId: string) {
+  const loaded = hostId ? homeNets.capsFor(hostId) : null
+  if (loaded) return loaded
+  const device = hostId
+    ? devicesStore.deviceByHostId(hostId)
+    : devicesStore.selfDevice
+  if (device && isSelfDevice(device)) return caps.currentHost
+  return defaultCapabilities
 }
 
-function getBridgeStatusForNetwork(n: Network): string | null {
+const formCaps = computed(() => {
+  if (useHomeUnion.value && formHostId.value) {
+    return deviceCapsFor(formHostId.value)
+  }
+  return caps.currentHost
+})
+
+const formNetworkModes = computed(() => formCaps.value.networkModes ?? defaultCapabilities.networkModes!)
+const formBridgedAvailable = computed(() => formCaps.value.supportsBridgedNetworking)
+const formManagedBridge = computed(() => formCaps.value.supportsManagedBridgeDaemon)
+const formBridgedExplanation = computed(() => {
+  const row = formCaps.value.details?.find((detail) => detail.code === 'bridgedNetworking')
+  if (row && !row.supported) return row.remediation || 'Bridged networking is not available on this Device.'
+  return bridged.explanation || 'Bridged networking is not available on this Device.'
+})
+
+const formDeviceOptions = computed(() =>
+  devicesStore.devices.map((device) => ({
+    value: device.hostId,
+    label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    disabled: !canCallDeviceAPI(device) || Boolean(editingId.value),
+  })),
+)
+
+const contextHostId = computed(() => (showBridges.value ? bridgeHostId.value : formHostId.value))
+
+const hostInterfaces = computed(() => {
+  if (useHomeUnion.value && contextHostId.value) return homeNets.interfacesFor(contextHostId.value)
+  return localInterfaces.value
+})
+
+const bridges = computed(() => {
+  if (useHomeUnion.value && contextHostId.value) return homeNets.bridgesFor(contextHostId.value)
+  return localBridges.value
+})
+
+const bridgeDevice = computed(() => {
+  if (bridgeHostId.value) return devicesStore.deviceByHostId(bridgeHostId.value)
+  return devicesStore.selfDevice
+})
+
+const bridgeCaps = computed(() => {
+  if (useHomeUnion.value && bridgeHostId.value) {
+    return deviceCapsFor(bridgeHostId.value)
+  }
+  return caps.currentHost
+})
+
+const selectedManagedBridge = computed(() => bridgeCaps.value.supportsManagedBridgeDaemon)
+const canManageBridges = computed(() => {
+  if (!useHomeUnion.value) return managedBridge.available
+  return devicesStore.devices.some((device) => {
+    if (!canCallDeviceAPI(device)) return false
+    return deviceCapsFor(device.hostId).supportsManagedBridgeDaemon === true
+  })
+})
+
+const bridgeDeviceOptions = computed(() =>
+  devicesStore.devices
+    .filter((device) => canCallDeviceAPI(device))
+    .map((device) => ({
+      value: device.hostId,
+      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    })),
+)
+
+function rowKey(row: HomeNetworkRow): string {
+  return `${row.hostId}:${row.network.id}`
+}
+
+function canMutate(row: HomeNetworkRow): boolean {
+  return row.reachable && !row.network.isDefault
+}
+
+function defaultFormHostId(): string {
+  return devicesStore.selfDevice?.hostId
+    || devicesStore.devices.find((device) => canCallDeviceAPI(device))?.hostId
+    || ''
+}
+
+function getBridgeStatus(ifaceName: string, hostId?: string): BridgeInfo | undefined {
+  const list = hostId && useHomeUnion.value ? homeNets.bridgesFor(hostId) : bridges.value
+  return list.find((b) => b.interface === ifaceName)
+}
+
+function getBridgeStatusForNetwork(row: HomeNetworkRow): string | null {
+  const n = row.network
   if (n.mode !== 'bridged' || !n.bridge) return null
-  const info = getBridgeStatus(n.bridge)
+  const info = getBridgeStatus(n.bridge, row.hostId)
   return info?.status || 'not_configured'
 }
 
@@ -72,12 +203,15 @@ function bridgeBadgeLabel(status: string): string {
 
 const selectedInterfaceBridge = computed(() => {
   if (!newBridge.value) return null
-  return getBridgeStatus(newBridge.value)
+  return getBridgeStatus(newBridge.value, formHostId.value || undefined)
 })
 
 const usedBridgeInterfaces = computed(() => {
   const used = new Map<string, string>()
-  for (const n of networks.value) {
+  const nets = useHomeUnion.value && formHostId.value
+    ? homeNets.networksFor(formHostId.value)
+    : networks.value
+  for (const n of nets) {
     if (n.mode === 'bridged' && n.bridge) {
       if (editingId.value && n.id === editingId.value) continue
       used.set(n.bridge, n.name)
@@ -87,7 +221,7 @@ const usedBridgeInterfaces = computed(() => {
 })
 
 function modeLabel(mode: string): string {
-  const row = networkModes.value.find((m) => m.mode === mode)
+  const row = formNetworkModes.value.find((m) => m.mode === mode)
   if (row?.label) return row.label
   if (mode === 'nat') return 'NAT'
   if (mode === 'bridged') return 'Bridged (Home Network)'
@@ -101,62 +235,117 @@ function modeBadgeClass(mode: string): string {
   return 'badge-blue'
 }
 
-const selectedModeRow = computed(() => networkModes.value.find((m) => m.mode === newMode.value))
+const selectedModeRow = computed(() => formNetworkModes.value.find((m) => m.mode === newMode.value))
 
 const typedBridgeMissing = computed(() => {
   if (newMode.value !== 'bridged' || !newBridge.value) return false
   return !hostInterfaces.value.some((i) => i.name === newBridge.value)
 })
 
-const cannotSaveBridged = computed(() => newMode.value === 'bridged' && !bridged.available)
+const cannotSaveBridged = computed(() => newMode.value === 'bridged' && !formBridgedAvailable.value)
 
-/** Show "setup bridge daemon" only when the host manages socket_vmnet (macOS). */
 const selectedInterfaceNeedsBridge = computed(() => {
-  if (!managedBridge.available) return false
+  if (!formManagedBridge.value) return false
   if (!newBridge.value) return false
   const info = selectedInterfaceBridge.value
   return !info || info.status === 'not_configured'
 })
 
-function interfaceIp(ifaceName: string): string {
-  const iface = hostInterfaces.value.find(i => i.name === ifaceName)
-  return iface?.ipAddress || ''
+function interfaceIp(ifaceName: string, hostId?: string): string {
+  const list = hostId && useHomeUnion.value ? homeNets.interfacesFor(hostId) : hostInterfaces.value
+  return list.find((i) => i.name === ifaceName)?.ipAddress || ''
 }
 
-async function fetchInterfaces() {
+async function fetchLocalInterfaces() {
   try {
     const { data } = await api.get('/system/interfaces')
-    hostInterfaces.value = data
-  } catch {}
+    localInterfaces.value = data
+  } catch { /* keep last-known */ }
 }
 
-async function fetchBridges() {
+async function fetchLocalBridges() {
   try {
     const { data } = await api.get('/system/bridges')
-    bridges.value = data
-  } catch {}
+    localBridges.value = data
+  } catch { /* keep last-known */ }
 }
 
-async function fetchAll() {
-  const tasks: Promise<void>[] = [networkStore.fetchAll(), fetchInterfaces()]
-  if (bridged.available) tasks.push(fetchBridges())
-  await Promise.all(tasks)
+async function refreshHomeNetworks() {
+  await devicesStore.fetchHealth().catch(() => {})
+  if (!useHomeUnion.value) {
+    const tasks: Promise<void>[] = [networkStore.fetchAll(), fetchLocalInterfaces()]
+    if (bridged.available) tasks.push(fetchLocalBridges())
+    await Promise.all(tasks)
+    return
+  }
+  await homeNets.fetchHomeAll(devicesStore.devices)
+}
+
+async function loadFormContext() {
+  const device = formDevice.value
+  if (device && useHomeUnion.value) {
+    await homeNets.fetchContext(device)
+    return
+  }
+  await fetchLocalInterfaces()
+  if (bridged.available) await fetchLocalBridges()
+}
+
+async function loadBridgeContext() {
+  const device = bridgeDevice.value
+  if (device && useHomeUnion.value) {
+    await homeNets.fetchContext(device)
+    return
+  }
+  await fetchLocalInterfaces()
+  if (managedBridge.available) await fetchLocalBridges()
+}
+
+function mutateTarget(hostId: string): HomeDeviceHealthSnapshot | null {
+  return devicesStore.deviceByHostId(hostId)
+    ?? (hostId ? null : devicesStore.selfDevice)
+}
+
+/** Home union must not fall back to the local host when the Device is gone. */
+function homeUnionDeviceBlocked(device: HomeDeviceHealthSnapshot | null): boolean {
+  return useHomeUnion.value && (!device || !canCallDeviceAPI(device))
 }
 
 let bridgePoll: number | undefined
 
 onMounted(() => {
-  void caps.fetchCapabilities().then(() => fetchAll())
+  void caps.fetchCapabilities().then(() => refreshHomeNetworks())
 })
 
 watch(showBridges, (open) => {
-  if (open && managedBridge.available) {
-    fetchInterfaces()
-    fetchBridges()
-    bridgePoll = window.setInterval(fetchBridges, 7000)
+  if (open) {
+    if (!bridgeHostId.value) {
+      const managed = devicesStore.devices.find((device) =>
+        canCallDeviceAPI(device) && deviceCapsFor(device.hostId).supportsManagedBridgeDaemon,
+      )
+      bridgeHostId.value = managed?.hostId || defaultFormHostId()
+    }
+    void loadBridgeContext()
+    bridgePoll = window.setInterval(() => { void loadBridgeContext() }, 7000)
   } else if (bridgePoll) {
     clearInterval(bridgePoll)
     bridgePoll = undefined
+  }
+})
+
+watch(bridgeHostId, () => {
+  if (showBridges.value) void loadBridgeContext()
+})
+
+watch(formHostId, async (id, prev) => {
+  if (!showCreate.value || editingId.value || !id || id === prev) return
+  await loadFormContext()
+  if (newMode.value === 'bridged' && !formBridgedAvailable.value) {
+    newMode.value = 'nat'
+    newBridge.value = ''
+  }
+  if (newBridge.value && !hostInterfaces.value.some((iface) => iface.name === newBridge.value)) {
+    newBridge.value = ''
   }
 })
 
@@ -164,7 +353,6 @@ onUnmounted(() => {
   if (bridgePoll) clearInterval(bridgePoll)
 })
 
-// Network CRUD
 function resetForm() {
   newName.value = ''
   newMode.value = 'nat'
@@ -172,39 +360,49 @@ function resetForm() {
   newDns.value = ''
   error.value = ''
   editingId.value = null
+  formHostId.value = defaultFormHostId()
 }
 
 function openCreate() {
   resetForm()
   showCreate.value = true
-  fetchInterfaces()
-  if (bridged.available) fetchBridges()
+  void loadFormContext()
 }
 
-function openEdit(n: Network) {
+function openEdit(row: HomeNetworkRow) {
+  const n = row.network
+  const deviceCaps = homeNets.capsFor(row.hostId)
+  const bridgedOk = deviceCaps?.supportsBridgedNetworking ?? n.mode === 'bridged'
   editingId.value = n.id
+  formHostId.value = row.hostId
   newName.value = n.name
-  // Fall back to NAT if bridged is unsupported on this platform
-  newMode.value = n.mode === 'bridged' && !bridged.available ? 'nat' : n.mode
-  newBridge.value = n.mode === 'bridged' && bridged.available ? (n.bridge || '') : ''
+  newMode.value = n.mode === 'bridged' && !bridgedOk ? 'nat' : n.mode
+  newBridge.value = n.mode === 'bridged' && bridgedOk ? (n.bridge || '') : ''
   newDns.value = n.dnsServer || ''
   error.value = ''
   showCreate.value = true
-  fetchInterfaces()
-  if (bridged.available) fetchBridges()
+  void loadFormContext()
 }
 
 async function saveNetwork() {
   error.value = ''
   if (!newName.value.trim()) { error.value = 'Name required'; return }
-  if (newMode.value === 'bridged' && !bridged.available) {
-    error.value = bridged.explanation || 'Bridged networking is not available on this device.'
+  if (newMode.value === 'bridged' && !formBridgedAvailable.value) {
+    error.value = formBridgedExplanation.value
     return
   }
-  if (newMode.value === 'bridged' && !newBridge.value) { error.value = 'Bridge interface required for bridged mode'; return }
+  if (newMode.value === 'bridged' && !newBridge.value) {
+    error.value = 'Bridge interface required for bridged mode'
+    return
+  }
+  const device = formDevice.value
+  if (homeUnionDeviceBlocked(device)) {
+    error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+    return
+  }
   loading.value = true
   try {
-    const body: any = {
+    const body: NetworkWriteBody = {
       name: newName.value.trim(),
       mode: newMode.value,
       bridge: newMode.value === 'bridged' ? newBridge.value : '',
@@ -212,41 +410,70 @@ async function saveNetwork() {
         ? (newDns.value || (editingId.value ? '' : undefined))
         : undefined,
     }
-    if (editingId.value) {
+    if (useHomeUnion.value && device) {
+      if (editingId.value) await homeNets.update(device, editingId.value, body)
+      else await homeNets.create(device, body)
+    } else if (editingId.value) {
       await networkStore.update(editingId.value, body)
     } else {
       await networkStore.create(body)
     }
     showCreate.value = false
     resetForm()
-  } catch (e: any) { error.value = apiErrorMessage(e) }
+  } catch (e: unknown) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
 
-function deleteNetwork(id: string, name: string) {
-  deleteTarget.value = { id, name }
+function deleteNetwork(row: HomeNetworkRow) {
+  deleteTarget.value = { id: row.network.id, name: row.network.name, hostId: row.hostId }
 }
 
 async function doDeleteNetwork() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await networkStore.remove(deleteTarget.value.id)
-  } catch (e: any) { toast.error(apiErrorMessage(e)) }
+    const device = mutateTarget(deleteTarget.value.hostId)
+    if (homeUnionDeviceBlocked(device)) {
+      toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+      return
+    }
+    if (useHomeUnion.value && device) {
+      await homeNets.remove(device, deleteTarget.value.id)
+    } else {
+      await networkStore.remove(deleteTarget.value.id)
+    }
+  } catch (e: unknown) { toast.error(apiErrorMessage(e)) }
   finally {
     deleting.value = false
     deleteTarget.value = null
   }
 }
 
-// Bridge management
+async function refreshAfterBridge(device: HomeDeviceHealthSnapshot | null) {
+  if (device && useHomeUnion.value) {
+    await Promise.all([homeNets.fetchContext(device), homeNets.fetchFor(device)])
+    return
+  }
+  await Promise.all([fetchLocalBridges(), networkStore.fetchAll()])
+}
+
+function actionDevice(): HomeDeviceHealthSnapshot | null {
+  return showBridges.value ? bridgeDevice.value : formDevice.value
+}
+
 async function setupBridge(ifaceName: string) {
+  const device = actionDevice()
+  if (homeUnionDeviceBlocked(device)) {
+    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+    return
+  }
   bridgeLoading.value = ifaceName
   try {
-    await api.post('/system/bridges', { interface: ifaceName })
+    const path = device ? deviceBridgesPath(device) : '/system/bridges'
+    await api.post(path, { interface: ifaceName })
     toast.success(`Bridge installed for ${ifaceName}`)
-    await Promise.all([fetchBridges(), networkStore.fetchAll()])
-  } catch (e: any) {
+    await refreshAfterBridge(device)
+  } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
@@ -254,12 +481,20 @@ async function setupBridge(ifaceName: string) {
 }
 
 async function removeBridge(ifaceName: string) {
+  const device = actionDevice()
+  if (homeUnionDeviceBlocked(device)) {
+    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+    return
+  }
   bridgeLoading.value = ifaceName
   try {
-    await api.delete(`/system/bridges/${ifaceName}`)
+    const path = device
+      ? `${deviceBridgesPath(device)}/${encodeURIComponent(ifaceName)}`
+      : `/system/bridges/${ifaceName}`
+    await api.delete(path)
     toast.success(`Bridge removed for ${ifaceName}`)
-    await fetchBridges()
-  } catch (e: any) {
+    await refreshAfterBridge(device)
+  } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
@@ -267,12 +502,20 @@ async function removeBridge(ifaceName: string) {
 }
 
 async function startBridge(ifaceName: string) {
+  const device = actionDevice()
+  if (homeUnionDeviceBlocked(device)) {
+    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+    return
+  }
   bridgeLoading.value = ifaceName
   try {
-    await api.post(`/system/bridges/${ifaceName}/start`)
+    const path = device
+      ? `${deviceBridgesPath(device)}/${encodeURIComponent(ifaceName)}/start`
+      : `/system/bridges/${ifaceName}/start`
+    await api.post(path)
     toast.success(`Bridge started for ${ifaceName}`)
-    await fetchBridges()
-  } catch (e: any) {
+    await refreshAfterBridge(device)
+  } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
@@ -280,12 +523,20 @@ async function startBridge(ifaceName: string) {
 }
 
 async function stopBridge(ifaceName: string) {
+  const device = actionDevice()
+  if (homeUnionDeviceBlocked(device)) {
+    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
+    return
+  }
   bridgeLoading.value = ifaceName
   try {
-    await api.post(`/system/bridges/${ifaceName}/stop`)
+    const path = device
+      ? `${deviceBridgesPath(device)}/${encodeURIComponent(ifaceName)}/stop`
+      : `/system/bridges/${ifaceName}/stop`
+    await api.post(path)
     toast.success(`Bridge stopped for ${ifaceName}`)
-    await fetchBridges()
-  } catch (e: any) {
+    await refreshAfterBridge(device)
+  } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
     bridgeLoading.value = null
@@ -294,13 +545,19 @@ async function stopBridge(ifaceName: string) {
 
 async function setupBridgeInline() {
   if (!newBridge.value) return
+  const device = formDevice.value
+  if (homeUnionDeviceBlocked(device)) {
+    error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
+    return
+  }
   bridgeLoading.value = newBridge.value
   try {
-    await api.post('/system/bridges', { interface: newBridge.value })
+    const path = device ? deviceBridgesPath(device) : '/system/bridges'
+    await api.post(path, { interface: newBridge.value })
     toast.success(`Bridge installed for ${newBridge.value}`)
-    await Promise.all([fetchBridges(), networkStore.fetchAll()])
-  } catch (e: any) {
-    toast.error(apiErrorMessage(e))
+    await refreshAfterBridge(device)
+  } catch (e: unknown) {
+    error.value = apiErrorMessage(e)
   } finally {
     bridgeLoading.value = null
   }
@@ -311,10 +568,10 @@ async function setupBridgeInline() {
   <div class="page-header">
     <h1>Networks</h1>
     <div style="display:flex;gap:8px;align-items:center">
-      <span :title="managedBridge.available ? undefined : managedBridge.explanation">
+      <span :title="canManageBridges ? undefined : (managedBridge.explanation || undefined)">
         <AppButton
           icon="settings"
-          :disabled="!managedBridge.available"
+          :disabled="!canManageBridges"
           @click="showBridges = true"
         >Manage Bridges</AppButton>
       </span>
@@ -322,33 +579,49 @@ async function setupBridgeInline() {
     </div>
   </div>
 
-  <EmptyState v-if="networks.length === 0" icon="globe" title="No networks configured. VMs use NAT networking by default." />
+  <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
+    {{ loadErrors[0] }}
+  </p>
 
-  <DataTable v-else :columns="[
+  <EmptyState
+    v-if="homeRows.length === 0 && !pageLoading"
+    icon="globe"
+    title="No networks configured. VMs use NAT networking by default."
+  />
+
+  <DataTable v-else-if="homeRows.length > 0" :columns="[
     { key: 'name', label: 'Name' },
+    { key: 'device', label: 'Device' },
     { key: 'mode', label: 'Mode' },
     { key: 'bridge', label: 'Bridge' },
     { key: 'dns', label: 'DNS' },
     { key: 'actions', label: '', align: 'right' },
   ]">
-    <tr v-for="n in networks" :key="n.id">
-      <td style="font-weight:500">{{ n.name }}</td>
-      <td><span class="badge" :class="modeBadgeClass(n.mode)">{{ n.mode }}</span></td>
+    <tr v-for="row in homeRows" :key="rowKey(row)">
+      <td style="font-weight:500">{{ row.network.name }}</td>
       <td>
-        <template v-if="n.bridge">
+        <WorkloadDeviceChip
+          :label="row.label"
+          :self="row.role === 'self'"
+          :reachable="row.reachable"
+        />
+      </td>
+      <td><span class="badge" :class="modeBadgeClass(row.network.mode)">{{ row.network.mode }}</span></td>
+      <td>
+        <template v-if="row.network.bridge">
           <span style="display:flex;align-items:center;gap:6px">
-            {{ n.bridge }}
-            <span v-if="interfaceIp(n.bridge)" class="mono" style="color:var(--text-secondary);font-size:12px">{{ interfaceIp(n.bridge) }}</span>
-            <span v-if="getBridgeStatusForNetwork(n)" class="badge" :class="bridgeBadgeClass(getBridgeStatusForNetwork(n)!)">{{ bridgeBadgeLabel(getBridgeStatusForNetwork(n)!) }}</span>
+            {{ row.network.bridge }}
+            <span v-if="interfaceIp(row.network.bridge, row.hostId)" class="mono" style="color:var(--text-secondary);font-size:12px">{{ interfaceIp(row.network.bridge, row.hostId) }}</span>
+            <span v-if="getBridgeStatusForNetwork(row)" class="badge" :class="bridgeBadgeClass(getBridgeStatusForNetwork(row)!)">{{ bridgeBadgeLabel(getBridgeStatusForNetwork(row)!) }}</span>
           </span>
         </template>
         <template v-else>-</template>
       </td>
-      <td class="mono" style="color:var(--text-secondary)">{{ n.dnsServer || '-' }}</td>
+      <td class="mono" style="color:var(--text-secondary)">{{ row.network.dnsServer || '-' }}</td>
       <td style="text-align:right">
-        <div v-if="!n.isDefault" style="display:flex;gap:4px;justify-content:flex-end">
-          <AppButton size="sm" @click="openEdit(n)">Edit</AppButton>
-          <AppButton size="sm" @click="deleteNetwork(n.id, n.name)">Delete</AppButton>
+        <div v-if="canMutate(row)" style="display:flex;gap:4px;justify-content:flex-end">
+          <AppButton size="sm" @click="openEdit(row)">Edit</AppButton>
+          <AppButton size="sm" @click="deleteNetwork(row)">Delete</AppButton>
         </div>
       </td>
     </tr>
@@ -356,7 +629,15 @@ async function setupBridgeInline() {
 
   <!-- Bridge Management Modal -->
   <AppModal v-if="showBridges" title="Manage Bridges" max-width="800px" @close="showBridges = false">
-    <EmptyState v-if="hostInterfaces.length === 0" title="Loading interfaces..." style="padding:24px" />
+    <div v-if="bridgeDeviceOptions.length > 0" class="form-group">
+      <label>{{ DEVICE_LABEL }}</label>
+      <AppSelect v-model="bridgeHostId" :options="bridgeDeviceOptions" />
+    </div>
+    <UnsupportedHint
+      v-if="!selectedManagedBridge"
+      :text="bridgeCaps.details?.find((d) => d.code === 'managedBridgeDaemon' && !d.supported)?.remediation || managedBridge.explanation"
+    />
+    <EmptyState v-else-if="hostInterfaces.length === 0" title="Loading interfaces..." style="padding:24px" />
     <DataTable v-else :columns="[
       { key: 'interface', label: 'Interface' },
       { key: 'ip', label: 'IP' },
@@ -370,21 +651,21 @@ async function setupBridgeInline() {
         </td>
         <td class="mono" style="color:var(--text-secondary)">{{ iface.ipAddress || '-' }}</td>
         <td>
-          <span class="badge" :class="bridgeBadgeClass(getBridgeStatus(iface.name)?.status || 'not_configured')">
-            {{ bridgeBadgeLabel(getBridgeStatus(iface.name)?.status || 'not_configured') }}
+          <span class="badge" :class="bridgeBadgeClass(getBridgeStatus(iface.name, bridgeHostId)?.status || 'not_configured')">
+            {{ bridgeBadgeLabel(getBridgeStatus(iface.name, bridgeHostId)?.status || 'not_configured') }}
           </span>
         </td>
         <td style="text-align:right">
           <template v-if="bridgeLoading === iface.name">
             <AppButton size="sm" disabled>Working...</AppButton>
           </template>
-          <template v-else-if="getBridgeStatus(iface.name)?.status === 'active'">
+          <template v-else-if="getBridgeStatus(iface.name, bridgeHostId)?.status === 'active'">
             <div style="display:flex;gap:4px;justify-content:flex-end">
               <AppButton size="sm" @click="stopBridge(iface.name)">Stop</AppButton>
               <AppButton size="sm" variant="danger" @click="removeBridge(iface.name)">Remove</AppButton>
             </div>
           </template>
-          <template v-else-if="getBridgeStatus(iface.name)?.status === 'installed'">
+          <template v-else-if="getBridgeStatus(iface.name, bridgeHostId)?.status === 'installed'">
             <div style="display:flex;gap:4px;justify-content:flex-end">
               <AppButton size="sm" @click="startBridge(iface.name)">Start</AppButton>
               <AppButton size="sm" variant="danger" @click="removeBridge(iface.name)">Remove</AppButton>
@@ -403,12 +684,16 @@ async function setupBridgeInline() {
 
   <!-- Create/Edit Network Modal -->
   <AppModal v-if="showCreate" :title="(editingId ? 'Edit' : 'Create') + ' Network'" @close="showCreate = false">
+    <div v-if="formDeviceOptions.length > 0" class="form-group">
+      <label>{{ DEVICE_LABEL }}</label>
+      <AppSelect v-model="formHostId" :options="formDeviceOptions" :disabled="Boolean(editingId)" />
+    </div>
     <div class="form-group"><label>Name</label><input v-model="newName" placeholder="my-network" /></div>
     <div class="form-group">
       <label>Mode</label>
       <AppSelect v-model="newMode">
         <option
-          v-for="m in networkModes"
+          v-for="m in formNetworkModes"
           :key="m.mode"
           :value="m.mode"
           :disabled="!m.supported"
@@ -423,15 +708,15 @@ async function setupBridgeInline() {
       </p>
       <UnsupportedHint
         v-if="selectedModeRow && !selectedModeRow.supported"
-        :text="selectedModeRow.remediation || selectedModeRow.description || bridged.explanation"
+        :text="selectedModeRow.remediation || selectedModeRow.description || formBridgedExplanation"
       />
       <p
         v-else-if="selectedModeRow?.description"
         style="color:var(--text-dim);font-size:12px;margin:6px 0 0"
       >{{ selectedModeRow.description }}</p>
-      <UnsupportedHint v-else-if="!bridged.available" :text="bridged.explanation" />
+      <UnsupportedHint v-else-if="!formBridgedAvailable" :text="formBridgedExplanation" />
     </div>
-    <div v-if="bridged.available && newMode === 'bridged'" class="form-group">
+    <div v-if="formBridgedAvailable && newMode === 'bridged'" class="form-group">
       <label>Bridge Interface</label>
       <AppSelect v-model="newBridge">
         <option value="" disabled>Select interface...</option>
@@ -441,7 +726,7 @@ async function setupBridgeInline() {
         </option>
       </AppSelect>
       <!-- Linux host bridges: allow typing a name not in the dropdown (e.g. no-IP br*). -->
-      <template v-if="!managedBridge.available">
+      <template v-if="!formManagedBridge">
         <input
           v-model="newBridge"
           class="bridge-custom"
@@ -455,7 +740,7 @@ async function setupBridgeInline() {
           Bridges without an IP still appear when detected; you can also type the name.
         </p>
         <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
-          Interface "{{ newBridge }}" is not on this device. Create it first — save and VM start will
+          Interface "{{ newBridge }}" is not on this Device. Create it first — save and VM start will
           fail closed with a structured error instead of a QEMU log.
         </p>
       </template>
@@ -463,7 +748,7 @@ async function setupBridgeInline() {
         <span style="color:var(--text-secondary);font-size:13px">No bridge configured for this interface.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Setting up..." @click="setupBridgeInline">Setup Bridge</AppButton>
       </div>
-      <div v-else-if="managedBridge.available && selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
+      <div v-else-if="formManagedBridge && selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
         <span style="color:var(--text-secondary);font-size:13px">Bridge is installed but not currently running.</span>
         <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Starting..." @click="startBridge(newBridge)">Start Bridge</AppButton>
       </div>
