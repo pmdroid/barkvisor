@@ -8,9 +8,16 @@ enum WorkloadStream {
     }
 
     /// SwiftUI `.task` identity. Running and stopping share one session so ACPI
-    /// shutdown does not mint a new ticket or reconnect.
-    static func sessionTaskID(deviceID: String, workloadID: String, state: String) -> String {
-        "\(deviceID)/\(workloadID)/\(isLive(state) ? "live" : "down")"
+    /// shutdown does not mint a new ticket or reconnect. Reachability is part of
+    /// the id so a member going down stops the session.
+    static func sessionTaskID(
+        deviceID: String,
+        workloadID: String,
+        state: String,
+        deviceReachable: Bool = true,
+    ) -> String {
+        let open = isLive(state) && deviceReachable
+        return "\(deviceID)/\(workloadID)/\(open ? "live" : "down")"
     }
 }
 
