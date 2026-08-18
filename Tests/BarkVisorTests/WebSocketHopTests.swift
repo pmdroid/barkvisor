@@ -139,6 +139,23 @@ struct WebSocketHopTests {
         #expect(!accepted.isActive)
     }
 
+    @Test func `agent hop uses the QEMU unix socket when vmState is set`() async throws {
+        let fixture = try await UnixHopFixture.make()
+        defer { fixture.shutdown() }
+        let inbound = FakeHopPeer()
+        let proxy = AgentLocalProxyController(vmState: FakeVMState(vncPath: fixture.path))
+        let task = Task {
+            await proxy.tunnel(inbound: inbound, vmID: "vm-9", kind: .vnc, query: "ticket=\(Self.ticket)")
+        }
+        let accepted = try await fixture.takeAccepted()
+        inbound.inject(.binary(byteBuffer("rfb")))
+        try await waitUntil { accepted.isActive }
+        inbound.close()
+        try await waitUntil { !accepted.isActive }
+        await task.value
+        #expect(!accepted.isActive)
+    }
+
     @Test func `agent hop uses injected dialer on the shared group`() async throws {
         let inbound = FakeHopPeer()
         let remote = FakeHopPeer()
@@ -470,6 +487,30 @@ private final class UnixAcceptBox: ChannelInboundHandler, @unchecked Sendable {
 
     func channelActive(context: ChannelHandlerContext) {
         offer(context.channel)
+    }
+}
+
+private struct FakeVMState: VMStateQuerying {
+    var vncPath: String?
+    var serialPath: String?
+
+    func isRunning(_: String) async -> Bool {
+        vncPath != nil || serialPath != nil
+    }
+    func isActiveOrStarting(_: String) async -> Bool {
+        true
+    }
+    func allRunningVMs() async -> [String: RunningVM] {
+        [:]
+    }
+    func vncSocketPath(for _: String) async -> String? {
+        vncPath
+    }
+    func serialSocketPath(for _: String) async -> String? {
+        serialPath
+    }
+    func qmpSocketPath(for _: String) async -> String? {
+        nil
     }
 }
 
