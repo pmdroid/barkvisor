@@ -237,11 +237,15 @@ final class DisplaySession {
         waitingForDisconnect = true
         let deadline = ContinuousClock.now + Duration.nanoseconds(Int64(clamping: connectTimeoutNanoseconds))
         while waitingForDisconnect, !Task.isCancelled {
-            if !connected, ContinuousClock.now >= deadline {
+            if connected {
+                try? await Task.sleep(for: .milliseconds(250))
+                continue
+            }
+            if ContinuousClock.now >= deadline {
                 expireConnectWaitIfNeeded()
                 break
             }
-            try? await Task.sleep(for: .milliseconds(5))
+            try? await Task.sleep(for: .milliseconds(50))
         }
     }
 

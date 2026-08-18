@@ -50,10 +50,10 @@ enum WorkloadGuestSummary {
 }
 
 enum GuestInfoRefresh {
-    /// Retry only while running and guest-info has not returned a body.
+    /// Retry only while running on a reachable Device and guest-info has not returned a body.
     /// `available: false` (NAT fallback / no agent) is terminal.
-    static func shouldRetry(guest: GuestInfo?, running: Bool) -> Bool {
-        running && guest == nil
+    static func shouldRetry(guest: GuestInfo?, running: Bool, reachable: Bool = true) -> Bool {
+        reachable && running && guest == nil
     }
 }
 

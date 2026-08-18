@@ -95,9 +95,10 @@ final class ConsoleSession {
                 let task = urlSession.webSocketTask(with: url)
                 socket = task
                 task.resume()
-                attempt = 0
                 status = ""
-                await receive(task)
+                if await receive(task) {
+                    attempt = 0
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -120,10 +121,14 @@ final class ConsoleSession {
         }
     }
 
-    private func receive(_ task: URLSessionWebSocketTask) async {
+    /// Returns true after at least one payload arrived, so a socket that
+    /// accepts and immediately closes does not reset the reconnect budget.
+    private func receive(_ task: URLSessionWebSocketTask) async -> Bool {
+        var received = false
         while !stopped, !Task.isCancelled, socket === task {
             do {
                 let message = try await task.receive()
+                received = true
                 switch message {
                 case let .data(data):
                     onBytes?(Array(data)[...])
@@ -133,8 +138,9 @@ final class ConsoleSession {
                     break
                 }
             } catch {
-                return
+                return received
             }
         }
+        return received
     }
 }
