@@ -149,3 +149,15 @@ export function deviceDiskUsagePath(device: DeviceApiTarget, diskId: string): st
 export function deviceNetworksPath(device: DeviceApiTarget): string {
   return devicePath(device, '/networks')
 }
+
+export function deviceNetworkPath(device: DeviceApiTarget, networkId: string): string {
+  return `${deviceNetworksPath(device)}/${encodeURIComponent(networkId)}`
+}
+
+export function deviceInterfacesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/interfaces')
+}
+
+export function deviceBridgesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/bridges')
+}
