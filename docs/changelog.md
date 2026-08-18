@@ -38,6 +38,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ### Platform
 
+- Restarting the Device daemon no longer stops Workloads. systemd signals only BarkVisor; QEMU stays up and is reattached. Use Workload Stop to shut a guest down.
+
 - Linux packages (`.deb` / `.rpm` / tarball), systemd, NAT and bridged networking, USB passthrough.
 - Native console app talks to the dashboard Device only (Local Network permission is for `:7777`).
 

@@ -85,7 +85,7 @@ Linux install guide: [Installation (Linux)](getting-started-linux.md).
 - **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper`. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
 - **Blank SPA after package install:** confirm `/usr/local/share/barkvisor/frontend/dist` has `index.html` (or `BARKVISOR_FRONTEND_DIR`).
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the `barkvisor` user to group `kvm` when KVM is present, then restart the service.
-- **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`.
+- **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
 
 ## Onboarding issues
 

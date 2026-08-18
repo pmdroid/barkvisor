@@ -36,27 +36,49 @@ public enum PlatformPaths {
     }
 
     /// Short path for unix sockets (must be < 104 bytes on many systems).
+    ///
+    /// Installed / systemd Devices use `/var/run/barkvisor` (outside PrivateTmp)
+    /// so QEMU sockets survive a daemon restart (PAS-223).
     public static func socketDir(isInstalled: Bool) -> URL {
-        let base: String
-        if isInstalled {
-            base = "/var/run/barkvisor"
-        } else {
-            #if os(macOS)
-                base = NSTemporaryDirectory() + "barkvisor"
-            #else
-                let tmp = ProcessInfo.processInfo.environment["TMPDIR"]
-                    ?? ProcessInfo.processInfo.environment["TMP"]
-                    ?? "/tmp"
-                base = (tmp as NSString).appendingPathComponent("barkvisor")
-            #endif
-        }
-        let dir = URL(fileURLWithPath: base)
+        let env = ProcessInfo.processInfo.environment
+        let tmp: String
+        #if os(macOS)
+            tmp = NSTemporaryDirectory()
+        #else
+            tmp = env["TMPDIR"] ?? env["TMP"] ?? "/tmp"
+        #endif
+        let dir = resolveSocketDir(
+            isInstalled: isInstalled,
+            dataDir: dataDir(isInstalled: isInstalled),
+            socketDirOverride: env["BARKVISOR_SOCKET_DIR"],
+            temporaryDirectory: tmp,
+        )
         try? FileManager.default.createDirectory(
             at: dir,
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700],
         )
         return dir
+    }
+
+    /// Pure socket-dir choice (no mkdir). `/var/lib/barkvisor` is the systemd
+    /// data dir even when libexec QEMU is missing (`isInstalled` false).
+    public static func resolveSocketDir(
+        isInstalled: Bool,
+        dataDir: URL,
+        socketDirOverride: String?,
+        temporaryDirectory: String,
+    ) -> URL {
+        if let override = socketDirOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        let standardized = dataDir.standardizedFileURL.path
+        if isInstalled || standardized == "/var/lib/barkvisor" {
+            return URL(fileURLWithPath: "/var/run/barkvisor", isDirectory: true)
+        }
+        return URL(fileURLWithPath: temporaryDirectory, isDirectory: true)
+            .appendingPathComponent("barkvisor", isDirectory: true)
     }
 
     /// True when a host-arch QEMU binary is present under libexec.
