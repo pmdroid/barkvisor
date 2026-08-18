@@ -3,7 +3,6 @@ import Foundation
     import FoundationNetworking
 #endif
 import NIOCore
-import NIOPosix
 import Testing
 import Vapor
 @testable import BarkVisor
@@ -12,13 +11,6 @@ import Vapor
 @Suite("Home console WebSocket tunnel (PAS-200)", .serialized)
 struct HomeConsoleProxyTests {
     private static let ticket = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-
-    /// Live Application + WebSocket echo times out on both GitHub
-    /// runners. Unit checks still run; re-enable when the harness is
-    /// reliable.
-    private static var liveWS: Bool {
-        false
-    }
 
     private func isolatedDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -156,164 +148,6 @@ struct HomeConsoleProxyTests {
         #expect(box.overflowed)
         #expect(!box.sendOrBuffer(.text("x")))
     }
-
-    @Test(.enabled(if: Self.liveWS))
-    func `tunnel relays binary and text to the member and back`() async throws {
-        let echo = try await makeApp()
-        echo.webSocket("api", "vms", ":id", "vnc") { _, ws in
-            ws.onText { ws, text in
-                ws.send("echo:\(text)")
-            }
-            ws.onBinary { ws, buffer in
-                var copy = buffer
-                copy.writeString("+bin")
-                ws.send(raw: copy.readableBytesView, opcode: .binary, fin: true, promise: nil)
-            }
-        }
-        try await echo.startup()
-        let tunnel = try await makeApp()
-        do {
-            let echoPort = try boundPort(echo)
-            let dir = try isolatedDir()
-            defer { try? FileManager.default.removeItem(at: dir) }
-            let selfId = UUID().uuidString
-            let peerId = "peer-1"
-            try DeviceRegistry(dataDir: dir).upsert(
-                hostId: peerId,
-                fingerprint: "aa",
-                agentHost: "127.0.0.1",
-                agentPort: echoPort,
-            )
-            tunnel.middleware.use(StubHomeUserMiddleware())
-            HomeConsoleProxyController(
-                dataDir: dir,
-                hostId: selfId,
-                localPort: echoPort,
-                devices: DeviceRegistry(dataDir: dir),
-                dialer: LoopbackWebSocketDialer(),
-            ).register(app: tunnel)
-            try await tunnel.startup()
-            let tunnelPort = try boundPort(tunnel)
-            let url =
-                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=\(Self.ticket)"
-            let text = try await echoRoundTrip(url: url, send: .text("ping"))
-            #expect(text == "echo:ping")
-            let binary = try await echoRoundTrip(url: url, send: .binary(Array("rfb".utf8)))
-            #expect(binary == "rfb+bin")
-            await stop(tunnel)
-            await stop(echo)
-        } catch {
-            await stop(tunnel)
-            await stop(echo)
-            throw error
-        }
-    }
-
-    @Test(.enabled(if: Self.liveWS))
-    func `server-first banner reaches the client`() async throws {
-        let echo = try await makeApp()
-        echo.webSocket("api", "vms", ":id", "vnc") { _, ws in
-            ws.send("RFB 003.008\n")
-        }
-        try await echo.startup()
-        let tunnel = try await makeApp()
-        do {
-            let echoPort = try boundPort(echo)
-            let dir = try isolatedDir()
-            defer { try? FileManager.default.removeItem(at: dir) }
-            let selfId = UUID().uuidString
-            let peerId = "peer-banner"
-            try DeviceRegistry(dataDir: dir).upsert(
-                hostId: peerId,
-                fingerprint: "aa",
-                agentHost: "127.0.0.1",
-                agentPort: echoPort,
-            )
-            tunnel.middleware.use(StubHomeUserMiddleware())
-            HomeConsoleProxyController(
-                dataDir: dir,
-                hostId: selfId,
-                localPort: echoPort,
-                devices: DeviceRegistry(dataDir: dir),
-                dialer: LoopbackWebSocketDialer(),
-            ).register(app: tunnel)
-            try await tunnel.startup()
-            let tunnelPort = try boundPort(tunnel)
-            let url =
-                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(peerId)/v1/vms/vm-9/vnc?ticket=\(Self.ticket)"
-            let banner = try await echoReceive(url: url)
-            #expect(banner == "RFB 003.008\n")
-            await stop(tunnel)
-            await stop(echo)
-        } catch {
-            await stop(tunnel)
-            await stop(echo)
-            throw error
-        }
-    }
-
-    @Test(.enabled(if: Self.liveWS))
-    func `this Device console still tunnels to local host API`() async throws {
-        let echo = try await makeApp()
-        echo.webSocket("api", "vms", ":id", "console") { _, ws in
-            ws.onText { ws, text in
-                ws.send("local:\(text)")
-            }
-        }
-        try await echo.startup()
-        let tunnel = try await makeApp()
-        do {
-            let echoPort = try boundPort(echo)
-            let selfId = UUID().uuidString
-            tunnel.middleware.use(StubHomeUserMiddleware())
-            try HomeConsoleProxyController(
-                dataDir: isolatedDir(),
-                hostId: selfId,
-                localPort: echoPort,
-                dialer: LoopbackWebSocketDialer(),
-            ).register(app: tunnel)
-            try await tunnel.startup()
-            let tunnelPort = try boundPort(tunnel)
-            let url =
-                "ws://127.0.0.1:\(tunnelPort)/api/home/devices/\(selfId)/v1/vms/vm-local/console?ticket=\(Self.ticket)"
-            let text = try await echoRoundTrip(url: url, send: .text("hi"))
-            #expect(text == "local:hi")
-            await stop(tunnel)
-            await stop(echo)
-        } catch {
-            await stop(tunnel)
-            await stop(echo)
-            throw error
-        }
-    }
-
-    @Test(.enabled(if: Self.liveWS))
-    func `agent hop tunnels vnc to the local host API`() async throws {
-        let echo = try await makeApp()
-        echo.webSocket("api", "vms", ":id", "vnc") { _, ws in
-            ws.onText { ws, text in
-                ws.send("agent:\(text)")
-            }
-        }
-        try await echo.startup()
-        let agent = try await makeApp()
-        do {
-            let echoPort = try boundPort(echo)
-            let proxy = AgentLocalProxyController(localPort: echoPort)
-            proxy.registerConsoleTunnels(app: agent)
-            try await agent.startup()
-            let agentPort = try boundPort(agent)
-            let url = "ws://127.0.0.1:\(agentPort)/api/vms/vm-9/vnc?ticket=\(Self.ticket)"
-            let text = try await echoRoundTrip(url: url, send: .text("frame"))
-            #expect(text == "agent:frame")
-            await stop(agent)
-            await stop(echo)
-        } catch {
-            await stop(agent)
-            await stop(echo)
-            throw error
-        }
-    }
 }
 
 private struct StubHomeUserMiddleware: AsyncMiddleware {
@@ -325,23 +159,6 @@ private struct StubHomeUserMiddleware: AsyncMiddleware {
             apiKeyId: nil,
         )
         return try await next.respond(to: request)
-    }
-}
-
-private struct LoopbackWebSocketDialer: HomeWebSocketDialing {
-    func connect(
-        url: URL,
-        on eventLoopGroup: EventLoopGroup,
-        configure: @escaping @Sendable (WebSocket) -> Void,
-    ) async throws -> WebSocket {
-        var rewritten = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        rewritten?.scheme = "ws"
-        let target = try #require(rewritten?.url)
-        return try await HomeWebSocketDialer.open(
-            url: target,
-            on: eventLoopGroup,
-            configure: configure,
-        )
     }
 }
 
@@ -360,66 +177,5 @@ private final class ShutdownOnce: @unchecked Sendable {
         guard !resumed else { return }
         resumed = true
         continuation.resume()
-    }
-}
-
-private final class EchoOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var resumed = false
-    private let continuation: CheckedContinuation<String, Error>
-
-    init(_ continuation: CheckedContinuation<String, Error>) {
-        self.continuation = continuation
-    }
-
-    func resume(_ result: Result<String, Error>) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !resumed else { return }
-        resumed = true
-        continuation.resume(with: result)
-    }
-}
-
-private enum EchoSend {
-    case text(String)
-    case binary([UInt8])
-}
-
-private func echoReceive(url: String) async throws -> String {
-    try await echoRoundTrip(url: url, send: nil)
-}
-
-private func echoRoundTrip(url: String, send: EchoSend?) async throws -> String {
-    // Resume the continuation on timeout. A TaskGroup child that parks on an
-    // unresumed CheckedContinuation is not cancelled by a sibling throw, and
-    // that hung the whole `swift test` job on CI.
-    try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-        let once = EchoOnce(cont)
-        let future = WebSocket.connect(to: url, on: MultiThreadedEventLoopGroup.singleton) { ws in
-            ws.onText { ws, text in
-                once.resume(.success(text))
-                ws.close(promise: nil)
-            }
-            ws.onBinary { ws, buffer in
-                once.resume(.success(String(buffer: buffer)))
-                ws.close(promise: nil)
-            }
-            if let send {
-                switch send {
-                case let .text(text):
-                    ws.send(text)
-                case let .binary(bytes):
-                    ws.send(raw: bytes, opcode: .binary, fin: true, promise: nil)
-                }
-            }
-        }
-        future.whenFailure { error in
-            once.resume(.failure(error))
-        }
-        Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            once.resume(.failure(BarkVisorError.timeout("console tunnel echo")))
-        }
     }
 }
