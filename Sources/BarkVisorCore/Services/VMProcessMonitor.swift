@@ -44,15 +44,25 @@ public actor VMProcessMonitor {
     // MARK: - Reconnect or Cleanup
 
     public func reconnectOrCleanup() async {
-        guard let enumerator = FileManager.default.enumerator(atPath: pidsDir.path) else { return }
-
         var reconnectedIDs: Set<String> = []
 
-        while let file = enumerator.nextObject() as? String {
-            guard file.hasSuffix(".pid") else { continue }
-            let vmID = String(file.dropLast(4))
-            if await tryReconnectVM(vmID: vmID, pidFile: pidsDir.appendingPathComponent(file)) {
-                reconnectedIDs.insert(vmID)
+        if let enumerator = FileManager.default.enumerator(atPath: pidsDir.path) {
+            while let file = enumerator.nextObject() as? String {
+                guard file.hasSuffix(".pid") else { continue }
+                let vmID = String(file.dropLast(4))
+                if await tryReconnectVM(vmID: vmID, pidFile: pidsDir.appendingPathComponent(file)) {
+                    reconnectedIDs.insert(vmID)
+                }
+            }
+        }
+
+        let candidates = await (try? dbPool.read { db in
+            try VM.filter(["running", "starting", "stopping", "error"].contains(Column("state")))
+                .fetchAll(db)
+        }) ?? []
+        for vm in candidates where !reconnectedIDs.contains(vm.id) {
+            if await adoptLiveIfPresent(vmID: vm.id) {
+                reconnectedIDs.insert(vm.id)
             }
         }
 
@@ -63,13 +73,21 @@ public actor VMProcessMonitor {
         }
     }
 
+    /// Adopt a QEMU that already has this Workload's `-uuid`, even with a stale pid file.
+    @discardableResult
+    public func adoptLiveIfPresent(vmID: String) async -> Bool {
+        guard let live = QEMUProcessLocator.find(vmID: vmID) else { return false }
+        return await adopt(live, vmID: vmID, pidFile: pidsDir.appendingPathComponent("\(vmID).pid"))
+    }
+
     private func tryReconnectVM(vmID: String, pidFile: URL) async -> Bool {
-        guard let content = try? String(contentsOf: pidFile, encoding: .utf8) else {
-            try? FileManager.default.removeItem(at: pidFile)
-            return false
+        if await adoptLiveIfPresent(vmID: vmID) {
+            return true
         }
 
-        guard let pids = VMPidFile.parse(content) else {
+        guard let content = try? String(contentsOf: pidFile, encoding: .utf8),
+              let pids = VMPidFile.parse(content)
+        else {
             try? FileManager.default.removeItem(at: pidFile)
             return false
         }
@@ -88,52 +106,92 @@ public actor VMProcessMonitor {
         }
 
         let sockets = VMSockets(vmID: vmID)
-        guard FileManager.default.fileExists(atPath: sockets.qmp.path) else {
-            Log.vm.warning("VM \(vmID): sockets missing, killing orphaned process", vm: vmID)
-            kill(pid, SIGTERM)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
-            cleanupDeadVM(vmID: vmID)
-            return false
+        if FileManager.default.fileExists(atPath: sockets.qmp.path) {
+            let args = QEMUProcessLocator.commandLine(pid: pid) ?? []
+            let parsed = QEMUProcessRecord.parse(pid: pid, arguments: args)
+            let record = parsed ?? QEMUProcessRecord(
+                pid: pid,
+                vmID: vmID,
+                serialSocketPath: sockets.serial.path,
+                vncSocketPath: sockets.vnc.path,
+                qmpSocketPath: sockets.qmp.path,
+                qmpEventSocketPath: sockets.event.path,
+            )
+            return await adopt(record, vmID: vmID, pidFile: pidFile)
         }
 
+        // Live QEMU, but not our UUID and no sockets in the current dir.
+        // Do not kill — it may be another Workload or a leftover after socket-dir cutover.
+        Log.vm.warning(
+            "VM \(vmID): PID \(pid) is QEMU without matching uuid/sockets; leaving process, dropping pid file",
+            vm: vmID,
+        )
+        try? FileManager.default.removeItem(at: pidFile)
+        return false
+    }
+
+    private func adopt(_ record: QEMUProcessRecord, vmID: String, pidFile: URL) async -> Bool {
         let vmRecord = try? await dbPool.read { db in
             try VM.fetchOne(db, key: vmID)
         }
         guard let vmRecord else {
-            Log.vm.warning("VM \(vmID): no DB record, killing orphaned process", vm: vmID)
-            kill(pid, SIGTERM)
-            cleanupDeadVM(vmID: vmID)
+            Log.vm.warning("VM \(vmID): live QEMU \(record.pid) has no DB record; not killing", vm: vmID)
             return false
         }
 
-        let swtpmPid = pids.swtpmPid.flatMap { candidate in
+        let expected = VMSockets(vmID: vmID)
+        let serial = firstExistingPath(record.serialSocketPath, expected.serial.path)
+        let vnc = firstExistingPath(record.vncSocketPath, expected.vnc.path)
+        let qmp = firstExistingPath(record.qmpSocketPath, expected.qmp.path)
+        let event = firstExistingPath(record.qmpEventSocketPath, expected.event.path)
+
+        let existingPids = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap(VMPidFile.parse)
+        let swtpmPid = existingPids?.swtpmPid.flatMap { candidate in
             VMManager.isSwtpmProcess(pid: candidate) ? candidate : nil
         }
+        try? "\(record.pid)\n\(swtpmPid ?? -1)".write(to: pidFile, atomically: true, encoding: .utf8)
+
         let running = RunningVM(
             process: nil,
-            pid: pid,
-            serialSocketPath: sockets.serial.path,
-            vncSocketPath: sockets.vnc.path,
-            qmpSocketPath: sockets.qmp.path,
-            qmpEventSocketPath: sockets.event.path,
+            pid: record.pid,
+            serialSocketPath: serial,
+            vncSocketPath: vnc,
+            qmpSocketPath: qmp,
+            qmpEventSocketPath: event,
             swtpmProcess: nil,
             reconnected: true,
             swtpmPid: swtpmPid,
         )
         await vmManager?.registerReconnectedVM(vmID: vmID, running: running)
+        await vmManager?.clearHealthError(for: vmID)
+        try? await vmManager?.updateState(vmID: vmID, state: "running")
 
-        await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
-        await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
-        await qmpEventListener?.start(vmID: vmID, eventSocketPath: sockets.event.path)
+        if FileManager.default.fileExists(atPath: serial) {
+            await consoleBuffers?.attach(vmID: vmID, serialSocketPath: serial)
+        }
+        if FileManager.default.fileExists(atPath: qmp) {
+            await metricsCollector?.start(vmID: vmID, qmpSocketPath: qmp, pid: record.pid)
+        }
+        if FileManager.default.fileExists(atPath: event) {
+            await qmpEventListener?.start(vmID: vmID, eventSocketPath: event)
+        }
 
-        watchProcess(vmID: vmID, pid: pid)
+        watchProcess(vmID: vmID, pid: record.pid)
 
         Log.vm.info(
-            "Reconnected to VM \(vmRecord.name) (PID: \(pid), VNC: \(sockets.vnc.path))",
+            "Reconnected to VM \(vmRecord.name) (PID: \(record.pid), VNC: \(vnc))",
             vm: vmID,
         )
         return true
+    }
+
+    private func firstExistingPath(_ preferred: String, _ fallback: String) -> String {
+        // Honor the live QEMU argv even when PrivateTmp deleted the dentry.
+        // Do not fall back to leftover sockets in the current socket dir.
+        if !preferred.isEmpty {
+            return preferred
+        }
+        return fallback
     }
 
     private func resetStaleVMStates(excluding reconnectedIDs: Set<String>) async {

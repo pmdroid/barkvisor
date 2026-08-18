@@ -69,6 +69,27 @@ struct DaemonRestartIsolationTests {
         #expect(VMPidFile.parse("") == nil)
     }
 
+    @Test func `qemu argv parse reads uuid and sockets`() {
+        let args = [
+            "/usr/bin/qemu-system-x86_64",
+            "-name", "hermes",
+            "-uuid", "6FB33A30-F139-4DE5-80EB-1DA1883696B1",
+            "-chardev", "socket,id=serial0,path=/tmp/barkvisor/6FB33A30-F13-ser.sock,server=on,wait=off",
+            "-vnc", "unix:/tmp/barkvisor/6FB33A30-F13-vnc.sock,lossy=on",
+            "-qmp", "unix:/tmp/barkvisor/6FB33A30-F13-qmp.sock,server,nowait",
+            "-qmp", "unix:/tmp/barkvisor/6FB33A30-F13-evt.sock,server,nowait",
+        ]
+        let record = QEMUProcessRecord.parse(pid: 334_901, arguments: args)
+        #expect(record?.vmID == "6FB33A30-F139-4DE5-80EB-1DA1883696B1")
+        #expect(record?.pid == 334_901)
+        #expect(record?.serialSocketPath == "/tmp/barkvisor/6FB33A30-F13-ser.sock")
+        #expect(record?.vncSocketPath == "/tmp/barkvisor/6FB33A30-F13-vnc.sock")
+        #expect(record?.qmpSocketPath == "/tmp/barkvisor/6FB33A30-F13-qmp.sock")
+        #expect(record?.qmpEventSocketPath == "/tmp/barkvisor/6FB33A30-F13-evt.sock")
+        #expect(QEMUProcessRecord.parse(pid: 1, arguments: ["bash", "-c", "echo"]) == nil)
+        #expect(QEMUProcessRecord.parse(pid: 1, arguments: ["qemu-system-x86_64", "-name", "x"]) == nil)
+    }
+
     @Test func `reconnected running vm keeps swtpm pid`() {
         let running = RunningVM(
             process: nil,

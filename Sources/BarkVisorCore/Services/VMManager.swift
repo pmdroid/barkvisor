@@ -142,9 +142,16 @@ public actor VMManager: VMStateQuerying {
         startingVMs.insert(vmID)
         defer { startingVMs.remove(vmID) }
 
+        if await processMonitor?.adoptLiveIfPresent(vmID: vmID) == true {
+            Log.vm.info("VM \(vmID) already has a live QEMU; adopted instead of launching", vm: vmID)
+            return
+        }
+
         // Load VM and related records
         let loaded = try await loadVM(id: vmID)
-        guard loaded.vm.state == "stopped" || loaded.vm.state == "error" else {
+        guard loaded.vm.state == "stopped" || loaded.vm.state == "error"
+            || loaded.vm.state == "running"
+        else {
             throw BarkVisorError.vmAlreadyRunning(vmID)
         }
 
@@ -242,6 +249,14 @@ public actor VMManager: VMStateQuerying {
             )
         } catch {
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
+            if isQEMUWriteLockError(error),
+               await processMonitor?.adoptLiveIfPresent(vmID: vmID) == true {
+                Log.vm.info(
+                    "VM \(vmID) disk was already locked by its QEMU; adopted the running process",
+                    vm: vmID,
+                )
+                return
+            }
             Log.vm.error("VM start failed: \(error.localizedDescription)", vm: vmID)
             do {
                 recordHealthError(error.localizedDescription, for: vmID)

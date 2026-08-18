@@ -238,6 +238,13 @@ extension VMManager {
         }
     }
 
+    func isQEMUWriteLockError(_ error: Error) -> Bool {
+        let text = error.localizedDescription
+        return text.contains("Failed to get \"write\" lock")
+            || text.contains("Failed to get 'write' lock")
+            || text.contains("Is another process using the image")
+    }
+
     func waitForVNCAndSerialSockets(
         process: Process, vncSock: URL, serialSock: URL, vmID: String,
     ) async throws {
