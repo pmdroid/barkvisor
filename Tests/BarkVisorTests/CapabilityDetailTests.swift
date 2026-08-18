@@ -132,6 +132,7 @@ struct CapabilityDetailTests {
         let byCode = Dictionary(uniqueKeysWithValues: caps.details.map { ($0.code, $0) })
         #expect(byCode[.bridgedNetworking]?.supported == caps.supportsBridgedNetworking)
         #expect(byCode[.managedBridgeDaemon]?.supported == caps.supportsManagedBridgeDaemon)
+        #expect(byCode[.hostBridgeManagement]?.supported == caps.supportsHostBridgeManagement)
         #expect(byCode[.usbPassthrough]?.supported == caps.supportsUSBPassthrough)
         #expect(byCode[.inAppUpdate]?.supported == caps.supportsInAppUpdate)
         #expect(byCode[.tcgOnly]?.supported == (caps.accelerator == "tcg"))
@@ -139,6 +140,7 @@ struct CapabilityDetailTests {
         #if os(Linux)
             #expect(byCode[.managedBridgeDaemon]?.supported == false)
             #expect(byCode[.managedBridgeDaemon]?.reasonCode == CapabilityReasonCode.linuxOsManaged.rawValue)
+            #expect(byCode[.hostBridgeManagement]?.supported == true)
             #expect(byCode[.inAppUpdate]?.supported == false)
             #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.linuxPkgUpdate.rawValue)
             if caps.accelerator == "tcg" {

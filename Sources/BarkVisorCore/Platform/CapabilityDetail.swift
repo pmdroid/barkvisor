@@ -8,6 +8,7 @@ import Foundation
 public enum CapabilityCode: String, Codable, Sendable, CaseIterable {
     case bridgedNetworking
     case managedBridgeDaemon
+    case hostBridgeManagement
     case usbPassthrough
     case inAppUpdate
     case kvmDevice
@@ -135,6 +136,8 @@ public enum CapabilityDetailBuilder {
             return bridgedNetworking(os: os, supported: features.bridgedNetworking)
         case .managedBridgeDaemon:
             return managedBridgeDaemon(os: os, supported: features.managedBridgeDaemon)
+        case .hostBridgeManagement:
+            return hostBridgeManagement(os: os)
         case .usbPassthrough:
             return usbPassthrough(os: os, supported: features.usbPassthrough)
         case .inAppUpdate:
@@ -204,6 +207,19 @@ public enum CapabilityDetailBuilder {
             supported: false,
             reason: .osUnsupported,
             remediation: "Managed bridge daemon lifecycle is not supported on this platform.",
+        )
+    }
+
+    private static func hostBridgeManagement(os: String) -> CapabilityDetail {
+        if isLinux(os) {
+            return CapabilityDetail(code: .hostBridgeManagement, supported: true)
+        }
+        return CapabilityDetail(
+            code: .hostBridgeManagement,
+            supported: false,
+            reason: .osUnsupported,
+            remediation: "Host bridge setup guidance is for Linux Devices. "
+                + "On macOS use Manage Bridges to install socket_vmnet.",
         )
     }
 

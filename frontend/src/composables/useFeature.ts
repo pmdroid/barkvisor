@@ -7,7 +7,8 @@ import { useCapabilitiesStore } from '../stores/capabilities'
  * | Feature               | Surfaces                                                      |
  * | --------------------- | ------------------------------------------------------------- |
  * | bridgedNetworking     | NetworkView, TemplateDeploy, CreateVM network pick            |
- * | managedBridgeDaemon   | NetworkView Manage Bridges, SetupView skip, VMDetail ready    |
+ * | managedBridgeDaemon   | NetworkView Manage Bridges (macOS), SetupView skip            |
+ * | hostBridgeManagement  | NetworkView Manage Bridges (Linux checklist)                  |
  * | usbPassthrough        | CreateVM network step, CreateVM summary, VMDetail attach USB  |
  * | inAppUpdate           | SettingsView updates tab                                      |
  *
@@ -17,6 +18,7 @@ import { useCapabilitiesStore } from '../stores/capabilities'
 export const FEATURE_CODES = [
   'bridgedNetworking',
   'managedBridgeDaemon',
+  'hostBridgeManagement',
   'usbPassthrough',
   'inAppUpdate',
 ] as const

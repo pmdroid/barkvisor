@@ -2157,6 +2157,8 @@ components:
           type: boolean
         supportsManagedBridgeDaemon:
           type: boolean
+        supportsHostBridgeManagement:
+          type: boolean
         supportsUSBPassthrough:
           type: boolean
         supportsInAppUpdate:
