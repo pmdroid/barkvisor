@@ -25,9 +25,9 @@ struct SerialConsoleView: View {
                     .background(Color.black)
             } else {
                 ContentUnavailableView(
-                    access == .memberDisabled ? "Member Console unavailable" : "Console unavailable",
+                    access == .deviceUnreachable ? "Device unreachable" : "Console unavailable",
                     systemImage: "apple.terminal",
-                    description: Text(access.reason)
+                    description: Text(access.reason),
                 )
             }
         }
@@ -44,17 +44,22 @@ struct SerialConsoleView: View {
                 }
             }
         #endif
-        .task(id: WorkloadStream.sessionTaskID(deviceID: deviceID, workloadID: workloadID, state: workload.state)) {
-            guard let client = model.client, access.allowsOpen else {
-                session.stop()
-                return
+            .task(id: WorkloadStream.sessionTaskID(
+                deviceID: deviceID,
+                workloadID: workloadID,
+                state: workload.state,
+                deviceReachable: device.isSelf || device.isReachable,
+            )) {
+                guard let client = model.client, access.allowsOpen else {
+                    session.stop()
+                    return
+                }
+                session.start(client: client, workloadID: workload.id, state: workload.state, device: device)
             }
-            session.start(client: client, workloadID: workload.id, state: workload.state)
-        }
-        .onChange(of: workload.state) { _, next in
-            session.updateState(next)
-        }
-        .onDisappear { session.stop() }
+            .onChange(of: workload.state) { _, next in
+                session.updateState(next)
+            }
+            .onDisappear { session.stop() }
     }
 
     private var workload: Workload {
@@ -72,131 +77,139 @@ struct SerialConsoleView: View {
     }
 
     private var access: WorkloadStreamAccess {
-        WorkloadStreamAccess.resolve(isSelfDevice: device.isSelf, state: workload.state)
+        WorkloadStreamAccess.resolve(device: device, state: workload.state)
     }
 }
 
 #if os(iOS)
-private struct SerialTerminalView: UIViewRepresentable {
-    var session: ConsoleSession
-    @Binding var terminalRef: TerminalView?
-
-    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
-
-    func makeUIView(context: Context) -> TerminalView {
-        let view = TerminalView(
-            frame: .zero,
-            font: .monospacedSystemFont(ofSize: 12.5, weight: .regular)
-        )
-        view.terminalDelegate = context.coordinator
-        view.nativeForegroundColor = .init(red: 0.78, green: 0.97, blue: 0.77, alpha: 1)
-        view.nativeBackgroundColor = .black
-        context.coordinator.attach(view)
-        DispatchQueue.main.async { terminalRef = view }
-        return view
-    }
-
-    func updateUIView(_ view: TerminalView, context: Context) {
-        context.coordinator.session = session
-        context.coordinator.attach(view)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, TerminalViewDelegate {
+    private struct SerialTerminalView: UIViewRepresentable {
         var session: ConsoleSession
-        weak var terminal: TerminalView?
+        @Binding var terminalRef: TerminalView?
 
-        init(session: ConsoleSession) { self.session = session }
+        func makeCoordinator() -> Coordinator {
+            Coordinator(session: session)
+        }
 
-        func attach(_ view: TerminalView) {
-            terminal = view
-            session.onBytes = { [weak view] bytes in
-                view?.feed(byteArray: bytes)
+        func makeUIView(context: Context) -> TerminalView {
+            let view = TerminalView(
+                frame: .zero,
+                font: .monospacedSystemFont(ofSize: 12.5, weight: .regular),
+            )
+            view.terminalDelegate = context.coordinator
+            view.nativeForegroundColor = .init(red: 0.78, green: 0.97, blue: 0.77, alpha: 1)
+            view.nativeBackgroundColor = .black
+            context.coordinator.attach(view)
+            DispatchQueue.main.async { terminalRef = view }
+            return view
+        }
+
+        func updateUIView(_ view: TerminalView, context: Context) {
+            context.coordinator.session = session
+            context.coordinator.attach(view)
+        }
+
+        @MainActor
+        final class Coordinator: NSObject, TerminalViewDelegate {
+            var session: ConsoleSession
+            weak var terminal: TerminalView?
+
+            init(session: ConsoleSession) {
+                self.session = session
             }
-            session.onText = { [weak view] text in
-                view?.feed(text: text)
+
+            func attach(_ view: TerminalView) {
+                terminal = view
+                session.onBytes = { [weak view] bytes in
+                    view?.feed(byteArray: bytes)
+                }
+                session.onText = { [weak view] text in
+                    view?.feed(text: text)
+                }
             }
-        }
 
-        nonisolated func sizeChanged(source _: TerminalView, newCols _: Int, newRows _: Int) {}
-        nonisolated func setTerminalTitle(source _: TerminalView, title _: String) {}
-        nonisolated func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
-        nonisolated func send(source _: TerminalView, data: ArraySlice<UInt8>) {
-            let copy = Array(data)
-            Task { @MainActor in self.session.send(copy[...]) }
-        }
+            nonisolated func sizeChanged(source _: TerminalView, newCols _: Int, newRows _: Int) {}
+            nonisolated func setTerminalTitle(source _: TerminalView, title _: String) {}
+            nonisolated func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
+            nonisolated func send(source _: TerminalView, data: ArraySlice<UInt8>) {
+                let copy = Array(data)
+                Task { @MainActor in self.session.send(copy[...]) }
+            }
 
-        nonisolated func scrolled(source _: TerminalView, position _: Double) {}
-        nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
-        nonisolated func bell(source _: TerminalView) {}
-        nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
-            HostPasteboard.writeString(String(data: content, encoding: .utf8) ?? "")
-        }
+            nonisolated func scrolled(source _: TerminalView, position _: Double) {}
+            nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
+            nonisolated func bell(source _: TerminalView) {}
+            nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
+                HostPasteboard.writeString(String(data: content, encoding: .utf8) ?? "")
+            }
 
-        nonisolated func clipboardRead(source _: TerminalView) -> Data? {
-            HostPasteboard.readData()
+            nonisolated func clipboardRead(source _: TerminalView) -> Data? {
+                HostPasteboard.readData()
+            }
+            nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
+            nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
         }
-        nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
-        nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
     }
-}
 #else
-private struct SerialTerminalView: NSViewRepresentable {
-    var session: ConsoleSession
-    @Binding var terminalRef: TerminalView?
-
-    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
-
-    func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: .zero)
-        view.terminalDelegate = context.coordinator
-        context.coordinator.attach(view)
-        DispatchQueue.main.async { terminalRef = view }
-        return view
-    }
-
-    func updateNSView(_ view: TerminalView, context: Context) {
-        context.coordinator.session = session
-        context.coordinator.attach(view)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, TerminalViewDelegate {
+    private struct SerialTerminalView: NSViewRepresentable {
         var session: ConsoleSession
-        weak var terminal: TerminalView?
+        @Binding var terminalRef: TerminalView?
 
-        init(session: ConsoleSession) { self.session = session }
+        func makeCoordinator() -> Coordinator {
+            Coordinator(session: session)
+        }
 
-        func attach(_ view: TerminalView) {
-            terminal = view
-            session.onBytes = { [weak view] bytes in
-                view?.feed(byteArray: bytes)
+        func makeNSView(context: Context) -> TerminalView {
+            let view = TerminalView(frame: .zero)
+            view.terminalDelegate = context.coordinator
+            context.coordinator.attach(view)
+            DispatchQueue.main.async { terminalRef = view }
+            return view
+        }
+
+        func updateNSView(_ view: TerminalView, context: Context) {
+            context.coordinator.session = session
+            context.coordinator.attach(view)
+        }
+
+        @MainActor
+        final class Coordinator: NSObject, TerminalViewDelegate {
+            var session: ConsoleSession
+            weak var terminal: TerminalView?
+
+            init(session: ConsoleSession) {
+                self.session = session
             }
-            session.onText = { [weak view] text in
-                view?.feed(text: text)
+
+            func attach(_ view: TerminalView) {
+                terminal = view
+                session.onBytes = { [weak view] bytes in
+                    view?.feed(byteArray: bytes)
+                }
+                session.onText = { [weak view] text in
+                    view?.feed(text: text)
+                }
             }
-        }
 
-        nonisolated func sizeChanged(source _: TerminalView, newCols _: Int, newRows _: Int) {}
-        nonisolated func setTerminalTitle(source _: TerminalView, title _: String) {}
-        nonisolated func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
-        nonisolated func send(source _: TerminalView, data: ArraySlice<UInt8>) {
-            let copy = Array(data)
-            Task { @MainActor in self.session.send(copy[...]) }
-        }
+            nonisolated func sizeChanged(source _: TerminalView, newCols _: Int, newRows _: Int) {}
+            nonisolated func setTerminalTitle(source _: TerminalView, title _: String) {}
+            nonisolated func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
+            nonisolated func send(source _: TerminalView, data: ArraySlice<UInt8>) {
+                let copy = Array(data)
+                Task { @MainActor in self.session.send(copy[...]) }
+            }
 
-        nonisolated func scrolled(source _: TerminalView, position _: Double) {}
-        nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
-        nonisolated func bell(source _: TerminalView) {}
-        nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
-            HostPasteboard.writeString(String(data: content, encoding: .utf8) ?? "")
-        }
+            nonisolated func scrolled(source _: TerminalView, position _: Double) {}
+            nonisolated func requestOpenLink(source _: TerminalView, link _: String, params _: [String: String]) {}
+            nonisolated func bell(source _: TerminalView) {}
+            nonisolated func clipboardCopy(source _: TerminalView, content: Data) {
+                HostPasteboard.writeString(String(data: content, encoding: .utf8) ?? "")
+            }
 
-        nonisolated func clipboardRead(source _: TerminalView) -> Data? {
-            HostPasteboard.readData()
+            nonisolated func clipboardRead(source _: TerminalView) -> Data? {
+                HostPasteboard.readData()
+            }
+            nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
+            nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
         }
-        nonisolated func iTermContent(source _: TerminalView, content _: ArraySlice<UInt8>) {}
-        nonisolated func rangeChanged(source _: TerminalView, startY _: Int, endY _: Int) {}
     }
-}
 #endif
