@@ -157,10 +157,12 @@ export const useDeviceLogsStore = defineStore('deviceLogs', () => {
     const pollable = members.filter((device) => Boolean(logsHistoryFetchPath(device)))
     if (!self && pollable.length === 0) return false
 
+    const pollParams: LogFetchParams = {
+      ...params,
+      limit: params.limit ?? LOG_HISTORY_LIMIT,
+    }
     const pollMembers = () => {
-      void Promise.all(
-        pollable.map((device) => fetchFor(device, { limit: params.limit ?? LOG_HISTORY_LIMIT })),
-      )
+      void Promise.all(pollable.map((device) => fetchFor(device, pollParams)))
     }
     if (pollable.length > 0) {
       pollMembers()

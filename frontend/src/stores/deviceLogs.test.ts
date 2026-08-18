@@ -231,6 +231,27 @@ describe('deviceLogs store (PAS-219)', () => {
     expect(store.startHomeTail([down])).toBe(false)
   })
 
+  test('home tail member polls keep active log filters', async () => {
+    const member = snapshot({ hostId: 'peer/1', role: 'member' })
+    const get = mock((url: string) => {
+      expect(url).toBe('/home/devices/peer%2F1/v1/logs')
+      return Promise.resolve({ data: [entry({ ts: '2026-08-17T12:00:00Z', msg: 'orb' })] })
+    })
+    api.get = get as typeof api.get
+    const store = useDeviceLogsStore()
+    const params = {
+      category: 'vm',
+      level: 'warn',
+      since: '2026-08-17T00:00:00Z',
+      search: 'disk',
+      limit: 10,
+    }
+    expect(store.startHomeTail([member], params)).toBe(true)
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get.mock.calls[0]?.[1]).toEqual({ params })
+    store.stopHomeTail()
+  })
+
   test('an unreachable refresh does not leave loading stuck after a stale list arrives', async () => {
     const peer = snapshot({ hostId: 'peer-1', role: 'member' })
     let resolveOlder!: (value: { data: LogEntry[] }) => void
