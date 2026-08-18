@@ -16,6 +16,13 @@ struct WebSocketHopTests {
         #expect(inbound.isClosed)
     }
 
+    @Test func `hop target omits query credentials`() throws {
+        let url = try #require(
+            URL(string: "ws://127.0.0.1:7777/api/vms/vm-1/vnc?ticket=secret&session=home"),
+        )
+        #expect(WebSocketHop.safeHopTarget(url) == "ws://127.0.0.1:7777/api/vms/vm-1/vnc")
+    }
+
     @Test func `inbound closed before dial completes closes the far end`() async throws {
         let inbound = FakeHopPeer()
         let remote = FakeHopPeer()
@@ -43,9 +50,9 @@ struct WebSocketHopTests {
         inbound.inject(.binary(byteBuffer("rfb")))
         farEnd.release()
         await task.value
-        try await waitUntil { remote.sentTexts() == ["ping"] && remote.sentBinaryStrings() == ["rfb"] }
-        #expect(remote.sentTexts() == ["ping"])
-        #expect(remote.sentBinaryStrings() == ["rfb"])
+        let expected = ["text:ping", "binary:rfb"]
+        try await waitUntil { remote.sentLabels() == expected }
+        #expect(remote.sentLabels() == expected)
     }
 
     @Test func `server-first banner reaches the client in order`() async throws {
@@ -53,10 +60,14 @@ struct WebSocketHopTests {
         let remote = FakeHopPeer()
         await WebSocketHop.run(
             inbound: inbound,
-            farEnd: BannerHopFarEnd(peer: remote, banner: .text("RFB 003.008\n")),
+            farEnd: BannerHopFarEnd(
+                peer: remote,
+                banners: [.text("RFB 003.008\n"), .binary(byteBuffer("sec"))],
+            ),
         )
-        try await waitUntil { inbound.sentTexts() == ["RFB 003.008\n"] }
-        #expect(inbound.sentTexts() == ["RFB 003.008\n"])
+        let expected = ["text:RFB 003.008\n", "binary:sec"]
+        try await waitUntil { inbound.sentLabels() == expected }
+        #expect(inbound.sentLabels() == expected)
     }
 
     @Test func `overflow toward remote closes both ends`() async throws {
@@ -259,6 +270,17 @@ private final class FakeHopPeer: WebSocketHopPeer, @unchecked Sendable {
             return nil
         }
     }
+
+    func sentLabels() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.map { frame in
+            switch frame {
+            case let .text(text): "text:\(text)"
+            case let .binary(buffer): "binary:\(String(buffer: buffer))"
+            }
+        }
+    }
 }
 
 private struct FailingHopFarEnd: WebSocketHopFarEnding {
@@ -308,13 +330,25 @@ private final class DelayedHopFarEnd: WebSocketHopFarEnding, @unchecked Sendable
 
 private struct BannerHopFarEnd: WebSocketHopFarEnding {
     let peer: FakeHopPeer
-    let banner: WebSocketPipeBox.Frame
+    let banners: [WebSocketPipeBox.Frame]
+
+    init(peer: FakeHopPeer, banner: WebSocketPipeBox.Frame) {
+        self.peer = peer
+        banners = [banner]
+    }
+
+    init(peer: FakeHopPeer, banners: [WebSocketPipeBox.Frame]) {
+        self.peer = peer
+        self.banners = banners
+    }
 
     func open(
         configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
     ) async throws -> any WebSocketHopPeer {
         configure(peer)
-        peer.inject(banner)
+        for banner in banners {
+            peer.inject(banner)
+        }
         return peer
     }
 }

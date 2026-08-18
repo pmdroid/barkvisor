@@ -39,6 +39,7 @@ enum WebSocketHop {
             inbound: inbound,
             farEnd: HomeWebSocketHopFarEnd(url: url, dialer: dialer),
             maxPendingBytes: maxPendingBytes,
+            logTarget: safeHopTarget(url),
         )
     }
 
@@ -63,6 +64,7 @@ enum WebSocketHop {
             inbound: inbound,
             farEnd: UnixSocketHopFarEnd(path: unixSocketPath),
             maxPendingBytes: maxPendingBytes,
+            logTarget: "unix:\(unixSocketPath)",
         )
     }
 
@@ -70,6 +72,7 @@ enum WebSocketHop {
         inbound: any WebSocketHopPeer,
         farEnd: any WebSocketHopFarEnding,
         maxPendingBytes: Int = WebSocketPipeBox.defaultMaxPendingBytes,
+        logTarget: String? = nil,
     ) async {
         let toRemote = WebSocketPipeBox()
         toRemote.maxPendingBytes = maxPendingBytes
@@ -107,8 +110,20 @@ enum WebSocketHop {
                 remote.close()
             }
         } catch {
+            let whereTo = logTarget.map { " (\($0))" } ?? ""
+            Log.server.error("Console hop failed\(whereTo): \(error.localizedDescription)")
             inbound.close()
         }
+    }
+
+    /// Scheme/host/port/path only — tickets and sessions stay off the log line.
+    static func safeHopTarget(_ url: URL) -> String {
+        var parts = URLComponents()
+        parts.scheme = url.scheme
+        parts.host = url.host
+        parts.port = url.port
+        parts.path = url.path
+        return parts.string ?? url.path
     }
 
     static func bindCloses(local: any WebSocketHopPeer, remote: any WebSocketHopPeer) {
