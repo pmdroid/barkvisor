@@ -42,12 +42,14 @@ struct AgentLocalProxyController: RouteCollection {
                 return [:]
             },
             onUpgrade: { req, inbound in
-                await Self.tunnelToLocal(
-                    req: req,
-                    inbound: inbound,
-                    kind: kind,
-                    localPort: localPort,
-                )
+                Task {
+                    await Self.tunnelToLocal(
+                        req: req,
+                        inbound: inbound,
+                        kind: kind,
+                        localPort: localPort,
+                    )
+                }
             },
         )
     }

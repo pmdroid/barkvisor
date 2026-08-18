@@ -42,7 +42,11 @@ struct HomeConsoleProxyController {
                 return [:]
             },
             onUpgrade: { req, ws in
-                await self.tunnel(req: req, inbound: ws, kind: kind)
+                // Do not await on inbound.eventLoop — the outbound
+                // WebSocket.connect needs that loop to complete.
+                Task {
+                    await self.tunnel(req: req, inbound: ws, kind: kind)
+                }
             },
         )
     }
