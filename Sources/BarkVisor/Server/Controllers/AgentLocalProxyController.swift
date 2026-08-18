@@ -1,5 +1,4 @@
 import BarkVisorCore
-import NIOPosix
 import Vapor
 
 /// Agent-plane catch-all: forward mTLS `/api/*` to this Device's host API.
@@ -12,13 +11,16 @@ import Vapor
 struct AgentLocalProxyController: RouteCollection {
     var localPort: Int
     var client: any HomeDeviceProxyClient
+    var dialer: any HomeWebSocketDialing
 
     init(
         localPort: Int = Config.port,
         client: any HomeDeviceProxyClient = LocalHostProxyClient(),
+        dialer: (any HomeWebSocketDialing)? = nil,
     ) {
         self.localPort = localPort
         self.client = client
+        self.dialer = dialer ?? PlainWebSocketDialer()
     }
 
     func boot(routes: any RoutesBuilder) throws {
@@ -34,7 +36,6 @@ struct AgentLocalProxyController: RouteCollection {
     }
 
     private func registerConsoleTunnel(app: Vapor.Application, kind: HomeConsoleKind) {
-        let localPort = localPort
         app.webSocket(
             "api", "vms", ":id", .constant(kind.rawValue),
             shouldUpgrade: { req in
@@ -44,32 +45,36 @@ struct AgentLocalProxyController: RouteCollection {
             },
             onUpgrade: { req, inbound in
                 Task {
-                    await Self.tunnelToLocal(
-                        req: req,
-                        inbound: inbound,
-                        kind: kind,
-                        localPort: localPort,
-                    )
+                    await self.tunnelToLocal(req: req, inbound: inbound, kind: kind)
                 }
             },
         )
     }
 
-    private static func tunnelToLocal(
+    private func tunnelToLocal(
         req: Vapor.Request,
         inbound: WebSocket,
         kind: HomeConsoleKind,
-        localPort: Int,
     ) async {
-        let toRemote = WebSocketPipeBox()
-        let toClient = WebSocketPipeBox()
-        WebSocketRelay.onEventLoop(inbound) {
-            WebSocketRelay.capture(from: inbound, into: toRemote)
-        }
         guard let vmID = req.parameters.get("id") else {
             WebSocketRelay.close(inbound)
             return
         }
+        await tunnel(
+            inbound: VaporWebSocketPeer(inbound),
+            vmID: vmID,
+            kind: kind,
+            query: req.url.query,
+        )
+    }
+
+    /// Target + injected dialer. Used by the agent-plane route and seam tests.
+    func tunnel(
+        inbound: any WebSocketHopPeer,
+        vmID: String,
+        kind: HomeConsoleKind,
+        query: String?,
+    ) async {
         let url: URL
         do {
             url = try HomeDeviceProxy.consoleTargetURL(
@@ -80,33 +85,14 @@ struct AgentLocalProxyController: RouteCollection {
                     agentPort: localPort,
                     vmID: vmID,
                     kind: kind,
-                    query: req.url.query,
+                    query: query,
                 ),
             )
         } catch {
-            WebSocketRelay.close(inbound)
+            inbound.close()
             return
         }
-        do {
-            let remote = try await HomeWebSocketDialer.open(
-                url: url,
-                on: MultiThreadedEventLoopGroup.singleton,
-            ) { ws in
-                WebSocketRelay.capture(from: ws, into: toClient)
-            }
-            if inbound.isClosed {
-                WebSocketRelay.close(remote)
-                return
-            }
-            toRemote.attach(remote)
-            toClient.attach(inbound)
-            WebSocketRelay.bindCloses(local: inbound, remote: remote)
-        } catch {
-            Log.server.error(
-                "Agent console tunnel failed: \(error.localizedDescription)",
-            )
-            WebSocketRelay.close(inbound)
-        }
+        await WebSocketHop.run(inbound: inbound, url: url, dialer: dialer)
     }
 
     @Sendable

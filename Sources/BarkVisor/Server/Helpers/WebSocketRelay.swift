@@ -5,9 +5,9 @@ import NIOPosix
 import NIOSSL
 import Vapor
 
-/// Bidirectional WebSocket pipe for Home → member console tunnels (PAS-200).
+/// Bidirectional pipe for Home / agent / local VNC hops (PAS-200, PAS-224).
 ///
-/// Inbound frames are buffered until the outbound socket is attached so a
+/// Inbound frames are buffered until the outbound peer is attached so a
 /// client that sends immediately after 101 is not dropped.
 final class WebSocketPipeBox: @unchecked Sendable {
     enum Frame {
@@ -18,13 +18,13 @@ final class WebSocketPipeBox: @unchecked Sendable {
     static let defaultMaxPendingBytes = 262_144
 
     private let lock = NSLock()
-    private var remote: WebSocket?
+    private var remote: (any WebSocketHopPeer)?
     private var pending: [Frame] = []
     private var pendingBytes = 0
     var maxPendingBytes = WebSocketPipeBox.defaultMaxPendingBytes
     private(set) var overflowed = false
 
-    func attach(_ ws: WebSocket) {
+    func attach(_ peer: any WebSocketHopPeer) {
         while true {
             let batch: [Frame] = {
                 lock.lock()
@@ -32,19 +32,19 @@ final class WebSocketPipeBox: @unchecked Sendable {
                 let frames = pending
                 pending.removeAll()
                 if frames.isEmpty {
-                    remote = ws
+                    remote = peer
                 }
                 return frames
             }()
             guard !batch.isEmpty else { return }
             for frame in batch {
-                sendLive(frame, on: ws)
+                sendLive(frame, on: peer)
             }
         }
     }
 
     func sendOrBuffer(_ frame: Frame) -> Bool {
-        let outcome: (WebSocket?, Bool) = {
+        let outcome: ((any WebSocketHopPeer)?, Bool) = {
             lock.lock()
             defer { lock.unlock() }
             if overflowed { return (nil, false) }
@@ -62,15 +62,15 @@ final class WebSocketPipeBox: @unchecked Sendable {
             pendingBytes += size
             return (nil, true)
         }()
-        if let ws = outcome.0 {
-            return sendLive(frame, on: ws)
+        if let peer = outcome.0 {
+            return sendLive(frame, on: peer)
         }
         return outcome.1
     }
 
     /// Reserve against the same cap after attach; release when the write completes.
     @discardableResult
-    private func sendLive(_ frame: Frame, on ws: WebSocket) -> Bool {
+    private func sendLive(_ frame: Frame, on peer: any WebSocketHopPeer) -> Bool {
         let size = Self.byteCount(frame)
         let reserved: Bool = {
             lock.lock()
@@ -86,7 +86,7 @@ final class WebSocketPipeBox: @unchecked Sendable {
             return true
         }()
         guard reserved else { return false }
-        WebSocketRelay.send(frame, on: ws) { [self] in
+        peer.send(frame) { [self] in
             lock.lock()
             pendingBytes = max(0, pendingBytes - size)
             lock.unlock()
@@ -171,7 +171,7 @@ enum WebSocketRelay {
     }
 }
 
-private final class OnceResume<T: Sendable>: @unchecked Sendable {
+final class OnceResume<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var resumed = false
     private let continuation: CheckedContinuation<T, Error>
@@ -221,8 +221,8 @@ protocol HomeWebSocketDialing: Sendable {
     func connect(
         url: URL,
         on eventLoopGroup: EventLoopGroup,
-        configure: @escaping @Sendable (WebSocket) -> Void,
-    ) async throws -> WebSocket
+        configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
+    ) async throws -> any WebSocketHopPeer
 }
 
 /// Outbound WebSocket client. `ws://` is loopback (This Device / agent hop).
@@ -236,8 +236,8 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
     func connect(
         url: URL,
         on eventLoopGroup: EventLoopGroup,
-        configure: @escaping @Sendable (WebSocket) -> Void,
-    ) async throws -> WebSocket {
+        configure: @escaping @Sendable (any WebSocketHopPeer) -> Void,
+    ) async throws -> any WebSocketHopPeer {
         var configuration = WebSocketClient.Configuration()
         if url.scheme?.lowercased() == "wss" {
             configuration.tlsConfiguration = try Self.mtlsConfiguration(
@@ -245,12 +245,13 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
                 hostId: hostId,
             )
         }
-        return try await Self.open(
+        let ws = try await Self.open(
             url: url,
             configuration: configuration,
             on: eventLoopGroup,
-            configure: configure,
+            configure: { ws in configure(VaporWebSocketPeer(ws)) },
         )
+        return VaporWebSocketPeer(ws)
     }
 
     static func open(
