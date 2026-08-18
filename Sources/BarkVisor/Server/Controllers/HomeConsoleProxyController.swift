@@ -1,6 +1,5 @@
 import BarkVisorCore
 import Foundation
-import NIOPosix
 import Vapor
 
 /// Home WebSocket tunnel for member VNC / serial console (PAS-200).
@@ -100,11 +99,6 @@ struct HomeConsoleProxyController {
     }
 
     private func tunnel(req: Vapor.Request, inbound: WebSocket, kind: HomeConsoleKind) async {
-        let toRemote = WebSocketPipeBox()
-        let toClient = WebSocketPipeBox()
-        WebSocketRelay.onEventLoop(inbound) {
-            WebSocketRelay.capture(from: inbound, into: toRemote)
-        }
         let url: URL
         do {
             url = try targetURL(req: req, kind: kind)
@@ -112,28 +106,7 @@ struct HomeConsoleProxyController {
             WebSocketRelay.close(inbound)
             return
         }
-        do {
-            // Dial on the shared group, not inbound.eventLoop. A one-loop
-            // client on the upgrade loop deadlocks (Linux CI).
-            let remote = try await dialer.connect(
-                url: url,
-                on: MultiThreadedEventLoopGroup.singleton,
-            ) { ws in
-                WebSocketRelay.capture(from: ws, into: toClient)
-            }
-            if inbound.isClosed {
-                WebSocketRelay.close(remote)
-                return
-            }
-            toRemote.attach(remote)
-            toClient.attach(inbound)
-            WebSocketRelay.bindCloses(local: inbound, remote: remote)
-        } catch {
-            Log.server.error(
-                "Home console tunnel failed: \(error.localizedDescription)",
-            )
-            WebSocketRelay.close(inbound)
-        }
+        await WebSocketHop.run(inbound: inbound, url: url, dialer: dialer)
     }
 }
 
