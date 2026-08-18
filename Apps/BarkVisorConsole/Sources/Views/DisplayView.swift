@@ -1,5 +1,53 @@
 import SwiftUI
 import WebKit
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
+
+enum HostPasteboard {
+    static let maxPasteCharacters = 1_000_000
+
+    static func readString() -> String? {
+        #if os(iOS)
+        UIPasteboard.general.string
+        #elseif os(macOS)
+        NSPasteboard.general.string(forType: .string)
+        #else
+        nil
+        #endif
+    }
+
+    static func writeString(_ text: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = text
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+
+    static func readData() -> Data? {
+        readString()?.data(using: .utf8)
+    }
+
+    static func clear() {
+        #if os(iOS)
+        UIPasteboard.general.items = []
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        #endif
+    }
+
+    static var hasUnreadStrings: Bool {
+        #if os(iOS)
+        UIPasteboard.general.hasStrings && readString() == nil
+        #else
+        false
+        #endif
+    }
+}
 
 struct DisplayView: View {
     @Environment(AppModel.self) private var model
@@ -12,8 +60,12 @@ struct DisplayView: View {
     var body: some View {
         VStack(spacing: 0) {
             if access.allowsOpen {
-                NoVNCWebView(session: session, pendingScript: session.pendingScript)
-                    .background(Color.black)
+                NoVNCWebView(
+                    session: session,
+                    pendingScript: session.pendingScript,
+                    pendingPaste: session.pendingPaste
+                )
+                .background(Color.black)
             } else {
                 ContentUnavailableView(
                     access == .memberDisabled ? "Member Display unavailable" : "Display unavailable",
@@ -22,18 +74,7 @@ struct DisplayView: View {
                 )
             }
             if access.allowsOpen {
-                HStack {
-                    Text(session.statusLabel)
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Button("Keyboard") { session.focusKeyboard() }
-                        .disabled(!session.connected)
-                    Button("Ctrl+Alt+Del") { session.sendCtrlAltDel() }
-                        .disabled(!session.connected)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial)
+                toolbar
             }
         }
         .navigationTitle("Display")
@@ -59,6 +100,43 @@ struct DisplayView: View {
             session.updateState(next)
         }
         .onDisappear { session.stop() }
+    }
+
+    private var toolbar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(session.statusLabel)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if !session.clipboardHint.isEmpty {
+                    Text(session.clipboardHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            HStack {
+                Button("Fit") { session.resetZoom() }
+                    .disabled(!session.connected || !session.zoomed)
+                Button("Paste") { session.pasteFromHost() }
+                    .disabled(!session.connected)
+                    .help("Paste this computer's clipboard into the guest (desktop guests need spice-vdagent)")
+                Button("Copy") { session.copyGuestToHost() }
+                    .disabled(session.guestClipboard.isEmpty)
+                    .help("Copy the last text the guest put on the clipboard")
+                Spacer()
+                Button("Keyboard") { session.focusKeyboard() }
+                    .disabled(!session.connected)
+                Button("Ctrl+Alt+Del") { session.sendCtrlAltDel() }
+                    .disabled(!session.connected)
+            }
+            Text("Desktop guests need spice-vdagent for clipboard.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
     }
 
     private var workload: Workload {
@@ -88,6 +166,10 @@ final class DisplaySession {
     var desktopSize = ""
     var connected = false
     var pendingScript: String?
+    var pendingPaste: String?
+    var guestClipboard = ""
+    var clipboardHint = ""
+    var zoomed = false
     /// True only after the noVNC module posts `ready` (`startVNC` is defined).
     var pageReady = false
     var connectTimeoutNanoseconds: UInt64 = StreamReconnect.connectTimeoutNanoseconds
@@ -99,6 +181,8 @@ final class DisplaySession {
     private var attempt = 0
     private var loop: Task<Void, Never>?
     private var waitingForDisconnect = false
+    private var scriptQueue: [String] = []
+    private var pasteQueue: [String] = []
 
     var statusLabel: String {
         if connected, !desktopSize.isEmpty { return "VNC · \(desktopSize)" }
@@ -121,9 +205,10 @@ final class DisplaySession {
         if !WorkloadStream.isLive(state) {
             loop?.cancel()
             loop = nil
-            pendingScript = "window.stopVNC && window.stopVNC()"
+            enqueueScript("window.stopVNC && window.stopVNC()")
             connected = false
             desktopSize = ""
+            zoomed = false
             status = WorkloadStreamAccess.notLive.reason
             waitingForDisconnect = false
         }
@@ -140,32 +225,85 @@ final class DisplaySession {
         stopped = false
     }
 
+    func enqueueScript(_ script: String) {
+        scriptQueue.append(script)
+        pendingScript = script
+    }
+
+    func enqueuePaste(_ text: String) {
+        pasteQueue.append(text)
+        pendingPaste = text
+    }
+
     /// Hands the queued script to the web view. Tests use this as the execute path.
     func consumePendingScript() -> String? {
-        guard pageReady, let script = pendingScript else { return nil }
+        guard pageReady else { return nil }
+        if !scriptQueue.isEmpty {
+            let script = scriptQueue.removeFirst()
+            pendingScript = scriptQueue.last
+            return script
+        }
+        guard let script = pendingScript else { return nil }
         pendingScript = nil
         return script
+    }
+
+    func consumePendingPaste() -> String? {
+        guard pageReady, !pasteQueue.isEmpty else { return nil }
+        let text = pasteQueue.removeFirst()
+        pendingPaste = pasteQueue.last
+        return text
     }
 
     func stop() {
         stopped = true
         loop?.cancel()
         loop = nil
-        pendingScript = "window.stopVNC && window.stopVNC()"
+        enqueueScript("window.stopVNC && window.stopVNC()")
         waitingForDisconnect = false
         connected = false
         desktopSize = ""
+        zoomed = false
         if status == "connected" || status == "connecting" {
             status = "disconnected"
         }
     }
 
     func sendCtrlAltDel() {
-        pendingScript = "window.sendCtrlAltDel && window.sendCtrlAltDel()"
+        enqueueScript("window.sendCtrlAltDel && window.sendCtrlAltDel()")
     }
 
     func focusKeyboard() {
-        pendingScript = "window.focusVNC && window.focusVNC()"
+        enqueueScript("window.focusVNC && window.focusVNC()")
+    }
+
+    func resetZoom() {
+        enqueueScript("window.resetZoom && window.resetZoom()")
+    }
+
+    func pasteFromHost() {
+        guard connected else { return }
+        if HostPasteboard.hasUnreadStrings {
+            clipboardHint = "Allow paste to send the clipboard"
+            return
+        }
+        let text = HostPasteboard.readString() ?? ""
+        if text.isEmpty {
+            clipboardHint = "Clipboard is empty"
+            return
+        }
+        if text.count > HostPasteboard.maxPasteCharacters {
+            clipboardHint = "Clipboard is too large"
+            return
+        }
+        enqueuePaste(text)
+        clipboardHint = "Pasted into guest"
+    }
+
+    func copyGuestToHost() {
+        guard !guestClipboard.isEmpty else { return }
+        HostPasteboard.writeString(guestClipboard)
+        clipboardHint = "Copied from guest"
     }
 
     func handleMessage(_ body: Any) {
@@ -177,17 +315,35 @@ final class DisplaySession {
             connected = true
             attempt = 0
             status = "connected"
+            zoomed = false
             let width = payload["width"] as? Int ?? 0
             let height = payload["height"] as? Int ?? 0
             desktopSize = width > 0 && height > 0 ? "\(width)×\(height)" : ""
         case "disconnect":
             connected = false
             desktopSize = ""
+            zoomed = false
             status = "disconnected"
             waitingForDisconnect = false
+        case "zoom":
+            let scale = zoomScale(payload["scale"])
+            zoomed = scale > 1.001
+        case "clipboard":
+            let text = payload["text"] as? String ?? ""
+            guestClipboard = text
+            if !text.isEmpty {
+                clipboardHint = "Guest copy ready — use Copy"
+            }
         default:
             break
         }
+    }
+
+    private func zoomScale(_ value: Any?) -> Double {
+        if let scale = value as? Double { return scale }
+        if let scale = value as? Int { return Double(scale) }
+        if let scale = value as? NSNumber { return scale.doubleValue }
+        return 1
     }
 
     private func run() async {
@@ -210,7 +366,7 @@ final class DisplaySession {
                 // Ticket is allowed in the web view only — never log it.
                 let encoded = url.absoluteString.replacingOccurrences(of: "\\", with: "\\\\")
                     .replacingOccurrences(of: "'", with: "\\'")
-                pendingScript = "window.startVNC && window.startVNC('\(encoded)')"
+                enqueueScript("window.startVNC && window.startVNC('\(encoded)')")
                 status = "connecting"
                 await waitUntilDisconnected()
             } catch is CancellationError {
@@ -253,7 +409,7 @@ final class DisplaySession {
     func expireConnectWaitIfNeeded() {
         guard waitingForDisconnect, !connected else { return }
         status = "timed out"
-        pendingScript = "window.stopVNC && window.stopVNC()"
+        enqueueScript("window.stopVNC && window.stopVNC()")
         waitingForDisconnect = false
     }
 }
@@ -261,8 +417,9 @@ final class DisplaySession {
 #if os(iOS)
 struct NoVNCWebView: UIViewRepresentable {
     var session: DisplaySession
-    /// Read in `DisplayView` so Keyboard / CAD invalidate the representable.
+    /// Read in `DisplayView` so Keyboard / CAD / paste invalidate the representable.
     var pendingScript: String?
+    var pendingPaste: String?
 
     func makeCoordinator() -> Coordinator { Coordinator(session: session) }
 
@@ -274,6 +431,7 @@ struct NoVNCWebView: UIViewRepresentable {
 
     func updateUIView(_ view: WKWebView, context: Context) {
         _ = pendingScript
+        _ = pendingPaste
         context.coordinator.session = session
         context.coordinator.flush(view)
     }
@@ -281,8 +439,9 @@ struct NoVNCWebView: UIViewRepresentable {
 #else
 struct NoVNCWebView: NSViewRepresentable {
     var session: DisplaySession
-    /// Read in `DisplayView` so Keyboard / CAD invalidate the representable.
+    /// Read in `DisplayView` so Keyboard / CAD / paste invalidate the representable.
     var pendingScript: String?
+    var pendingPaste: String?
 
     func makeCoordinator() -> Coordinator { Coordinator(session: session) }
 
@@ -294,6 +453,7 @@ struct NoVNCWebView: NSViewRepresentable {
 
     func updateNSView(_ view: WKWebView, context: Context) {
         _ = pendingScript
+        _ = pendingPaste
         context.coordinator.session = session
         context.coordinator.flush(view)
     }
@@ -313,6 +473,11 @@ private func makeWebView(coordinator: Coordinator) -> WKWebView {
     view.isOpaque = true
     view.scrollView.contentInsetAdjustmentBehavior = .never
     view.scrollView.keyboardDismissMode = .interactive
+    view.scrollView.minimumZoomScale = 1
+    view.scrollView.maximumZoomScale = 1
+    view.scrollView.bouncesZoom = false
+    view.scrollView.pinchGestureRecognizer?.isEnabled = false
+    view.scrollView.isScrollEnabled = false
     view.backgroundColor = .black
     #endif
     return view
@@ -338,8 +503,18 @@ final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler 
     }
 
     func flush(_ view: WKWebView) {
-        guard let script = session.consumePendingScript() else { return }
-        view.evaluateJavaScript(script, completionHandler: nil)
+        while let script = session.consumePendingScript() {
+            view.evaluateJavaScript(script, completionHandler: nil)
+        }
+        while let text = session.consumePendingPaste() {
+            view.callAsyncJavaScript(
+                "window.pasteClipboard && window.pasteClipboard(text)",
+                arguments: ["text": text],
+                in: nil,
+                in: .page,
+                completionHandler: { _ in }
+            )
+        }
     }
 
     nonisolated func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
