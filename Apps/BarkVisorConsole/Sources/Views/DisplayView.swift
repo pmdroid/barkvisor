@@ -209,6 +209,7 @@ final class DisplaySession {
             connected = false
             desktopSize = ""
             zoomed = false
+            resetGuestClipboard()
             status = WorkloadStreamAccess.notLive.reason
             waitingForDisconnect = false
         }
@@ -276,6 +277,7 @@ final class DisplaySession {
         connected = false
         desktopSize = ""
         zoomed = false
+        resetGuestClipboard()
         if status == "connected" || status == "connecting" {
             status = "disconnected"
         }
@@ -328,6 +330,7 @@ final class DisplaySession {
             attempt = 0
             status = "connected"
             zoomed = false
+            resetGuestClipboard()
             let width = payload["width"] as? Int ?? 0
             let height = payload["height"] as? Int ?? 0
             desktopSize = width > 0 && height > 0 ? "\(width)×\(height)" : ""
@@ -335,13 +338,20 @@ final class DisplaySession {
             connected = false
             desktopSize = ""
             zoomed = false
+            resetGuestClipboard()
             status = "disconnected"
             waitingForDisconnect = false
         case "zoom":
             let scale = zoomScale(payload["scale"])
             zoomed = scale > 1.001
         case "clipboard":
+            let oversized = boolFlag(payload["oversized"])
             let text = payload["text"] as? String ?? ""
+            if oversized || text.count > HostPasteboard.maxPasteCharacters {
+                guestClipboard = ""
+                clipboardHint = "Guest clipboard is too large"
+                return
+            }
             guestClipboard = text
             if !text.isEmpty {
                 clipboardHint = "Guest copy ready — use Copy"
@@ -349,6 +359,18 @@ final class DisplaySession {
         default:
             break
         }
+    }
+
+    /// Prior-session guest text must not survive reconnect or a not-live toolbar.
+    private func resetGuestClipboard() {
+        guestClipboard = ""
+        clipboardHint = ""
+    }
+
+    private func boolFlag(_ value: Any?) -> Bool {
+        if let flag = value as? Bool { return flag }
+        if let number = value as? NSNumber { return number.boolValue }
+        return false
     }
 
     private func zoomScale(_ value: Any?) -> Double {

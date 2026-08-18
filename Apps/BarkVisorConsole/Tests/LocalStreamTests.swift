@@ -291,6 +291,70 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint == "Copied from guest")
     }
 
+    @Test @MainActor func displayClipboardClearsOnDisconnect() {
+        let session = DisplaySession()
+        let sentinel = "pas-220-host-\(UUID().uuidString)"
+        HostPasteboard.writeString(sentinel)
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        session.handleMessage(["type": "disconnect"])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+        session.copyGuestToHost()
+        #expect(HostPasteboard.readString() == sentinel)
+    }
+
+    @Test @MainActor func displayClipboardClearsOnConnect() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "stale-guest"])
+        session.handleMessage(["type": "connect", "width": 800, "height": 600])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+    }
+
+    @Test @MainActor func displayClipboardClearsOnStop() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        session.stop()
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+    }
+
+    @Test @MainActor func displayClipboardClearsWhenNotLive() {
+        let session = DisplaySession()
+        session.primeForTest(state: "running")
+        session.handleMessage(["type": "clipboard", "text": "guest-copy"])
+        session.updateState("stopped")
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint.isEmpty)
+    }
+
+    @Test @MainActor func displayClipboardRejectsOversizedGuestPayload() {
+        let session = DisplaySession()
+        let sentinel = "pas-220-host-\(UUID().uuidString)"
+        HostPasteboard.writeString(sentinel)
+        let oversized = String(repeating: "a", count: HostPasteboard.maxPasteCharacters + 1)
+        session.handleMessage(["type": "clipboard", "text": oversized])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint == "Guest clipboard is too large")
+        session.copyGuestToHost()
+        #expect(HostPasteboard.readString() == sentinel)
+    }
+
+    @Test @MainActor func displayClipboardRejectsOversizedFlagWithoutBody() {
+        let session = DisplaySession()
+        session.handleMessage(["type": "clipboard", "text": "tiny", "oversized": true])
+        #expect(session.guestClipboard.isEmpty)
+        #expect(session.clipboardHint == "Guest clipboard is too large")
+    }
+
+    @Test @MainActor func displayClipboardAcceptsMaxSizedGuestPayload() {
+        let session = DisplaySession()
+        let text = String(repeating: "b", count: HostPasteboard.maxPasteCharacters)
+        session.handleMessage(["type": "clipboard", "text": text])
+        #expect(session.guestClipboard.count == HostPasteboard.maxPasteCharacters)
+        #expect(session.clipboardHint == "Guest copy ready — use Copy")
+    }
+
     @Test @MainActor func displayPasteUsesStructuredQueueNotScriptInterpolation() {
         let session = DisplaySession()
         session.handleMessage(["type": "connect", "width": 800, "height": 600])
