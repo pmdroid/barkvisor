@@ -1,5 +1,6 @@
 import BarkVisorCore
 import Foundation
+import NIOPosix
 import Vapor
 
 /// Home WebSocket tunnel for member VNC / serial console (PAS-200).
@@ -99,7 +100,6 @@ struct HomeConsoleProxyController {
     }
 
     private func tunnel(req: Vapor.Request, inbound: WebSocket, kind: HomeConsoleKind) async {
-        let eventLoop = inbound.eventLoop
         let toRemote = WebSocketPipeBox()
         let toClient = WebSocketPipeBox()
         WebSocketRelay.onEventLoop(inbound) {
@@ -113,15 +113,14 @@ struct HomeConsoleProxyController {
             return
         }
         do {
-            // Hop off inbound.eventLoop before awaiting the outbound
-            // handshake. Awaiting WebSocket.connect on the same NIO loop
-            // deadlocks when the group is small (Linux CI).
-            let dialer = self.dialer
-            let remote = try await Task {
-                try await dialer.connect(url: url, on: eventLoop) { ws in
-                    WebSocketRelay.capture(from: ws, into: toClient)
-                }
-            }.value
+            // Dial on the shared group, not inbound.eventLoop. A one-loop
+            // client on the upgrade loop deadlocks (Linux CI).
+            let remote = try await dialer.connect(
+                url: url,
+                on: MultiThreadedEventLoopGroup.singleton,
+            ) { ws in
+                WebSocketRelay.capture(from: ws, into: toClient)
+            }
             if inbound.isClosed {
                 WebSocketRelay.close(remote)
                 return

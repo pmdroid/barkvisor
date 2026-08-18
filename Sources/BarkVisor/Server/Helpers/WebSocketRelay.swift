@@ -1,6 +1,7 @@
 import BarkVisorCore
 import Foundation
 import NIOCore
+import NIOPosix
 import NIOSSL
 import Vapor
 
@@ -219,7 +220,7 @@ private final class DialLifetime: @unchecked Sendable {
 protocol HomeWebSocketDialing: Sendable {
     func connect(
         url: URL,
-        on eventLoop: EventLoop,
+        on eventLoopGroup: EventLoopGroup,
         configure: @escaping @Sendable (WebSocket) -> Void,
     ) async throws -> WebSocket
 }
@@ -234,7 +235,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
 
     func connect(
         url: URL,
-        on eventLoop: EventLoop,
+        on eventLoopGroup: EventLoopGroup,
         configure: @escaping @Sendable (WebSocket) -> Void,
     ) async throws -> WebSocket {
         var configuration = WebSocketClient.Configuration()
@@ -247,7 +248,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
         return try await Self.open(
             url: url,
             configuration: configuration,
-            on: eventLoop,
+            on: eventLoopGroup,
             configure: configure,
         )
     }
@@ -255,7 +256,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
     static func open(
         url: URL,
         configuration: WebSocketClient.Configuration = .init(),
-        on eventLoop: EventLoop,
+        on eventLoopGroup: EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         configure: @escaping @Sendable (WebSocket) -> Void = { _ in },
     ) async throws -> WebSocket {
         let lifetime = DialLifetime()
@@ -265,7 +266,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
                     try await connectOnce(
                         url: url,
                         configuration: configuration,
-                        on: eventLoop,
+                        on: eventLoopGroup,
                         lifetime: lifetime,
                         configure: configure,
                     )
@@ -287,7 +288,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
     private static func connectOnce(
         url: URL,
         configuration: WebSocketClient.Configuration,
-        on eventLoop: EventLoop,
+        on eventLoopGroup: EventLoopGroup,
         lifetime: DialLifetime,
         configure: @escaping @Sendable (WebSocket) -> Void,
     ) async throws -> WebSocket {
@@ -296,7 +297,7 @@ struct HomeWebSocketDialer: HomeWebSocketDialing {
             let future = WebSocket.connect(
                 to: url.absoluteString,
                 configuration: configuration,
-                on: eventLoop,
+                on: eventLoopGroup,
             ) { ws in
                 if lifetime.accept(ws) {
                     configure(ws)
