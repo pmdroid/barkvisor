@@ -178,9 +178,7 @@ extension MetricsCollector {
         var collectedPorts: [GuestListeningPortDTO]?
         if GuestListeningPorts.shouldCollect(vmID: vmID) {
             collectedPorts = GuestListeningPorts.collect(using: gaClient)
-            if collectedPorts != nil {
-                GuestListeningPorts.markCollected(vmID: vmID)
-            }
+            GuestListeningPorts.markCollected(vmID: vmID, succeeded: collectedPorts != nil)
         }
         let persistedPorts = GuestListeningPorts.persistFields(
             collected: collectedPorts,

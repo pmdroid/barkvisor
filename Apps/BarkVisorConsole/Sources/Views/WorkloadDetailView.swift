@@ -24,7 +24,7 @@ struct WorkloadDetailView: View {
                 }
             }
 
-            if guest?.available == true {
+            if guest?.available == true, device.isReachable {
                 Section("Listening ports") {
                     if let ports = guest?.listeningPorts {
                         if ports.isEmpty {
@@ -98,7 +98,12 @@ struct WorkloadDetailView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
-            .task(id: "\(deviceID)/\(workloadID)/\(workload.state)") {
+            .task(id: GuestInfoRefresh.taskID(
+                deviceID: deviceID,
+                workloadID: workloadID,
+                state: workload.state,
+                reachable: device.isReachable,
+            )) {
                 while !Task.isCancelled {
                     if !device.isReachable { return }
                     guest = await model.guestInfo(for: workload.id, on: device)

@@ -28,35 +28,42 @@ public struct GuestListeningPortDTO: Codable, Sendable, Equatable, Hashable {
 
 public enum GuestListeningPorts {
     public static let collectIntervalSeconds: TimeInterval = 30
+    public static let collectFailureBackoffSeconds: TimeInterval = 300
 
     public static let scopeInternal = "internal"
     public static let scopeNetwork = "network"
 
     private static let lock = NSLock()
     private nonisolated(unsafe) static var lastAttempt: [String: Date] = [:]
+    private nonisolated(unsafe) static var lastFailed: [String: Bool] = [:]
 
     public static func shouldCollect(
         vmID: String,
         now: Date = Date(),
-        interval: TimeInterval = collectIntervalSeconds,
+        interval: TimeInterval? = nil,
     ) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        if let last = lastAttempt[vmID], now.timeIntervalSince(last) < interval {
+        let wait = interval ?? (lastFailed[vmID] == true
+            ? collectFailureBackoffSeconds
+            : collectIntervalSeconds)
+        if let last = lastAttempt[vmID], now.timeIntervalSince(last) < wait {
             return false
         }
         return true
     }
 
-    public static func markCollected(vmID: String, now: Date = Date()) {
+    public static func markCollected(vmID: String, now: Date = Date(), succeeded: Bool = true) {
         lock.lock()
         lastAttempt[vmID] = now
+        lastFailed[vmID] = !succeeded
         lock.unlock()
     }
 
     public static func clearAttempt(vmID: String) {
         lock.lock()
         lastAttempt.removeValue(forKey: vmID)
+        lastFailed.removeValue(forKey: vmID)
         lock.unlock()
     }
 
@@ -127,11 +134,13 @@ public enum GuestListeningPorts {
         guard let collected else {
             return (previousJSON, previousCollectedAt)
         }
-        let json = encodeJSON(collected)
-        if json == previousJSON {
+        let next = canonicalize(collected)
+        if let previousJSON,
+           let previous = JSONColumnCoding.decodeArray(GuestListeningPortDTO.self, from: previousJSON),
+           canonicalize(previous) == next {
             return (previousJSON, previousCollectedAt)
         }
-        return (json, now)
+        return (encodeJSON(next), now)
     }
 
     public static func parseCommandOutput(_ text: String) -> [GuestListeningPortDTO] {
