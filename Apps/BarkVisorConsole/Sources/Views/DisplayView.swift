@@ -1,9 +1,9 @@
 import SwiftUI
 import WebKit
 #if os(iOS)
-import UIKit
+    import UIKit
 #elseif os(macOS)
-import AppKit
+    import AppKit
 #endif
 
 enum HostPasteboard {
@@ -11,20 +11,20 @@ enum HostPasteboard {
 
     static func readString() -> String? {
         #if os(iOS)
-        UIPasteboard.general.string
+            UIPasteboard.general.string
         #elseif os(macOS)
-        NSPasteboard.general.string(forType: .string)
+            NSPasteboard.general.string(forType: .string)
         #else
-        nil
+            nil
         #endif
     }
 
     static func writeString(_ text: String) {
         #if os(iOS)
-        UIPasteboard.general.string = text
+            UIPasteboard.general.string = text
         #elseif os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         #endif
     }
 
@@ -34,17 +34,17 @@ enum HostPasteboard {
 
     static func clear() {
         #if os(iOS)
-        UIPasteboard.general.items = []
+            UIPasteboard.general.items = []
         #elseif os(macOS)
-        NSPasteboard.general.clearContents()
+            NSPasteboard.general.clearContents()
         #endif
     }
 
     static var hasUnreadStrings: Bool {
         #if os(iOS)
-        UIPasteboard.general.hasStrings && readString() == nil
+            UIPasteboard.general.hasStrings && readString() == nil
         #else
-        false
+            false
         #endif
     }
 }
@@ -63,14 +63,14 @@ struct DisplayView: View {
                 NoVNCWebView(
                     session: session,
                     pendingScript: session.pendingScript,
-                    pendingPaste: session.pendingPaste
+                    pendingPaste: session.pendingPaste,
                 )
                 .background(Color.black)
             } else {
                 ContentUnavailableView(
-                    access == .memberDisabled ? "Member Display unavailable" : "Display unavailable",
+                    access == .deviceUnreachable ? "Device unreachable" : "Display unavailable",
                     systemImage: "display",
-                    description: Text(access.reason)
+                    description: Text(access.reason),
                 )
             }
             if access.allowsOpen {
@@ -89,17 +89,17 @@ struct DisplayView: View {
                 }
             }
         #endif
-        .task(id: WorkloadStream.sessionTaskID(deviceID: deviceID, workloadID: workloadID, state: workload.state)) {
-            guard let client = model.client, access.allowsOpen else {
-                session.stop()
-                return
+            .task(id: WorkloadStream.sessionTaskID(deviceID: deviceID, workloadID: workloadID, state: workload.state)) {
+                guard let client = model.client, access.allowsOpen else {
+                    session.stop()
+                    return
+                }
+                session.start(client: client, workloadID: workload.id, state: workload.state, device: device)
             }
-            session.start(client: client, workloadID: workload.id, state: workload.state)
-        }
-        .onChange(of: workload.state) { _, next in
-            session.updateState(next)
-        }
-        .onDisappear { session.stop() }
+            .onChange(of: workload.state) { _, next in
+                session.updateState(next)
+            }
+            .onDisappear { session.stop() }
     }
 
     private var toolbar: some View {
@@ -154,7 +154,7 @@ struct DisplayView: View {
     }
 
     private var access: WorkloadStreamAccess {
-        WorkloadStreamAccess.resolve(isSelfDevice: device.isSelf, state: workload.state)
+        WorkloadStreamAccess.resolve(device: device, state: workload.state)
     }
 }
 
@@ -176,6 +176,7 @@ final class DisplaySession {
 
     private var client: APIClient?
     private var workloadID = ""
+    private var device: HomeDeviceHealthSnapshot?
     private var state = ""
     private var stopped = true
     private var attempt = 0
@@ -190,10 +191,16 @@ final class DisplaySession {
         return "VNC · \(status)"
     }
 
-    func start(client: APIClient, workloadID: String, state: String) {
+    func start(
+        client: APIClient,
+        workloadID: String,
+        state: String,
+        device: HomeDeviceHealthSnapshot? = nil,
+    ) {
         stop()
         self.client = client
         self.workloadID = workloadID
+        self.device = device
         self.state = state
         stopped = false
         attempt = 0
@@ -392,14 +399,20 @@ final class DisplaySession {
             guard let client else { return }
             do {
                 status = "requesting ticket"
-                let ticket = try await client.createWSTicket(vmID: workloadID)
+                let tickets = try await client.mintStreamTickets(vmID: workloadID, on: device)
                 guard canOpenStream(), !Task.isCancelled else {
                     if !WorkloadStream.isLive(state) {
                         status = WorkloadStreamAccess.notLive.reason
                     }
                     return
                 }
-                let url = try StreamURL.vnc(base: client.baseURL, workloadID: workloadID, ticket: ticket)
+                let url = try StreamURL.vnc(
+                    base: client.baseURL,
+                    workloadID: workloadID,
+                    ticket: tickets.ticket,
+                    device: device,
+                    session: tickets.session,
+                )
                 // Ticket is allowed in the web view only — never log it.
                 let encoded = url.absoluteString.replacingOccurrences(of: "\\", with: "\\\\")
                     .replacingOccurrences(of: "'", with: "\\'")
@@ -453,49 +466,53 @@ final class DisplaySession {
 }
 
 #if os(iOS)
-struct NoVNCWebView: UIViewRepresentable {
-    var session: DisplaySession
-    /// Read in `DisplayView` so Keyboard / CAD / paste invalidate the representable.
-    var pendingScript: String?
-    var pendingPaste: String?
+    struct NoVNCWebView: UIViewRepresentable {
+        var session: DisplaySession
+        /// Read in `DisplayView` so Keyboard / CAD / paste invalidate the representable.
+        var pendingScript: String?
+        var pendingPaste: String?
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
+        func makeCoordinator() -> Coordinator {
+            Coordinator(session: session)
+        }
 
-    func makeUIView(context: Context) -> WKWebView {
-        let view = makeWebView(coordinator: context.coordinator)
-        context.coordinator.load(view)
-        return view
+        func makeUIView(context: Context) -> WKWebView {
+            let view = makeWebView(coordinator: context.coordinator)
+            context.coordinator.load(view)
+            return view
+        }
+
+        func updateUIView(_ view: WKWebView, context: Context) {
+            _ = pendingScript
+            _ = pendingPaste
+            context.coordinator.session = session
+            context.coordinator.flush(view)
+        }
     }
-
-    func updateUIView(_ view: WKWebView, context: Context) {
-        _ = pendingScript
-        _ = pendingPaste
-        context.coordinator.session = session
-        context.coordinator.flush(view)
-    }
-}
 #else
-struct NoVNCWebView: NSViewRepresentable {
-    var session: DisplaySession
-    /// Read in `DisplayView` so Keyboard / CAD / paste invalidate the representable.
-    var pendingScript: String?
-    var pendingPaste: String?
+    struct NoVNCWebView: NSViewRepresentable {
+        var session: DisplaySession
+        /// Read in `DisplayView` so Keyboard / CAD / paste invalidate the representable.
+        var pendingScript: String?
+        var pendingPaste: String?
 
-    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
+        func makeCoordinator() -> Coordinator {
+            Coordinator(session: session)
+        }
 
-    func makeNSView(context: Context) -> WKWebView {
-        let view = makeWebView(coordinator: context.coordinator)
-        context.coordinator.load(view)
-        return view
+        func makeNSView(context: Context) -> WKWebView {
+            let view = makeWebView(coordinator: context.coordinator)
+            context.coordinator.load(view)
+            return view
+        }
+
+        func updateNSView(_ view: WKWebView, context: Context) {
+            _ = pendingScript
+            _ = pendingPaste
+            context.coordinator.session = session
+            context.coordinator.flush(view)
+        }
     }
-
-    func updateNSView(_ view: WKWebView, context: Context) {
-        _ = pendingScript
-        _ = pendingPaste
-        context.coordinator.session = session
-        context.coordinator.flush(view)
-    }
-}
 #endif
 
 private func makeWebView(coordinator: Coordinator) -> WKWebView {
@@ -508,15 +525,15 @@ private func makeWebView(coordinator: Coordinator) -> WKWebView {
     view.navigationDelegate = coordinator
     view.underPageBackgroundColor = .black
     #if os(iOS)
-    view.isOpaque = true
-    view.scrollView.contentInsetAdjustmentBehavior = .never
-    view.scrollView.keyboardDismissMode = .interactive
-    view.scrollView.minimumZoomScale = 1
-    view.scrollView.maximumZoomScale = 1
-    view.scrollView.bouncesZoom = false
-    view.scrollView.pinchGestureRecognizer?.isEnabled = false
-    view.scrollView.isScrollEnabled = false
-    view.backgroundColor = .black
+        view.isOpaque = true
+        view.scrollView.contentInsetAdjustmentBehavior = .never
+        view.scrollView.keyboardDismissMode = .interactive
+        view.scrollView.minimumZoomScale = 1
+        view.scrollView.maximumZoomScale = 1
+        view.scrollView.bouncesZoom = false
+        view.scrollView.pinchGestureRecognizer?.isEnabled = false
+        view.scrollView.isScrollEnabled = false
+        view.backgroundColor = .black
     #endif
     return view
 }
@@ -550,7 +567,7 @@ final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler 
                 arguments: ["text": text],
                 in: nil,
                 in: .page,
-                completionHandler: { _ in }
+                completionHandler: { _ in },
             )
         }
     }
@@ -576,7 +593,7 @@ final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler 
     nonisolated func webView(
         _: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void,
     ) {
         guard let url = navigationAction.request.url, url.isFileURL else {
             decisionHandler(.cancel)

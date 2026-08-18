@@ -42,6 +42,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 - Linux packages (`.deb` / `.rpm` / tarball), systemd, NAT and bridged networking, USB passthrough.
 - Native console app talks to the dashboard Device only (Local Network permission is for `:7777`).
+- Phone and Mac Console / Display open a Workload on a reachable member the same way the Home web UI does (Home WebSocket tunnel). Create VM stays web-only.
 
 ## 0.x — single Device
 

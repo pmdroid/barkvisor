@@ -3,7 +3,7 @@ import Testing
 @testable import BarkVisorConsole
 
 struct LocalStreamTests {
-    @Test func streamLiveOnlyWhenRunningOrStopping() {
+    @Test func `stream live only when running or stopping`() {
         #expect(WorkloadStream.isLive("running"))
         #expect(WorkloadStream.isLive("stopping"))
         #expect(!WorkloadStream.isLive("stopped"))
@@ -11,7 +11,7 @@ struct LocalStreamTests {
         #expect(!WorkloadStream.isLive("error"))
     }
 
-    @Test func sessionTaskIDIgnoresRunningToStopping() {
+    @Test func `session task ID ignores running to stopping`() {
         let running = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-1", state: "running")
         let stopping = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-1", state: "stopping")
         let stopped = WorkloadStream.sessionTaskID(deviceID: "self", workloadID: "vm-1", state: "stopped")
@@ -23,19 +23,35 @@ struct LocalStreamTests {
         #expect(stopped.hasSuffix("/down"))
     }
 
-    @Test func memberStreamsStayDisabled() {
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: false, state: "running") == .memberDisabled)
-        #expect(!WorkloadStreamAccess.resolve(isSelfDevice: false, state: "running").allowsOpen)
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: true, state: "stopped") == .notLive)
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: true, state: "running") == .available)
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: true, state: "stopping") == .available)
+    @Test func `using A workload is the same on self and reachable member`() {
         #expect(
-            WorkloadStreamAccess.memberDisabled.reason
-                == "Console and Display on a member Device are not available yet."
+            WorkloadStreamAccess.resolve(isSelfDevice: false, deviceReachable: true, state: "running")
+                == .available,
         )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: false, deviceReachable: true, state: "running")
+                .allowsOpen,
+        )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: false, deviceReachable: false, state: "running")
+                == .deviceUnreachable,
+        )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "stopped")
+                == .notLive,
+        )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "running")
+                == .available,
+        )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "stopping")
+                == .available,
+        )
+        #expect(WorkloadStreamAccess.deviceUnreachable.reason == "That Device is unreachable.")
     }
 
-    @Test func reconnectBackoffCapsAtTenAttempts() {
+    @Test func `reconnect backoff caps at ten attempts`() {
         #expect(StreamReconnect.maxAttempts == 10)
         #expect(!StreamReconnect.shouldRetry(attempt: 0))
         #expect(StreamReconnect.shouldRetry(attempt: 1))
@@ -50,7 +66,7 @@ struct LocalStreamTests {
         #expect(StreamReconnect.connectTimeoutNanoseconds < StreamReconnect.maxDelayNanoseconds)
     }
 
-    @Test @MainActor func displayReadyMessageMarksModuleReady() {
+    @Test @MainActor func `display ready message marks module ready`() {
         let session = DisplaySession()
         session.pendingScript = "window.startVNC && window.startVNC('ws://example')"
         session.handleMessage(["type": "connect", "width": 800, "height": 600])
@@ -61,7 +77,7 @@ struct LocalStreamTests {
         #expect(session.pendingScript != nil)
     }
 
-    @Test @MainActor func displayConnectTimeoutResumesWaiter() async {
+    @Test @MainActor func `display connect timeout resumes waiter`() async {
         let session = DisplaySession()
         session.connectTimeoutNanoseconds = 10_000_000
         session.status = "connecting"
@@ -71,11 +87,11 @@ struct LocalStreamTests {
         #expect(!session.connected)
     }
 
-    @Test @MainActor func displayConnectTimeoutSkippedAfterConnect() async {
+    @Test @MainActor func `display connect timeout skipped after connect`() async {
         let session = DisplaySession()
         session.connectTimeoutNanoseconds = 20_000_000
         async let wait: Void = session.waitUntilDisconnected()
-        session.handleMessage(["type": "connect", "width": 1024, "height": 768])
+        session.handleMessage(["type": "connect", "width": 1_024, "height": 768])
         try? await Task.sleep(nanoseconds: 40_000_000)
         #expect(session.connected)
         #expect(session.status == "connected")
@@ -85,9 +101,9 @@ struct LocalStreamTests {
         #expect(session.status == "disconnected")
     }
 
-    @Test @MainActor func displayStopClearsConnectedToolbar() {
+    @Test @MainActor func `display stop clears connected toolbar`() {
         let session = DisplaySession()
-        session.handleMessage(["type": "connect", "width": 1280, "height": 800])
+        session.handleMessage(["type": "connect", "width": 1_280, "height": 800])
         #expect(session.statusLabel == "VNC · 1280×800")
         session.stop()
         #expect(!session.connected)
@@ -98,7 +114,7 @@ struct LocalStreamTests {
         #expect(!session.pageReady)
     }
 
-    @Test @MainActor func displayControlScriptsTargetGuest() {
+    @Test @MainActor func `display control scripts target guest`() {
         let session = DisplaySession()
         session.sendCtrlAltDel()
         #expect(session.pendingScript == "window.sendCtrlAltDel && window.sendCtrlAltDel()")
@@ -108,7 +124,7 @@ struct LocalStreamTests {
         #expect(session.pendingScript == "window.resetZoom && window.resetZoom()")
     }
 
-    @Test @MainActor func displayControlScriptsStayQueuedInOrder() {
+    @Test @MainActor func `display control scripts stay queued in order`() {
         let session = DisplaySession()
         session.pageReady = true
         session.sendCtrlAltDel()
@@ -121,7 +137,7 @@ struct LocalStreamTests {
         #expect(session.pendingScript == nil)
     }
 
-    @Test @MainActor func displayZoomMessageTogglesFit() {
+    @Test @MainActor func `display zoom message toggles fit`() {
         let session = DisplaySession()
         session.handleMessage(["type": "zoom", "scale": 2])
         #expect(session.zoomed)
@@ -133,7 +149,7 @@ struct LocalStreamTests {
         #expect(!session.zoomed)
     }
 
-    @Test @MainActor func displayControlScriptsExecuteOnlyWhenPageReady() {
+    @Test @MainActor func `display control scripts execute only when page ready`() {
         let session = DisplaySession()
         session.sendCtrlAltDel()
         #expect(session.consumePendingScript() == nil)
@@ -149,7 +165,7 @@ struct LocalStreamTests {
         #expect(session.consumePendingScript() == nil)
     }
 
-    @Test @MainActor func displayStopDiscardsQueuedScriptsAndPaste() {
+    @Test @MainActor func `display stop discards queued scripts and paste`() {
         let session = DisplaySession()
         session.pageReady = true
         session.sendCtrlAltDel()
@@ -166,13 +182,13 @@ struct LocalStreamTests {
         #expect(session.consumePendingPaste() == nil)
     }
 
-    @Test @MainActor func displayStartDiscardsQueuedWorkFromPriorSession() {
+    @Test @MainActor func `display start discards queued work from prior session`() throws {
         let session = DisplaySession()
         session.pageReady = true
         session.sendCtrlAltDel()
         session.enqueuePaste("stale-paste")
 
-        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:9")!, token: nil)
+        let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:9")), token: nil)
         session.start(client: client, workloadID: "vm-1", state: "running")
         #expect(!session.pageReady)
         #expect(session.pendingScript == nil)
@@ -183,7 +199,7 @@ struct LocalStreamTests {
         session.stop()
     }
 
-    @Test @MainActor func displayNotLiveDiscardsQueuedWorkAndPageReady() {
+    @Test @MainActor func `display not live discards queued work and page ready`() {
         let session = DisplaySession()
         session.primeForTest(state: "running")
         session.pageReady = true
@@ -199,7 +215,7 @@ struct LocalStreamTests {
         #expect(session.consumePendingPaste() == nil)
     }
 
-    @Test @MainActor func displayDisconnectDiscardsQueuedWorkThenReconnectStartsClean() {
+    @Test @MainActor func `display disconnect discards queued work then reconnect starts clean`() {
         let session = DisplaySession()
         session.handleMessage(["type": "connect", "width": 800, "height": 600])
         session.handleMessage(["type": "ready"])
@@ -223,7 +239,7 @@ struct LocalStreamTests {
         #expect(session.pendingPaste == nil)
     }
 
-    @Test @MainActor func displayConnectTimeoutDropsLeftoversThenStopsVNC() async {
+    @Test @MainActor func `display connect timeout drops leftovers then stops VNC`() async {
         let session = DisplaySession()
         session.connectTimeoutNanoseconds = 10_000_000
         session.pageReady = true
@@ -242,7 +258,7 @@ struct LocalStreamTests {
         #expect(session.consumePendingScript() == nil)
     }
 
-    @Test @MainActor func displayDropsTicketWhenWorkloadLeavesLive() {
+    @Test @MainActor func `display drops ticket when workload leaves live`() {
         let session = DisplaySession()
         session.primeForTest(state: "running")
         #expect(session.canOpenStream())
@@ -255,7 +271,7 @@ struct LocalStreamTests {
         #expect(!session.pageReady)
     }
 
-    @Test @MainActor func consoleDropsTicketWhenWorkloadLeavesLive() {
+    @Test @MainActor func `console drops ticket when workload leaves live`() {
         let session = ConsoleSession()
         session.primeForTest(state: "running")
         #expect(session.canOpenStream())
@@ -266,7 +282,7 @@ struct LocalStreamTests {
         #expect(session.status == WorkloadStreamAccess.notLive.reason)
     }
 
-    @Test func streamURLUsesTicketAndNeverJWT() throws {
+    @Test func `stream URL uses ticket and never JWT`() throws {
         let base = try DeviceURL.normalize("http://192.168.30.1:7777")
         let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.sig"
         let console = try StreamURL.console(base: base, workloadID: "vm-1", ticket: "ticket-one")
@@ -287,17 +303,54 @@ struct LocalStreamTests {
         let secure = try StreamURL.console(
             base: DeviceURL.normalize("https://home.local:7777"),
             workloadID: "vm-2",
-            ticket: "tick+et"
+            ticket: "tick+et",
         )
         #expect(secure.scheme == "wss")
         #expect(secure.absoluteString.contains("ticket=tick"))
         #expect(!StreamURL.containsSecret(secure, secret: jwt))
+
+        let member = HomeDeviceHealthSnapshot(
+            hostId: "ECEFE91A-11BB-453F-B9E4-2DE744E4CC8A",
+            role: "member",
+            displayName: "agentbox",
+            fingerprint: nil,
+            agentHost: "192.168.30.1",
+            agentPort: 7_778,
+            pairedAt: nil,
+            reachability: "ok",
+            reachabilityError: nil,
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil,
+        )
+        let memberConsole = try StreamURL.console(
+            base: base,
+            workloadID: "vm-1",
+            ticket: "device-ticket",
+            device: member,
+            session: "home-session",
+        )
+        #expect(memberConsole.path == "/api/home/devices/ECEFE91A-11BB-453F-B9E4-2DE744E4CC8A/v1/vms/vm-1/console")
+        #expect(memberConsole.query?.contains("ticket=device-ticket") == true)
+        #expect(memberConsole.query?.contains("session=home-session") == true)
+        #expect(!StreamURL.containsSecret(memberConsole, secret: jwt))
+        let memberVNC = try StreamURL.vnc(
+            base: base,
+            workloadID: "vm-1",
+            ticket: "device-ticket",
+            device: member,
+            session: "home-session",
+        )
+        #expect(memberVNC.path.hasSuffix("/vnc"))
+        #expect(memberVNC.path.contains("/home/devices/"))
     }
 
-    @Test func wsTicketResponseDecodes() throws {
+    @Test func `ws ticket response decodes`() throws {
         let body = try JSONDecoder().decode(
             WSTicketResponse.self,
-            from: Data(#"{"ticket":"one-shot"}"#.utf8)
+            from: Data(#"{"ticket":"one-shot"}"#.utf8),
         )
         #expect(body.ticket == "one-shot")
     }
@@ -305,7 +358,7 @@ struct LocalStreamTests {
 
 @Suite(.serialized)
 struct DisplayClipboardTests {
-    @Test @MainActor func displayClipboardBuffersGuestText() {
+    @Test @MainActor func `display clipboard buffers guest text`() {
         let session = DisplaySession()
         session.handleMessage(["type": "clipboard", "text": "guest-copy"])
         #expect(session.guestClipboard == "guest-copy")
@@ -315,7 +368,7 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint == "Copied from guest")
     }
 
-    @Test @MainActor func displayClipboardClearsOnDisconnect() {
+    @Test @MainActor func `display clipboard clears on disconnect`() {
         let session = DisplaySession()
         let sentinel = "pas-220-host-\(UUID().uuidString)"
         HostPasteboard.writeString(sentinel)
@@ -327,7 +380,7 @@ struct DisplayClipboardTests {
         #expect(HostPasteboard.readString() == sentinel)
     }
 
-    @Test @MainActor func displayClipboardClearsOnConnect() {
+    @Test @MainActor func `display clipboard clears on connect`() {
         let session = DisplaySession()
         session.handleMessage(["type": "clipboard", "text": "stale-guest"])
         session.handleMessage(["type": "connect", "width": 800, "height": 600])
@@ -335,7 +388,7 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint.isEmpty)
     }
 
-    @Test @MainActor func displayClipboardClearsOnStop() {
+    @Test @MainActor func `display clipboard clears on stop`() {
         let session = DisplaySession()
         session.handleMessage(["type": "clipboard", "text": "guest-copy"])
         session.stop()
@@ -343,7 +396,7 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint.isEmpty)
     }
 
-    @Test @MainActor func displayClipboardClearsWhenNotLive() {
+    @Test @MainActor func `display clipboard clears when not live`() {
         let session = DisplaySession()
         session.primeForTest(state: "running")
         session.handleMessage(["type": "clipboard", "text": "guest-copy"])
@@ -352,7 +405,7 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint.isEmpty)
     }
 
-    @Test @MainActor func displayClipboardRejectsOversizedGuestPayload() {
+    @Test @MainActor func `display clipboard rejects oversized guest payload`() {
         let session = DisplaySession()
         let sentinel = "pas-220-host-\(UUID().uuidString)"
         HostPasteboard.writeString(sentinel)
@@ -364,14 +417,14 @@ struct DisplayClipboardTests {
         #expect(HostPasteboard.readString() == sentinel)
     }
 
-    @Test @MainActor func displayClipboardRejectsOversizedFlagWithoutBody() {
+    @Test @MainActor func `display clipboard rejects oversized flag without body`() {
         let session = DisplaySession()
         session.handleMessage(["type": "clipboard", "text": "tiny", "oversized": true])
         #expect(session.guestClipboard.isEmpty)
         #expect(session.clipboardHint == "Guest clipboard is too large")
     }
 
-    @Test @MainActor func displayClipboardAcceptsMaxSizedGuestPayload() {
+    @Test @MainActor func `display clipboard accepts max sized guest payload`() {
         let session = DisplaySession()
         let text = String(repeating: "b", count: HostPasteboard.maxPasteCharacters)
         session.handleMessage(["type": "clipboard", "text": text])
@@ -379,7 +432,7 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint == "Guest copy ready — use Copy")
     }
 
-    @Test @MainActor func displayPasteUsesStructuredQueueNotScriptInterpolation() {
+    @Test @MainActor func `display paste uses structured queue not script interpolation`() {
         let session = DisplaySession()
         session.handleMessage(["type": "connect", "width": 800, "height": 600])
         HostPasteboard.writeString("line 1\nquote ' \" emoji 🙂")
@@ -393,7 +446,7 @@ struct DisplayClipboardTests {
         #expect(session.pendingPaste == nil)
     }
 
-    @Test @MainActor func displayPasteEmptyClipboardIsHint() {
+    @Test @MainActor func `display paste empty clipboard is hint`() {
         let session = DisplaySession()
         session.handleMessage(["type": "connect", "width": 800, "height": 600])
         HostPasteboard.clear()
@@ -402,7 +455,7 @@ struct DisplayClipboardTests {
         #expect(session.clipboardHint == "Clipboard is empty")
     }
 
-    @Test @MainActor func hostPasteboardRoundTrip() {
+    @Test @MainActor func `host pasteboard round trip`() {
         let token = "pas-220-\(UUID().uuidString)"
         HostPasteboard.writeString(token)
         #expect(HostPasteboard.readString() == token)

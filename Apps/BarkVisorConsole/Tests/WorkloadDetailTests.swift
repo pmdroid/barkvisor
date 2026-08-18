@@ -5,7 +5,7 @@ import Testing
 struct WorkloadDetailTests {
     private let decoder = JSONDecoder()
 
-    @Test func guestInfoDecodesOsAndAddresses() throws {
+    @Test func `guest info decodes os and addresses`() throws {
         let json = """
         {
           "available": true,
@@ -23,7 +23,7 @@ struct WorkloadDetailTests {
         #expect(WorkloadGuestSummary.ipLabel(guest: guest) == "192.168.64.12")
     }
 
-    @Test func guestInfoKeepsNatFallbackAddressWhenAgentMissing() throws {
+    @Test func `guest info keeps nat fallback address when agent missing`() throws {
         let json = """
         {
           "available": false,
@@ -38,7 +38,7 @@ struct WorkloadDetailTests {
         #expect(WorkloadGuestSummary.ipLabel(guest: guest) == "10.0.2.15")
     }
 
-    @Test func guestSummaryFallsBackToVmTypeFamily() {
+    @Test func `guest summary falls back to vm type family`() {
         let linux = fixtureWorkload(vmType: "linux-arm64")
         let windows = fixtureWorkload(id: "vm-win", name: "desktop", vmType: "windows-x86_64")
         #expect(WorkloadGuestSummary.osLabel(workload: linux, guest: nil) == "Linux")
@@ -49,28 +49,41 @@ struct WorkloadDetailTests {
         #expect(WorkloadGuestSummary.osLabel(workload: linux, guest: guest) == "Fedora")
     }
 
-    @Test func memberConsoleAndDisplayStayDisabled() {
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: false, state: "running") == .memberDisabled)
-        #expect(!WorkloadStreamAccess.resolve(isSelfDevice: false, state: "running").allowsOpen)
-        #expect(
-            WorkloadStreamAccess.memberDisabled.reason
-                == "Console and Display on a member Device are not available yet."
-        )
+    @Test func `member console and display match this device when reachable`() {
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
+        let down = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        #expect(WorkloadStreamAccess.resolve(device: living, state: "running") == .available)
+        #expect(WorkloadStreamAccess.resolve(device: living, state: "running").allowsOpen)
+        #expect(WorkloadStreamAccess.resolve(device: living, state: "stopped") == .notLive)
+        #expect(WorkloadStreamAccess.resolve(device: down, state: "running") == .deviceUnreachable)
+        #expect(!WorkloadStreamAccess.resolve(device: down, state: "running").allowsOpen)
     }
 
-    @Test func thisDeviceConsoleOpensOnlyWhenLive() {
+    @Test func `this device console opens only when live`() {
         #expect(WorkloadStream.isLive("running"))
         #expect(WorkloadStream.isLive("stopping"))
         #expect(!WorkloadStream.isLive("stopped"))
         #expect(!WorkloadStream.isLive("starting"))
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: true, state: "running") == .available)
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: true, state: "stopping") == .available)
-        #expect(WorkloadStreamAccess.resolve(isSelfDevice: true, state: "stopped") == .notLive)
-        #expect(!WorkloadStreamAccess.resolve(isSelfDevice: true, state: "stopped").allowsOpen)
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "running")
+                == .available,
+        )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "stopping")
+                == .available,
+        )
+        #expect(
+            WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "stopped")
+                == .notLive,
+        )
+        #expect(
+            !WorkloadStreamAccess.resolve(isSelfDevice: true, deviceReachable: true, state: "stopped")
+                .allowsOpen,
+        )
         #expect(WorkloadStreamAccess.notLive.reason == "The Workload must be running.")
     }
 
-    @Test func detailIdentityKeepsDeviceAndWorkloadTogether() {
+    @Test func `detail identity keeps device and workload together`() {
         let studio = snapshot(hostId: "self", role: "self", title: "Studio")
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
         let haos = fixtureWorkload(id: "vm-1", name: "haos")
@@ -82,7 +95,7 @@ struct WorkloadDetailTests {
         #expect(HomeDeviceHealthSnapshot.placeholderSelf.title == "This Device")
     }
 
-    @Test func actionKeyMatchesHomeRowAndFallsBackToBareID() {
+    @Test func `action key matches home row and falls back to bare ID`() {
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
         let haos = fixtureWorkload(id: "vm-1", name: "haos")
         #expect(WorkloadActionKey.id(hostID: "self", workloadID: "vm-1") == "self/vm-1")
@@ -91,11 +104,11 @@ struct WorkloadDetailTests {
         #expect(WorkloadActionKey.id(hostID: "", workloadID: "vm-1") == "vm-1")
         #expect(
             HomeWorkloadRow(workload: haos, device: living).id
-                == WorkloadActionKey.id(hostID: "peer", workloadID: "vm-1")
+                == WorkloadActionKey.id(hostID: "peer", workloadID: "vm-1"),
         )
     }
 
-    @Test func guestInfoStopsRetryAfterSuccessfulResponse() {
+    @Test func `guest info stops retry after successful response`() {
         let missing = GuestInfo(available: false, ipAddresses: ["10.0.2.15"])
         let ready = GuestInfo(available: true, ipAddresses: ["192.168.64.12"], osName: "Ubuntu")
         #expect(GuestInfoRefresh.shouldRetry(guest: nil, running: true))
@@ -110,7 +123,7 @@ struct WorkloadDetailTests {
         hostId: String,
         role: String,
         title: String? = nil,
-        reachable: Bool = true
+        reachable: Bool = true,
     ) -> HomeDeviceHealthSnapshot {
         HomeDeviceHealthSnapshot(
             hostId: hostId,
@@ -118,7 +131,7 @@ struct WorkloadDetailTests {
             displayName: title ?? hostId,
             fingerprint: nil,
             agentHost: nil,
-            agentPort: 7777,
+            agentPort: 7_777,
             pairedAt: nil,
             reachability: reachable ? "ok" : "unreachable",
             reachabilityError: reachable ? nil : "Device is unreachable",
@@ -126,7 +139,7 @@ struct WorkloadDetailTests {
             platform: nil,
             resources: nil,
             workloadCount: nil,
-            healthCounts: nil
+            healthCounts: nil,
         )
     }
 
@@ -134,7 +147,7 @@ struct WorkloadDetailTests {
         id: String = "vm-1",
         name: String = "haos",
         vmType: String = "linux-arm64",
-        state: String = "running"
+        state: String = "running",
     ) -> Workload {
         Workload(
             id: id,
@@ -143,7 +156,7 @@ struct WorkloadDetailTests {
             state: state,
             health: state == "running" ? "guest_ready" : nil,
             cpuCount: 2,
-            memoryMB: 1024,
+            memoryMB: 1_024,
             bootDiskId: "disk-1",
             isoId: nil,
             networkId: nil,
@@ -151,7 +164,7 @@ struct WorkloadDetailTests {
             pendingChanges: nil,
             createdAt: "2026-01-01T00:00:00Z",
             updatedAt: "2026-01-02T00:00:00Z",
-            status: nil
+            status: nil,
         )
     }
 }
