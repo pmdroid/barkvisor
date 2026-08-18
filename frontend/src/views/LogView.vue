@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useLogStore } from '../stores/logs'
-import { useVMStore } from '../stores/vms'
 import { getWSTicket } from '../api/client'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import TabGroup from '../components/ui/TabGroup.vue'
+import { useDeviceLogsStore, LOG_HISTORY_LIMIT, LOG_TAIL_CAP, type HomeLogRow } from '../stores/deviceLogs'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import { useDevicesStore } from '../stores/devices'
+import { useLogStore } from '../stores/logs'
+import { useVMStore } from '../stores/vms'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import { isSelfDevice } from '../utils/homeDeviceApi'
+import { DEVICE_LABEL } from '../utils/terminology'
 
 const store = useLogStore()
+const homeLogs = useDeviceLogsStore()
+const homeWorkloads = useDeviceWorkloadsStore()
+const devicesStore = useDevicesStore()
 const vmStore = useVMStore()
 
 const category = ref('')
@@ -18,6 +28,7 @@ const search = ref('')
 const timeRange = ref('24h')
 const liveTail = ref(false)
 const vmFilter = ref('')
+const deviceFilter = ref('')
 
 const categories = [
   { key: '', label: 'All' },
@@ -31,6 +42,8 @@ const categories = [
   { key: 'sync', label: 'Sync' },
 ]
 
+const useHomeUnion = computed(() => devicesStore.devices.length > 0)
+
 function sinceFromRange(range: string): string | undefined {
   const now = Date.now()
   const offsets: Record<string, number> = {
@@ -43,29 +56,110 @@ function sinceFromRange(range: string): string | undefined {
   return new Date(now - offsets[range]).toISOString()
 }
 
-const displayEntries = computed(() => {
-  if (!vmFilter.value) return store.entries
-  return store.entries.filter(e => e.vm === vmFilter.value)
-})
-
-async function refresh() {
-  await store.fetchLogs({
+function fetchParams() {
+  return {
     category: category.value || undefined,
     level: level.value || undefined,
     since: sinceFromRange(timeRange.value),
     search: search.value || undefined,
-    limit: 1000,
-  })
+    limit: LOG_HISTORY_LIMIT,
+  }
+}
+
+const tableColumns = computed(() => {
+  const columns = [
+    { key: 'time', label: 'Time', width: '160px' },
+    { key: 'level', label: 'Level', width: '70px' },
+    { key: 'source', label: 'Source', width: '80px' },
+    { key: 'message', label: 'Message' },
+    { key: 'vm', label: 'VM', width: '120px' },
+  ]
+  if (!useHomeUnion.value) return columns
+  return [
+    columns[0]!,
+    { key: 'device', label: 'Device', width: '140px' },
+    ...columns.slice(1),
+  ]
+})
+
+const deviceOptions = computed(() =>
+  devicesStore.devices.map((device) => ({
+    value: device.hostId,
+    label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+  })),
+)
+
+const vmOptions = computed(() => {
+  if (!useHomeUnion.value) return vmStore.vms.map((vm) => ({ id: vm.id, name: vm.name }))
+  const seen = new Set<string>()
+  const options: { id: string; name: string }[] = []
+  for (const row of homeWorkloads.homeRows(devicesStore.devices)) {
+    if (seen.has(row.vm.id)) continue
+    seen.add(row.vm.id)
+    options.push({ id: row.vm.id, name: row.vm.name })
+  }
+  return options
+})
+
+const displayRows = computed<HomeLogRow[]>(() => {
+  const limit = liveTail.value ? LOG_TAIL_CAP : LOG_HISTORY_LIMIT
+  if (useHomeUnion.value) {
+    return homeLogs.homeRows(devicesStore.devices, limit, {
+      hostId: deviceFilter.value || undefined,
+      vm: vmFilter.value || undefined,
+    })
+  }
+  const entries = vmFilter.value
+    ? store.entries.filter((item) => item.vm === vmFilter.value)
+    : store.entries
+  return entries.map((item) => ({
+    entry: item,
+    hostId: devicesStore.selfDevice?.hostId || '',
+    label: '',
+    role: 'self',
+    reachable: true,
+  }))
+})
+
+const pageLoading = computed(() => {
+  if (devicesStore.loading) return true
+  if (!useHomeUnion.value) return store.loading
+  return devicesStore.devices.some((device) => homeLogs.isLoading(device.hostId))
+})
+
+const loadErrors = computed(() =>
+  devicesStore.devices
+    .map((device) => homeLogs.errorFor(device.hostId))
+    .filter((message): message is string => Boolean(message)),
+)
+
+async function refresh() {
+  await devicesStore.fetchHealth().catch(() => {})
+  if (!useHomeUnion.value) {
+    await Promise.all([store.fetchLogs(fetchParams()), vmStore.fetchAll()])
+    return
+  }
+  await Promise.all([
+    homeLogs.fetchHomeAll(devicesStore.devices, fetchParams()),
+    homeWorkloads.fetchHomeAll(devicesStore.devices),
+  ])
 }
 
 function toggleLiveTail() {
-  liveTail.value = !liveTail.value
   if (liveTail.value) {
-    store.startTail()
-  } else {
+    liveTail.value = false
+    homeLogs.stopHomeTail()
     store.stopTail()
-    refresh()
+    void refresh()
+    return
   }
+  if (useHomeUnion.value) {
+    if (!homeLogs.startHomeTail(devicesStore.devices, fetchParams())) return
+    liveTail.value = true
+    return
+  }
+  store.startTail()
+  liveTail.value = true
 }
 
 function formatTime(ts: string): string {
@@ -99,9 +193,17 @@ function catBadge(cat: string): string {
   }
 }
 
-function vmName(id: string): string {
-  const vm = vmStore.vms.find(v => v.id === id)
-  return vm?.name || id.substring(0, 8)
+function vmName(row: HomeLogRow): string {
+  const id = row.entry.vm
+  if (!id) return ''
+  if (useHomeUnion.value) {
+    return homeWorkloads.vmFor(row.hostId, id)?.name || id.substring(0, 8)
+  }
+  return vmStore.vms.find((vm) => vm.id === id)?.name || id.substring(0, 8)
+}
+
+function rowKey(row: HomeLogRow, index: number): string {
+  return `${row.hostId}:${row.entry.ts}:${row.entry.msg}:${index}`
 }
 
 async function downloadDiagnostics() {
@@ -113,26 +215,24 @@ async function downloadDiagnostics() {
 }
 
 watch([category, level, timeRange], () => {
-  if (!liveTail.value) refresh()
-})
-
-watch(vmFilter, () => {
-  // VM filter is client-side, no refetch needed
+  if (!liveTail.value) void refresh()
 })
 
 let searchTimeout: ReturnType<typeof setTimeout>
 watch(search, () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    if (!liveTail.value) refresh()
+    if (!liveTail.value) void refresh()
   }, 300)
 })
 
 onMounted(() => {
-  vmStore.fetchAll()
-  refresh()
+  void refresh()
 })
-onUnmounted(() => store.clear())
+onUnmounted(() => {
+  store.clear()
+  homeLogs.clear()
+})
 </script>
 
 <template>
@@ -145,9 +245,17 @@ onUnmounted(() => store.clear())
         placeholder="Search logs..."
         style="width:220px"
       />
+      <AppSelect v-if="useHomeUnion" v-model="deviceFilter">
+        <option value="">All Devices</option>
+        <option
+          v-for="opt in deviceOptions"
+          :key="opt.value"
+          :value="opt.value"
+        >{{ opt.label }}</option>
+      </AppSelect>
       <AppSelect v-model="vmFilter">
         <option value="">All VMs</option>
-        <option v-for="vm in vmStore.vms" :key="vm.id" :value="vm.id">{{ vm.name }}</option>
+        <option v-for="vm in vmOptions" :key="vm.id" :value="vm.id">{{ vm.name }}</option>
       </AppSelect>
       <AppSelect v-model="timeRange">
         <option value="1h">Last Hour</option>
@@ -172,32 +280,37 @@ onUnmounted(() => store.clear())
     ]" />
   </div>
 
+  <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
+    {{ loadErrors[0] }}
+  </p>
+
   <!-- Empty state -->
-  <EmptyState v-if="displayEntries.length === 0 && !store.loading" icon="file" title="No log entries found" subtitle="Try adjusting the time range or level filter" />
+  <EmptyState v-if="displayRows.length === 0 && !pageLoading" icon="file" title="No log entries found" subtitle="Try adjusting the time range or level filter" />
 
   <!-- Loading -->
-  <div v-else-if="store.loading && store.entries.length === 0" class="empty">
+  <div v-else-if="pageLoading && displayRows.length === 0" class="empty">
     <p>Loading logs...</p>
   </div>
 
   <!-- Log table -->
-  <DataTable v-else :columns="[
-    { key: 'time', label: 'Time', width: '160px' },
-    { key: 'level', label: 'Level', width: '70px' },
-    { key: 'source', label: 'Source', width: '80px' },
-    { key: 'message', label: 'Message' },
-    { key: 'vm', label: 'VM', width: '120px' },
-  ]">
-      <tr v-for="(entry, i) in displayEntries" :key="i" :class="{ 'row-error': entry.level === 'error' || entry.level === 'fatal', 'row-warn': entry.level === 'warn' }">
-        <td class="mono">{{ formatTime(entry.ts) }}</td>
-        <td><span class="badge" :class="levelBadge(entry.level)">{{ entry.level }}</span></td>
-        <td><span class="badge" :class="catBadge(entry.cat)">{{ entry.cat }}</span></td>
+  <DataTable v-else :columns="tableColumns">
+      <tr v-for="(row, i) in displayRows" :key="rowKey(row, i)" :class="{ 'row-error': row.entry.level === 'error' || row.entry.level === 'fatal', 'row-warn': row.entry.level === 'warn' }">
+        <td class="mono">{{ formatTime(row.entry.ts) }}</td>
+        <td v-if="useHomeUnion">
+          <WorkloadDeviceChip
+            :label="row.label"
+            :self="row.role === 'self'"
+            :reachable="row.reachable"
+          />
+        </td>
+        <td><span class="badge" :class="levelBadge(row.entry.level)">{{ row.entry.level }}</span></td>
+        <td><span class="badge" :class="catBadge(row.entry.cat)">{{ row.entry.cat }}</span></td>
         <td>
-          <div style="font-weight:500">{{ entry.msg }}</div>
-          <div v-if="entry.err" style="color:var(--red);font-size:11px;margin-top:2px">{{ entry.err }}</div>
+          <div style="font-weight:500">{{ row.entry.msg }}</div>
+          <div v-if="row.entry.err" style="color:var(--red);font-size:11px;margin-top:2px">{{ row.entry.err }}</div>
         </td>
         <td>
-          <button v-if="entry.vm" class="vm-link" @click="vmFilter = entry.vm">{{ vmName(entry.vm) }}</button>
+          <button v-if="row.entry.vm" class="vm-link" @click="vmFilter = row.entry.vm">{{ vmName(row) }}</button>
         </td>
       </tr>
   </DataTable>
