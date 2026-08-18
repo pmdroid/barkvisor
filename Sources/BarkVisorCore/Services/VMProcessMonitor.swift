@@ -69,13 +69,11 @@ public actor VMProcessMonitor {
             return false
         }
 
-        let lines = content.split(separator: "\n").map {
-            String($0).trimmingCharacters(in: .whitespaces)
-        }
-        guard let firstLine = lines.first, let pid = Int32(firstLine) else {
+        guard let pids = VMPidFile.parse(content) else {
             try? FileManager.default.removeItem(at: pidFile)
             return false
         }
+        let pid = pids.qemuPid
 
         guard kill(pid, 0) == 0 else {
             Log.vm.info("VM \(vmID): process \(pid) no longer running, cleaning up", vm: vmID)
@@ -109,6 +107,9 @@ public actor VMProcessMonitor {
             return false
         }
 
+        let swtpmPid = pids.swtpmPid.flatMap { candidate in
+            VMManager.isSwtpmProcess(pid: candidate) ? candidate : nil
+        }
         let running = RunningVM(
             process: nil,
             pid: pid,
@@ -118,6 +119,7 @@ public actor VMProcessMonitor {
             qmpEventSocketPath: sockets.event.path,
             swtpmProcess: nil,
             reconnected: true,
+            swtpmPid: swtpmPid,
         )
         await vmManager?.registerReconnectedVM(vmID: vmID, running: running)
 
@@ -239,7 +241,13 @@ public actor VMProcessMonitor {
     }
 
     private func cleanupDeadVM(vmID: String) {
-        try? FileManager.default.removeItem(at: pidsDir.appendingPathComponent("\(vmID).pid"))
+        let pidFile = pidsDir.appendingPathComponent("\(vmID).pid")
+        if let content = try? String(contentsOf: pidFile, encoding: .utf8),
+           let pids = VMPidFile.parse(content),
+           let swtpmPid = pids.swtpmPid {
+            VMManager.terminateSwtpm(pid: swtpmPid, vmID: vmID)
+        }
+        try? FileManager.default.removeItem(at: pidFile)
         VMSockets(vmID: vmID).removeStale()
         // Retry DB update up to 3 times to prevent orphaned running state
         for attempt in 1 ... 3 {
