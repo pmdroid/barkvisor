@@ -407,7 +407,7 @@ private func echoRoundTrip(url: String, send: EchoSend?) async throws -> String 
             once.resume(.failure(error))
         }
         Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
             once.resume(.failure(BarkVisorError.timeout("console tunnel echo")))
         }
     }

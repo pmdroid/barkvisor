@@ -109,9 +109,15 @@ struct HomeConsoleProxyController {
             return
         }
         do {
-            let remote = try await dialer.connect(url: url, on: eventLoop) { ws in
-                WebSocketRelay.capture(from: ws, into: toClient)
-            }
+            // Hop off inbound.eventLoop before awaiting the outbound
+            // handshake. Awaiting WebSocket.connect on the same NIO loop
+            // deadlocks when the group is small (Linux CI).
+            let dialer = self.dialer
+            let remote = try await Task {
+                try await dialer.connect(url: url, on: eventLoop) { ws in
+                    WebSocketRelay.capture(from: ws, into: toClient)
+                }
+            }.value
             if inbound.isClosed {
                 WebSocketRelay.close(remote)
                 return

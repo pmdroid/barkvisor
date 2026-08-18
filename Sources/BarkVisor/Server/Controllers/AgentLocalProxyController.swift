@@ -86,9 +86,11 @@ struct AgentLocalProxyController: RouteCollection {
             return
         }
         do {
-            let remote = try await HomeWebSocketDialer.open(url: url, on: eventLoop) { ws in
-                WebSocketRelay.capture(from: ws, into: toClient)
-            }
+            let remote = try await Task {
+                try await HomeWebSocketDialer.open(url: url, on: eventLoop) { ws in
+                    WebSocketRelay.capture(from: ws, into: toClient)
+                }
+            }.value
             if inbound.isClosed {
                 WebSocketRelay.close(remote)
                 return
