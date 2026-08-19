@@ -161,6 +161,10 @@ describe('guestHome (PAS-201)', () => {
       guest: natPlaceholder,
       portForwards: [],
     })).toEqual({ kind: 'empty' })
+
+    const chipsFn = readFileSync(join(here, '../views/VMListView.vue'), 'utf8')
+      .match(/function serviceChipsFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(chipsFn).toMatch(/if \(row\.role !== 'self' && !row\.reachable\) return null/)
   })
 
   test('self NAT still shows localhost host ports; bridged uses guest IP', () => {

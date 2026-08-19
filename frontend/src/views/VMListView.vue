@@ -195,6 +195,7 @@ function networkModeFor(row: HomeWorkloadRow) {
 }
 
 function serviceChipsFor(row: HomeWorkloadRow) {
+  if (row.role !== 'self' && !row.reachable) return null
   const guest = rowGuestInfo(row)
   return guestListServiceChips({
     guest,
