@@ -4,12 +4,16 @@ import NIOCore
 import NIOPosix
 import Vapor
 
-/// Client WebSocket ↔ far-end stream (PAS-224).
+/// Client WebSocket ↔ far-end stream (PAS-224, PAS-233).
 ///
 /// Controllers only pick a target and a dialer. This module owns the
-/// pre-attach buffer, 256 KiB cap, overflow-close, bind-closes, and
-/// the inbound-closed-before-dial race. WebSocket dials always use
-/// `MultiThreadedEventLoopGroup.singleton`, never the inbound loop.
+/// pre-attach buffer, pending-byte cap, overflow-close, bind-closes, and
+/// the inbound-closed-before-dial race. WebSocket and serial dials always
+/// use `MultiThreadedEventLoopGroup.singleton`, never the inbound loop.
+///
+/// Serial is two modules: `ConsoleBufferManager` owns the QEMU socket,
+/// scrollback, and fan-out. This hop owns each client pipe. Do not hop a
+/// second client onto the serial unix socket.
 enum WebSocketHop {
     /// websocket-kit clients default to 16 KiB frames. A Tight framebuffer
     /// read grows past that and the Home hop (NIO client) closes mid-picture.
@@ -103,7 +107,7 @@ enum WebSocketHop {
                     peer.close()
                 }
             }
-            if inbound.isClosed || remote.isClosed || toRemote.overflowed || toClient.overflowed {
+            if inbound.isClosed || toRemote.overflowed || toClient.overflowed {
                 if toRemote.overflowed || toClient.overflowed {
                     logOverflow(logTarget)
                 }
@@ -111,11 +115,15 @@ enum WebSocketHop {
                 remote.close()
                 return
             }
+            // Attach even if the far end already closed during open so
+            // pre-attach frames (serial scrollback) still flush.
             toRemote.attach(remote)
             toClient.attach(inbound)
             bindCloses(local: inbound, remote: remote)
-            if toRemote.overflowed || toClient.overflowed {
-                logOverflow(logTarget)
+            if remote.isClosed || toRemote.overflowed || toClient.overflowed {
+                if toRemote.overflowed || toClient.overflowed {
+                    logOverflow(logTarget)
+                }
                 inbound.close()
                 remote.close()
             }

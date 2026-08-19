@@ -138,6 +138,7 @@ public final class VaporServer: @unchecked Sendable {
             hostId: Config.hostId,
             database: database.pool,
             vmState: services.manager,
+            consoleBuffers: services.consoleBuffers,
         )
 
         scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
@@ -309,7 +310,7 @@ public final class VaporServer: @unchecked Sendable {
         self.diskInfoCache = diskInfoCache
         await diskInfoCache.start()
 
-        let consoleBuffers = ConsoleBufferManager(eventLoopGroup: app.eventLoopGroup)
+        let consoleBuffers = ConsoleBufferManager()
         await manager.setConsoleBuffers(consoleBuffers)
         await manager.setMetricsCollector(collector)
         await manager.setStateStreamService(stateStreamService)
