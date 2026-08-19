@@ -59,6 +59,35 @@ describe('home inventory union (PAS-234)', () => {
     expect(inv.errorFor('peer-down')).toBeNull()
   })
 
+  test('clear bumps fetch seq so an in-flight list cannot land after a new fetch', async () => {
+    const inv = createHomeInventory<Row>()
+    const peer = device('peer-1')
+    let resolveOlder!: (rows: Row[]) => void
+    const older = new Promise<Row[]>((resolve) => {
+      resolveOlder = resolve
+    })
+    const first = inv.fetchFor({
+      device: peer,
+      canFetch: true,
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load',
+      request: () => older,
+      asList: (data) => data as Row[],
+    })
+    inv.clear()
+    await inv.fetchFor({
+      device: peer,
+      canFetch: true,
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load',
+      request: async () => [{ id: 'new', name: 'new' }],
+      asList: (data) => data as Row[],
+    })
+    resolveOlder([{ id: 'old', name: 'old' }])
+    await first
+    expect(inv.listFor('peer-1').map((row) => row.id)).toEqual(['new'])
+  })
+
   test('a stale list does not overwrite a newer fetch', async () => {
     const inv = createHomeInventory<Row>()
     const peer = device('peer-1')

@@ -42,6 +42,24 @@ describe('log store (PAS-203)', () => {
     expect(get).toHaveBeenCalledTimes(1)
   })
 
+  test('clear drops an in-flight history fetch so it cannot land after a new fetch', async () => {
+    let resolveOlder!: (value: { data: unknown[] }) => void
+    const older = new Promise<{ data: unknown[] }>((resolve) => {
+      resolveOlder = resolve
+    })
+    const get = mock()
+      .mockReturnValueOnce(older)
+      .mockResolvedValueOnce({ data: [{ ts: '2', level: 'info', cat: 'vm', msg: 'fresh' }] })
+    api.get = get as typeof api.get
+    const store = useLogStore()
+    const first = store.fetchLogs({ limit: 10 })
+    store.clear()
+    await store.fetchLogs({ limit: 10 })
+    resolveOlder({ data: [{ ts: '1', level: 'info', cat: 'vm', msg: 'stale' }] })
+    await first
+    expect(store.entries.map((row) => row.msg)).toEqual(['fresh'])
+  })
+
   test('startTail does not flip on for an unreachable member', async () => {
     const member = { hostId: 'peer/1', role: 'member', reachability: 'ok' }
     const down = { hostId: 'peer-2', role: 'member', reachability: 'unreachable' }
