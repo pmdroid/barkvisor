@@ -80,9 +80,13 @@ public final class QMPClient: @unchecked Sendable {
         return try readCommandResponse()
     }
 
-    public func executeWithArgs(_ command: String, args: [String: Any]) throws -> [String: Any] {
+    public func executeWithArgs(
+        _ command: String,
+        args: [String: Any],
+        maxResponseBytes: Int? = nil,
+    ) throws -> [String: Any] {
         try sendCommand(["execute": command, "arguments": args])
-        return try readCommandResponse()
+        return try readCommandResponse(maxResponseBytes: maxResponseBytes)
     }
 
     public func disconnect() {
@@ -99,9 +103,9 @@ public final class QMPClient: @unchecked Sendable {
     }
 
     /// Read a QMP command response, skipping over any asynchronous events.
-    private func readCommandResponse() throws -> [String: Any] {
+    private func readCommandResponse(maxResponseBytes: Int? = nil) throws -> [String: Any] {
         while true {
-            let msg = try readMessage()
+            let msg = try readMessage(maxBytes: maxResponseBytes)
             // Skip asynchronous events — they have an "event" key
             if msg["event"] != nil { continue }
             return msg
@@ -129,7 +133,7 @@ public final class QMPClient: @unchecked Sendable {
 
     /// Read the next QMP JSON message (could be a response or an event).
     /// Handles multi-message reads: QEMU often sends `POWERDOWN\n{"return":{}}\n` in one packet.
-    private func readMessage() throws -> [String: Any] {
+    private func readMessage(maxBytes: Int? = nil) throws -> [String: Any] {
         guard fd >= 0 else {
             throw BarkVisorError.monitorError("QMP not connected")
         }
@@ -144,6 +148,10 @@ public final class QMPClient: @unchecked Sendable {
                 let line = Data(readBuffer[..<nl])
                 readBuffer.removeSubrange(...nl)
                 if line.isEmpty { continue }
+                if let maxBytes, line.count > maxBytes {
+                    readBuffer.removeAll(keepingCapacity: false)
+                    throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
+                }
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: line) as? [String: Any] else {
                         throw BarkVisorError.monitorError("Invalid QMP response format")
@@ -158,6 +166,11 @@ public final class QMPClient: @unchecked Sendable {
                 }
             }
 
+            if let maxBytes, readBuffer.count > maxBytes {
+                readBuffer.removeAll(keepingCapacity: false)
+                throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
+            }
+
             let n = read(fd, chunk, chunkSize)
             if n == 0 {
                 throw BarkVisorError.monitorError("QMP connection closed (empty read)")
@@ -169,6 +182,10 @@ public final class QMPClient: @unchecked Sendable {
                 throw BarkVisorError.monitorError("QMP read failed (errno \(errno))")
             }
             readBuffer.append(chunk, count: n)
+            if let maxBytes, readBuffer.count > maxBytes {
+                readBuffer.removeAll(keepingCapacity: false)
+                throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
+            }
         }
     }
 }

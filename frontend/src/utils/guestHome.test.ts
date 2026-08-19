@@ -203,6 +203,8 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).toContain('detail-label">OS')
     expect(detail).toContain('detail-label">IP Address')
     expect(detail).toContain('Listening ports')
+    expect(detail).toContain('guestInfo.listeningPorts != null')
+    expect(detail).not.toMatch(/listeningPorts == null[\s\S]{0,120}Unavailable/)
     expect(detail).toContain('guestListeningPortHref')
     expect(detail).toContain('isPublishedGuestPort')
     expect(detail).toContain('guestIpsReachable')

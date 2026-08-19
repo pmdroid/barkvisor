@@ -58,6 +58,37 @@ public struct GuestInfoRecord: Codable, Sendable, FetchableRecord, PersistableRe
         self.portsCollectedAt = portsCollectedAt
         self.updatedAt = updatedAt
     }
+
+    /// Refresh guest-info. Port columns are omitted when `updatePorts` is false
+    /// so an unchanged snapshot is not rewritten on every poll.
+    public func saveRefreshing(_ db: Database, updatePorts: Bool) throws {
+        if updatePorts {
+            try save(db, onConflict: .replace)
+            return
+        }
+        if try GuestInfoRecord.fetchOne(db, key: vmId) == nil {
+            try insert(db)
+            return
+        }
+        try update(db, columns: Self.columnsExcludingPorts)
+    }
+
+    private static let columnsExcludingPorts: [Column] = [
+        Column("hostname"),
+        Column("osName"),
+        Column("osVersion"),
+        Column("osId"),
+        Column("kernelVersion"),
+        Column("kernelRelease"),
+        Column("machine"),
+        Column("timezone"),
+        Column("timezoneOffset"),
+        Column("ipAddresses"),
+        Column("macAddress"),
+        Column("users"),
+        Column("filesystems"),
+        Column("updatedAt"),
+    ]
 }
 
 public struct GuestUserDTO: Codable, Sendable {

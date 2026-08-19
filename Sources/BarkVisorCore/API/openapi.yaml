@@ -1424,7 +1424,8 @@ components:
       required: [available, ipAddresses, ipSource]
       description: >
         Guest addon snapshot. listeningPorts is null when unavailable and
-        [] when the guest reported none. Do not invent ports.
+        [] when the guest reported none. Do not invent ports. Web UIs hide
+        the ports section when listeningPorts is null.
       properties:
         available:
           type: boolean
