@@ -63,9 +63,14 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     })
   }
 
+  function putOne(hostId: string, vm: VM): void {
+    inventory.invalidateFetch(hostId)
+    inventory.replaceOne(hostId, vm)
+  }
+
   async function replaceOne(device: DeviceApiTarget, vm: VM): Promise<void> {
     inventory.noteSelf(device)
-    inventory.replaceOne(device.hostId, vm)
+    putOne(device.hostId, vm)
   }
 
   function vmFor(hostId: string, vmId: string): VM | undefined {
@@ -73,6 +78,7 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
   }
 
   function removeOne(hostId: string, vmId: string): void {
+    inventory.invalidateFetch(hostId)
     inventory.removeOne(hostId, vmId)
   }
 
@@ -173,8 +179,9 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     vmFor,
     replaceOne,
     replaceList: inventory.replaceList,
-    putOne: inventory.replaceOne,
+    putOne,
     removeOne,
+    hasList: inventory.hasList,
     isLoading: inventory.isLoading,
     errorFor: inventory.errorFor,
     isActing,

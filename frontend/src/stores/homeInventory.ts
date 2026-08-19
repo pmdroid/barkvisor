@@ -209,7 +209,7 @@ export function createHomeInventory<T>() {
     errorByHost.value = {}
     selfHostId.value = null
     for (const hostId of Object.keys(fetchSeqByHost)) {
-      delete fetchSeqByHost[hostId]
+      fetchSeqByHost[hostId] = (fetchSeqByHost[hostId] ?? 0) + 1
     }
   }
 
