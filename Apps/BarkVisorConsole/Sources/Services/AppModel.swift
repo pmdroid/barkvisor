@@ -43,6 +43,32 @@ enum PhoneTab: String, Hashable {
     case settings
 }
 
+/// Outcome of POST /api/auth/refresh. Only `.unauthorized` (401) may drop the Keychain refresh token.
+enum SessionRefreshResult: Equatable {
+    case rotated(String)
+    case unauthorized
+    case unavailable(String)
+
+    static func from(error: Error) -> SessionRefreshResult {
+        guard let api = error as? APIError else {
+            return .unavailable(error.localizedDescription)
+        }
+        switch api {
+        case .unauthorized:
+            return .unauthorized
+        case let .http(status, _) where status == 401:
+            return .unauthorized
+        default:
+            return .unavailable(api.localizedDescription)
+        }
+    }
+
+    var accessToken: String? {
+        if case let .rotated(token) = self { return token }
+        return nil
+    }
+}
+
 @Observable
 @MainActor
 final class AppModel {
@@ -77,7 +103,7 @@ final class AppModel {
     /// Origin the JWT was issued for. Polling must never follow a draft URL edit.
     private var sessionURL: URL?
     private var pollTask: Task<Void, Never>?
-    private var refreshTask: Task<String?, Never>?
+    private var refreshTask: Task<SessionRefreshResult, Never>?
     private var scopedGeneration = 0
     private var homeGeneration = 0
 
@@ -85,7 +111,7 @@ final class AppModel {
         guard let sessionURL, let token else { return nil }
         var api = APIClient(baseURL: sessionURL, token: token)
         api.refreshOnce = { [weak self] in
-            await self?.refreshAccessToken()
+            await (self?.refreshAccessToken())?.accessToken
         }
         return api
     }
@@ -127,10 +153,19 @@ final class AppModel {
 
     func bootstrap() async {
         if refreshToken != nil, JWT.needsRefresh(token) {
-            if await refreshAccessToken() == nil, token == nil || JWT.isExpired(token ?? "") {
+            switch await refreshAccessToken() {
+            case .rotated:
+                break
+            case .unauthorized:
                 clearSessionLocally()
                 phase = sessionURL == nil ? .connect : .login
                 return
+            case let .unavailable(message):
+                if token == nil || JWT.isExpired(token ?? "") {
+                    banner = message
+                    phase = sessionURL == nil ? .connect : .login
+                    return
+                }
             }
         }
         guard token != nil else {
@@ -396,20 +431,22 @@ final class AppModel {
         KeychainStore.deleteSession()
     }
 
-    private func refreshAccessToken() async -> String? {
+    private func refreshAccessToken() async -> SessionRefreshResult {
         if let refreshTask {
             return await refreshTask.value
         }
-        let task = Task<String?, Never> { [weak self] in
-            guard let self else { return nil }
-            guard let refreshToken, let sessionURL else { return nil }
+        let task = Task<SessionRefreshResult, Never> { [weak self] in
+            guard let self else { return .unavailable("Sign in required") }
+            guard let refreshToken, let sessionURL else {
+                return .unavailable("Sign in required")
+            }
             do {
                 var api = APIClient(baseURL: sessionURL, token: nil)
                 let session = try await api.refreshSession(refreshToken: refreshToken)
                 self.persistSession(session)
-                return session.token
+                return .rotated(session.token)
             } catch {
-                return nil
+                return SessionRefreshResult.from(error: error)
             }
         }
         refreshTask = task
@@ -579,7 +616,10 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled, self.phase == .ready else { return }
                 if JWT.needsRefresh(self.token) {
-                    _ = await self.refreshAccessToken()
+                    if await self.refreshAccessToken() == .unauthorized {
+                        self.logout()
+                        return
+                    }
                 }
                 do {
                     try await self.refreshDevices()

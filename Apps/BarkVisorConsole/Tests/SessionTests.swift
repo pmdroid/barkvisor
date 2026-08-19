@@ -65,6 +65,26 @@ struct SessionTests {
         #expect(ula.deviceURL == "http://[fd12:3456:789a::1]:7777")
     }
 
+    @Test func `refresh drops the session only on 401`() {
+        #expect(SessionRefreshResult.from(error: APIError.unauthorized) == .unauthorized)
+        #expect(SessionRefreshResult.from(error: APIError.http(status: 401, reason: "expired")) == .unauthorized)
+        #expect(SessionRefreshResult.from(error: APIError.transport("offline")) != .unauthorized)
+        #expect(SessionRefreshResult.from(error: APIError.http(status: 503, reason: "down")) != .unauthorized)
+        #expect(SessionRefreshResult.from(error: APIError.http(status: 500, reason: "boom")) != .unauthorized)
+        if case let .unavailable(message) = SessionRefreshResult.from(error: APIError.transport("offline")) {
+            #expect(message == "offline")
+        } else {
+            Issue.record("transport refresh must stay unavailable")
+        }
+    }
+
+    @Test func `qr scanner maps camera failures to a banner`() {
+        #expect(LoginQRScanError.failure(authorized: false, cameraPresent: true) == .cameraDenied)
+        #expect(LoginQRScanError.failure(authorized: true, cameraPresent: false) == .cameraUnavailable)
+        #expect(LoginQRScanError.failure(authorized: true, cameraPresent: true) == nil)
+        #expect(LoginQRScanError.cameraDenied.rawValue == "Camera access is required to scan a sign-in QR")
+    }
+
     @Test func `device url origin compare is host and port only`() throws {
         let a = try DeviceURL.normalize("http://192.168.0.8:7777/login")
         let b = try DeviceURL.normalize("http://192.168.0.8:7777")

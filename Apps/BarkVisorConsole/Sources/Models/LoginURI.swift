@@ -139,3 +139,15 @@ enum LoginURI {
         return addr
     }
 }
+
+/// Camera setup failures for the sign-in QR scanner. Connect/Login must show a banner.
+enum LoginQRScanError: String, Equatable {
+    case cameraDenied = "Camera access is required to scan a sign-in QR"
+    case cameraUnavailable = "Camera is not available to scan a sign-in QR"
+
+    static func failure(authorized: Bool, cameraPresent: Bool) -> LoginQRScanError? {
+        if !authorized { return .cameraDenied }
+        if !cameraPresent { return .cameraUnavailable }
+        return nil
+    }
+}

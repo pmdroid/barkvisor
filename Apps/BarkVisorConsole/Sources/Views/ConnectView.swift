@@ -27,9 +27,12 @@ struct ConnectView: View {
                     .disabled(model.busy || model.serverURLText.trimmingCharacters(in: .whitespaces).isEmpty)
                     #if os(iOS)
                         NavigationLink("Scan QR") {
-                            LoginQRScanner { uri in
-                                Task { await model.redeemLoginURI(uri) }
-                            }
+                            LoginQRScanner(
+                                onCode: { uri in
+                                    Task { await model.redeemLoginURI(uri) }
+                                },
+                                onFailure: { model.banner = $0 },
+                            )
                         }
                     #endif
                     if model.busy {
@@ -90,9 +93,12 @@ struct LoginView: View {
                     .disabled(model.busy || model.username.isEmpty || model.password.isEmpty)
                     #if os(iOS)
                         NavigationLink("Scan QR") {
-                            LoginQRScanner { uri in
-                                Task { await model.redeemLoginURI(uri) }
-                            }
+                            LoginQRScanner(
+                                onCode: { uri in
+                                    Task { await model.redeemLoginURI(uri) }
+                                },
+                                onFailure: { model.banner = $0 },
+                            )
                         }
                     #endif
                     if model.busy {
