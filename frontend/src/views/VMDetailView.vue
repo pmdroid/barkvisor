@@ -248,7 +248,9 @@ const pfSaving = ref(false)
 
 function openPortForwardEditor(draft?: PortForwardRule) {
   const current = vm.value?.portForwards ? [...vm.value.portForwards] : []
-  if (draft) current.push({ ...draft })
+  if (draft && typeof draft.hostPort === 'number' && typeof draft.guestPort === 'number') {
+    current.push({ ...draft })
+  }
   editPortForwards.value = current
   showPortForwardEditor.value = true
 }
@@ -1188,7 +1190,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 </span>
               </span>
               <span v-else style="color:var(--text-dim)">None</span>
-              <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor">Edit</AppButton>
+              <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor()">Edit</AppButton>
             </span>
           </div>
           <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
