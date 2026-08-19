@@ -30,6 +30,8 @@ public struct GuestListeningPortDTO: Codable, Sendable, Equatable, Hashable {
     }
 }
 
+// Windows netstat/PowerShell parsers plus the 3s collect budget sit in one type.
+// swiftlint:disable type_body_length file_length
 public enum GuestListeningPorts {
     public static let collectIntervalSeconds: TimeInterval = 30
     public static let collectFailureBackoffSeconds: TimeInterval = 300
@@ -818,3 +820,4 @@ public enum GuestListeningPorts {
         return nil
     }
 }
+// swiftlint:enable type_body_length file_length
