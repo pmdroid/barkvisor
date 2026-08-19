@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import api from '../api/client'
 import type { HomeDeviceHealthSnapshot, UpdateVMRequest, VM, WorkloadSpec } from '../api/types'
 import {
@@ -13,6 +13,7 @@ import {
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
 import { hardwarePatchBody } from '../utils/editHome'
+import { useDevicesStore } from './devices'
 import { asArray, createHomeInventory, homeUnionRows } from './homeInventory'
 
 export type HomeWorkloadRow = {
@@ -29,7 +30,16 @@ function actionKey(hostId: string, vmId: string): string {
 
 export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
   const inventory = createHomeInventory<VM>()
+  const devices = useDevicesStore()
   const actionLoading = ref<Record<string, boolean>>({})
+
+  watch(
+    () => devices.selfDevice,
+    (self) => {
+      if (self) inventory.noteSelf(self)
+    },
+    { immediate: true },
+  )
 
   function vmsFor(hostId: string): VM[] {
     return inventory.listFor(hostId)

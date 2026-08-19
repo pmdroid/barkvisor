@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import api from '../api/client'
 import type { Disk, DiskUsage, HomeDeviceHealthSnapshot, StorageSummary } from '../api/types'
 import { useDeviceDisksStore } from './deviceDisks'
+import { useDevicesStore } from './devices'
 import { useDiskStore } from './disks'
 
 const originalGet = api.get
@@ -89,6 +91,44 @@ describe('deviceDisks store (PAS-218)', () => {
     expect(useDiskStore().disks.map((row) => row.name)).toEqual(['boot', 'data'])
     expect(useDiskStore().disks[0]?.id).toBe('boot-1')
     expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('local diskStore keeps rows after health reveals This Device hostId', async () => {
+    const listed = [disk({ id: 'boot-1', name: 'boot' })]
+    const storage = summary({ diskCount: 1 })
+    const get = mock((url: string) => {
+      if (url === '/disks') return Promise.resolve({ data: listed })
+      if (url === '/disks/summary') return Promise.resolve({ data: storage })
+      if (url === '/home/devices/health') {
+        return Promise.resolve({
+          data: {
+            devices: [snapshot({ hostId: 'box', role: 'self', displayName: 'agentbox' })],
+            totals: {
+              devices: 1,
+              reachable: 1,
+              unreachable: 0,
+              workloadCount: 0,
+              healthCounts: {},
+            },
+          },
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+
+    const local = useDiskStore()
+    const devices = useDevicesStore()
+    await Promise.all([local.fetchAll(), local.fetchSummary()])
+    expect(local.disks.map((row) => row.id)).toEqual(['boot-1'])
+    expect(local.summary?.diskCount).toBe(1)
+
+    await devices.fetchHealth()
+    await nextTick()
+    expect(devices.selfDevice?.hostId).toBe('box')
+    expect(local.disks.map((row) => row.id)).toEqual(['boot-1'])
+    expect(local.summary?.diskCount).toBe(1)
+    expect(local.disks).toHaveLength(1)
   })
 
   test('self resize and delete also patch diskStore for other surfaces', async () => {

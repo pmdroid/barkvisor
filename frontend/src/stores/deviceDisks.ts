@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import api from '../api/client'
 import type { Disk, DiskUsage, HomeDeviceHealthSnapshot, StorageSummary } from '../api/types'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
@@ -13,7 +13,8 @@ import {
   isSelfDevice,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
-import { asArray, createHomeInventory, homeUnionRows } from './homeInventory'
+import { useDevicesStore } from './devices'
+import { asArray, createHomeInventory, homeUnionRows, pickHostValue } from './homeInventory'
 
 export type DiskWriteBody = {
   name: string
@@ -39,15 +40,24 @@ export type HomeDiskSummary = {
 
 export const useDeviceDisksStore = defineStore('deviceDisks', () => {
   const inventory = createHomeInventory<Disk>()
+  const devices = useDevicesStore()
   const usagesByHost = ref<Record<string, Record<string, DiskUsage>>>({})
   const summaryByHost = ref<Record<string, StorageSummary>>({})
+
+  watch(
+    () => devices.selfDevice,
+    (self) => {
+      if (self) inventory.noteSelf(self)
+    },
+    { immediate: true },
+  )
 
   function disksFor(hostId: string): Disk[] {
     return inventory.listFor(hostId)
   }
 
   function usagesFor(hostId: string): Record<string, DiskUsage> {
-    return usagesByHost.value[hostId] ?? {}
+    return pickHostValue(usagesByHost.value, hostId, inventory.selfHostId.value) ?? {}
   }
 
   function usageFor(hostId: string, diskId: string): DiskUsage | undefined {
@@ -55,7 +65,7 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
   }
 
   function summaryFor(hostId: string): StorageSummary | null {
-    return summaryByHost.value[hostId] ?? null
+    return pickHostValue(summaryByHost.value, hostId, inventory.selfHostId.value) ?? null
   }
 
   function replaceUsage(hostId: string, diskId: string, usage: DiskUsage): void {

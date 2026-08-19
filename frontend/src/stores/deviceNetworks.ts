@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import api from '../api/client'
 import type {
   BridgeInfo,
@@ -19,7 +19,8 @@ import {
   deviceNetworksPath,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
-import { asArray, createHomeInventory, homeUnionRows } from './homeInventory'
+import { useDevicesStore } from './devices'
+import { asArray, createHomeInventory, homeUnionRows, pickHostValue } from './homeInventory'
 
 export type NetworkWriteBody = {
   name: string
@@ -38,25 +39,34 @@ export type HomeNetworkRow = {
 
 export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
   const inventory = createHomeInventory<Network>()
+  const devices = useDevicesStore()
   const interfacesByHost = ref<Record<string, HostInterface[]>>({})
   const bridgesByHost = ref<Record<string, BridgeInfo[]>>({})
   const capsByHost = ref<Record<string, CurrentHostCapabilities>>({})
   const contextSeqByHost: Record<string, number> = {}
+
+  watch(
+    () => devices.selfDevice,
+    (self) => {
+      if (self) inventory.noteSelf(self)
+    },
+    { immediate: true },
+  )
 
   function networksFor(hostId: string): Network[] {
     return inventory.listFor(hostId)
   }
 
   function interfacesFor(hostId: string): HostInterface[] {
-    return interfacesByHost.value[hostId] ?? []
+    return pickHostValue(interfacesByHost.value, hostId, inventory.selfHostId.value) ?? []
   }
 
   function bridgesFor(hostId: string): BridgeInfo[] {
-    return bridgesByHost.value[hostId] ?? []
+    return pickHostValue(bridgesByHost.value, hostId, inventory.selfHostId.value) ?? []
   }
 
   function capsFor(hostId: string): CurrentHostCapabilities | null {
-    return capsByHost.value[hostId] ?? null
+    return pickHostValue(capsByHost.value, hostId, inventory.selfHostId.value) ?? null
   }
 
   async function fetchFor(device: DeviceApiTarget): Promise<void> {
