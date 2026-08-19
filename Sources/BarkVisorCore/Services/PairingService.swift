@@ -61,6 +61,10 @@ public enum PairingService {
         _ input: IssueInput,
         offers: PairingOfferStore? = nil,
     ) throws -> PairingIssueResponse {
+        let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
+        if let raw = input.advertisedHost, PairingPayload.sanitizeHost(raw) == nil {
+            try? revoke(dataDir: input.dataDir, offers: store)
+        }
         let host = try advertisedHost(from: input)
         let material: HomeCertificateMaterial
         do {
@@ -81,7 +85,6 @@ public enum PairingService {
             agentPort: input.agentPort,
             advertisedHost: host,
         )
-        let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
         do {
             try store.replace(offer)
         } catch let error as PairingError {

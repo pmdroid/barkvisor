@@ -51,6 +51,8 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('CUSTOM_ADVERTISED_HOST')
     expect(settings).toContain('onAdvertisedHostChange')
     expect(settings).toContain('Other / DNS name')
+    expect(settings).toContain('if (advertisedHost !== undefined)')
+    expect(settings).toContain('pairingOffer.value = null')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
   })
 
