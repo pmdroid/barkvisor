@@ -44,6 +44,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 - Workload detail shows TCP listening ports from the guest addon (SSH, HTTP, and common dev servers). Loopback stays internal and is never a URL. Members use the same guest-info hop as This Device.
 - Listening ports are the common set only (SSH, HTTP/S, typical dev servers, DBs, RDP, VNC) — rpcbind and the rest stay hidden. HTTP that actually answers `HEAD /` (or a well-known HTTP port when the probe cannot run) is an Open link.
+- This Device NAT Overview offers **Publish this port** when a common TCP listener has no matching hostfwd. The host port is the guest port if free, otherwise the next free NAT claim (PAS-64). One click opens the existing port-forwards editor. Restart is still required if QEMU is already started. Loopback listeners stay hidden. Member NAT is not a click: localhost would be the wrong machine.
 
 ### Platform
 

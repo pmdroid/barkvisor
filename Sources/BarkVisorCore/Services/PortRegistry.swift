@@ -32,7 +32,8 @@ public struct PortClaim: Sendable, Equatable {
 /// Host-local port occupancy from configured NAT `hostfwd` rules.
 ///
 /// Wave 0: config-vs-config on write + TCP bind probe at start.
-/// Auto-allocation (`nextFree`) and App ports are deferred.
+/// `nextFree` is guest-port-first, then the next unused host port (PAS-228).
+/// App ports stay deferred.
 public enum PortRegistry {
     /// Claims from VMs whose effective mode allows port forwards (NAT / implicit NAT).
     public static func claims(db: Database, excludingVM: String? = nil) throws -> [PortClaim] {
@@ -92,6 +93,49 @@ public enum PortRegistry {
     ) async throws {
         try await pool.read { db in
             try assertAvailable(rules, excludingVM: excludingVM, db: db)
+        }
+    }
+
+    /// Host port at `preferred` if free, otherwise the next unused port of `proto`.
+    /// Occupied = NAT `hostfwd` claims (PAS-64) plus `extraOccupied`, then TCP bind probe.
+    public static func nextFree(
+        preferred: Int,
+        proto: String,
+        excludingVM: String? = nil,
+        extraOccupied: [Int] = [],
+        db: Database,
+    ) throws -> Int {
+        let normalized = normalizedProtocol(proto)
+        var occupied = Set(extraOccupied)
+        for claim in try claims(db: db, excludingVM: excludingVM) where claim.proto == normalized {
+            occupied.insert(claim.hostPort)
+        }
+        let start = min(max(preferred, 1), 65_535)
+        for port in start ... 65_535 {
+            if occupied.contains(port) { continue }
+            if !probeListen(port: port, proto: normalized) { continue }
+            return port
+        }
+        throw BarkVisorError.portInUse(
+            "No free host port at or above \(start)/\(normalized).",
+        )
+    }
+
+    public static func nextFree(
+        preferred: Int,
+        proto: String,
+        excludingVM: String? = nil,
+        extraOccupied: [Int] = [],
+        db pool: DatabasePool,
+    ) async throws -> Int {
+        try await pool.read { db in
+            try nextFree(
+                preferred: preferred,
+                proto: proto,
+                excludingVM: excludingVM,
+                extraOccupied: extraOccupied,
+                db: db,
+            )
         }
     }
 
