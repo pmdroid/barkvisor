@@ -54,6 +54,7 @@ const loginOffer = ref<LoginOffer | null>(null)
 const loginOfferSvgMarkup = ref('')
 const loginOfferLoading = ref(false)
 const loginOfferCopied = ref(false)
+const loginOfferSeq = ref(0)
 const selectedHost = ref('')
 const customHost = ref('')
 const rejoinPayload = ref('')
@@ -130,20 +131,29 @@ function openHomeTab() {
 }
 
 async function loadLoginOffer() {
+  const seq = ++loginOfferSeq.value
   try {
-    loginOffer.value = await getLoginOffer()
-    await renderLoginOfferQr()
+    const loaded = await getLoginOffer()
+    if (seq !== loginOfferSeq.value) return
+    loginOffer.value = loaded
+    await renderLoginOfferQr(seq)
   } catch (e: unknown) {
+    if (seq !== loginOfferSeq.value) return
     toast.error(apiErrorMessage(e))
   }
 }
 
-async function renderLoginOfferQr() {
-  if (!loginOffer.value) {
-    loginOfferSvgMarkup.value = ''
+async function renderLoginOfferQr(seq: number) {
+  const offer = loginOffer.value
+  if (!offer) {
+    if (seq === loginOfferSeq.value) loginOfferSvgMarkup.value = ''
     return
   }
-  loginOfferSvgMarkup.value = await loginOfferSvg(loginOffer.value.uri)
+  const uri = offer.uri
+  const svg = await loginOfferSvg(uri)
+  if (seq !== loginOfferSeq.value) return
+  if (loginOffer.value?.uri !== uri) return
+  loginOfferSvgMarkup.value = svg
 }
 
 async function showLoginQr() {
@@ -152,27 +162,34 @@ async function showLoginQr() {
     toast.error(`Enter a DNS name or IP the phone can reach.`)
     return
   }
+  const seq = ++loginOfferSeq.value
   loginOfferLoading.value = true
   try {
-    loginOffer.value = await issueLoginOffer(host)
-    await renderLoginOfferQr()
+    const issued = await issueLoginOffer(host)
+    if (seq !== loginOfferSeq.value) return
+    loginOffer.value = issued
+    await renderLoginOfferQr(seq)
   } catch (e: unknown) {
+    if (seq !== loginOfferSeq.value) return
     toast.error(apiErrorMessage(e))
   } finally {
-    loginOfferLoading.value = false
+    if (seq === loginOfferSeq.value) loginOfferLoading.value = false
   }
 }
 
 async function hideLoginQr() {
+  const seq = ++loginOfferSeq.value
   loginOfferLoading.value = true
   try {
     await revokeLoginOffer()
+    if (seq !== loginOfferSeq.value) return
     loginOffer.value = null
     loginOfferSvgMarkup.value = ''
   } catch (e: unknown) {
+    if (seq !== loginOfferSeq.value) return
     toast.error(apiErrorMessage(e))
   } finally {
-    loginOfferLoading.value = false
+    if (seq === loginOfferSeq.value) loginOfferLoading.value = false
   }
 }
 

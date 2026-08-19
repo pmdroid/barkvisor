@@ -104,6 +104,7 @@ final class AppModel {
     private var sessionURL: URL?
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<SessionRefreshResult, Never>?
+    private var sessionGeneration = 0
     private var scopedGeneration = 0
     private var homeGeneration = 0
 
@@ -220,6 +221,7 @@ final class AppModel {
         let presented = refreshToken
         let url = sessionURL
         let access = token
+        bumpSessionGeneration()
         stopPolling()
         clearSessionLocally()
         dropScopedState()
@@ -257,6 +259,7 @@ final class AppModel {
         serverURLText = next.absoluteString
         UserDefaults.standard.set(serverURLText, forKey: "serverURL")
         guard token != nil || refreshToken != nil, let sessionURL, !DeviceURL.sameOrigin(sessionURL, next) else { return }
+        bumpSessionGeneration()
         stopPolling()
         clearSessionLocally()
         self.sessionURL = nil
@@ -393,12 +396,10 @@ final class AppModel {
         defer { busy = false }
         do {
             let payload = try LoginURI.parse(raw)
-            serverURLText = payload.deviceURL
-            let url = try DeviceURL.normalize(serverURLText)
-            serverURLText = url.absoluteString
-            UserDefaults.standard.set(serverURLText, forKey: "serverURL")
+            let url = try DeviceURL.normalize(payload.deviceURL)
             var api = APIClient(baseURL: url, token: nil)
             let session = try await api.redeemLogin(code: payload.code)
+            serverURLText = url.absoluteString
             persistSession(session, origin: url)
             try await refreshAll()
             phase = .ready
@@ -417,12 +418,21 @@ final class AppModel {
         refreshToken = session.refreshToken
         if let origin {
             sessionURL = origin
+            serverURLText = origin.absoluteString
         } else if sessionURL == nil {
             sessionURL = try? DeviceURL.normalize(serverURLText)
         }
-        KeychainStore.saveSession(token: session.token, refreshToken: session.refreshToken)
+        if !KeychainStore.saveSession(token: session.token, refreshToken: session.refreshToken) {
+            banner = "Could not save the session on this device"
+        }
         UserDefaults.standard.set(serverURLText, forKey: "serverURL")
         UserDefaults.standard.set(username, forKey: "username")
+    }
+
+    private func bumpSessionGeneration() {
+        sessionGeneration += 1
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func clearSessionLocally() {
@@ -435,14 +445,23 @@ final class AppModel {
         if let refreshTask {
             return await refreshTask.value
         }
+        let generation = sessionGeneration
+        let presented = refreshToken
+        let origin = sessionURL
         let task = Task<SessionRefreshResult, Never> { [weak self] in
             guard let self else { return .unavailable("Sign in required") }
-            guard let refreshToken, let sessionURL else {
+            guard let presented, let origin else {
                 return .unavailable("Sign in required")
             }
             do {
-                var api = APIClient(baseURL: sessionURL, token: nil)
-                let session = try await api.refreshSession(refreshToken: refreshToken)
+                var api = APIClient(baseURL: origin, token: nil)
+                let session = try await api.refreshSession(refreshToken: presented)
+                guard self.sessionGeneration == generation,
+                      self.refreshToken == presented,
+                      self.sessionURL == origin
+                else {
+                    return .unavailable("Sign in required")
+                }
                 self.persistSession(session)
                 return .rotated(session.token)
             } catch {

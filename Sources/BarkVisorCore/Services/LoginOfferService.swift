@@ -86,30 +86,51 @@ public enum LoginOfferService {
             throw BarkVisorError.unauthorized("Invalid sign-in code")
         }
         let incoming = PairingCode.hash(code)
-        let user = try await db.write { db -> User in
-            guard let offer = try LoginOfferRecord.fetchOne(db) else {
-                throw BarkVisorError.unauthorized("Invalid sign-in code")
-            }
-            if offer.consumedAt != nil {
-                throw BarkVisorError.unauthorized("Invalid sign-in code")
-            }
-            if let expires = iso8601.date(from: offer.expiresAt), now >= expires {
-                throw BarkVisorError.unauthorized("Invalid sign-in code")
-            }
-            guard PairingCode.hashesEqual(incoming, offer.codeHash) else {
-                throw BarkVisorError.unauthorized("Invalid sign-in code")
-            }
-            guard let user = try User.filter(User.Columns.id == offer.userId).fetchOne(db) else {
-                throw BarkVisorError.unauthorized("Invalid sign-in code")
-            }
-            var consumed = offer
-            consumed.consumedAt = iso8601.string(from: now)
-            try consumed.update(db)
-            return user
+        let user = try await db.read { db in
+            try redeemableUser(incomingHash: incoming, now: now, db: db)
         }
         let token = try await AuthService.signAccessToken(user: user, keys: keys, now: now)
-        let refresh = try await AuthService.issueRefreshToken(userId: user.id, db: db, now: now)
-        return AuthSessionTokens(token: token, refreshToken: refresh, user: user)
+        let plaintext = AuthService.generateRefreshToken()
+        try await db.write { db in
+            let user = try redeemableUser(incomingHash: incoming, now: now, db: db)
+            guard var offer = try LoginOfferRecord.fetchOne(db) else {
+                throw BarkVisorError.unauthorized("Invalid sign-in code")
+            }
+            offer.consumedAt = iso8601.string(from: now)
+            try offer.update(db)
+            try RefreshTokenRecord(
+                id: UUID().uuidString,
+                userId: user.id,
+                familyId: UUID().uuidString,
+                tokenHash: AuthService.hashRefreshToken(plaintext),
+                createdAt: iso8601.string(from: now),
+                expiresAt: iso8601.string(from: now.addingTimeInterval(AuthService.refreshTokenTTL)),
+            ).insert(db)
+        }
+        return AuthSessionTokens(token: token, refreshToken: plaintext, user: user)
+    }
+
+    private static func redeemableUser(
+        incomingHash: String,
+        now: Date,
+        db: GRDB.Database,
+    ) throws -> User {
+        guard let offer = try LoginOfferRecord.fetchOne(db) else {
+            throw BarkVisorError.unauthorized("Invalid sign-in code")
+        }
+        if offer.consumedAt != nil {
+            throw BarkVisorError.unauthorized("Invalid sign-in code")
+        }
+        if let expires = iso8601.date(from: offer.expiresAt), now >= expires {
+            throw BarkVisorError.unauthorized("Invalid sign-in code")
+        }
+        guard PairingCode.hashesEqual(incomingHash, offer.codeHash) else {
+            throw BarkVisorError.unauthorized("Invalid sign-in code")
+        }
+        guard let user = try User.filter(User.Columns.id == offer.userId).fetchOne(db) else {
+            throw BarkVisorError.unauthorized("Invalid sign-in code")
+        }
+        return user
     }
 
     private static func issueResponse(

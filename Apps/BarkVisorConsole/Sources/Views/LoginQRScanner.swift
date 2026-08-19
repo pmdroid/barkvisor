@@ -46,6 +46,7 @@
         var onCode: ((String) -> Void)?
         var onFailure: ((String) -> Void)?
         private let session = AVCaptureSession()
+        private let sessionQueue = DispatchQueue(label: "dev.barkvisor.login-qr")
         private var handled = false
         private var appeared = false
 
@@ -75,7 +76,9 @@
         override func viewWillDisappear(_ animated: Bool) {
             super.viewWillDisappear(animated)
             appeared = false
-            if session.isRunning { session.stopRunning() }
+            sessionQueue.async { [session] in
+                if session.isRunning { session.stopRunning() }
+            }
         }
 
         private func finishAuthorization(granted: Bool) {
@@ -113,9 +116,11 @@
         }
 
         private func startIfNeeded() {
-            guard appeared, !handled, !session.inputs.isEmpty, !session.isRunning else { return }
-            DispatchQueue.global(qos: .userInitiated).async { [session] in
-                session.startRunning()
+            guard appeared, !handled, !session.inputs.isEmpty else { return }
+            sessionQueue.async { [weak self] in
+                guard let self, self.appeared, !self.handled else { return }
+                if !self.session.isRunning { self.session.startRunning() }
+                if !self.appeared, self.session.isRunning { self.session.stopRunning() }
             }
         }
 

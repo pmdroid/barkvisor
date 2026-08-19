@@ -180,6 +180,39 @@ struct AuthServiceTests {
         #expect(rows.allSatisfy { $0.revokedAt != nil })
     }
 
+    @Test func `revoking one family leaves the other session`() async throws {
+        let (tmp, db) = try makeDB()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let keys = await makeKeys()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let phone = try await AuthService.loginSession(
+            username: "admin",
+            password: "testpass10",
+            hasher: TestPasswordHasher(),
+            keys: keys,
+            db: db,
+            now: now,
+        )
+        let browser = try await AuthService.loginSession(
+            username: "admin",
+            password: "testpass10",
+            hasher: TestPasswordHasher(),
+            keys: keys,
+            db: db,
+            now: now,
+        )
+        try await AuthService.revokeRefreshToken(phone.refreshToken, db: db, now: now)
+        await #expect(throws: BarkVisorError.self) {
+            try await AuthService.refresh(
+                refreshToken: phone.refreshToken, keys: keys, db: db, now: now,
+            )
+        }
+        let rotated = try await AuthService.refresh(
+            refreshToken: browser.refreshToken, keys: keys, db: db, now: now,
+        )
+        #expect(rotated.refreshToken != browser.refreshToken)
+    }
+
     @Test func `revoke all refresh tokens for the user`() async throws {
         let (tmp, db) = try makeDB()
         defer { try? FileManager.default.removeItem(at: tmp) }

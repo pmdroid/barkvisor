@@ -128,26 +128,20 @@ struct AuthController: RouteCollection {
     @Sendable
     func logout(req: Vapor.Request) async throws -> HTTPStatus {
         let body = try? req.content.decode(LogoutRequest.self)
-        var revoked = false
+        guard let refreshToken = body?.refreshToken, !refreshToken.isEmpty else {
+            throw BarkVisorError.unauthorized("Missing refresh token")
+        }
+        // Bearer authenticates/audits only. Do not revoke every family for this user.
         if let bearer = req.headers.bearerAuthorization?.token,
            let payload = try? await keys.verify(bearer, as: UserPayload.self) {
-            try await AuthService.revokeAllRefreshTokens(userId: payload.sub.value, db: req.db)
             AuditService.log(
                 action: "auth.logout", resourceType: "user", resourceId: payload.sub.value,
                 resourceName: payload.username, req: req,
             )
-            revoked = true
+        } else {
+            AuditService.log(action: "auth.logout", resourceType: "user", req: req)
         }
-        if let refreshToken = body?.refreshToken, !refreshToken.isEmpty {
-            try await AuthService.revokeRefreshToken(refreshToken, db: req.db)
-            if !revoked {
-                AuditService.log(action: "auth.logout", resourceType: "user", req: req)
-            }
-            revoked = true
-        }
-        guard revoked else {
-            throw BarkVisorError.unauthorized("Missing refresh token")
-        }
+        try await AuthService.revokeRefreshToken(refreshToken, db: req.db)
         return .noContent
     }
 

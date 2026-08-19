@@ -172,6 +172,31 @@ struct LoginOfferTests {
         }
     }
 
+    @Test func `failed jwt issuance leaves the offer redeemable`() async throws {
+        let (tmp, db) = try makeDB()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let emptyKeys = JWTKeyCollection()
+        let now = Date()
+        let offer = try await LoginOfferService.issue(
+            LoginOfferService.IssueInput(
+                userId: "user-1",
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
+                now: now,
+            ),
+            db: db,
+        )
+        await #expect(throws: Error.self) {
+            try await LoginOfferService.redeem(
+                code: offer.code, keys: emptyKeys, db: db, now: now.addingTimeInterval(30),
+            )
+        }
+        let current = try await LoginOfferService.current(now: now.addingTimeInterval(31), db: db)
+        #expect(current.code == offer.code)
+        let rows = try await db.read { db in try RefreshTokenRecord.fetchCount(db) }
+        #expect(rows == 0)
+    }
+
     @Test func `expired offer cannot be redeemed`() async throws {
         let (tmp, db) = try makeDB()
         defer { try? FileManager.default.removeItem(at: tmp) }

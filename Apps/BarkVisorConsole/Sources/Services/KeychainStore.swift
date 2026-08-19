@@ -26,7 +26,22 @@ enum KeychainStore {
 
     @discardableResult
     static func saveSession(token: String, refreshToken: String) -> Bool {
-        saveToken(token) && saveRefreshToken(refreshToken)
+        let previousToken = readToken()
+        let previousRefresh = readRefreshToken()
+        let tokenOk = saveToken(token)
+        let refreshOk = saveRefreshToken(refreshToken)
+        if tokenOk && refreshOk { return true }
+        if let previousToken {
+            _ = saveToken(previousToken)
+        } else {
+            _ = deleteToken()
+        }
+        if let previousRefresh {
+            _ = saveRefreshToken(previousRefresh)
+        } else {
+            _ = deleteRefreshToken()
+        }
+        return false
     }
 
     @discardableResult
@@ -62,16 +77,21 @@ enum KeychainStore {
 
     @discardableResult
     private static func save(account: String, value: String) -> Bool {
-        delete(account: account)
         let data = Data(value.utf8)
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecUseDataProtectionKeychain as String: true,
         ]
+        let updated = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary,
+        )
+        if updated == errSecSuccess { return true }
+        guard updated == errSecItemNotFound else { return false }
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        query[kSecUseDataProtectionKeychain as String] = true
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
