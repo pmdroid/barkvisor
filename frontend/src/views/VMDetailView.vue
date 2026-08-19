@@ -1325,10 +1325,9 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             </div>
           </div>
 
-          <div style="margin-top:16px">
+          <div v-if="guestInfo.listeningPorts != null" style="margin-top:16px">
             <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Listening ports</h3>
-            <p v-if="guestInfo.listeningPorts == null" style="color:var(--text-dim);font-size:12px;margin:0">Unavailable</p>
-            <p v-else-if="guestListeningPortRows.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
+            <p v-if="guestListeningPortRows.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
             <DataTable v-else :columns="[{ key: 'port', label: 'Port' }, { key: 'address', label: 'Address' }, { key: 'label', label: 'Service' }, { key: 'access', label: 'Access' }, { key: 'publish', label: '' }]">
               <tr v-for="row in guestListeningPortRows" :key="row.key">
                 <td class="mono" style="font-variant-numeric:tabular-nums">{{ row.port }}</td>

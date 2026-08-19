@@ -110,13 +110,13 @@ extension MetricsCollector {
         let previous = try? dbPool.read { db in
             try GuestInfoRecord.fetchOne(db, key: vmID)
         }
-        let record = buildGuestInfoRecord(
+        let snapshot = buildGuestInfoRecord(
             gaClient: gaClient, vmID: vmID, ips: ips, mac: mac, previous: previous,
         )
 
         do {
             try dbPool.write { db in
-                try record.save(db, onConflict: .replace)
+                try snapshot.record.saveRefreshing(db, updatePorts: snapshot.updatePorts)
             }
         } catch {
             Log.metrics.error("Failed to save guest info for VM \(vmID): \(error)", vm: vmID)
@@ -152,7 +152,7 @@ extension MetricsCollector {
         ips: [String],
         mac: String?,
         previous: GuestInfoRecord?,
-    ) -> GuestInfoRecord {
+    ) -> (record: GuestInfoRecord, updatePorts: Bool) {
         let hostnameResult = try? gaClient.execute("guest-get-host-name")
         let osInfoResult = try? gaClient.execute("guest-get-osinfo")
         let tzResult = try? gaClient.execute("guest-get-timezone")
@@ -175,20 +175,22 @@ extension MetricsCollector {
         let parsedUsers = parseGuestUsers(usersResult)
         let parsedFS = parseGuestFilesystems(fsResult)
         let now = iso8601.string(from: Date())
-        var collectedPorts: [GuestListeningPortDTO]?
+        let persistedPorts: (json: String?, collectedAt: String?, changed: Bool)
         if GuestListeningPorts.shouldCollect(vmID: vmID) {
-            collectedPorts = GuestListeningPorts.collect(using: gaClient)
+            let collectedPorts = GuestListeningPorts.collect(using: gaClient)
             GuestListeningPorts.markCollected(vmID: vmID, succeeded: collectedPorts != nil)
+            persistedPorts = GuestListeningPorts.persistFields(
+                collected: collectedPorts,
+                previousJSON: previous?.listeningPorts,
+                previousCollectedAt: previous?.portsCollectedAt,
+                now: now,
+            )
+        } else {
+            persistedPorts = (previous?.listeningPorts, previous?.portsCollectedAt, false)
         }
-        let persistedPorts = GuestListeningPorts.persistFields(
-            collected: collectedPorts,
-            previousJSON: previous?.listeningPorts,
-            previousCollectedAt: previous?.portsCollectedAt,
-            now: now,
-        )
 
         let encoder = JSONEncoder()
-        return GuestInfoRecord(
+        let record = GuestInfoRecord(
             vmId: vmID,
             hostname: hostName,
             osName: osName,
@@ -213,6 +215,7 @@ extension MetricsCollector {
             listeningPorts: persistedPorts.json,
             portsCollectedAt: persistedPorts.collectedAt,
         )
+        return (record, persistedPorts.changed)
     }
 
     private static func parseGuestUsers(

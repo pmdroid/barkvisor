@@ -83,6 +83,7 @@ struct GuestListeningPortsTests {
         )
         #expect(same.json == json)
         #expect(same.collectedAt == "t1")
+        #expect(same.changed == false)
 
         let empty = GuestListeningPorts.persistFields(
             collected: [],
@@ -92,6 +93,7 @@ struct GuestListeningPortsTests {
         )
         #expect(empty.json == "[]")
         #expect(empty.collectedAt == "t2")
+        #expect(empty.changed == true)
 
         let failed = GuestListeningPorts.persistFields(
             collected: nil,
@@ -99,8 +101,18 @@ struct GuestListeningPortsTests {
             previousCollectedAt: "t1",
             now: "t2",
         )
-        #expect(failed.json == json)
-        #expect(failed.collectedAt == "t1")
+        #expect(failed.json == nil)
+        #expect(failed.collectedAt == nil)
+        #expect(failed.changed == true)
+
+        let alreadyNil = GuestListeningPorts.persistFields(
+            collected: nil,
+            previousJSON: nil,
+            previousCollectedAt: nil,
+            now: "t2",
+        )
+        #expect(alreadyNil.json == nil)
+        #expect(alreadyNil.changed == false)
 
         let reshuffled = #"[{"scope":"network","port":22,"label":"SSH","address":"0.0.0.0","proto":"tcp"}]"#
         let sameKeys = GuestListeningPorts.persistFields(
@@ -111,6 +123,38 @@ struct GuestListeningPortsTests {
         )
         #expect(sameKeys.json == reshuffled)
         #expect(sameKeys.collectedAt == "t1")
+        #expect(sameKeys.changed == false)
+    }
+
+    @Test func `canonicalize puts labeled ports first`() throws {
+        let smtp = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 25))
+        let http = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 80))
+        let high = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 40_000))
+        let ordered = GuestListeningPorts.canonicalize([smtp, high, http])
+        #expect(ordered.map(\.port) == [80, 25, 40_000])
+        #expect(ordered.first?.label == "HTTP")
+    }
+
+    @Test func `collect budget is a shared 3s wall`() {
+        let t0 = Date()
+        #expect(GuestListeningPorts.collectTimeoutSeconds == 3)
+        #expect(GuestListeningPorts.remainingCollectBudget(
+            until: t0.addingTimeInterval(3),
+            now: t0,
+        ) == 3)
+        #expect(GuestListeningPorts.remainingCollectBudget(
+            until: t0,
+            now: t0.addingTimeInterval(1),
+        ) == 0)
+    }
+
+    @Test func `guest exec out-data is byte bounded`() {
+        let ok = Data("LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n".utf8).base64EncodedString()
+        #expect(GuestListeningPorts.decodeBoundedOutput(ok)?.contains(":22") == true)
+        let huge = Data(repeating: 0x41, count: GuestListeningPorts.execOutputMaxBytes + 1)
+            .base64EncodedString()
+        #expect(GuestListeningPorts.decodeBoundedOutput(huge) == nil)
+        #expect(GuestListeningPorts.decodeBoundedOutput(nil) == nil)
     }
 
     @Test func `published filter keeps common ports only`() {
