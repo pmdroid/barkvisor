@@ -258,6 +258,70 @@ final class PortRegistryTests {
         #expect(error?.code == "port_in_use")
     }
 
+    // MARK: - nextFree (PAS-228)
+
+    @Test func `nextFree uses preferred when unclaimed`() async throws {
+        let port = try await PortRegistry.nextFree(preferred: 18_080, proto: "tcp", db: dbPool)
+        #expect(port >= 18_080)
+        #expect(PortRegistry.probeListen(port: port, proto: "tcp"))
+    }
+
+    @Test func `nextFree skips a claimed NAT host port`() async throws {
+        try await insertVM(
+            id: "vm-ha", name: "Home Assistant",
+            portForwards: [PortForwardRule(protocol: "tcp", hostPort: 18_123, guestPort: 8_123)],
+        )
+        let port = try await PortRegistry.nextFree(preferred: 18_123, proto: "tcp", db: dbPool)
+        #expect(port > 18_123)
+        #expect(PortRegistry.probeListen(port: port, proto: "tcp"))
+    }
+
+    @Test func `nextFree ignores isolated leftover forwards`() async throws {
+        let isolated = try await NetworkService.create(
+            CreateNetworkParams(
+                name: "private-next", mode: "isolated", bridge: nil, macAddress: nil, dnsServer: nil,
+            ),
+            db: dbPool,
+        )
+        try await insertVM(
+            id: "vm-iso-next", name: "Isolated leftover",
+            networkId: isolated.id,
+            portForwards: [PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 80)],
+        )
+        let port = try await PortRegistry.nextFree(preferred: 18_080, proto: "tcp", db: dbPool)
+        #expect(port >= 18_080)
+        let claims = try await dbPool.read { db in try PortRegistry.claims(db: db) }
+        #expect(claims.isEmpty)
+    }
+
+    @Test func `nextFree extraOccupied skips this VM host port`() async throws {
+        let port = try await PortRegistry.nextFree(
+            preferred: 18_222,
+            proto: "tcp",
+            extraOccupied: [18_222],
+            db: dbPool,
+        )
+        #expect(port > 18_222)
+    }
+
+    @Test func `nextFree excludingVM can reuse that VM host port`() async throws {
+        try await insertVM(
+            id: "vm-self-next", name: "Self",
+            portForwards: [PortForwardRule(protocol: "tcp", hostPort: 18_080, guestPort: 80)],
+        )
+        let port = try await PortRegistry.nextFree(
+            preferred: 18_080,
+            proto: "tcp",
+            excludingVM: "vm-self-next",
+            db: dbPool,
+        )
+        #expect(port >= 18_080)
+        let others = try await dbPool.read { db in
+            try PortRegistry.claims(db: db, excludingVM: "vm-self-next")
+        }
+        #expect(others.isEmpty)
+    }
+
     // MARK: - Bind probe
 
     @Test func `probeListen is false while a TCP socket is bound`() {
