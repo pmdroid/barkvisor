@@ -194,6 +194,8 @@ describe('guestHome (PAS-201)', () => {
     expect(detail).toContain('guestInfoFetchPath')
     expect(list).toContain('guestInfoIfRunning')
     expect(list).toContain('guestIpPortsView')
+    expect(list).toContain('guestListServiceChips')
+    expect(list).toContain('guestIpsReachableFromNetwork')
     expect(detail).toContain('guestOsLabel')
     expect(detail).toContain('{{ memberOsLabel }}')
     expect(detail).not.toContain('v-if="guestInfo?.osName"')

@@ -1,8 +1,8 @@
 /** Guest TCP LISTEN display (PAS-225) and This Device NAT hostfwd suggest (PAS-228).
  *  Loopback is internal and never a URL. */
 
-import type { GuestListeningPort, PortForwardRule } from '../api/types'
-import { guestServiceHref } from './guestHome'
+import type { GuestInfo, GuestListeningPort, PortForwardRule } from '../api/types'
+import { guestServiceHref, guestServiceLabel } from './guestHome'
 
 /** QEMU user-net guest address — not reachable from the operator browser. */
 export const slirpGuestIPv4 = '10.0.2.15'
@@ -60,6 +60,104 @@ export function guestListeningPortHref(
 export function guestListeningPortAccessLabel(port: GuestListeningPort): string {
   if (port.scope === 'internal' || isLoopbackAddress(port.address)) return 'Internal'
   return port.address
+}
+
+/** List chips: SSH / HTTP / HTTPS only. Loopback is never shown. */
+export const listServiceChipLabels = ['SSH', 'HTTP', 'HTTPS'] as const
+export type ListServiceChipLabel = (typeof listServiceChipLabels)[number]
+
+export type GuestListServiceChip = {
+  key: string
+  label: ListServiceChipLabel
+  href: string | null
+  copyText: string
+}
+
+const preferredListChipPort: Record<ListServiceChipLabel, number> = {
+  SSH: 22,
+  HTTP: 80,
+  HTTPS: 443,
+}
+
+/**
+ * Bridged guest IPs are operator-reachable. NAT/isolated are not.
+ * Unknown mode (member network not on This Device) follows the guest addresses.
+ */
+export function guestIpsReachableFromNetwork(
+  networkMode: string | null | undefined,
+  guestIps: string[],
+): boolean {
+  if (networkMode === 'bridged') return true
+  if (networkMode === 'nat' || networkMode === 'isolated') return false
+  return guestIps.some(isOperatorReachableGuestAddress)
+}
+
+/**
+ * Short Workloads-list chip set from guest-info listeners.
+ * `null` means listeners unavailable (caller may keep hostfwd chips).
+ * `[]` means none observed — do not invent ports.
+ */
+export function guestListServiceChips(input: {
+  guest: GuestInfo | null | undefined
+  isMember: boolean
+  guestIpsReachable: boolean
+  portForwards: PortForwardRule[]
+}): GuestListServiceChip[] | null {
+  const ports = input.guest?.listeningPorts
+  if (ports == null) return null
+  const ips = input.guest?.ipAddresses ?? []
+  const access: GuestListeningPortAccess = {
+    isMember: input.isMember,
+    guestIpsReachable: input.guestIpsReachable,
+    portForwards: input.portForwards,
+  }
+  const best = new Map<ListServiceChipLabel, GuestListeningPort>()
+  for (const item of ports) {
+    const label = listServiceChipLabel(item)
+    if (!label) continue
+    const current = best.get(label)
+    if (!current || listChipRank(item, label) < listChipRank(current, label)) {
+      best.set(label, item)
+    }
+  }
+  return listServiceChipLabels.flatMap((label) => {
+    const item = best.get(label)
+    if (!item) return []
+    const href = guestListeningPortHref(item, ips, access)
+    return [{
+      key: `${label}-${item.port}`,
+      label,
+      href,
+      copyText: listChipCopyText(item, href, ips, access),
+    }]
+  })
+}
+
+function listServiceChipLabel(port: GuestListeningPort): ListServiceChipLabel | null {
+  if (port.scope === 'internal' || isLoopbackAddress(port.address)) return null
+  if (port.label === 'SSH' || port.label === 'HTTP' || port.label === 'HTTPS') return port.label
+  return null
+}
+
+function listChipRank(port: GuestListeningPort, label: ListServiceChipLabel): number {
+  if (port.port === preferredListChipPort[label]) return 0
+  return port.port
+}
+
+function listChipCopyText(
+  port: GuestListeningPort,
+  href: string | null,
+  guestIps: string[],
+  access: GuestListeningPortAccess,
+): string {
+  if (href) return href.replace(/^https?:\/\//, '')
+  const host = operatorReachableHost(port, guestIps, access)
+  if (host) return guestServiceLabel(host, port.port)
+  if (!access.isMember) {
+    const hostPort = tcpHostForwardPort(port.port, access.portForwards)
+    if (hostPort != null) return `127.0.0.1:${hostPort}`
+  }
+  return port.label ?? String(port.port)
 }
 
 function isHttpLike(port: GuestListeningPort): boolean {

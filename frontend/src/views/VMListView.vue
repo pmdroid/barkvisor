@@ -29,7 +29,13 @@ import {
   guestInfoIfRunning,
   guestIpPortsView,
   guestOsLabel,
+  guestPrimaryIp,
 } from '../utils/guestHome'
+import {
+  guestIpsReachableFromNetwork,
+  guestListServiceChips,
+  isOperatorReachableGuestAddress,
+} from '../utils/guestListeningPorts'
 
 const store = useVMStore()
 const homeWorkloads = useDeviceWorkloadsStore()
@@ -181,6 +187,30 @@ function ipPortsFor(row: HomeWorkloadRow) {
     guest: rowGuestInfo(row),
     portForwards: vmPortForwards(row.vm),
   })
+}
+
+function networkModeFor(row: HomeWorkloadRow) {
+  if (!row.vm.networkId) return null
+  return networkMap.value[row.vm.networkId]?.mode ?? null
+}
+
+function serviceChipsFor(row: HomeWorkloadRow) {
+  const guest = rowGuestInfo(row)
+  return guestListServiceChips({
+    guest,
+    isMember: row.role !== 'self',
+    guestIpsReachable: guestIpsReachableFromNetwork(
+      networkModeFor(row),
+      guest?.ipAddresses ?? [],
+    ),
+    portForwards: vmPortForwards(row.vm),
+  })
+}
+
+function listGuestIp(row: HomeWorkloadRow) {
+  const ip = guestPrimaryIp(rowGuestInfo(row))
+  if (!ip || !isOperatorReachableGuestAddress(ip)) return null
+  return ip
 }
 
 function emuBadge(vm: typeof store.vms[0]) {
@@ -360,7 +390,37 @@ async function doStop() {
             <span style="font-size:12px;color:var(--text-secondary)">{{ row.vm.cpuCount }} CPU &middot; {{ row.vm.memoryMB >= 1024 ? (row.vm.memoryMB / 1024).toFixed(row.vm.memoryMB % 1024 === 0 ? 0 : 1) + ' GB' : row.vm.memoryMB + ' MB' }}</span>
           </td>
           <td>
-            <template v-if="ipPortsFor(row).kind === 'bridged-ip'">
+            <template v-if="serviceChipsFor(row)">
+              <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+                <div v-if="listGuestIp(row)" style="display:flex;align-items:center;gap:6px">
+                  <code class="ip-text">{{ listGuestIp(row) }}</code>
+                  <button class="ip-copy" @click.stop="copyText(`${rowKey(row)}-ip`, listGuestIp(row)!)" :title="copied[`${rowKey(row)}-ip`] ? 'Copied!' : 'Copy address'">
+                    <AppIcon v-if="!copied[`${rowKey(row)}-ip`]" name="copy" :size="13" style="stroke-width:2" />
+                    <AppIcon v-else name="check" :size="13" style="color:var(--green)" />
+                  </button>
+                </div>
+                <template v-for="chip in serviceChipsFor(row)" :key="chip.key">
+                  <a
+                    v-if="chip.href"
+                    :href="chip.href"
+                    target="_blank"
+                    class="badge badge-accent"
+                    style="text-decoration:none"
+                    @click.stop
+                  >{{ chip.label }}</a>
+                  <span
+                    v-else
+                    class="badge badge-gray"
+                    :title="chip.copyText !== chip.label ? chip.copyText : undefined"
+                  >{{ chip.label }}</span>
+                </template>
+                <span
+                  v-if="!listGuestIp(row) && serviceChipsFor(row)!.length === 0"
+                  style="color:var(--text-dim);font-size:12px"
+                >-</span>
+              </div>
+            </template>
+            <template v-else-if="ipPortsFor(row).kind === 'bridged-ip'">
               <div style="display:flex;flex-wrap:wrap;gap:4px">
                 <div v-for="(link, i) in ipPortsFor(row).links" :key="i" style="display:flex;align-items:center;gap:6px">
                   <a v-if="link.href" :href="link.href" target="_blank" class="ip-text" style="text-decoration:none;color:var(--accent)" @click.stop>{{ link.label }}</a>

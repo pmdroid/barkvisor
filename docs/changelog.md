@@ -6,6 +6,10 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+### Workloads list
+
+- Running Workloads show SSH and HTTP chips from guest-info listeners. Links match Overview: bridged guest IP, This Device NAT through hostfwd, never localhost on a member, never loopback.
+
 ### Home of more than one Device
 
 - Pair another Device from **Settings → Home → Add a Device**. Pick a LAN IPv4, IPv6 unique-local, or DNS name for `host=` in the offer, then scan the QR or paste the full `barkvisor://pair/v1?…` in setup, or run `barkvisor join --code` on an API-only host. Changing the address re-issues the URI and the QR. A rejected address (localhost, public, metadata) returns 400 and drops the previous pairing code.

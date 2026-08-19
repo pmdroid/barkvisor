@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import type { GuestListeningPort } from '../api/types'
+import type { GuestInfo, GuestListeningPort } from '../api/types'
 import {
   claimedNatTcpHostPorts,
+  guestIpsReachableFromNetwork,
+  guestListServiceChips,
   guestListeningPortAccessLabel,
   guestListeningPortHref,
   isLoopbackAddress,
@@ -234,3 +236,136 @@ describe('suggest NAT hostfwd (PAS-228)', () => {
     )).toEqual([2222, 443])
   })
 })
+
+function guest(partial: Partial<GuestInfo> & Pick<GuestInfo, 'listeningPorts'>): GuestInfo {
+  return {
+    available: true,
+    ipAddresses: ['10.0.0.5'],
+    macAddress: null,
+    ipSource: 'guest-agent',
+    hostname: 'guest',
+    osName: 'Ubuntu',
+    osVersion: '24.04',
+    osId: 'ubuntu',
+    kernelVersion: null,
+    kernelRelease: null,
+    machine: null,
+    timezone: null,
+    timezoneOffset: null,
+    users: null,
+    filesystems: null,
+    ...partial,
+  }
+}
+
+describe('guestListServiceChips (PAS-232)', () => {
+  test('unavailable listeners stay null so the list can keep hostfwd chips', () => {
+    expect(guestListServiceChips({
+      guest: guest({ listeningPorts: null }),
+      isMember: false,
+      guestIpsReachable: true,
+      portForwards: [],
+    })).toBeNull()
+    expect(guestListServiceChips({
+      guest: null,
+      isMember: false,
+      guestIpsReachable: true,
+      portForwards: [],
+    })).toBeNull()
+  })
+
+  test('empty listeners are none and do not invent ports', () => {
+    expect(guestListServiceChips({
+      guest: guest({ listeningPorts: [] }),
+      isMember: false,
+      guestIpsReachable: true,
+      portForwards: [{ protocol: 'tcp', hostPort: 2222, guestPort: 22 }],
+    })).toEqual([])
+  })
+
+  test('list chips are SSH and HTTP only; loopback and Dev stay off the row', () => {
+    const chips = guestListServiceChips({
+      guest: guest({
+        listeningPorts: [
+          port({ port: 22, label: 'SSH' }),
+          port({ port: 80, label: 'HTTP' }),
+          port({ port: 443, label: 'HTTPS' }),
+          port({ port: 3000, label: 'Dev' }),
+          port({ port: 3306, label: 'MySQL' }),
+          port({ address: '127.0.0.1', port: 8080, scope: 'internal', label: 'HTTP' }),
+        ],
+      }),
+      isMember: false,
+      guestIpsReachable: true,
+      portForwards: [],
+    })
+    expect(chips?.map((c) => c.label)).toEqual(['SSH', 'HTTP', 'HTTPS'])
+    expect(chips?.find((c) => c.label === 'SSH')?.href).toBeNull()
+    expect(chips?.find((c) => c.label === 'HTTP')?.href).toBe('http://10.0.0.5')
+    expect(chips?.find((c) => c.label === 'HTTPS')?.href).toBe('https://10.0.0.5')
+    expect(chips?.find((c) => c.label === 'SSH')?.copyText).toBe('10.0.0.5:22')
+  })
+
+  test('bridged guest IP is the HTTP href; This Device NAT uses hostfwd; members never get localhost', () => {
+    const http = port({ port: 80, label: 'HTTP' })
+    const ssh = port({ port: 22, label: 'SSH' })
+    const forwards = [
+      { protocol: 'tcp' as const, hostPort: 8080, guestPort: 80 },
+      { protocol: 'tcp' as const, hostPort: 2222, guestPort: 22 },
+    ]
+    const bridged = guestListServiceChips({
+      guest: guest({ listeningPorts: [ssh, http] }),
+      isMember: false,
+      guestIpsReachable: true,
+      portForwards: forwards,
+    })
+    expect(bridged?.find((c) => c.label === 'HTTP')?.href).toBe('http://10.0.0.5')
+
+    const natThisDevice = guestListServiceChips({
+      guest: guest({ ipAddresses: ['10.0.2.15'], listeningPorts: [ssh, http] }),
+      isMember: false,
+      guestIpsReachable: false,
+      portForwards: forwards,
+    })
+    expect(natThisDevice?.find((c) => c.label === 'HTTP')?.href).toBe('http://127.0.0.1:8080')
+    expect(natThisDevice?.find((c) => c.label === 'SSH')?.href).toBeNull()
+    expect(natThisDevice?.find((c) => c.label === 'SSH')?.copyText).toBe('127.0.0.1:2222')
+
+    const memberNat = guestListServiceChips({
+      guest: guest({ ipAddresses: ['10.0.2.15'], listeningPorts: [ssh, http] }),
+      isMember: true,
+      guestIpsReachable: false,
+      portForwards: forwards,
+    })
+    expect(memberNat?.find((c) => c.label === 'HTTP')?.href).toBeNull()
+    expect(memberNat?.find((c) => c.label === 'SSH')?.copyText).toBe('SSH')
+    expect(JSON.stringify(memberNat)).not.toContain('127.0.0.1')
+    expect(JSON.stringify(memberNat)).not.toContain('localhost')
+  })
+
+  test('unknown network mode follows operator-reachable guest IPs, never slirp', () => {
+    expect(guestIpsReachableFromNetwork('bridged', ['10.0.2.15'])).toBe(true)
+    expect(guestIpsReachableFromNetwork('nat', ['192.168.1.10'])).toBe(false)
+    expect(guestIpsReachableFromNetwork('isolated', ['192.168.1.10'])).toBe(false)
+    expect(guestIpsReachableFromNetwork(null, ['192.168.1.10'])).toBe(true)
+    expect(guestIpsReachableFromNetwork(undefined, ['10.0.2.15'])).toBe(false)
+  })
+
+  test('duplicate HTTP listeners collapse to one chip preferring port 80', () => {
+    const chips = guestListServiceChips({
+      guest: guest({
+        listeningPorts: [
+          port({ port: 8080, label: 'HTTP' }),
+          port({ address: '::', port: 80, label: 'HTTP' }),
+        ],
+      }),
+      isMember: false,
+      guestIpsReachable: true,
+      portForwards: [],
+    })
+    expect(chips).toEqual([{
+      key: 'HTTP-80',
+      label: 'HTTP',
+      href: 'http://10.0.0.5',
+      copyText: '10.0.0.5',
+    }])
