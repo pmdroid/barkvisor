@@ -182,6 +182,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var createdAt: String
     var updatedAt: String
     var status: WorkloadRuntimeStatus?
+    var portForwards: [GuestPortForward]?
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -198,6 +199,29 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
 }
 
+struct GuestPortForward: Decodable, Hashable {
+    var proto: String
+    var hostPort: Int
+    var guestPort: Int
+
+    enum CodingKeys: String, CodingKey {
+        case proto = "protocol"
+        case hostPort, guestPort
+    }
+}
+
+struct GuestListeningPortAccess: Hashable {
+    var isMember: Bool
+    var guestIpsReachable: Bool
+    var portForwards: [GuestPortForward]
+
+    static let unknown = GuestListeningPortAccess(
+        isMember: false,
+        guestIpsReachable: false,
+        portForwards: [],
+    )
+}
+
 struct GuestListeningPort: Decodable, Hashable {
     var proto: String
     var address: String
@@ -205,6 +229,41 @@ struct GuestListeningPort: Decodable, Hashable {
     var scope: String
     var label: String?
     var scheme: String?
+    /// True when the JSON included `scheme` (including explicit null after a negative probe).
+    var schemeKeyPresent: Bool
+
+    init(
+        proto: String,
+        address: String,
+        port: Int,
+        scope: String,
+        label: String?,
+        scheme: String?,
+        schemeKeyPresent: Bool = false,
+    ) {
+        self.proto = proto
+        self.address = address
+        self.port = port
+        self.scope = scope
+        self.label = label
+        self.scheme = scheme
+        self.schemeKeyPresent = schemeKeyPresent
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        proto = try container.decode(String.self, forKey: .proto)
+        address = try container.decode(String.self, forKey: .address)
+        port = try container.decode(Int.self, forKey: .port)
+        scope = try container.decode(String.self, forKey: .scope)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+        schemeKeyPresent = container.contains(.scheme)
+        scheme = try container.decodeIfPresent(String.self, forKey: .scheme)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case proto, address, port, scope, label, scheme
+    }
 
     var isInternal: Bool {
         scope == "internal" || address.hasPrefix("127.") || address == "::1" || address == "localhost"
@@ -219,28 +278,55 @@ struct GuestListeningPort: Decodable, Hashable {
         return "TCP \(port)"
     }
 
-    func openURL(guestIPs: [String]) -> URL? {
-        guard !isInternal else { return nil }
-        let http = scheme == "http" || scheme == "https"
-            || label == "HTTP" || label == "HTTPS" || label == "Dev"
-        guard http else { return nil }
-        let host: String
-        if !address.hasPrefix("127."), address != "0.0.0.0", address != "::",
-           address != "*", address != "10.0.2.15" {
-            host = address
-        } else if let ip = guestIPs.first(where: { ip in
-            !ip.isEmpty && !ip.hasPrefix("127.") && ip != "::1"
-                && ip != "10.0.2.15" && !ip.lowercased().hasPrefix("fe80:")
-        }) {
-            host = ip
+    var isHttpLike: Bool {
+        if scheme == "http" || scheme == "https" { return true }
+        if schemeKeyPresent { return false }
+        return label == "HTTP" || label == "HTTPS" || label == "Dev"
+    }
+
+    func openURL(guestIPs: [String], access: GuestListeningPortAccess = .unknown) -> URL? {
+        guard !isInternal, isHttpLike else { return nil }
+        if access.guestIpsReachable, let host = operatorReachableHost(guestIPs: guestIPs) {
+            return makeURL(host: host, listenPort: port)
+        }
+        if access.isMember { return nil }
+        guard let hostPort = access.portForwards.first(where: {
+            $0.proto == "tcp" && $0.guestPort == port
+        })?.hostPort else { return nil }
+        return makeURL(host: "127.0.0.1", listenPort: hostPort)
+    }
+
+    private func operatorReachableHost(guestIPs: [String]) -> String? {
+        let candidate: String
+        if !isWildcardAddress(address), !isInternal, address != "10.0.2.15" {
+            candidate = address
+        } else if let ip = guestIPs.first(where: Self.isOperatorReachableGuestAddress) {
+            candidate = ip
         } else {
             return nil
         }
+        return Self.isOperatorReachableGuestAddress(candidate) ? candidate : nil
+    }
+
+    private func makeURL(host: String, listenPort: Int) -> URL? {
         let proto = scheme == "https" || label == "HTTPS" ? "https" : "http"
         let wrapped = host.contains(":") ? "[\(host)]" : host
-        let suffix = (port == 80 && proto == "http") || (port == 443 && proto == "https")
-            ? "" : ":\(port)"
+        let suffix = (listenPort == 80 && proto == "http") || (listenPort == 443 && proto == "https")
+            ? "" : ":\(listenPort)"
         return URL(string: "\(proto)://\(wrapped)\(suffix)")
+    }
+
+    private func isWildcardAddress(_ host: String) -> Bool {
+        host == "0.0.0.0" || host == "::" || host == "*" || host.isEmpty
+    }
+
+    static func isOperatorReachableGuestAddress(_ host: String) -> Bool {
+        guard !host.isEmpty else { return false }
+        if host.hasPrefix("127.") || host == "::1" || host == "localhost" { return false }
+        if host == "0.0.0.0" || host == "::" || host == "*" { return false }
+        if host == "10.0.2.15" { return false }
+        if host.lowercased().hasPrefix("fe80:") { return false }
+        return true
     }
 
     static let publishedPorts: Set<Int> = [

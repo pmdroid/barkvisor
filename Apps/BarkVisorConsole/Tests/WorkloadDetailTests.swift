@@ -45,6 +45,9 @@ struct WorkloadDetailTests {
         #expect(guest.listeningPorts?.last?.displayLabel == "Dev")
         #expect(guest.listeningPorts?.first?.isPublished == true)
         #expect(guest.listeningPorts?.first?.openURL(guestIPs: ["192.168.64.12"]) == nil)
+        let bridged = GuestListeningPortAccess(
+            isMember: false, guestIpsReachable: true, portForwards: [],
+        )
         let http = GuestListeningPort(
             proto: "tcp",
             address: "0.0.0.0",
@@ -52,13 +55,34 @@ struct WorkloadDetailTests {
             scope: "network",
             label: "HTTP",
             scheme: "http",
+            schemeKeyPresent: true,
         )
-        #expect(http.openURL(guestIPs: ["192.168.64.12"])?.absoluteString == "http://192.168.64.12")
+        #expect(http.openURL(guestIPs: ["192.168.64.12"], access: bridged)?.absoluteString == "http://192.168.64.12")
         #expect(http.isPublished)
         let rpc = GuestListeningPort(
-            proto: "tcp", address: "0.0.0.0", port: 111, scope: "network", label: nil, scheme: nil,
+            proto: "tcp", address: "0.0.0.0", port: 111, scope: "network",
+            label: nil, scheme: nil, schemeKeyPresent: false,
         )
         #expect(!rpc.isPublished)
+
+        let negative = GuestListeningPort(
+            proto: "tcp", address: "0.0.0.0", port: 8_080, scope: "network",
+            label: "HTTP", scheme: nil, schemeKeyPresent: true,
+        )
+        #expect(negative.openURL(guestIPs: ["192.168.64.12"], access: bridged) == nil)
+
+        let natSelf = GuestListeningPortAccess(
+            isMember: false,
+            guestIpsReachable: false,
+            portForwards: [GuestPortForward(proto: "tcp", hostPort: 8_080, guestPort: 80)],
+        )
+        #expect(http.openURL(guestIPs: ["10.0.2.15"], access: natSelf)?.absoluteString == "http://127.0.0.1:8080")
+        let memberNAT = GuestListeningPortAccess(
+            isMember: true,
+            guestIpsReachable: false,
+            portForwards: natSelf.portForwards,
+        )
+        #expect(http.openURL(guestIPs: ["10.0.2.15"], access: memberNAT) == nil)
     }
 
     @Test func `empty listening ports is none not unavailable`() throws {
@@ -234,6 +258,7 @@ struct WorkloadDetailTests {
             createdAt: "2026-01-01T00:00:00Z",
             updatedAt: "2026-01-02T00:00:00Z",
             status: nil,
+            portForwards: nil,
         )
     }
 }

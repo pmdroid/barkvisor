@@ -63,6 +63,7 @@ export function guestListeningPortAccessLabel(port: GuestListeningPort): string 
 
 function isHttpLike(port: GuestListeningPort): boolean {
   if (port.scheme === 'http' || port.scheme === 'https') return true
+  if (port.scheme === null) return false
   return port.label === 'HTTP' || port.label === 'HTTPS' || port.label === 'Dev'
 }
 

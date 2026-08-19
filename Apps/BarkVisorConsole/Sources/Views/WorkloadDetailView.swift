@@ -8,6 +8,7 @@ struct WorkloadDetailView: View {
     var fallbackDevice: HomeDeviceHealthSnapshot
     @State private var pendingForceStop = false
     @State private var guest: GuestInfo?
+    @State private var networkMode: String?
 
     var body: some View {
         List {
@@ -36,7 +37,10 @@ struct WorkloadDetailView: View {
                                 LabeledContent(port.displayLabel) {
                                     if port.isInternal {
                                         Text("Internal")
-                                    } else if let url = port.openURL(guestIPs: guest?.ipAddresses ?? []) {
+                                    } else if let url = port.openURL(
+                                        guestIPs: guest?.ipAddresses ?? [],
+                                        access: listeningAccess,
+                                    ) {
                                         Link(url.absoluteString, destination: url)
                                     } else {
                                         Text("\(port.address):\(port.port)")
@@ -105,6 +109,9 @@ struct WorkloadDetailView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+            .task(id: "\(deviceID)/\(workload.networkId ?? "")") {
+                networkMode = await model.networkMode(for: workload.networkId, on: device)
+            }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,
                 workloadID: workloadID,
@@ -148,6 +155,14 @@ struct WorkloadDetailView: View {
 
     private var access: WorkloadStreamAccess {
         WorkloadStreamAccess.resolve(device: device, state: workload.state)
+    }
+
+    private var listeningAccess: GuestListeningPortAccess {
+        GuestListeningPortAccess(
+            isMember: !device.isSelf,
+            guestIpsReachable: networkMode == "bridged",
+            portForwards: workload.portForwards ?? [],
+        )
     }
 
     private var busy: Bool {
