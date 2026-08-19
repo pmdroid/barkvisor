@@ -90,6 +90,7 @@ router.beforeEach(async (to) => {
   const token = localStorage.getItem('token')
   if (!token || isTokenExpired(token)) {
     localStorage.removeItem('token')
+    localStorage.removeItem('refreshToken')
     return { name: 'login' }
   }
 })

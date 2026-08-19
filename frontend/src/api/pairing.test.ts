@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  advertisedHostForOffer,
   CUSTOM_ADVERTISED_HOST,
   isPairingPayload,
   issuedAdvertisedHost,
@@ -93,5 +94,10 @@ describe('PAS-51 pairing client', () => {
         qrPayload: 'barkvisor://pair/v1?code=ABCD-EFGH&host=192.168.0.8&port=7777',
       }),
     ).toBe('192.168.0.8')
+    expect(advertisedHostForOffer('100.64.0.8', 'ignored.example')).toBe('100.64.0.8')
+    expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '  box.home.example  ')).toBe(
+      'box.home.example',
+    )
+    expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '   ')).toBeUndefined()
   })
 })

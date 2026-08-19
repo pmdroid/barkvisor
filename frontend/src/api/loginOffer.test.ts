@@ -23,6 +23,8 @@ describe('PAS-242 phone sign-in offer', () => {
     expect(settings).toContain('loginOffer')
     expect(settings).toContain('Copy URI')
     expect(settings).toContain('Phone sign-in')
+    expect(settings).toContain('advertisedHostForOffer')
+    expect(settings).toContain('customHost.value')
     expect(settings).not.toContain('barkvisor://pair/v1?code')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
   })

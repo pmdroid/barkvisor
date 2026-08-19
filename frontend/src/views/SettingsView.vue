@@ -9,6 +9,7 @@ import { useSSHKeyStore } from '../stores/sshKeys'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useFeature } from '../composables/useFeature'
 import {
+  advertisedHostForOffer,
   CUSTOM_ADVERTISED_HOST,
   getPairingCode,
   issuePairingCode,
@@ -146,12 +147,13 @@ async function renderLoginOfferQr() {
 }
 
 async function showLoginQr() {
+  const host = advertisedHostForOffer(selectedHost.value, customHost.value)
+  if (selectedHost.value === CUSTOM_ADVERTISED_HOST && !host) {
+    toast.error(`Enter a DNS name or IP the phone can reach.`)
+    return
+  }
   loginOfferLoading.value = true
   try {
-    const host =
-      selectedHost.value && selectedHost.value !== CUSTOM_ADVERTISED_HOST
-        ? selectedHost.value
-        : undefined
     loginOffer.value = await issueLoginOffer(host)
     await renderLoginOfferQr()
   } catch (e: unknown) {
