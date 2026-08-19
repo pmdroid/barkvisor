@@ -11,6 +11,7 @@ public struct PairingIssueResponse: Codable, Sendable, Equatable {
     public var caFingerprint: String
     public var port: Int
     public var agentPort: Int
+    public var advertisedHost: String?
     public var advertisedHosts: [String]
     public var apiVersion: Int
 
@@ -24,6 +25,7 @@ public struct PairingIssueResponse: Codable, Sendable, Equatable {
         caFingerprint: String,
         port: Int,
         agentPort: Int,
+        advertisedHost: String? = nil,
         advertisedHosts: [String],
         apiVersion: Int = APIContract.version,
     ) {
@@ -36,6 +38,7 @@ public struct PairingIssueResponse: Codable, Sendable, Equatable {
         self.caFingerprint = caFingerprint
         self.port = port
         self.agentPort = agentPort
+        self.advertisedHost = advertisedHost
         self.advertisedHosts = advertisedHosts
         self.apiVersion = apiVersion
     }

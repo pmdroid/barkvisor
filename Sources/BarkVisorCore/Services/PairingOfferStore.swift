@@ -11,6 +11,9 @@ public struct PairingOffer: Codable, Sendable, Equatable {
     public var expiresAt: String
     public var consumedAt: String?
     public var agentPort: Int
+    /// Address baked into `host=` when the offer was issued. Optional so
+    /// legacy `pairing-offer.json` still loads.
+    public var advertisedHost: String?
 
     public init(
         codeHash: String,
@@ -19,6 +22,7 @@ public struct PairingOffer: Codable, Sendable, Equatable {
         expiresAt: String,
         consumedAt: String? = nil,
         agentPort: Int = Config.agentPort,
+        advertisedHost: String? = nil,
     ) {
         self.codeHash = codeHash
         self.codeDisplay = codeDisplay
@@ -26,10 +30,11 @@ public struct PairingOffer: Codable, Sendable, Equatable {
         self.expiresAt = expiresAt
         self.consumedAt = consumedAt
         self.agentPort = agentPort
+        self.advertisedHost = advertisedHost
     }
 
     enum CodingKeys: String, CodingKey {
-        case codeHash, codeDisplay, createdAt, expiresAt, consumedAt, agentPort
+        case codeHash, codeDisplay, createdAt, expiresAt, consumedAt, agentPort, advertisedHost
     }
 
     public init(from decoder: Decoder) throws {
@@ -40,6 +45,7 @@ public struct PairingOffer: Codable, Sendable, Equatable {
         self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
         self.consumedAt = try container.decodeIfPresent(String.self, forKey: .consumedAt)
         self.agentPort = try container.decodeIfPresent(Int.self, forKey: .agentPort) ?? Config.agentPort
+        self.advertisedHost = try container.decodeIfPresent(String.self, forKey: .advertisedHost)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -50,6 +56,7 @@ public struct PairingOffer: Codable, Sendable, Equatable {
         try container.encode(expiresAt, forKey: .expiresAt)
         try container.encodeIfPresent(consumedAt, forKey: .consumedAt)
         try container.encode(agentPort, forKey: .agentPort)
+        try container.encodeIfPresent(advertisedHost, forKey: .advertisedHost)
     }
 }
 

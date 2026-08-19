@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   isCurrentPairingSeq,
+  nextPairingLoadSeq,
   pairingExpiryLabel,
   remainingPairingSeconds,
 } from './pairingOffer'
@@ -26,5 +27,13 @@ describe('pairing offer load sequence', () => {
   test('stale GET does not win after a newer issue or revoke', () => {
     expect(isCurrentPairingSeq(1, 1)).toBe(true)
     expect(isCurrentPairingSeq(1, 2)).toBe(false)
+  })
+
+  test('a GET started during POST does not share the mutation sequence', () => {
+    expect(nextPairingLoadSeq(true, 4)).toBeNull()
+    const loadSeq = nextPairingLoadSeq(false, 4)
+    expect(loadSeq).toBe(5)
+    expect(isCurrentPairingSeq(4, loadSeq!)).toBe(false)
+    expect(isCurrentPairingSeq(loadSeq!, 5)).toBe(true)
   })
 })

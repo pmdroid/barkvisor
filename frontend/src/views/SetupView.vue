@@ -296,9 +296,21 @@ async function finishSetup() {
       <!-- Join existing Home (PAS-51) — same SetupView, existing /api/pairing/join -->
       <div v-if="panel === 'join'" class="step-content">
         <h2>Join an existing {{ HOME_LABEL }}</h2>
+        <ol class="pairing-steps">
+          <li>
+            On the other {{ DEVICE_LABEL }}, open Settings → Home → Add a {{ DEVICE_LABEL }},
+            pick the address this {{ DEVICE_LABEL }} can reach, and copy the full
+            <code>barkvisor://</code> offer.
+          </li>
+          <li>Paste that offer here. The short printed code is not enough.</li>
+          <li>
+            Join. On an API-only {{ DEVICE_LABEL }}, run
+            <code>barkvisor join --code 'barkvisor://pair/v1?…'</code>
+            on this machine instead.
+          </li>
+        </ol>
         <p class="step-desc">
-          Paste the pairing code from the other {{ DEVICE_LABEL }}. This {{ DEVICE_LABEL }} still
-          runs if that {{ DEVICE_LABEL }} is later unreachable.
+          This {{ DEVICE_LABEL }} still runs if that {{ DEVICE_LABEL }} is later unreachable.
         </p>
         <form @submit.prevent="submitJoin">
           <div class="form-group">
@@ -530,6 +542,17 @@ async function finishSetup() {
 }
 .step-content .form-group {
   text-align: left;
+}
+.pairing-steps {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+.pairing-steps li + li {
+  margin-top: 6px;
 }
 .select-input,
 .pairing-input {

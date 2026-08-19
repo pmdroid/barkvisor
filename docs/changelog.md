@@ -8,7 +8,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ### Home of more than one Device
 
-- Pair another Device from **Settings → Home → Add a Device**. Paste the full `barkvisor://pair/v1?…` offer in setup, or run `barkvisor join --code` on an API-only host.
+- Pair another Device from **Settings → Home → Add a Device**. Pick a LAN IPv4, IPv6 unique-local, or DNS name for `host=` in the offer, then paste the full `barkvisor://pair/v1?…` in setup, or run `barkvisor join --code` on an API-only host. A rejected address (localhost, public, metadata) returns 400 and drops the previous pairing code.
+- Join allow-list now includes CGNAT `100.64.0.0/10` (still blocks `100.100.100.200`, loopback, link-local, public, and metadata). An older joiner still rejects those offers — upgrade it or pick a LAN IP.
 - Optional `BARKVISOR_JOIN_CODE` on first boot. Join is always console-local on that Device.
 - Devices share one Home login. The dashboard lists every Device and health.
 - Create, start, and stop Workloads on a picked Device through the Home proxy (`:7777`). The browser or phone does not open member IPs. Agent traffic uses mTLS on `:7778`.

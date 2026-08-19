@@ -70,6 +70,62 @@ public enum HostInfoService {
         return interfaces
     }
 
+    /// All currently assigned IPv4 and IPv6 addresses (one row per address).
+    /// `listInterfaces()` stays IPv4-only for setup/system UI.
+    public static func listInterfaceAddresses() -> [HostInterfaceInfo] {
+        var interfaces: [HostInterfaceInfo] = []
+
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+            return interfaces
+        }
+        defer { freeifaddrs(firstAddr) }
+
+        var seen = Set<String>()
+        var current: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let addr = current {
+            let name = String(cString: addr.pointee.ifa_name)
+            if let ifaAddr = addr.pointee.ifa_addr {
+                let family = Int32(ifaAddr.pointee.sa_family)
+                if family == AF_INET || family == AF_INET6,
+                   let ip = numericHost(ifaAddr) {
+                    let key = "\(name)\0\(ip)"
+                    if seen.insert(key).inserted {
+                        interfaces.append(HostInterfaceInfo(name: name, ipAddress: ip))
+                    }
+                }
+            }
+            current = addr.pointee.ifa_next
+        }
+        return interfaces
+    }
+
+    private static func numericHost(_ ifaAddr: UnsafePointer<sockaddr>) -> String? {
+        let family = Int32(ifaAddr.pointee.sa_family)
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+            let addrLen = socklen_t(ifaAddr.pointee.sa_len)
+        #else
+            let addrLen: socklen_t = family == AF_INET6
+                ? socklen_t(MemoryLayout<sockaddr_in6>.size)
+                : socklen_t(MemoryLayout<sockaddr_in>.size)
+        #endif
+        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        guard getnameinfo(
+            ifaAddr, addrLen,
+            &hostname, socklen_t(hostname.count),
+            nil, 0, NI_NUMERICHOST,
+        ) == 0 else {
+            return nil
+        }
+        var ip = hostname.withUnsafeBufferPointer {
+            String(bytes: $0.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8) ?? ""
+        }
+        if let zone = ip.firstIndex(of: "%") {
+            ip = String(ip[..<zone])
+        }
+        return ip.isEmpty ? nil : ip
+    }
+
     /// Whether a network interface name exists on this host.
     ///
     /// **Down and address-less interfaces count as present** — a Linux bridge

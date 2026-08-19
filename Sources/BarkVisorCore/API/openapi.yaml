@@ -892,7 +892,23 @@ paths:
         Authenticated issuer (existing Device). Creates a single-use code
         (default 10 minutes) and a `barkvisor://pair/v1` QR URI that carries
         address, hostId, and Device certificate fingerprint. A new issue
-        replaces any previous unused code.
+        replaces any previous unused code. `advertisedHost` is baked into
+        `host=` and persisted so GET after reload matches.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                advertisedHost:
+                  type: string
+                  description: |
+                    Address written to `host=` on the pairing URI. A LAN IPv4
+                    (RFC1918), IPv6 ULA, CGNAT `100.64.0.0/10`, or a DNS name.
+                    Not resolved at issue time. Rejected: localhost, `.internal`,
+                    public and metadata addresses (`169.254.169.254`,
+                    `100.100.100.200`), whitespace, and path characters.
       responses:
         "200":
           content:
@@ -2428,10 +2444,17 @@ components:
           type: integer
         agentPort:
           type: integer
+        advertisedHost:
+          type: string
+          description: Host baked into qrPayload `host=` when the offer was issued.
         advertisedHosts:
           type: array
           items:
             type: string
+          description: |
+            Selectable issuer addresses: RFC1918 IPv4, IPv6 ULA, and CGNAT
+            `100.64.0.0/10`. Loopback, link-local, public, and metadata are
+            omitted.
         apiVersion:
           type: integer
 

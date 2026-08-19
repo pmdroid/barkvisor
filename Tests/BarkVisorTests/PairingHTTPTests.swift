@@ -128,6 +128,44 @@ struct PairingHTTPTests {
         #expect((300 ... 399).contains(response.status))
         #expect(server.connectionCount == 1)
     }
+
+    @Test func `issue advertisedHost valid persists and invalid is 400`() throws {
+        let dir = try isolatedDir("adv-host")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let offers = PairingOfferStore(dataDir: dir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: hostId,
+                advertisedHost: "100.64.1.8",
+                advertisedHosts: ["192.168.0.8"],
+            ),
+            offers: offers,
+        )
+        #expect(issued.advertisedHost == "100.64.1.8")
+        #expect(issued.qrPayload.contains("host=100.64.1.8"))
+        #expect(PairingError.invalidPayload("x").httpStatus == 400)
+        #expect(throws: PairingError.self) {
+            try PairingService.issue(
+                PairingService.IssueInput(
+                    dataDir: dir,
+                    hostId: hostId,
+                    advertisedHost: "localhost",
+                    advertisedHosts: ["192.168.0.8"],
+                ),
+                offers: offers,
+            )
+        }
+        #expect(try offers.load() == nil)
+    }
+
+    @Test func `setup window join stays console local even for CGNAT peers`() {
+        #expect(PairingPayload.isConsoleLocalClient("127.0.0.1"))
+        #expect(!PairingPayload.isConsoleLocalClient("192.168.1.10"))
+        #expect(!PairingPayload.isConsoleLocalClient("100.64.0.1"))
+        #expect(!PairingPayload.isConsoleLocalClient("10.0.0.5"))
+    }
 }
 
 /// Serves a 302 so tests can prove pairing HTTP does not follow it.

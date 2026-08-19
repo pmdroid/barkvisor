@@ -21,6 +21,23 @@ struct HostInfoServiceTests {
         #expect(lo?.ipAddress == "127.0.0.1")
     }
 
+    @Test func `list interface addresses keeps IPv4 and does not leak zone ids`() {
+        let addrs = HostInfoService.listInterfaceAddresses()
+        #expect(!addrs.isEmpty, "Should find at least one address")
+        let ipv4 = addrs.filter { !$0.ipAddress.contains(":") }
+        #expect(!ipv4.isEmpty, "Should find at least one IPv4 address")
+        for iface in ipv4 {
+            #expect(
+                iface.ipAddress.split(separator: ".").count == 4,
+                "IPv4 should have 4 octets: \(iface.ipAddress)",
+            )
+        }
+        for iface in addrs where iface.ipAddress.contains(":") {
+            #expect(!iface.ipAddress.contains("%"), "IPv6 should drop the zone id: \(iface.ipAddress)")
+            #expect(!iface.ipAddress.isEmpty)
+        }
+    }
+
     @Test func `list interfaces has valid format`() {
         let interfaces = HostInfoService.listInterfaces()
         for iface in interfaces {

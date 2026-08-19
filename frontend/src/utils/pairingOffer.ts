@@ -16,3 +16,13 @@ export function pairingExpiryLabel(expiresAt: string, nowMs: number): string {
 export function isCurrentPairingSeq(loadSeq: number, latestSeq: number): boolean {
   return loadSeq === latestSeq
 }
+
+/**
+ * Sequence for a pairing GET. Skip while a POST/revoke is in flight so the
+ * GET cannot share that mutation's sequence and overwrite the new offer.
+ * Otherwise advance so an older GET cannot commit after a newer load.
+ */
+export function nextPairingLoadSeq(loading: boolean, currentSeq: number): number | null {
+  if (loading) return null
+  return currentSeq + 1
+}
