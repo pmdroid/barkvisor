@@ -1,4 +1,5 @@
-/** Guest TCP LISTEN display (PAS-225). Loopback is internal and never a URL. */
+/** Guest TCP LISTEN display (PAS-225) and This Device NAT hostfwd suggest (PAS-228).
+ *  Loopback is internal and never a URL. */
 
 import type { GuestListeningPort, PortForwardRule } from '../api/types'
 import { guestServiceHref } from './guestHome'
@@ -84,7 +85,73 @@ function tcpHostForwardPort(
   guestPort: number,
   forwards: PortForwardRule[],
 ): number | undefined {
-  return forwards.find((pf) => pf.protocol === 'tcp' && pf.guestPort === guestPort)?.hostPort
+  return matchingTcpHostfwd(guestPort, forwards)?.hostPort
+}
+
+/** Implicit NAT (missing networkId) and explicit NAT allow `hostfwd`. */
+export function natHostfwdAllowsMode(mode: string | null | undefined): boolean {
+  return !mode || mode === 'nat'
+}
+
+/** Host TCP ports claimed by NAT / implicit-NAT Workloads (PAS-64 registry). */
+export function claimedNatTcpHostPorts(
+  vms: Array<{ networkId: string | null; portForwards: PortForwardRule[] | null }>,
+  networks: Array<{ id: string; mode: string }>,
+): number[] {
+  const modeById = new Map(networks.map((n) => [n.id, n.mode]))
+  const ports: number[] = []
+  for (const vm of vms) {
+    const mode = vm.networkId ? modeById.get(vm.networkId) : undefined
+    if (mode && !natHostfwdAllowsMode(mode)) continue
+    for (const pf of vm.portForwards ?? []) {
+      if (pf.protocol === 'tcp') ports.push(pf.hostPort)
+    }
+  }
+  return ports
+}
+
+export function matchingTcpHostfwd(
+  guestPort: number,
+  forwards: PortForwardRule[],
+): PortForwardRule | undefined {
+  return forwards.find((pf) => pf.protocol === 'tcp' && pf.guestPort === guestPort)
+}
+
+/** Guest port if unused, otherwise the next unused host TCP port. */
+export function nextFreeHostPort(
+  preferred: number,
+  occupied: Iterable<number>,
+): number | null {
+  const taken = new Set(occupied)
+  const start = Math.min(Math.max(Math.trunc(preferred), 1), 65535)
+  for (let port = start; port <= 65535; port++) {
+    if (!taken.has(port)) return port
+  }
+  return null
+}
+
+export type SuggestPublishNatHostfwdAccess = {
+  isMember: boolean
+  /** Bridged / isolated hide the control. Null is implicit NAT. */
+  networkMode: string | null | undefined
+  portForwards: PortForwardRule[]
+  occupiedHostPorts: Iterable<number>
+}
+
+/** This Device NAT only. Loopback and member NAT stay non-clickable. */
+export function suggestPublishNatHostfwd(
+  port: GuestListeningPort,
+  access: SuggestPublishNatHostfwdAccess,
+): PortForwardRule | null {
+  if (access.isMember) return null
+  if (!natHostfwdAllowsMode(access.networkMode)) return null
+  if (port.proto.toLowerCase() !== 'tcp') return null
+  if (port.scope === 'internal' || isLoopbackAddress(port.address)) return null
+  if (!isPublishedGuestPort(port)) return null
+  if (matchingTcpHostfwd(port.port, access.portForwards)) return null
+  const hostPort = nextFreeHostPort(port.port, access.occupiedHostPorts)
+  if (hostPort == null) return null
+  return { protocol: 'tcp', hostPort, guestPort: port.port }
 }
 
 function hrefFor(host: string, port: number, item: GuestListeningPort): string {

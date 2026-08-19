@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import type { GuestListeningPort } from '../api/types'
 import {
+  claimedNatTcpHostPorts,
   guestListeningPortAccessLabel,
   guestListeningPortHref,
   isLoopbackAddress,
   isPublishedGuestPort,
   isWildcardAddress,
+  nextFreeHostPort,
+  suggestPublishNatHostfwd,
 } from './guestListeningPorts'
 
 function port(partial: Partial<GuestListeningPort> & Pick<GuestListeningPort, 'port'>): GuestListeningPort {
@@ -130,5 +133,98 @@ describe('guestListeningPorts (PAS-225)', () => {
     const none: GuestListeningPort[] = []
     expect(unavailable).toBeNull()
     expect(none).toEqual([])
+  })
+})
+
+describe('suggest NAT hostfwd (PAS-228)', () => {
+  const ssh = port({ address: '0.0.0.0', port: 22, label: 'SSH' })
+  const http = port({ address: '0.0.0.0', port: 80, label: 'HTTP' })
+  const loopbackHttp = port({
+    address: '127.0.0.1',
+    port: 80,
+    scope: 'internal',
+    label: 'HTTP',
+  })
+
+  test('This Device NAT publishes guest port when that host port is free', () => {
+    expect(suggestPublishNatHostfwd(http, {
+      isMember: false,
+      networkMode: 'nat',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toEqual({ protocol: 'tcp', hostPort: 80, guestPort: 80 })
+    expect(suggestPublishNatHostfwd(ssh, {
+      isMember: false,
+      networkMode: null,
+      portForwards: [],
+      occupiedHostPorts: [2222],
+    })).toEqual({ protocol: 'tcp', hostPort: 22, guestPort: 22 })
+  })
+
+  test('occupied guest port takes the next free host port', () => {
+    expect(nextFreeHostPort(80, [80, 81])).toBe(82)
+    expect(suggestPublishNatHostfwd(http, {
+      isMember: false,
+      networkMode: 'nat',
+      portForwards: [{ protocol: 'tcp', hostPort: 8080, guestPort: 8080 }],
+      occupiedHostPorts: [80, 8080],
+    })).toEqual({ protocol: 'tcp', hostPort: 81, guestPort: 80 })
+  })
+
+  test('matching hostfwd, loopback, member, bridged, and isolated hide the control', () => {
+    const forwarded = {
+      isMember: false,
+      networkMode: 'nat' as const,
+      portForwards: [{ protocol: 'tcp' as const, hostPort: 8080, guestPort: 80 }],
+      occupiedHostPorts: [8080],
+    }
+    expect(suggestPublishNatHostfwd(http, forwarded)).toBeNull()
+    expect(suggestPublishNatHostfwd(loopbackHttp, {
+      isMember: false,
+      networkMode: 'nat',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toBeNull()
+    expect(suggestPublishNatHostfwd(http, {
+      isMember: true,
+      networkMode: 'nat',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toBeNull()
+    expect(suggestPublishNatHostfwd(http, {
+      isMember: false,
+      networkMode: 'bridged',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toBeNull()
+    expect(suggestPublishNatHostfwd(http, {
+      isMember: false,
+      networkMode: 'isolated',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toBeNull()
+  })
+
+  test('unpublished ports are not offered', () => {
+    expect(suggestPublishNatHostfwd(port({ address: '0.0.0.0', port: 111 }), {
+      isMember: false,
+      networkMode: 'nat',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toBeNull()
+  })
+
+  test('isolated leftover hostfwd is not a NAT claim', () => {
+    expect(claimedNatTcpHostPorts(
+      [
+        { networkId: 'net-nat', portForwards: [{ protocol: 'tcp', hostPort: 2222, guestPort: 22 }] },
+        { networkId: 'net-iso', portForwards: [{ protocol: 'tcp', hostPort: 80, guestPort: 80 }] },
+        { networkId: null, portForwards: [{ protocol: 'tcp', hostPort: 443, guestPort: 443 }] },
+      ],
+      [
+        { id: 'net-nat', mode: 'nat' },
+        { id: 'net-iso', mode: 'isolated' },
+      ],
+    )).toEqual([2222, 443])
   })
 })

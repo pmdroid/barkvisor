@@ -55,9 +55,11 @@ import {
 } from '../utils/workloadDetail'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
 import {
+  claimedNatTcpHostPorts,
   guestListeningPortAccessLabel,
   guestListeningPortHref,
   isPublishedGuestPort,
+  suggestPublishNatHostfwd,
 } from '../utils/guestListeningPorts'
 import {
   guestAgentInstallCommands,
@@ -244,8 +246,10 @@ const showPortForwardEditor = ref(false)
 const editPortForwards = ref<PortForwardRule[]>([])
 const pfSaving = ref(false)
 
-function openPortForwardEditor() {
-  editPortForwards.value = vm.value?.portForwards ? [...vm.value.portForwards] : []
+function openPortForwardEditor(draft?: PortForwardRule) {
+  const current = vm.value?.portForwards ? [...vm.value.portForwards] : []
+  if (draft) current.push({ ...draft })
+  editPortForwards.value = current
   showPortForwardEditor.value = true
 }
 
@@ -494,18 +498,34 @@ const guestListeningPortRows = computed(() => {
   const guest = guestInfo.value
   if (!guest?.listeningPorts) return []
   const ips = guest.ipAddresses ?? []
-  return guest.listeningPorts.filter(isPublishedGuestPort).map((item) => ({
-    key: `${item.proto}-${item.address}-${item.port}`,
-    port: item.port,
-    address: item.address,
-    label: item.label,
-    access: guestListeningPortAccessLabel(item),
-    href: guestListeningPortHref(item, ips, {
+  const forwards = vm.value?.portForwards ?? []
+  const occupied = claimedNatTcpHostPorts(store.vms, allNetworks.value)
+  const seenGuest = new Set<number>()
+  return guest.listeningPorts.filter(isPublishedGuestPort).map((item) => {
+    let publish = suggestPublishNatHostfwd(item, {
       isMember: isMemberDetail.value,
-      guestIpsReachable: currentNetwork.value?.mode === 'bridged',
-      portForwards: vm.value?.portForwards ?? [],
-    }),
-  }))
+      networkMode: currentNetwork.value?.mode ?? null,
+      portForwards: forwards,
+      occupiedHostPorts: occupied,
+    })
+    if (publish) {
+      if (seenGuest.has(item.port)) publish = null
+      else seenGuest.add(item.port)
+    }
+    return {
+      key: `${item.proto}-${item.address}-${item.port}`,
+      port: item.port,
+      address: item.address,
+      label: item.label,
+      access: guestListeningPortAccessLabel(item),
+      href: guestListeningPortHref(item, ips, {
+        isMember: isMemberDetail.value,
+        guestIpsReachable: currentNetwork.value?.mode === 'bridged',
+        portForwards: forwards,
+      }),
+      publish,
+    }
+  })
 })
 
 async function refreshWorkload() {
@@ -739,6 +759,7 @@ async function loadLocalDetail(existingVersion?: number) {
   try {
     await Promise.all([
       store.fetchOne(vmId.value),
+      store.fetchAll(),
       fetchNetworks(),
       fetchImages(),
       ...(managedBridge.available ? [fetchBridges()] : []),
@@ -1304,7 +1325,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Listening ports</h3>
             <p v-if="guestInfo.listeningPorts == null" style="color:var(--text-dim);font-size:12px;margin:0">Unavailable</p>
             <p v-else-if="guestListeningPortRows.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
-            <DataTable v-else :columns="[{ key: 'port', label: 'Port' }, { key: 'address', label: 'Address' }, { key: 'label', label: 'Service' }, { key: 'access', label: 'Access' }]">
+            <DataTable v-else :columns="[{ key: 'port', label: 'Port' }, { key: 'address', label: 'Address' }, { key: 'label', label: 'Service' }, { key: 'access', label: 'Access' }, { key: 'publish', label: '' }]">
               <tr v-for="row in guestListeningPortRows" :key="row.key">
                 <td class="mono" style="font-variant-numeric:tabular-nums">{{ row.port }}</td>
                 <td class="mono">{{ row.address }}</td>
@@ -1313,6 +1334,9 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                   <span v-if="row.access === 'Internal'" class="badge badge-gray">Internal</span>
                   <a v-else-if="row.href" :href="row.href" target="_blank" class="badge badge-accent" style="text-decoration:none">{{ row.href.replace(/^https?:\/\//, '') }}</a>
                   <span v-else class="mono">{{ row.access }}</span>
+                </td>
+                <td>
+                  <AppButton v-if="row.publish" size="sm" @click="openPortForwardEditor(row.publish)">Publish this port</AppButton>
                 </td>
               </tr>
             </DataTable>
