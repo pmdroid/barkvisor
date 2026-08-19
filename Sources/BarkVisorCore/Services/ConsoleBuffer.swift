@@ -2,23 +2,28 @@ import Foundation
 import NIOCore
 import NIOPosix
 
-/// Manages per-VM console buffers. Connects to the serial socket immediately when a VM starts,
-/// records all output into a disk-backed scrollback buffer, and replays it to new WebSocket clients.
+/// Owns the QEMU serial unix socket for a Workload (PAS-233).
+///
+/// This is not a 1:1 hop. The socket accepts one client; this manager holds
+/// that connection, records scrollback, and fans out to many WebSocket
+/// subscribers. Each subscriber's pipe (cap, overflow, bind-closes) lives
+/// in `WebSocketHop`. Serial dials use `MultiThreadedEventLoopGroup.singleton`,
+/// never the inbound WebSocket event loop.
 public actor ConsoleBufferManager {
     private var buffers: [String: VMConsoleBuffer] = [:]
     private let eventLoopGroup: EventLoopGroup
 
-    public init(eventLoopGroup: EventLoopGroup) {
+    public init(eventLoopGroup: EventLoopGroup = MultiThreadedEventLoopGroup.singleton) {
         self.eventLoopGroup = eventLoopGroup
     }
 
     /// Called when a VM starts — begins recording serial output immediately
-    public func attach(vmID: String, serialSocketPath: String) {
+    public func attach(vmID: String, serialSocketPath: String) async {
         let buffer = VMConsoleBuffer(
             vmID: vmID, serialSocketPath: serialSocketPath, eventLoopGroup: eventLoopGroup,
         )
         buffers[vmID] = buffer
-        Task { await buffer.connect() }
+        await buffer.connect()
     }
 
     /// Called when a VM stops
@@ -45,13 +50,26 @@ public actor ConsoleBufferManager {
     }
 
     /// Register a WebSocket listener to receive live output
-    public func addListener(vmID: String, id: String, callback: @escaping @Sendable ([UInt8]) -> Void) {
-        buffers[vmID]?.addListener(id: id, callback: callback)
+    public func addListener(
+        vmID: String,
+        id: String,
+        callback: @escaping @Sendable ([UInt8]) -> Void,
+        onClose: (@Sendable () -> Void)? = nil,
+    ) {
+        buffers[vmID]?.addListener(id: id, callback: callback, onClose: onClose)
     }
 
     /// Remove a WebSocket listener
     public func removeListener(vmID: String, id: String) {
         buffers[vmID]?.removeListener(id: id)
+    }
+
+    public func isAttached(vmID: String) -> Bool {
+        buffers[vmID] != nil
+    }
+
+    public func listenerCount(vmID: String) -> Int {
+        buffers[vmID]?.listenerCount ?? 0
     }
 }
 
@@ -67,8 +85,10 @@ public final class VMConsoleBuffer: @unchecked Sendable {
     private let scrollbackFileURL: URL
     private var fileHandle: FileHandle?
     private var fileSize: Int = 0
+    private var liveScrollback = Data()
     private var channel: Channel?
     private var listeners: [String: @Sendable ([UInt8]) -> Void] = [:]
+    private var closeHandlers: [String: @Sendable () -> Void] = [:]
     private var logLineBuffer = Data()
     private var logFlushTask: Task<Void, Never>?
 
@@ -89,8 +109,10 @@ public final class VMConsoleBuffer: @unchecked Sendable {
     public var scrollbackData: Data {
         lock.lock()
         defer { lock.unlock() }
-        let path = scrollbackFileURL
-        return (try? Data(contentsOf: path)) ?? Data()
+        if !liveScrollback.isEmpty {
+            return liveScrollback
+        }
+        return (try? Data(contentsOf: scrollbackFileURL)) ?? Data()
     }
 
     public init(vmID: String, serialSocketPath: String, eventLoopGroup: EventLoopGroup) {
@@ -101,8 +123,15 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         openOrCreateFile()
     }
 
+    public var listenerCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return listeners.count
+    }
+
     private func openOrCreateFile() {
         let fm = FileManager.default
+        try? fm.createDirectory(at: Self.consoleDir(), withIntermediateDirectories: true)
         if !fm.fileExists(atPath: scrollbackFileURL.path) {
             fm.createFile(
                 atPath: scrollbackFileURL.path, contents: nil, attributes: [.posixPermissions: 0o600],
@@ -113,6 +142,9 @@ public final class VMConsoleBuffer: @unchecked Sendable {
             handle.seekToEndOfFile()
             fileSize = Int(handle.offsetInFile)
             fileHandle = handle
+            if liveScrollback.isEmpty {
+                liveScrollback = (try? Data(contentsOf: scrollbackFileURL)) ?? Data()
+            }
         } catch {
             Log.vm.error(
                 "Failed to open console scrollback file for \(self.vmID): \(error)", vm: self.vmID,
@@ -138,6 +170,8 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         let ch = channel
         channel = nil
         listeners.removeAll()
+        let handlers = Array(closeHandlers.values)
+        closeHandlers.removeAll()
         logLineBuffer.removeAll()
         let flushTask = logFlushTask
         logFlushTask = nil
@@ -145,6 +179,9 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         lock.unlock()
         flushTask?.cancel()
         try? handle?.synchronize()
+        for handler in handlers {
+            handler()
+        }
         return ch
     }
 
@@ -163,8 +200,9 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         fileHandle = nil
         do {
             let data = try Data(contentsOf: scrollbackFileURL)
-            let trimmed = data.suffix(maxScrollback)
+            let trimmed = Data(data.suffix(maxScrollback))
             try trimmed.write(to: scrollbackFileURL)
+            liveScrollback = trimmed
             let handle = try FileHandle(forUpdating: scrollbackFileURL)
             handle.seekToEndOfFile()
             fileSize = Int(handle.offsetInFile)
@@ -179,12 +217,14 @@ public final class VMConsoleBuffer: @unchecked Sendable {
     public func connect() async {
         do {
             let ch = try await ClientBootstrap(group: eventLoopGroup)
+                .channelOption(ChannelOptions.autoRead, value: true)
                 .channelInitializer { channel in
                     channel.pipeline.addHandler(ConsoleRecorderHandler(buffer: self))
                 }
                 .connect(unixDomainSocketPath: serialSocketPath)
                 .get()
             setChannel(ch)
+            ch.read()
         } catch {
             Log.vm.error("Failed to connect console buffer for \(self.vmID): \(error)", vm: self.vmID)
         }
@@ -205,6 +245,10 @@ public final class VMConsoleBuffer: @unchecked Sendable {
             openOrCreateFile()
         }
         fileHandle?.write(Data(bytes))
+        liveScrollback.append(contentsOf: bytes)
+        if liveScrollback.count > maxScrollback {
+            liveScrollback = Data(liveScrollback.suffix(maxScrollback))
+        }
         fileSize += bytes.count
         needsCompact = fileSize > compactThreshold
 
@@ -254,16 +298,29 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         try? await ch.writeAndFlush(buf)
     }
 
-    public func addListener(id: String, callback: @escaping @Sendable ([UInt8]) -> Void) {
+    public func addListener(
+        id: String,
+        callback: @escaping @Sendable ([UInt8]) -> Void,
+        onClose: (@Sendable () -> Void)? = nil,
+    ) {
         lock.lock()
         listeners[id] = callback
+        if let onClose {
+            closeHandlers[id] = onClose
+        }
         lock.unlock()
     }
 
     public func removeListener(id: String) {
         lock.lock()
         listeners.removeValue(forKey: id)
+        closeHandlers.removeValue(forKey: id)
         lock.unlock()
+    }
+
+    /// Serial socket died. Keep scrollback; close live hops.
+    public func noteSerialClosed() {
+        _ = clearForDisconnect()
     }
 }
 
@@ -282,7 +339,12 @@ public final class ConsoleRecorderHandler: ChannelInboundHandler, @unchecked Sen
         buffer.recordOutput(bytes)
     }
 
-    public func errorCaught(context: ChannelHandlerContext, error: Error) {
+    public func channelInactive(context _: ChannelHandlerContext) {
+        buffer.noteSerialClosed()
+    }
+
+    public func errorCaught(context: ChannelHandlerContext, error _: Error) {
         context.close(promise: nil)
+        buffer.noteSerialClosed()
     }
 }

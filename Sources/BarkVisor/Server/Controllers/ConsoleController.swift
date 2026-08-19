@@ -1,8 +1,6 @@
 import BarkVisorCore
 import Foundation
 import JWTKit
-import NIOCore
-import NIOPosix
 import Vapor
 
 struct ConsoleController {
@@ -53,39 +51,11 @@ struct ConsoleController {
                         return
                     }
 
-                    // Replay scrollback history
-                    let scrollback = await buffers.scrollback(vmID: vmID)
-                    if !scrollback.isEmpty {
-                        eventLoop.execute {
-                            ws.send(Array(scrollback), promise: nil)
-                        }
-                    }
-
-                    // Register as live listener
-                    let listenerId = UUID().uuidString
-                    await buffers.addListener(vmID: vmID, id: listenerId) { bytes in
-                        eventLoop.execute {
-                            ws.send(bytes, promise: nil)
-                        }
-                    }
-
-                    // WebSocket input → serial socket
-                    eventLoop.execute {
-                        ws.onText { _, text in
-                            if let data = text.data(using: .utf8) {
-                                Task { await buffers.write(vmID: vmID, data: data) }
-                            }
-                        }
-
-                        ws.onBinary { _, buf in
-                            let data = Data(buf.readableBytesView)
-                            Task { await buffers.write(vmID: vmID, data: data) }
-                        }
-
-                        ws.onClose.whenComplete { _ in
-                            Task { await buffers.removeListener(vmID: vmID, id: listenerId) }
-                        }
-                    }
+                    await WebSocketHop.run(
+                        inbound: VaporWebSocketPeer(ws),
+                        farEnd: ConsoleBufferHopFarEnd(buffers: buffers, vmID: vmID),
+                        logTarget: "serial:\(vmID)",
+                    )
                 }
             },
         )

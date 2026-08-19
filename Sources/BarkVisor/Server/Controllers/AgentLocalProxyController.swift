@@ -13,17 +13,20 @@ struct AgentLocalProxyController: RouteCollection {
     var client: any HomeDeviceProxyClient
     var dialer: any HomeWebSocketDialing
     var vmState: (any VMStateQuerying)?
+    var consoleBuffers: ConsoleBufferManager?
 
     init(
         localPort: Int = Config.port,
         client: any HomeDeviceProxyClient = LocalHostProxyClient(),
         dialer: (any HomeWebSocketDialing)? = nil,
         vmState: (any VMStateQuerying)? = nil,
+        consoleBuffers: ConsoleBufferManager? = nil,
     ) {
         self.localPort = localPort
         self.client = client
         self.dialer = dialer ?? PlainWebSocketDialer()
         self.vmState = vmState
+        self.consoleBuffers = consoleBuffers
     }
 
     func boot(routes: any RoutesBuilder) throws {
@@ -79,14 +82,28 @@ struct AgentLocalProxyController: RouteCollection {
         )
     }
 
-    /// Prefer the QEMU unix socket on this Device. Looping back through
-    /// `:7777` dropped the RFB banner on the extra WebSocket client hop.
+    /// VNC hops to the QEMU unix socket (PAS-224). Serial hops to
+    /// `ConsoleBufferManager` so scrollback and extra subscribers survive
+    /// (PAS-233). Looping VNC through `:7777` dropped the RFB banner.
     func tunnel(
         inbound: any WebSocketHopPeer,
         vmID: String,
         kind: HomeConsoleKind,
         query: String?,
     ) async {
+        if kind == .console, let consoleBuffers {
+            guard await consoleBuffers.isAttached(vmID: vmID) else {
+                Log.server.error("Agent console hop: no serial buffer for \(vmID)")
+                inbound.close()
+                return
+            }
+            await WebSocketHop.run(
+                inbound: inbound,
+                farEnd: ConsoleBufferHopFarEnd(buffers: consoleBuffers, vmID: vmID),
+                logTarget: "serial:\(vmID)",
+            )
+            return
+        }
         if let vmState {
             let path: String? = switch kind {
             case .vnc: await vmState.vncSocketPath(for: vmID)

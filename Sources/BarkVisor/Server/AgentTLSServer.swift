@@ -29,6 +29,7 @@ public final class AgentTLSServer: @unchecked Sendable {
     private let dataDir: URL?
     private let hostId: String?
     private let vmState: (any VMStateQuerying)?
+    private let consoleBuffers: ConsoleBufferManager?
     private var reloadTask: Task<Void, Never>?
 
     public private(set) var boundPort: Int?
@@ -43,6 +44,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         hostId: String? = nil,
         database: DatabasePool? = nil,
         vmState: (any VMStateQuerying)? = nil,
+        consoleBuffers: ConsoleBufferManager? = nil,
     ) {
         self.material = material
         self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
@@ -53,6 +55,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         self.hostId = hostId
         self.database = database
         self.vmState = vmState
+        self.consoleBuffers = consoleBuffers
     }
 
     public func start() async throws {
@@ -259,7 +262,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
         try app.register(collection: AgentMTLSController())
         try app.register(collection: AgentLibraryController(db: database))
-        let localProxy = AgentLocalProxyController(vmState: vmState)
+        let localProxy = AgentLocalProxyController(vmState: vmState, consoleBuffers: consoleBuffers)
         try app.register(collection: localProxy)
         localProxy.registerConsoleTunnels(app: app)
     }
@@ -308,6 +311,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         port: Int = Config.agentPort,
         database: DatabasePool? = nil,
         vmState: (any VMStateQuerying)? = nil,
+        consoleBuffers: ConsoleBufferManager? = nil,
     ) async -> AgentTLSServer? {
         if port == Config.port {
             Log.server.error(
@@ -334,6 +338,7 @@ public final class AgentTLSServer: @unchecked Sendable {
                 hostId: hostId,
                 database: database,
                 vmState: vmState,
+                consoleBuffers: consoleBuffers,
             )
             try await server.start()
             return server
