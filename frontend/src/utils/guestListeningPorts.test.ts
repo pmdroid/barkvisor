@@ -380,3 +380,5 @@ describe('guestListServiceChips (PAS-232)', () => {
       href: 'http://10.0.0.5',
       copyText: '10.0.0.5',
     }])
+  })
+})
