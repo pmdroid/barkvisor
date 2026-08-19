@@ -11,6 +11,10 @@ import Vapor
 /// the inbound-closed-before-dial race. WebSocket dials always use
 /// `MultiThreadedEventLoopGroup.singleton`, never the inbound loop.
 enum WebSocketHop {
+    /// websocket-kit clients default to 16 KiB frames. A Tight framebuffer
+    /// read grows past that and the Home hop (NIO client) closes mid-picture.
+    static let maxBinaryFrameBytes = 12_288
+
     static var dialEventLoopGroup: EventLoopGroup {
         MultiThreadedEventLoopGroup.singleton
     }
@@ -78,6 +82,8 @@ enum WebSocketHop {
         toRemote.maxPendingBytes = maxPendingBytes
         let toClient = WebSocketPipeBox()
         toClient.maxPendingBytes = maxPendingBytes
+        toRemote.onOverflow = { logOverflow(logTarget) }
+        toClient.onOverflow = { logOverflow(logTarget) }
         let lifetime = HopLifetime()
 
         inbound.capture(into: toRemote)
@@ -98,6 +104,9 @@ enum WebSocketHop {
                 }
             }
             if inbound.isClosed || remote.isClosed || toRemote.overflowed || toClient.overflowed {
+                if toRemote.overflowed || toClient.overflowed {
+                    logOverflow(logTarget)
+                }
                 inbound.close()
                 remote.close()
                 return
@@ -106,6 +115,7 @@ enum WebSocketHop {
             toClient.attach(inbound)
             bindCloses(local: inbound, remote: remote)
             if toRemote.overflowed || toClient.overflowed {
+                logOverflow(logTarget)
                 inbound.close()
                 remote.close()
             }
@@ -114,6 +124,11 @@ enum WebSocketHop {
             Log.server.error("Console hop failed\(whereTo): \(error.localizedDescription)")
             inbound.close()
         }
+    }
+
+    private static func logOverflow(_ logTarget: String?) {
+        let whereTo = logTarget.map { " (\($0))" } ?? ""
+        Log.server.error("Console hop overflow\(whereTo): pending frames exceeded the pipe cap")
     }
 
     /// Scheme/host/port/path only — tickets and sessions stay off the log line.
@@ -308,8 +323,17 @@ final class UnixSocketHopPeer: WebSocketHopPeer, @unchecked Sendable {
             defer { lock.unlock() }
             return self.box
         }()
-        if let box, !box.sendOrBuffer(.binary(buffer)) {
-            close()
+        guard let box else { return }
+        var remaining = buffer
+        while remaining.readableBytes > 0 {
+            let n = min(remaining.readableBytes, WebSocketHop.maxBinaryFrameBytes)
+            guard var slice = remaining.readSlice(length: n) else { break }
+            var owned = ByteBufferAllocator().buffer(capacity: n)
+            owned.writeBuffer(&slice)
+            if !box.sendOrBuffer(.binary(owned)) {
+                close()
+                return
+            }
         }
     }
 

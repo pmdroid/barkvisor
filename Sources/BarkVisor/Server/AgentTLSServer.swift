@@ -28,6 +28,7 @@ public final class AgentTLSServer: @unchecked Sendable {
     private let database: DatabasePool?
     private let dataDir: URL?
     private let hostId: String?
+    private let vmState: (any VMStateQuerying)?
     private var reloadTask: Task<Void, Never>?
 
     public private(set) var boundPort: Int?
@@ -41,6 +42,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         dataDir: URL? = nil,
         hostId: String? = nil,
         database: DatabasePool? = nil,
+        vmState: (any VMStateQuerying)? = nil,
     ) {
         self.material = material
         self.presentationCertificatePEM = presentationCertificatePEM ?? material.deviceCertificatePEM
@@ -50,6 +52,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         self.dataDir = dataDir
         self.hostId = hostId
         self.database = database
+        self.vmState = vmState
     }
 
     public func start() async throws {
@@ -256,7 +259,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
         try app.register(collection: AgentMTLSController())
         try app.register(collection: AgentLibraryController(db: database))
-        let localProxy = AgentLocalProxyController()
+        let localProxy = AgentLocalProxyController(vmState: vmState)
         try app.register(collection: localProxy)
         localProxy.registerConsoleTunnels(app: app)
     }
@@ -304,6 +307,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         hostname: String = "0.0.0.0",
         port: Int = Config.agentPort,
         database: DatabasePool? = nil,
+        vmState: (any VMStateQuerying)? = nil,
     ) async -> AgentTLSServer? {
         if port == Config.port {
             Log.server.error(
@@ -329,6 +333,7 @@ public final class AgentTLSServer: @unchecked Sendable {
                 dataDir: dataDir,
                 hostId: hostId,
                 database: database,
+                vmState: vmState,
             )
             try await server.start()
             return server

@@ -12,15 +12,18 @@ struct AgentLocalProxyController: RouteCollection {
     var localPort: Int
     var client: any HomeDeviceProxyClient
     var dialer: any HomeWebSocketDialing
+    var vmState: (any VMStateQuerying)?
 
     init(
         localPort: Int = Config.port,
         client: any HomeDeviceProxyClient = LocalHostProxyClient(),
         dialer: (any HomeWebSocketDialing)? = nil,
+        vmState: (any VMStateQuerying)? = nil,
     ) {
         self.localPort = localPort
         self.client = client
         self.dialer = dialer ?? PlainWebSocketDialer()
+        self.vmState = vmState
     }
 
     func boot(routes: any RoutesBuilder) throws {
@@ -41,6 +44,14 @@ struct AgentLocalProxyController: RouteCollection {
             shouldUpgrade: { req in
                 // Client cert is required by the agent-plane mTLS listener.
                 try HomeConsoleProxy.requireTicket(req)
+                let vmID = try req.parameters.require("id")
+                let ticket = req.query[String.self, at: "ticket"]
+                    ?? req.query[String.self, at: "token"]
+                guard let ticket,
+                      await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil
+                else {
+                    throw Abort(.unauthorized, reason: "Invalid or expired ticket")
+                }
                 return [:]
             },
             onUpgrade: { req, inbound in
@@ -68,13 +79,27 @@ struct AgentLocalProxyController: RouteCollection {
         )
     }
 
-    /// Target + injected dialer. Used by the agent-plane route and seam tests.
+    /// Prefer the QEMU unix socket on this Device. Looping back through
+    /// `:7777` dropped the RFB banner on the extra WebSocket client hop.
     func tunnel(
         inbound: any WebSocketHopPeer,
         vmID: String,
         kind: HomeConsoleKind,
         query: String?,
     ) async {
+        if let vmState {
+            let path: String? = switch kind {
+            case .vnc: await vmState.vncSocketPath(for: vmID)
+            case .console: await vmState.serialSocketPath(for: vmID)
+            }
+            guard let path else {
+                Log.server.error("Agent console hop: no \(kind.rawValue) socket for \(vmID)")
+                inbound.close()
+                return
+            }
+            await WebSocketHop.run(inbound: inbound, unixSocketPath: path)
+            return
+        }
         let url: URL
         do {
             url = try HomeDeviceProxy.consoleTargetURL(

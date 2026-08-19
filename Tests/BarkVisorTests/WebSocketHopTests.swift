@@ -97,6 +97,36 @@ struct WebSocketHopTests {
         #expect(remote.isClosed)
     }
 
+    @Test func `live overflow after attach closes both ends`() {
+        let inbound = FakeHopPeer()
+        let remote = FakeHopPeer()
+        let flag = OverflowFlag()
+        let toRemote = WebSocketPipeBox()
+        toRemote.maxPendingBytes = 8
+        toRemote.onOverflow = { flag.fired = true }
+        inbound.capture(into: toRemote)
+        toRemote.attach(remote)
+        inbound.inject(.text("123456789"))
+        #expect(flag.fired)
+        #expect(inbound.isClosed)
+        #expect(toRemote.overflowed)
+        remote.close()
+    }
+
+    @Test func `default cap holds a one-megabyte VNC banner`() async {
+        var buffer = ByteBufferAllocator().buffer(capacity: 1_000_000)
+        buffer.writeRepeatingByte(0x41, count: 1_000_000)
+        let inbound = FakeHopPeer()
+        let remote = FakeHopPeer()
+        await WebSocketHop.run(
+            inbound: inbound,
+            farEnd: BannerHopFarEnd(peer: remote, banner: .binary(buffer)),
+        )
+        #expect(!inbound.isClosed)
+        #expect(!remote.isClosed)
+        #expect(inbound.sentBinaryByteCount() == 1_000_000)
+    }
+
     @Test func `unix socket close closes the client`() async throws {
         let fixture = try await UnixHopFixture.make()
         defer { fixture.shutdown() }
@@ -111,6 +141,26 @@ struct WebSocketHopTests {
         #expect(inbound.isClosed)
     }
 
+    @Test func `unix hop splits a 40 KiB read under the 16 KiB WS frame cap`() async throws {
+        let fixture = try await UnixHopFixture.make()
+        defer { fixture.shutdown() }
+        let inbound = FakeHopPeer()
+        let task = Task {
+            await WebSocketHop.run(inbound: inbound, unixSocketPath: fixture.path)
+        }
+        let accepted = try await fixture.takeAccepted()
+        var payload = ByteBufferAllocator().buffer(capacity: 40_000)
+        payload.writeRepeatingByte(0x5A, count: 40_000)
+        accepted.writeAndFlush(payload, promise: nil)
+        try await waitUntil { inbound.sentBinaryByteCount() == 40_000 }
+        let sizes = inbound.sentBinarySizes()
+        #expect(!sizes.isEmpty)
+        #expect(sizes.allSatisfy { $0 <= WebSocketHop.maxBinaryFrameBytes })
+        #expect(sizes.reduce(0, +) == 40_000)
+        inbound.close()
+        await task.value
+    }
+
     @Test func `client close closes the unix socket`() async throws {
         let fixture = try await UnixHopFixture.make()
         defer { fixture.shutdown() }
@@ -119,6 +169,23 @@ struct WebSocketHopTests {
             await WebSocketHop.run(inbound: inbound, unixSocketPath: fixture.path)
         }
         let accepted = try await fixture.takeAccepted()
+        inbound.close()
+        try await waitUntil { !accepted.isActive }
+        await task.value
+        #expect(!accepted.isActive)
+    }
+
+    @Test func `agent hop uses the QEMU unix socket when vmState is set`() async throws {
+        let fixture = try await UnixHopFixture.make()
+        defer { fixture.shutdown() }
+        let inbound = FakeHopPeer()
+        let proxy = AgentLocalProxyController(vmState: FakeVMState(vncPath: fixture.path))
+        let task = Task {
+            await proxy.tunnel(inbound: inbound, vmID: "vm-9", kind: .vnc, query: "ticket=\(Self.ticket)")
+        }
+        let accepted = try await fixture.takeAccepted()
+        inbound.inject(.binary(byteBuffer("rfb")))
+        try await waitUntil { accepted.isActive }
         inbound.close()
         try await waitUntil { !accepted.isActive }
         await task.value
@@ -268,6 +335,24 @@ private final class FakeHopPeer: WebSocketHopPeer, @unchecked Sendable {
         return sent.compactMap { frame in
             if case let .binary(buffer) = frame { return String(buffer: buffer) }
             return nil
+        }
+    }
+
+    func sentBinarySizes() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.compactMap { frame in
+            if case let .binary(buffer) = frame { return buffer.readableBytes }
+            return nil
+        }
+    }
+
+    func sentBinaryByteCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent.reduce(0) { count, frame in
+            if case let .binary(buffer) = frame { return count + buffer.readableBytes }
+            return count
         }
     }
 
@@ -447,6 +532,34 @@ private final class UnixAcceptBox: ChannelInboundHandler, @unchecked Sendable {
 
     func channelActive(context: ChannelHandlerContext) {
         offer(context.channel)
+    }
+}
+
+private final class OverflowFlag: @unchecked Sendable {
+    var fired = false
+}
+
+private struct FakeVMState: VMStateQuerying {
+    var vncPath: String?
+    var serialPath: String?
+
+    func isRunning(_: String) async -> Bool {
+        vncPath != nil || serialPath != nil
+    }
+    func isActiveOrStarting(_: String) async -> Bool {
+        true
+    }
+    func allRunningVMs() async -> [String: RunningVM] {
+        [:]
+    }
+    func vncSocketPath(for _: String) async -> String? {
+        vncPath
+    }
+    func serialSocketPath(for _: String) async -> String? {
+        serialPath
+    }
+    func qmpSocketPath(for _: String) async -> String? {
+        nil
     }
 }
 

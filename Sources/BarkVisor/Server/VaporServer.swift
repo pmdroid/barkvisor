@@ -137,6 +137,7 @@ public final class VaporServer: @unchecked Sendable {
             dataDir: Config.dataDir,
             hostId: Config.hostId,
             database: database.pool,
+            vmState: services.manager,
         )
 
         scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
