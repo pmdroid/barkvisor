@@ -1,6 +1,6 @@
 import Foundation
 
-/// TCP LISTEN snapshot from qemu-guest-agent (PAS-225).
+/// TCP LISTEN snapshot from qemu-guest-agent (PAS-225, PAS-231).
 ///
 /// `null` on the API means unavailable; `[]` means the guest reported none.
 /// Only TCP. Loopback is `scope: internal` and never becomes a URL.
@@ -30,6 +30,8 @@ public struct GuestListeningPortDTO: Codable, Sendable, Equatable, Hashable {
     }
 }
 
+// Windows netstat/PowerShell parsers plus the 3s collect budget sit in one type.
+// swiftlint:disable type_body_length file_length
 public enum GuestListeningPorts {
     public static let collectIntervalSeconds: TimeInterval = 30
     public static let collectFailureBackoffSeconds: TimeInterval = 300
@@ -42,6 +44,14 @@ public enum GuestListeningPorts {
 
     public static let scopeInternal = "internal"
     public static let scopeNetwork = "network"
+
+    private static let windowsPowerShellListenArgs = [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-NetTCPConnection -State Listen | ForEach-Object {"
+            + " $_.LocalAddress + ' ' + $_.LocalPort + ' LISTEN' }",
+    ]
 
     private static let lock = NSLock()
     private nonisolated(unsafe) static var lastAttempt: [String: Date] = [:]
@@ -261,8 +271,65 @@ public enum GuestListeningPorts {
         return canonicalize(ports)
     }
 
-    static func collect(using client: QMPClient, now: Date = Date()) -> [GuestListeningPortDTO]? {
+    /// True when guest-osinfo or the Workload guest type names Windows.
+    /// Linux collect (`ss` / `netstat` / `/proc`) must not run in that case.
+    public static func looksLikeWindows(_ hint: String?) -> Bool {
+        guard let hint else { return false }
+        let lower = hint.lowercased()
+        return lower.contains("windows") || lower.contains("mswin")
+    }
+
+    /// `netstat -ano` plus PowerShell `Get-NetTCPConnection` table/CSV/list.
+    public static func parseWindowsOutput(_ text: String) -> [GuestListeningPortDTO] {
+        canonicalize(parseCommandOutput(text) + parsePowerShellNetTCP(text))
+    }
+
+    public static func parsePowerShellNetTCP(_ text: String) -> [GuestListeningPortDTO] {
+        let lines = text.split(whereSeparator: \.isNewline).map {
+            String($0).trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty }
+
+        if let csv = parsePowerShellCSV(lines), !csv.isEmpty {
+            return canonicalize(csv)
+        }
+        if let listed = parsePowerShellList(lines), !listed.isEmpty {
+            return canonicalize(listed)
+        }
+
+        var ports: [GuestListeningPortDTO] = []
+        for line in lines {
+            let upper = line.uppercased()
+            if upper.hasPrefix("LOCALADDRESS") || upper.hasPrefix("LOCAL ADDRESS") {
+                continue
+            }
+            if line.allSatisfy({ $0 == "-" || $0.isWhitespace }) { continue }
+            guard isListenState(line) else { continue }
+            if let fromEndpoint = parseListenLine(line) {
+                ports.append(fromEndpoint)
+                continue
+            }
+            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count >= 2, let port = Int(fields[1]),
+                  let item = makePort(address: fields[0], port: port)
+            else { continue }
+            ports.append(item)
+        }
+        return canonicalize(ports)
+    }
+
+    static func collect(
+        using client: QMPClient,
+        now: Date = Date(),
+        osHint: String? = nil,
+    ) -> [GuestListeningPortDTO]? {
         let deadline = now.addingTimeInterval(collectTimeoutSeconds)
+        if looksLikeWindows(osHint) {
+            return collectWindows(using: client, deadline: deadline)
+        }
+        return collectUnix(using: client, deadline: deadline)
+    }
+
+    private static func collectUnix(using client: QMPClient, deadline: Date) -> [GuestListeningPortDTO]? {
         let raw: [GuestListeningPortDTO]
         if let text = execCapture(
             client,
@@ -297,14 +364,63 @@ public enum GuestListeningPorts {
         return decoratePublished(raw, using: client, deadline: deadline)
     }
 
+    /// First snapshot that parses at least one TCP listen row.
+    /// Empty parses are not success: localized `netstat` can emit ABHÖREN
+    /// (or similar) and must fall through to `cmd` / PowerShell.
+    static func firstNonEmptyWindowsParse(_ snapshots: [() -> String?]) -> [GuestListeningPortDTO]? {
+        var empty: [GuestListeningPortDTO]?
+        for snapshot in snapshots {
+            guard let text = snapshot() else { continue }
+            let parsed = parseWindowsOutput(text)
+            if !parsed.isEmpty { return parsed }
+            empty = parsed
+        }
+        return empty
+    }
+
+    private static func collectWindows(using client: QMPClient, deadline: Date) -> [GuestListeningPortDTO]? {
+        let raw = firstNonEmptyWindowsParse([
+            {
+                firstExec(
+                    client,
+                    paths: [#"C:\Windows\System32\netstat.exe"#, "netstat.exe"],
+                    arg: ["-ano"],
+                    deadline: deadline,
+                )
+            },
+            {
+                firstExec(
+                    client,
+                    paths: [#"C:\Windows\System32\cmd.exe"#, "cmd.exe"],
+                    arg: ["/c", "netstat -ano"],
+                    deadline: deadline,
+                )
+            },
+            {
+                firstExec(
+                    client,
+                    paths: [
+                        #"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"#,
+                        "powershell.exe",
+                    ],
+                    arg: windowsPowerShellListenArgs,
+                    deadline: deadline,
+                )
+            },
+        ])
+        guard let raw else { return nil }
+        return decoratePublished(raw, using: client, deadline: deadline, probeHTTP: false)
+    }
+
     static func decoratePublished(
         _ ports: [GuestListeningPortDTO],
         using client: QMPClient,
         deadline: Date,
+        probeHTTP: Bool = true,
     ) -> [GuestListeningPortDTO] {
         let visible = selectPublished(ports)
         let candidates = visible.map(\.port).filter(isHTTPProbeCandidate)
-        guard !candidates.isEmpty else {
+        guard probeHTTP, !candidates.isEmpty else {
             return applyHTTPSchemes(visible, probedHTTP: [], probeRan: false)
         }
         guard remainingCollectBudget(until: deadline) > 0 else {
@@ -367,6 +483,93 @@ public enum GuestListeningPorts {
 
     // MARK: - Parse helpers
 
+    private static func parsePowerShellCSV(_ lines: [String]) -> [GuestListeningPortDTO]? {
+        guard let headerLine = lines.first, headerLine.contains(",") else { return nil }
+        let header = splitCSV(headerLine).map { $0.lowercased() }
+        guard let addrIdx = header.firstIndex(of: "localaddress"),
+              let portIdx = header.firstIndex(of: "localport")
+        else { return nil }
+        let stateIdx = header.firstIndex(of: "state")
+        var ports: [GuestListeningPortDTO] = []
+        for line in lines.dropFirst() {
+            let cols = splitCSV(line)
+            guard addrIdx < cols.count, portIdx < cols.count, let port = Int(cols[portIdx]) else {
+                continue
+            }
+            if let stateIdx, stateIdx < cols.count {
+                let state = cols[stateIdx]
+                if !state.isEmpty, !isListenState(state) { continue }
+            }
+            if let item = makePort(address: cols[addrIdx], port: port) {
+                ports.append(item)
+            }
+        }
+        return ports
+    }
+
+    private static func splitCSV(_ line: String) -> [String] {
+        var fields: [String] = []
+        var current = ""
+        var inQuotes = false
+        for char in line {
+            if char == "\"" {
+                inQuotes.toggle()
+                continue
+            }
+            if char == ",", !inQuotes {
+                fields.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+                continue
+            }
+            current.append(char)
+        }
+        fields.append(current.trimmingCharacters(in: .whitespaces))
+        return fields
+    }
+
+    private static func parsePowerShellList(_ lines: [String]) -> [GuestListeningPortDTO]? {
+        let keyed = lines.contains {
+            let lower = $0.lowercased()
+            return lower.hasPrefix("localaddress") && $0.contains(":")
+        }
+        guard keyed else { return nil }
+
+        var address: String?
+        var port: Int?
+        var listen = false
+        var ports: [GuestListeningPortDTO] = []
+
+        func flush() {
+            if listen, let address, let port, let item = makePort(address: address, port: port) {
+                ports.append(item)
+            }
+            address = nil
+            port = nil
+            listen = false
+        }
+
+        for line in lines {
+            let parts = line.split(separator: ":", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+            guard parts.count == 2 else { continue }
+            switch parts[0].lowercased() {
+            case "localaddress":
+                flush()
+                address = parts[1]
+                listen = false
+            case "localport":
+                port = Int(parts[1])
+            case "state":
+                listen = isListenState(parts[1])
+            default:
+                break
+            }
+        }
+        flush()
+        return ports
+    }
+
     private static func parseListenLine(_ line: String) -> GuestListeningPortDTO? {
         guard !line.isEmpty else { return nil }
         let upper = line.uppercased()
@@ -377,7 +580,7 @@ public enum GuestListeningPorts {
         guard let first = fields.first else { return nil }
         let proto = first.lowercased()
         if proto.hasPrefix("udp") { return nil }
-        if !upper.contains("LISTEN") { return nil }
+        if !isListenState(line), !hasWindowsListenForeign(fields) { return nil }
 
         for field in fields {
             if looksLikeRemoteWildcard(field) { continue }
@@ -386,6 +589,23 @@ public enum GuestListeningPorts {
             }
         }
         return nil
+    }
+
+    /// English LISTEN/LISTENING plus common localized netstat listen words.
+    static func isListenState(_ text: String) -> Bool {
+        let folded = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .uppercased()
+        if folded.contains("LISTEN") { return true }
+        let localized = ["ABHOREN", "ECOUTE", "ESCUCHANDO", "ESCUTANDO", "ASCOLTO", "LUISTEREN"]
+        return localized.contains { folded.contains($0) }
+    }
+
+    /// Windows `netstat -ano` marks listeners with foreign `0.0.0.0:0` / `[::]:0`.
+    private static func hasWindowsListenForeign(_ fields: [String]) -> Bool {
+        fields.contains { token in
+            let t = token.lowercased()
+            return t == "0.0.0.0:0" || t == "[::]:0"
+        }
     }
 
     private static func looksLikeRemoteWildcard(_ token: String) -> Bool {
@@ -600,3 +820,4 @@ public enum GuestListeningPorts {
         return nil
     }
 }
+// swiftlint:enable type_body_length file_length

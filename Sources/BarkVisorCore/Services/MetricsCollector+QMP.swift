@@ -107,11 +107,18 @@ extension MetricsCollector {
         guard let gaResult = try? gaClient.execute("guest-network-get-interfaces") else { return }
 
         let (ips, mac) = parseNetworkInterfaces(gaResult)
-        let previous = try? dbPool.read { db in
-            try GuestInfoRecord.fetchOne(db, key: vmID)
+        let previousAndType = try? dbPool.read { db -> (GuestInfoRecord?, String?) in
+            let previous = try GuestInfoRecord.fetchOne(db, key: vmID)
+            let vmType = try VM.fetchOne(db, key: vmID)?.vmType
+            return (previous, vmType)
         }
         let snapshot = buildGuestInfoRecord(
-            gaClient: gaClient, vmID: vmID, ips: ips, mac: mac, previous: previous,
+            gaClient: gaClient,
+            vmID: vmID,
+            ips: ips,
+            mac: mac,
+            previous: previousAndType?.0,
+            vmType: previousAndType?.1,
         )
 
         do {
@@ -152,6 +159,7 @@ extension MetricsCollector {
         ips: [String],
         mac: String?,
         previous: GuestInfoRecord?,
+        vmType: String?,
     ) -> (record: GuestInfoRecord, updatePorts: Bool) {
         let hostnameResult = try? gaClient.execute("guest-get-host-name")
         let osInfoResult = try? gaClient.execute("guest-get-osinfo")
@@ -177,7 +185,10 @@ extension MetricsCollector {
         let now = iso8601.string(from: Date())
         let persistedPorts: (json: String?, collectedAt: String?, changed: Bool)
         if GuestListeningPorts.shouldCollect(vmID: vmID) {
-            let collectedPorts = GuestListeningPorts.collect(using: gaClient)
+            let osHint = [vmType, osId, osName, osVersion, kernelVersion, kernelRelease]
+                .compactMap(\.self)
+                .joined(separator: " ")
+            let collectedPorts = GuestListeningPorts.collect(using: gaClient, osHint: osHint)
             GuestListeningPorts.markCollected(vmID: vmID, succeeded: collectedPorts != nil)
             persistedPorts = GuestListeningPorts.persistFields(
                 collected: collectedPorts,
