@@ -1,8 +1,3 @@
-#if canImport(CryptoKit)
-    import CryptoKit
-#else
-    import Crypto
-#endif
 import Foundation
 #if canImport(FoundationNetworking)
     import FoundationNetworking
@@ -34,9 +29,20 @@ public struct ImageProgressEvent: Codable, Sendable {
     }
 }
 
-public enum ExpectedChecksum: Sendable {
+public enum ExpectedChecksum: Sendable, Equatable {
     case sha256(String)
     case sha512(String)
+
+    /// Prefer sha256 when the catalog lists both.
+    public static func catalog(sha256: String?, sha512: String?) -> ExpectedChecksum? {
+        if let sha256, !sha256.isEmpty { return .sha256(sha256) }
+        if let sha512, !sha512.isEmpty { return .sha512(sha512) }
+        return nil
+    }
+
+    public static func catalog(from image: RepositoryImage) -> ExpectedChecksum? {
+        catalog(sha256: image.sha256, sha512: image.sha512)
+    }
 }
 
 /// Starts catalog/image downloads. Extracted so tests can assert `start` is never called.
@@ -206,15 +212,13 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
         // Persist sha256 of the stored file (after decompress). Catalog sha512 is
         // verified above when present; the row always stores sha256 for depot verify.
         let digest = try ImageFileChecksum.sha256Hex(ofFile: finalPath)
-
-        let pool = dbPool()
-        try await pool.write { db in
-            try db.execute(
-                sql:
-                "UPDATE images SET status = 'ready', path = ?, sizeBytes = ?, sha256 = ?, updatedAt = ? WHERE id = ?",
-                arguments: [finalPath.path, finalSize, digest, iso8601.string(from: Date()), imageID],
-            )
-        }
+        try await LibraryAcquire.persistReady(
+            imageId: imageID,
+            path: finalPath.path,
+            sizeBytes: finalSize,
+            sha256: digest,
+            db: dbPool(),
+        )
 
         let doneEvent = ImageProgressEvent(
             id: imageID, status: "ready",
@@ -281,28 +285,17 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
         )
         emit(imageID: imageID, event: verifyEvent)
 
-        let fileData = try Data(contentsOf: destination)
-        let computed: String
-        let algorithm: String
-        let expected: String
-
-        switch expectedChecksum {
-        case let .sha256(hash):
-            computed = SHA256.hash(data: fileData).compactMap { String(format: "%02x", $0) }.joined()
-            algorithm = "SHA256"
-            expected = hash.lowercased()
-        case let .sha512(hash):
-            computed = SHA512.hash(data: fileData).compactMap { String(format: "%02x", $0) }.joined()
-            algorithm = "SHA512"
-            expected = hash.lowercased()
-        }
-
-        guard computed == expected else {
+        do {
+            try ImageFileChecksum.verify(ofFile: destination, expected: expectedChecksum)
+        } catch {
             try? FileManager.default.removeItem(at: destination)
-            throw BarkVisorError.downloadFailed(
-                "\(algorithm) mismatch: expected \(expected), got \(computed)",
-            )
+            throw error
         }
+        let algorithm =
+            switch expectedChecksum {
+            case .sha256: "SHA256"
+            case .sha512: "SHA512"
+            }
         Log.images.info("\(algorithm) checksum verified for \(imageID)")
     }
 

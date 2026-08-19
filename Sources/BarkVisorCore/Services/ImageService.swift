@@ -156,45 +156,40 @@ public enum ImageService {
         downloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> CatalogDownloadClaim {
-        let imageId = UUID().uuidString
-        let ext = imageExtension(from: sourceURL.lastPathComponent, imageType: repoImage.imageType)
-        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
-        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-        let destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
-
-        enum Action {
-            case existing(VMImage)
-            case startNew(VMImage)
-        }
-
-        let action: Action = try await db.write { db in
-            let rows = try VMImage.filter(Column("sourceUrl") == repoImage.downloadUrl).fetchAll(db)
-            if let ready = try readyImage(
-                sourceUrl: repoImage.downloadUrl, expectedChecksum: checksum, db: db,
-            ) {
-                return .existing(ready)
-            }
-            if let downloading = rows.first(where: { $0.status == "downloading" }) {
-                return .existing(downloading)
-            }
-            let now = iso8601.string(from: Date())
-            let image = VMImage(
-                id: imageId, name: repoImage.name, imageType: repoImage.imageType, arch: repoImage.arch,
-                path: nil, sizeBytes: nil, status: "downloading", error: nil,
-                sourceUrl: repoImage.downloadUrl, createdAt: now, updatedAt: now,
-            )
-            try image.insert(db)
-            return .startNew(image)
-        }
-
-        switch action {
-        case let .existing(image):
+        let request = LibraryDepotFetchRequest(
+            sourceUrl: repoImage.downloadUrl,
+            name: repoImage.name,
+            imageType: repoImage.imageType,
+            arch: repoImage.arch,
+            expectedChecksum: checksum,
+        )
+        switch try await LibraryAcquire.claim(request: request, kind: .internet, db: db) {
+        case let .ready(image), let .inFlight(image):
             return .existing(image)
-        case let .startNew(image):
-            await downloader.start(
-                imageID: image.id, url: sourceURL, destination: destination, expectedChecksum: checksum,
-            )
-            return .started(image)
+        case .sourceFailed:
+            throw BarkVisorError.downloadFailed("Library row is not usable for this catalog URL")
+        case let .started(image):
+            do {
+                let destination = try await LibraryAcquire.destination(
+                    imageId: image.id,
+                    sourceUrl: repoImage.downloadUrl,
+                    imageType: repoImage.imageType,
+                    db: db,
+                )
+                await downloader.start(
+                    imageID: image.id, url: sourceURL, destination: destination,
+                    expectedChecksum: checksum,
+                )
+                return .started(image)
+            } catch {
+                await LibraryAcquire.markFailed(
+                    imageId: image.id,
+                    message: error.localizedDescription,
+                    kind: .internet,
+                    db: db,
+                )
+                throw error
+            }
         }
     }
 
