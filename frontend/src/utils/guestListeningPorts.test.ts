@@ -4,6 +4,7 @@ import {
   guestListeningPortAccessLabel,
   guestListeningPortHref,
   isLoopbackAddress,
+  isPublishedGuestPort,
   isWildcardAddress,
 } from './guestListeningPorts'
 
@@ -87,6 +88,28 @@ describe('guestListeningPorts (PAS-225)', () => {
       guestIpsReachable: false,
       portForwards: natThisDevice.portForwards,
     })).toBeNull()
+  })
+
+  test('only common ports are shown', () => {
+    expect(isPublishedGuestPort(port({ port: 22 }))).toBe(true)
+    expect(isPublishedGuestPort(port({ port: 8081 }))).toBe(true)
+    expect(isPublishedGuestPort(port({ port: 111 }))).toBe(false)
+    expect(isPublishedGuestPort(port({ port: 5353 }))).toBe(false)
+  })
+
+  test('probed HTTP scheme is a browser URL even without a well-known label', () => {
+    expect(guestListeningPortHref(port({
+      address: '10.0.0.5',
+      port: 8081,
+      scheme: 'http',
+      label: 'Dev',
+    }), ['10.0.0.5'])).toBe('http://10.0.0.5:8081')
+    expect(guestListeningPortHref(port({
+      address: '10.0.0.5',
+      port: 8080,
+      label: 'HTTP',
+      scheme: null,
+    }), ['10.0.0.5'])).toBe('http://10.0.0.5:8080')
   })
 
   test('SSH is labeled but not a browser URL', () => {

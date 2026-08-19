@@ -54,7 +54,11 @@ import {
   workloadDetailVmSource,
 } from '../utils/workloadDetail'
 import { guestInfoFetchPath, guestOsLabel } from '../utils/guestHome'
-import { guestListeningPortAccessLabel, guestListeningPortHref } from '../utils/guestListeningPorts'
+import {
+  guestListeningPortAccessLabel,
+  guestListeningPortHref,
+  isPublishedGuestPort,
+} from '../utils/guestListeningPorts'
 import {
   guestAgentInstallCommands,
   guestAgentInstallOpenId,
@@ -490,7 +494,7 @@ const guestListeningPortRows = computed(() => {
   const guest = guestInfo.value
   if (!guest?.listeningPorts) return []
   const ips = guest.ipAddresses ?? []
-  return guest.listeningPorts.map((item) => ({
+  return guest.listeningPorts.filter(isPublishedGuestPort).map((item) => ({
     key: `${item.proto}-${item.address}-${item.port}`,
     port: item.port,
     address: item.address,
@@ -1299,7 +1303,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <div style="margin-top:16px">
             <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Listening ports</h3>
             <p v-if="guestInfo.listeningPorts == null" style="color:var(--text-dim);font-size:12px;margin:0">Unavailable</p>
-            <p v-else-if="guestInfo.listeningPorts.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
+            <p v-else-if="guestListeningPortRows.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
             <DataTable v-else :columns="[{ key: 'port', label: 'Port' }, { key: 'address', label: 'Address' }, { key: 'label', label: 'Service' }, { key: 'access', label: 'Access' }]">
               <tr v-for="row in guestListeningPortRows" :key="row.key">
                 <td class="mono" style="font-variant-numeric:tabular-nums">{{ row.port }}</td>

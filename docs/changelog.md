@@ -39,6 +39,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ### Guest ports
 
 - Workload detail shows TCP listening ports from the guest addon (SSH, HTTP, and common dev servers). Loopback stays internal and is never a URL. Members use the same guest-info hop as This Device.
+- Listening ports are the common set only (SSH, HTTP/S, typical dev servers, DBs, RDP, VNC) — rpcbind and the rest stay hidden. HTTP that actually answers `HEAD /` (or a well-known HTTP port when the probe cannot run) is an Open link.
 
 ### Platform
 

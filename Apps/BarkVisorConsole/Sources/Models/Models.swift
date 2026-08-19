@@ -204,15 +204,52 @@ struct GuestListeningPort: Decodable, Hashable {
     var port: Int
     var scope: String
     var label: String?
+    var scheme: String?
 
     var isInternal: Bool {
         scope == "internal" || address.hasPrefix("127.") || address == "::1" || address == "localhost"
+    }
+
+    var isPublished: Bool {
+        Self.publishedPorts.contains(port)
     }
 
     var displayLabel: String {
         if let label, !label.isEmpty { return label }
         return "TCP \(port)"
     }
+
+    func openURL(guestIPs: [String]) -> URL? {
+        guard !isInternal else { return nil }
+        let http = scheme == "http" || scheme == "https"
+            || label == "HTTP" || label == "HTTPS" || label == "Dev"
+        guard http else { return nil }
+        let host: String
+        if !address.hasPrefix("127."), address != "0.0.0.0", address != "::",
+           address != "*", address != "10.0.2.15" {
+            host = address
+        } else if let ip = guestIPs.first(where: { ip in
+            !ip.isEmpty && !ip.hasPrefix("127.") && ip != "::1"
+                && ip != "10.0.2.15" && !ip.lowercased().hasPrefix("fe80:")
+        }) {
+            host = ip
+        } else {
+            return nil
+        }
+        let proto = scheme == "https" || label == "HTTPS" ? "https" : "http"
+        let wrapped = host.contains(":") ? "[\(host)]" : host
+        let suffix = (port == 80 && proto == "http") || (port == 443 && proto == "https")
+            ? "" : ":\(port)"
+        return URL(string: "\(proto)://\(wrapped)\(suffix)")
+    }
+
+    static let publishedPorts: Set<Int> = [
+        22, 80, 443,
+        3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174,
+        8_000, 8_080, 8_081, 8_443, 8_888,
+        3_306, 5_432, 6_379, 27_017,
+        3_389, 5_900,
+    ]
 }
 
 struct GuestInfo: Decodable, Hashable {

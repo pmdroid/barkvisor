@@ -27,14 +27,21 @@ struct WorkloadDetailView: View {
             if guest?.available == true, device.isReachable {
                 Section("Listening ports") {
                     if let ports = guest?.listeningPorts {
-                        if ports.isEmpty {
+                        let visible = ports.filter(\.isPublished)
+                        if visible.isEmpty {
                             Text("None")
                                 .foregroundStyle(.secondary)
                         } else {
-                            ForEach(ports, id: \.self) { port in
+                            ForEach(visible, id: \.self) { port in
                                 LabeledContent(port.displayLabel) {
-                                    Text(port.isInternal ? "Internal" : "\(port.address):\(port.port)")
-                                        .textSelection(.enabled)
+                                    if port.isInternal {
+                                        Text("Internal")
+                                    } else if let url = port.openURL(guestIPs: guest?.ipAddresses ?? []) {
+                                        Link(url.absoluteString, destination: url)
+                                    } else {
+                                        Text("\(port.address):\(port.port)")
+                                            .textSelection(.enabled)
+                                    }
                                 }
                             }
                         }

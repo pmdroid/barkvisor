@@ -43,6 +43,22 @@ struct WorkloadDetailTests {
         #expect(guest.listeningPorts?.last?.isInternal == true)
         #expect(guest.portsCollectedAt == "2026-08-18T00:00:00Z")
         #expect(guest.listeningPorts?.last?.displayLabel == "Dev")
+        #expect(guest.listeningPorts?.first?.isPublished == true)
+        #expect(guest.listeningPorts?.first?.openURL(guestIPs: ["192.168.64.12"]) == nil)
+        let http = GuestListeningPort(
+            proto: "tcp",
+            address: "0.0.0.0",
+            port: 80,
+            scope: "network",
+            label: "HTTP",
+            scheme: "http",
+        )
+        #expect(http.openURL(guestIPs: ["192.168.64.12"])?.absoluteString == "http://192.168.64.12")
+        #expect(http.isPublished)
+        let rpc = GuestListeningPort(
+            proto: "tcp", address: "0.0.0.0", port: 111, scope: "network", label: nil, scheme: nil,
+        )
+        #expect(!rpc.isPublished)
     }
 
     @Test func `empty listening ports is none not unavailable`() throws {
