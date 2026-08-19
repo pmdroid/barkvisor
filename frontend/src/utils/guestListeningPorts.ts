@@ -80,16 +80,13 @@ const preferredListChipPort: Record<ListServiceChipLabel, number> = {
 }
 
 /**
- * Bridged guest IPs are operator-reachable. NAT/isolated are not.
- * Unknown mode (member network not on This Device) follows the guest addresses.
+ * Guest IPs are operator-reachable only on bridged. Matches Overview
+ * (`currentNetwork.mode === 'bridged'`). Unknown / NAT / isolated stay false.
  */
 export function guestIpsReachableFromNetwork(
   networkMode: string | null | undefined,
-  guestIps: string[],
 ): boolean {
-  if (networkMode === 'bridged') return true
-  if (networkMode === 'nat' || networkMode === 'isolated') return false
-  return guestIps.some(isOperatorReachableGuestAddress)
+  return networkMode === 'bridged'
 }
 
 /**

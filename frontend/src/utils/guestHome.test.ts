@@ -162,9 +162,13 @@ describe('guestHome (PAS-201)', () => {
       portForwards: [],
     })).toEqual({ kind: 'empty' })
 
-    const chipsFn = readFileSync(join(here, '../views/VMListView.vue'), 'utf8')
-      .match(/function serviceChipsFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    const listSrc = readFileSync(join(here, '../views/VMListView.vue'), 'utf8')
+    const chipsFn = listSrc.match(/function serviceChipsFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
     expect(chipsFn).toMatch(/if \(row\.role !== 'self' && !row\.reachable\) return null/)
+    const modeFn = listSrc.match(/function networkModeFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(modeFn).toContain('deviceNetworks.networksFor(row.hostId)')
+    expect(modeFn).toMatch(/if \(row\.role === 'self'\) return networkMap/)
+    expect(listSrc).toContain('deviceNetworks.fetchFor(device)')
   })
 
   test('self NAT still shows localhost host ports; bridged uses guest IP', () => {

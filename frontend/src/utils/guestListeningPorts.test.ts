@@ -343,12 +343,12 @@ describe('guestListServiceChips (PAS-232)', () => {
     expect(JSON.stringify(memberNat)).not.toContain('localhost')
   })
 
-  test('unknown network mode follows operator-reachable guest IPs, never slirp', () => {
-    expect(guestIpsReachableFromNetwork('bridged', ['10.0.2.15'])).toBe(true)
-    expect(guestIpsReachableFromNetwork('nat', ['192.168.1.10'])).toBe(false)
-    expect(guestIpsReachableFromNetwork('isolated', ['192.168.1.10'])).toBe(false)
-    expect(guestIpsReachableFromNetwork(null, ['192.168.1.10'])).toBe(true)
-    expect(guestIpsReachableFromNetwork(undefined, ['10.0.2.15'])).toBe(false)
+  test('only bridged is operator-reachable; unknown mode is not a LAN guess', () => {
+    expect(guestIpsReachableFromNetwork('bridged')).toBe(true)
+    expect(guestIpsReachableFromNetwork('nat')).toBe(false)
+    expect(guestIpsReachableFromNetwork('isolated')).toBe(false)
+    expect(guestIpsReachableFromNetwork(null)).toBe(false)
+    expect(guestIpsReachableFromNetwork(undefined)).toBe(false)
   })
 
   test('duplicate HTTP listeners collapse to one chip preferring port 80', () => {

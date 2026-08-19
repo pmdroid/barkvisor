@@ -7,6 +7,7 @@ import { useToastStore } from '../stores/toast'
 import { useNetworkStore } from '../stores/networks'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import { useDeviceNetworksStore } from '../stores/deviceNetworks'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
@@ -42,6 +43,7 @@ const homeWorkloads = useDeviceWorkloadsStore()
 const devicesStore = useDevicesStore()
 const toast = useToastStore()
 const networkStore = useNetworkStore()
+const deviceNetworks = useDeviceNetworksStore()
 const { byId: networkMap } = storeToRefs(networkStore)
 const router = useRouter()
 const route = useRoute()
@@ -105,7 +107,10 @@ async function refreshHomeWorkloads() {
     await store.fetchAll()
     return
   }
-  await homeWorkloads.fetchHomeAll(list)
+  await Promise.all([
+    homeWorkloads.fetchHomeAll(list),
+    Promise.all(list.map((device) => deviceNetworks.fetchFor(device))),
+  ])
 }
 
 function guestDeviceForRow(row: HomeWorkloadRow) {
@@ -191,7 +196,11 @@ function ipPortsFor(row: HomeWorkloadRow) {
 
 function networkModeFor(row: HomeWorkloadRow) {
   if (!row.vm.networkId) return null
-  return networkMap.value[row.vm.networkId]?.mode ?? null
+  const fromHost = deviceNetworks.networksFor(row.hostId).find((n) => n.id === row.vm.networkId)
+  if (fromHost) return fromHost.mode
+  // This Device only: Home /networks is local. Members never use that map.
+  if (row.role === 'self') return networkMap.value[row.vm.networkId]?.mode ?? null
+  return null
 }
 
 function serviceChipsFor(row: HomeWorkloadRow) {
@@ -200,10 +209,7 @@ function serviceChipsFor(row: HomeWorkloadRow) {
   return guestListServiceChips({
     guest,
     isMember: row.role !== 'self',
-    guestIpsReachable: guestIpsReachableFromNetwork(
-      networkModeFor(row),
-      guest?.ipAddresses ?? [],
-    ),
+    guestIpsReachable: guestIpsReachableFromNetwork(networkModeFor(row)),
     portForwards: vmPortForwards(row.vm),
   })
 }
