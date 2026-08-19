@@ -149,8 +149,7 @@ public final class QMPClient: @unchecked Sendable {
                 readBuffer.removeSubrange(...nl)
                 if line.isEmpty { continue }
                 if let maxBytes, line.count > maxBytes {
-                    readBuffer.removeAll(keepingCapacity: false)
-                    throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
+                    try rejectOversizedResponse(maxBytes)
                 }
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: line) as? [String: Any] else {
@@ -167,8 +166,7 @@ public final class QMPClient: @unchecked Sendable {
             }
 
             if let maxBytes, readBuffer.count > maxBytes {
-                readBuffer.removeAll(keepingCapacity: false)
-                throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
+                try rejectOversizedResponse(maxBytes)
             }
 
             let n = read(fd, chunk, chunkSize)
@@ -183,9 +181,15 @@ public final class QMPClient: @unchecked Sendable {
             }
             readBuffer.append(chunk, count: n)
             if let maxBytes, readBuffer.count > maxBytes {
-                readBuffer.removeAll(keepingCapacity: false)
-                throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
+                try rejectOversizedResponse(maxBytes)
             }
         }
+    }
+
+    /// Drop the socket so a later command cannot read a truncated tail or a
+    /// leftover sibling message after we refused an oversized QMP frame.
+    private func rejectOversizedResponse(_ maxBytes: Int) throws -> Never {
+        disconnect()
+        throw BarkVisorError.monitorError("QMP response exceeded \(maxBytes) bytes")
     }
 }
