@@ -133,12 +133,17 @@ public enum LoginOfferService {
     }
 
     private static func advertisedHost(from input: IssueInput) throws -> String {
-        var candidates: [String] = []
-        if let host = input.advertisedHost {
-            candidates.append(host)
+        if let raw = input.advertisedHost {
+            guard let host = PairingPayload.sanitizeHost(raw) else {
+                throw BarkVisorError.badRequest(
+                    "Invalid advertised host. Use a LAN IP, unique local IPv6, "
+                        + "CGNAT address, or DNS name — not localhost, .internal, "
+                        + "or a public/metadata address.",
+                )
+            }
+            return host
         }
-        candidates.append(contentsOf: input.advertisedHosts)
-        if let host = candidates.compactMap(PairingPayload.sanitizeHost).first {
+        if let host = input.advertisedHosts.compactMap(PairingPayload.sanitizeHost).first {
             return host
         }
         throw BarkVisorError.badRequest(

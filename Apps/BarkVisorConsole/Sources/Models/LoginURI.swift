@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
 
 /// Phone sign-in URI. Distinct from pairing (`barkvisor://pair/v1`).
 enum LoginURI {
@@ -13,7 +18,8 @@ enum LoginURI {
         var port: Int
 
         var deviceURL: String {
-            "http://\(host):\(port)"
+            let wrapped = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+            return "http://\(wrapped):\(port)"
         }
     }
 
@@ -48,7 +54,7 @@ enum LoginURI {
         guard let code = query["code"], !code.isEmpty else {
             throw APIError.http(status: 400, reason: "Sign-in QR is missing a code")
         }
-        guard let host = query["host"], isAllowedHost(host) else {
+        guard let hostRaw = query["host"], let host = sanitizeHost(hostRaw) else {
             throw APIError.http(status: 400, reason: "Sign-in QR has an invalid host")
         }
         guard let portRaw = query["port"], let port = Int(portRaw), (1 ... 65_535).contains(port) else {
@@ -57,29 +63,79 @@ enum LoginURI {
         return Payload(code: code, host: host, port: port)
     }
 
-    /// Same advertised-host allow-list as pairing (PAS-226).
+    /// Same advertised-host allow-list as `PairingPayload.sanitizeHost`.
     static func isAllowedHost(_ raw: String) -> Bool {
-        let host = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !host.isEmpty, host.count <= 253 else { return false }
-        if host.contains(where: { $0 == "/" || $0 == "@" || $0 == "\\" || $0.isWhitespace }) {
-            return false
+        sanitizeHost(raw) != nil
+    }
+
+    static func sanitizeHost(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 253 else { return nil }
+        if trimmed.contains(where: { $0 == "/" || $0 == "@" || $0 == "\\" || $0.isWhitespace }) {
+            return nil
         }
-        if host.contains("://") { return false }
-        if host == "localhost" || host.hasPrefix("localhost.") { return false }
-        if host == "metadata" || host == "metadata.google.internal" || host.hasSuffix(".internal") {
-            return false
+        if trimmed.contains("://") { return nil }
+        if isBlockedJoinHost(trimmed) { return nil }
+        return trimmed
+    }
+
+    private static func isBlockedJoinHost(_ raw: String) -> Bool {
+        let host = raw.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        if host == "localhost" || host.hasPrefix("localhost.") { return true }
+        if host == "metadata" || host == "metadata.google.internal" { return true }
+        if host.hasSuffix(".internal") { return true }
+        if let octets = parseIPv4Octets(host) {
+            return !isAllowedJoinIPv4(octets)
         }
-        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-        if parts.count == 4, parts.allSatisfy({ UInt8($0) != nil }) {
-            let octets = parts.compactMap { UInt8($0) }
-            guard octets.count == 4 else { return false }
-            if octets == [100, 100, 100, 200] { return false }
-            if octets[0] == 10 { return true }
-            if octets[0] == 192, octets[1] == 168 { return true }
-            if octets[0] == 172, (16 ... 31).contains(octets[1]) { return true }
-            if octets[0] == 100, (64 ... 127).contains(octets[1]) { return true }
-            return false
+        if let addr = parseIPv6(host) {
+            return isBlockedJoinIPv6(addr)
         }
-        return host.contains(".")
+        return false
+    }
+
+    private static func isAllowedJoinIPv4(_ parts: (UInt8, UInt8, UInt8, UInt8)) -> Bool {
+        if parts == (100, 100, 100, 200) { return false }
+        if parts.0 == 10 { return true }
+        if parts.0 == 172, (16 ... 31).contains(parts.1) { return true }
+        if parts.0 == 192, parts.1 == 168 { return true }
+        if parts.0 == 100, (64 ... 127).contains(parts.1) { return true }
+        return false
+    }
+
+    private static func isBlockedJoinIPv6(_ addr: in6_addr) -> Bool {
+        withUnsafeBytes(of: addr) { raw in
+            let bytes = Array(raw)
+            guard bytes.count == 16 else { return true }
+            if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xFF, bytes[11] == 0xFF {
+                return !isAllowedJoinIPv4((bytes[12], bytes[13], bytes[14], bytes[15]))
+            }
+            let isULA = (bytes[0] & 0xFE) == 0xFC
+            if isULA {
+                if bytes[0] == 0xFD, bytes[1] == 0x00, bytes[2] == 0x0E, bytes[3] == 0xC2 {
+                    return true
+                }
+                return false
+            }
+            return true
+        }
+    }
+
+    private static func parseIPv4Octets(_ host: String) -> (UInt8, UInt8, UInt8, UInt8)? {
+        var addr = in_addr()
+        guard host.withCString({ inet_aton($0, &addr) }) == 1 else { return nil }
+        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else {
+            return nil
+        }
+        let canonical = String(cString: buf)
+        let parts = canonical.split(separator: ".").compactMap { UInt8($0) }
+        guard parts.count == 4 else { return nil }
+        return (parts[0], parts[1], parts[2], parts[3])
+    }
+
+    private static func parseIPv6(_ host: String) -> in6_addr? {
+        var addr = in6_addr()
+        guard host.withCString({ inet_pton(AF_INET6, $0, &addr) }) == 1 else { return nil }
+        return addr
     }
 }

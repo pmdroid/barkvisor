@@ -50,8 +50,19 @@ struct SessionTests {
         #expect(LoginURI.isAllowedHost("172.16.1.2"))
         #expect(LoginURI.isAllowedHost("100.64.0.8"))
         #expect(LoginURI.isAllowedHost("box.home.example"))
+        #expect(LoginURI.isAllowedHost("nas"))
+        #expect(LoginURI.isAllowedHost("fd12:3456:789a::1"))
         #expect(!LoginURI.isAllowedHost("1.1.1.1"))
         #expect(!LoginURI.isAllowedHost("localhost"))
+        #expect(!LoginURI.isAllowedHost("127.1"))
+        #expect(!LoginURI.isAllowedHost("fd00:ec2::254"))
+        let named = try LoginURI.parse("barkvisor://login/v1?code=ABCD-EFGH&host=nas&port=7777")
+        #expect(named.host == "nas")
+        let ula = try LoginURI.parse(
+            "barkvisor://login/v1?code=ABCD-EFGH&host=fd12:3456:789a::1&port=7777",
+        )
+        #expect(ula.host == "fd12:3456:789a::1")
+        #expect(ula.deviceURL == "http://[fd12:3456:789a::1]:7777")
     }
 
     @Test func `device url origin compare is host and port only`() throws {
