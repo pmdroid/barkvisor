@@ -238,6 +238,324 @@ struct WebSocketHopTests {
     }
 }
 
+@Suite("Serial console hop (PAS-233)", .serialized)
+struct SerialConsoleHopTests {
+    private static let ticket = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+    @Test func `two subscribers get scrollback and live output`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        serial.write("boot\n")
+        try await waitUntil { await fixture.buffers.scrollback(vmID: fixture.vmID).count == 5 }
+
+        let first = FakeHopPeer()
+        let second = FakeHopPeer()
+        let firstTask = Task {
+            await WebSocketHop.run(
+                inbound: first,
+                farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            )
+        }
+        let secondTask = Task {
+            await WebSocketHop.run(
+                inbound: second,
+                farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            )
+        }
+        try await waitUntil { first.sentBinaryByteCount() == 5 && second.sentBinaryByteCount() == 5 }
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 2)
+
+        serial.write("live\n")
+        try await waitUntil { first.sentBinaryByteCount() == 10 && second.sentBinaryByteCount() == 10 }
+        #expect(first.sentBinaryStrings() == ["boot\n", "live\n"])
+        #expect(second.sentBinaryStrings() == ["boot\n", "live\n"])
+
+        first.close()
+        try await waitUntil { await fixture.buffers.listenerCount(vmID: fixture.vmID) == 1 }
+        serial.write("more\n")
+        try await waitUntil { second.sentBinaryByteCount() == 15 }
+        #expect(first.sentBinaryStrings() == ["boot\n", "live\n"])
+        #expect(second.sentBinaryStrings() == ["boot\n", "live\n", "more\n"])
+
+        second.close()
+        await firstTask.value
+        await secondTask.value
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `inbound already closed does not subscribe`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        _ = try await fixture.attachBuffer()
+        let inbound = FakeHopPeer()
+        inbound.close()
+        await WebSocketHop.run(
+            inbound: inbound,
+            farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+        )
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 0)
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `scrollback overflow closes that client only`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        serial.write("123456789")
+        try await waitUntil { await fixture.buffers.scrollback(vmID: fixture.vmID).count == 9 }
+
+        let overflowed = FakeHopPeer()
+        await WebSocketHop.run(
+            inbound: overflowed,
+            farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            maxPendingBytes: 8,
+        )
+        #expect(overflowed.isClosed)
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 0)
+
+        let healthy = FakeHopPeer()
+        let task = Task {
+            await WebSocketHop.run(
+                inbound: healthy,
+                farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            )
+        }
+        try await waitUntil { healthy.sentBinaryByteCount() == 9 }
+        #expect(!healthy.isClosed)
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 1)
+        healthy.close()
+        await task.value
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `serial socket close closes subscribed hops`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        let inbound = FakeHopPeer()
+        let task = Task {
+            await WebSocketHop.run(
+                inbound: inbound,
+                farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            )
+        }
+        try await waitUntil { await fixture.buffers.listenerCount(vmID: fixture.vmID) == 1 }
+        serial.channel.close(promise: nil)
+        try await waitUntil { inbound.isClosed }
+        await task.value
+        #expect(inbound.isClosed)
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `client bytes reach the serial socket`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        let inbound = FakeHopPeer()
+        let task = Task {
+            await WebSocketHop.run(
+                inbound: inbound,
+                farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            )
+        }
+        try await waitUntil { await fixture.buffers.listenerCount(vmID: fixture.vmID) == 1 }
+        inbound.inject(.text("hi"))
+        try await waitUntil { serial.received() == "hi" }
+        #expect(serial.received() == "hi")
+        inbound.close()
+        await task.value
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `live serial bytes during hop attach are not dropped`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        serial.write("boot\n")
+        try await waitUntil { await fixture.buffers.scrollback(vmID: fixture.vmID).count == 5 }
+
+        let inbound = FakeHopPeer()
+        let task = Task {
+            await WebSocketHop.run(
+                inbound: inbound,
+                farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+            )
+        }
+        serial.write("live\n")
+        try await waitUntil {
+            inbound.sentBinaryByteCount() == 10 && inbound.sentBinaryStrings().joined() == "boot\nlive\n"
+        }
+        #expect(inbound.sentBinaryStrings().joined() == "boot\nlive\n")
+        inbound.close()
+        await task.value
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `hop after serial close replays then closes`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        serial.write("boot\n")
+        try await waitUntil { await fixture.buffers.scrollback(vmID: fixture.vmID).count == 5 }
+        serial.channel.close(promise: nil)
+        try await waitUntil { await fixture.buffers.isSerialLive(vmID: fixture.vmID) == false }
+
+        let inbound = FakeHopPeer()
+        await WebSocketHop.run(
+            inbound: inbound,
+            farEnd: ConsoleBufferHopFarEnd(buffers: fixture.buffers, vmID: fixture.vmID),
+        )
+        #expect(inbound.isClosed)
+        #expect(inbound.sentBinaryStrings() == ["boot\n"])
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 0)
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `agent hop rejects a buffer whose serial never connected`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        await fixture.buffers.attach(
+            vmID: fixture.vmID,
+            serialSocketPath: "/tmp/barkvisor-missing-serial-\(fixture.vmID)",
+        )
+        #expect(await fixture.buffers.isAttached(vmID: fixture.vmID))
+        #expect(await fixture.buffers.isSerialLive(vmID: fixture.vmID) == false)
+
+        let inbound = FakeHopPeer()
+        let proxy = AgentLocalProxyController(
+            vmState: FakeVMState(serialPath: fixture.path),
+            consoleBuffers: fixture.buffers,
+        )
+        await proxy.tunnel(
+            inbound: inbound,
+            vmID: fixture.vmID,
+            kind: .console,
+            query: "ticket=\(Self.ticket)",
+        )
+        #expect(inbound.isClosed)
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 0)
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `agent hop rejects a buffer after serial close`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        serial.channel.close(promise: nil)
+        try await waitUntil { await fixture.buffers.isSerialLive(vmID: fixture.vmID) == false }
+
+        let inbound = FakeHopPeer()
+        let proxy = AgentLocalProxyController(
+            vmState: FakeVMState(serialPath: fixture.path),
+            consoleBuffers: fixture.buffers,
+        )
+        await proxy.tunnel(
+            inbound: inbound,
+            vmID: fixture.vmID,
+            kind: .console,
+            query: "ticket=\(Self.ticket)",
+        )
+        #expect(inbound.isClosed)
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 0)
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+
+    @Test func `agent serial hop uses the buffer not a second unix client`() async throws {
+        let fixture = try await SerialHopFixture.make()
+        defer { fixture.shutdown() }
+        let serial = try await fixture.attachBuffer()
+        serial.write("boot\n")
+        try await waitUntil { await fixture.buffers.scrollback(vmID: fixture.vmID).count == 5 }
+
+        let inbound = FakeHopPeer()
+        let proxy = AgentLocalProxyController(
+            vmState: FakeVMState(serialPath: fixture.path),
+            consoleBuffers: fixture.buffers,
+        )
+        let task = Task {
+            await proxy.tunnel(
+                inbound: inbound,
+                vmID: fixture.vmID,
+                kind: .console,
+                query: "ticket=\(Self.ticket)",
+            )
+        }
+        try await waitUntil { inbound.sentBinaryByteCount() == 5 }
+        #expect(await fixture.buffers.listenerCount(vmID: fixture.vmID) == 1)
+        inbound.close()
+        await task.value
+        await fixture.buffers.detach(vmID: fixture.vmID)
+    }
+}
+
+private struct SerialHopFixture {
+    let path: String
+    let unix: UnixHopFixture
+    let buffers: ConsoleBufferManager
+    let vmID: String
+
+    static func make() async throws -> SerialHopFixture {
+        let unix = try await UnixHopFixture.make()
+        return SerialHopFixture(
+            path: unix.path,
+            unix: unix,
+            buffers: ConsoleBufferManager(),
+            vmID: UUID().uuidString,
+        )
+    }
+
+    func attachBuffer() async throws -> SerialSocket {
+        await buffers.attach(vmID: vmID, serialSocketPath: path)
+        let channel = try await unix.takeAccepted()
+        let collector = ByteCollectHandler()
+        try await channel.pipeline.addHandler(collector).get()
+        return SerialSocket(channel: channel, collector: collector)
+    }
+
+    func shutdown() {
+        unix.shutdown()
+    }
+}
+
+private struct SerialSocket {
+    let channel: Channel
+    let collector: ByteCollectHandler
+
+    func write(_ text: String) {
+        let channel = channel
+        let buffer = byteBuffer(text)
+        channel.eventLoop.execute {
+            channel.writeAndFlush(buffer, promise: nil)
+        }
+    }
+
+    func received() -> String {
+        collector.text()
+    }
+}
+
+private final class ByteCollectHandler: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = ByteBuffer
+    private let lock = NSLock()
+    private var bytes = Data()
+
+    func channelRead(context _: ChannelHandlerContext, data: NIOAny) {
+        var buffer = unwrapInboundIn(data)
+        if let chunk = buffer.readBytes(length: buffer.readableBytes) {
+            lock.lock()
+            bytes.append(contentsOf: chunk)
+            lock.unlock()
+        }
+    }
+
+    func text() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(data: bytes, encoding: .utf8) ?? ""
+    }
+}
+
 private func byteBuffer(_ text: String) -> ByteBuffer {
     var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
     buffer.writeString(text)
@@ -245,11 +563,11 @@ private func byteBuffer(_ text: String) -> ByteBuffer {
 }
 
 private func waitUntil(
-    _ predicate: @escaping @Sendable () -> Bool,
+    _ predicate: @escaping @Sendable () async -> Bool,
     nanoseconds: UInt64 = 2_000_000_000,
 ) async throws {
     let deadline = DispatchTime.now().uptimeNanoseconds + nanoseconds
-    while !predicate() {
+    while await !predicate() {
         if DispatchTime.now().uptimeNanoseconds > deadline {
             throw BarkVisorError.timeout("hop seam")
         }
