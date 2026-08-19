@@ -82,6 +82,8 @@ enum WebSocketHop {
         toRemote.maxPendingBytes = maxPendingBytes
         let toClient = WebSocketPipeBox()
         toClient.maxPendingBytes = maxPendingBytes
+        toRemote.onOverflow = { logOverflow(logTarget) }
+        toClient.onOverflow = { logOverflow(logTarget) }
         let lifetime = HopLifetime()
 
         inbound.capture(into: toRemote)

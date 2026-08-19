@@ -97,6 +97,22 @@ struct WebSocketHopTests {
         #expect(remote.isClosed)
     }
 
+    @Test func `live overflow after attach closes both ends`() {
+        let inbound = FakeHopPeer()
+        let remote = FakeHopPeer()
+        let flag = OverflowFlag()
+        let toRemote = WebSocketPipeBox()
+        toRemote.maxPendingBytes = 8
+        toRemote.onOverflow = { flag.fired = true }
+        inbound.capture(into: toRemote)
+        toRemote.attach(remote)
+        inbound.inject(.text("123456789"))
+        #expect(flag.fired)
+        #expect(inbound.isClosed)
+        #expect(toRemote.overflowed)
+        remote.close()
+    }
+
     @Test func `default cap holds a one-megabyte VNC banner`() async {
         var buffer = ByteBufferAllocator().buffer(capacity: 1_000_000)
         buffer.writeRepeatingByte(0x41, count: 1_000_000)
@@ -517,6 +533,10 @@ private final class UnixAcceptBox: ChannelInboundHandler, @unchecked Sendable {
     func channelActive(context: ChannelHandlerContext) {
         offer(context.channel)
     }
+}
+
+private final class OverflowFlag: @unchecked Sendable {
+    var fired = false
 }
 
 private struct FakeVMState: VMStateQuerying {

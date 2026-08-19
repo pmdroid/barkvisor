@@ -25,6 +25,8 @@ final class WebSocketPipeBox: @unchecked Sendable {
     private var pendingBytes = 0
     var maxPendingBytes = WebSocketPipeBox.defaultMaxPendingBytes
     private(set) var overflowed = false
+    /// Fired once, off the lock, when pending bytes first exceed the cap.
+    var onOverflow: (@Sendable () -> Void)?
 
     func attach(_ peer: any WebSocketHopPeer) {
         while true {
@@ -47,24 +49,25 @@ final class WebSocketPipeBox: @unchecked Sendable {
 
     func sendOrBuffer(_ frame: Frame) -> Bool {
         let frame = Self.owned(frame)
-        let outcome: ((any WebSocketHopPeer)?, Bool) = {
+        let outcome: ((any WebSocketHopPeer)?, Bool, Bool) = {
             lock.lock()
             defer { lock.unlock() }
-            if overflowed { return (nil, false) }
+            if overflowed { return (nil, false, false) }
             if let remote {
-                return (remote, true)
+                return (remote, true, false)
             }
             let size = Self.byteCount(frame)
             if pendingBytes + size > maxPendingBytes {
                 overflowed = true
                 pending.removeAll()
                 pendingBytes = 0
-                return (nil, false)
+                return (nil, false, true)
             }
             pending.append(frame)
             pendingBytes += size
-            return (nil, true)
+            return (nil, true, false)
         }()
+        if outcome.2 { notifyOverflow() }
         if let peer = outcome.0 {
             return sendLive(frame, on: peer)
         }
@@ -87,26 +90,31 @@ final class WebSocketPipeBox: @unchecked Sendable {
     @discardableResult
     private func sendLive(_ frame: Frame, on peer: any WebSocketHopPeer) -> Bool {
         let size = Self.byteCount(frame)
-        let reserved: Bool = {
+        let reserved: (ok: Bool, overflowedNow: Bool) = {
             lock.lock()
             defer { lock.unlock() }
-            if overflowed { return false }
+            if overflowed { return (false, false) }
             if remote != nil, pendingBytes + size > maxPendingBytes {
                 overflowed = true
-                return false
+                return (false, true)
             }
             if remote != nil {
                 pendingBytes += size
             }
-            return true
+            return (true, false)
         }()
-        guard reserved else { return false }
+        if reserved.overflowedNow { notifyOverflow() }
+        guard reserved.ok else { return false }
         peer.send(frame) { [self] in
             lock.lock()
             pendingBytes = max(0, pendingBytes - size)
             lock.unlock()
         }
         return true
+    }
+
+    private func notifyOverflow() {
+        onOverflow?()
     }
 
     private static func byteCount(_ frame: Frame) -> Int {
