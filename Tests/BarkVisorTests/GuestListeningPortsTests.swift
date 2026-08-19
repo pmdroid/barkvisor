@@ -238,6 +238,71 @@ struct GuestListeningPortsTests {
         #expect(compactPorts.first { $0.port == 443 }?.label == "HTTPS")
     }
 
+    @Test func `localized windows netstat listen rows are not dropped`() {
+        let german = """
+        Aktive Verbindungen
+
+          Proto  Lokale Adresse          Remoteadresse           Status
+          TCP    0.0.0.0:22             0.0.0.0:0              ABHÖREN       4120
+          TCP    127.0.0.1:3000         0.0.0.0:0              ABHÖREN       5678
+          TCP    [::]:80                [::]:0                 ABHÖREN       4
+          TCP    192.168.1.50:49812     13.107.5.93:443        HERGESTELLT   2000
+          UDP    0.0.0.0:500            *:*                                    1234
+        """
+        let ports = GuestListeningPorts.parseWindowsOutput(german)
+        #expect(Set(ports.map(\.port)) == [22, 80, 3_000])
+        #expect(ports.contains { $0.port == 49_812 } == false)
+        #expect(GuestListeningPorts.isListenState("ABHÖREN"))
+        #expect(GuestListeningPorts.isListenState("ÉCOUTE"))
+        #expect(!GuestListeningPorts.isListenState("HERGESTELLT"))
+        #expect(!GuestListeningPorts.isListenState("ESTABLISHED"))
+    }
+
+    @Test func `empty windows parse falls through to later snapshots`() {
+        var laterCalls = 0
+        let germanNoEnglish = """
+          TCP    0.0.0.0:135            0.0.0.0:0              ABHÖREN       892
+        """
+        let powershellEnglish = """
+        0.0.0.0 443 LISTEN
+        127.0.0.1 5173 LISTEN
+        """
+        let establishedOnly = """
+          TCP    192.168.1.50:49812     13.107.5.93:443        ESTABLISHED     2000
+        """
+
+        let skippedEmpty = GuestListeningPorts.firstNonEmptyWindowsParse([
+            { establishedOnly },
+            {
+                laterCalls += 1
+                return powershellEnglish
+            },
+        ])
+        #expect(Set(skippedEmpty?.map(\.port) ?? []) == [443, 5_173])
+        #expect(laterCalls == 1)
+
+        laterCalls = 0
+        let germanFirst = GuestListeningPorts.firstNonEmptyWindowsParse([
+            { germanNoEnglish },
+            {
+                laterCalls += 1
+                return powershellEnglish
+            },
+        ])
+        #expect(germanFirst?.map(\.port) == [135])
+        #expect(laterCalls == 0)
+
+        #expect(GuestListeningPorts.firstNonEmptyWindowsParse([
+            { nil },
+            { nil },
+        ]) == nil)
+        let emptySuccess = GuestListeningPorts.firstNonEmptyWindowsParse([
+            { establishedOnly },
+        ])
+        #expect(emptySuccess != nil)
+        #expect(emptySuccess?.isEmpty == true)
+    }
+
     @Test func `windows guest hint skips unix collect path`() {
         #expect(GuestListeningPorts.looksLikeWindows("mswindows Microsoft Windows"))
         #expect(GuestListeningPorts.looksLikeWindows("windows-amd64"))
