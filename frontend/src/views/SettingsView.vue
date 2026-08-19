@@ -9,8 +9,10 @@ import { useSSHKeyStore } from '../stores/sshKeys'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useFeature } from '../composables/useFeature'
 import {
+  CUSTOM_ADVERTISED_HOST,
   getPairingCode,
   issuePairingCode,
+  issuedAdvertisedHost,
   joinHome,
   isPairingPayload,
   revokePairingCode,
@@ -19,7 +21,7 @@ import {
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
-import { isCurrentPairingSeq, pairingExpiryLabel } from '../utils/pairingOffer'
+import { isCurrentPairingSeq, nextPairingLoadSeq, pairingExpiryLabel } from '../utils/pairingOffer'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -40,9 +42,35 @@ const pairingHydrating = ref(false)
 const pairingSeq = ref(0)
 const pairingNow = ref(Date.now())
 const pairingCopied = ref(false)
+const selectedHost = ref('')
+const customHost = ref('')
 const rejoinPayload = ref('')
 const rejoinLoading = ref(false)
 let pairingTick: ReturnType<typeof setInterval> | null = null
+
+const hostOptions = computed(() => {
+  const hosts = pairingOffer.value?.advertisedHosts ?? []
+  return [
+    ...hosts.map((host) => ({ value: host, label: host })),
+    { value: CUSTOM_ADVERTISED_HOST, label: 'Other / DNS name…' },
+  ]
+})
+
+function syncPickerFromOffer(offer: PairingIssue | null) {
+  if (!offer) {
+    selectedHost.value = ''
+    customHost.value = ''
+    return
+  }
+  const host = issuedAdvertisedHost(offer)
+  if (host && offer.advertisedHosts.includes(host)) {
+    selectedHost.value = host
+    customHost.value = ''
+    return
+  }
+  selectedHost.value = CUSTOM_ADVERTISED_HOST
+  customHost.value = host ?? ''
+}
 
 function startPairingTick() {
   if (pairingTick != null) return
@@ -64,12 +92,15 @@ watch(pairingOffer, (offer) => {
 })
 
 async function loadPairingCode() {
-  const seq = pairingSeq.value
+  const seq = nextPairingLoadSeq(pairingLoading.value, pairingSeq.value)
+  if (seq == null) return
+  pairingSeq.value = seq
   pairingHydrating.value = true
   try {
     const loaded = await getPairingCode()
     if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
     pairingOffer.value = loaded
+    syncPickerFromOffer(loaded)
   } catch (e: unknown) {
     if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
     toast.error(apiErrorMessage(e))
@@ -85,18 +116,50 @@ function openHomeTab() {
   devicesStore.fetchHealth()
 }
 
-async function addDevice() {
+async function issueOffer(advertisedHost?: string, success?: string) {
   pairingSeq.value += 1
+  const seq = pairingSeq.value
   pairingHydrating.value = false
   pairingLoading.value = true
   try {
-    pairingOffer.value = await issuePairingCode()
-    toast.success(`Add a ${DEVICE_LABEL} with this pairing code`)
+    const issued = await issuePairingCode(advertisedHost)
+    if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
+    pairingOffer.value = issued
+    syncPickerFromOffer(issued)
+    if (success) toast.success(success)
   } catch (e: unknown) {
+    if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
     toast.error(apiErrorMessage(e))
+    if (advertisedHost !== undefined) {
+      pairingOffer.value = null
+    }
+    syncPickerFromOffer(pairingOffer.value)
   } finally {
-    pairingLoading.value = false
+    if (isCurrentPairingSeq(seq, pairingSeq.value)) pairingLoading.value = false
   }
+}
+
+async function addDevice() {
+  await issueOffer(undefined, `Add a ${DEVICE_LABEL} with this pairing code`)
+}
+
+function onAdvertisedHostChange(value: string) {
+  selectedHost.value = value
+  if (value === CUSTOM_ADVERTISED_HOST) return
+  const current = pairingOffer.value ? issuedAdvertisedHost(pairingOffer.value) : null
+  if (value === current) return
+  void issueOffer(value, 'New pairing code for this address')
+}
+
+async function applyCustomHost() {
+  const host = customHost.value.trim()
+  if (!host) {
+    toast.error(`Enter a DNS name or IP the new ${DEVICE_LABEL} can reach.`)
+    return
+  }
+  const current = pairingOffer.value ? issuedAdvertisedHost(pairingOffer.value) : null
+  if (host === current) return
+  await issueOffer(host, 'New pairing code for this address')
 }
 
 async function revokeDeviceCode() {
@@ -106,6 +169,7 @@ async function revokeDeviceCode() {
   try {
     await revokePairingCode()
     pairingOffer.value = null
+    syncPickerFromOffer(null)
     toast.success('Pairing code revoked')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
@@ -613,10 +677,43 @@ onUnmounted(() => {
     />
 
     <div v-else class="pairing-card">
+      <ol class="pairing-steps">
+        <li>Pick the address the new {{ DEVICE_LABEL }} can reach (LAN IP or DNS name).</li>
+        <li>Copy the full <code>barkvisor://</code> offer, not only the short code.</li>
+        <li>
+          On the new {{ DEVICE_LABEL }}, choose Join an existing {{ HOME_LABEL }} or run
+          <code>barkvisor join --code</code>.
+        </li>
+        <li>The offer expires. Revoke it if you are not going to use it.</li>
+      </ol>
+      <div class="pairing-host">
+        <label for="pairing-advertised-host">Address in this offer</label>
+        <AppSelect
+          :modelValue="selectedHost"
+          :options="hostOptions"
+          :disabled="pairingLoading"
+          @update:modelValue="onAdvertisedHostChange"
+        />
+        <div v-if="selectedHost === CUSTOM_ADVERTISED_HOST" class="pairing-custom">
+          <input
+            v-model="customHost"
+            class="pairing-input"
+            type="text"
+            placeholder="hostname or DNS name"
+            autocomplete="off"
+            spellcheck="false"
+            :disabled="pairingLoading"
+            @keydown.enter.prevent="applyCustomHost"
+          />
+          <AppButton size="sm" :loading="pairingLoading" @click="applyCustomHost">
+            Use this address
+          </AppButton>
+        </div>
+      </div>
       <div class="pairing-code">{{ pairingOffer.code }}</div>
       <p class="pairing-meta">{{ pairingExpiryLabel(pairingOffer.expiresAt, pairingNow) }}</p>
       <p class="pairing-hint">
-        Paste the full pairing code below on the new {{ DEVICE_LABEL }}. This
+        Changing the address issues a new code and offer. This
         {{ DEVICE_LABEL }} still runs if that {{ DEVICE_LABEL }} is unreachable.
       </p>
       <pre class="pairing-uri">{{ pairingOffer.qrPayload }}</pre>
@@ -1107,6 +1204,37 @@ onUnmounted(() => {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-align: center;
+}
+.pairing-steps {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+.pairing-steps li + li {
+  margin-top: 6px;
+}
+.pairing-host {
+  text-align: left;
+  margin-bottom: 14px;
+}
+.pairing-host label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.pairing-custom {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.pairing-custom .pairing-input {
+  flex: 1;
+  resize: none;
 }
 .pairing-meta,
 .pairing-hint {

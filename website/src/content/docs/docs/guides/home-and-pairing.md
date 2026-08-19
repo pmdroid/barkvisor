@@ -25,20 +25,24 @@ On a Device that already finished setup:
 
 1. Open the dashboard (`http://<this-device>:7777`).
 2. Go to **Settings → Home → Add a Device**.
-3. Copy the **full** pairing offer. It looks like `barkvisor://pair/v1?…`.
-4. The short printed code alone is not enough.
+3. Pick the address the new Device can reach: a listed LAN IP, or **Other / DNS name…** for a name the joiner can resolve.
+4. Copy the **full** pairing offer (`barkvisor://pair/v1?…`). The short printed code alone is not enough.
 
-The offer expires. If join fails, issue a new one.
+The chosen address is the `host=` in that offer. Changing the address issues a new code and resets the expiry. The offer expires; Revoke it if unused.
+
+Join redeem is HTTP on `:7777`. Allowed addresses are RFC1918, IPv6 unique-local, and CGNAT `100.64.0.0/10`. Loopback, link-local, public IPs, and metadata (`169.254.169.254`, `100.100.100.200`) stay blocked. A name is resolved on the joining Device, not when the offer is issued.
+
+Older joiners that only accept RFC1918 still reject a `100.64/10` offer. Upgrade the joining Device, or pick a LAN IP both sides can reach.
 
 ## Join from the setup wizard
 
 On the new Device, open `http://localhost:7777` (or that host’s LAN IP) before an admin account exists.
 
-1. Choose **Join an existing Home**.
-2. Paste the full `barkvisor://pair/v1?…` offer.
-3. Finish setup if the wizard still asks for a local admin (the Home login is what you use afterward).
+1. On the other Device, pick the address this Device can reach and copy the full `barkvisor://pair/v1?…` offer.
+2. Choose **Join an existing Home** and paste that offer.
+3. Join. Finish setup if the wizard still asks for a local admin (the Home login is what you use afterward). On an API-only Device, use `barkvisor join --code` instead.
 
-This Device still starts if the other Device later goes down.
+This Device still starts if the other Device later goes down. Unauthenticated join during setup is console-local (`127.0.0.1` only).
 
 ## Join from the CLI (API-only / worker)
 

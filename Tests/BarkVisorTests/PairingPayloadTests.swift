@@ -159,4 +159,59 @@ struct PairingPayloadTests {
         ]
         #expect(PairingAddresses.advertisedIPv4(from: ifaces) == ["192.168.0.4"])
     }
+
+    @Test func `advertised addresses include ULA and drop blocked IPv6`() {
+        let ifaces = [
+            HostInterfaceInfo(name: "lo0", ipAddress: "127.0.0.1"),
+            HostInterfaceInfo(name: "lo0", ipAddress: "::1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "192.168.0.4"),
+            HostInterfaceInfo(name: "en0", ipAddress: "fd12:3456:789a::1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "fe80::1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "fd00:ec2::254"),
+            HostInterfaceInfo(name: "en0", ipAddress: "2001:db8::1"),
+        ]
+        #expect(
+            PairingAddresses.advertisedIPv4(from: ifaces) == [
+                "192.168.0.4",
+                "fd12:3456:789a::1",
+            ],
+        )
+    }
+
+    @Test func `join host policy allows CGNAT and carves out metadata`() throws {
+        #expect(!PairingPayload.isBlockedJoinHost("100.64.0.1"))
+        #expect(!PairingPayload.isBlockedJoinHost("100.127.255.254"))
+        #expect(!PairingPayload.isBlockedJoinHost("::ffff:100.64.0.1"))
+        #expect(PairingPayload.sanitizeHost("100.64.0.1") == "100.64.0.1")
+        #expect(PairingPayload.isBlockedJoinHost("100.63.255.255"))
+        #expect(PairingPayload.isBlockedJoinHost("100.128.0.0"))
+        #expect(PairingPayload.isBlockedJoinHost("100.100.100.200"))
+        #expect(PairingPayload.isBlockedJoinHost("::ffff:100.100.100.200"))
+        #expect(PairingPayload.sanitizeHost("100.100.100.200") == nil)
+        #expect(PairingPayload.isBlockedJoinHost("169.254.1.1"))
+        #expect(PairingPayload.isBlockedJoinHost("127.0.0.1"))
+        #expect(PairingPayload.isBlockedJoinHost("8.8.8.8"))
+        #expect(!PairingPayload.isConsoleLocalClient("100.64.0.1"))
+        #expect(PairingPayload.hostResolvesToBlockedAddress("100.100.100.200"))
+        #expect(PairingPayload.hostResolvesToBlockedAddress("127.0.0.1"))
+        #expect(PairingPayload.hostResolvesToBlockedAddress("8.8.8.8"))
+        #expect(!PairingPayload.hostResolvesToBlockedAddress("100.64.0.1"))
+        let cgnat = try PairingPayload.redeemURL(host: "100.64.0.1", port: 7_777)
+        #expect(cgnat.host == "100.64.0.1")
+        #expect(throws: PairingError.self) {
+            try PairingPayload.redeemURL(host: "100.100.100.200", port: 7_777)
+        }
+        #expect(PairingPayload.sanitizeHost("machine.example.ts.net") == "machine.example.ts.net")
+        #expect(PairingPayload.sanitizeHost("localhost") == nil)
+        #expect(PairingPayload.sanitizeHost("foo.internal") == nil)
+        #expect(PairingPayload.sanitizeHost("evil.example/path") == nil)
+        #expect(PairingPayload.sanitizeHost("has space") == nil)
+        let ifaces = [
+            HostInterfaceInfo(name: "lo0", ipAddress: "127.0.0.1"),
+            HostInterfaceInfo(name: "en0", ipAddress: "192.168.0.4"),
+            HostInterfaceInfo(name: "tun0", ipAddress: "100.64.12.34"),
+            HostInterfaceInfo(name: "meta", ipAddress: "100.100.100.200"),
+        ]
+        #expect(PairingAddresses.advertisedIPv4(from: ifaces) == ["192.168.0.4", "100.64.12.34"])
+    }
 }

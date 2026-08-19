@@ -490,6 +490,7 @@ struct PairingIssue: Decodable, Hashable {
     var caFingerprint: String
     var port: Int
     var agentPort: Int
+    var advertisedHost: String?
     var advertisedHosts: [String]
     var apiVersion: Int
 }

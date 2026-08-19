@@ -61,6 +61,10 @@ public enum PairingService {
         _ input: IssueInput,
         offers: PairingOfferStore? = nil,
     ) throws -> PairingIssueResponse {
+        let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
+        if let raw = input.advertisedHost, PairingPayload.sanitizeHost(raw) == nil {
+            try? revoke(dataDir: input.dataDir, offers: store)
+        }
         let host = try advertisedHost(from: input)
         let material: HomeCertificateMaterial
         do {
@@ -79,8 +83,8 @@ public enum PairingService {
             createdAt: iso8601.string(from: input.now),
             expiresAt: iso8601.string(from: expires),
             agentPort: input.agentPort,
+            advertisedHost: host,
         )
-        let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
         do {
             try store.replace(offer)
         } catch let error as PairingError {
@@ -109,6 +113,7 @@ public enum PairingService {
             caFingerprint: material.caFingerprint,
             port: input.port,
             agentPort: input.agentPort,
+            advertisedHost: host,
             advertisedHosts: input.advertisedHosts,
         )
     }
@@ -127,7 +132,7 @@ public enum PairingService {
         if let expires = iso8601.date(from: offer.expiresAt), input.now >= expires {
             throw PairingError.noActiveOffer
         }
-        let host = try advertisedHost(from: input)
+        let host = try advertisedHost(from: input, persisted: offer.advertisedHost)
         let material: HomeCertificateMaterial
         do {
             material = try HomeCAService.loadOrCreate(dataDir: input.dataDir, hostId: input.hostId)
@@ -159,6 +164,7 @@ public enum PairingService {
             caFingerprint: material.caFingerprint,
             port: input.port,
             agentPort: offer.agentPort,
+            advertisedHost: host,
             advertisedHosts: input.advertisedHosts,
         )
     }
@@ -599,8 +605,24 @@ public enum PairingService {
         }
     }
 
-    private static func advertisedHost(from input: IssueInput) throws -> String {
+    private static func advertisedHost(
+        from input: IssueInput,
+        persisted: String? = nil,
+    ) throws -> String {
+        if persisted == nil, let raw = input.advertisedHost {
+            guard let host = PairingPayload.sanitizeHost(raw) else {
+                throw PairingError.invalidPayload(
+                    "Invalid advertised host. Use a LAN IP, unique local IPv6, "
+                        + "CGNAT address, or DNS name — not localhost, .internal, "
+                        + "or a public/metadata address.",
+                )
+            }
+            return host
+        }
         var candidates: [String] = []
+        if let persisted {
+            candidates.append(persisted)
+        }
         if let host = input.advertisedHost {
             candidates.append(host)
         }
