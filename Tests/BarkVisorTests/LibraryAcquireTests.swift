@@ -24,6 +24,16 @@ private struct MemoryLibrarySource: LibraryByteSource {
     }
 }
 
+/// Writes the destination then fails so finish() can prove it deletes the artifact.
+private struct WritingThenFailingSource: LibraryByteSource {
+    var bytes: Data
+
+    func copyBytes(to destination: URL) async throws -> LibraryFetchedBytes {
+        try bytes.write(to: destination)
+        throw BarkVisorError.downloadFailed("copy exploded after write")
+    }
+}
+
 final class LibraryAcquireTests {
     private let dbPool: DatabasePool
     private let tmpDir: URL
@@ -147,6 +157,56 @@ final class LibraryAcquireTests {
         }) {
             LibraryAcquire.endLive(image.id)
         }
+    }
+
+    @Test func `claim returns later ready row when first ready checksum is stale`() async throws {
+        let source = "https://example.com/stale-then-good.img"
+        let now = "2026-01-01T00:00:00Z"
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-stale", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: "/tmp/stale.img", sizeBytes: 4, status: "ready", error: nil,
+                sourceUrl: source, sha256: "aaa", createdAt: now, updatedAt: now,
+            ).insert(db)
+            try VMImage(
+                id: "img-good", name: "Cloud", imageType: "cloud-image", arch: "arm64",
+                path: "/tmp/good.img", sizeBytes: 4, status: "ready", error: nil,
+                sourceUrl: source, sha256: "bbb", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+        let claim = try await LibraryAcquire.claim(
+            request: request(source, expectedChecksum: .sha256("bbb")),
+            kind: .internet,
+            db: dbPool,
+        )
+        guard case let .ready(image) = claim else {
+            Issue.record("expected matching ready row, got \(claim)")
+            return
+        }
+        #expect(image.id == "img-good")
+    }
+
+    @Test func `finish deletes destination when the byte source throws after writing`() async throws {
+        let source = "https://example.com/copy-fail.img"
+        let req = request(source)
+        let claim = try await LibraryAcquire.claim(request: req, kind: .internet, db: dbPool)
+        guard case let .started(row) = claim else {
+            Issue.record("expected claim to start, got \(claim)")
+            return
+        }
+        let destination = try await LibraryAcquire.destination(
+            imageId: row.id, sourceUrl: source, imageType: req.imageType, db: dbPool,
+        )
+        await #expect(throws: (any Error).self) {
+            try await LibraryAcquire.finish(
+                imageId: row.id,
+                source: WritingThenFailingSource(bytes: Data("partial".utf8)),
+                request: req,
+                kind: .internet,
+                db: dbPool,
+            )
+        }
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
     }
 
     @Test func `catalog checksum pick prefers sha256`() {
