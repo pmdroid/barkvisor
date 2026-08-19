@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '../api/client'
-import { apiErrorMessage } from '../api/errors'
 import type { Disk, DiskUsage, HomeDeviceHealthSnapshot, StorageSummary } from '../api/types'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
@@ -12,8 +11,9 @@ import {
   deviceDiskUsagePath,
   deviceDisksPath,
   isSelfDevice,
+  type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
-import { useDiskStore } from './disks'
+import { asArray, createHomeInventory, homeUnionRows } from './homeInventory'
 
 export type DiskWriteBody = {
   name: string
@@ -37,20 +37,13 @@ export type HomeDiskSummary = {
   summary: StorageSummary
 }
 
-function asDisks(data: unknown): Disk[] {
-  return Array.isArray(data) ? (data as Disk[]) : []
-}
-
 export const useDeviceDisksStore = defineStore('deviceDisks', () => {
-  const disksByHost = ref<Record<string, Disk[]>>({})
+  const inventory = createHomeInventory<Disk>()
   const usagesByHost = ref<Record<string, Record<string, DiskUsage>>>({})
   const summaryByHost = ref<Record<string, StorageSummary>>({})
-  const loadingByHost = ref<Record<string, boolean>>({})
-  const errorByHost = ref<Record<string, string | null>>({})
-  const fetchSeqByHost: Record<string, number> = {}
 
   function disksFor(hostId: string): Disk[] {
-    return disksByHost.value[hostId] ?? []
+    return inventory.listFor(hostId)
   }
 
   function usagesFor(hostId: string): Record<string, DiskUsage> {
@@ -63,25 +56,6 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
 
   function summaryFor(hostId: string): StorageSummary | null {
     return summaryByHost.value[hostId] ?? null
-  }
-
-  function isLoading(hostId: string): boolean {
-    return Boolean(loadingByHost.value[hostId])
-  }
-
-  function errorFor(hostId: string): string | null {
-    return errorByHost.value[hostId] ?? null
-  }
-
-  function replaceList(hostId: string, disks: Disk[]): void {
-    disksByHost.value = { ...disksByHost.value, [hostId]: disks }
-  }
-
-  function replaceOne(hostId: string, disk: Disk): void {
-    const current = disksFor(hostId)
-    const idx = current.findIndex((row) => row.id === disk.id)
-    const next = idx >= 0 ? current.map((row, i) => (i === idx ? disk : row)) : [...current, disk]
-    replaceList(hostId, next)
   }
 
   function replaceUsage(hostId: string, diskId: string, usage: DiskUsage): void {
@@ -99,42 +73,12 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
     usagesByHost.value = { ...usagesByHost.value, [hostId]: rest }
   }
 
-  function invalidateFetch(hostId: string): void {
-    fetchSeqByHost[hostId] = (fetchSeqByHost[hostId] ?? 0) + 1
-    loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-  }
-
-  function syncSelfList(device: HomeDeviceHealthSnapshot, disks: Disk[]): void {
-    if (!isSelfDevice(device)) return
-    useDiskStore().applyList(disks)
-  }
-
-  function syncSelfDisk(device: HomeDeviceHealthSnapshot, disk: Disk): void {
-    if (!isSelfDevice(device)) return
-    useDiskStore().applyOne(disk)
-  }
-
-  function syncSelfRemove(device: HomeDeviceHealthSnapshot, id: string): void {
-    if (!isSelfDevice(device)) return
-    useDiskStore().applyRemove(id)
-  }
-
-  function syncSelfUsage(device: HomeDeviceHealthSnapshot, id: string, usage: DiskUsage): void {
-    if (!isSelfDevice(device)) return
-    useDiskStore().applyUsage(id, usage)
-  }
-
-  function syncSelfSummary(device: HomeDeviceHealthSnapshot, next: StorageSummary): void {
-    if (!isSelfDevice(device)) return
-    useDiskStore().applySummary(next)
-  }
-
-  function seqIsCurrent(hostId: string, seq?: number): boolean {
-    return seq == null || seq === fetchSeqByHost[hostId]
+  function applySummary(hostId: string, next: StorageSummary): void {
+    summaryByHost.value = { ...summaryByHost.value, [hostId]: next }
   }
 
   async function fetchUsages(
-    device: HomeDeviceHealthSnapshot,
+    device: DeviceApiTarget,
     ids: string[],
     seq?: number,
   ): Promise<void> {
@@ -142,63 +86,50 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
     await Promise.all(ids.map(async (id) => {
       try {
         const { data } = await api.get<DiskUsage>(deviceDiskUsagePath(device, id))
-        if (!seqIsCurrent(hostId, seq)) return
+        if (!inventory.seqIsCurrent(hostId, seq)) return
         replaceUsage(hostId, id, data)
-        syncSelfUsage(device, id, data)
       } catch {
         /* keep last-known usage */
       }
     }))
   }
 
-  async function fetchSummary(device: HomeDeviceHealthSnapshot, seq?: number): Promise<void> {
+  async function fetchSummary(device: DeviceApiTarget, seq?: number): Promise<void> {
     const hostId = device.hostId
     try {
       const { data } = await api.get<StorageSummary>(deviceDiskSummaryPath(device))
-      if (!seqIsCurrent(hostId, seq)) return
-      summaryByHost.value = { ...summaryByHost.value, [hostId]: data }
-      syncSelfSummary(device, data)
+      if (!inventory.seqIsCurrent(hostId, seq)) return
+      applySummary(hostId, data)
     } catch {
       /* keep last-known summary — never sum across Devices */
     }
   }
 
-  async function fetchFor(device: HomeDeviceHealthSnapshot): Promise<void> {
-    const hostId = device.hostId
-    const seq = (fetchSeqByHost[hostId] ?? 0) + 1
-    fetchSeqByHost[hostId] = seq
-    if (!canCallDeviceAPI(device)) {
-      // Keep last-known rows (PAS-47). Never invent disks on first miss.
-      if (!(hostId in disksByHost.value)) {
-        replaceList(hostId, [])
-      }
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      return
-    }
-    loadingByHost.value = { ...loadingByHost.value, [hostId]: true }
-    try {
-      const { data } = await api.get<Disk[]>(deviceDisksPath(device))
-      if (seq !== fetchSeqByHost[hostId]) return
-      const disks = asDisks(data)
-      replaceList(hostId, disks)
-      syncSelfList(device, disks)
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-      await Promise.all([
-        fetchUsages(device, disks.map((row) => row.id), seq),
-        fetchSummary(device, seq),
-      ])
-    } catch (err) {
-      if (seq !== fetchSeqByHost[hostId]) return
-      errorByHost.value = {
-        ...errorByHost.value,
-        [hostId]: apiErrorMessage(err, 'Unable to load disks'),
-      }
-    } finally {
-      if (seq === fetchSeqByHost[hostId]) {
-        loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      }
-    }
+  async function fetchFor(
+    device: DeviceApiTarget,
+    extras: { usages?: boolean; summary?: boolean } = { usages: true, summary: true },
+  ): Promise<void> {
+    await inventory.fetchFor({
+      device,
+      canFetch: canCallDeviceAPI(device),
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load disks',
+      request: async () => {
+        const { data } = await api.get<Disk[]>(deviceDisksPath(device))
+        return data
+      },
+      asList: asArray<Disk>,
+      afterSuccess: async ({ items, seq }) => {
+        const tasks: Promise<void>[] = []
+        if (extras.usages !== false) {
+          tasks.push(fetchUsages(device, items.map((row) => row.id), seq))
+        }
+        if (extras.summary !== false) {
+          tasks.push(fetchSummary(device, seq))
+        }
+        await Promise.all(tasks)
+      },
+    })
   }
 
   async function fetchHomeAll(devices: HomeDeviceHealthSnapshot[]): Promise<void> {
@@ -206,16 +137,13 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
   }
 
   function homeRows(devices: HomeDeviceHealthSnapshot[]): HomeDiskRow[] {
-    const rows: HomeDiskRow[] = []
-    for (const device of devices) {
-      const reachable = canCallDeviceAPI(device)
-      const label = deviceDisplayLabel(device)
-      const role = isSelfDevice(device) ? 'self' : String(device.role ?? 'member')
-      for (const disk of disksFor(device.hostId)) {
-        rows.push({ disk, hostId: device.hostId, label, role, reachable })
-      }
-    }
-    return rows
+    return homeUnionRows(devices, disksFor, canCallDeviceAPI).map((row) => ({
+      disk: row.item,
+      hostId: row.hostId,
+      label: row.label,
+      role: row.role,
+      reachable: row.reachable,
+    }))
   }
 
   function homeSummaries(devices: HomeDeviceHealthSnapshot[]): HomeDiskSummary[] {
@@ -234,44 +162,53 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
     return rows
   }
 
-  async function create(device: HomeDeviceHealthSnapshot, body: DiskWriteBody): Promise<Disk> {
+  async function create(device: DeviceApiTarget, body: DiskWriteBody): Promise<Disk> {
     const { data } = await api.post<Disk>(deviceDisksPath(device), body)
-    invalidateFetch(device.hostId)
-    replaceOne(device.hostId, data)
-    syncSelfDisk(device, data)
+    inventory.invalidateFetch(device.hostId)
+    inventory.noteSelf(device)
+    inventory.replaceOne(device.hostId, data)
     await Promise.all([fetchUsages(device, [data.id]), fetchSummary(device)])
     return data
   }
 
-  async function remove(device: HomeDeviceHealthSnapshot, id: string): Promise<void> {
+  async function remove(device: DeviceApiTarget, id: string): Promise<void> {
     await api.delete(deviceDiskPath(device, id))
-    invalidateFetch(device.hostId)
-    replaceList(device.hostId, disksFor(device.hostId).filter((row) => row.id !== id))
+    inventory.invalidateFetch(device.hostId)
+    inventory.noteSelf(device)
+    inventory.replaceList(device.hostId, disksFor(device.hostId).filter((row) => row.id !== id))
     dropUsage(device.hostId, id)
-    syncSelfRemove(device, id)
     await fetchSummary(device)
   }
 
-  async function resize(device: HomeDeviceHealthSnapshot, id: string, sizeGB: number): Promise<void> {
+  async function resize(device: DeviceApiTarget, id: string, sizeGB: number): Promise<void> {
     await api.post(deviceDiskResizePath(device, id), { sizeGB })
     await fetchFor(device)
   }
 
   return {
-    disksByHost,
+    disksByHost: inventory.dataByHost,
+    selfHostId: inventory.selfHostId,
     fetchFor,
     fetchHomeAll,
     fetchSummary,
+    fetchUsages,
     homeRows,
     homeSummaries,
     disksFor,
     usagesFor,
     usageFor,
     summaryFor,
-    isLoading,
-    errorFor,
+    isLoading: inventory.isLoading,
+    errorFor: inventory.errorFor,
     create,
     remove,
     resize,
+    replaceList: inventory.replaceList,
+    replaceOne: inventory.replaceOne,
+    replaceUsage,
+    dropUsage,
+    applySummary,
+    noteSelf: inventory.noteSelf,
+    invalidateFetch: inventory.invalidateFetch,
   }
 })

@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import api from '../api/client'
+import { computed } from 'vue'
 import type { Network, NetworkModeName } from '../api/types'
-import { apiErrorMessage } from '../api/errors'
+import { thisDeviceTarget } from './homeInventory'
+import { useDeviceNetworksStore } from './deviceNetworks'
+import { useDevicesStore } from './devices'
 
 export type NetworkWriteBody = {
   name: string
@@ -12,9 +13,26 @@ export type NetworkWriteBody = {
 }
 
 export const useNetworkStore = defineStore('networks', () => {
-  const networks = ref<Network[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
+  const home = useDeviceNetworksStore()
+  const devices = useDevicesStore()
+
+  function selfTarget() {
+    return thisDeviceTarget(devices.selfDevice, home.selfHostId)
+  }
+
+  function selfHostId(): string {
+    return selfTarget().hostId
+  }
+
+  function rememberSelf(): string {
+    const target = selfTarget()
+    home.noteSelf(target)
+    return target.hostId
+  }
+
+  const networks = computed(() => home.networksFor(selfHostId()))
+  const loading = computed(() => home.isLoading(selfHostId()))
+  const error = computed(() => home.errorFor(selfHostId()))
 
   const byId = computed(() => {
     const map: Record<string, Network> = {}
@@ -30,43 +48,28 @@ export const useNetworkStore = defineStore('networks', () => {
   )
 
   async function fetchAll() {
-    loading.value = true
-    error.value = null
-    try {
-      const { data } = await api.get<Network[]>('/networks')
-      networks.value = data
-    } catch (e: unknown) {
-      error.value = apiErrorMessage(e, 'Failed to load networks')
-    } finally {
-      loading.value = false
-    }
+    await home.fetchFor(selfTarget())
   }
 
   function applyOne(network: Network) {
-    const idx = networks.value.findIndex(n => n.id === network.id)
-    if (idx >= 0) networks.value[idx] = network
-    else networks.value.push(network)
+    const hostId = rememberSelf()
+    home.replaceOne(hostId, network)
   }
 
   function applyRemove(id: string) {
-    networks.value = networks.value.filter(n => n.id !== id)
+    home.removeOne(rememberSelf(), id)
   }
 
   async function create(body: NetworkWriteBody): Promise<Network> {
-    const { data } = await api.post<Network>('/networks', body)
-    applyOne(data)
-    return data
+    return home.create(selfTarget(), body)
   }
 
   async function update(id: string, body: Partial<NetworkWriteBody>): Promise<Network> {
-    const { data } = await api.patch<Network>(`/networks/${id}`, body)
-    applyOne(data)
-    return data
+    return home.update(selfTarget(), id, body)
   }
 
   async function remove(id: string) {
-    await api.delete(`/networks/${id}`)
-    applyRemove(id)
+    await home.remove(selfTarget(), id)
   }
 
   function getById(id: string | null | undefined): Network | undefined {

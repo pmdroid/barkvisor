@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed } from 'vue'
 import api from '../api/client'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import { logsHistoryFetchPath, shouldPollDeviceControl } from '../utils/editHome'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
+import { asArray, createHomeInventory } from './homeInventory'
 
 export interface LogEntry {
   ts: string
@@ -24,13 +25,15 @@ export type LogFetchParams = {
   search?: string
 }
 
+const CURRENT = 'current'
+
 export const useLogStore = defineStore('logs', () => {
-  const entries = ref<LogEntry[]>([])
-  const loading = ref(false)
+  const inventory = createHomeInventory<LogEntry>()
   const tail = useTicketedEventSource()
   let pollTimer: number | undefined
-  let fetchGen = 0
-  let lastFetchKey = ''
+
+  const entries = computed(() => inventory.listFor(CURRENT))
+  const loading = computed(() => inventory.isLoading(CURRENT))
 
   async function fetchLogs(
     params: LogFetchParams = {},
@@ -38,35 +41,23 @@ export const useLogStore = defineStore('logs', () => {
   ) {
     const path = device ? logsHistoryFetchPath(device) : '/logs'
     if (device && !path) return
-    const key = JSON.stringify({
-      path: path ?? '/logs',
-      hostId: device?.hostId ?? '',
-      category: params.category ?? '',
-      level: params.level ?? '',
-      search: params.search ?? '',
-      since: params.since ?? '',
+    await inventory.fetchFor({
+      device: { hostId: CURRENT, role: device?.role ?? 'self', reachability: device?.reachability },
+      canFetch: true,
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load logs',
+      setLoading: inventory.listFor(CURRENT).length === 0,
+      request: async () => {
+        const { data } = await api.get(path ?? '/logs', { params })
+        return data
+      },
+      asList: asArray<LogEntry>,
     })
-    if (key !== lastFetchKey) {
-      lastFetchKey = key
-      fetchGen++
-    }
-    const gen = fetchGen
-    const showLoading = entries.value.length === 0
-    if (showLoading) loading.value = true
-    try {
-      const { data } = await api.get(path ?? '/logs', { params })
-      if (gen !== fetchGen) return
-      entries.value = Array.isArray(data) ? data : []
-    } catch {
-      /* keep last successful snapshot */
-    } finally {
-      if (showLoading) loading.value = false
-    }
   }
 
   function startTail(device?: DeviceApiTarget | null): boolean {
     stopTail()
-    fetchGen++
+    inventory.invalidateFetch(CURRENT)
     if (device && shouldPollDeviceControl(device)) {
       const path = logsHistoryFetchPath(device)
       if (!path) return false
@@ -83,10 +74,7 @@ export const useLogStore = defineStore('logs', () => {
       onMessage: (event) => {
         try {
           const entry: LogEntry = JSON.parse(event.data)
-          entries.value.unshift(entry)
-          if (entries.value.length > 2000) {
-            entries.value = entries.value.slice(0, 2000)
-          }
+          inventory.replaceList(CURRENT, [entry, ...inventory.listFor(CURRENT)].slice(0, 2000))
         } catch {
           /* ignore parse errors */
         }
@@ -105,9 +93,7 @@ export const useLogStore = defineStore('logs', () => {
 
   function clear() {
     stopTail()
-    fetchGen++
-    lastFetchKey = ''
-    entries.value = []
+    inventory.clear()
   }
 
   return { entries, loading, fetchLogs, startTail, stopTail, clear }

@@ -1,12 +1,11 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
 import api from '../api/client'
-import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot } from '../api/types'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { logsHistoryFetchPath, shouldPollDeviceControl } from '../utils/editHome'
 import { isSelfDevice } from '../utils/homeDeviceApi'
+import { asArray, createHomeInventory } from './homeInventory'
 import { type LogEntry, type LogFetchParams } from './logs'
 
 export const LOG_HISTORY_LIMIT = 1000
@@ -18,10 +17,6 @@ export type HomeLogRow = {
   label: string
   role: string
   reachable: boolean
-}
-
-function asEntries(data: unknown): LogEntry[] {
-  return Array.isArray(data) ? (data as LogEntry[]) : []
 }
 
 function entryTime(entry: LogEntry): number {
@@ -43,69 +38,30 @@ export function mergeHomeLogRows(rows: HomeLogRow[], limit: number): HomeLogRow[
 }
 
 export const useDeviceLogsStore = defineStore('deviceLogs', () => {
-  const entriesByHost = ref<Record<string, LogEntry[]>>({})
-  const loadingByHost = ref<Record<string, boolean>>({})
-  const errorByHost = ref<Record<string, string | null>>({})
-  const fetchSeqByHost: Record<string, number> = {}
+  const inventory = createHomeInventory<LogEntry>()
   const tail = useTicketedEventSource()
   let pollTimer: number | undefined
 
   function entriesFor(hostId: string): LogEntry[] {
-    return entriesByHost.value[hostId] ?? []
-  }
-
-  function isLoading(hostId: string): boolean {
-    return Boolean(loadingByHost.value[hostId])
-  }
-
-  function errorFor(hostId: string): string | null {
-    return errorByHost.value[hostId] ?? null
-  }
-
-  function replaceList(hostId: string, entries: LogEntry[]): void {
-    entriesByHost.value = { ...entriesByHost.value, [hostId]: entries }
-  }
-
-  function omitHost(hostId: string): void {
-    if (entriesByHost.value[hostId]?.length === 0) {
-      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      return
-    }
-    replaceList(hostId, [])
+    return inventory.listFor(hostId)
   }
 
   async function fetchFor(
     device: HomeDeviceHealthSnapshot,
     params: LogFetchParams = {},
   ): Promise<void> {
-    const hostId = device.hostId
-    const seq = (fetchSeqByHost[hostId] ?? 0) + 1
-    fetchSeqByHost[hostId] = seq
     const path = logsHistoryFetchPath(device)
-    if (!path) {
-      // Unreachable: omit live rows. Never fail the whole page (PAS-47).
-      omitHost(hostId)
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      return
-    }
-    loadingByHost.value = { ...loadingByHost.value, [hostId]: true }
-    try {
-      const { data } = await api.get(path, { params })
-      if (seq !== fetchSeqByHost[hostId]) return
-      replaceList(hostId, asEntries(data))
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-    } catch (err) {
-      if (seq !== fetchSeqByHost[hostId]) return
-      errorByHost.value = {
-        ...errorByHost.value,
-        [hostId]: apiErrorMessage(err, 'Unable to load logs'),
-      }
-    } finally {
-      if (seq === fetchSeqByHost[hostId]) {
-        loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      }
-    }
+    await inventory.fetchFor({
+      device,
+      canFetch: Boolean(path),
+      unreachablePolicy: 'omit',
+      loadError: 'Unable to load logs',
+      request: async () => {
+        const { data } = await api.get(path as string, { params })
+        return data
+      },
+      asList: asArray<LogEntry>,
+    })
   }
 
   async function fetchHomeAll(
@@ -144,7 +100,7 @@ export const useDeviceLogsStore = defineStore('deviceLogs', () => {
 
   function prependSelf(device: HomeDeviceHealthSnapshot, entry: LogEntry, cap: number): void {
     const current = entriesFor(device.hostId)
-    replaceList(device.hostId, [entry, ...current].slice(0, cap))
+    inventory.replaceList(device.hostId, [entry, ...current].slice(0, cap))
   }
 
   function startHomeTail(
@@ -195,22 +151,17 @@ export const useDeviceLogsStore = defineStore('deviceLogs', () => {
 
   function clear(): void {
     stopHomeTail()
-    entriesByHost.value = {}
-    loadingByHost.value = {}
-    errorByHost.value = {}
-    for (const hostId of Object.keys(fetchSeqByHost)) {
-      delete fetchSeqByHost[hostId]
-    }
+    inventory.clear()
   }
 
   return {
-    entriesByHost,
+    entriesByHost: inventory.dataByHost,
     fetchFor,
     fetchHomeAll,
     homeRows,
     entriesFor,
-    isLoading,
-    errorFor,
+    isLoading: inventory.isLoading,
+    errorFor: inventory.errorFor,
     startHomeTail,
     stopHomeTail,
     clear,

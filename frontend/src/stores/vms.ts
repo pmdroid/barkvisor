@@ -1,34 +1,42 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed } from 'vue'
 import api from '../api/client'
 import type { VM, CreateVMRequest, UpdateVMRequest, WorkloadSpec } from '../api/types'
-import { apiErrorMessage } from '../api/errors'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 import { deviceVmsBasePath, isSelfDevice } from '../utils/homeDeviceApi'
+import { thisDeviceTarget } from './homeInventory'
+import { useDeviceWorkloadsStore } from './deviceWorkloads'
+import { useDevicesStore } from './devices'
 
 export const useVMStore = defineStore('vms', () => {
-  const vms = ref<VM[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
+  const home = useDeviceWorkloadsStore()
+  const devices = useDevicesStore()
+
+  function selfTarget(): DeviceApiTarget {
+    return thisDeviceTarget(devices.selfDevice, home.selfHostId)
+  }
+
+  function selfHostId(): string {
+    return selfTarget().hostId
+  }
+
+  const vms = computed(() => home.vmsFor(selfHostId()))
+  const loading = computed(() => home.isLoading(selfHostId()))
+  const error = computed(() => home.errorFor(selfHostId()))
+
+  function applyLocal(vm: VM): void {
+    const target = selfTarget()
+    home.noteSelf(target)
+    home.putOne(target.hostId, vm)
+  }
 
   async function fetchAll() {
-    loading.value = true
-    error.value = null
-    try {
-      const { data } = await api.get('/vms')
-      vms.value = data
-    } catch (e: any) {
-      error.value = apiErrorMessage(e, 'Failed to load VMs')
-    } finally {
-      loading.value = false
-    }
+    await home.fetchFor(selfTarget())
   }
 
   async function fetchOne(id: string): Promise<VM> {
     const { data } = await api.get(`/vms/${id}`)
-    const idx = vms.value.findIndex((v) => v.id === id)
-    if (idx >= 0) vms.value[idx] = data
-    else vms.value.push(data)
+    applyLocal(data)
     return data
   }
 
@@ -45,10 +53,10 @@ export const useVMStore = defineStore('vms', () => {
     const keepLocal = !device || isSelfDevice(device)
     if (res.status === 202) {
       const { vm, taskID } = res.data
-      if (keepLocal) vms.value.push(vm)
+      if (keepLocal) applyLocal(vm)
       return { vm, taskID }
     }
-    if (keepLocal) vms.value.push(res.data)
+    if (keepLocal) applyLocal(res.data)
     return { vm: res.data }
   }
 
@@ -79,34 +87,30 @@ export const useVMStore = defineStore('vms', () => {
 
   async function attachUSB(id: string, deviceId: string) {
     const { data } = await api.post(`/vms/${id}/usb`, { deviceId })
-    const idx = vms.value.findIndex((v) => v.id === id)
-    if (idx >= 0) vms.value[idx] = data
+    applyLocal(data)
     return data
   }
 
   async function detachUSB(id: string, deviceId: string) {
     const { data } = await api.delete(`/vms/${id}/usb/${encodeURIComponent(deviceId)}`)
-    const idx = vms.value.findIndex((v) => v.id === id)
-    if (idx >= 0) vms.value[idx] = data
+    applyLocal(data)
     return data
   }
 
   async function remove(id: string, keepDisk = false): Promise<string | undefined> {
     const res = await api.delete(`/vms/${id}`, { params: { keepDisk } })
     if (res.status === 202) {
-      // Background deletion — mark VM as deleting locally, poll will clean up
-      const idx = vms.value.findIndex((v) => v.id === id)
-      if (idx >= 0) vms.value[idx] = { ...vms.value[idx], state: 'deleting' }
+      const current = vms.value.find((row) => row.id === id)
+      if (current) applyLocal({ ...current, state: 'deleting' })
       return res.data.taskID
     }
-    vms.value = vms.value.filter((v) => v.id !== id)
+    home.removeOne(selfHostId(), id)
     return undefined
   }
 
   async function update(id: string, body: UpdateVMRequest) {
     const { data } = await api.patch(`/vms/${id}`, body)
-    const idx = vms.value.findIndex((v) => v.id === id)
-    if (idx >= 0) vms.value[idx] = data
+    applyLocal(data)
     return data
   }
 
