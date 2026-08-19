@@ -109,6 +109,11 @@ describe('guestListeningPorts (PAS-225)', () => {
       port: 8080,
       label: 'HTTP',
       scheme: null,
+    }), ['10.0.0.5'])).toBeNull()
+    expect(guestListeningPortHref(port({
+      address: '10.0.0.5',
+      port: 8080,
+      label: 'HTTP',
     }), ['10.0.0.5'])).toBe('http://10.0.0.5:8080')
   })
 
