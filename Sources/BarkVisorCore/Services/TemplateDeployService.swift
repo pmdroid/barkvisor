@@ -57,14 +57,7 @@ public enum TemplateDeployService {
         // createVM also guards via validateCreateVMInputs; this is the early gate.
         try PlatformCapabilities.requireCompatibleGuestArch(repoImage.arch)
 
-        let checksum: ExpectedChecksum? =
-            if let sha256 = repoImage.sha256, !sha256.isEmpty {
-                .sha256(sha256)
-            } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
-                .sha512(sha512)
-            } else {
-                nil
-            }
+        let checksum = ExpectedChecksum.catalog(from: repoImage)
         let localImage = try await db.read { db in
             try ImageService.readyImage(
                 sourceUrl: repoImage.downloadUrl, expectedChecksum: checksum, db: db,
@@ -74,13 +67,7 @@ public enum TemplateDeployService {
         if localImage == nil {
             if let depot {
                 if let fetched = await depot.fetchMatching(
-                    LibraryDepotFetchRequest(
-                        sourceUrl: repoImage.downloadUrl,
-                        name: repoImage.name,
-                        imageType: repoImage.imageType,
-                        arch: repoImage.arch,
-                        expectedChecksum: checksum,
-                    ),
+                    LibraryDepotFetchRequest(repoImage: repoImage),
                     db: db,
                 ) {
                     if fetched.status != "ready" {
@@ -200,20 +187,6 @@ public enum TemplateDeployService {
         return repoImage
     }
 
-    private static func imageFileExtension(
-        filename: String, pathExtension: String, imageType: String,
-    ) -> String {
-        if filename.hasSuffix(".qcow2.xz") || filename.hasSuffix(".img.xz")
-            || filename.hasSuffix(".img.gz") || filename.hasSuffix(".qcow2.gz") {
-            let parts = filename.split(separator: ".", maxSplits: 1)
-            return parts.count > 1 ? String(parts[1]) : (imageType == "iso" ? "iso" : "img")
-        }
-        if pathExtension.isEmpty {
-            return imageType == "iso" ? "iso" : "img"
-        }
-        return pathExtension
-    }
-
     private static func startOrDetectDownload(
         repoImage: RepositoryImage,
         imageDownloader: any ImageDownloadStarting,
@@ -222,59 +195,14 @@ public enum TemplateDeployService {
         guard let sourceURL = URL(string: repoImage.downloadUrl) else {
             throw BarkVisorError.badRequest("Invalid download URL for image")
         }
-
-        let imageId = UUID().uuidString
-        let ext = imageFileExtension(
-            filename: sourceURL.lastPathComponent,
-            pathExtension: sourceURL.pathExtension,
-            imageType: repoImage.imageType,
+        let claim = try await ImageService.startOrDetectCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: .catalog(from: repoImage),
+            downloader: imageDownloader,
+            db: db,
         )
-        let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
-        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-        let destination = imagesDir.appendingPathComponent("\(imageId).\(ext)")
-
-        enum DownloadAction {
-            case alreadyDownloading(String)
-            case startNew(String)
-        }
-
-        let action: DownloadAction = try await db.write { db in
-            if let existing =
-                try VMImage
-                    .filter(Column("sourceUrl") == repoImage.downloadUrl)
-                    .filter(Column("status") == "downloading")
-                    .fetchOne(db) {
-                return .alreadyDownloading(existing.id)
-            }
-
-            let now = iso8601.string(from: Date())
-            let image = VMImage(
-                id: imageId, name: repoImage.name, imageType: repoImage.imageType,
-                arch: repoImage.arch, path: nil, sizeBytes: nil,
-                status: "downloading", error: nil, sourceUrl: repoImage.downloadUrl,
-                createdAt: now, updatedAt: now,
-            )
-            try image.insert(db)
-            return .startNew(imageId)
-        }
-
-        switch action {
-        case let .alreadyDownloading(existingId):
-            return .downloading(imageId: existingId)
-        case let .startNew(newId):
-            let checksum: ExpectedChecksum? =
-                if let sha256 = repoImage.sha256, !sha256.isEmpty {
-                    .sha256(sha256)
-                } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
-                    .sha512(sha512)
-                } else {
-                    nil
-                }
-            await imageDownloader.start(
-                imageID: newId, url: sourceURL, destination: destination, expectedChecksum: checksum,
-            )
-            return .downloading(imageId: newId)
-        }
+        return .downloading(imageId: claim.image.id)
     }
 
     /// Build `CreateVMParams` and delegate to the shared create pipeline (async disk clone).

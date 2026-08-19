@@ -275,14 +275,7 @@ struct RepositoryController: RouteCollection {
             )
         }
 
-        let checksum: ExpectedChecksum? =
-            if let sha256 = repoImage.sha256, !sha256.isEmpty {
-                .sha256(sha256)
-            } else if let sha512 = repoImage.sha512, !sha512.isEmpty {
-                .sha512(sha512)
-            } else {
-                nil
-            }
+        let checksum = ExpectedChecksum.catalog(from: repoImage)
 
         if let existing = try await req.db.read({ db in
             try ImageService.readyImage(
@@ -293,13 +286,7 @@ struct RepositoryController: RouteCollection {
         }
 
         if let fetched = await LibraryDepotClients.acquire(downloader: imageDownloader).fetchMatching(
-            LibraryDepotFetchRequest(
-                sourceUrl: repoImage.downloadUrl,
-                name: repoImage.name,
-                imageType: repoImage.imageType,
-                arch: repoImage.arch,
-                expectedChecksum: checksum,
-            ),
+            LibraryDepotFetchRequest(repoImage: repoImage),
             db: req.db,
         ) {
             return try Self.imageJSON(fetched)

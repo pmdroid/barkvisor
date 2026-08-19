@@ -289,5 +289,15 @@ final class ImageChecksumTests {
         let expected512 = SHA512.hash(data: content).compactMap { String(format: "%02x", $0) }
             .joined()
         #expect(sha512 == expected512)
+        try ImageFileChecksum.verify(ofFile: file, expected: .sha256(expected))
+        try ImageFileChecksum.verify(ofFile: file, expected: .sha512(expected512))
+        #expect(throws: (any Error).self) {
+            try ImageFileChecksum.verify(
+                ofFile: file,
+                expected: .sha256(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                ),
+            )
+        }
     }
 }
