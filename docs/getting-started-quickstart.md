@@ -269,7 +269,7 @@ displays rich guest info polled by the `MetricsCollector`:
 - Timezone
 - Logged-in users
 - Filesystem mount points and usage
-- TCP listening ports (null when the addon cannot collect them, empty when none)
+- TCP listening ports (null when the addon cannot collect them, empty when none). Linux uses `ss`/`netstat`; Windows uses `netstat -ano` or PowerShell.
 
 Guest info is available at `GET /api/vms/:id/guest-info` and is persisted to
 the database for offline reference.

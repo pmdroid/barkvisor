@@ -160,6 +160,93 @@ struct GuestListeningPortsTests {
         #expect(tls.first?.scheme == "https")
     }
 
+    @Test func `windows netstat ano parses tcp listening`() {
+        let text = """
+        Active Connections
+
+          Proto  Local Address          Foreign Address        State           PID
+          TCP    0.0.0.0:22             0.0.0.0:0              LISTENING       4120
+          TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       892
+          TCP    127.0.0.1:3000         0.0.0.0:0              LISTENING       5678
+          TCP    192.168.1.50:3389      0.0.0.0:0              LISTENING       1232
+          TCP    [::]:80                [::]:0                 LISTENING       4
+          TCP    192.168.1.50:49812     13.107.5.93:443        ESTABLISHED     2000
+          UDP    0.0.0.0:500            *:*                                    1234
+          UDP    0.0.0.0:3389           *:*                                    1232
+        """
+        let ports = GuestListeningPorts.parseWindowsOutput(text)
+        #expect(Set(ports.map(\.port)) == [22, 80, 135, 3_000, 3_389])
+        #expect(ports.contains { $0.port == 500 } == false)
+        #expect(ports.first { $0.port == 3_000 }?.scope == GuestListeningPorts.scopeInternal)
+        #expect(ports.first { $0.port == 80 }?.address == "::")
+        #expect(ports.first { $0.port == 3_389 }?.label == "RDP")
+
+        let published = GuestListeningPorts.selectPublished(ports)
+        #expect(Set(published.map(\.port)) == [22, 80, 3_000, 3_389])
+        let implied = GuestListeningPorts.applyHTTPSchemes(
+            published,
+            probedHTTP: [],
+            probeRan: false,
+        )
+        #expect(implied.first { $0.port == 80 }?.scheme == "http")
+        #expect(implied.first { $0.port == 22 }?.scheme == nil)
+        #expect(implied.first { $0.port == 3_389 }?.scheme == nil)
+    }
+
+    @Test func `windows powershell table and csv parse listen rows`() {
+        let table = """
+        LocalAddress                        LocalPort RemoteAddress                       RemotePort State       AppliedSetting OwningProcess
+        ------------                        --------- -------------                       ---------- -----       -------------- -------------
+        0.0.0.0                                    22 0.0.0.0                                    0 Listen                      4120
+        127.0.0.1                                3000 0.0.0.0                                    0 Listen                      5678
+        ::                                         80 ::                                         0 Listen                      4
+        ::                                       3389 ::                                         0 Listen                      1232
+        """
+        let tablePorts = GuestListeningPorts.parsePowerShellNetTCP(table)
+        #expect(Set(tablePorts.map(\.port)) == [22, 80, 3_000, 3_389])
+        #expect(tablePorts.first { $0.port == 80 }?.address == "::")
+
+        let csv = """
+        "LocalAddress","LocalPort","State"
+        "0.0.0.0","22","Listen"
+        "127.0.0.1","3000","Listen"
+        "::","80","Listen"
+        "192.168.1.50","49812","Established"
+        """
+        let csvPorts = GuestListeningPorts.parsePowerShellNetTCP(csv)
+        #expect(Set(csvPorts.map(\.port)) == [22, 80, 3_000])
+
+        let listed = """
+        LocalAddress : 0.0.0.0
+        LocalPort    : 22
+        State        : Listen
+
+        LocalAddress : 127.0.0.1
+        LocalPort    : 3000
+        State        : Listen
+        """
+        let listPorts = GuestListeningPorts.parsePowerShellNetTCP(listed)
+        #expect(Set(listPorts.map(\.port)) == [22, 3_000])
+        #expect(listPorts.first { $0.port == 3_000 }?.scope == GuestListeningPorts.scopeInternal)
+
+        let compact = """
+        0.0.0.0 443 LISTEN
+        127.0.0.1 5173 LISTEN
+        """
+        let compactPorts = GuestListeningPorts.parseWindowsOutput(compact)
+        #expect(Set(compactPorts.map(\.port)) == [443, 5_173])
+        #expect(compactPorts.first { $0.port == 443 }?.label == "HTTPS")
+    }
+
+    @Test func `windows guest hint skips unix collect path`() {
+        #expect(GuestListeningPorts.looksLikeWindows("mswindows Microsoft Windows"))
+        #expect(GuestListeningPorts.looksLikeWindows("windows-amd64"))
+        #expect(GuestListeningPorts.looksLikeWindows("windows-arm64"))
+        #expect(!GuestListeningPorts.looksLikeWindows("linux-amd64 Ubuntu"))
+        #expect(!GuestListeningPorts.looksLikeWindows(nil))
+        #expect(!GuestListeningPorts.looksLikeWindows(""))
+    }
+
     @Test func `loopback is never a network scope`() {
         #expect(GuestListeningPorts.scope(for: "127.0.0.1") == GuestListeningPorts.scopeInternal)
         #expect(GuestListeningPorts.scope(for: "::1") == GuestListeningPorts.scopeInternal)
