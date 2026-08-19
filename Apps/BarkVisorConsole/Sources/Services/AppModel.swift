@@ -249,9 +249,10 @@ final class AppModel {
            let mode = networks.first(where: { $0.id == networkID })?.mode {
             return mode
         }
-        return await optional {
-            try await requireClient().networks(on: device).first { $0.id == networkID }?.mode
+        guard let nets = await optional({ try await requireClient().networks(on: device) }) else {
+            return nil
         }
+        return nets.first { $0.id == networkID }?.mode
     }
 
     func refreshHome() async {
