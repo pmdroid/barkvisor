@@ -27,6 +27,16 @@ export interface PairingIssue {
 
 export const CUSTOM_ADVERTISED_HOST = '__custom__'
 
+/** Host to stamp on a pairing or sign-in offer from the Settings picker. */
+export function advertisedHostForOffer(selectedHost: string, customHost: string): string | undefined {
+  if (selectedHost === CUSTOM_ADVERTISED_HOST) {
+    const host = customHost.trim()
+    return host.length > 0 ? host : undefined
+  }
+  const host = selectedHost.trim()
+  return host.length > 0 ? host : undefined
+}
+
 /** Host baked into a pairing URI (`host=`). */
 export function pairingHostFromPayload(qrPayload: string): string | null {
   try {

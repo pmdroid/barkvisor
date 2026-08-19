@@ -6,6 +6,10 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+### Workloads list
+
+- Running Workloads show SSH and HTTP chips from guest-info listeners. Links match Overview: bridged guest IP, This Device NAT through hostfwd, never localhost on a member, never loopback. The IP column is copyable only on bridged.
+
 ### Home of more than one Device
 
 - Pair another Device from **Settings → Home → Add a Device**. Pick a LAN IPv4, IPv6 unique-local, or DNS name for `host=` in the offer, then scan the QR or paste the full `barkvisor://pair/v1?…` in setup, or run `barkvisor join --code` on an API-only host. Changing the address re-issues the URI and the QR. A rejected address (localhost, public, metadata) returns 400 and drops the previous pairing code.
@@ -45,6 +49,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Workload detail shows TCP listening ports from the guest addon (SSH, HTTP, and common dev servers). Loopback stays internal and is never a URL. Members use the same guest-info hop as This Device.
 - Listening ports are the common set only (SSH, HTTP/S, typical dev servers, DBs, RDP, VNC) — rpcbind and the rest stay hidden. HTTP that actually answers `HEAD /` (or a well-known HTTP port when the probe cannot run) is an Open link.
 - This Device NAT Overview offers **Publish this port** when a common TCP listener has no matching hostfwd. The host port is the guest port if free, otherwise the next free NAT claim (PAS-64). One click opens the existing port-forwards editor. Restart is still required if QEMU is already started. Loopback listeners stay hidden. Member NAT is not a click: localhost would be the wrong machine.
+- A failed collect clears the snapshot (`null`, hidden in the web UI) instead of keeping stale ports. Collection shares a ~3s budget and caps guest-exec output. Unchanged snapshots skip rewriting port columns. Labeled common ports sort first.
 - A Windows Workload with the VirtIO guest addon reports the same TCP listen set (`netstat -ano` or PowerShell). Missing bash/python skips the HTTP probe and uses the well-known scheme. Denied exec stays `null` and backs off like Linux.
 
 ### Platform

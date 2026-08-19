@@ -33,6 +33,12 @@ public struct GuestListeningPortDTO: Codable, Sendable, Equatable, Hashable {
 public enum GuestListeningPorts {
     public static let collectIntervalSeconds: TimeInterval = 30
     public static let collectFailureBackoffSeconds: TimeInterval = 300
+    /// Shared wall-clock budget for ss/netstat attempts, /proc fallback, and HTTP probe.
+    public static let collectTimeoutSeconds: TimeInterval = 3
+    /// Decoded guest-exec `out-data` cap; oversized output is treated as unavailable.
+    public static let execOutputMaxBytes = 65_536
+    /// QMP JSON is larger than decoded out-data (base64). Fail before unbounded buffering.
+    public static let execStatusMaxResponseBytes = 98_304
 
     public static let scopeInternal = "internal"
     public static let scopeNetwork = "network"
@@ -205,6 +211,9 @@ public enum GuestListeningPorts {
             }
         }
         return unique.sorted {
+            let aKnown = $0.label != nil || isPublishedPort($0.port)
+            let bKnown = $1.label != nil || isPublishedPort($1.port)
+            if aKnown != bKnown { return aKnown && !bKnown }
             if $0.port != $1.port { return $0.port < $1.port }
             return $0.address < $1.address
         }
@@ -214,23 +223,30 @@ public enum GuestListeningPorts {
         JSONColumnCoding.encode(canonicalize(ports))
     }
 
-    /// Keep the previous snapshot when the collected set is unchanged.
+    /// Persist a collect result. `collected == nil` means unavailable: clear the columns.
+    /// Unchanged canonicalize keeps the previous JSON/timestamp and sets `changed` false
+    /// so the poll can skip rewriting port columns.
     public static func persistFields(
         collected: [GuestListeningPortDTO]?,
         previousJSON: String?,
         previousCollectedAt: String?,
         now: String,
-    ) -> (json: String?, collectedAt: String?) {
+    ) -> (json: String?, collectedAt: String?, changed: Bool) {
         guard let collected else {
-            return (previousJSON, previousCollectedAt)
+            let changed = previousJSON != nil || previousCollectedAt != nil
+            return (nil, nil, changed)
         }
         let next = canonicalize(collected)
         if let previousJSON,
            let previous = JSONColumnCoding.decodeArray(GuestListeningPortDTO.self, from: previousJSON),
            canonicalize(previous) == next {
-            return (previousJSON, previousCollectedAt)
+            return (previousJSON, previousCollectedAt, false)
         }
-        return (encodeJSON(next), now)
+        return (encodeJSON(next), now, true)
+    }
+
+    public static func remainingCollectBudget(until deadline: Date, now: Date = Date()) -> TimeInterval {
+        max(0, deadline.timeIntervalSince(now))
     }
 
     public static func parseCommandOutput(_ text: String) -> [GuestListeningPortDTO] {
@@ -299,39 +315,51 @@ public enum GuestListeningPorts {
         return canonicalize(ports)
     }
 
-    static func collect(using client: QMPClient, osHint: String? = nil) -> [GuestListeningPortDTO]? {
+    static func collect(
+        using client: QMPClient,
+        now: Date = Date(),
+        osHint: String? = nil,
+    ) -> [GuestListeningPortDTO]? {
+        let deadline = now.addingTimeInterval(collectTimeoutSeconds)
         if looksLikeWindows(osHint) {
-            return collectWindows(using: client)
+            return collectWindows(using: client, deadline: deadline)
         }
-        return collectUnix(using: client)
+        return collectUnix(using: client, deadline: deadline)
     }
 
-    private static func collectUnix(using client: QMPClient) -> [GuestListeningPortDTO]? {
+    private static func collectUnix(using client: QMPClient, deadline: Date) -> [GuestListeningPortDTO]? {
         let raw: [GuestListeningPortDTO]
         if let text = execCapture(
             client,
             path: "/bin/sh",
             arg: ["-c", "(ss -lntH || ss -lnt || netstat -lnt) 2>/dev/null"],
+            deadline: deadline,
         ) {
             raw = parseCommandOutput(text)
         } else if let text = firstExec(
             client,
             paths: ["/usr/bin/ss", "/bin/ss", "/usr/sbin/ss"],
             arg: ["-lntH"],
+            deadline: deadline,
         ) {
             raw = parseCommandOutput(text)
         } else if let text = firstExec(
             client,
             paths: ["/usr/bin/netstat", "/bin/netstat"],
             arg: ["-lnt"],
+            deadline: deadline,
         ) {
             raw = parseCommandOutput(text)
-        } else if let tcp = readGuestFile(client, path: "/proc/net/tcp") {
-            raw = parseProcNet(tcp: tcp, tcp6: readGuestFile(client, path: "/proc/net/tcp6"))
+        } else if remainingCollectBudget(until: deadline) > 0,
+                  let tcp = readGuestFile(client, path: "/proc/net/tcp", deadline: deadline) {
+            let tcp6 = remainingCollectBudget(until: deadline) > 0
+                ? readGuestFile(client, path: "/proc/net/tcp6", deadline: deadline)
+                : nil
+            raw = parseProcNet(tcp: tcp, tcp6: tcp6)
         } else {
             return nil
         }
-        return decoratePublished(raw, using: client)
+        return decoratePublished(raw, using: client, deadline: deadline)
     }
 
     /// First snapshot that parses at least one TCP listen row.
@@ -348,13 +376,14 @@ public enum GuestListeningPorts {
         return empty
     }
 
-    private static func collectWindows(using client: QMPClient) -> [GuestListeningPortDTO]? {
+    private static func collectWindows(using client: QMPClient, deadline: Date) -> [GuestListeningPortDTO]? {
         let raw = firstNonEmptyWindowsParse([
             {
                 firstExec(
                     client,
                     paths: [#"C:\Windows\System32\netstat.exe"#, "netstat.exe"],
                     arg: ["-ano"],
+                    deadline: deadline,
                 )
             },
             {
@@ -362,6 +391,7 @@ public enum GuestListeningPorts {
                     client,
                     paths: [#"C:\Windows\System32\cmd.exe"#, "cmd.exe"],
                     arg: ["/c", "netstat -ano"],
+                    deadline: deadline,
                 )
             },
             {
@@ -372,16 +402,18 @@ public enum GuestListeningPorts {
                         "powershell.exe",
                     ],
                     arg: windowsPowerShellListenArgs,
+                    deadline: deadline,
                 )
             },
         ])
         guard let raw else { return nil }
-        return decoratePublished(raw, using: client)
+        return decoratePublished(raw, using: client, deadline: deadline, probeHTTP: false)
     }
 
     static func decoratePublished(
         _ ports: [GuestListeningPortDTO],
         using client: QMPClient,
+        deadline: Date,
         probeHTTP: Bool = true,
     ) -> [GuestListeningPortDTO] {
         let visible = selectPublished(ports)
@@ -389,13 +421,20 @@ public enum GuestListeningPorts {
         guard probeHTTP, !candidates.isEmpty else {
             return applyHTTPSchemes(visible, probedHTTP: [], probeRan: false)
         }
-        if let probed = probeHTTPPorts(Set(candidates).sorted(), using: client) {
+        guard remainingCollectBudget(until: deadline) > 0 else {
+            return applyHTTPSchemes(visible, probedHTTP: [], probeRan: false)
+        }
+        if let probed = probeHTTPPorts(Set(candidates).sorted(), using: client, deadline: deadline) {
             return applyHTTPSchemes(visible, probedHTTP: probed, probeRan: true)
         }
         return applyHTTPSchemes(visible, probedHTTP: [], probeRan: false)
     }
 
-    static func probeHTTPPorts(_ ports: [Int], using client: QMPClient) -> Set<Int>? {
+    static func probeHTTPPorts(
+        _ ports: [Int],
+        using client: QMPClient,
+        deadline: Date,
+    ) -> Set<Int>? {
         guard !ports.isEmpty else { return [] }
         let list = ports.map(String.init).joined(separator: " ")
         let script = """
@@ -415,7 +454,7 @@ public enum GuestListeningPorts {
          if hit: pass
         " \(list) 2>/dev/null
         """
-        guard let text = execCapture(client, path: "/bin/sh", arg: ["-c", script]) else {
+        guard let text = execCapture(client, path: "/bin/sh", arg: ["-c", script], deadline: deadline) else {
             return nil
         }
         return Set(
@@ -425,9 +464,15 @@ public enum GuestListeningPorts {
         )
     }
 
-    private static func firstExec(_ client: QMPClient, paths: [String], arg: [String]) -> String? {
+    private static func firstExec(
+        _ client: QMPClient,
+        paths: [String],
+        arg: [String],
+        deadline: Date,
+    ) -> String? {
         for path in paths {
-            if let text = execCapture(client, path: path, arg: arg) {
+            guard remainingCollectBudget(until: deadline) > 0 else { return nil }
+            if let text = execCapture(client, path: path, arg: arg, deadline: deadline) {
                 return text
             }
         }
@@ -675,25 +720,41 @@ public enum GuestListeningPorts {
 
     // MARK: - Guest agent I/O
 
-    private static func execCapture(_ client: QMPClient, path: String, arg: [String]) -> String? {
+    private static func execCapture(
+        _ client: QMPClient,
+        path: String,
+        arg: [String],
+        deadline: Date,
+    ) -> String? {
+        guard remainingCollectBudget(until: deadline) > 0 else { return nil }
         guard let result = try? client.executeWithArgs(
             "guest-exec",
             args: ["path": path, "arg": arg, "capture-output": true],
+            maxResponseBytes: execStatusMaxResponseBytes,
         ),
             let ret = result["return"] as? [String: Any],
             let pid = jsonInt(ret["pid"])
         else { return nil }
 
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            guard let status = try? client.executeWithArgs("guest-exec-status", args: ["pid": pid]),
-                  let body = status["return"] as? [String: Any]
+        while remainingCollectBudget(until: deadline) > 0 {
+            guard let status = try? client.executeWithArgs(
+                "guest-exec-status",
+                args: ["pid": pid],
+                maxResponseBytes: execStatusMaxResponseBytes,
+            ),
+                let body = status["return"] as? [String: Any]
             else { return nil }
             if body["exited"] as? Bool != true {
-                Thread.sleep(forTimeInterval: 0.05)
+                Thread.sleep(forTimeInterval: min(0.05, remainingCollectBudget(until: deadline)))
                 continue
             }
-            let text = decodeBase64Text(body["out-data"] as? String)
+            let text: String?
+            if let raw = body["out-data"] as? String {
+                guard let decoded = decodeBoundedOutput(raw) else { return nil }
+                text = decoded
+            } else {
+                text = nil
+            }
             let code = jsonInt(body["exitcode"]) ?? 1
             if code == 0 { return text ?? "" }
             if let text, !text.isEmpty { return text }
@@ -702,10 +763,16 @@ public enum GuestListeningPorts {
         return nil
     }
 
-    private static func readGuestFile(_ client: QMPClient, path: String) -> String? {
+    private static func readGuestFile(
+        _ client: QMPClient,
+        path: String,
+        deadline: Date,
+    ) -> String? {
+        guard remainingCollectBudget(until: deadline) > 0 else { return nil }
         guard let opened = try? client.executeWithArgs(
             "guest-file-open",
             args: ["path": path, "mode": "r"],
+            maxResponseBytes: execStatusMaxResponseBytes,
         ),
             let handle = jsonInt(opened["return"])
         else { return nil }
@@ -715,22 +782,26 @@ public enum GuestListeningPorts {
 
         var chunks = Data()
         for _ in 0 ..< 16 {
+            guard remainingCollectBudget(until: deadline) > 0 else { return nil }
             guard let read = try? client.executeWithArgs(
                 "guest-file-read",
                 args: ["handle": handle, "count": 4_096],
+                maxResponseBytes: execStatusMaxResponseBytes,
             ),
                 let body = read["return"] as? [String: Any]
             else { break }
             if let data = decodeBase64(body["buf-b64"] as? String) {
                 chunks.append(data)
+                if chunks.count > execOutputMaxBytes { return nil }
             }
             if body["eof"] as? Bool == true { break }
         }
         return String(data: chunks, encoding: .utf8)
     }
 
-    private static func decodeBase64Text(_ value: String?) -> String? {
+    static func decodeBoundedOutput(_ value: String?, maxBytes: Int = execOutputMaxBytes) -> String? {
         guard let data = decodeBase64(value) else { return nil }
+        guard data.count <= maxBytes else { return nil }
         return String(data: data, encoding: .utf8)
     }
 

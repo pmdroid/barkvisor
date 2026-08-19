@@ -327,6 +327,69 @@ final class ModelDBRoundTripTests {
         #expect(decoded?.first?.label == "SSH")
     }
 
+    @Test func `guest info skip port columns when unchanged`() throws {
+        try dbPool.write { db in
+            try Disk(
+                id: "d-ports-skip",
+                name: "boot",
+                path: "/tmp/d-ports-skip.qcow2",
+                sizeBytes: 1_000_000,
+                format: "qcow2",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+            try VM(
+                id: "vm-ports-skip", name: "test", vmType: "linux-arm64", state: "stopped",
+                cpuCount: 2, memoryMb: 1_024, bootDiskId: "d-ports-skip", networkId: nil,
+                cloudInitPath: nil, description: nil, bootOrder: "cd",
+                displayResolution: "1280x800", additionalDiskIds: nil, uefi: true,
+                tpmEnabled: false, macAddress: "52:54:00:12:34:59", sharedPaths: nil,
+                portForwards: nil, autoCreated: false, pendingChanges: false,
+                createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+        }
+
+        let ssh = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 22))
+        let ports = GuestListeningPorts.encodeJSON([ssh])
+        try dbPool.write { db in
+            try GuestInfoRecord(
+                vmId: "vm-ports-skip", hostname: "old", osName: "Ubuntu",
+                osVersion: "24.04", osId: "ubuntu", kernelVersion: "6.8",
+                kernelRelease: "6.8.0-generic", machine: "aarch64",
+                timezone: "UTC", timezoneOffset: 0, ipAddresses: "[\"192.168.1.5\"]",
+                macAddress: "52:54:00:12:34:56", users: "[]", filesystems: "[]",
+                updatedAt: "t1",
+                listeningPorts: ports,
+                portsCollectedAt: "t1",
+            ).insert(db)
+        }
+
+        let skipped = GuestInfoRecord(
+            vmId: "vm-ports-skip", hostname: "new", osName: "Ubuntu",
+            osVersion: "24.04", osId: "ubuntu", kernelVersion: "6.8",
+            kernelRelease: "6.8.0-generic", machine: "aarch64",
+            timezone: "UTC", timezoneOffset: 0, ipAddresses: "[\"192.168.1.5\"]",
+            macAddress: "52:54:00:12:34:56", users: "[]", filesystems: "[]",
+            updatedAt: "t2",
+            listeningPorts: nil,
+            portsCollectedAt: nil,
+        )
+        try dbPool.write { db in try skipped.saveRefreshing(db, updatePorts: false) }
+        let afterSkip = try dbPool.read { db in try GuestInfoRecord.fetchOne(db, key: "vm-ports-skip") }
+        #expect(afterSkip?.hostname == "new")
+        #expect(afterSkip?.updatedAt == "t2")
+        #expect(afterSkip?.listeningPorts == ports)
+        #expect(afterSkip?.portsCollectedAt == "t1")
+
+        try dbPool.write { db in try skipped.saveRefreshing(db, updatePorts: true) }
+        let afterClear = try dbPool.read { db in try GuestInfoRecord.fetchOne(db, key: "vm-ports-skip") }
+        #expect(afterClear?.listeningPorts == nil)
+        #expect(afterClear?.portsCollectedAt == nil)
+        #expect(afterClear?.hostname == "new")
+    }
+
     @Test func `guest info cascade on VM delete`() throws {
         try dbPool.write { db in
             try Disk(

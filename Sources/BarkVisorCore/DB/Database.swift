@@ -92,6 +92,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M008_GuestListeningPorts.identifier) { db in
             try M008_GuestListeningPorts.migrate(db)
         }
+        migrator.registerMigration(M009_AuthSessions.identifier) { db in
+            try M009_AuthSessions.migrate(db)
+        }
     }
 }
 

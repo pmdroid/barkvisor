@@ -41,6 +41,10 @@ describe('API contract (PAS-78)', () => {
     const yaml = specText()
     for (const path of [
       '/api/auth/login',
+      '/api/auth/refresh',
+      '/api/auth/logout',
+      '/api/auth/login-offers',
+      '/api/auth/login-offers/redeem',
       '/api/vms',
       '/api/disks',
       '/api/networks',

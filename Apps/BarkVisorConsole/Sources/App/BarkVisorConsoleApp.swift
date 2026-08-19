@@ -9,9 +9,12 @@ struct BarkVisorConsoleApp: App {
             RootView()
                 .environment(model)
                 .task { await model.bootstrap() }
+                .onOpenURL { url in
+                    Task { await model.handleOpenURL(url) }
+                }
         }
         #if os(macOS)
-        .defaultSize(width: 1100, height: 720)
+        .defaultSize(width: 1_100, height: 720)
         .windowToolbarStyle(.unified)
         .windowResizability(.contentMinSize)
         #endif
