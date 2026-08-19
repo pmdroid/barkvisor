@@ -177,6 +177,16 @@ public struct LibraryDepotFetchRequest: Sendable {
         self.arch = arch
         self.expectedChecksum = expectedChecksum
     }
+
+    public init(repoImage: RepositoryImage) {
+        self.init(
+            sourceUrl: repoImage.downloadUrl,
+            name: repoImage.name,
+            imageType: repoImage.imageType,
+            arch: repoImage.arch,
+            expectedChecksum: .catalog(from: repoImage),
+        )
+    }
 }
 
 public protocol LibraryDepotFetching: Sendable {
