@@ -151,6 +151,26 @@ describe('home inventory union (PAS-234)', () => {
     expect(inv.errorFor('peer-1')).toBeTruthy()
   })
 
+  test('rows fetched under the self placeholder stay visible after the real hostId arrives', async () => {
+    const inv = createHomeInventory<Row>()
+    await inv.fetchFor({
+      device: { hostId: 'self', role: 'self' },
+      canFetch: true,
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load',
+      request: async () => [{ id: '1', name: 'boot' }],
+      asList: (data) => data as Row[],
+    })
+    expect(inv.listFor('self')).toEqual([{ id: '1', name: 'boot' }])
+    expect(inv.listFor('box')).toEqual([])
+
+    inv.noteSelf({ hostId: 'box', role: 'self' })
+    expect(inv.listFor('box')).toEqual([{ id: '1', name: 'boot' }])
+    expect(inv.listFor('self')).toEqual([{ id: '1', name: 'boot' }])
+    expect(inv.hasList('box')).toBe(true)
+    expect(inv.listFor('orb')).toEqual([])
+  })
+
   test('omit policy drops live rows when the Device is unreachable', async () => {
     const inv = createHomeInventory<Row>()
     const peer = device('orb')

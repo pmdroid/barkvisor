@@ -40,11 +40,37 @@ export function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
   return idx >= 0 ? list.map((row, i) => (i === idx ? item : row)) : [...list, item]
 }
 
+/** Local fetch before /home/devices/health knows This Device's hostId. */
+export const SELF_PLACEHOLDER_HOST_ID = 'self'
+
 export function thisDeviceTarget(
   self: DeviceApiTarget | null | undefined,
   fallbackHostId?: string | null,
 ): DeviceApiTarget {
-  return self ?? { hostId: fallbackHostId || 'self', role: 'self' }
+  return self ?? { hostId: fallbackHostId || SELF_PLACEHOLDER_HOST_ID, role: 'self' }
+}
+
+/** Real self hostId and the pre-health placeholder read as one Device. */
+export function selfHostAliases(hostId: string, selfHostId?: string | null): string[] {
+  const keys = [hostId]
+  if (selfHostId && hostId === selfHostId && hostId !== SELF_PLACEHOLDER_HOST_ID) {
+    keys.push(SELF_PLACEHOLDER_HOST_ID)
+  }
+  if (hostId === SELF_PLACEHOLDER_HOST_ID && selfHostId && selfHostId !== hostId) {
+    keys.push(selfHostId)
+  }
+  return keys
+}
+
+export function pickHostValue<T>(
+  record: Record<string, T>,
+  hostId: string,
+  selfHostId?: string | null,
+): T | undefined {
+  for (const key of selfHostAliases(hostId, selfHostId)) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) return record[key]
+  }
+  return undefined
 }
 
 export function homeUnionRows<T>(
@@ -76,19 +102,19 @@ export function createHomeInventory<T>() {
   const selfHostId = ref<string | null>(null)
 
   function listFor(hostId: string): T[] {
-    return dataByHost.value[hostId] ?? []
+    return pickHostValue(dataByHost.value, hostId, selfHostId.value) ?? []
   }
 
   function hasList(hostId: string): boolean {
-    return Object.prototype.hasOwnProperty.call(dataByHost.value, hostId)
+    return pickHostValue(dataByHost.value, hostId, selfHostId.value) !== undefined
   }
 
   function isLoading(hostId: string): boolean {
-    return Boolean(loadingByHost.value[hostId])
+    return Boolean(pickHostValue(loadingByHost.value, hostId, selfHostId.value))
   }
 
   function errorFor(hostId: string): string | null {
-    return errorByHost.value[hostId] ?? null
+    return pickHostValue(errorByHost.value, hostId, selfHostId.value) ?? null
   }
 
   function replaceList(hostId: string, items: T[]): void {
