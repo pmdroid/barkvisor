@@ -203,6 +203,12 @@ describe('suggest NAT hostfwd (PAS-228)', () => {
       portForwards: [],
       occupiedHostPorts: [],
     })).toBeNull()
+    expect(suggestPublishNatHostfwd(http, {
+      isMember: false,
+      networkMode: 'unresolved',
+      portForwards: [],
+      occupiedHostPorts: [],
+    })).toBeNull()
   })
 
   test('unpublished ports are not offered', () => {

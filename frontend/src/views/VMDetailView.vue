@@ -506,7 +506,9 @@ const guestListeningPortRows = computed(() => {
   return guest.listeningPorts.filter(isPublishedGuestPort).map((item) => {
     let publish = suggestPublishNatHostfwd(item, {
       isMember: isMemberDetail.value,
-      networkMode: currentNetwork.value?.mode ?? null,
+      networkMode: vm.value?.networkId && !currentNetwork.value
+        ? 'unresolved'
+        : (currentNetwork.value?.mode ?? null),
       portForwards: forwards,
       occupiedHostPorts: occupied,
     })

@@ -132,7 +132,7 @@ export function nextFreeHostPort(
 
 export type SuggestPublishNatHostfwdAccess = {
   isMember: boolean
-  /** Bridged / isolated hide the control. Null is implicit NAT. */
+  /** Bridged / isolated / unresolved hide the control. Null is implicit NAT. */
   networkMode: string | null | undefined
   portForwards: PortForwardRule[]
   occupiedHostPorts: Iterable<number>
