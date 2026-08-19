@@ -1,15 +1,33 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import api from '../api/client'
+import { computed } from 'vue'
 import type { Disk, DiskUsage, StorageSummary } from '../api/types'
-import { apiErrorMessage } from '../api/errors'
+import { thisDeviceTarget } from './homeInventory'
+import { useDeviceDisksStore } from './deviceDisks'
+import { useDevicesStore } from './devices'
 
 export const useDiskStore = defineStore('disks', () => {
-  const disks = ref<Disk[]>([])
-  const usages = ref<Record<string, DiskUsage>>({})
-  const summary = ref<StorageSummary | null>(null)
-  const loading = ref(false)
-  const error = ref<string | null>(null)
+  const home = useDeviceDisksStore()
+  const devices = useDevicesStore()
+
+  function selfTarget() {
+    return thisDeviceTarget(devices.selfDevice, home.selfHostId)
+  }
+
+  function selfHostId(): string {
+    return selfTarget().hostId
+  }
+
+  function rememberSelf(): string {
+    const target = selfTarget()
+    home.noteSelf(target)
+    return target.hostId
+  }
+
+  const disks = computed(() => home.disksFor(selfHostId()))
+  const usages = computed(() => home.usagesFor(selfHostId()))
+  const summary = computed(() => home.summaryFor(selfHostId()))
+  const loading = computed(() => home.isLoading(selfHostId()))
+  const error = computed(() => home.errorFor(selfHostId()))
 
   const byId = computed(() => {
     const map: Record<string, Disk> = {}
@@ -20,86 +38,55 @@ export const useDiskStore = defineStore('disks', () => {
   const unattached = computed(() => disks.value.filter(d => !d.vmId))
 
   async function fetchAll(opts: { withUsage?: boolean } = {}) {
-    loading.value = true
-    error.value = null
-    try {
-      const { data } = await api.get<Disk[]>('/disks')
-      disks.value = data
-      if (opts.withUsage) {
-        await fetchUsages(data.map(d => d.id))
-      }
-    } catch (e: unknown) {
-      error.value = apiErrorMessage(e, 'Failed to load disks')
-    } finally {
-      loading.value = false
-    }
+    await home.fetchFor(selfTarget(), {
+      usages: Boolean(opts.withUsage),
+      summary: false,
+    })
   }
 
   async function fetchUsages(ids?: string[]) {
     const target = ids ?? disks.value.map(d => d.id)
-    const next: Record<string, DiskUsage> = { ...usages.value }
-    await Promise.all(
-      target.map(async id => {
-        try {
-          const { data } = await api.get<DiskUsage>(`/disks/${id}/usage`)
-          next[id] = data
-        } catch {
-          /* ignore per-disk usage failures */
-        }
-      }),
-    )
-    usages.value = next
+    await home.fetchUsages(selfTarget(), target)
   }
 
   async function fetchSummary() {
-    try {
-      const { data } = await api.get<StorageSummary>('/disks/summary')
-      summary.value = data
-    } catch {
-      /* ignore */
-    }
+    await home.fetchSummary(selfTarget())
   }
 
   function applyList(next: Disk[]) {
-    disks.value = next
+    const hostId = rememberSelf()
+    home.replaceList(hostId, next)
   }
 
   function applyOne(disk: Disk) {
-    const idx = disks.value.findIndex(d => d.id === disk.id)
-    if (idx >= 0) disks.value[idx] = disk
-    else disks.value.push(disk)
+    const hostId = rememberSelf()
+    home.replaceOne(hostId, disk)
   }
 
   function applyRemove(id: string) {
-    disks.value = disks.value.filter(d => d.id !== id)
-    const { [id]: _, ...rest } = usages.value
-    usages.value = rest
+    const hostId = rememberSelf()
+    home.replaceList(hostId, home.disksFor(hostId).filter(d => d.id !== id))
+    home.dropUsage(hostId, id)
   }
 
   function applyUsage(id: string, usage: DiskUsage) {
-    usages.value = { ...usages.value, [id]: usage }
+    home.replaceUsage(rememberSelf(), id, usage)
   }
 
   function applySummary(next: StorageSummary) {
-    summary.value = next
+    home.applySummary(rememberSelf(), next)
   }
 
   async function create(body: { name: string; sizeGB: number; format: string }): Promise<Disk> {
-    const { data } = await api.post<Disk>('/disks', body)
-    applyOne(data)
-    await fetchSummary()
-    return data
+    return home.create(selfTarget(), body)
   }
 
   async function remove(id: string) {
-    await api.delete(`/disks/${id}`)
-    applyRemove(id)
-    await fetchSummary()
+    await home.remove(selfTarget(), id)
   }
 
   async function resize(id: string, sizeGB: number) {
-    await api.post(`/disks/${id}/resize`, { sizeGB })
-    await Promise.all([fetchAll({ withUsage: true }), fetchSummary()])
+    await home.resize(selfTarget(), id, sizeGB)
   }
 
   function getById(id: string | null | undefined): Disk | undefined {
