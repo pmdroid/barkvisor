@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   isCurrentPairingSeq,
+  isPairingOfferActive,
   nextPairingLoadSeq,
   pairingExpiryLabel,
   remainingPairingSeconds,
@@ -15,11 +16,14 @@ describe('pairing offer expiry', () => {
     expect(pairingExpiryLabel(expiresAt, issued + 9 * 60 * 1000)).toBe('Expires in 1 minute')
     expect(pairingExpiryLabel(expiresAt, Date.parse(expiresAt))).toBe('Expired')
     expect(pairingExpiryLabel(expiresAt, Date.parse(expiresAt) + 1_000)).toBe('Expired')
+    expect(isPairingOfferActive(expiresAt, issued)).toBe(true)
+    expect(isPairingOfferActive(expiresAt, Date.parse(expiresAt))).toBe(false)
   })
 
   test('invalid expiry is treated as expired', () => {
     expect(remainingPairingSeconds('not-a-date', Date.now())).toBe(0)
     expect(pairingExpiryLabel('not-a-date', Date.now())).toBe('Expired')
+    expect(isPairingOfferActive('not-a-date', Date.now())).toBe(false)
   })
 })
 

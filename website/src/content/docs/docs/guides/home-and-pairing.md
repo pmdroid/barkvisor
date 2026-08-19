@@ -26,7 +26,7 @@ On a Device that already finished setup:
 1. Open the dashboard (`http://<this-device>:7777`).
 2. Go to **Settings → Home → Add a Device**.
 3. Pick the address the new Device can reach: a listed LAN IP, or **Other / DNS name…** for a name the joiner can resolve.
-4. Copy the **full** pairing offer (`barkvisor://pair/v1?…`). The short printed code alone is not enough.
+4. Scan the QR, or copy the **full** pairing offer (`barkvisor://pair/v1?…`). The short printed code alone is not enough. Changing the address re-issues both the URI and the QR.
 
 The chosen address is the `host=` in that offer. Changing the address issues a new code and resets the expiry. The offer expires; Revoke it if unused.
 
