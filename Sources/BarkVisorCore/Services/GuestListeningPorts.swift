@@ -376,7 +376,7 @@ public enum GuestListeningPorts {
             },
         ])
         guard let raw else { return nil }
-        return decoratePublished(raw, using: client, probeHTTP: false)
+        return decoratePublished(raw, using: client)
     }
 
     static func decoratePublished(
