@@ -25,6 +25,8 @@ describe('PAS-242 phone sign-in offer', () => {
     expect(settings).toContain('Phone sign-in')
     expect(settings).toContain('advertisedHostForOffer')
     expect(settings).toContain('customHost.value')
+    expect(settings).toContain('watch([pairingOffer, loginOffer]')
+    expect(settings).toContain('pairingExpiryLabel(loginOffer.expiresAt, pairingNow)')
     expect(settings).not.toContain('barkvisor://pair/v1?code')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)
   })

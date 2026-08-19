@@ -98,8 +98,8 @@ function stopPairingTick() {
   pairingTick = null
 }
 
-watch(pairingOffer, (offer) => {
-  if (offer) startPairingTick()
+watch([pairingOffer, loginOffer], ([pairing, login]) => {
+  if (pairing || login) startPairingTick()
   else stopPairingTick()
 })
 

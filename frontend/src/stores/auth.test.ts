@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
-import api from '../api/client'
+import api, { isAuthBootstrapRequest, setUnauthorizedHandler } from '../api/client'
 import { REFRESH_TOKEN_KEY, useAuthStore } from './auth'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 const memory = new Map<string, string>()
 Object.defineProperty(globalThis, 'localStorage', {
@@ -32,6 +37,7 @@ describe('auth store (PAS-242)', () => {
 
   afterEach(() => {
     api.post = originalPost
+    setUnauthorizedHandler(() => undefined)
     localStorage.clear()
   })
 
@@ -84,5 +90,102 @@ describe('auth store (PAS-242)', () => {
     expect(store.refreshToken).toBe('')
     expect(localStorage.getItem('token')).toBeNull()
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
+  })
+
+  test('401 interceptor posts logout instead of dropping the refresh token locally', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+
+    const post = mock((url: string, body: unknown) => {
+      expect(url).toBe('/auth/logout')
+      expect(body).toEqual({ refreshToken: 'bvrt_abc' })
+      return Promise.resolve({ status: 204 })
+    })
+    api.post = post as typeof api.post
+
+    let redirected = 0
+    setUnauthorizedHandler(() => {
+      redirected += 1
+    })
+
+    const reject401 = async (config: { url?: string }) =>
+      Promise.reject({
+        config,
+        response: { status: 401 },
+        message: 'unauthorized',
+      })
+    await api.request({ url: '/vms', adapter: reject401 }).then(
+      () => {
+        throw new Error('expected 401')
+      },
+      () => undefined,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(redirected).toBe(1)
+    expect(store.refreshToken).toBe('')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
+  })
+
+  test('login 401 does not revoke a stored refresh family', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+
+    const post = mock((url: string) => {
+      expect(url).not.toBe('/auth/logout')
+      return Promise.resolve({ status: 204 })
+    })
+    api.post = post as typeof api.post
+
+    const reject401 = async (config: { url?: string }) =>
+      Promise.reject({
+        config,
+        response: { status: 401 },
+        message: 'unauthorized',
+      })
+    await api
+      .request({
+        method: 'post',
+        url: '/auth/login',
+        data: { username: 'admin', password: 'bad' },
+        adapter: reject401,
+      })
+      .then(
+        () => {
+          throw new Error('expected 401')
+        },
+        () => undefined,
+      )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(post).not.toHaveBeenCalled()
+    expect(store.refreshToken).toBe('bvrt_abc')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('bvrt_abc')
+  })
+
+  test('bootstrap auth paths are not treated as session 401s', () => {
+    expect(isAuthBootstrapRequest({ url: '/auth/login' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/refresh' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/logout' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/login-offers/redeem' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/login-offers' })).toBe(false)
+    expect(isAuthBootstrapRequest({ url: '/vms' })).toBe(false)
+  })
+
+  test('expired JWT guard and 401 interceptor revoke through logout', () => {
+    const client = readFileSync(join(here, '../api/client.ts'), 'utf8')
+    const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
+    expect(client).toContain('revokeRefreshOnUnauthorized')
+    expect(client).toContain('useAuthStore().logout()')
+    expect(client).not.toMatch(/if \(error\.response\?\.status === 401\) \{\s*localStorage\.removeItem\('token'\)/)
+    expect(router).toContain('useAuthStore().logout()')
+    expect(router).not.toContain("localStorage.removeItem('refreshToken')")
   })
 })

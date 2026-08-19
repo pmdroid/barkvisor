@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -89,8 +90,7 @@ router.beforeEach(async (to) => {
   if (to.name === 'login') return
   const token = localStorage.getItem('token')
   if (!token || isTokenExpired(token)) {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
+    void useAuthStore().logout()
     return { name: 'login' }
   }
 })
