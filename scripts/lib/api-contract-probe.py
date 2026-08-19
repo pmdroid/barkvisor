@@ -109,6 +109,14 @@ def body_for(method: str, path: str) -> bytes | None:
         user = os.environ.get("BARKVISOR_ADMIN_USER", "admin")
         pw = os.environ.get("BARKVISOR_ADMIN_PASSWORD", "barkvisor-smoke-pass")
         return json.dumps({"username": user, "password": pw}).encode()
+    if path == "/api/auth/refresh":
+        return json.dumps({"refreshToken": "invalid"}).encode()
+    if path == "/api/auth/logout":
+        return json.dumps({"refreshToken": "invalid"}).encode()
+    if path == "/api/auth/login-offers":
+        return b"{}"
+    if path == "/api/auth/login-offers/redeem":
+        return json.dumps({"code": "AAAA-AAAA"}).encode()
     if path == "/api/home/placement/score":
         return b"{}"
     if path == "/api/system/library/settings":

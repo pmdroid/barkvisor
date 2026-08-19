@@ -23,6 +23,8 @@ enum APIError: LocalizedError, Equatable {
 struct APIClient {
     var baseURL: URL
     var token: String?
+    /// Called once on 401. Return a new access JWT to retry, or nil to fail.
+    var refreshOnce: (() async -> String?)?
 
     private static let decoder: JSONDecoder = .init()
 
@@ -72,7 +74,7 @@ struct APIClient {
             request.httpBody = try Self.encoder.encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await perform(request)
+        let (data, response) = try await perform(request, allowRefresh: !isAuthBootstrap(path))
         if T.self == DiscardBody.self {
             return DiscardBody() as! T
         }
@@ -107,12 +109,32 @@ struct APIClient {
         )
     }
 
-    func login(username: String, password: String) async throws -> String {
+    func login(username: String, password: String) async throws -> SessionTokens {
         let response: LoginResponse = try await post(
             "/api/auth/login",
             body: LoginRequest(username: username, password: password),
         )
-        return response.token
+        return SessionTokens(token: response.token, refreshToken: response.refreshToken)
+    }
+
+    func refreshSession(refreshToken: String) async throws -> SessionTokens {
+        let response: LoginResponse = try await post(
+            "/api/auth/refresh",
+            body: RefreshRequest(refreshToken: refreshToken),
+        )
+        return SessionTokens(token: response.token, refreshToken: response.refreshToken)
+    }
+
+    func redeemLogin(code: String) async throws -> SessionTokens {
+        let response: LoginResponse = try await post(
+            "/api/auth/login-offers/redeem",
+            body: LoginRedeemRequest(code: code),
+        )
+        return SessionTokens(token: response.token, refreshToken: response.refreshToken)
+    }
+
+    func logout(refreshToken: String?) async throws {
+        try await post("/api/auth/logout", body: LogoutRequest(refreshToken: refreshToken))
     }
 
     /// Single-use ticket for WebSocket query params. The session JWT stays on this POST.
@@ -226,7 +248,14 @@ struct APIClient {
         return request
     }
 
-    private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    private func isAuthBootstrap(_ path: String) -> Bool {
+        path == "/api/auth/login"
+            || path == "/api/auth/refresh"
+            || path == "/api/auth/logout"
+            || path == "/api/auth/login-offers/redeem"
+    }
+
+    private func perform(_ request: URLRequest, allowRefresh: Bool) async throws -> (Data, HTTPURLResponse) {
         let data: Data
         let response: URLResponse
         do {
@@ -237,7 +266,14 @@ struct APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("Invalid response")
         }
-        if http.statusCode == 401 { throw APIError.unauthorized }
+        if http.statusCode == 401 {
+            if allowRefresh, let refreshOnce, let newToken = await refreshOnce() {
+                var retry = request
+                retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                return try await perform(retry, allowRefresh: false)
+            }
+            throw APIError.unauthorized
+        }
         if http.statusCode == 503, reason(from: data) == "setup_required" {
             throw APIError.setupRequired
         }

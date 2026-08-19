@@ -20,6 +20,24 @@ struct LoginRequest: Encodable {
 
 struct LoginResponse: Decodable {
     var token: String
+    var refreshToken: String
+}
+
+struct SessionTokens: Equatable {
+    var token: String
+    var refreshToken: String
+}
+
+struct RefreshRequest: Encodable {
+    var refreshToken: String
+}
+
+struct LogoutRequest: Encodable {
+    var refreshToken: String?
+}
+
+struct LoginRedeemRequest: Encodable {
+    var code: String
 }
 
 struct SetupStatus: Decodable {

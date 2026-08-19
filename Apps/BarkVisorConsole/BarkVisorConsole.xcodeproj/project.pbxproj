@@ -10,6 +10,7 @@
 		17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */; };
 		3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D972FFFAF314F1E415F95262 /* Theme.swift */; };
 		B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CCB06D0BEF46910846E84B /* Models.swift */; };
+		70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F479E78AC8E6DA04341B1D0A /* LoginURI.swift */; };
 		3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */; };
 		4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */; };
 		3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16E71E792A18330E918CE2C /* APIClient.swift */; };
@@ -17,6 +18,7 @@
 		F3E0AD70EAB6684ACB560CA0 /* ConsoleSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BF2E9CD8A8A2935D535C090 /* ConsoleSession.swift */; };
 		DFF9BA2EF5C55A2DA338FA91 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3D16F9314A80FC782E950D /* RootView.swift */; };
 		E82045A66F22735704FF1659 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EDDA117AD453050E0D04717 /* ConnectView.swift */; };
+		EC06974B57C7AC501E9E00FA /* LoginQRScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6E9DD696EC064C0E356616F /* LoginQRScanner.swift */; };
 		93C4E88344ACDF5A9723FCCA /* AppShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958E57141FE4AF286E9FB9DC /* AppShell.swift */; };
 		B5DBFF2632507C489AF3F996 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */; };
 		F3E39ED4F727F96FB8AE08F4 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF0845A7F634DD213C8A3643 /* DashboardView.swift */; };
@@ -35,6 +37,7 @@
 		30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */; };
 		0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */; };
 		D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */; };
+		0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFA94CEA740ED82135195F5 /* SessionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +46,7 @@
 		5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkVisorConsoleApp.swift; sourceTree = "<group>"; };
 		D972FFFAF314F1E415F95262 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		69CCB06D0BEF46910846E84B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		F479E78AC8E6DA04341B1D0A /* LoginURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginURI.swift; sourceTree = "<group>"; };
 		B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
 		6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		C16E71E792A18330E918CE2C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
@@ -50,6 +54,7 @@
 		3BF2E9CD8A8A2935D535C090 /* ConsoleSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleSession.swift; sourceTree = "<group>"; };
 		9E3D16F9314A80FC782E950D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		4EDDA117AD453050E0D04717 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
+		A6E9DD696EC064C0E356616F /* LoginQRScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginQRScanner.swift; sourceTree = "<group>"; };
 		958E57141FE4AF286E9FB9DC /* AppShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShell.swift; sourceTree = "<group>"; };
 		BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		FF0845A7F634DD213C8A3643 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
@@ -65,6 +70,7 @@
 		5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
 		D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailTests.swift; sourceTree = "<group>"; };
 		F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStreamTests.swift; sourceTree = "<group>"; };
+		BAFA94CEA740ED82135195F5 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
 		D9C6393D6C2EE0244C1E3BAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6CFFB50779C3195239B4A46F /* BarkVisorConsole.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BarkVisorConsole.entitlements; sourceTree = "<group>"; };
 		AA4ACA445B3FBAF47CDE31AC /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -142,6 +148,7 @@
 			isa = PBXGroup;
 			children = (
 				69CCB06D0BEF46910846E84B /* Models.swift */,
+				F479E78AC8E6DA04341B1D0A /* LoginURI.swift */,
 				B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */,
 			);
 			path = Models;
@@ -163,6 +170,7 @@
 			children = (
 				9E3D16F9314A80FC782E950D /* RootView.swift */,
 				4EDDA117AD453050E0D04717 /* ConnectView.swift */,
+				A6E9DD696EC064C0E356616F /* LoginQRScanner.swift */,
 				958E57141FE4AF286E9FB9DC /* AppShell.swift */,
 				BCA5A59E35FA97FDAAB97F49 /* SidebarView.swift */,
 				FF0845A7F634DD213C8A3643 /* DashboardView.swift */,
@@ -204,6 +212,7 @@
 				5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */,
 				D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */,
 				F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */,
+				BAFA94CEA740ED82135195F5 /* SessionTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -300,6 +309,7 @@
 				17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */,
 				3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */,
 				B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */,
+				70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */,
 				3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */,
 				4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */,
 				3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */,
@@ -307,6 +317,7 @@
 				F3E0AD70EAB6684ACB560CA0 /* ConsoleSession.swift in Sources */,
 				DFF9BA2EF5C55A2DA338FA91 /* RootView.swift in Sources */,
 				E82045A66F22735704FF1659 /* ConnectView.swift in Sources */,
+				EC06974B57C7AC501E9E00FA /* LoginQRScanner.swift in Sources */,
 				93C4E88344ACDF5A9723FCCA /* AppShell.swift in Sources */,
 				B5DBFF2632507C489AF3F996 /* SidebarView.swift in Sources */,
 				F3E39ED4F727F96FB8AE08F4 /* DashboardView.swift in Sources */,
@@ -329,6 +340,7 @@
 				30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */,
 				0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */,
 				D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */,
+				0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
