@@ -243,6 +243,18 @@ final class AppModel {
         await optional { try await requireClient().guestInfo(workloadID, on: device) }
     }
 
+    func networkMode(for networkID: String?, on device: HomeDeviceHealthSnapshot) async -> String? {
+        guard let networkID else { return nil }
+        if selectedDevice?.hostId == device.hostId,
+           let mode = networks.first(where: { $0.id == networkID })?.mode {
+            return mode
+        }
+        guard let nets = await optional({ try await requireClient().networks(on: device) }) else {
+            return nil
+        }
+        return nets.first { $0.id == networkID }?.mode
+    }
+
     func refreshHome() async {
         _ = try? await refreshDevices()
         await refreshHomeUnion()

@@ -113,6 +113,53 @@ struct GuestListeningPortsTests {
         #expect(sameKeys.collectedAt == "t1")
     }
 
+    @Test func `published filter keeps common ports only`() {
+        let rpc = GuestListeningPorts.makePort(address: "0.0.0.0", port: 111)
+        let sshd = GuestListeningPorts.makePort(address: "0.0.0.0", port: 22)
+        let vite = GuestListeningPorts.makePort(address: "0.0.0.0", port: 5_173)
+        let mdns = GuestListeningPorts.makePort(address: "0.0.0.0", port: 5_353)
+        let kept = GuestListeningPorts.selectPublished([rpc, sshd, vite, mdns].compactMap(\.self))
+        #expect(Set(kept.map(\.port)) == [22, 5_173])
+        #expect(GuestListeningPorts.isPublishedPort(8_081))
+        #expect(!GuestListeningPorts.isPublishedPort(111))
+    }
+
+    @Test func `http scheme follows probe then well-known fallback`() throws {
+        let http = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 80))
+        let ssh = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 22))
+        let mysql = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 3_306))
+        let probed = GuestListeningPorts.applyHTTPSchemes(
+            [http, ssh, mysql],
+            probedHTTP: [80],
+            probeRan: true,
+        )
+        #expect(probed.first { $0.port == 80 }?.scheme == "http")
+        #expect(probed.first { $0.port == 22 }?.scheme == nil)
+        #expect(probed.first { $0.port == 3_306 }?.scheme == nil)
+
+        let notHttp = GuestListeningPorts.applyHTTPSchemes(
+            [http],
+            probedHTTP: [],
+            probeRan: true,
+        )
+        #expect(notHttp.first?.scheme == nil)
+
+        let fallback = GuestListeningPorts.applyHTTPSchemes(
+            [http],
+            probedHTTP: [],
+            probeRan: false,
+        )
+        #expect(fallback.first?.scheme == "http")
+
+        let https = try #require(GuestListeningPorts.makePort(address: "0.0.0.0", port: 443))
+        let tls = GuestListeningPorts.applyHTTPSchemes(
+            [https],
+            probedHTTP: [],
+            probeRan: true,
+        )
+        #expect(tls.first?.scheme == "https")
+    }
+
     @Test func `loopback is never a network scope`() {
         #expect(GuestListeningPorts.scope(for: "127.0.0.1") == GuestListeningPorts.scopeInternal)
         #expect(GuestListeningPorts.scope(for: "::1") == GuestListeningPorts.scopeInternal)

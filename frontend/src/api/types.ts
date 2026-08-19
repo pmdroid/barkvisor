@@ -433,6 +433,7 @@ export interface GuestListeningPort {
   port: number
   scope: 'internal' | 'network' | string
   label: string | null
+  scheme?: 'http' | 'https' | string | null
 }
 
 export interface GuestInfo {
