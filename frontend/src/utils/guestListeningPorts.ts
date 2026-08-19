@@ -29,6 +29,18 @@ export function isOperatorReachableGuestAddress(address: string): boolean {
   return host !== slirpGuestIPv4
 }
 
+export const publishedGuestPorts = new Set([
+  22, 80, 443,
+  3000, 3001, 4173, 4200, 5000, 5173, 5174,
+  8000, 8080, 8081, 8443, 8888,
+  3306, 5432, 6379, 27017,
+  3389, 5900,
+])
+
+export function isPublishedGuestPort(port: Pick<GuestListeningPort, 'port'>): boolean {
+  return publishedGuestPorts.has(port.port)
+}
+
 export function guestListeningPortHref(
   port: GuestListeningPort,
   guestIps: string[],
@@ -37,11 +49,11 @@ export function guestListeningPortHref(
   if (port.scope === 'internal' || isLoopbackAddress(port.address)) return null
   if (!isHttpLike(port)) return null
   const host = operatorReachableHost(port, guestIps, access)
-  if (host) return hrefFor(host, port.port, port.label)
+  if (host) return hrefFor(host, port.port, port)
   if (access?.isMember) return null
   const hostPort = tcpHostForwardPort(port.port, access?.portForwards ?? [])
   if (hostPort == null) return null
-  return hrefFor('127.0.0.1', hostPort, port.label)
+  return hrefFor('127.0.0.1', hostPort, port)
 }
 
 export function guestListeningPortAccessLabel(port: GuestListeningPort): string {
@@ -50,6 +62,7 @@ export function guestListeningPortAccessLabel(port: GuestListeningPort): string 
 }
 
 function isHttpLike(port: GuestListeningPort): boolean {
+  if (port.scheme === 'http' || port.scheme === 'https') return true
   return port.label === 'HTTP' || port.label === 'HTTPS' || port.label === 'Dev'
 }
 
@@ -73,9 +86,10 @@ function tcpHostForwardPort(
   return forwards.find((pf) => pf.protocol === 'tcp' && pf.guestPort === guestPort)?.hostPort
 }
 
-function hrefFor(host: string, port: number, label: string | null): string {
+function hrefFor(host: string, port: number, item: GuestListeningPort): string {
   const href = guestServiceHref(host, port)
-  if (label !== 'HTTPS' || href.startsWith('https://')) return href
+  const https = item.scheme === 'https' || item.label === 'HTTPS'
+  if (!https || href.startsWith('https://')) return href
   return `https://${href.slice('http://'.length)}`
 }
 

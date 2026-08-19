@@ -1382,7 +1382,8 @@ components:
       description: >
         TCP LISTEN from the guest addon. proto is always tcp. scope is
         internal for loopback (never a URL) and network otherwise.
-        label is SSH, HTTP, HTTPS, or Dev when the port is well-known.
+        Only common ports are returned. scheme is http or https when the
+        guest answered HTTP (or the port is well-known HTTPS).
       properties:
         proto:
           type: string
@@ -1397,6 +1398,10 @@ components:
         label:
           type: string
           nullable: true
+        scheme:
+          type: string
+          nullable: true
+          enum: [http, https]
 
     GuestInfo:
       type: object
