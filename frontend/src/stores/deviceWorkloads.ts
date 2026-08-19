@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import api from '../api/client'
-import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot, UpdateVMRequest, VM, WorkloadSpec } from '../api/types'
 import {
   canFetchDeviceWorkloads,
@@ -11,10 +10,11 @@ import {
   deviceVmUsbDevicePath,
   deviceVmUsbPath,
   deviceVmsBasePath,
-  isSelfDevice,
+  type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
 import { hardwarePatchBody } from '../utils/editHome'
-import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import { useDevicesStore } from './devices'
+import { asArray, createHomeInventory, homeUnionRows } from './homeInventory'
 
 export type HomeWorkloadRow = {
   vm: VM
@@ -29,66 +29,48 @@ function actionKey(hostId: string, vmId: string): string {
 }
 
 export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
-  const vmsByHost = ref<Record<string, VM[]>>({})
-  const loadingByHost = ref<Record<string, boolean>>({})
-  const errorByHost = ref<Record<string, string | null>>({})
+  const inventory = createHomeInventory<VM>()
+  const devices = useDevicesStore()
   const actionLoading = ref<Record<string, boolean>>({})
-  const fetchSeqByHost: Record<string, number> = {}
+
+  watch(
+    () => devices.selfDevice,
+    (self) => {
+      if (self) inventory.noteSelf(self)
+    },
+    { immediate: true },
+  )
 
   function vmsFor(hostId: string): VM[] {
-    return vmsByHost.value[hostId] ?? []
-  }
-
-  function isLoading(hostId: string): boolean {
-    return Boolean(loadingByHost.value[hostId])
-  }
-
-  function errorFor(hostId: string): string | null {
-    return errorByHost.value[hostId] ?? null
+    return inventory.listFor(hostId)
   }
 
   function isActing(hostId: string, vmId: string): boolean {
     return Boolean(actionLoading.value[actionKey(hostId, vmId)])
   }
 
-  async function fetchFor(device: HomeDeviceHealthSnapshot): Promise<void> {
-    const hostId = device.hostId
-    const seq = (fetchSeqByHost[hostId] ?? 0) + 1
-    fetchSeqByHost[hostId] = seq
-    if (!canFetchDeviceWorkloads(device)) {
-      // Keep last-known names (PAS-47). Never invent a list on first miss.
-      if (!(hostId in vmsByHost.value)) {
-        vmsByHost.value = { ...vmsByHost.value, [hostId]: [] }
-      }
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      return
-    }
-    loadingByHost.value = { ...loadingByHost.value, [hostId]: true }
-    try {
-      const { data } = await api.get<VM[]>(deviceVmsBasePath(device))
-      if (seq !== fetchSeqByHost[hostId]) return
-      vmsByHost.value = { ...vmsByHost.value, [hostId]: Array.isArray(data) ? data : [] }
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-    } catch (err) {
-      if (seq !== fetchSeqByHost[hostId]) return
-      errorByHost.value = {
-        ...errorByHost.value,
-        [hostId]: apiErrorMessage(err, 'Unable to load Workloads'),
-      }
-    } finally {
-      if (seq === fetchSeqByHost[hostId]) {
-        loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      }
-    }
+  async function fetchFor(device: DeviceApiTarget): Promise<void> {
+    await inventory.fetchFor({
+      device,
+      canFetch: canFetchDeviceWorkloads(device),
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load Workloads',
+      request: async () => {
+        const { data } = await api.get<VM[]>(deviceVmsBasePath(device))
+        return data
+      },
+      asList: asArray<VM>,
+    })
   }
 
-  async function replaceOne(device: HomeDeviceHealthSnapshot, vm: VM): Promise<void> {
-    const hostId = device.hostId
-    const current = vmsByHost.value[hostId] ?? []
-    const idx = current.findIndex((row) => row.id === vm.id)
-    const next = idx >= 0 ? current.map((row, i) => (i === idx ? vm : row)) : [...current, vm]
-    vmsByHost.value = { ...vmsByHost.value, [hostId]: next }
+  function putOne(hostId: string, vm: VM): void {
+    inventory.invalidateFetch(hostId)
+    inventory.replaceOne(hostId, vm)
+  }
+
+  async function replaceOne(device: DeviceApiTarget, vm: VM): Promise<void> {
+    inventory.noteSelf(device)
+    putOne(device.hostId, vm)
   }
 
   function vmFor(hostId: string, vmId: string): VM | undefined {
@@ -96,12 +78,8 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
   }
 
   function removeOne(hostId: string, vmId: string): void {
-    const current = vmsByHost.value[hostId]
-    if (!current?.some((row) => row.id === vmId)) return
-    vmsByHost.value = {
-      ...vmsByHost.value,
-      [hostId]: current.filter((row) => row.id !== vmId),
-    }
+    inventory.invalidateFetch(hostId)
+    inventory.removeOne(hostId, vmId)
   }
 
   async function refreshOne(device: HomeDeviceHealthSnapshot, vmId: string): Promise<void> {
@@ -182,28 +160,30 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
   }
 
   function homeRows(devices: HomeDeviceHealthSnapshot[]): HomeWorkloadRow[] {
-    const rows: HomeWorkloadRow[] = []
-    for (const device of devices) {
-      const reachable = canFetchDeviceWorkloads(device)
-      const label = deviceDisplayLabel(device)
-      const role = isSelfDevice(device) ? 'self' : String(device.role ?? 'member')
-      for (const vm of vmsFor(device.hostId)) {
-        rows.push({ vm, hostId: device.hostId, label, role, reachable })
-      }
-    }
-    return rows
+    return homeUnionRows(devices, vmsFor, canFetchDeviceWorkloads).map((row) => ({
+      vm: row.item,
+      hostId: row.hostId,
+      label: row.label,
+      role: row.role,
+      reachable: row.reachable,
+    }))
   }
 
   return {
-    vmsByHost,
+    vmsByHost: inventory.dataByHost,
+    selfHostId: inventory.selfHostId,
     fetchFor,
     fetchHomeAll,
     homeRows,
     vmsFor,
     vmFor,
+    replaceOne,
+    replaceList: inventory.replaceList,
+    putOne,
     removeOne,
-    isLoading,
-    errorFor,
+    hasList: inventory.hasList,
+    isLoading: inventory.isLoading,
+    errorFor: inventory.errorFor,
     isActing,
     refreshOne,
     update,
@@ -213,5 +193,6 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     start,
     stop,
     restart,
+    noteSelf: inventory.noteSelf,
   }
 })

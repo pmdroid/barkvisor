@@ -60,7 +60,7 @@ describe('deviceNetworks store (PAS-216)', () => {
     expect(store.networksFor('self-1')).toHaveLength(1)
     await store.create(self, { name: 'lab', mode: 'isolated' })
     expect(store.networksFor('self-1').map((row) => row.name)).toEqual(['Default NAT', 'lab'])
-    expect(useNetworkStore().networks.map((row) => row.name)).toEqual(['lab'])
+    expect(useNetworkStore().networks.map((row) => row.name)).toEqual(['Default NAT', 'lab'])
     expect(post).toHaveBeenCalledTimes(1)
   })
 

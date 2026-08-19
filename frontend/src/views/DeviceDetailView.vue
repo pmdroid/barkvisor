@@ -40,7 +40,7 @@ const vms = computed(() => workloads.vmsFor(hostId.value))
 const listError = computed(() => workloads.errorFor(hostId.value))
 const loadingList = computed(() => workloads.isLoading(hostId.value))
 const healthReady = computed(() => devices.report !== null || Boolean(devices.error))
-const listSettled = computed(() => hostId.value in workloads.vmsByHost)
+const listSettled = computed(() => workloads.hasList(hostId.value))
 const showEmptyWorkloads = computed(() =>
   vms.value.length === 0 && !loadingList.value && !listError.value && listSettled.value,
 )

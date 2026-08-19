@@ -80,6 +80,40 @@ describe('deviceWorkloads store (PAS-52)', () => {
     expect(post).toHaveBeenCalledTimes(1)
   })
 
+  test('a stale list does not overwrite putOne that finished first', async () => {
+    const peer = snapshot({ hostId: 'peer-1', role: 'member' })
+    const listed = [vm({ id: 'vm-old', name: 'old', state: 'stopped' })]
+    const created = vm({ id: 'vm-new', name: 'new', state: 'stopped' })
+    let resolveOlder!: (value: { data: VM[] }) => void
+    const older = new Promise<{ data: VM[] }>((resolve) => {
+      resolveOlder = resolve
+    })
+    api.get = mock().mockReturnValueOnce(older) as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    const first = store.fetchFor(peer)
+    store.putOne('peer-1', created)
+    expect(store.vmsFor('peer-1').map((row) => row.id)).toEqual(['vm-new'])
+    resolveOlder({ data: listed })
+    await first
+    expect(store.vmsFor('peer-1').map((row) => row.id)).toEqual(['vm-new'])
+    expect(store.isLoading('peer-1')).toBe(false)
+  })
+
+  test('hasList follows the self placeholder after This Device hostId arrives', async () => {
+    const listed = [vm({ id: 'vm-1', name: 'home', state: 'stopped' })]
+    api.get = mock((url: string) => {
+      if (url === '/vms') return Promise.resolve({ data: listed })
+      throw new Error(`unexpected GET ${url}`)
+    }) as typeof api.get
+    const store = useDeviceWorkloadsStore()
+    await store.fetchFor({ hostId: 'self', role: 'self' })
+    expect(store.hasList('self')).toBe(true)
+    expect(store.hasList('box')).toBe(false)
+    store.noteSelf({ hostId: 'box', role: 'self' })
+    expect(store.hasList('box')).toBe(true)
+    expect(store.vmsFor('box').map((row) => row.id)).toEqual(['vm-1'])
+  })
+
   test('members list and stop through the Home proxy', async () => {
     const peer = snapshot({ hostId: 'peer-1', role: 'member' })
     const listed = [vm({ id: 'vm-2', name: 'nas', state: 'running' })]

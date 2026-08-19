@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import api from '../api/client'
-import { apiErrorMessage } from '../api/errors'
 import type {
   BridgeInfo,
   CurrentHostCapabilities,
@@ -11,7 +10,6 @@ import type {
   NetworkModeName,
 } from '../api/types'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
   deviceBridgesPath,
@@ -19,9 +17,10 @@ import {
   deviceInterfacesPath,
   deviceNetworkPath,
   deviceNetworksPath,
-  isSelfDevice,
+  type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
-import { useNetworkStore } from './networks'
+import { useDevicesStore } from './devices'
+import { asArray, createHomeInventory, homeUnionRows, pickHostValue } from './homeInventory'
 
 export type NetworkWriteBody = {
   name: string
@@ -38,111 +37,53 @@ export type HomeNetworkRow = {
   reachable: boolean
 }
 
-function asNetworks(data: unknown): Network[] {
-  return Array.isArray(data) ? (data as Network[]) : []
-}
-
-function asInterfaces(data: unknown): HostInterface[] {
-  return Array.isArray(data) ? (data as HostInterface[]) : []
-}
-
-function asBridges(data: unknown): BridgeInfo[] {
-  return Array.isArray(data) ? (data as BridgeInfo[]) : []
-}
-
 export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
-  const networksByHost = ref<Record<string, Network[]>>({})
+  const inventory = createHomeInventory<Network>()
+  const devices = useDevicesStore()
   const interfacesByHost = ref<Record<string, HostInterface[]>>({})
   const bridgesByHost = ref<Record<string, BridgeInfo[]>>({})
   const capsByHost = ref<Record<string, CurrentHostCapabilities>>({})
-  const loadingByHost = ref<Record<string, boolean>>({})
-  const errorByHost = ref<Record<string, string | null>>({})
-  const fetchSeqByHost: Record<string, number> = {}
   const contextSeqByHost: Record<string, number> = {}
 
+  watch(
+    () => devices.selfDevice,
+    (self) => {
+      if (self) inventory.noteSelf(self)
+    },
+    { immediate: true },
+  )
+
   function networksFor(hostId: string): Network[] {
-    return networksByHost.value[hostId] ?? []
+    return inventory.listFor(hostId)
   }
 
   function interfacesFor(hostId: string): HostInterface[] {
-    return interfacesByHost.value[hostId] ?? []
+    return pickHostValue(interfacesByHost.value, hostId, inventory.selfHostId.value) ?? []
   }
 
   function bridgesFor(hostId: string): BridgeInfo[] {
-    return bridgesByHost.value[hostId] ?? []
+    return pickHostValue(bridgesByHost.value, hostId, inventory.selfHostId.value) ?? []
   }
 
   function capsFor(hostId: string): CurrentHostCapabilities | null {
-    return capsByHost.value[hostId] ?? null
+    return pickHostValue(capsByHost.value, hostId, inventory.selfHostId.value) ?? null
   }
 
-  function isLoading(hostId: string): boolean {
-    return Boolean(loadingByHost.value[hostId])
+  async function fetchFor(device: DeviceApiTarget): Promise<void> {
+    await inventory.fetchFor({
+      device,
+      canFetch: canCallDeviceAPI(device),
+      unreachablePolicy: 'keepLastKnown',
+      loadError: 'Unable to load networks',
+      request: async () => {
+        const { data } = await api.get<Network[]>(deviceNetworksPath(device))
+        return data
+      },
+      asList: asArray<Network>,
+    })
   }
 
-  function errorFor(hostId: string): string | null {
-    return errorByHost.value[hostId] ?? null
-  }
-
-  function replaceList(hostId: string, networks: Network[]): void {
-    networksByHost.value = { ...networksByHost.value, [hostId]: networks }
-  }
-
-  function replaceOne(hostId: string, network: Network): void {
-    const current = networksFor(hostId)
-    const idx = current.findIndex((row) => row.id === network.id)
-    const next = idx >= 0 ? current.map((row, i) => (i === idx ? network : row)) : [...current, network]
-    replaceList(hostId, next)
-  }
-
-  function invalidateFetch(hostId: string): void {
-    fetchSeqByHost[hostId] = (fetchSeqByHost[hostId] ?? 0) + 1
-    loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-  }
-
-  function syncSelfNetwork(device: HomeDeviceHealthSnapshot, network: Network): void {
-    if (!isSelfDevice(device)) return
-    useNetworkStore().applyOne(network)
-  }
-
-  function syncSelfRemove(device: HomeDeviceHealthSnapshot, id: string): void {
-    if (!isSelfDevice(device)) return
-    useNetworkStore().applyRemove(id)
-  }
-
-  async function fetchFor(device: HomeDeviceHealthSnapshot): Promise<void> {
-    const hostId = device.hostId
-    const seq = (fetchSeqByHost[hostId] ?? 0) + 1
-    fetchSeqByHost[hostId] = seq
-    if (!canCallDeviceAPI(device)) {
-      // Keep last-known names (PAS-47). Never invent Default NAT on first miss.
-      if (!(hostId in networksByHost.value)) {
-        replaceList(hostId, [])
-      }
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-      loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      return
-    }
-    loadingByHost.value = { ...loadingByHost.value, [hostId]: true }
-    try {
-      const { data } = await api.get<Network[]>(deviceNetworksPath(device))
-      if (seq !== fetchSeqByHost[hostId]) return
-      replaceList(hostId, asNetworks(data))
-      errorByHost.value = { ...errorByHost.value, [hostId]: null }
-    } catch (err) {
-      if (seq !== fetchSeqByHost[hostId]) return
-      errorByHost.value = {
-        ...errorByHost.value,
-        [hostId]: apiErrorMessage(err, 'Unable to load networks'),
-      }
-    } finally {
-      if (seq === fetchSeqByHost[hostId]) {
-        loadingByHost.value = { ...loadingByHost.value, [hostId]: false }
-      }
-    }
-  }
-
-  async function fetchContext(device: HomeDeviceHealthSnapshot): Promise<void> {
+  async function fetchContext(device: DeviceApiTarget): Promise<void> {
     const hostId = device.hostId
     const seq = (contextSeqByHost[hostId] ?? 0) + 1
     contextSeqByHost[hostId] = seq
@@ -154,8 +95,8 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
         api.get(deviceCapabilitiesPath(device)).catch(() => ({ data: null })),
       ])
       if (seq !== contextSeqByHost[hostId]) return
-      interfacesByHost.value = { ...interfacesByHost.value, [hostId]: asInterfaces(ifaces.data) }
-      bridgesByHost.value = { ...bridgesByHost.value, [hostId]: asBridges(bridges.data) }
+      interfacesByHost.value = { ...interfacesByHost.value, [hostId]: asArray<HostInterface>(ifaces.data) }
+      bridgesByHost.value = { ...bridgesByHost.value, [hostId]: asArray<BridgeInfo>(bridges.data) }
       if (caps.data) {
         capsByHost.value = { ...capsByHost.value, [hostId]: parseSystemCapabilities(caps.data) }
       }
@@ -172,47 +113,45 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
   }
 
   function homeRows(devices: HomeDeviceHealthSnapshot[]): HomeNetworkRow[] {
-    const rows: HomeNetworkRow[] = []
-    for (const device of devices) {
-      const reachable = canCallDeviceAPI(device)
-      const label = deviceDisplayLabel(device)
-      const role = isSelfDevice(device) ? 'self' : String(device.role ?? 'member')
-      for (const network of networksFor(device.hostId)) {
-        rows.push({ network, hostId: device.hostId, label, role, reachable })
-      }
-    }
-    return rows
+    return homeUnionRows(devices, networksFor, canCallDeviceAPI).map((row) => ({
+      network: row.item,
+      hostId: row.hostId,
+      label: row.label,
+      role: row.role,
+      reachable: row.reachable,
+    }))
   }
 
-  async function create(device: HomeDeviceHealthSnapshot, body: NetworkWriteBody): Promise<Network> {
+  async function create(device: DeviceApiTarget, body: NetworkWriteBody): Promise<Network> {
     const { data } = await api.post<Network>(deviceNetworksPath(device), body)
-    invalidateFetch(device.hostId)
-    replaceOne(device.hostId, data)
-    syncSelfNetwork(device, data)
+    inventory.invalidateFetch(device.hostId)
+    inventory.noteSelf(device)
+    inventory.replaceOne(device.hostId, data)
     return data
   }
 
   async function update(
-    device: HomeDeviceHealthSnapshot,
+    device: DeviceApiTarget,
     id: string,
     body: Partial<NetworkWriteBody>,
   ): Promise<Network> {
     const { data } = await api.patch<Network>(deviceNetworkPath(device, id), body)
-    invalidateFetch(device.hostId)
-    replaceOne(device.hostId, data)
-    syncSelfNetwork(device, data)
+    inventory.invalidateFetch(device.hostId)
+    inventory.noteSelf(device)
+    inventory.replaceOne(device.hostId, data)
     return data
   }
 
-  async function remove(device: HomeDeviceHealthSnapshot, id: string): Promise<void> {
+  async function remove(device: DeviceApiTarget, id: string): Promise<void> {
     await api.delete(deviceNetworkPath(device, id))
-    invalidateFetch(device.hostId)
-    replaceList(device.hostId, networksFor(device.hostId).filter((row) => row.id !== id))
-    syncSelfRemove(device, id)
+    inventory.invalidateFetch(device.hostId)
+    inventory.noteSelf(device)
+    inventory.replaceList(device.hostId, networksFor(device.hostId).filter((row) => row.id !== id))
   }
 
   return {
-    networksByHost,
+    networksByHost: inventory.dataByHost,
+    selfHostId: inventory.selfHostId,
     fetchFor,
     fetchContext,
     fetchHomeAll,
@@ -221,10 +160,14 @@ export const useDeviceNetworksStore = defineStore('deviceNetworks', () => {
     interfacesFor,
     bridgesFor,
     capsFor,
-    isLoading,
-    errorFor,
+    isLoading: inventory.isLoading,
+    errorFor: inventory.errorFor,
     create,
     update,
     remove,
+    replaceList: inventory.replaceList,
+    replaceOne: inventory.replaceOne,
+    removeOne: inventory.removeOne,
+    noteSelf: inventory.noteSelf,
   }
 })
