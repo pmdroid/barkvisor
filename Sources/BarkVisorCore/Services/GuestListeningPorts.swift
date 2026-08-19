@@ -10,6 +10,8 @@ public struct GuestListeningPortDTO: Codable, Sendable, Equatable, Hashable {
     public let port: Int
     public let scope: String
     public let label: String?
+    /// `http` / `https` when the listener should open in a browser; nil otherwise.
+    public let scheme: String?
 
     public init(
         proto: String = "tcp",
@@ -17,12 +19,14 @@ public struct GuestListeningPortDTO: Codable, Sendable, Equatable, Hashable {
         port: Int,
         scope: String,
         label: String?,
+        scheme: String? = nil,
     ) {
         self.proto = proto
         self.address = address
         self.port = port
         self.scope = scope
         self.label = label
+        self.scheme = scheme
     }
 }
 
@@ -67,14 +71,91 @@ public enum GuestListeningPorts {
         lock.unlock()
     }
 
+    /// SSH, common HTTP/HTTPS, typical dev servers, DBs, RDP, VNC.
+    public static let publishedPorts: Set<Int> = [
+        22, 80, 443,
+        3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174,
+        8_000, 8_080, 8_081, 8_443, 8_888,
+        3_306, 5_432, 6_379, 27_017,
+        3_389, 5_900,
+    ]
+
+    public static func isPublishedPort(_ port: Int) -> Bool {
+        publishedPorts.contains(port)
+    }
+
     public static func label(for port: Int) -> String? {
         switch port {
         case 22: "SSH"
         case 80, 8_000, 8_080: "HTTP"
         case 443, 8_443: "HTTPS"
-        case 3_000, 3_001, 4_173, 5_173, 5_174: "Dev"
+        case 3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174, 8_081, 8_888: "Dev"
+        case 3_306: "MySQL"
+        case 5_432: "Postgres"
+        case 6_379: "Redis"
+        case 27_017: "Mongo"
+        case 3_389: "RDP"
+        case 5_900: "VNC"
         default: nil
         }
+    }
+
+    public static func impliedScheme(for port: Int) -> String? {
+        switch port {
+        case 80, 3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174, 8_000, 8_080, 8_081, 8_888:
+            "http"
+        case 443, 8_443:
+            "https"
+        default:
+            nil
+        }
+    }
+
+    public static func isNonHTTPService(_ port: Int) -> Bool {
+        switch port {
+        case 22, 3_306, 3_389, 5_432, 5_900, 6_379, 27_017: true
+        default: false
+        }
+    }
+
+    public static func isHTTPProbeCandidate(_ port: Int) -> Bool {
+        isPublishedPort(port) && !isNonHTTPService(port) && impliedScheme(for: port) != "https"
+    }
+
+    public static func selectPublished(_ ports: [GuestListeningPortDTO]) -> [GuestListeningPortDTO] {
+        canonicalize(ports.filter { isPublishedPort($0.port) })
+    }
+
+    public static func applyHTTPSchemes(
+        _ ports: [GuestListeningPortDTO],
+        probedHTTP: Set<Int>,
+        probeRan: Bool,
+    ) -> [GuestListeningPortDTO] {
+        canonicalize(ports.map { item in
+            let scheme = resolvedScheme(port: item.port, probedHTTP: probedHTTP, probeRan: probeRan)
+            let labeled = item.label ?? (
+                scheme == "http" ? "HTTP" : scheme == "https" ? "HTTPS" : nil
+            )
+            return GuestListeningPortDTO(
+                proto: item.proto,
+                address: item.address,
+                port: item.port,
+                scope: item.scope,
+                label: labeled,
+                scheme: scheme,
+            )
+        })
+    }
+
+    static func resolvedScheme(port: Int, probedHTTP: Set<Int>, probeRan: Bool) -> String? {
+        if isNonHTTPService(port) { return nil }
+        if probedHTTP.contains(port) {
+            return impliedScheme(for: port) == "https" ? "https" : "http"
+        }
+        if probeRan {
+            return impliedScheme(for: port) == "https" ? "https" : nil
+        }
+        return impliedScheme(for: port)
     }
 
     public static func isLoopbackAddress(_ address: String) -> Bool {
@@ -102,6 +183,7 @@ public enum GuestListeningPorts {
             port: port,
             scope: scope(for: host),
             label: label(for: port),
+            scheme: impliedScheme(for: port),
         )
     }
 
@@ -164,28 +246,85 @@ public enum GuestListeningPorts {
     }
 
     static func collect(using client: QMPClient) -> [GuestListeningPortDTO]? {
+        let raw: [GuestListeningPortDTO]
         if let text = execCapture(
             client,
             path: "/bin/sh",
             arg: ["-c", "(ss -lntH || ss -lnt || netstat -lnt) 2>/dev/null"],
         ) {
-            return parseCommandOutput(text)
-        }
-        for path in ["/usr/bin/ss", "/bin/ss", "/usr/sbin/ss"] {
-            if let text = execCapture(client, path: path, arg: ["-lntH"]) {
-                return parseCommandOutput(text)
-            }
-        }
-        for path in ["/usr/bin/netstat", "/bin/netstat"] {
-            if let text = execCapture(client, path: path, arg: ["-lnt"]) {
-                return parseCommandOutput(text)
-            }
-        }
-        guard let tcp = readGuestFile(client, path: "/proc/net/tcp") else {
+            raw = parseCommandOutput(text)
+        } else if let text = firstExec(
+            client,
+            paths: ["/usr/bin/ss", "/bin/ss", "/usr/sbin/ss"],
+            arg: ["-lntH"],
+        ) {
+            raw = parseCommandOutput(text)
+        } else if let text = firstExec(
+            client,
+            paths: ["/usr/bin/netstat", "/bin/netstat"],
+            arg: ["-lnt"],
+        ) {
+            raw = parseCommandOutput(text)
+        } else if let tcp = readGuestFile(client, path: "/proc/net/tcp") {
+            raw = parseProcNet(tcp: tcp, tcp6: readGuestFile(client, path: "/proc/net/tcp6"))
+        } else {
             return nil
         }
-        let tcp6 = readGuestFile(client, path: "/proc/net/tcp6")
-        return parseProcNet(tcp: tcp, tcp6: tcp6)
+        return decoratePublished(raw, using: client)
+    }
+
+    static func decoratePublished(
+        _ ports: [GuestListeningPortDTO],
+        using client: QMPClient,
+    ) -> [GuestListeningPortDTO] {
+        let visible = selectPublished(ports)
+        let candidates = visible.map(\.port).filter(isHTTPProbeCandidate)
+        guard !candidates.isEmpty else {
+            return applyHTTPSchemes(visible, probedHTTP: [], probeRan: false)
+        }
+        if let probed = probeHTTPPorts(Set(candidates).sorted(), using: client) {
+            return applyHTTPSchemes(visible, probedHTTP: probed, probeRan: true)
+        }
+        return applyHTTPSchemes(visible, probedHTTP: [], probeRan: false)
+    }
+
+    static func probeHTTPPorts(_ ports: [Int], using client: QMPClient) -> Set<Int>? {
+        guard !ports.isEmpty else { return [] }
+        let list = ports.map(String.init).joined(separator: " ")
+        let script = """
+        python3 -c "import socket,sys
+        for p in sys.argv[1:]:
+         n=int(p)
+         hit=False
+         for host in ('127.0.0.1','::1'):
+          try:
+           s=socket.create_connection((host,n),0.2); s.settimeout(0.2)
+           s.sendall(b'HEAD / HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n')
+           d=s.recv(32); s.close()
+           if d.startswith(b'HTTP/'):
+            print(p); hit=True; break
+          except Exception:
+           pass
+         if hit: pass
+        " \(list) 2>/dev/null
+        """
+        guard let text = execCapture(client, path: "/bin/sh", arg: ["-c", script]) else {
+            return nil
+        }
+        return Set(
+            text.split(whereSeparator: \.isWhitespace)
+                .compactMap { Int($0) }
+                .filter { ports.contains($0) },
+        )
+    }
+
+    private static func firstExec(_ client: QMPClient, paths: [String], arg: [String]) -> String? {
+        for path in paths {
+            if let text = execCapture(client, path: path, arg: arg) {
+                return text
+            }
+        }
+        return nil
     }
 
     // MARK: - Parse helpers
