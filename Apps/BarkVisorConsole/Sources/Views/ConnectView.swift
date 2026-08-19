@@ -9,11 +9,11 @@ struct ConnectView: View {
             Form {
                 Section {
                     TextField("Device URL", text: $model.serverURLText, prompt: Text("http://192.168.30.1:7777"))
-                        #if os(iOS)
+                    #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
-                        #endif
+                    #endif
                 } header: {
                     Text("Connect")
                 } footer: {
@@ -25,6 +25,13 @@ struct ConnectView: View {
                         Task { await model.connect() }
                     }
                     .disabled(model.busy || model.serverURLText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    #if os(iOS)
+                        NavigationLink("Scan QR") {
+                            LoginQRScanner { uri in
+                                Task { await model.redeemLoginURI(uri) }
+                            }
+                        }
+                    #endif
                     if model.busy {
                         ProgressView()
                     }
@@ -36,8 +43,8 @@ struct ConnectView: View {
                 "Could not connect",
                 isPresented: Binding(
                     get: { model.banner != nil },
-                    set: { if !$0 { model.banner = nil } }
-                )
+                    set: { if !$0 { model.banner = nil } },
+                ),
             ) {
                 Button("OK", role: .cancel) { model.banner = nil }
             } message: {
@@ -62,10 +69,10 @@ struct LoginView: View {
                     TextField("Username", text: $model.username)
                         .textContentType(.username)
                         .focused($focused, equals: .user)
-                        #if os(iOS)
+                    #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        #endif
+                    #endif
                     SecureField("Password", text: $model.password)
                         .textContentType(.password)
                         .focused($focused, equals: .password)
@@ -81,6 +88,13 @@ struct LoginView: View {
                         Task { await model.signIn() }
                     }
                     .disabled(model.busy || model.username.isEmpty || model.password.isEmpty)
+                    #if os(iOS)
+                        NavigationLink("Scan QR") {
+                            LoginQRScanner { uri in
+                                Task { await model.redeemLoginURI(uri) }
+                            }
+                        }
+                    #endif
                     if model.busy {
                         ProgressView()
                     }
@@ -96,8 +110,8 @@ struct LoginView: View {
                 "Sign in failed",
                 isPresented: Binding(
                     get: { model.banner != nil },
-                    set: { if !$0 { model.banner = nil } }
-                )
+                    set: { if !$0 { model.banner = nil } },
+                ),
             ) {
                 Button("OK", role: .cancel) { model.banner = nil }
             } message: {

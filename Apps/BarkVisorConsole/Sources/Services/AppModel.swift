@@ -11,7 +11,9 @@ enum AppRoute: String, CaseIterable, Identifiable, Hashable {
     case logs
     case settings
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
@@ -71,22 +73,30 @@ final class AppModel {
     var homeLoaded = false
 
     private var token: String?
+    private var refreshToken: String?
     /// Origin the JWT was issued for. Polling must never follow a draft URL edit.
     private var sessionURL: URL?
     private var pollTask: Task<Void, Never>?
+    private var refreshTask: Task<String?, Never>?
     private var scopedGeneration = 0
     private var homeGeneration = 0
 
     var client: APIClient? {
         guard let sessionURL, let token else { return nil }
-        return APIClient(baseURL: sessionURL, token: token)
+        var api = APIClient(baseURL: sessionURL, token: token)
+        api.refreshOnce = { [weak self] in
+            await self?.refreshAccessToken()
+        }
+        return api
     }
 
     var selectedDevice: HomeDeviceHealthSnapshot? {
         devices.first { $0.hostId == selectedDeviceID } ?? devices.first { $0.isSelf } ?? devices.first
     }
 
-    var connectedURL: URL? { sessionURL ?? (try? DeviceURL.normalize(serverURLText)) }
+    var connectedURL: URL? {
+        sessionURL ?? (try? DeviceURL.normalize(serverURLText))
+    }
 
     init() {
         let storedURL = UserDefaults.standard.string(forKey: "serverURL") ?? DeviceURL.default
@@ -103,20 +113,26 @@ final class AppModel {
         username = UserDefaults.standard.string(forKey: "username") ?? ""
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
         token = KeychainStore.readToken()
-        if let stored = token {
-            if JWT.isExpired(stored) {
-                KeychainStore.deleteToken()
-                token = nil
-            } else if let url = try? DeviceURL.normalize(serverURLText) {
+        refreshToken = KeychainStore.readRefreshToken()
+        if token != nil || refreshToken != nil {
+            if let url = try? DeviceURL.normalize(serverURLText) {
                 sessionURL = url
             } else {
-                KeychainStore.deleteToken()
+                KeychainStore.deleteSession()
                 token = nil
+                refreshToken = nil
             }
         }
     }
 
     func bootstrap() async {
+        if refreshToken != nil, JWT.needsRefresh(token) {
+            if await refreshAccessToken() == nil, token == nil || JWT.isExpired(token ?? "") {
+                clearSessionLocally()
+                phase = sessionURL == nil ? .connect : .login
+                return
+            }
+        }
         guard token != nil else {
             phase = .connect
             return
@@ -150,8 +166,8 @@ final class AppModel {
             let url = try DeviceURL.normalize(serverURLText)
             serverURLText = url.absoluteString
             var api = APIClient(baseURL: url, token: nil)
-            let newToken = try await api.login(username: username, password: password)
-            persistSession(token: newToken)
+            let session = try await api.login(username: username, password: password)
+            persistSession(session, origin: url)
             password = ""
             try await refreshAll()
             phase = .ready
@@ -166,9 +182,11 @@ final class AppModel {
     }
 
     func logout() {
+        let presented = refreshToken
+        let url = sessionURL
+        let access = token
         stopPolling()
-        token = nil
-        KeychainStore.deleteToken()
+        clearSessionLocally()
         dropScopedState()
         dropHomeState()
         devices = []
@@ -176,8 +194,14 @@ final class AppModel {
         pairing = nil
         about = nil
         logs = []
-        phase = .login
+        phase = url == nil ? .connect : .login
         banner = nil
+        if let url, presented != nil || access != nil {
+            Task {
+                var api = APIClient(baseURL: url, token: access)
+                try? await api.logout(refreshToken: presented)
+            }
+        }
     }
 
     func disconnect() {
@@ -197,10 +221,9 @@ final class AppModel {
         }
         serverURLText = next.absoluteString
         UserDefaults.standard.set(serverURLText, forKey: "serverURL")
-        guard token != nil, let sessionURL, !DeviceURL.sameOrigin(sessionURL, next) else { return }
+        guard token != nil || refreshToken != nil, let sessionURL, !DeviceURL.sameOrigin(sessionURL, next) else { return }
         stopPolling()
-        token = nil
-        KeychainStore.deleteToken()
+        clearSessionLocally()
         self.sessionURL = nil
         dropScopedState()
         dropHomeState()
@@ -325,19 +348,81 @@ final class AppModel {
         }
     }
 
-    private func persistSession(token: String) {
-        self.token = token
-        sessionURL = try? DeviceURL.normalize(serverURLText)
-        KeychainStore.saveToken(token)
+    func handleOpenURL(_ url: URL) async {
+        await redeemLoginURI(url.absoluteString)
+    }
+
+    func redeemLoginURI(_ raw: String) async {
+        banner = nil
+        busy = true
+        defer { busy = false }
+        do {
+            let payload = try LoginURI.parse(raw)
+            serverURLText = payload.deviceURL
+            let url = try DeviceURL.normalize(serverURLText)
+            serverURLText = url.absoluteString
+            UserDefaults.standard.set(serverURLText, forKey: "serverURL")
+            var api = APIClient(baseURL: url, token: nil)
+            let session = try await api.redeemLogin(code: payload.code)
+            persistSession(session, origin: url)
+            try await refreshAll()
+            phase = .ready
+            startPolling()
+        } catch APIError.setupRequired {
+            phase = .setupRequired
+        } catch APIError.unauthorized {
+            banner = "Sign-in QR was invalid or expired"
+        } catch {
+            banner = error.localizedDescription
+        }
+    }
+
+    private func persistSession(_ session: SessionTokens, origin: URL? = nil) {
+        token = session.token
+        refreshToken = session.refreshToken
+        if let origin {
+            sessionURL = origin
+        } else if sessionURL == nil {
+            sessionURL = try? DeviceURL.normalize(serverURLText)
+        }
+        KeychainStore.saveSession(token: session.token, refreshToken: session.refreshToken)
         UserDefaults.standard.set(serverURLText, forKey: "serverURL")
         UserDefaults.standard.set(username, forKey: "username")
+    }
+
+    private func clearSessionLocally() {
+        token = nil
+        refreshToken = nil
+        KeychainStore.deleteSession()
+    }
+
+    private func refreshAccessToken() async -> String? {
+        if let refreshTask {
+            return await refreshTask.value
+        }
+        let task = Task<String?, Never> { [weak self] in
+            guard let self else { return nil }
+            guard let refreshToken, let sessionURL else { return nil }
+            do {
+                var api = APIClient(baseURL: sessionURL, token: nil)
+                let session = try await api.refreshSession(refreshToken: refreshToken)
+                self.persistSession(session)
+                return session.token
+            } catch {
+                return nil
+            }
+        }
+        refreshTask = task
+        let value = await task.value
+        refreshTask = nil
+        return value
     }
 
     private func refreshDevices() async throws {
         let client = try requireClient()
         let health: Result<HomeDeviceHealthReport, Error>
         do {
-            health = .success(try await client.healthReport())
+            health = try await .success(client.healthReport())
         } catch {
             health = .failure(error)
         }
@@ -350,7 +435,7 @@ final class AppModel {
             if healthStatus != 404 { throw healthError }
             let list: Result<HomeDeviceList, Error>
             do {
-                list = .success(try await client.deviceList())
+                list = try await .success(client.deviceList())
             } catch {
                 list = .failure(error)
             }
@@ -359,20 +444,20 @@ final class AppModel {
                 _ = try HomeDeviceDirectory.resolution(
                     healthStatus: healthStatus,
                     listStatus: nil,
-                    aboutSucceeded: true
+                    aboutSucceeded: true,
                 )
                 devices = body.devices.map(\.asSnapshot)
                 totals = nil
             case let .failure(listError):
                 let listStatus = HomeDeviceDirectory.httpStatus(from: listError)
                 if listStatus != 404 { throw listError }
-                let aboutSucceeded = (try? await client.about()) != nil
+                let aboutSucceeded = await (try? client.about()) != nil
                 _ = try HomeDeviceDirectory.resolution(
                     healthStatus: healthStatus,
                     listStatus: listStatus,
-                    aboutSucceeded: aboutSucceeded
+                    aboutSucceeded: aboutSucceeded,
                 )
-                devices = [await client.localOnlyDevice()]
+                devices = await [client.localOnlyDevice()]
                 totals = nil
             }
         }
@@ -493,6 +578,9 @@ final class AppModel {
             while let self, !Task.isCancelled, self.phase == .ready {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled, self.phase == .ready else { return }
+                if JWT.needsRefresh(self.token) {
+                    _ = await self.refreshAccessToken()
+                }
                 do {
                     try await self.refreshDevices()
                     await self.refreshDeviceScoped()
@@ -516,7 +604,7 @@ final class AppModel {
     private func mutate(
         _ id: String,
         on device: HomeDeviceHealthSnapshot?,
-        _ work: (APIClient, HomeDeviceHealthSnapshot?) async throws -> Void
+        _ work: (APIClient, HomeDeviceHealthSnapshot?) async throws -> Void,
     ) async {
         actionIDs.insert(id)
         defer { actionIDs.remove(id) }

@@ -49,6 +49,12 @@ public enum APIContract {
         Route(method: "GET", path: "/api/openapi.yaml", stability: .stable),
         Route(method: "GET", path: "/api/contract", stability: .stable),
         Route(method: "POST", path: "/api/auth/login", stability: .stable),
+        Route(method: "POST", path: "/api/auth/refresh", stability: .stable),
+        Route(method: "POST", path: "/api/auth/logout", stability: .stable),
+        Route(method: "POST", path: "/api/auth/login-offers", stability: .evolving),
+        Route(method: "GET", path: "/api/auth/login-offers", stability: .evolving),
+        Route(method: "DELETE", path: "/api/auth/login-offers", stability: .evolving),
+        Route(method: "POST", path: "/api/auth/login-offers/redeem", stability: .evolving),
 
         // Stable resources
         Route(method: "GET", path: "/api/vms", stability: .stable),

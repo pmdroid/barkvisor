@@ -18,6 +18,13 @@ import {
   revokePairingCode,
   type PairingIssue,
 } from '../api/pairing'
+import {
+  getLoginOffer,
+  issueLoginOffer,
+  revokeLoginOffer,
+  type LoginOffer,
+} from '../api/loginOffer'
+import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
@@ -42,6 +49,10 @@ const pairingHydrating = ref(false)
 const pairingSeq = ref(0)
 const pairingNow = ref(Date.now())
 const pairingCopied = ref(false)
+const loginOffer = ref<LoginOffer | null>(null)
+const loginOfferSvgMarkup = ref('')
+const loginOfferLoading = ref(false)
+const loginOfferCopied = ref(false)
 const selectedHost = ref('')
 const customHost = ref('')
 const rejoinPayload = ref('')
@@ -112,8 +123,68 @@ async function loadPairingCode() {
 function openHomeTab() {
   tab.value = 'home'
   loadPairingCode()
+  loadLoginOffer()
   fetchLibrarySettings()
   devicesStore.fetchHealth()
+}
+
+async function loadLoginOffer() {
+  try {
+    loginOffer.value = await getLoginOffer()
+    await renderLoginOfferQr()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  }
+}
+
+async function renderLoginOfferQr() {
+  if (!loginOffer.value) {
+    loginOfferSvgMarkup.value = ''
+    return
+  }
+  loginOfferSvgMarkup.value = await loginOfferSvg(loginOffer.value.uri)
+}
+
+async function showLoginQr() {
+  loginOfferLoading.value = true
+  try {
+    const host =
+      selectedHost.value && selectedHost.value !== CUSTOM_ADVERTISED_HOST
+        ? selectedHost.value
+        : undefined
+    loginOffer.value = await issueLoginOffer(host)
+    await renderLoginOfferQr()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    loginOfferLoading.value = false
+  }
+}
+
+async function hideLoginQr() {
+  loginOfferLoading.value = true
+  try {
+    await revokeLoginOffer()
+    loginOffer.value = null
+    loginOfferSvgMarkup.value = ''
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    loginOfferLoading.value = false
+  }
+}
+
+async function copyLoginUri() {
+  if (!loginOffer.value) return
+  try {
+    await navigator.clipboard.writeText(loginOffer.value.uri)
+    loginOfferCopied.value = true
+    setTimeout(() => {
+      loginOfferCopied.value = false
+    }, 2000)
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not copy sign-in URI'))
+  }
 }
 
 async function issueOffer(advertisedHost?: string, success?: string) {
@@ -727,6 +798,39 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div class="pairing-card login-offer-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div>
+          <h3 class="login-offer-title">Phone sign-in</h3>
+          <p class="pairing-hint" style="text-align:left;margin:0">
+            Sign in on the iPhone app. This is not pairing. Scan the QR in BarkVisor, or open
+            the sign-in URI if the system Camera launched the app.
+          </p>
+        </div>
+        <AppButton
+          size="sm"
+          variant="primary"
+          :loading="loginOfferLoading"
+          @click="showLoginQr"
+        >
+          Show sign-in QR
+        </AppButton>
+      </div>
+      <div v-if="loginOffer" class="login-offer-body">
+        <div class="login-offer-qr" v-html="loginOfferSvgMarkup" />
+        <p class="pairing-meta">{{ pairingExpiryLabel(loginOffer.expiresAt, pairingNow) }}</p>
+        <pre class="pairing-uri">{{ loginOffer.uri }}</pre>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <AppButton size="sm" @click="copyLoginUri">
+            {{ loginOfferCopied ? 'Copied' : 'Copy URI' }}
+          </AppButton>
+          <AppButton size="sm" style="color:var(--red)" :loading="loginOfferLoading" @click="hideLoginQr">
+            Hide
+          </AppButton>
+        </div>
+      </div>
+    </div>
+
     <div class="pairing-card rejoin-card">
       <p class="pairing-hint" style="text-align:left;margin:0 0 10px">
         If this {{ DEVICE_LABEL }} already has its data, paste a pairing code from
@@ -1254,8 +1358,24 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-all;
 }
-.rejoin-card {
+.rejoin-card,
+.login-offer-card {
   margin-top: 16px;
+}
+.login-offer-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.login-offer-qr {
+  width: 192px;
+  height: 192px;
+  margin: 12px auto 0;
+}
+.login-offer-qr :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #fff;
 }
 .pairing-input {
   width: 100%;

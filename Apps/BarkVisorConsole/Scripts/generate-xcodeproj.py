@@ -13,6 +13,7 @@ APP_SOURCES = [
     "Sources/App/BarkVisorConsoleApp.swift",
     "Sources/Theme/Theme.swift",
     "Sources/Models/Models.swift",
+    "Sources/Models/LoginURI.swift",
     "Sources/Models/StreamSupport.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
@@ -20,6 +21,7 @@ APP_SOURCES = [
     "Sources/Services/ConsoleSession.swift",
     "Sources/Views/RootView.swift",
     "Sources/Views/ConnectView.swift",
+    "Sources/Views/LoginQRScanner.swift",
     "Sources/Views/AppShell.swift",
     "Sources/Views/SidebarView.swift",
     "Sources/Views/DashboardView.swift",
@@ -37,6 +39,7 @@ TEST_SOURCES = [
     "Tests/APIDecodingTests.swift",
     "Tests/WorkloadDetailTests.swift",
     "Tests/LocalStreamTests.swift",
+    "Tests/SessionTests.swift",
 ]
 
 
@@ -271,6 +274,7 @@ def main() -> None:
             "Models",
             [
                 child_file("Sources/Models/Models.swift"),
+                child_file("Sources/Models/LoginURI.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
             ],
             "Models",
@@ -294,6 +298,7 @@ def main() -> None:
             [
                 child_file("Sources/Views/RootView.swift"),
                 child_file("Sources/Views/ConnectView.swift"),
+                child_file("Sources/Views/LoginQRScanner.swift"),
                 child_file("Sources/Views/AppShell.swift"),
                 child_file("Sources/Views/SidebarView.swift"),
                 child_file("Sources/Views/DashboardView.swift"),
@@ -330,6 +335,7 @@ def main() -> None:
                 child_file("Tests/APIDecodingTests.swift"),
                 child_file("Tests/WorkloadDetailTests.swift"),
                 child_file("Tests/LocalStreamTests.swift"),
+                child_file("Tests/SessionTests.swift"),
             ],
             "Tests",
         )

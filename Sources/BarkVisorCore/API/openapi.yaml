@@ -126,7 +126,118 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: JWT
+          description: JWT and opaque refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshSession
+      security: []
+      x-barkvisor-stability: stable
+      summary: Rotate a refresh token and issue a new JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: New JWT and rotated refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      security: []
+      x-barkvisor-stability: stable
+      summary: Revoke the presented refresh family, or all refresh tokens when a JWT is sent
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Refresh tokens revoked
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/login-offers:
+    post:
+      tags: [evolving]
+      operationId: issueLoginOffer
+      x-barkvisor-stability: evolving
+      summary: Mint a short-lived phone sign-in QR (not pairing)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginOfferIssueRequest"
+      responses:
+        "200":
+          description: Active sign-in offer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginOfferIssue"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      tags: [evolving]
+      operationId: getLoginOffer
+      x-barkvisor-stability: evolving
+      summary: Current unused sign-in offer, if any
+      responses:
+        "200":
+          description: Active sign-in offer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginOfferIssue"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [evolving]
+      operationId: revokeLoginOffer
+      x-barkvisor-stability: evolving
+      summary: Drop the active sign-in offer
+      responses:
+        "204":
+          description: Offer revoked
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/login-offers/redeem:
+    post:
+      tags: [evolving]
+      operationId: redeemLoginOffer
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Exchange a sign-in QR code for a JWT and refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRedeemRequest"
+      responses:
+        "200":
+          description: JWT and refresh token
           content:
             application/json:
               schema:
@@ -1523,9 +1634,55 @@ components:
 
     LoginResponse:
       type: object
-      required: [token]
+      required: [token, refreshToken]
       properties:
         token:
+          type: string
+        refreshToken:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+
+    LoginOfferIssueRequest:
+      type: object
+      properties:
+        advertisedHost:
+          type: string
+
+    LoginOfferIssue:
+      type: object
+      required: [code, expiresAt, ttlSeconds, uri, host, port]
+      properties:
+        code:
+          type: string
+        expiresAt:
+          type: string
+        ttlSeconds:
+          type: integer
+        uri:
+          type: string
+          description: barkvisor://login/v1?code=…&host=…&port=…
+        host:
+          type: string
+        port:
+          type: integer
+
+    LoginRedeemRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
           type: string
 
     VM:

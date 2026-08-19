@@ -16,7 +16,34 @@ struct LoginRequest: Content, Validatable {
 
 struct LoginResponse: Content {
     let token: String
+    let refreshToken: String
 }
+
+struct RefreshRequest: Content, Validatable {
+    let refreshToken: String
+
+    static func validations(_ validations: inout Validations) {
+        validations.add("refreshToken", as: String.self, is: !.empty)
+    }
+}
+
+struct LogoutRequest: Content {
+    var refreshToken: String?
+}
+
+struct LoginOfferIssueRequest: Content {
+    var advertisedHost: String?
+}
+
+struct LoginRedeemRequest: Content, Validatable {
+    let code: String
+
+    static func validations(_ validations: inout Validations) {
+        validations.add("code", as: String.self, is: !.empty)
+    }
+}
+
+extension LoginOfferIssue: Content {}
 
 struct WSTicketRequest: Content {
     let vmID: String?
@@ -32,11 +59,19 @@ struct AuthController: RouteCollection {
 
     func boot(routes: any RoutesBuilder) throws {
         let auth = routes.grouped("api", "auth")
-        auth.grouped(loginRateLimit).post("login", use: login)
+        let limited = auth.grouped(loginRateLimit)
+        limited.post("login", use: login)
+        limited.post("refresh", use: refresh)
+        limited.post("logout", use: logout)
+        limited.post("login-offers", "redeem", use: redeemLoginOffer)
     }
 
     func bootProtected(routes: any RoutesBuilder) throws {
         routes.post("api", "auth", "ws-ticket", use: createWSTicket)
+        let offers = routes.grouped("api", "auth", "login-offers")
+        offers.post(use: issueLoginOffer)
+        offers.get(use: currentLoginOffer)
+        offers.delete(use: revokeLoginOffer)
     }
 
     @Sendable
@@ -45,15 +80,15 @@ struct AuthController: RouteCollection {
         let body = try req.content.decode(LoginRequest.self)
 
         do {
-            let (token, user) = try await AuthService.login(
+            let session = try await AuthService.loginSession(
                 username: body.username, password: body.password,
                 hasher: BcryptHasher.shared, keys: keys, db: req.db,
             )
             AuditService.log(
-                action: "auth.login", resourceType: "user", resourceId: user.id,
-                resourceName: user.username, req: req,
+                action: "auth.login", resourceType: "user", resourceId: session.user.id,
+                resourceName: session.user.username, req: req,
             )
-            return LoginResponse(token: token)
+            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
         } catch {
             // Log failed attempts without exposing the submitted username (could be a mistyped password)
             if let bvError = error as? BarkVisorError {
@@ -67,6 +102,101 @@ struct AuthController: RouteCollection {
                     )
                 }
             }
+            throw error
+        }
+    }
+
+    @Sendable
+    func refresh(req: Vapor.Request) async throws -> LoginResponse {
+        try RefreshRequest.validate(content: req)
+        let body = try req.content.decode(RefreshRequest.self)
+        do {
+            let session = try await AuthService.refresh(
+                refreshToken: body.refreshToken, keys: keys, db: req.db,
+            )
+            AuditService.log(
+                action: "auth.refresh", resourceType: "user", resourceId: session.user.id,
+                resourceName: session.user.username, req: req,
+            )
+            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+        } catch {
+            AuditService.log(action: "auth.refresh.failed", detail: "Invalid refresh token", req: req)
+            throw error
+        }
+    }
+
+    @Sendable
+    func logout(req: Vapor.Request) async throws -> HTTPStatus {
+        let body = try? req.content.decode(LogoutRequest.self)
+        var revoked = false
+        if let bearer = req.headers.bearerAuthorization?.token,
+           let payload = try? await keys.verify(bearer, as: UserPayload.self) {
+            try await AuthService.revokeAllRefreshTokens(userId: payload.sub.value, db: req.db)
+            AuditService.log(
+                action: "auth.logout", resourceType: "user", resourceId: payload.sub.value,
+                resourceName: payload.username, req: req,
+            )
+            revoked = true
+        }
+        if let refreshToken = body?.refreshToken, !refreshToken.isEmpty {
+            try await AuthService.revokeRefreshToken(refreshToken, db: req.db)
+            if !revoked {
+                AuditService.log(action: "auth.logout", resourceType: "user", req: req)
+            }
+            revoked = true
+        }
+        guard revoked else {
+            throw BarkVisorError.unauthorized("Missing refresh token")
+        }
+        return .noContent
+    }
+
+    @Sendable
+    func issueLoginOffer(req: Vapor.Request) async throws -> LoginOfferIssue {
+        let authUser = try req.requireUser
+        let advertised = (try? req.content.decode(LoginOfferIssueRequest.self))?.advertisedHost
+        let offer = try await LoginOfferService.issue(
+            LoginOfferService.IssueInput(userId: authUser.userId, advertisedHost: advertised),
+            db: req.db,
+        )
+        AuditService.log(
+            action: "auth.login_offer.issue", resourceType: "user", resourceId: authUser.userId,
+            resourceName: authUser.username, req: req,
+        )
+        return offer
+    }
+
+    @Sendable
+    func currentLoginOffer(req: Vapor.Request) async throws -> LoginOfferIssue {
+        _ = try req.requireUser
+        return try await LoginOfferService.current(db: req.db)
+    }
+
+    @Sendable
+    func revokeLoginOffer(req: Vapor.Request) async throws -> HTTPStatus {
+        _ = try req.requireUser
+        try await LoginOfferService.revoke(db: req.db)
+        AuditService.log(action: "auth.login_offer.revoke", resourceType: "user", req: req)
+        return .noContent
+    }
+
+    @Sendable
+    func redeemLoginOffer(req: Vapor.Request) async throws -> LoginResponse {
+        try LoginRedeemRequest.validate(content: req)
+        let body = try req.content.decode(LoginRedeemRequest.self)
+        do {
+            let session = try await LoginOfferService.redeem(
+                code: body.code, keys: keys, db: req.db,
+            )
+            AuditService.log(
+                action: "auth.login_offer.redeem", resourceType: "user",
+                resourceId: session.user.id, resourceName: session.user.username, req: req,
+            )
+            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+        } catch {
+            AuditService.log(
+                action: "auth.login_offer.redeem.failed", detail: "Invalid sign-in code", req: req,
+            )
             throw error
         }
     }
