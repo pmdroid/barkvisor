@@ -169,16 +169,27 @@ public enum ImageService {
         case .sourceFailed:
             throw BarkVisorError.downloadFailed("Library row is not usable for this catalog URL")
         case let .started(image):
-            let destination = try await LibraryAcquire.destination(
-                imageId: image.id,
-                sourceUrl: repoImage.downloadUrl,
-                imageType: repoImage.imageType,
-                db: db,
-            )
-            await downloader.start(
-                imageID: image.id, url: sourceURL, destination: destination, expectedChecksum: checksum,
-            )
-            return .started(image)
+            do {
+                let destination = try await LibraryAcquire.destination(
+                    imageId: image.id,
+                    sourceUrl: repoImage.downloadUrl,
+                    imageType: repoImage.imageType,
+                    db: db,
+                )
+                await downloader.start(
+                    imageID: image.id, url: sourceURL, destination: destination,
+                    expectedChecksum: checksum,
+                )
+                return .started(image)
+            } catch {
+                await LibraryAcquire.markFailed(
+                    imageId: image.id,
+                    message: error.localizedDescription,
+                    kind: .internet,
+                    db: db,
+                )
+                throw error
+            }
         }
     }
 

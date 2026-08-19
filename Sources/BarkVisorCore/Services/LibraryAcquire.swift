@@ -150,32 +150,31 @@ public enum LibraryAcquire {
             filename: filename,
             db: db,
         )
-        let fetched = try await source.copyBytes(to: destination)
         do {
+            let fetched = try await source.copyBytes(to: destination)
             try verify(
                 destination: destination,
                 kind: kind,
                 request: request,
                 fetched: fetched,
             )
+            let sizeBytes =
+                (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64)
+                    ?? fetched.bytesWritten
+            guard let row = try await persistReady(
+                imageId: imageId,
+                path: destination.path,
+                sizeBytes: sizeBytes,
+                sha256: fetched.sha256,
+                db: db,
+            ) else {
+                throw BarkVisorError.downloadFailed("could not record image: row missing")
+            }
+            return row
         } catch {
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
-        let sizeBytes =
-            (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64)
-                ?? fetched.bytesWritten
-        guard let row = try await persistReady(
-            imageId: imageId,
-            path: destination.path,
-            sizeBytes: sizeBytes,
-            sha256: fetched.sha256,
-            db: db,
-        ) else {
-            try? FileManager.default.removeItem(at: destination)
-            throw BarkVisorError.downloadFailed("could not record image: row missing")
-        }
-        return row
     }
 
     public static func beginLive(_ id: String) {
@@ -212,8 +211,10 @@ public enum LibraryAcquire {
         db: Database,
     ) throws -> Claim? {
         let rows = try VMImage.filter(Column("sourceUrl") == request.sourceUrl).fetchAll(db)
-        if let ready = rows.first(where: { $0.status == "ready" }),
-           ImageService.matchesCatalogChecksum(ready, expected: request.expectedChecksum) {
+        if let ready = rows.first(where: {
+            $0.status == "ready"
+                && ImageService.matchesCatalogChecksum($0, expected: request.expectedChecksum)
+        }) {
             return .ready(ready)
         }
         if let downloading = rows.first(where: { $0.status == "downloading" }) {

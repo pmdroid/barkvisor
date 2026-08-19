@@ -149,6 +149,56 @@ final class ImageServiceTests {
         #expect(started == [claims[0].image.id])
     }
 
+    @Test func `catalog destination failure marks the claimed row so a later claim can retry`() async throws {
+        let blocked = tmpDir.appendingPathComponent("not-a-library")
+        try Data().write(to: blocked)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: blocked.path)
+                .save(db, onConflict: .replace)
+        }
+        let downloader = RecordingCatalogStartDownloader()
+        let source = "https://example.com/catalog-dest-fail.img"
+        let sourceURL = try #require(URL(string: source))
+        let repoImage = RepositoryImage(
+            id: "ri-dest-fail", repositoryId: "repo-1", slug: "cloud",
+            name: "Cloud", description: nil, imageType: "cloud-image", arch: "arm64",
+            version: "1", downloadUrl: source, sizeBytes: nil,
+        )
+        await #expect(throws: (any Error).self) {
+            try await ImageService.startOrDetectCatalogDownload(
+                repoImage: repoImage,
+                sourceURL: sourceURL,
+                checksum: nil,
+                downloader: downloader,
+                db: dbPool,
+            )
+        }
+        let failed = try await dbPool.read { db in
+            try VMImage.filter(Column("sourceUrl") == source).fetchOne(db)
+        }
+        #expect(failed?.status == "error")
+        let started = await downloader.startedIDs
+        #expect(started.isEmpty)
+
+        let library = tmpDir.appendingPathComponent("library")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: library.path)
+                .save(db, onConflict: .replace)
+        }
+        let retry = try await ImageService.startOrDetectCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: nil,
+            downloader: downloader,
+            db: dbPool,
+        )
+        #expect(retry.image.status == "downloading")
+        #expect(retry.image.id != failed?.id)
+        let startedAfter = await downloader.startedIDs
+        #expect(startedAfter == [retry.image.id])
+    }
+
     @Test func `ready image is ignored when catalog checksum differs`() throws {
         let now = "2026-01-01T00:00:00Z"
         let source = "https://example.com/cloud-checksum.img"
