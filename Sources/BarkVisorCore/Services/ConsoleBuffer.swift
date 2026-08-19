@@ -49,14 +49,18 @@ public actor ConsoleBufferManager {
         await buffers[vmID]?.write(data)
     }
 
-    /// Register a WebSocket listener to receive live output
+    /// Register a WebSocket listener and snapshot scrollback together so
+    /// bytes recorded between those steps are not lost (PAS-233).
     public func addListener(
         vmID: String,
         id: String,
         callback: @escaping @Sendable ([UInt8]) -> Void,
         onClose: (@Sendable () -> Void)? = nil,
-    ) {
-        buffers[vmID]?.addListener(id: id, callback: callback, onClose: onClose)
+    ) -> (scrollback: Data, serialClosed: Bool) {
+        guard let buffer = buffers[vmID] else {
+            return (VMConsoleBuffer.loadPersistedScrollback(vmID: vmID), true)
+        }
+        return buffer.addListener(id: id, callback: callback, onClose: onClose)
     }
 
     /// Remove a WebSocket listener
@@ -68,9 +72,20 @@ public actor ConsoleBufferManager {
         buffers[vmID] != nil
     }
 
+    /// True only while the QEMU serial unix socket is open.
+    public func isSerialLive(vmID: String) -> Bool {
+        buffers[vmID]?.isSerialLive ?? false
+    }
+
     public func listenerCount(vmID: String) -> Int {
         buffers[vmID]?.listenerCount ?? 0
     }
+}
+
+private enum SerialChannelState {
+    case connecting
+    case live
+    case closed
 }
 
 /// Per-VM console buffer with disk-backed scrollback and live listeners
@@ -87,6 +102,7 @@ public final class VMConsoleBuffer: @unchecked Sendable {
     private var fileSize: Int = 0
     private var liveScrollback = Data()
     private var channel: Channel?
+    private var serialState: SerialChannelState = .connecting
     private var listeners: [String: @Sendable ([UInt8]) -> Void] = [:]
     private var closeHandlers: [String: @Sendable () -> Void] = [:]
     private var logLineBuffer = Data()
@@ -129,6 +145,12 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         return listeners.count
     }
 
+    public var isSerialLive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return serialState == .live
+    }
+
     private func openOrCreateFile() {
         let fm = FileManager.default
         try? fm.createDirectory(at: Self.consoleDir(), withIntermediateDirectories: true)
@@ -155,6 +177,15 @@ public final class VMConsoleBuffer: @unchecked Sendable {
     private func setChannel(_ ch: Channel) {
         lock.lock()
         channel = ch
+        serialState = .live
+        lock.unlock()
+    }
+
+    private func markConnectFailed() {
+        lock.lock()
+        if serialState == .connecting {
+            serialState = .closed
+        }
         lock.unlock()
     }
 
@@ -169,6 +200,7 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         lock.lock()
         let ch = channel
         channel = nil
+        serialState = .closed
         listeners.removeAll()
         let handlers = Array(closeHandlers.values)
         closeHandlers.removeAll()
@@ -227,6 +259,7 @@ public final class VMConsoleBuffer: @unchecked Sendable {
             ch.read()
         } catch {
             Log.vm.error("Failed to connect console buffer for \(self.vmID): \(error)", vm: self.vmID)
+            markConnectFailed()
         }
     }
 
@@ -302,13 +335,23 @@ public final class VMConsoleBuffer: @unchecked Sendable {
         id: String,
         callback: @escaping @Sendable ([UInt8]) -> Void,
         onClose: (@Sendable () -> Void)? = nil,
-    ) {
+    ) -> (scrollback: Data, serialClosed: Bool) {
         lock.lock()
+        defer { lock.unlock() }
+        let snapshot: Data = {
+            if !liveScrollback.isEmpty {
+                return liveScrollback
+            }
+            return (try? Data(contentsOf: scrollbackFileURL)) ?? Data()
+        }()
+        if serialState == .closed {
+            return (snapshot, true)
+        }
         listeners[id] = callback
         if let onClose {
             closeHandlers[id] = onClose
         }
-        lock.unlock()
+        return (snapshot, false)
     }
 
     public func removeListener(id: String) {

@@ -6,8 +6,9 @@ import NIOPosix
 /// Far end for a serial console client (PAS-233).
 ///
 /// The manager already holds the QEMU unix socket. Opening this end
-/// replays scrollback, then registers one subscriber. Overflow, bind-closes,
-/// and inbound-closed-before-dial stay in `WebSocketHop`.
+/// registers one subscriber and replays that snapshot so live bytes
+/// cannot fall between the two. Overflow, bind-closes, and
+/// inbound-closed-before-dial stay in `WebSocketHop`.
 struct ConsoleBufferHopFarEnd: WebSocketHopFarEnding {
     let buffers: ConsoleBufferManager
     let vmID: String
@@ -17,13 +18,6 @@ struct ConsoleBufferHopFarEnd: WebSocketHopFarEnding {
     ) async throws -> any WebSocketHopPeer {
         let peer = ConsoleBufferHopPeer(buffers: buffers, vmID: vmID)
         configure(peer)
-        if peer.isClosed {
-            return peer
-        }
-        let scrollback = await buffers.scrollback(vmID: vmID)
-        if !scrollback.isEmpty {
-            peer.receive(bytes: Array(scrollback))
-        }
         if peer.isClosed {
             return peer
         }
@@ -40,6 +34,8 @@ final class ConsoleBufferHopPeer: WebSocketHopPeer, @unchecked Sendable {
     private var box: WebSocketPipeBox?
     private var closed = false
     private var subscribed = false
+    private var replayFinished = false
+    private var pendingLive: [[UInt8]] = []
     private let closePromise: EventLoopPromise<Void>
 
     init(
@@ -127,11 +123,11 @@ final class ConsoleBufferHopPeer: WebSocketHopPeer, @unchecked Sendable {
             return true
         }()
         guard shouldSubscribe else { return }
-        await buffers.addListener(
+        let result = await buffers.addListener(
             vmID: vmID,
             id: listenerID,
             callback: { [weak self] bytes in
-                self?.receive(bytes: bytes)
+                self?.receiveLive(bytes: bytes)
             },
             onClose: { [weak self] in
                 self?.close()
@@ -139,6 +135,50 @@ final class ConsoleBufferHopPeer: WebSocketHopPeer, @unchecked Sendable {
         )
         if isClosed {
             await buffers.removeListener(vmID: vmID, id: listenerID)
+            return
+        }
+        if !result.scrollback.isEmpty {
+            receive(bytes: Array(result.scrollback))
+        }
+        finishReplay()
+        if result.serialClosed || isClosed {
+            close()
+            await buffers.removeListener(vmID: vmID, id: listenerID)
+        }
+    }
+
+    private func receiveLive(bytes: [UInt8]) {
+        let deliver: [UInt8]? = {
+            lock.lock()
+            defer { lock.unlock() }
+            if closed { return nil }
+            if !replayFinished {
+                pendingLive.append(bytes)
+                return nil
+            }
+            return bytes
+        }()
+        if let deliver {
+            receive(bytes: deliver)
+        }
+    }
+
+    private func finishReplay() {
+        let pending: [[UInt8]] = {
+            lock.lock()
+            defer { lock.unlock() }
+            replayFinished = true
+            if closed {
+                pendingLive.removeAll()
+                return []
+            }
+            let out = pendingLive
+            pendingLive.removeAll()
+            return out
+        }()
+        for chunk in pending {
+            if isClosed { return }
+            receive(bytes: chunk)
         }
     }
 

@@ -92,8 +92,8 @@ struct AgentLocalProxyController: RouteCollection {
         query: String?,
     ) async {
         if kind == .console, let consoleBuffers {
-            guard await consoleBuffers.isAttached(vmID: vmID) else {
-                Log.server.error("Agent console hop: no serial buffer for \(vmID)")
+            guard await consoleBuffers.isSerialLive(vmID: vmID) else {
+                Log.server.error("Agent console hop: no live serial for \(vmID)")
                 inbound.close()
                 return
             }

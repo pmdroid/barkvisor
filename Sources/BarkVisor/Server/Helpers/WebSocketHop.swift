@@ -107,7 +107,7 @@ enum WebSocketHop {
                     peer.close()
                 }
             }
-            if inbound.isClosed || remote.isClosed || toRemote.overflowed || toClient.overflowed {
+            if inbound.isClosed || toRemote.overflowed || toClient.overflowed {
                 if toRemote.overflowed || toClient.overflowed {
                     logOverflow(logTarget)
                 }
@@ -115,11 +115,15 @@ enum WebSocketHop {
                 remote.close()
                 return
             }
+            // Attach even if the far end already closed during open so
+            // pre-attach frames (serial scrollback) still flush.
             toRemote.attach(remote)
             toClient.attach(inbound)
             bindCloses(local: inbound, remote: remote)
-            if toRemote.overflowed || toClient.overflowed {
-                logOverflow(logTarget)
+            if remote.isClosed || toRemote.overflowed || toClient.overflowed {
+                if toRemote.overflowed || toClient.overflowed {
+                    logOverflow(logTarget)
+                }
                 inbound.close()
                 remote.close()
             }
