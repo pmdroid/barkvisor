@@ -28,11 +28,44 @@ export function setSetupRequiredHandler(handler: () => void) {
   onSetupRequired = handler
 }
 
+function requestPath(url: unknown): string {
+  if (typeof url !== 'string' || !url) return ''
+  const path = url.split('?')[0] || ''
+  try {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return new URL(path).pathname
+    }
+  } catch {
+    return path
+  }
+  return path
+}
+
+/** Login/refresh/logout/redeem 401s must not revoke a still-valid session. */
+export function isAuthBootstrapRequest(config?: { url?: string } | null): boolean {
+  const path = requestPath(config?.url)
+  return (
+    path.endsWith('/auth/login') ||
+    path.endsWith('/auth/refresh') ||
+    path.endsWith('/auth/logout') ||
+    path.endsWith('/auth/login-offers/redeem')
+  )
+}
+
+function revokeRefreshOnUnauthorized() {
+  void import('../stores/auth')
+    .then(({ useAuthStore }) => useAuthStore().logout())
+    .catch(() => {
+      localStorage.removeItem('token')
+      localStorage.removeItem('refreshToken')
+    })
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token')
+    if (error.response?.status === 401 && !isAuthBootstrapRequest(error.config)) {
+      revokeRefreshOnUnauthorized()
       if (onUnauthorized) {
         onUnauthorized()
       }

@@ -31,8 +31,23 @@
 	</dict>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>BarkVisor uses the camera to scan a sign-in QR from a Device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>BarkVisor Console connects to a Device on your network (default port 7777).</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>dev.barkvisor.console.login</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>barkvisor</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
