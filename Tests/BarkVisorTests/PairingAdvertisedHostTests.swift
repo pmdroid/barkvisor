@@ -84,7 +84,18 @@ struct PairingAdvertisedHostTests {
     @Test func `explicit advertised host is rejected without falling back`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
         let offers = PairingOfferStore(dataDir: dir)
+        _ = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: dir,
+                hostId: hostId,
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
+            ),
+            offers: offers,
+        )
+        #expect(try offers.load() != nil)
         let blocked = [
             "localhost",
             "foo.internal",
@@ -97,14 +108,14 @@ struct PairingAdvertisedHostTests {
                 try PairingService.issue(
                     PairingService.IssueInput(
                         dataDir: dir,
-                        hostId: UUID().uuidString,
+                        hostId: hostId,
                         advertisedHost: host,
                         advertisedHosts: ["192.168.0.8"],
                     ),
                     offers: offers,
                 )
             }
+            #expect(try offers.load() == nil)
         }
-        #expect(try offers.load() == nil)
     }
 }

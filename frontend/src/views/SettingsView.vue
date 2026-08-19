@@ -130,6 +130,9 @@ async function issueOffer(advertisedHost?: string, success?: string) {
   } catch (e: unknown) {
     if (!isCurrentPairingSeq(seq, pairingSeq.value)) return
     toast.error(apiErrorMessage(e))
+    if (advertisedHost !== undefined) {
+      pairingOffer.value = null
+    }
     syncPickerFromOffer(pairingOffer.value)
   } finally {
     if (isCurrentPairingSeq(seq, pairingSeq.value)) pairingLoading.value = false
