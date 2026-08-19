@@ -168,6 +168,9 @@ describe('guestHome (PAS-201)', () => {
     const modeFn = listSrc.match(/function networkModeFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
     expect(modeFn).toContain('deviceNetworks.networksFor(row.hostId)')
     expect(modeFn).toMatch(/if \(row\.role === 'self'\) return networkMap/)
+    const ipFn = listSrc.match(/function listGuestIp\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(ipFn).toContain('listDisplayGuestIp')
+    expect(ipFn).toContain('networkModeFor(row)')
     expect(listSrc).toContain('deviceNetworks.fetchFor(device)')
   })
 
@@ -204,6 +207,7 @@ describe('guestHome (PAS-201)', () => {
     expect(list).toContain('guestIpPortsView')
     expect(list).toContain('guestListServiceChips')
     expect(list).toContain('guestIpsReachableFromNetwork')
+    expect(list).toContain('listDisplayGuestIp')
     expect(detail).toContain('guestOsLabel')
     expect(detail).toContain('{{ memberOsLabel }}')
     expect(detail).not.toContain('v-if="guestInfo?.osName"')

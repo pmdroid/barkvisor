@@ -11,6 +11,7 @@ import {
   isWildcardAddress,
   nextFreeHostPort,
   suggestPublishNatHostfwd,
+  listDisplayGuestIp,
 } from './guestListeningPorts'
 
 function port(partial: Partial<GuestListeningPort> & Pick<GuestListeningPort, 'port'>): GuestListeningPort {
@@ -349,6 +350,16 @@ describe('guestListServiceChips (PAS-232)', () => {
     expect(guestIpsReachableFromNetwork('isolated')).toBe(false)
     expect(guestIpsReachableFromNetwork(null)).toBe(false)
     expect(guestIpsReachableFromNetwork(undefined)).toBe(false)
+  })
+
+  test('list IP is copyable only on bridged, never NAT or isolated', () => {
+    expect(listDisplayGuestIp('10.0.0.12', 'bridged')).toBe('10.0.0.12')
+    expect(listDisplayGuestIp('10.0.0.12', 'nat')).toBeNull()
+    expect(listDisplayGuestIp('10.0.0.12', 'isolated')).toBeNull()
+    expect(listDisplayGuestIp('10.0.0.12', null)).toBeNull()
+    expect(listDisplayGuestIp('10.0.2.15', 'bridged')).toBeNull()
+    expect(listDisplayGuestIp('127.0.0.1', 'bridged')).toBeNull()
+    expect(listDisplayGuestIp(null, 'bridged')).toBeNull()
   })
 
   test('duplicate HTTP listeners collapse to one chip preferring port 80', () => {

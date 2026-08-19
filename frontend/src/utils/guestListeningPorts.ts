@@ -89,6 +89,16 @@ export function guestIpsReachableFromNetwork(
   return networkMode === 'bridged'
 }
 
+/** Copyable list IP only when the operator can reach the guest. */
+export function listDisplayGuestIp(
+  ip: string | null | undefined,
+  networkMode: string | null | undefined,
+): string | null {
+  if (!ip || !isOperatorReachableGuestAddress(ip)) return null
+  if (!guestIpsReachableFromNetwork(networkMode)) return null
+  return ip
+}
+
 /**
  * Short Workloads-list chip set from guest-info listeners.
  * `null` means listeners unavailable (caller may keep hostfwd chips).

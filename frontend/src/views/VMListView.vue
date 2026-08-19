@@ -35,7 +35,7 @@ import {
 import {
   guestIpsReachableFromNetwork,
   guestListServiceChips,
-  isOperatorReachableGuestAddress,
+  listDisplayGuestIp,
 } from '../utils/guestListeningPorts'
 
 const store = useVMStore()
@@ -215,9 +215,7 @@ function serviceChipsFor(row: HomeWorkloadRow) {
 }
 
 function listGuestIp(row: HomeWorkloadRow) {
-  const ip = guestPrimaryIp(rowGuestInfo(row))
-  if (!ip || !isOperatorReachableGuestAddress(ip)) return null
-  return ip
+  return listDisplayGuestIp(guestPrimaryIp(rowGuestInfo(row)), networkModeFor(row))
 }
 
 function emuBadge(vm: typeof store.vms[0]) {
