@@ -56,6 +56,7 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('PairingQr')
     expect(settings).toContain(':payload="pairingOffer.qrPayload"')
     expect(settings).toContain(':key="pairingOffer.qrPayload"')
+    expect(settings).toContain('v-if="isPairingOfferActive(pairingOffer.expiresAt, pairingNow)"')
     expect(settings).toContain('copyPairingPayload')
     expect(settings).toContain('v-if="!pairingOffer"')
     expect(settings).not.toMatch(/\b(cluster|node)s?\b/i)

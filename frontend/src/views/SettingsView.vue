@@ -21,7 +21,12 @@ import {
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
-import { isCurrentPairingSeq, nextPairingLoadSeq, pairingExpiryLabel } from '../utils/pairingOffer'
+import {
+  isCurrentPairingSeq,
+  isPairingOfferActive,
+  nextPairingLoadSeq,
+  pairingExpiryLabel,
+} from '../utils/pairingOffer'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -712,7 +717,11 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="pairing-code">{{ pairingOffer.code }}</div>
-      <PairingQr :key="pairingOffer.qrPayload" :payload="pairingOffer.qrPayload" />
+      <PairingQr
+        v-if="isPairingOfferActive(pairingOffer.expiresAt, pairingNow)"
+        :key="pairingOffer.qrPayload"
+        :payload="pairingOffer.qrPayload"
+      />
       <p class="pairing-meta">{{ pairingExpiryLabel(pairingOffer.expiresAt, pairingNow) }}</p>
       <p class="pairing-hint">
         Changing the address issues a new code and offer. This
