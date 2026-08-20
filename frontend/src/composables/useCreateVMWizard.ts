@@ -13,17 +13,12 @@ import { networksUsableOnHost } from './useFeature'
 import api from '../api/client'
 import type {
   PortForwardRule,
-  HostUSBDevice,
-  USBPassthroughDevice,
-  CreateVMRequest,
   CurrentHostCapabilities,
   Disk,
-  HomePlacementScoreResponse,
   Image,
   Network,
 } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
-import { useImageProgress } from './useTicketedEventSource'
 import { useTaskPoller } from './useTaskPoller'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
@@ -56,22 +51,16 @@ import {
   usesLocalDeviceInventory,
 } from '../utils/homeDeviceApi'
 import {
-  applyRecommendedHostId,
-  isPlacementScoreAborted,
   isRecommendedHost,
   placementReasonsForHost,
-  PLACEMENT_SCORE_DEBOUNCE_MS,
-  scorePlacement,
 } from '../utils/placement'
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
+import { usePlacement } from './usePlacement'
+import { useVirtioDownload } from './useVirtioDownload'
+import { useUSBPicker } from './useUSBPicker'
+import { useCreateVMPayload } from './useCreateVMPayload'
 
-const livePlacementCancels = new Set<() => void>()
-
-/** Abort in-flight placement scores. Tests call this in afterEach. */
-export function cancelLivePlacementScores() {
-  for (const cancel of [...livePlacementCancels]) cancel()
-  livePlacementCancels.clear()
-}
+export { cancelLivePlacementScores } from './usePlacement'
 
 export function useCreateVMWizard(
   emit: (e: 'created') => void,
@@ -89,7 +78,6 @@ export function useCreateVMWizard(
 
   const selectedHostId = ref(opts.initialHostId ?? '')
   const userOverrodeHost = ref(!!opts.initialHostId)
-  const placementScore = ref<HomePlacementScoreResponse | null>(null)
   const pickedCaps = ref<CurrentHostCapabilities>({ ...defaultCapabilities })
   const pickedHostArchKnown = ref(false)
   const deviceImages = ref<Image[]>([])
@@ -176,6 +164,58 @@ export function useCreateVMWizard(
     return fromImage || ''
   })
 
+  const cpuCount = ref(2)
+  const memoryMB = ref(1024)
+
+  const placement = usePlacement({
+    selectedHostId,
+    userOverrodeHost,
+    initialHostId: opts.initialHostId,
+    effectiveGuestArch,
+    memoryMB,
+    osType,
+    selectedLibraryKey,
+  })
+  const {
+    placementScore,
+    placementRefreshing,
+    assignRecommendedHostId,
+    consumeProgrammaticHostAssign,
+    refreshPlacement,
+  } = placement
+
+  const virtio = useVirtioDownload({
+    selectedHostId,
+    selectedDevice,
+    osType,
+  })
+  const {
+    virtioWinAvailable,
+    virtioWinDownloading,
+    virtioWinProgress,
+    virtioWinStatus,
+    virtioWinError,
+    checkVirtioWinStatus,
+    startVirtioWinDownload,
+  } = virtio
+
+  const usbPicker = useUSBPicker({
+    selectedHostId,
+    selectedDevice,
+  })
+  const {
+    hostUSBDevices,
+    selectedUSBDevices,
+    showUSBPicker,
+    fetchUSBDevices,
+    toggleUSBDevice,
+    isUSBSelected,
+    removeUSBDevice,
+    clearUSBSelection,
+  } = usbPicker
+
+  const { buildCreateVMPayload } = useCreateVMPayload()
+
   const deviceOptions = computed<DevicePickOption[]>(() => {
     const rows = devicesStore.devices
     const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
@@ -212,8 +252,6 @@ export function useCreateVMWizard(
   })
 
   // Step 2: Hardware
-  const cpuCount = ref(2)
-  const memoryMB = ref(1024)
   const displayResolution = ref('1280x800')
   const uefi = ref(true)
   const tpmOverride = ref<boolean | null>(null)
@@ -314,14 +352,6 @@ export function useCreateVMWizard(
   const showCloudInit = ref(false)
   const cloudUserData = ref('')
 
-  // VirtIO Windows Drivers (conditional step for Windows)
-  const virtioWinAvailable = ref(false)
-  const virtioWinImageId = ref<string | null>(null)
-  const virtioWinDownloading = ref(false)
-  const virtioWinProgress = ref(0)
-  const virtioWinStatus = ref<string>('')
-  const virtioWinError = ref('')
-
   // Dynamic step mapping (PAS-182): Basics → Image → Place → Hardware → Drivers? → Storage → Network → Summary
   const needsDriverStep = computed(() => osType.value === 'windows' && !virtioWinAvailable.value)
   const totalSteps = computed(() => (needsDriverStep.value ? 8 : 7))
@@ -343,154 +373,12 @@ export function useCreateVMWizard(
     await loadPickedDevice()
   }
 
-  watch(osType, async (os) => {
-    if (os === 'windows') {
-      await checkVirtioWinStatus()
-    }
-  })
-
-  let virtioCheckSeq = 0
-
-  async function checkVirtioWinStatus() {
-    const seq = ++virtioCheckSeq
-    try {
-      const target = selectedDevice.value
-      if (selectedHostId.value && !target) {
-        if (seq === virtioCheckSeq) virtioWinAvailable.value = false
-        return
-      }
-      const path = target ? devicePath(target, '/system/virtio-win/status') : '/system/virtio-win/status'
-      const { data } = await api.get(path)
-      if (seq !== virtioCheckSeq) return
-      virtioWinAvailable.value = data.available
-      virtioWinImageId.value = data.imageId || null
-    } catch {
-      if (seq === virtioCheckSeq) virtioWinAvailable.value = false
-    }
-  }
-
-  const virtioProgress = useImageProgress()
-
-  async function startVirtioWinDownload() {
-    virtioWinError.value = ''
-    virtioWinDownloading.value = true
-    virtioWinProgress.value = 0
-    virtioWinStatus.value = 'downloading'
-    virtioProgress.stop()
-
-    try {
-      const target = selectedDevice.value
-      if (selectedHostId.value && !target) {
-        virtioWinError.value = 'The selected Device is no longer available. Pick a Device again.'
-        virtioWinDownloading.value = false
-        return
-      }
-      const path = target ? devicePath(target, '/system/virtio-win/download') : '/system/virtio-win/download'
-      const { data } = await api.post(path)
-      virtioWinImageId.value = data.imageId
-      if (target && !isSelfDevice(target)) {
-        // No SSE cross-device — poll the member image until ready.
-        const { poll } = useTaskPoller()
-        if (data.taskID) {
-          const event = await poll(data.taskID, { path: deviceTaskPath(target, data.taskID) })
-          if (event.status === 'completed') {
-            virtioWinAvailable.value = true
-            virtioWinDownloading.value = false
-            return
-          }
-          virtioWinError.value = event.error || 'Download failed'
-          virtioWinDownloading.value = false
-          return
-        }
-        virtioWinAvailable.value = false
-        virtioWinDownloading.value = false
-        virtioWinError.value = 'Download started on the Device. Refresh this step shortly.'
-        return
-      }
-
-      virtioProgress.start(data.imageId, {
-        onProgress: (msg) => {
-          virtioWinProgress.value = msg.percent ?? 0
-          virtioWinStatus.value = msg.status ?? 'downloading'
-        },
-        onReady: () => {
-          virtioWinAvailable.value = true
-          virtioWinDownloading.value = false
-          imageStore.fetchAll()
-        },
-        onError: (msg) => {
-          virtioWinError.value = msg?.error || 'Download failed'
-          virtioWinDownloading.value = false
-          if (virtioWinStatus.value !== 'ready') {
-            checkVirtioWinStatus()
-          }
-        },
-      })
-    } catch (e: any) {
-      virtioWinError.value = apiErrorMessage(e)
-      virtioWinDownloading.value = false
-    }
-  }
-
   // Step 4/5: Storage
   const diskSource = ref<'new' | 'existing'>('new')
   const diskSizeGB = ref(10)
   const existingDiskId = ref('')
   const sharedPaths = ref<string[]>([])
   const showFolderPicker = ref(false)
-
-  // USB passthrough (shown on Network step, gated by capabilities)
-  const hostUSBDevices = ref<HostUSBDevice[]>([])
-  const selectedUSBDevices = ref<USBPassthroughDevice[]>([])
-  const showUSBPicker = ref(false)
-
-  async function fetchUSBDevices() {
-    try {
-      const target = selectedDevice.value
-      if (selectedHostId.value && !target) {
-        hostUSBDevices.value = []
-        return
-      }
-      const path = target ? devicePath(target, '/system/usb-devices') : '/system/usb-devices'
-      const { data } = await api.get(path)
-      hostUSBDevices.value = data
-    } catch {
-      hostUSBDevices.value = []
-    }
-  }
-
-  function usbDeviceKey(dev: { deviceId?: string | null; vendorId: string; productId: string; serialNumber?: string | null; id?: string }) {
-    if ('id' in dev && dev.id) return dev.id
-    return dev.deviceId
-      || (dev.serialNumber ? `${dev.vendorId}:${dev.productId}:${dev.serialNumber}` : `${dev.vendorId}:${dev.productId}`)
-  }
-
-  function toggleUSBDevice(dev: HostUSBDevice) {
-    if (dev.attachable === false || dev.claimedByVMId) return
-    const key = usbDeviceKey(dev)
-    const idx = selectedUSBDevices.value.findIndex((d) => usbDeviceKey(d) === key)
-    if (idx >= 0) {
-      selectedUSBDevices.value.splice(idx, 1)
-    } else {
-      selectedUSBDevices.value.push({
-        vendorId: dev.vendorId,
-        productId: dev.productId,
-        label: dev.productName || dev.name,
-        serialNumber: dev.serialNumber,
-        deviceId: usbDeviceKey(dev),
-      })
-    }
-  }
-
-  function isUSBSelected(dev: HostUSBDevice): boolean {
-    const key = usbDeviceKey(dev)
-    return selectedUSBDevices.value.some((d) => usbDeviceKey(d) === key)
-  }
-
-  function removeUSBDevice(dev: USBPassthroughDevice) {
-    const key = usbDeviceKey(dev)
-    selectedUSBDevices.value = selectedUSBDevices.value.filter((d) => usbDeviceKey(d) !== key)
-  }
 
   // Step 5/6: Network (list from shared store)
   const selectedNetworkId = ref('')
@@ -579,90 +467,6 @@ export function useCreateVMWizard(
     deviceDisks.value = []
   }
 
-  let placementScoreSeq = 0
-  const placementRefreshing = ref(false)
-  /** True while refreshPlacement assigns selectedHostId — not a user pick. */
-  let applyingRecommendedHost = false
-  let placementAbort: AbortController | null = null
-  let placementDebounce: ReturnType<typeof setTimeout> | undefined
-
-  function assignRecommendedHostId(hostId: string) {
-    if (hostId === selectedHostId.value) return
-    applyingRecommendedHost = true
-    selectedHostId.value = hostId
-  }
-
-  function cancelPlacementScore() {
-    if (placementDebounce !== undefined) {
-      clearTimeout(placementDebounce)
-      placementDebounce = undefined
-    }
-    placementAbort?.abort()
-    placementAbort = null
-    livePlacementCancels.delete(cancelPlacementScore)
-  }
-
-  livePlacementCancels.add(cancelPlacementScore)
-
-  function schedulePlacementRefresh(applyRecommendation: boolean) {
-    if (placementDebounce !== undefined) clearTimeout(placementDebounce)
-    placementDebounce = setTimeout(() => {
-      placementDebounce = undefined
-      void refreshPlacement(applyRecommendation)
-    }, PLACEMENT_SCORE_DEBOUNCE_MS)
-  }
-
-  async function refreshPlacement(applyRecommendation = true) {
-    placementAbort?.abort()
-    const ac = new AbortController()
-    placementAbort = ac
-    const seq = ++placementScoreSeq
-    placementRefreshing.value = true
-    try {
-      const guest = effectiveGuestArch.value
-      const data = await scorePlacement({
-        declaredArchitectures: guest ? [guest] : [],
-        minMemoryMB: memoryMB.value,
-        requestedMemoryMB: memoryMB.value,
-      }, { signal: ac.signal })
-      if (seq !== placementScoreSeq) return
-      placementScore.value = data
-    } catch (error) {
-      if (seq !== placementScoreSeq || isPlacementScoreAborted(error)) return
-      placementScore.value = null
-    } finally {
-      if (seq === placementScoreSeq) placementRefreshing.value = false
-    }
-    if (seq !== placementScoreSeq) return
-    if (!applyRecommendation || userOverrodeHost.value) return
-    const guest = effectiveGuestArch.value
-    assignRecommendedHostId(applyRecommendedHostId({
-      recommendedHostId: placementScore.value?.recommendedHostId,
-      initialHostId: opts.initialHostId,
-      selfHostId: devicesStore.selfDevice?.hostId,
-      currentHostId: selectedHostId.value,
-      hostAllowed: (hostId) => {
-        const row = devicesStore.deviceByHostId(hostId)
-        if (!row) return false
-        return createVMIncompatibilityReasons(row, {
-          guestArch: guest,
-          osType: osType.value,
-          hasImage: selectedLibraryKey.value
-            ? homeLibrary.deviceHasLibraryImage(selectedLibraryKey.value, row)
-            : undefined,
-        }).length === 0
-      },
-    }))
-  }
-
-  watch([memoryMB, effectiveGuestArch, osType], () => {
-    schedulePlacementRefresh(false)
-  })
-
-  watch(() => homeLibrary.imagesLoading, (loading, wasLoading) => {
-    if (wasLoading && !loading) void refreshPlacement(true)
-  })
-
   async function refreshHomeLibrary() {
     await devicesStore.fetchHealth().catch(() => {})
     await homeLibrary.fetchImages(devicesStore.devices).catch(() => {})
@@ -724,7 +528,7 @@ export function useCreateVMWizard(
         deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
         deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
         existingDiskId.value = ''
-        selectedUSBDevices.value = []
+        clearUSBSelection()
         error.value = ''
         await applyLoadedResources(false, seq)
       } catch (e: unknown) {
@@ -747,7 +551,7 @@ export function useCreateVMWizard(
   })
 
   onUnmounted(() => {
-    cancelPlacementScore()
+    placement.cancelPlacementScore()
   })
 
   watch(currentStepLabel, (label) => {
@@ -755,12 +559,11 @@ export function useCreateVMWizard(
   })
 
   watch(selectedHostId, async (next, prev) => {
-    const programmatic = applyingRecommendedHost
-    applyingRecommendedHost = false
+    const programmatic = consumeProgrammaticHostAssign()
     if (!next || next === prev) return
     if (!programmatic) userOverrodeHost.value = true
     existingDiskId.value = ''
-    selectedUSBDevices.value = []
+    clearUSBSelection()
     // loadPickedDevice already continues with the new host after refreshPlacement.
     if (programmatic) return
     await loadPickedDevice()
@@ -884,43 +687,32 @@ export function useCreateVMWizard(
     }
     loading.value = true
     try {
-      // Simple path omits vmType / firmware so the server applies host defaults (PAS-93).
-      const req: CreateVMRequest = {
-        name: name.value.trim(),
+      const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
+      const req = buildCreateVMPayload({
+        name: name.value,
         osFamily: osType.value,
         cpuCount: cpuCount.value,
         memoryMB: memoryMB.value,
-      }
-      if (archCustomized.value) req.vmType = vmType.value
-      if (uefiCustomized.value) req.uefi = uefi.value
-      if (tpmCustomized.value) req.tpmEnabled = tpmEnabled.value
-      if (diskSource.value === 'existing') {
-        req.existingDiskId = existingDiskId.value
-      } else {
-        req.diskSizeGB = diskSizeGB.value
-      }
-      const imageId = createImage?.id
-      if (mode.value === 'iso') {
-        if (imageId) req.isoId = imageId
-      } else {
-        if (imageId) req.cloudImageId = imageId
-        const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
-        const keys = selectedKey ? [authorizedKeyForCloudInit(selectedKey)] : []
-        const userData = cloudUserData.value.trim()
-        if (keys.length || userData) {
-          req.cloudInit = {
-            sshAuthorizedKeys: keys.length ? keys : undefined,
-            userData: userData || undefined,
-          }
-        }
-      }
-      if (displayResolution.value !== '1280x800') req.displayResolution = displayResolution.value
-      if (selectedNetworkId.value) req.networkId = selectedNetworkId.value
-      if (portForwards.value.length > 0) req.portForwards = portForwards.value
-      if (sharedPaths.value.length > 0) req.sharedPaths = sharedPaths.value
-      if (usb.value.available && selectedUSBDevices.value.length > 0) {
-        req.usbDevices = selectedUSBDevices.value
-      }
+        archCustomized: archCustomized.value,
+        vmType: vmType.value,
+        uefiCustomized: uefiCustomized.value,
+        uefi: uefi.value,
+        tpmCustomized: tpmCustomized.value,
+        tpmEnabled: tpmEnabled.value,
+        diskSource: diskSource.value,
+        existingDiskId: existingDiskId.value,
+        diskSizeGB: diskSizeGB.value,
+        mode: mode.value,
+        imageId: createImage?.id,
+        sshAuthorizedKeys: selectedKey ? [authorizedKeyForCloudInit(selectedKey)] : [],
+        userData: cloudUserData.value,
+        displayResolution: displayResolution.value,
+        selectedNetworkId: selectedNetworkId.value,
+        portForwards: portForwards.value,
+        sharedPaths: sharedPaths.value,
+        usbAvailable: usb.value.available,
+        usbDevices: selectedUSBDevices.value,
+      })
 
       const target = selectedDevice.value
       const result = await vmStore.create(req, target ?? undefined)
