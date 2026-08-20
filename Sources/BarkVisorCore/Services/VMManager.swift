@@ -155,11 +155,9 @@ public actor VMManager: VMStateQuerying {
 
         // PAS-48: block foreign-arch guests (portable or overlay) before QEMU / state flip.
         // Overlay guestType stays in overridesJson; QEMUBuilder launches the merged guest.
-        let resolvedGuest = try WorkloadSpecResolver.launchGuestType(
-            WorkloadSpecProjector.fromVM(loaded.vm),
-        )
+        let effective = try EffectiveWorkloadPipeline.evaluate(vm: loaded.vm)
         try PlatformCapabilities.requireCompatibleGuestArch(
-            GuestProfiles.require(resolvedGuest).arch,
+            GuestProfiles.require(effective.launchGuestType).arch,
         )
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)

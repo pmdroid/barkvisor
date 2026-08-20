@@ -144,7 +144,7 @@ struct WorkloadSpecProjectorTests {
             name: "flat",
             vmType: "linux-arm64",
             osFamily: nil,
-            cpuCount: 2,
+            cpuCount: fixtureCPUCount,
             memoryMB: 1_024,
             diskSizeGB: 20,
             isoId: nil,
@@ -165,7 +165,7 @@ struct WorkloadSpecProjectorTests {
         let params = try VMController.createParams(from: body)
         #expect(params.name == "flat")
         #expect(params.vmType == "linux-arm64")
-        #expect(params.cpuCount == 2)
+        #expect(params.cpuCount == fixtureCPUCount)
         #expect(params.memoryMB == 1_024)
     }
 
@@ -174,7 +174,7 @@ struct WorkloadSpecProjectorTests {
             name: "simple",
             vmType: nil,
             osFamily: nil,
-            cpuCount: 2,
+            cpuCount: fixtureCPUCount,
             memoryMB: 1_024,
             diskSizeGB: 10,
             isoId: nil,
@@ -203,7 +203,7 @@ struct WorkloadSpecProjectorTests {
             name: "win",
             vmType: nil,
             osFamily: "windows",
-            cpuCount: 2,
+            cpuCount: fixtureCPUCount,
             memoryMB: 4_096,
             diskSizeGB: 64,
             isoId: nil,
@@ -232,7 +232,7 @@ struct WorkloadSpecProjectorTests {
             name: "named",
             vmType: hostLinux,
             osFamily: "windows",
-            cpuCount: 2,
+            cpuCount: fixtureCPUCount,
             memoryMB: 1_024,
             diskSizeGB: 10,
             isoId: nil,
@@ -365,7 +365,7 @@ struct WorkloadSpecProjectorTests {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(name: "from-spec"),
             spec: WorkloadSpecBody(
-                resources: WorkloadResources(cpu: 2, memoryMb: 1_024),
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 1_024),
                 guestType: "linux-amd64",
                 cloudInit: WorkloadCloudInit(inline: "packages:\n  - vim\n"),
             ),
@@ -386,7 +386,7 @@ struct WorkloadSpecProjectorTests {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(name: "from-spec"),
             spec: WorkloadSpecBody(
-                resources: WorkloadResources(cpu: 2, memoryMb: 1_024),
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 1_024),
                 guestType: "linux-amd64",
                 cloudInit: WorkloadCloudInit(inline: "packages:\n  - vim\n"),
             ),

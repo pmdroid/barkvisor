@@ -16,23 +16,17 @@ public struct QMPDiskService: Sendable {
             throw BarkVisorError.vmNotRunning(vmID)
         }
 
-        // Determine the QMP device name for this disk
-        let deviceName: String
         let vm = try await dbPool.read { db in try VM.fetchOne(db, key: vmID) }
-        if let vm, vm.bootDiskId == disk.id {
-            deviceName = "boot0"
-        } else if let vm {
-            let ids = vm.decodedAdditionalDiskIds
-            if let idx = ids.firstIndex(of: disk.id) {
-                deviceName = "extra\(idx)"
-            } else {
-                throw BarkVisorError.diskCreateFailed("Disk \(disk.id) is not in VM's additional disks")
-            }
-        } else {
+        guard let vm else {
             throw BarkVisorError.diskCreateFailed(
                 "Disk \(disk.id) is not attached as boot or additional disk",
             )
         }
+        let deviceName = try QEMUDeviceNames.blockDevice(
+            diskId: disk.id,
+            bootDiskId: vm.bootDiskId,
+            additionalDiskIds: vm.decodedAdditionalDiskIds,
+        )
 
         let client = QMPClient(socketPath: socketPath)
         try client.connect()

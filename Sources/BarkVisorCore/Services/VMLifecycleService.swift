@@ -97,7 +97,7 @@ public enum VMLifecycleService {
         }
     }
 
-    /// Replace VM columns from a WorkloadSpec (PAS-35). Dual-writes `specJson`.
+    /// Replace VM columns from a WorkloadSpec (PAS-35). Refreshes stored `specJson`.
     public static func updateVMSpec(
         id: String,
         spec: WorkloadSpec,
