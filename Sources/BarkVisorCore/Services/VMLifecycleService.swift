@@ -97,7 +97,7 @@ public enum VMLifecycleService {
         }
     }
 
-    /// Replace VM columns from a WorkloadSpec (PAS-35). Dual-writes `specJson`.
+    /// Replace VM columns from a WorkloadSpec (PAS-35). Refreshes stored `specJson`.
     public static func updateVMSpec(
         id: String,
         spec: WorkloadSpec,
@@ -190,6 +190,9 @@ extension VMLifecycleService {
     ) async throws -> BootDiskResult {
         if let existingId = params.existingDiskId {
             let diskID = try await db.write { db in
+                if try VM.fetchOne(db, key: vmID) != nil {
+                    throw BarkVisorError.conflict("Workload \(vmID) already exists")
+                }
                 guard let disk = try Disk.fetchOne(db, key: existingId) else {
                     throw BarkVisorError.badRequest("Disk not found")
                 }

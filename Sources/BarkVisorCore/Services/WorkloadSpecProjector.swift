@@ -2,8 +2,9 @@ import Foundation
 
 /// Maps `WorkloadSpec` ↔ flat `vms` columns.
 ///
-/// Dual-write policy (Wave 0): **read columns → write both** until cutover.
-/// `specJson` is a write-aside projection; `fromVM` never reads it.
+/// Intake is `EffectiveWorkloadPipeline` (document or record). This type only
+/// projects columns. `specJson` is written by `VM.syncSpecProjection` and read
+/// by the pipeline as `storedDocument`.
 ///
 /// | spec.path | VM column |
 /// |---|---|

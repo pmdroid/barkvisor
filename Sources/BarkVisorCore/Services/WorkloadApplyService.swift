@@ -91,7 +91,11 @@ public enum WorkloadApplyService {
         db: DatabasePool,
     ) async throws -> WorkloadApplyResult {
         let before = WorkloadSpecProjector.fromVM(existing)
-        let merged = try WorkloadSpecDocument.merge(base: before, overlay: document)
+        let effective = try EffectiveWorkloadPipeline.evaluate(
+            document: document,
+            existing: existing,
+        )
+        let merged = effective.portable
         var preview = existing
         try WorkloadSpecProjector.apply(merged, to: &preview)
         let after = WorkloadSpecProjector.fromVM(preview)
@@ -133,8 +137,7 @@ public enum WorkloadApplyService {
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> WorkloadApplyResult {
         let spec = try WorkloadSpecDocument.decode(document)
-        try WorkloadSpecProjector.validate(spec)
-        let params = try createParams(from: spec)
+        let params = try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
         try await VMLifecycleService.validateCreateVMInputs(params: params, db: db)
         if dryRun {
             let previewID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -167,51 +170,7 @@ public enum WorkloadApplyService {
     }
 
     static func createParams(from spec: WorkloadSpec) throws -> CreateVMParams {
-        let guestType = try WorkloadSpecProjector.resolveGuestType(spec)
-        let bootDiskId = spec.spec.disks.first(where: { $0.role == "boot" })?.diskId
-        let isoFromSpec = spec.spec.disks.first(where: { $0.role == "cdrom" })?.imageId
-            ?? spec.spec.disks.first(where: { $0.role == "cdrom" })?.diskId
-        if bootDiskId == nil || bootDiskId?.isEmpty == true,
-           isoFromSpec == nil || isoFromSpec?.isEmpty == true {
-            throw BarkVisorError.badRequest(
-                "Creating a workload requires spec.disks with a boot diskId or a cdrom imageId",
-            )
-        }
-        let forwards = spec.spec.networks.first?.portForwards.map {
-            PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
-        }
-        let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
-        let requestedID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return CreateVMParams(
-            id: requestedID?.isEmpty == true ? nil : requestedID,
-            name: spec.metadata.name,
-            vmType: guestType,
-            cpuCount: spec.spec.resources.cpu,
-            memoryMB: spec.spec.resources.memoryMb,
-            diskSizeGB: isoFromSpec == nil ? nil : defaultCreateDiskSizeGB,
-            isoId: isoFromSpec,
-            cloudInit: cloudInitConfig(from: spec.spec.cloudInit),
-            networkId: spec.spec.networks.first?.networkId,
-            existingDiskId: bootDiskId,
-            sharedPaths: spec.spec.sharedPaths,
-            portForwards: forwards,
-            usbDevices: usb.isEmpty ? nil : usb,
-            description: spec.metadata.description,
-            bootOrder: spec.spec.bootOrder,
-            displayResolution: spec.spec.display?.resolution,
-            uefi: spec.spec.firmware?.uefi,
-            tpmEnabled: spec.spec.firmware?.tpm,
-            overrides: spec.overrides,
-            health: spec.spec.health,
-        )
-    }
-
-    /// `spec.cloudInit.inline` is user-data for ISO generation.
-    static func cloudInitConfig(from cloud: WorkloadCloudInit?) -> CloudInitConfig? {
-        guard let inline = cloud?.inline,
-              !inline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
-        return CloudInitConfig(sshAuthorizedKeys: nil, userData: inline)
+        try EffectiveWorkloadPipeline.createParams(from: spec, extras: .apply)
     }
 
     // MARK: - Envelope
