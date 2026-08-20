@@ -259,7 +259,7 @@ stream is delivered to the browser via Server-Sent Events (SSE) at
 ### Guest Information (qemu-guest-agent)
 
 If `qemu-guest-agent` is installed in the guest, the **Overview** tab
-displays rich guest info polled by the `MetricsCollector`:
+displays rich guest info polled by `GuestAgentInventory` (qemu-guest-agent; not metrics):
 
 - IP addresses (source: `guest-agent`; falls back to `10.0.2.15` for NAT)
 - Hostname

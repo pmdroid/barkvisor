@@ -395,33 +395,3 @@ public actor HealthProbeService {
         )
     }
 }
-
-/// Guest-info helpers shared by health projection and the probe runner.
-public enum GuestHealthStore {
-    public static func lastSeen(ids: [String], db: DatabasePool) async throws -> [String: String] {
-        guard !ids.isEmpty else { return [:] }
-        let idSet = Set(ids)
-        let records = try await db.read { db in
-            try GuestInfoRecord.fetchAll(db)
-        }
-        var seen: [String: String] = [:]
-        for record in records where idSet.contains(record.vmId) {
-            seen[record.vmId] = record.updatedAt
-        }
-        return seen
-    }
-
-    public static func ipsByVM(ids: [String], db: DatabasePool) async -> [String: [String]] {
-        guard !ids.isEmpty else { return [:] }
-        let idSet = Set(ids)
-        let records = await (try? db.read { db in
-            try GuestInfoRecord.fetchAll(db)
-        }) ?? []
-        var out: [String: [String]] = [:]
-        for record in records where idSet.contains(record.vmId) {
-            out[record.vmId] = JSONColumnCoding.decodeArray(String.self, from: record.ipAddresses)
-                ?? []
-        }
-        return out
-    }
-}

@@ -13,6 +13,7 @@ public actor VMProcessMonitor {
     private weak var vmManager: VMManager?
     private var consoleBuffers: ConsoleBufferManager?
     private var metricsCollector: MetricsCollector?
+    private var guestAgentInventory: GuestAgentInventory?
     private var stateStreamService: VMStateStreamService?
     private var qmpEventListener: QMPEventListener?
 
@@ -31,6 +32,10 @@ public actor VMProcessMonitor {
 
     public func setMetricsCollector(_ collector: MetricsCollector) {
         metricsCollector = collector
+    }
+
+    public func setGuestAgentInventory(_ inventory: GuestAgentInventory) {
+        guestAgentInventory = inventory
     }
 
     public func setStateStreamService(_ service: VMStateStreamService) {
@@ -125,6 +130,7 @@ public actor VMProcessMonitor {
 
         await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
         await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
+        await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
         await qmpEventListener?.start(vmID: vmID, eventSocketPath: sockets.event.path)
 
         watchProcess(vmID: vmID, pid: pid)
