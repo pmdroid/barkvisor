@@ -100,9 +100,11 @@ describe('guestListeningPorts (PAS-225)', () => {
     expect(isPublishedGuestPort(port({ port: 22 }))).toBe(true)
     expect(isPublishedGuestPort(port({ port: 8081 }))).toBe(true)
     expect(isPublishedGuestPort(port({ port: 8123 }))).toBe(true)
+    expect(isPublishedGuestPort(port({ port: 8096 }))).toBe(true)
     expect(isPublishedGuestPort(port({ port: 32400 }))).toBe(true)
     expect(isPublishedGuestPort(port({ port: 18789 }))).toBe(true)
     expect(isPublishedGuestPort(port({ port: 111 }))).toBe(false)
+    expect(isPublishedGuestPort(port({ port: 8006 }))).toBe(false)
     expect(isPublishedGuestPort(port({ port: 5353 }))).toBe(false)
   })
 
