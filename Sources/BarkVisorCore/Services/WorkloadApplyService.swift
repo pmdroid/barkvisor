@@ -91,7 +91,11 @@ public enum WorkloadApplyService {
         db: DatabasePool,
     ) async throws -> WorkloadApplyResult {
         let before = WorkloadSpecProjector.fromVM(existing)
-        let merged = try WorkloadSpecDocument.merge(base: before, overlay: document)
+        let effective = try EffectiveWorkloadPipeline.evaluate(
+            document: document,
+            existing: existing,
+        )
+        let merged = effective.portable
         var preview = existing
         try WorkloadSpecProjector.apply(merged, to: &preview)
         let after = WorkloadSpecProjector.fromVM(preview)

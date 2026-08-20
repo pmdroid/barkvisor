@@ -107,6 +107,10 @@ extension VMLifecycleService {
         try validateVMName(params.name)
         if let id = params.id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
             try validateVMID(id)
+            let taken = try await db.read { db in try VM.fetchOne(db, key: id) }
+            if taken != nil {
+                throw BarkVisorError.conflict("Workload \(id) already exists")
+            }
         }
 
         guard let profile = GuestProfiles.profile(for: params.vmType) else {

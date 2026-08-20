@@ -180,18 +180,13 @@ public enum EffectiveWorkloadPipeline {
             portForwards: forwards,
         )
         let usb = (usbDevices ?? []).map { USBPassthroughService.workload(from: $0) }
-        let firmware: WorkloadFirmware? =
-            if uefi != nil || tpmEnabled != nil {
-                WorkloadFirmware(uefi: uefi ?? true, tpm: tpmEnabled ?? false)
-            } else {
-                nil
-            }
+        // Leave firmware nil so omitted uefi/tpmEnabled stay omitted on CreateVMParams.
+        // Synthesizing tpm: false here overrode the Windows default in buildVM.
         return WorkloadSpec(
             metadata: WorkloadMetadata(name: name, description: description),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: cpuCount, memoryMb: memoryMB),
                 guestType: guestType,
-                firmware: firmware,
                 bootOrder: bootOrder,
                 disks: disks,
                 networks: [network],
