@@ -47,12 +47,8 @@ public enum LinuxHostNetwork {
         return entries.filter { !$0.hasPrefix(".") }.sorted()
     }
 
-    /// Distro paths for qemu-bridge-helper.
-    public static let qemuBridgeHelperCandidates = [
-        "/usr/lib/qemu/qemu-bridge-helper",
-        "/usr/libexec/qemu-bridge-helper",
-        "/usr/local/libexec/qemu/qemu-bridge-helper",
-    ]
+    /// Distro paths for qemu-bridge-helper (owned by HostBridgeFactsService).
+    public static let qemuBridgeHelperCandidates = HostBridgeFactsService.qemuBridgeHelperCandidates
 
     /// First existing helper path, if any.
     public static func resolvedQemuBridgeHelperPath() -> String? {
@@ -90,7 +86,7 @@ public enum LinuxHostNetwork {
     }
 
     /// Default qemu-bridge-helper ACL (`allow br0` / `allow all`).
-    public static let defaultBridgeACLPath = "/etc/qemu/bridge.conf"
+    public static let defaultBridgeACLPath = HostBridgeFactsService.defaultACLPath
 
     /// Parse qemu-bridge-helper ACL contents. Comments (`#`) and blank lines ignored.
     public static func bridgeACLAllows(_ name: String, fileContents: String) -> Bool {

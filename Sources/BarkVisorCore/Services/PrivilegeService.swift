@@ -126,16 +126,8 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
     }
 
     public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
-        // Report all host bridge devices so BridgeSync can mark them active.
-        LinuxHostNetwork.listBridgeInterfaces().map { name in
-            BridgeStateDTO(
-                interface: name,
-                socketPath: nil,
-                plistExists: true,
-                daemonRunning: true,
-                status: "active",
-            )
-        }
+        // Discovery is HostBridgeFacts (sysfs). Do not mint macOS plist/daemon rows.
+        []
     }
 
     public func installUpdate(packagePath: String, expectedVersion: String) async throws {
