@@ -140,6 +140,8 @@ struct RemoteAccessTests {
         #expect(!RemoteAccessSettings.allowsPeer("100.100.100.200"))
         #expect(!RemoteAccessSettings.allowsPeer(nil))
         #expect(!RemoteAccessSettings.allowsPeer(""))
+        #expect(!RemoteAccessSettings.allowsPeer("box.ts.net"))
+        #expect(!RemoteAccessSettings.allowsPeer("not-an-ip"))
     }
 
     @Test func `advertised hosts prefer advertise URL then tailnet then LAN`() {

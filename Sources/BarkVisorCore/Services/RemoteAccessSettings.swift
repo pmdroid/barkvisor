@@ -84,9 +84,13 @@ public enum RemoteAccessSettings {
     }
 
     /// Loopback, RFC1918, ULA, and CGNAT `100.64.0.0/10` (minus metadata).
+    /// Fail closed on empty, hostname-shaped, or unclassified peer strings.
     public static func allowsPeer(_ ip: String?) -> Bool {
         guard let ip, !ip.isEmpty else { return false }
         if PairingPayload.isConsoleLocalClient(ip) { return true }
+        let trimmed = ip.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        let looksIP = trimmed.contains(":") || trimmed.split(separator: ".").count == 4
+        guard looksIP else { return false }
         return !PairingPayload.isBlockedJoinHost(ip)
     }
 
