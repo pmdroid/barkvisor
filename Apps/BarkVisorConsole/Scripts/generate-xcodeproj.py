@@ -17,6 +17,7 @@ APP_SOURCES = [
     "Sources/Models/CreateWorkload.swift",
     "Sources/Models/LoginURI.swift",
     "Sources/Models/LoginOfferQR.swift",
+    "Sources/Models/PairingOffer.swift",
     "Sources/Models/StreamSupport.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
@@ -46,6 +47,7 @@ TEST_SOURCES = [
     "Tests/WorkloadDetailTests.swift",
     "Tests/LocalStreamTests.swift",
     "Tests/SessionTests.swift",
+    "Tests/PairingOfferTests.swift",
 ]
 
 
@@ -284,6 +286,7 @@ def main() -> None:
                 child_file("Sources/Models/CreateWorkload.swift"),
                 child_file("Sources/Models/LoginURI.swift"),
                 child_file("Sources/Models/LoginOfferQR.swift"),
+                child_file("Sources/Models/PairingOffer.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
             ],
             "Models",
@@ -348,6 +351,7 @@ def main() -> None:
                 child_file("Tests/WorkloadDetailTests.swift"),
                 child_file("Tests/LocalStreamTests.swift"),
                 child_file("Tests/SessionTests.swift"),
+                child_file("Tests/PairingOfferTests.swift"),
             ],
             "Tests",
         )

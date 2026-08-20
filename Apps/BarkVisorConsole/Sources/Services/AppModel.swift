@@ -114,6 +114,8 @@ final class AppModel {
     private var scopedGeneration = 0
     private var catalogGeneration = 0
     private var homeGeneration = 0
+    private var pairingGeneration = 0
+    private var pairingMutating = false
 
     var client: APIClient? {
         guard let sessionURL, let token else { return nil }
@@ -486,28 +488,49 @@ final class AppModel {
         }
     }
 
-    func issuePairing() async {
+    func issuePairing(advertisedHost: String? = nil) async {
         banner = nil
+        pairingGeneration += 1
+        let generation = pairingGeneration
+        pairingMutating = true
+        defer { if pairingGeneration == generation { pairingMutating = false } }
         do {
-            pairing = try await requireClient().issuePairingCode()
+            let issued = try await requireClient().issuePairingCode(advertisedHost: advertisedHost)
+            guard pairingGeneration == generation else { return }
+            pairing = issued
         } catch {
+            guard pairingGeneration == generation else { return }
+            if advertisedHost != nil {
+                pairing = nil
+            }
             handle(error)
         }
     }
 
     func loadPairing() async {
+        if pairingMutating { return }
+        let generation = pairingGeneration
         do {
-            pairing = try await requireClient().pairingCode()
+            let loaded = try await requireClient().pairingCode()
+            guard pairingGeneration == generation, !pairingMutating else { return }
+            pairing = loaded
         } catch {
+            guard pairingGeneration == generation, !pairingMutating else { return }
             handle(error)
         }
     }
 
     func revokePairing() async {
+        pairingGeneration += 1
+        let generation = pairingGeneration
+        pairingMutating = true
+        defer { if pairingGeneration == generation { pairingMutating = false } }
         do {
             try await requireClient().revokePairingCode()
+            guard pairingGeneration == generation else { return }
             pairing = nil
         } catch {
+            guard pairingGeneration == generation else { return }
             handle(error)
         }
     }
