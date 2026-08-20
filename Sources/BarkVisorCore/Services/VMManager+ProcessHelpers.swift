@@ -33,6 +33,7 @@ extension VMManager {
         // Stop recording console, metrics, and event listener
         await consoleBuffers?.detach(vmID: vmID)
         await metricsCollector?.stop(vmID: vmID)
+        await guestAgentInventory?.stop(vmID: vmID)
         await qmpEventListener?.stop(vmID: vmID)
 
         do {

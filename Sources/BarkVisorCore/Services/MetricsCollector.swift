@@ -4,7 +4,6 @@
     import Glibc
 #endif
 import Foundation
-import GRDB
 
 public struct MetricSample: Codable, Sendable {
     public let timestamp: String
@@ -54,7 +53,7 @@ struct QMPPollResult {
 
 /// Per-VM metrics polling via QMP, stores samples in a ring buffer (30 min history at 5s interval = 360 samples)
 /// Also collects host-level CPU/memory stats on a separate timer for the dashboard history.
-/// Guest agent info is persisted to the guest_info DB table.
+/// QMP here is balloon + blockstats only; qemu-guest-agent inventory is `GuestAgentInventory`.
 ///
 /// Host history (`GET /api/system/stats/history`) is this in-memory ring only
 /// (PAS-85). There is no TSDB. `minutes` is clamped to
@@ -76,8 +75,6 @@ public actor MetricsCollector {
     private static let maxSamples = systemStatsMaxSamples
     private static let pollInterval = UInt64(systemStatsPollIntervalSeconds) * 1_000_000_000
 
-    private let dbPool: DatabasePool
-
     private var buffers: [String: [MetricSample]] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
     private var continuations: [String: [String: AsyncStream<MetricSample>.Continuation]] = [:]
@@ -91,9 +88,7 @@ public actor MetricsCollector {
     private var systemStatsBuffer: [SystemStatsSample] = []
     private var systemPollTask: Task<Void, Never>?
 
-    public init(dbPool: DatabasePool) {
-        self.dbPool = dbPool
-    }
+    public init() {}
 
     /// Start collecting host-level stats (call once at server startup)
     public func startSystemStatsCollection() {
@@ -152,16 +147,6 @@ public actor MetricsCollector {
         prevDiskRead.removeValue(forKey: vmID)
         prevDiskWrite.removeValue(forKey: vmID)
         prevCPUTime.removeValue(forKey: vmID)
-        GuestListeningPorts.clearAttempt(vmID: vmID)
-
-        // Remove guest info from DB
-        do {
-            _ = try dbPool.write { db in
-                try GuestInfoRecord.deleteOne(db, key: vmID)
-            }
-        } catch {
-            Log.metrics.error("Failed to remove guest info for VM \(vmID): \(error)", vm: vmID)
-        }
 
         // Close all SSE streams
         if let conts = continuations[vmID] {
@@ -214,15 +199,12 @@ public actor MetricsCollector {
 
         let cpuPercent = pollCPU(vmID: vmID, pid: pid)
 
-        let dbPool = dbPool
         let prevDiskReadVal = prevDiskRead[vmID]
         let prevDiskWriteVal = prevDiskWrite[vmID]
 
         let qmpResult: QMPPollResult = await Task.detached {
             Self.pollQMP(
                 qmpSocketPath: qmpSocketPath,
-                vmID: vmID,
-                dbPool: dbPool,
                 prevDiskReadVal: prevDiskReadVal,
                 prevDiskWriteVal: prevDiskWriteVal,
             )

@@ -27,6 +27,11 @@ extension VMManager {
             }
             terminateSwtpm(running, vmID: vmID)
             cleanup(vmID: vmID)
+            // Process sources are already stopped, so handleTermination will not run.
+            await consoleBuffers?.detach(vmID: vmID)
+            await metricsCollector?.stop(vmID: vmID)
+            await guestAgentInventory?.stop(vmID: vmID)
+            await qmpEventListener?.stop(vmID: vmID)
 
             // Update DB state (including reconnected VMs that have no terminationHandler)
             do {
@@ -89,6 +94,10 @@ extension VMManager {
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
             cleanup(vmID: vmID)
+            await consoleBuffers?.detach(vmID: vmID)
+            await metricsCollector?.stop(vmID: vmID)
+            await guestAgentInventory?.stop(vmID: vmID)
+            await qmpEventListener?.stop(vmID: vmID)
             runningVMs.removeValue(forKey: vmID)
 
             do {
@@ -117,6 +126,7 @@ extension VMManager {
         for (vmID, _) in runningVMs {
             await consoleBuffers?.detach(vmID: vmID)
             await metricsCollector?.stop(vmID: vmID)
+            await guestAgentInventory?.stop(vmID: vmID)
         }
         await qmpEventListener?.stopAll()
         await processMonitor?.stopAllProcessSources()

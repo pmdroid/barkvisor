@@ -95,6 +95,7 @@ public actor VMManager: VMStateQuerying {
     public let pidsDir: URL
     public private(set) var consoleBuffers: ConsoleBufferManager?
     public private(set) var metricsCollector: MetricsCollector?
+    public private(set) var guestAgentInventory: GuestAgentInventory?
     public private(set) var stateStreamService: VMStateStreamService?
     public private(set) var processMonitor: VMProcessMonitor?
     public private(set) var qmpEventListener: QMPEventListener?
@@ -111,6 +112,10 @@ public actor VMManager: VMStateQuerying {
 
     public func setMetricsCollector(_ collector: MetricsCollector) {
         metricsCollector = collector
+    }
+
+    public func setGuestAgentInventory(_ inventory: GuestAgentInventory) {
+        guestAgentInventory = inventory
     }
 
     public func setStateStreamService(_ service: VMStateStreamService) {
@@ -234,6 +239,7 @@ public actor VMManager: VMStateQuerying {
             try await updateState(vmID: vmID, state: "running")
 
             await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
+            await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
             await qmpEventListener?.start(vmID: vmID, eventSocketPath: sockets.event.path)
 
             Log.vm.info(
@@ -329,7 +335,7 @@ public actor VMManager: VMStateQuerying {
 
         if FileManager.default.fileExists(atPath: gaPath) {
             do {
-                try sendGuestAgentShutdown(socketPath: gaPath)
+                try GuestAgentChannel.shutdown(socketPath: gaPath)
                 return "guest-agent"
             } catch {
                 Log.vm.info(
@@ -350,33 +356,6 @@ public actor VMManager: VMStateQuerying {
         let response = try qmp.execute("system_powerdown")
         Log.vm.info("ACPI system_powerdown response for VM \(vmID): \(response)", vm: vmID)
         return "acpi-powerdown"
-    }
-
-    /// Issue `guest-shutdown` over the QEMU Guest Agent channel.
-    /// A closed connection after a successful write is treated as success (guest is dying).
-    private func sendGuestAgentShutdown(socketPath: String) throws {
-        let ga = QMPClient(socketPath: socketPath, timeoutSeconds: 5)
-        try ga.connectRaw(timeoutSeconds: 2)
-        defer { ga.disconnect() }
-
-        let syncId = Int.random(in: 1 ... 999_999)
-        let sync = try ga.executeWithArgs("guest-sync", args: ["id": syncId])
-        // guest-sync echoes the id in "return"
-        if let ret = sync["return"] as? Int, ret != syncId {
-            throw BarkVisorError.monitorError("guest-sync mismatch (expected \(syncId), got \(ret))")
-        }
-
-        do {
-            // mode powerdown: guest should power off (not reboot)
-            _ = try ga.executeWithArgs("guest-shutdown", args: ["mode": "powerdown"])
-        } catch {
-            // Guest often tears down the agent channel before a full reply is delivered.
-            let msg = String(describing: error)
-            if msg.contains("closed") || msg.contains("empty read") || msg.contains("timed out") {
-                return
-            }
-            throw error
-        }
     }
 
     /// Hard-stop QEMU: prefer QMP `quit`, then SIGTERM, then SIGKILL. Ensures reconnected VMs
