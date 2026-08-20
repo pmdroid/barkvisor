@@ -53,7 +53,8 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var usbDevices: String? // JSON-encoded [USBPassthroughDevice]
     public var autoCreated: Bool
     public var pendingChanges: Bool
-    /// Dual-write projection of `WorkloadSpec` (PAS-35). Source of truth is still columns.
+    /// Stored WorkloadSpec document. Columns remain source of truth; the
+    /// pipeline reads this as `EffectiveWorkload.storedDocument`.
     public var specJson: String?
     /// Portable `overrides.linux` / `overrides.macos` bags (PAS-41).
     public var overridesJson: String?
@@ -123,7 +124,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.updatedAt = updatedAt
     }
 
-    /// Dual-write: refresh `specJson` from columns. Bump generation on user-facing writes.
+    /// Refresh stored `specJson` from columns. Bump generation on user-facing writes.
     public mutating func syncSpecProjection(bumpGeneration: Bool = true) {
         if bumpGeneration {
             specGeneration += 1
