@@ -31,11 +31,12 @@ export function isOperatorReachableGuestAddress(address: string): boolean {
 }
 
 export const publishedGuestPorts = new Set([
-  22, 80, 443,
-  3000, 3001, 4173, 4200, 5000, 5173, 5174,
-  8000, 8080, 8081, 8443, 8888,
-  3306, 5432, 6379, 27017,
-  3389, 5900,
+  22, 80, 81, 443,
+  1234, 1880, 1883, 2283, 3000, 3001, 3306, 3389,
+  4173, 4200, 5000, 5055, 5173, 5174, 5432, 5900, 6379,
+  6767, 7860, 7878, 8000, 8006, 8080, 8081, 8123, 8188,
+  8384, 8443, 8686, 8888, 8883, 8989, 9000, 9090, 9091, 9443, 9696,
+  11434, 18789, 27017, 32400,
 ])
 
 export function isPublishedGuestPort(port: Pick<GuestListeningPort, 'port'>): boolean {
