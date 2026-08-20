@@ -3,7 +3,7 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/client'
-import type { APIKeyResponse, AuditEntry, LibrarySettings, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
+import type { APIKeyResponse, AuditEntry, LibrarySettings, RemoteAccessStatus, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useTaskPoller } from '../composables/useTaskPoller'
@@ -133,6 +133,7 @@ function openHomeTab() {
   loadPairingCode()
   loadLoginOffer()
   fetchLibrarySettings()
+  fetchRemoteAccess()
   devicesStore.fetchHealth()
 }
 
@@ -331,6 +332,44 @@ const librarySaving = ref(false)
 const showLibraryPicker = ref(false)
 const depotDraft = ref('')
 const depotSaving = ref(false)
+
+const remoteAccess = ref<RemoteAccessStatus | null>(null)
+const remoteAccessLoading = ref(false)
+const remoteAccessSaving = ref(false)
+const advertiseDraft = ref('')
+const requireTailnetDraft = ref(false)
+
+async function fetchRemoteAccess() {
+  remoteAccessLoading.value = true
+  try {
+    const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
+    remoteAccess.value = data
+    advertiseDraft.value = data.advertiseUrl ?? ''
+    requireTailnetDraft.value = data.requireTailnetForRemote
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not load remote access'))
+  } finally {
+    remoteAccessLoading.value = false
+  }
+}
+
+async function saveRemoteAccess() {
+  remoteAccessSaving.value = true
+  try {
+    const { data } = await api.put<RemoteAccessStatus>('/home/settings/remote-access', {
+      requireTailnetForRemote: requireTailnetDraft.value,
+      advertiseUrl: advertiseDraft.value,
+    })
+    remoteAccess.value = data
+    advertiseDraft.value = data.advertiseUrl ?? ''
+    requireTailnetDraft.value = data.requireTailnetForRemote
+    toast.success('Remote access saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not save remote access'))
+  } finally {
+    remoteAccessSaving.value = false
+  }
+}
 
 const depotOptions = computed(() => {
   const none = { value: '', label: 'None — download from the internet' }
@@ -749,6 +788,63 @@ onUnmounted(() => {
 
   <!-- Home / Add a Device (PAS-51) — existing /api/pairing/codes, not a second wizard -->
   <div v-if="tab === 'home'">
+    <div class="pairing-card" style="margin-bottom:16px;text-align:left">
+      <h3 class="login-offer-title">Remote access</h3>
+      <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        LAN works without a VPN. For off-LAN, install
+        <a href="https://tailscale.com/download" target="_blank" rel="noopener">Tailscale</a>
+        on this {{ DEVICE_LABEL }} and the phone or laptop. BarkVisor does not bundle Tailscale.
+        Pairing and sign-in QRs use the advertise URL, then the tailnet address, then a LAN IP
+        as <code>host=</code>.
+      </p>
+      <p v-if="remoteAccess?.tailscale.available" class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        Tailscale is up
+        <span v-if="remoteAccess.tailscale.ip"> — {{ remoteAccess.tailscale.ip }}</span>
+        <span v-if="remoteAccess.tailscale.dnsName"> ({{ remoteAccess.tailscale.dnsName }})</span>
+      </p>
+      <p v-else class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        Tailscale is not detected. Install tailscaled, sign in, then reload this page.
+      </p>
+      <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        WireGuard:
+        {{ remoteAccess?.wireguard.configured ? 'a tunnel interface is present' : 'not detected' }}.
+        BarkVisor does not configure WireGuard. If you run your own tunnel, put that address in
+        the advertise URL.
+      </p>
+      <div class="form-group" style="margin:0 0 12px;text-align:left">
+        <label for="advertise-url">Advertise URL</label>
+        <input
+          id="advertise-url"
+          v-model="advertiseDraft"
+          class="pairing-input"
+          type="text"
+          placeholder="hostname, MagicDNS, or tailnet IP"
+          autocomplete="off"
+          spellcheck="false"
+          :disabled="remoteAccessLoading || remoteAccessSaving"
+        />
+      </div>
+      <label class="pairing-hint" style="display:flex;gap:8px;align-items:center;text-align:left;margin:0 0 12px">
+        <input
+          type="checkbox"
+          v-model="requireTailnetDraft"
+          :disabled="remoteAccessLoading || remoteAccessSaving"
+          style="width:16px;height:16px;cursor:pointer"
+        />
+        Require Tailscale (or LAN) for the Home API off this network
+      </label>
+      <div style="display:flex;justify-content:flex-end">
+        <AppButton
+          size="sm"
+          variant="primary"
+          :loading="remoteAccessSaving"
+          :disabled="remoteAccessLoading"
+          @click="saveRemoteAccess"
+        >
+          Save remote access
+        </AppButton>
+      </div>
+    </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0">
         Add a {{ DEVICE_LABEL }} to this {{ HOME_LABEL }}. On the new {{ DEVICE_LABEL }}, open

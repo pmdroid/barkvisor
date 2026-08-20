@@ -101,6 +101,8 @@ public enum APIContract {
         Route(method: "GET", path: "/api/system/about", stability: .evolving),
         Route(method: "GET", path: "/api/system/library/settings", stability: .evolving),
         Route(method: "PUT", path: "/api/system/library/settings", stability: .evolving),
+        Route(method: "GET", path: "/api/system/remote-access", stability: .evolving),
+        Route(method: "PUT", path: "/api/home/settings/remote-access", stability: .evolving),
         Route(method: "GET", path: "/api/agent/inventory", stability: .evolving),
         Route(method: "GET", path: "/api/agent/whoami", stability: .outOfBand),
         Route(method: "GET", path: "/api/agent/library/images", stability: .outOfBand),

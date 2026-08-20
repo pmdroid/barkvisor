@@ -73,7 +73,10 @@ public enum HostInventoryService {
             ),
             resources: liveResources(),
             storage: storage,
-            networking: NetworkingInfo(interfaces: interfaces),
+            networking: NetworkingInfo(
+                interfaces: interfaces,
+                tailnet: TailscaleProbe.detect(),
+            ),
             virtualization: VirtualizationInfo(
                 accelerator: accelerator,
                 qemuCPUModel: PlatformCapabilities.qemuCPUModel,

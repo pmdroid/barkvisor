@@ -149,8 +149,15 @@ struct AuthController: RouteCollection {
     func issueLoginOffer(req: Vapor.Request) async throws -> LoginOfferIssue {
         let authUser = try req.requireUser
         let advertised = (try? req.content.decode(LoginOfferIssueRequest.self))?.advertisedHost
+        let hosts = try await req.db.read { db in
+            try RemoteAccessSettings.advertisedHosts(from: db)
+        }
         let offer = try await LoginOfferService.issue(
-            LoginOfferService.IssueInput(userId: authUser.userId, advertisedHost: advertised),
+            LoginOfferService.IssueInput(
+                userId: authUser.userId,
+                advertisedHost: advertised,
+                advertisedHosts: hosts,
+            ),
             db: req.db,
         )
         AuditService.log(
