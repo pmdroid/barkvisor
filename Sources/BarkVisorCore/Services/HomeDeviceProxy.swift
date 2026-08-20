@@ -176,15 +176,7 @@ public enum HomeDeviceProxy {
     /// Keep the Device ticket (`ticket=` or noVNC's `token=` rewrite). Drop
     /// Home `session=` so it is never sent to the member.
     public static func forwardedConsoleQuery(_ query: String?) -> String? {
-        guard let query, !query.isEmpty else { return nil }
-        var parts = URLComponents()
-        parts.percentEncodedQuery = query
-        let items = parts.queryItems ?? []
-        let ticket = items.first { $0.name.lowercased() == "ticket" }?.value
-            ?? items.first { $0.name.lowercased() == "token" }?.value
-        guard let ticket, !ticket.isEmpty else { return nil }
-        parts.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
-        return parts.percentEncodedQuery
+        StreamTicketPolicy.hopQuery(from: query)
     }
 }
 

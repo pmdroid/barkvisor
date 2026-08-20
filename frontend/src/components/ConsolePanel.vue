@@ -3,9 +3,9 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, watch, useTemplateRef } from 'vue'
 import { Terminal, type WTerm } from '@wterm/vue'
 import '@wterm/vue/css'
-import { getWSTicket } from '../api/client'
+import { mintStreamTickets } from '../api/client'
 import { consoleSocketPath, consoleSocketQuery } from '../utils/consoleHome'
-import { isSelfDevice, type DeviceApiTarget } from '../utils/homeDeviceApi'
+import { type DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const props = defineProps<{ vmId: string; vmState: string; device?: DeviceApiTarget | null }>()
 
@@ -44,10 +44,9 @@ async function connect() {
   let ticket: string
   let session: string | undefined
   try {
-    ticket = await getWSTicket(props.vmId, props.device)
-    if (props.device && !isSelfDevice(props.device)) {
-      session = await getWSTicket(props.vmId)
-    }
+    const minted = await mintStreamTickets(props.vmId, props.device)
+    ticket = minted.ticket
+    session = minted.session
   } catch (e: any) {
     status.value = `Ticket failed: ${apiErrorMessage(e)}`
     return

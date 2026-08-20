@@ -14,15 +14,14 @@ struct VNCController {
                 guard let vmID = req.parameters.get("id") else {
                     throw Abort(.badRequest)
                 }
-                // noVNC's RFB client rewrites ?ticket= to ?token= internally
-                guard let ticket = req.query[String.self, at: "ticket"] ?? req.query[String.self, at: "token"]
+                guard let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
+                    ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+                    ?? req.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
                 else {
-                    throw Abort(
-                        .unauthorized, reason: "Missing ticket. Use POST /api/auth/ws-ticket to obtain one.",
-                    )
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.missingTicketReason)
                 }
                 guard await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil else {
-                    throw Abort(.unauthorized, reason: "Invalid or expired ticket")
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
                 }
                 return [:]
             },

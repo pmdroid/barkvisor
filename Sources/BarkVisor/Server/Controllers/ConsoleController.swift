@@ -15,13 +15,13 @@ struct ConsoleController {
                 guard let vmID = req.parameters.get("id") else {
                     throw Abort(.badRequest)
                 }
-                guard let ticket = req.query[String.self, at: "ticket"] else {
-                    throw Abort(
-                        .unauthorized, reason: "Missing ticket. Use POST /api/auth/ws-ticket to obtain one.",
-                    )
+                guard let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
+                    ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+                else {
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.missingTicketReason)
                 }
                 guard await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil else {
-                    throw Abort(.unauthorized, reason: "Invalid or expired ticket")
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
                 }
                 return [:]
             },

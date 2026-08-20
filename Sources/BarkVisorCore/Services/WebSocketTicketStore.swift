@@ -57,7 +57,8 @@ public actor WebSocketTicketStore {
         return ticket
     }
 
-    /// Validate and consume a ticket, requiring it to be scoped to the given VM ID.
+    /// Spend-on-use on the owner Device (PAS-237). Home must not call this
+    /// with a Device ticket — see `StreamTicketPolicy.requirePassThroughDeviceTicket`.
     /// The ticket is always removed (single-use), even if expired or wrong VM.
     public func validateTicket(_ ticket: String, forVMID vmID: String) -> (
         userID: String, username: String,

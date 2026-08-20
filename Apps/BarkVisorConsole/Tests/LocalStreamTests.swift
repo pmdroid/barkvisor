@@ -360,6 +360,12 @@ struct LocalStreamTests {
         )
         #expect(memberVNC.path.hasSuffix("/vnc"))
         #expect(memberVNC.path.contains("/home/devices/"))
+        #expect(!StreamTickets.needsHomeSession(nil))
+        #expect(StreamTickets.needsHomeSession(member))
+        let items = StreamTickets.queryItems(ticket: "device-ticket", session: "home-session")
+        #expect(items.contains(where: { $0.name == "ticket" && $0.value == "device-ticket" }))
+        #expect(items.contains(where: { $0.name == "session" && $0.value == "home-session" }))
+        #expect(!items.contains(where: { $0.name == "token" }))
     }
 
     @Test func `ws ticket response decodes`() throws {
