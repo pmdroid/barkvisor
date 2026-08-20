@@ -317,27 +317,11 @@ public enum TemplateDeployService {
             ).id
         } else if mode == .bridged {
             try PlatformCapabilities.requireBridgedNetworking()
-            let activeBridge = try await db.read { db in
-                try BridgeRecord.filter(Column("status") == "active").fetchOne(db)
+            let records = try await db.read { db in
+                try BridgeRecord.filter(Column("status") == "active").fetchAll(db)
             }
-            guard let activeBridge else {
-                throw BarkVisorError.preconditionFailed(
-                    """
-                    This template requires bridged networking, but no bridge is active. \
-                    Install the BarkVisor Helper and enable a bridge in Settings > Network.
-                    """,
-                )
-            }
-
-            // Prefer ensureBridgedNetwork so we don't hand-roll a third Network insert.
-            let network = try await NetworkService.ensureBridgedNetwork(
-                for: activeBridge.interface, db: db,
-            )
-            // Rename only if we just created a generic "Bridged (iface)" name for this deploy.
-            if network.name == "Bridged (\(activeBridge.interface))" {
-                return network.id
-            }
-            return network.id
+            let interface = try HostBridgeFactsService.activeBridgedInterface(records: records)
+            return try await NetworkService.ensureBridgedNetwork(for: interface, db: db).id
         } else {
             let defaultNAT = try await db.read { db in
                 try Network.filter(Column("mode") == "nat" && Column("isDefault") == true).fetchOne(db)

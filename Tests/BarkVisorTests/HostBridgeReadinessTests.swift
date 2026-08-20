@@ -154,4 +154,47 @@ struct HostBridgeReadinessTests {
         #expect(LinuxHostNetwork.defaultBridgeACLPath == HostBridgeFactsService.defaultACLPath)
         #expect(HostBridgeReadinessService.suggestedBridgeName == HostBridgeFactsService.suggestedBridgeName)
     }
+
+    @Test func `bridged template deploy uses facts not BridgeRecord`() throws {
+        let ghost = BridgeRecord(
+            id: nil,
+            interface: "ghost0",
+            socketPath: nil,
+            plistExists: true,
+            daemonRunning: true,
+            status: "active",
+            updatedAt: "now",
+        )
+        var stub = StubHostBridgeFacts()
+        stub.helperSetuid = true
+        stub.aclAllowsSuggested = true
+        stub.bridges = [HostBridgeSnapshot(name: "br0", enslaved: ["eth1"])]
+
+        #if os(Linux)
+            let iface = try HostBridgeFactsService.activeBridgedInterface(
+                records: [ghost], source: stub,
+            )
+            #expect(iface == "br0")
+
+            let missing = #expect(throws: BarkVisorError.self) {
+                try HostBridgeFactsService.activeBridgedInterface(
+                    records: [ghost], source: StubHostBridgeFacts(),
+                )
+            }
+            #expect(missing?.httpStatus == 412)
+            #expect(missing?.errorDescription?.contains("Helper") != true)
+        #elseif os(macOS)
+            let iface = try HostBridgeFactsService.activeBridgedInterface(
+                records: [ghost], source: stub,
+            )
+            #expect(iface == "ghost0")
+
+            let missing = #expect(throws: BarkVisorError.self) {
+                try HostBridgeFactsService.activeBridgedInterface(
+                    records: [], source: stub,
+                )
+            }
+            #expect(missing?.httpStatus == 412)
+        #endif
+    }
 }
