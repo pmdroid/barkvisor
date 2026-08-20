@@ -33,12 +33,15 @@ struct RemoteAccessGateMiddleware: AsyncMiddleware {
 enum RemoteAccessGate {
     static func isExempt(_ path: String) -> Bool {
         if !path.hasPrefix("/api/") { return true }
+        if path.hasPrefix("/api/setup") { return true }
         switch path {
         case "/api/health",
              "/api/openapi.yaml",
              "/api/contract",
              "/api/workloadspec.schema.json",
-             "/api/system/capabilities":
+             "/api/system/capabilities",
+             "/api/pairing/join",
+             "/api/pairing/redeem":
             return true
         default:
             return false

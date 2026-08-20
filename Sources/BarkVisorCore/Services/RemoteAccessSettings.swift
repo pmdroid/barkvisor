@@ -65,17 +65,15 @@ public enum RemoteAccessSettings {
         return try load(from: db)
     }
 
-    public static func advertisedHosts(from db: Database) throws -> [String] {
-        let settings = try load(from: db)
-        return PairingAddresses.advertisedHosts(
+    public static func advertisedHosts(advertiseUrl: String?) -> [String] {
+        PairingAddresses.advertisedHosts(
             tailnet: TailscaleProbe.detect(),
-            advertiseUrl: settings.advertiseUrl,
+            advertiseUrl: advertiseUrl,
         )
     }
 
-    public static func status(from db: Database) throws -> RemoteAccessStatus {
-        let settings = try load(from: db)
-        return RemoteAccessStatus(
+    public static func status(settings: Snapshot) -> RemoteAccessStatus {
+        RemoteAccessStatus(
             tailscale: TailscaleProbe.detect(),
             wireguard: WireGuardProbe.detect(),
             advertiseUrl: settings.advertiseUrl,

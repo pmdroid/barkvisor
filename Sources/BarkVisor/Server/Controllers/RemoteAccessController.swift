@@ -20,9 +20,10 @@ struct RemoteAccessController: RouteCollection {
     @Sendable
     func getStatus(req: Vapor.Request) async throws -> RemoteAccessStatus {
         _ = try req.requireUser
-        return try await req.db.read { db in
-            try RemoteAccessSettings.status(from: db)
+        let settings = try await req.db.read { db in
+            try RemoteAccessSettings.load(from: db)
         }
+        return RemoteAccessSettings.status(settings: settings)
     }
 
     @Sendable
