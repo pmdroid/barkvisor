@@ -63,11 +63,7 @@ public enum NetworkService {
             let conflict = try await db.read { db in
                 try Network.filter(Column("bridge") == bridge).fetchOne(db)
             }
-            if let conflict {
-                throw BarkVisorError.conflict(
-                    "Interface '\(bridge)' is already used by network \"\(conflict.name)\". Each interface can only have one bridge.",
-                )
-            }
+            try HostBridgeFactsService.requireUnusedBridgedInterface(bridge, occupiedBy: conflict)
         }
 
         let storedBridge = mode == .bridged ? params.bridge : nil
@@ -165,11 +161,7 @@ public enum NetworkService {
                     .filter(Column("id") != params.id)
                     .fetchOne(db)
             }
-            if let conflict {
-                throw BarkVisorError.conflict(
-                    "Interface '\(bridge)' is already used by network \"\(conflict.name)\". Each interface can only have one bridge.",
-                )
-            }
+            try HostBridgeFactsService.requireUnusedBridgedInterface(bridge, occupiedBy: conflict)
         }
 
         let updatedNetwork = network

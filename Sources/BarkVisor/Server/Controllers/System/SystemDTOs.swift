@@ -102,6 +102,7 @@ extension CapabilityCode: Content {}
 extension NetworkModeCapability: Content {}
 extension HostBridgeReadiness: Content {}
 extension HostBridgeSnapshot: Content {}
+extension HostBridgeRemediation: Content {}
 
 struct HostUSBDeviceResponse: Content {
     let id: String

@@ -1,10 +1,23 @@
 import type { HostBridgeReadiness } from '../api/types'
 import type { GuestCommandGroup } from './guestAgentInstall'
+import {
+  HOST_BRIDGE_ACL_PATH,
+  HOST_BRIDGE_HELPER_PATH,
+  HOST_BRIDGE_SUGGESTED,
+} from './hostBridgeFacts'
 
-/** Copyable Linux host-bridge steps (PAS-222). BarkVisor does not run these. */
+/** Copyable Linux host-bridge steps (PAS-222). Prefer remediations from HostBridgeFacts. */
 export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommandGroup[] {
-  const br = ready.suggestedBridge || 'br0'
-  const helper = ready.helperPath || '/usr/lib/qemu/qemu-bridge-helper'
+  if (ready.remediations && ready.remediations.length > 0) {
+    return ready.remediations.map((step) => ({
+      id: step.id,
+      label: step.label,
+      commands: step.commands,
+    }))
+  }
+
+  const br = ready.suggestedBridge || HOST_BRIDGE_SUGGESTED
+  const helper = ready.helperPath || HOST_BRIDGE_HELPER_PATH
   const groups: GuestCommandGroup[] = []
 
   if (ready.bridges.length === 0) {
@@ -24,7 +37,7 @@ export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommand
     groups.push({
       id: 'allow-acl',
       label: `Allow ${br} in qemu-bridge.conf`,
-      commands: `echo 'allow ${br}' | sudo tee /etc/qemu/bridge.conf`,
+      commands: `echo 'allow ${br}' | sudo tee ${HOST_BRIDGE_ACL_PATH}`,
     })
   }
 
@@ -41,9 +54,9 @@ export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommand
 
 /** Shown when the Device binary is older than PAS-222 (no readiness route). */
 export const linuxBridgeFallbackReadiness: HostBridgeReadiness = {
-  helperPath: '/usr/lib/qemu/qemu-bridge-helper',
+  helperPath: HOST_BRIDGE_HELPER_PATH,
   helperSetuid: false,
-  suggestedBridge: 'br0',
+  suggestedBridge: HOST_BRIDGE_SUGGESTED,
   aclAllowsSuggested: false,
   bridges: [],
   defaultRouteInterface: null,

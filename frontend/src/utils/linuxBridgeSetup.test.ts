@@ -40,6 +40,16 @@ describe('linuxBridgeSetup (PAS-222)', () => {
     expect(groups[0].commands).toContain('ip link add name br0')
   })
 
+  test('server remediations win over local constants', () => {
+    const groups = linuxBridgeSetupGroups(
+      base({
+        remediations: [{ id: 'allow-acl', label: 'Allow br0', commands: 'echo allow br0' }],
+      }),
+    )
+    expect(groups.map((g) => g.id)).toEqual(['allow-acl'])
+    expect(groups[0].commands).toBe('echo allow br0')
+  })
+
   test('only-uplink warns instead of claiming ready', () => {
     expect(
       linuxBridgeStatusSummary(base({ onlyUplink: true, ready: false })),
