@@ -30,6 +30,7 @@ import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { hostArchToImageArch, normalizeImageArch } from '../utils/imageArch'
+import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   architectureIsProblem,
   architectureLabel,
@@ -201,15 +202,12 @@ export function useCreateVMWizard(
     })
   })
 
-  const vmType = computed(() => {
-    const arch = effectiveGuestArch.value
-    const archSuffix = arch === 'x86_64' ? 'amd64' : 'arm64'
-    if (osType.value === 'windows') {
-      // Never silently map Windows → Linux.
-      return arch === 'x86_64' ? 'windows-amd64' : 'windows-arm64'
-    }
-    return `linux-${archSuffix}` as const
-  })
+  const vmType = computed(() =>
+    resolveGuestType({
+      osFamily: osType.value,
+      arch: effectiveGuestArch.value || hostImageArch.value,
+    }),
+  )
 
   // Step 2: Hardware
   const cpuCount = ref(2)
@@ -217,7 +215,9 @@ export function useCreateVMWizard(
   const displayResolution = ref('1280x800')
   const uefi = ref(true)
   const tpmOverride = ref<boolean | null>(null)
-  const tpmEnabled = computed(() => tpmOverride.value ?? osType.value === 'windows')
+  const tpmEnabled = computed(() =>
+    tpmOverride.value ?? (guestProfile(vmType.value)?.defaultTPMEnabled ?? false),
+  )
   const alwaysShowArchDetails = ref(readAlwaysShowArchitectureDetails())
 
   const archCustomized = computed(() => {

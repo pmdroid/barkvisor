@@ -1068,6 +1068,32 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(wizard.currentStepLabel.value).toBe('Hardware')
   })
 
+  test('vmType follows GuestProfiles keys for the picked Device arch', async () => {
+    const devices = useDevicesStore()
+    const health = report([
+      device({ hostId: 'alpha', role: 'member', displayName: 'alpha' }),
+    ])
+    devices.report = health
+    api.get = mock((url: string) => {
+      if (url === '/home/devices/health') return Promise.resolve({ data: health })
+      if (url.startsWith('/home/devices/alpha/v1/')) {
+        if (url.endsWith('/ssh-keys')) return Promise.resolve({ data: [] })
+        return Promise.resolve(inventoryGet('alpha', url))
+      }
+      return Promise.resolve({ data: [] })
+    }) as typeof api.get
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'alpha' })
+    await wizard.loadPickedDevice()
+    await waitForCurrentInventory(wizard, 'alpha')
+    expect(wizard.hostArch.value).toBe('x86_64')
+    expect(wizard.effectiveGuestArch.value).toBe('')
+    expect(wizard.vmType.value).toBe('linux-amd64')
+    expect(wizard.tpmEnabled.value).toBe(false)
+    wizard.selectOS('windows')
+    expect(wizard.vmType.value).toBe('windows-amd64')
+    expect(wizard.tpmEnabled.value).toBe(true)
+  })
+
   test('Windows vmType follows the selected image architecture', () => {
     const devices = useDevicesStore()
     devices.report = report([
