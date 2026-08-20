@@ -168,7 +168,10 @@ struct HostBridgeReadinessTests {
         var stub = StubHostBridgeFacts()
         stub.helperSetuid = true
         stub.aclAllowsSuggested = true
-        stub.bridges = [HostBridgeSnapshot(name: "br0", enslaved: ["eth1"])]
+        stub.bridges = [
+            HostBridgeSnapshot(name: "virbr0", enslaved: []),
+            HostBridgeSnapshot(name: "br0", enslaved: ["eth1"]),
+        ]
 
         #if os(Linux)
             let iface = try HostBridgeFactsService.activeBridgedInterface(
