@@ -1,3 +1,5 @@
+import { guestProfile } from './guestType'
+
 /** localStorage key for “always show architecture details” (PAS-93). */
 export const ALWAYS_SHOW_ARCH_DETAILS_KEY = 'barkvisor.alwaysShowArchitectureDetails'
 
@@ -49,6 +51,8 @@ export function architectureLabel(arch: string | null | undefined): string {
 /** QEMU machine implied by a guest type / arch (inspect-only). */
 export function defaultMachineType(vmTypeOrArch: string | null | undefined): string {
   const raw = vmTypeOrArch ?? ''
+  const fromTable = guestProfile(raw)?.machine
+  if (fromTable) return fromTable
   if (raw.includes('amd64') || raw.includes('x86')) return 'q35'
   return 'virt'
 }

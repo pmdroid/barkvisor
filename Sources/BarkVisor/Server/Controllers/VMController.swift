@@ -430,12 +430,13 @@ struct VMController: RouteCollection {
         return WorkloadSpecProjector.fromVM(vm)
     }
 
-    /// Flat create: honor an explicit `vmType`, otherwise pick a host-native guest.
-    static func resolveFlatGuestType(vmType: String?, osFamily: String?) throws -> String {
-        if let vmType, !vmType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return try GuestProfiles.require(vmType).id
-        }
-        return try GuestProfiles.defaultID(osFamily: osFamily)
+    /// Flat create: same keys as wizard and WorkloadSpec (`GuestProfiles.resolve`).
+    static func resolveFlatGuestType(
+        vmType: String?,
+        osFamily: String?,
+        arch: String? = nil,
+    ) throws -> String {
+        try GuestProfiles.resolve(guestType: vmType, osFamily: osFamily, arch: arch)
     }
 
     static func createParams(from body: CreateVMRequest) throws -> CreateVMParams {
