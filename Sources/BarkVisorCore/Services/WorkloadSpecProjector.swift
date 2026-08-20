@@ -229,20 +229,11 @@ public enum WorkloadSpecProjector {
 
     /// Resolve guest profile id from spec, defaulting arch from the host when omitted.
     public static func resolveGuestType(_ spec: WorkloadSpec) throws -> String {
-        if let guestType = spec.spec.guestType, !guestType.isEmpty {
-            let profile = try GuestProfiles.require(guestType)
-            if let arch = spec.spec.arch.flatMap({ Self.normalizeQEMUArch($0) }),
-               arch != profile.qemuArch {
-                throw BarkVisorError.badRequest(
-                    "spec.arch \(arch) does not match guestType \(guestType) (\(profile.qemuArch))",
-                )
-            }
-            return guestType
-        }
-        let qemuArch = spec.spec.arch.flatMap { Self.normalizeQEMUArch($0) }
-            ?? PlatformCapabilities.defaultGuestArch
-        let imageArch = qemuArch == "aarch64" ? "arm64" : "x86_64"
-        return try GuestProfiles.defaultID(osFamily: spec.spec.osFamily, imageArch: imageArch)
+        try GuestProfiles.resolve(
+            guestType: spec.spec.guestType,
+            osFamily: spec.spec.osFamily,
+            arch: spec.spec.arch,
+        )
     }
 
     public static func normalizeQEMUArch(_ raw: String) -> String? {

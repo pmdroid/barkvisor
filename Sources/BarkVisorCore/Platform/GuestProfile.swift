@@ -45,6 +45,7 @@ public struct GuestProfile: Sendable, Equatable, Codable, Hashable {
 }
 
 /// Table of supported guest profiles. Single source for validation, QEMU, and API.
+/// Frontend `frontend/src/utils/guestType.ts` mirrors these rows for the wizard.
 public enum GuestProfiles {
     public static let all: [GuestProfile] = [
         GuestProfile(
@@ -144,6 +145,43 @@ public enum GuestProfiles {
         default:
             return nil
         }
+    }
+
+    /// API / image arch (`arm64` / `x86_64`) from QEMU, image, or host labels.
+    /// Unknown tokens return `nil` so callers can fall back to the host.
+    public static func normalizedImageArch(_ raw: String) -> String? {
+        switch PlatformCapabilities.normalizedArch(raw) {
+        case "arm64": return "arm64"
+        case "x86_64": return "x86_64"
+        default: return nil
+        }
+    }
+
+    /// Single guest-type authority for wizard, flat create, and WorkloadSpec.
+    ///
+    /// Explicit `guestType` / `vmType` wins (must exist in this table). Otherwise
+    /// pick the default linux/windows row for `arch`, falling back to the host.
+    /// `linux-x86_64` stays a persisted alias; omitted x86 linux resolves to
+    /// `linux-amd64`.
+    public static func resolve(
+        guestType: String? = nil,
+        osFamily: String? = nil,
+        arch: String? = nil,
+    ) throws -> String {
+        let explicit = guestType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !explicit.isEmpty {
+            let profile = try require(explicit)
+            if let arch, !arch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let imageArch = normalizedImageArch(arch),
+               imageArch != profile.arch {
+                throw BarkVisorError.badRequest(
+                    "arch \(imageArch) does not match guestType \(explicit) (\(profile.arch))",
+                )
+            }
+            return profile.id
+        }
+        let imageArch = arch.flatMap { normalizedImageArch($0) } ?? PlatformCapabilities.hostArch
+        return try defaultID(osFamily: osFamily, imageArch: imageArch)
     }
 
     /// Default persisted guest ID when the client omits `vmType` / `guestType`.

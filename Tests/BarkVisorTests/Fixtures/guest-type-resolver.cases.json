@@ -1,0 +1,100 @@
+[
+  {
+    "guestType": null,
+    "osFamily": "linux",
+    "arch": "arm64",
+    "id": "linux-arm64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": null,
+    "osFamily": "linux",
+    "arch": "aarch64",
+    "id": "linux-arm64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": null,
+    "osFamily": "LINUX",
+    "arch": "ARM64",
+    "id": "linux-arm64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": null,
+    "osFamily": "linux",
+    "arch": "x86_64",
+    "id": "linux-amd64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": null,
+    "osFamily": "linux",
+    "arch": "amd64",
+    "id": "linux-amd64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": null,
+    "osFamily": "linux",
+    "arch": "x64",
+    "id": "linux-amd64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": null,
+    "osFamily": "windows",
+    "arch": "arm64",
+    "id": "windows-arm64",
+    "defaultTPMEnabled": true
+  },
+  {
+    "guestType": null,
+    "osFamily": "windows",
+    "arch": "aarch64",
+    "id": "windows-arm64",
+    "defaultTPMEnabled": true
+  },
+  {
+    "guestType": null,
+    "osFamily": "windows",
+    "arch": "x86_64",
+    "id": "windows-amd64",
+    "defaultTPMEnabled": true
+  },
+  {
+    "guestType": null,
+    "osFamily": "windows",
+    "arch": "amd64",
+    "id": "windows-amd64",
+    "defaultTPMEnabled": true
+  },
+  {
+    "guestType": "linux-x86_64",
+    "osFamily": "linux",
+    "arch": "x86_64",
+    "id": "linux-x86_64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": "windows-amd64",
+    "osFamily": null,
+    "arch": null,
+    "id": "windows-amd64",
+    "defaultTPMEnabled": true
+  },
+  {
+    "guestType": "linux-arm64",
+    "osFamily": "windows",
+    "arch": null,
+    "id": "linux-arm64",
+    "defaultTPMEnabled": false
+  },
+  {
+    "guestType": "  windows-arm64  ",
+    "osFamily": "linux",
+    "arch": "arm64",
+    "id": "windows-arm64",
+    "defaultTPMEnabled": true
+  }
+]
