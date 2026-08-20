@@ -1094,6 +1094,28 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(wizard.tpmEnabled.value).toBe(true)
   })
 
+  test('unknown image arch does not throw from vmType', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+    ])
+    const library = useHomeLibraryStore()
+    const odd = readyImage({ id: 'odd', name: 'odd.iso', arch: 'ppc64' })
+    library.images = [
+      {
+        ...odd,
+        libraryKey: homeImageKey(odd),
+        sourceHostIds: ['desk'],
+        copies: [{ hostId: 'desk', imageId: 'desk-odd', status: 'ready' }],
+      },
+    ]
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectedImageId.value = homeImageKey(odd)
+    expect(wizard.effectiveGuestArch.value).toBe('ppc64')
+    expect(wizard.vmType.value).toBe('linux-arm64')
+    expect(wizard.tpmEnabled.value).toBe(false)
+  })
+
   test('Windows vmType follows the selected image architecture', () => {
     const devices = useDevicesStore()
     devices.report = report([

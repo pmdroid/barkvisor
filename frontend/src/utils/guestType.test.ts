@@ -50,4 +50,16 @@ describe('resolveGuestType', () => {
       /does not match guestType/,
     )
   })
+
+  test('unknown arch falls back to defaultArch instead of throwing', () => {
+    expect(
+      resolveGuestType({ osFamily: 'linux', arch: 'ppc64', defaultArch: 'x86_64' }),
+    ).toBe('linux-amd64')
+    expect(
+      resolveGuestType({ osFamily: 'windows', arch: 'riscv64', defaultArch: 'arm64' }),
+    ).toBe('windows-arm64')
+    expect(() => resolveGuestType({ osFamily: 'linux', arch: 'ppc64' })).toThrow(
+      /guest type resolve needs arch/,
+    )
+  })
 })

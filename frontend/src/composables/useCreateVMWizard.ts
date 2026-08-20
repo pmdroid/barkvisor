@@ -206,6 +206,9 @@ export function useCreateVMWizard(
     resolveGuestType({
       osFamily: osType.value,
       arch: effectiveGuestArch.value || hostImageArch.value,
+      // Unknown image arch tokens must not throw during render; submit still
+      // fail-closes via archIsProblem / place-anyway (PAS-241).
+      defaultArch: hostImageArch.value,
     }),
   )
 
