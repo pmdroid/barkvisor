@@ -87,13 +87,14 @@ public enum GuestListeningPorts {
         lock.unlock()
     }
 
-    /// SSH, common HTTP/HTTPS, typical dev servers, DBs, RDP, VNC.
+    /// SSH, HTTP/S, typical self-host UIs, dev servers, DBs, RDP, VNC.
     public static let publishedPorts: Set<Int> = [
-        22, 80, 443,
-        3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174,
-        8_000, 8_080, 8_081, 8_443, 8_888,
-        3_306, 5_432, 6_379, 27_017,
-        3_389, 5_900,
+        22, 80, 81, 443,
+        1_234, 1_880, 1_883, 2_283, 3_000, 3_001, 3_306, 3_389,
+        4_173, 4_200, 5_000, 5_055, 5_173, 5_174, 5_432, 5_900, 6_379,
+        6_767, 7_860, 7_878, 8_000, 8_006, 8_080, 8_081, 8_123, 8_188,
+        8_384, 8_443, 8_686, 8_888, 8_883, 8_989, 9_000, 9_090, 9_091, 9_443, 9_696,
+        11_434, 18_789, 27_017, 32_400,
     ]
 
     public static func isPublishedPort(_ port: Int) -> Bool {
@@ -104,23 +105,47 @@ public enum GuestListeningPorts {
         switch port {
         case 22: "SSH"
         case 80, 8_000, 8_080: "HTTP"
-        case 443, 8_443: "HTTPS"
+        case 81: "NPM"
+        case 443, 8_443, 9_443: "HTTPS"
+        case 1_234: "LM Studio"
+        case 1_880: "Node-RED"
+        case 1_883, 8_883: "MQTT"
+        case 2_283: "Immich"
         case 3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174, 8_081, 8_888: "Dev"
         case 3_306: "MySQL"
-        case 5_432: "Postgres"
-        case 6_379: "Redis"
-        case 27_017: "Mongo"
         case 3_389: "RDP"
+        case 5_055: "Overseerr"
+        case 5_432: "Postgres"
         case 5_900: "VNC"
+        case 6_379: "Redis"
+        case 6_767: "Bazarr"
+        case 7_860: "Gradio"
+        case 7_878: "Radarr"
+        case 8_006: "Proxmox"
+        case 8_123: "Home Assistant"
+        case 8_188: "ComfyUI"
+        case 8_384: "Syncthing"
+        case 8_686: "Lidarr"
+        case 8_989: "Sonarr"
+        case 9_000: "Portainer"
+        case 9_090: "Cockpit"
+        case 9_091: "Transmission"
+        case 9_696: "Prowlarr"
+        case 11_434: "Ollama"
+        case 18_789: "OpenClaw"
+        case 27_017: "Mongo"
+        case 32_400: "Plex"
         default: nil
         }
     }
 
     public static func impliedScheme(for port: Int) -> String? {
         switch port {
-        case 80, 3_000, 3_001, 4_173, 4_200, 5_000, 5_173, 5_174, 8_000, 8_080, 8_081, 8_888:
+        case 80, 81, 1_234, 1_880, 2_283, 3_000, 3_001, 4_173, 4_200, 5_000, 5_055,
+             5_173, 5_174, 6_767, 7_860, 7_878, 8_000, 8_006, 8_080, 8_081, 8_123, 8_188,
+             8_384, 8_686, 8_888, 8_989, 9_000, 9_090, 9_091, 9_696, 11_434, 18_789, 32_400:
             "http"
-        case 443, 8_443:
+        case 443, 8_443, 9_443:
             "https"
         default:
             nil
@@ -129,7 +154,7 @@ public enum GuestListeningPorts {
 
     public static func isNonHTTPService(_ port: Int) -> Bool {
         switch port {
-        case 22, 3_306, 3_389, 5_432, 5_900, 6_379, 27_017: true
+        case 22, 1_883, 3_306, 3_389, 5_432, 5_900, 6_379, 8_883, 27_017: true
         default: false
         }
     }
