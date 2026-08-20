@@ -11,6 +11,7 @@
 		3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D972FFFAF314F1E415F95262 /* Theme.swift */; };
 		B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CCB06D0BEF46910846E84B /* Models.swift */; };
 		EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */; };
+		D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */; };
 		70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F479E78AC8E6DA04341B1D0A /* LoginURI.swift */; };
 		010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */; };
 		3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */; };
@@ -27,6 +28,7 @@
 		8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40C0E3A9BCA1B51480836FF /* HomeView.swift */; };
 		2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA85C5946B65A59DFF46D77 /* DevicesView.swift */; };
 		5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */; };
+		11E524FFFCD88CD4978F96A8 /* CreateWorkloadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */; };
 		9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */; };
 		DF4E37A51C3F79D06ECE745F /* SerialConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */; };
 		02D993BF3DB2B3D572704DE7 /* DisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */; };
@@ -38,6 +40,7 @@
 		89988E97162C9EEA1AADDF3D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = FDAFD770BDEB2E2B37188E80 /* SwiftTerm */; };
 		30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */; };
 		E1B4C9E9B34B37BDE12F5342 /* LibraryCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */; };
+		5768E7FA4356E7827E3F93D5 /* CreateWorkloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A026BC9CA66C66CEA2B15B5 /* CreateWorkloadTests.swift */; };
 		0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */; };
 		D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */; };
 		0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFA94CEA740ED82135195F5 /* SessionTests.swift */; };
@@ -50,6 +53,7 @@
 		D972FFFAF314F1E415F95262 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		69CCB06D0BEF46910846E84B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalog.swift; sourceTree = "<group>"; };
+		4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkload.swift; sourceTree = "<group>"; };
 		F479E78AC8E6DA04341B1D0A /* LoginURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginURI.swift; sourceTree = "<group>"; };
 		FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginOfferQR.swift; sourceTree = "<group>"; };
 		B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
@@ -66,6 +70,7 @@
 		C40C0E3A9BCA1B51480836FF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		6BA85C5946B65A59DFF46D77 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
 		A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadsView.swift; sourceTree = "<group>"; };
+		623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkloadSheet.swift; sourceTree = "<group>"; };
 		5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailView.swift; sourceTree = "<group>"; };
 		5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SerialConsoleView.swift; sourceTree = "<group>"; };
 		9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayView.swift; sourceTree = "<group>"; };
@@ -74,6 +79,7 @@
 		E2E14E47E20214650F056095 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
 		22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalogTests.swift; sourceTree = "<group>"; };
+		4A026BC9CA66C66CEA2B15B5 /* CreateWorkloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkloadTests.swift; sourceTree = "<group>"; };
 		D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailTests.swift; sourceTree = "<group>"; };
 		F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStreamTests.swift; sourceTree = "<group>"; };
 		BAFA94CEA740ED82135195F5 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
@@ -155,6 +161,7 @@
 			children = (
 				69CCB06D0BEF46910846E84B /* Models.swift */,
 				9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */,
+				4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */,
 				F479E78AC8E6DA04341B1D0A /* LoginURI.swift */,
 				FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */,
 				B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */,
@@ -185,6 +192,7 @@
 				C40C0E3A9BCA1B51480836FF /* HomeView.swift */,
 				6BA85C5946B65A59DFF46D77 /* DevicesView.swift */,
 				A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */,
+				623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */,
 				5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */,
 				5BA84623ABE6FF301D44FA98 /* SerialConsoleView.swift */,
 				9C4FA8F29E95AD508869D0D1 /* DisplayView.swift */,
@@ -219,6 +227,7 @@
 			children = (
 				5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */,
 				22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */,
+				4A026BC9CA66C66CEA2B15B5 /* CreateWorkloadTests.swift */,
 				D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */,
 				F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */,
 				BAFA94CEA740ED82135195F5 /* SessionTests.swift */,
@@ -319,6 +328,7 @@
 				3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */,
 				B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */,
 				EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */,
+				D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */,
 				70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */,
 				010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */,
 				3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */,
@@ -335,6 +345,7 @@
 				8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */,
 				2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */,
 				5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */,
+				11E524FFFCD88CD4978F96A8 /* CreateWorkloadSheet.swift in Sources */,
 				9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */,
 				DF4E37A51C3F79D06ECE745F /* SerialConsoleView.swift in Sources */,
 				02D993BF3DB2B3D572704DE7 /* DisplayView.swift in Sources */,
@@ -350,6 +361,7 @@
 			files = (
 				30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */,
 				E1B4C9E9B34B37BDE12F5342 /* LibraryCatalogTests.swift in Sources */,
+				5768E7FA4356E7827E3F93D5 /* CreateWorkloadTests.swift in Sources */,
 				0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */,
 				D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */,
 				0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */,

@@ -52,14 +52,16 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop / ACPI restart. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
-| Library / Disks / Networks / Logs | Library lists images on the Device and downloads from the image catalog (`POST /api/repositories/images/{id}/download`). Disks, Networks, and Logs stay read-only. Depot path stays in the web UI. |
+| Library / Disks / Networks / Logs | Library lists images on the Device, downloads from the image catalog (`POST /api/repositories/images/{id}/download`), and can create a Workload from a ready image. Disks, Networks, and Logs stay read-only. Depot path stays in the web UI. |
 | Settings | URL, logout, about (`/api/system/about`), Add Device pairing code. On Mac, issue a phone sign-in QR (`POST /api/auth/login-offers`). Changing origin signs you out. |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Start and ACPI Stop from the list (and Console / Display from detail) match the Home web UI on This Device and on a reachable member. Force Stop stays on detail with a confirm. Create VM is not in this app. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
+Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Start and ACPI Stop from the list (and Console / Display from detail) match the Home web UI on This Device and on a reachable member. Force Stop stays on detail with a confirm. Create is a short sheet (iOS Home toolbar +, Mac Workloads / Library): name, a ready Library image, default disk, implicit NAT, This Device (iOS Home also picks a reachable Device). Member create uses the Home proxy. Hardware, extra disks, networks, and USB stay in the web UI. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
 
 ## Tests
+
+`CreateWorkloadTests` covers ready-image gating, guest type from the image arch, default CPU/RAM/disk (clamped to a provided host CPU count, never this Mac’s `cpuCount`), ISO vs cloud-image POST bodies, 202 `{ taskID, vm }` decode, and member create via the Home proxy.
 
 `APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, and Device URL normalization.
 

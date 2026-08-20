@@ -358,6 +358,30 @@ final class AppModel {
         }
     }
 
+    func createWorkload(
+        name: String,
+        image: LibraryImage,
+        on device: HomeDeviceHealthSnapshot,
+    ) async -> Workload? {
+        let key = "create/\(device.hostId)"
+        actionIDs.insert(key)
+        defer { actionIDs.remove(key) }
+        do {
+            let body = try CreateWorkload.body(
+                name: name,
+                image: image,
+                hostCPUCount: device.resources?.cpuCount,
+            )
+            let created = try await requireClient().createWorkload(body, on: device)
+            await refreshDeviceScoped()
+            await refreshHomeUnion()
+            return created
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
     func downloadCatalogImage(_ image: CatalogImage) async {
         let id = "catalog:\(image.id)"
         actionIDs.insert(id)
@@ -407,6 +431,14 @@ final class AppModel {
         catalogImagesByRepo = merged.imagesByRepo
         catalogFetchFailed = merged.fetchFailed
         catalogLoaded = true
+    }
+
+    func anyReadyLibraryImage() async -> Bool {
+        if CreateWorkload.hasReadyImage(images) { return true }
+        for device in devices where device.isReachable {
+            if await CreateWorkload.hasReadyImage(libraryImages(on: device) ?? []) { return true }
+        }
+        return false
     }
 
     func guestInfo(for workloadID: String, on device: HomeDeviceHealthSnapshot?) async -> GuestInfo? {

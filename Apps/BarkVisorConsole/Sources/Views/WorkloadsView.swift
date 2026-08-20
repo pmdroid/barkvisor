@@ -13,7 +13,9 @@ struct WorkloadsView: View {
                     description: Text(
                         model.selectedDevice?.isReachable == false
                             ? "This \(Copy.device.lowercased()) is unreachable."
-                            : "Create workloads in the web UI, then they appear here.",
+                            : CreateWorkload.hasReadyImage(model.images)
+                            ? "Create a Workload from a ready Library image."
+                            : CreateWorkload.emptyLibraryCopy,
                     ),
                 )
             } else {
@@ -34,6 +36,11 @@ struct WorkloadsView: View {
                 .pickerStyle(.menu)
             }
         }
+        .createWorkloadEntry(
+            allowsDevicePicker: false,
+            images: model.images,
+            enabled: model.selectedDevice?.isReachable == true && CreateWorkload.hasReadyImage(model.images),
+        )
     }
 
     private var visible: [Workload] {
