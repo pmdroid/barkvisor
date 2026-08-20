@@ -216,7 +216,8 @@ public enum HostInfoService {
     ///
     /// On Linux, also includes **bridge devices without an IPv4 address** (from sysfs).
     /// `listInterfaces()` is IPv4-only, so a bare `br0` would otherwise be missing from the UI.
-    /// - Parameter bridgeStatusByInterface: map of interface name → BridgeRecord.status
+    /// - Parameter bridgeStatusByInterface: map of interface name → status
+    ///   (macOS: BridgeRecord; Linux: HostBridgeFacts)
     public static func listInterfaceSnapshots(
         bridgeStatusByInterface: [String: String] = [:],
     ) -> [HostInterfaceSnapshot] {
@@ -233,7 +234,7 @@ public enum HostInfoService {
 
         #if os(Linux)
             // Merge bridge-class devices that have no AF_INET address (down / L2-only).
-            for name in LinuxHostNetwork.listBridgeInterfaces() {
+            for name in HostBridgeFactsService.probe().bridges.map(\.name) {
                 if byName[name] != nil { continue }
                 byName[name] = HostInterfaceSnapshot(
                     name: name,

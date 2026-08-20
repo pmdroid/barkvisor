@@ -15,6 +15,10 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func listBridges(req: Vapor.Request) async throws -> [BridgeInfo] {
+        if !PlatformCapabilities.supportsManagedBridgeDaemon {
+            return HostBridgeFactsService.hostBridgeInfos(from: HostBridgeFactsService.probe())
+                .map(Self.bridgeInfo(from:))
+        }
         let records = try await req.db.read { db in
             try BridgeRecord.fetchAll(db)
         }
@@ -27,6 +31,16 @@ struct SystemBridgeController: RouteCollection {
                 status: r.status,
             )
         }
+    }
+
+    private static func bridgeInfo(from dto: BridgeStateDTO) -> BridgeInfo {
+        BridgeInfo(
+            interface: dto.interface,
+            socketPath: dto.socketPath,
+            plistExists: dto.plistExists,
+            daemonRunning: dto.daemonRunning,
+            status: dto.status,
+        )
     }
 
     /// install/start/stop/remove require the macOS managed bridge daemon (XPC helper).

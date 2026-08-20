@@ -3,8 +3,8 @@ import GRDB
 
 public enum BridgeSyncService {
     public static func syncOnce(db: DatabasePool) async {
-        // Intended for managed bridge daemons (macOS). Call sites should gate on
-        // PlatformCapabilities.supportsManagedBridgeDaemon.
+        // macOS managed daemons only. Linux host bridges are HostBridgeFacts (sysfs).
+        guard PlatformCapabilities.supportsManagedBridgeDaemon else { return }
         do {
             let states = try await PrivilegeService.shared.getAllBridgeStates()
             let now = iso8601.string(from: Date())

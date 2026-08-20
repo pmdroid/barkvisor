@@ -28,6 +28,7 @@ import {
   deviceHostBridgeReadinessPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
+import { HOST_BRIDGE_SUGGESTED } from '../utils/hostBridgeFacts'
 import {
   linuxBridgeFallbackReadiness,
   linuxBridgeSetupGroups,
@@ -347,7 +348,9 @@ async function fetchLinuxReadiness() {
     const { data } = await api.get<HostBridgeReadiness>(path)
     linuxReadiness.value = data
   } catch {
-    linuxReadiness.value = linuxBridgeFallbackReadiness
+    if (linuxReadiness.value == null) {
+      linuxReadiness.value = linuxBridgeFallbackReadiness
+    }
   } finally {
     linuxReadinessLoading.value = false
   }
@@ -815,7 +818,7 @@ async function setupBridgeInline() {
           v-model="newBridge"
           class="bridge-custom"
           style="margin-top:8px;width:100%"
-          placeholder="Or type bridge name (e.g. br0)"
+          :placeholder="`Or type bridge name (e.g. ${HOST_BRIDGE_SUGGESTED})`"
           spellcheck="false"
           autocomplete="off"
         />

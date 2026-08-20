@@ -115,13 +115,11 @@ struct SetupController: RouteCollection {
         guard !setupMiddleware.isSetupComplete else {
             throw Abort(.notFound)
         }
-        let bridgeStatusByInterface = try await req.db.read { db in
-            try Dictionary(
-                uniqueKeysWithValues: BridgeRecord.fetchAll(db).map { ($0.interface, $0.status) },
-            )
+        let records = try await req.db.read { db in
+            try BridgeRecord.fetchAll(db)
         }
         return HostInfoService.listInterfaceSnapshots(
-            bridgeStatusByInterface: bridgeStatusByInterface,
+            bridgeStatusByInterface: HostBridgeFactsService.statusByInterface(records: records),
         ).map {
             InterfaceResponse(
                 name: $0.name,
