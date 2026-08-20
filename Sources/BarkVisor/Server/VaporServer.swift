@@ -178,6 +178,7 @@ public final class VaporServer: @unchecked Sendable {
         let downloader: ImageDownloader
         let syncService: RepositorySyncService
         let collector: MetricsCollector
+        let guestAgentInventory: GuestAgentInventory
         let stateStreamService: VMStateStreamService
         let manager: VMManager
         let qmpDiskService: QMPDiskService
@@ -292,8 +293,9 @@ public final class VaporServer: @unchecked Sendable {
         let syncService = RepositorySyncService(dbPool: pool)
         repositorySyncService = syncService
 
-        let collector = MetricsCollector(dbPool: pool)
+        let collector = MetricsCollector()
         metricsCollector = collector
+        let guestAgentInventory = GuestAgentInventory(dbPool: pool)
         await collector.startSystemStatsCollection()
 
         let stateStreamService = VMStateStreamService()
@@ -313,6 +315,7 @@ public final class VaporServer: @unchecked Sendable {
         let consoleBuffers = ConsoleBufferManager()
         await manager.setConsoleBuffers(consoleBuffers)
         await manager.setMetricsCollector(collector)
+        await manager.setGuestAgentInventory(guestAgentInventory)
         await manager.setStateStreamService(stateStreamService)
 
         let qmpEventListener = QMPEventListener(dbPool: pool)
@@ -325,6 +328,7 @@ public final class VaporServer: @unchecked Sendable {
         await processMonitor.setVMManager(manager)
         await processMonitor.setConsoleBuffers(consoleBuffers)
         await processMonitor.setMetricsCollector(collector)
+        await processMonitor.setGuestAgentInventory(guestAgentInventory)
         await processMonitor.setStateStreamService(stateStreamService)
         await processMonitor.setQMPEventListener(qmpEventListener)
         await manager.setProcessMonitor(processMonitor)
@@ -334,6 +338,7 @@ public final class VaporServer: @unchecked Sendable {
 
         return Services(
             downloader: downloader, syncService: syncService, collector: collector,
+            guestAgentInventory: guestAgentInventory,
             stateStreamService: stateStreamService, manager: manager,
             qmpDiskService: qmpDiskService, backgroundTasks: backgroundTasks,
             diskInfoCache: diskInfoCache, consoleBuffers: consoleBuffers,

@@ -1,6 +1,7 @@
 import Foundation
 
 /// TCP LISTEN snapshot from qemu-guest-agent (PAS-225, PAS-231).
+/// Collected by `GuestAgentInventory` (PAS-239), not metrics.
 ///
 /// `null` on the API means unavailable; `[]` means the guest reported none.
 /// Only TCP. Loopback is `scope: internal` and never becomes a URL.

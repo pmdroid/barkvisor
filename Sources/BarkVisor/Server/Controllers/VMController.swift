@@ -505,7 +505,7 @@ struct VMController: RouteCollection {
     @Sendable
     func getGuestInfo(req: Vapor.Request) async throws -> GuestInfoResponse {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        let result = try await VMLifecycleService.getGuestInfo(
+        let result = try await GuestAgentInventory.getGuestInfo(
             vmID: id, vmManager: vmManager, db: req.db,
         )
         return GuestInfoResponse(from: result)
