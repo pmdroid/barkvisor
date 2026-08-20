@@ -4,26 +4,115 @@ struct LibraryView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Group {
-            if model.images.isEmpty {
-                ContentUnavailableView(
-                    "Library is empty",
-                    systemImage: "opticaldisc",
-                    description: Text("Download images from the web UI Repositories page.")
-                )
-            } else {
-                List(model.images) { image in
-                    LabeledContent {
-                        Text(image.status)
-                            .foregroundStyle(Color.status(image.status))
-                    } label: {
-                        Text(image.name)
-                        Text("\(image.imageType) · \(image.arch) · \(ByteCountFormatter.string(fromByteCount: image.sizeBytes ?? 0, countStyle: .file))")
+        List {
+            Section {
+                if model.images.isEmpty {
+                    Text(Copy.emptyLibrary)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.images) { image in
+                        LibraryImageRow(image: image)
                     }
                 }
-                .platformListStyle()
+            } header: {
+                Text(Copy.library)
+            } footer: {
+                Text(libraryFooter)
+            }
+
+            if !model.catalogLoaded {
+                Section("Catalog") {
+                    ProgressView("Loading catalog…")
+                }
+            } else if model.catalogGroups.isEmpty {
+                Section("Catalog") {
+                    Text(LibraryCatalog.emptyCatalogCopy)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(model.catalogGroups) { group in
+                    Section(group.repo.name) {
+                        ForEach(group.images) { image in
+                            CatalogImageRow(image: image)
+                        }
+                    }
+                }
             }
         }
+        .platformListStyle()
+        .refreshable { await model.refreshLibrary() }
+        .task { await model.refreshLibrary() }
+    }
+
+    private var libraryFooter: String {
+        let title = model.libraryDevice?.title
+        if LibraryCatalog.preferSelfDevice {
+            return "Downloads land on This \(Copy.device)."
+        }
+        if let title, !title.isEmpty {
+            return "Downloads land on \(title)."
+        }
+        return "Downloads land on the selected \(Copy.device.lowercased())."
+    }
+}
+
+private struct LibraryImageRow: View {
+    var image: LibraryImage
+
+    var body: some View {
+        LabeledContent {
+            if image.isTransferring {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Text(image.status)
+                .foregroundStyle(Color.status(image.status))
+        } label: {
+            Text(image.name)
+            Text(detail)
+            if let error = image.error, image.status == "error" {
+                Text(error)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var detail: String {
+        var parts = [image.imageType, image.arch]
+        if let size = LibraryCatalog.sizeLabel(image.sizeBytes) { parts.append(size) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+private struct CatalogImageRow: View {
+    @Environment(AppModel.self) private var model
+    var image: CatalogImage
+
+    var body: some View {
+        LabeledContent {
+            if state.isBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Button(state.buttonTitle) {
+                Task { await model.downloadCatalogImage(image) }
+            }
+            .disabled(state == .ready || state.isBusy || !(model.libraryDevice?.isReachable ?? true))
+        } label: {
+            Text(image.name)
+            Text(image.detailLine)
+            if case let .failed(message) = state, let message, !message.isEmpty {
+                Text(message)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var state: CatalogDownloadState {
+        LibraryCatalog.downloadState(
+            local: LibraryCatalog.libraryImage(for: image, in: model.images),
+            starting: model.actionIDs.contains("catalog:\(image.id)"),
+        )
     }
 }
 

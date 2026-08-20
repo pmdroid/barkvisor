@@ -10,6 +10,7 @@
 		17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */; };
 		3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D972FFFAF314F1E415F95262 /* Theme.swift */; };
 		B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CCB06D0BEF46910846E84B /* Models.swift */; };
+		EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */; };
 		70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F479E78AC8E6DA04341B1D0A /* LoginURI.swift */; };
 		010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */; };
 		3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */; };
@@ -36,6 +37,7 @@
 		D2AC7A94173F65741361BA3F /* noVNC in Resources */ = {isa = PBXBuildFile; fileRef = E8B498E4629DB56F072E5A0B /* noVNC */; };
 		89988E97162C9EEA1AADDF3D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = FDAFD770BDEB2E2B37188E80 /* SwiftTerm */; };
 		30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */; };
+		E1B4C9E9B34B37BDE12F5342 /* LibraryCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */; };
 		0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */; };
 		D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */; };
 		0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFA94CEA740ED82135195F5 /* SessionTests.swift */; };
@@ -47,6 +49,7 @@
 		5F24339286D521AF2C260FA6 /* BarkVisorConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkVisorConsoleApp.swift; sourceTree = "<group>"; };
 		D972FFFAF314F1E415F95262 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		69CCB06D0BEF46910846E84B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalog.swift; sourceTree = "<group>"; };
 		F479E78AC8E6DA04341B1D0A /* LoginURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginURI.swift; sourceTree = "<group>"; };
 		FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginOfferQR.swift; sourceTree = "<group>"; };
 		B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
@@ -70,6 +73,7 @@
 		3A4CC16A220D98EE907BF334 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E2E14E47E20214650F056095 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
+		22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalogTests.swift; sourceTree = "<group>"; };
 		D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailTests.swift; sourceTree = "<group>"; };
 		F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStreamTests.swift; sourceTree = "<group>"; };
 		BAFA94CEA740ED82135195F5 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
@@ -150,6 +154,7 @@
 			isa = PBXGroup;
 			children = (
 				69CCB06D0BEF46910846E84B /* Models.swift */,
+				9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */,
 				F479E78AC8E6DA04341B1D0A /* LoginURI.swift */,
 				FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */,
 				B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */,
@@ -213,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */,
+				22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */,
 				D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */,
 				F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */,
 				BAFA94CEA740ED82135195F5 /* SessionTests.swift */,
@@ -312,6 +318,7 @@
 				17634B26E4EB4BE59CC4C7CE /* BarkVisorConsoleApp.swift in Sources */,
 				3995B209EDDA358C2CE8D566 /* Theme.swift in Sources */,
 				B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */,
+				EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */,
 				70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */,
 				010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */,
 				3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */,
@@ -342,6 +349,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				30B59A87B68379EC1911E553 /* APIDecodingTests.swift in Sources */,
+				E1B4C9E9B34B37BDE12F5342 /* LibraryCatalogTests.swift in Sources */,
 				0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */,
 				D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */,
 				0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */,

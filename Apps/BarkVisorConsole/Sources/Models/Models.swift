@@ -9,6 +9,7 @@ enum Copy {
     static let workload = "Workload"
     static let workloads = "Workloads"
     static let library = "Library"
+    static let emptyLibrary = LibraryCatalog.emptyLibraryCopy
 }
 
 // MARK: - Auth / setup
@@ -513,6 +514,10 @@ struct LibraryImage: Decodable, Identifiable, Hashable {
     var updatedAt: String
 
     var isReadyISO: Bool { imageType == "iso" && status == "ready" }
+
+    var isTransferring: Bool {
+        status == "downloading" || status == "decompressing" || status == "uploading"
+    }
 }
 
 struct WorkloadISOMediaItem: Identifiable, Hashable {
@@ -598,6 +603,39 @@ enum WorkloadISOAccess: Equatable {
         case .deviceUnreachable: "That Device is unreachable."
         case .busy: "This Workload is busy."
         }
+    }
+}
+
+struct ImageRepository: Decodable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var url: String
+    var isBuiltIn: Bool
+    var repoType: String
+    var lastSyncedAt: String?
+    var lastError: String?
+    var syncStatus: String
+    var createdAt: String
+    var updatedAt: String
+}
+
+struct CatalogImage: Decodable, Identifiable, Hashable {
+    var id: String
+    var repositoryId: String
+    var slug: String
+    var name: String
+    var description: String?
+    var imageType: String
+    var arch: String
+    var version: String?
+    var downloadUrl: String
+    var sizeBytes: Int64?
+
+    var detailLine: String {
+        var parts = [imageType, arch]
+        if let version, !version.isEmpty { parts.append(version) }
+        if let size = LibraryCatalog.sizeLabel(sizeBytes) { parts.append(size) }
+        return parts.joined(separator: " · ")
     }
 }
 

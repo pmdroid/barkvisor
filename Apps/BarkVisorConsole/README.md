@@ -2,7 +2,7 @@
 
 Native SwiftUI console for macOS 14+ and iOS 26+. It talks to an existing BarkVisor Device over the same HTTP API as `frontend/src` — there is no second protocol.
 
-The UI is stock SwiftUI: `NavigationSplitView` on Mac, a three-tab `TabView` (Home / Devices / Settings) on iOS, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
+The UI is stock SwiftUI: `NavigationSplitView` on Mac, a four-tab `TabView` (Home / Library / Devices / Settings) on iOS, grouped `Form` / `List`, system colors, and the system accent. It follows light and dark appearance. There is no custom BarkVisor theme.
 
 Product words in the UI: **Home**, **Device**, **Workload**, **Library**.
 
@@ -45,14 +45,14 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | --- | --- |
 | Connect | Device URL |
 | Sign in | `POST /api/auth/login` or scan `barkvisor://login/v1` (`POST /api/auth/login-offers/redeem`) |
-| Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail. Swipe and context menu Start / ACPI Stop use the same Device or Home-proxy APIs as detail. Force Stop stays on detail. |
+| Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail. Swipe and context menu Start / ACPI Stop use the same Device or Home-proxy APIs as detail. Force Stop stays on detail. Library is its own tab. |
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List for the selected Device; a row pushes Workload detail. Same Start / ACPI Stop swipe and context menu as Home. |
 | Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop / ACPI restart. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
-| Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
+| Library / Disks / Networks / Logs | Library lists images on the Device and downloads from the image catalog (`POST /api/repositories/images/{id}/download`). Disks, Networks, and Logs stay read-only. Depot path stays in the web UI. |
 | Settings | URL, logout, about (`/api/system/about`), Add Device pairing code. On Mac, issue a phone sign-in QR (`POST /api/auth/login-offers`). Changing origin signs you out. |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.

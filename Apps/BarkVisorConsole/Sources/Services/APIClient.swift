@@ -233,6 +233,22 @@ struct APIClient {
         try await get(scoped("/images", on: device))
     }
 
+    func image(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> LibraryImage {
+        try await get(scoped("/images/\(id)", on: device))
+    }
+
+    func repositories(on device: HomeDeviceHealthSnapshot?) async throws -> [ImageRepository] {
+        try await get(scoped("/repositories", on: device))
+    }
+
+    func catalogImages(repositoryID: String, on device: HomeDeviceHealthSnapshot?) async throws -> [CatalogImage] {
+        try await get(scoped("/repositories/\(repositoryID)/images", on: device))
+    }
+
+    func downloadCatalogImage(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> LibraryImage {
+        try await post(scoped("/repositories/images/\(id)/download", on: device), body: EmptyJSON())
+    }
+
     func disks(on device: HomeDeviceHealthSnapshot?) async throws -> [DiskRecord] {
         try await get(scoped("/disks", on: device))
     }

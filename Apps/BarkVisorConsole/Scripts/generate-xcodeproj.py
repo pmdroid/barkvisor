@@ -13,6 +13,7 @@ APP_SOURCES = [
     "Sources/App/BarkVisorConsoleApp.swift",
     "Sources/Theme/Theme.swift",
     "Sources/Models/Models.swift",
+    "Sources/Models/LibraryCatalog.swift",
     "Sources/Models/LoginURI.swift",
     "Sources/Models/LoginOfferQR.swift",
     "Sources/Models/StreamSupport.swift",
@@ -38,6 +39,7 @@ APP_SOURCES = [
 ]
 TEST_SOURCES = [
     "Tests/APIDecodingTests.swift",
+    "Tests/LibraryCatalogTests.swift",
     "Tests/WorkloadDetailTests.swift",
     "Tests/LocalStreamTests.swift",
     "Tests/SessionTests.swift",
@@ -275,6 +277,7 @@ def main() -> None:
             "Models",
             [
                 child_file("Sources/Models/Models.swift"),
+                child_file("Sources/Models/LibraryCatalog.swift"),
                 child_file("Sources/Models/LoginURI.swift"),
                 child_file("Sources/Models/LoginOfferQR.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
@@ -335,6 +338,7 @@ def main() -> None:
             "Tests",
             [
                 child_file("Tests/APIDecodingTests.swift"),
+                child_file("Tests/LibraryCatalogTests.swift"),
                 child_file("Tests/WorkloadDetailTests.swift"),
                 child_file("Tests/LocalStreamTests.swift"),
                 child_file("Tests/SessionTests.swift"),
