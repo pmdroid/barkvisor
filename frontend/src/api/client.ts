@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { wsTicketPath } from '../utils/consoleHome'
+import { needsHomeSession } from '../utils/streamTicket'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const api = axios.create({
@@ -90,6 +91,18 @@ export async function getWSTicket(
 ): Promise<string> {
   const { data } = await api.post(wsTicketPath(device), vmID ? { vmID } : {})
   return data.ticket
+}
+
+/** Device ticket, plus Home `session=` on a member tunnel. JWT stays on these POSTs. */
+export async function mintStreamTickets(
+  vmID: string,
+  device?: DeviceApiTarget | null,
+): Promise<{ ticket: string; session?: string }> {
+  const ticket = await getWSTicket(vmID, device)
+  if (needsHomeSession(device)) {
+    return { ticket, session: await getWSTicket(vmID) }
+  }
+  return { ticket }
 }
 
 export default api

@@ -48,12 +48,13 @@ struct AgentLocalProxyController: RouteCollection {
                 // Client cert is required by the agent-plane mTLS listener.
                 try HomeConsoleProxy.requireTicket(req)
                 let vmID = try req.parameters.require("id")
-                let ticket = req.query[String.self, at: "ticket"]
-                    ?? req.query[String.self, at: "token"]
+                let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
+                    ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+                    ?? req.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
                 guard let ticket,
                       await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID) != nil
                 else {
-                    throw Abort(.unauthorized, reason: "Invalid or expired ticket")
+                    throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
                 }
                 return [:]
             },
