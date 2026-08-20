@@ -130,12 +130,9 @@ public enum HostInventoryService {
     /// Linux: setuid helper typically at `/usr/lib/qemu/qemu-bridge-helper` (distro paths vary).
     public static func qemuBridgeHelperPresent() -> Bool {
         #if os(Linux)
-            let candidates = [
-                "/usr/lib/qemu/qemu-bridge-helper",
-                "/usr/libexec/qemu-bridge-helper",
-                "/usr/local/libexec/qemu/qemu-bridge-helper",
-            ]
-            return candidates.contains { FileManager.default.isExecutableFile(atPath: $0) }
+            HostBridgeFactsService.qemuBridgeHelperCandidates.contains {
+                FileManager.default.isExecutableFile(atPath: $0)
+            }
         #else
             false
         #endif

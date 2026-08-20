@@ -15,7 +15,7 @@ struct SystemHostController: RouteCollection {
 
     @Sendable
     func getHostBridgeReadiness(req _: Vapor.Request) async throws -> HostBridgeReadiness {
-        HostBridgeReadinessService.probe()
+        HostBridgeFactsService.readiness()
     }
 
     // MARK: - Directory Browser
@@ -69,13 +69,11 @@ struct SystemHostController: RouteCollection {
 
     @Sendable
     func listInterfaces(req: Vapor.Request) async throws -> [HostInterface] {
-        let bridgeStatusByInterface = try await req.db.read { db in
-            try Dictionary(
-                uniqueKeysWithValues: BridgeRecord.fetchAll(db).map { ($0.interface, $0.status) },
-            )
+        let records = try await req.db.read { db in
+            try BridgeRecord.fetchAll(db)
         }
         return HostInfoService.listInterfaceSnapshots(
-            bridgeStatusByInterface: bridgeStatusByInterface,
+            bridgeStatusByInterface: HostBridgeFactsService.statusByInterface(records: records),
         ).map {
             HostInterface(
                 name: $0.name,

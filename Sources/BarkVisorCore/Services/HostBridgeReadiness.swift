@@ -1,7 +1,7 @@
 import Foundation
 
-/// Live Linux host-bridge probe for Manage Bridges (PAS-222).
-/// Detection only — never mutates the host.
+/// Live host-bridge snapshot for Manage Bridges (PAS-222 wire).
+/// Detection only — never mutates the host. Assembled by `HostBridgeFactsService`.
 public struct HostBridgeSnapshot: Codable, Sendable, Equatable {
     public var name: String
     public var enslaved: [String]
@@ -21,6 +21,7 @@ public struct HostBridgeReadiness: Codable, Sendable, Equatable {
     public var defaultRouteInterface: String?
     public var onlyUplink: Bool
     public var ready: Bool
+    public var remediations: [HostBridgeRemediation]?
 
     public init(
         helperPath: String?,
@@ -31,6 +32,7 @@ public struct HostBridgeReadiness: Codable, Sendable, Equatable {
         defaultRouteInterface: String?,
         onlyUplink: Bool,
         ready: Bool,
+        remediations: [HostBridgeRemediation]? = nil,
     ) {
         self.helperPath = helperPath
         self.helperSetuid = helperSetuid
@@ -40,59 +42,16 @@ public struct HostBridgeReadiness: Codable, Sendable, Equatable {
         self.defaultRouteInterface = defaultRouteInterface
         self.onlyUplink = onlyUplink
         self.ready = ready
+        self.remediations = remediations
     }
 }
 
 public enum HostBridgeReadinessService {
-    public static let suggestedBridgeName = "br0"
+    public static let suggestedBridgeName = HostBridgeFactsService.suggestedBridgeName
 
-    public static func probe() -> HostBridgeReadiness {
-        #if os(Linux)
-            return probeLinux()
-        #else
-            return HostBridgeReadiness(
-                helperPath: nil,
-                helperSetuid: false,
-                suggestedBridge: suggestedBridgeName,
-                aclAllowsSuggested: nil,
-                bridges: [],
-                defaultRouteInterface: nil,
-                onlyUplink: false,
-                ready: false,
-            )
-        #endif
+    /// Host-facts seam: pass `source` in tests. Live probe uses `LiveHostBridgeFactSource`.
+    public static func probe(source: any HostBridgeFactSource = LiveHostBridgeFactSource())
+        -> HostBridgeReadiness {
+        HostBridgeFactsService.readiness(source: source)
     }
-
-    #if os(Linux)
-        private static func probeLinux() -> HostBridgeReadiness {
-            let helper = LinuxHostNetwork.resolvedQemuBridgeHelperPath()
-            let setuid = helper.map { LinuxHostNetwork.isSetuidExecutable(at: $0) } ?? false
-            let bridges = LinuxHostNetwork.listBridgeInterfaces().map { name in
-                HostBridgeSnapshot(
-                    name: name,
-                    enslaved: LinuxHostNetwork.enslavedInterfaces(onBridge: name),
-                )
-            }
-            let def = LinuxHostNetwork.defaultRouteInterface()
-            let enslaved = Set(bridges.flatMap(\.enslaved))
-            let onlyUplink: Bool = if let def, !def.isEmpty {
-                !enslaved.contains(def)
-            } else {
-                false
-            }
-            let acl = LinuxHostNetwork.bridgeACLDecision(suggestedBridgeName)
-            let hasBridge = !bridges.isEmpty
-            let ready = hasBridge && setuid && acl == true
-            return HostBridgeReadiness(
-                helperPath: helper,
-                helperSetuid: setuid,
-                suggestedBridge: suggestedBridgeName,
-                aclAllowsSuggested: acl,
-                bridges: bridges,
-                defaultRouteInterface: def,
-                onlyUplink: onlyUplink && !hasBridge,
-                ready: ready,
-            )
-        }
-    #endif
 }

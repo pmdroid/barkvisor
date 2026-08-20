@@ -720,6 +720,12 @@ export type HostBridgeSnapshot = {
   enslaved: string[]
 }
 
+export type HostBridgeRemediation = {
+  id: string
+  label: string
+  commands: string
+}
+
 export type HostBridgeReadiness = {
   helperPath: string | null
   helperSetuid: boolean
@@ -729,6 +735,7 @@ export type HostBridgeReadiness = {
   defaultRouteInterface: string | null
   onlyUplink: boolean
   ready: boolean
+  remediations?: HostBridgeRemediation[]
 }
 
 /** Alias: capabilities for the host running this BarkVisor process. */
