@@ -213,6 +213,14 @@ struct APIClient {
         try await get(scoped("/vms/\(id)/guest-info", on: device))
     }
 
+    func attachISO(_ id: String, isoID: String, on device: HomeDeviceHealthSnapshot?) async throws {
+        try await post(scoped("/vms/\(id)/attach-iso", on: device), body: ISOMediaBody(isoId: isoID))
+    }
+
+    func ejectISO(_ id: String, isoID: String, on device: HomeDeviceHealthSnapshot?) async throws {
+        try await post(scoped("/vms/\(id)/detach-iso", on: device), body: ISOMediaBody(isoId: isoID))
+    }
+
     func stats(on device: HomeDeviceHealthSnapshot?) async throws -> SystemStats {
         try await get(scoped("/system/stats", on: device))
     }

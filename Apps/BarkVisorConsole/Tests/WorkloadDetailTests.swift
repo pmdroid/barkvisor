@@ -328,6 +328,89 @@ struct WorkloadDetailTests {
         #expect(acting.hasSuffix("/up/busy"))
     }
 
+    @Test func `workload decodes isoIds and falls back to isoId`() throws {
+        let many = """
+        {
+          "id": "vm-1",
+          "name": "haos",
+          "vmType": "linux-arm64",
+          "state": "running",
+          "cpuCount": 2,
+          "memoryMB": 2048,
+          "bootDiskId": "disk-1",
+          "isoId": "iso-1",
+          "isoIds": ["iso-1", "iso-2"],
+          "pendingChanges": true,
+          "createdAt": "2026-01-01T00:00:00Z",
+          "updatedAt": "2026-01-02T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let workload = try decoder.decode(Workload.self, from: many)
+        #expect(workload.isoId == "iso-1")
+        #expect(workload.isoIds == ["iso-1", "iso-2"])
+        #expect(workload.attachedISOIds == ["iso-1", "iso-2"])
+        #expect(workload.pendingChanges == true)
+
+        let legacy = fixtureWorkload(isoId: "iso-legacy", isoIds: nil)
+        #expect(legacy.attachedISOIds == ["iso-legacy"])
+        #expect(fixtureWorkload(isoIds: []).attachedISOIds.isEmpty)
+        #expect(fixtureWorkload().attachedISOIds.isEmpty)
+    }
+
+    @Test func `ready isos come from that device library excluding attached`() {
+        let fedora = libraryImage(id: "iso-fedora", name: "Fedora DVD", status: "ready")
+        let downloading = libraryImage(id: "iso-dl", name: "Ubuntu", status: "downloading")
+        let cloud = libraryImage(
+            id: "img-cloud",
+            name: "Ubuntu cloud",
+            imageType: "cloud-image",
+            status: "ready",
+        )
+        let attached = libraryImage(id: "iso-attached", name: "Installer", status: "ready")
+        let library = [fedora, downloading, cloud, attached]
+        let media = WorkloadISOMedia.attached(ids: ["iso-attached", "iso-gone"], library: library)
+        #expect(media.count == 2)
+        #expect(media[0].name == "Installer")
+        #expect(!media[0].isMissing)
+        #expect(media[1].isMissing)
+        #expect(media[1].displayName.contains("Missing image"))
+        let ready = WorkloadISOMedia.attachable(library: library, attachedIDs: ["iso-attached"])
+        #expect(ready.map(\.id) == ["iso-fedora"])
+    }
+
+    @Test func `iso attach uses home proxy for members`() throws {
+        let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")), token: nil)
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio")
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
+        #expect(client.scoped("/vms/vm-1/attach-iso", on: studio) == "/api/vms/vm-1/attach-iso")
+        #expect(client.scoped("/vms/vm-1/detach-iso", on: studio) == "/api/vms/vm-1/detach-iso")
+        #expect(
+            client.scoped("/vms/vm-1/attach-iso", on: living)
+                == "/api/home/devices/peer/v1/vms/vm-1/attach-iso",
+        )
+        #expect(
+            client.scoped("/vms/vm-1/detach-iso", on: living)
+                == "/api/home/devices/peer/v1/vms/vm-1/detach-iso",
+        )
+        #expect(client.scoped("/images", on: living) == "/api/home/devices/peer/v1/images")
+    }
+
+    @Test func `iso access blocks unreachable and busy`() {
+        #expect(WorkloadISOAccess.resolve(reachable: true, busy: false) == .available)
+        #expect(WorkloadISOAccess.resolve(reachable: true, busy: false).allowsChange)
+        #expect(WorkloadISOAccess.resolve(reachable: false, busy: false) == .deviceUnreachable)
+        #expect(!WorkloadISOAccess.resolve(reachable: false, busy: false).allowsChange)
+        #expect(WorkloadISOAccess.resolve(reachable: true, busy: true) == .busy)
+        #expect(!WorkloadISOAccess.resolve(reachable: true, busy: true).allowsChange)
+        #expect(WorkloadISOAccess.deviceUnreachable.reason == "That Device is unreachable.")
+        #expect(WorkloadISOAccess.busy.reason == "This Workload is busy.")
+        #expect(
+            APIError.http(status: 404, reason: "ISO image not found").localizedDescription
+                == "ISO image not found",
+        )
+        #expect(APIError.http(status: 409, reason: "busy").localizedDescription == "busy")
+    }
+
     private func snapshot(
         hostId: String,
         role: String,
@@ -357,6 +440,8 @@ struct WorkloadDetailTests {
         name: String = "haos",
         vmType: String = "linux-arm64",
         state: String = "running",
+        isoId: String? = nil,
+        isoIds: [String]? = nil,
     ) -> Workload {
         Workload(
             id: id,
@@ -367,7 +452,8 @@ struct WorkloadDetailTests {
             cpuCount: 2,
             memoryMB: 1_024,
             bootDiskId: "disk-1",
-            isoId: nil,
+            isoId: isoId,
+            isoIds: isoIds,
             networkId: nil,
             description: nil,
             pendingChanges: nil,
@@ -375,6 +461,26 @@ struct WorkloadDetailTests {
             updatedAt: "2026-01-02T00:00:00Z",
             status: nil,
             portForwards: nil,
+        )
+    }
+
+    private func libraryImage(
+        id: String,
+        name: String,
+        imageType: String = "iso",
+        status: String,
+    ) -> LibraryImage {
+        LibraryImage(
+            id: id,
+            name: name,
+            imageType: imageType,
+            arch: "test-arch",
+            status: status,
+            sizeBytes: 1_024,
+            sourceUrl: nil,
+            error: nil,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-02T00:00:00Z",
         )
     }
 }
