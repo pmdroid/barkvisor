@@ -105,7 +105,12 @@ struct CreateVMRequest: Content, Validatable {
             is: .in(GuestProfiles.supportedIDs),
             required: false,
         )
-        validations.add("cpuCount", as: Int.self, is: .range(1 ... 256), required: false)
+        validations.add(
+            "cpuCount",
+            as: Int.self,
+            is: .range(1 ... PlatformHost.cpuCount),
+            required: false,
+        )
         validations.add("memoryMB", as: Int.self, is: .range(128 ... 1_048_576), required: false)
     }
 }
@@ -130,7 +135,12 @@ struct UpdateVMRequest: Content, Validatable {
     let spec: WorkloadSpec?
 
     static func validations(_ validations: inout Validations) {
-        validations.add("cpuCount", as: Int?.self, is: .nil || .range(1 ... 256), required: false)
+        validations.add(
+            "cpuCount",
+            as: Int?.self,
+            is: .nil || .range(1 ... PlatformHost.cpuCount),
+            required: false,
+        )
         validations.add("memoryMB", as: Int?.self, is: .nil || .range(128 ... 1_048_576), required: false)
     }
 }
@@ -440,36 +450,24 @@ struct VMController: RouteCollection {
     }
 
     static func createParams(from body: CreateVMRequest) throws -> CreateVMParams {
+        let extras = CreateWorkloadExtras(
+            diskSizeGB: body.diskSizeGB,
+            isoId: body.isoId,
+            cloudImageId: body.cloudImageId,
+            cloudInit: body.cloudInit,
+            networkId: body.networkId,
+            existingDiskId: body.existingDiskId,
+            sharedPaths: body.sharedPaths,
+            portForwards: body.portForwards,
+            usbDevices: body.usbDevices,
+            description: body.description,
+            bootOrder: body.bootOrder,
+            displayResolution: body.displayResolution,
+            uefi: body.uefi,
+            tpmEnabled: body.tpmEnabled,
+        )
         if let spec = body.spec {
-            try WorkloadSpecProjector.validate(spec)
-            let guestType = try WorkloadSpecProjector.resolveGuestType(spec)
-            let bootDiskId = spec.spec.disks.first(where: { $0.role == "boot" })?.diskId
-            let isoFromSpec = spec.spec.disks.first(where: { $0.role == "cdrom" })?.imageId
-            let forwards = spec.spec.networks.first?.portForwards.map {
-                PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
-            }
-            let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
-            return CreateVMParams(
-                name: spec.metadata.name,
-                vmType: guestType,
-                cpuCount: spec.spec.resources.cpu,
-                memoryMB: spec.spec.resources.memoryMb,
-                diskSizeGB: body.diskSizeGB,
-                isoId: body.isoId ?? isoFromSpec,
-                cloudImageId: body.cloudImageId,
-                cloudInit: body.cloudInit ?? Self.cloudInitConfig(from: spec.spec.cloudInit),
-                networkId: body.networkId ?? spec.spec.networks.first?.networkId,
-                existingDiskId: body.existingDiskId ?? bootDiskId,
-                sharedPaths: body.sharedPaths ?? spec.spec.sharedPaths,
-                portForwards: body.portForwards ?? forwards,
-                usbDevices: body.usbDevices ?? (usb.isEmpty ? nil : usb),
-                description: body.description ?? spec.metadata.description,
-                bootOrder: body.bootOrder ?? spec.spec.bootOrder,
-                displayResolution: body.displayResolution ?? spec.spec.display?.resolution,
-                uefi: body.uefi ?? spec.spec.firmware?.uefi,
-                tpmEnabled: body.tpmEnabled ?? spec.spec.firmware?.tpm,
-                overrides: spec.overrides,
-            )
+            return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)
         }
         guard let name = body.name,
               let cpuCount = body.cpuCount, let memoryMB = body.memoryMB
@@ -478,27 +476,31 @@ struct VMController: RouteCollection {
                 "name, cpuCount, and memoryMB are required when spec is omitted",
             )
         }
-        let vmType = try Self.resolveFlatGuestType(vmType: body.vmType, osFamily: body.osFamily)
-        return CreateVMParams(
-            name: name, vmType: vmType, cpuCount: cpuCount,
-            memoryMB: memoryMB, diskSizeGB: body.diskSizeGB, isoId: body.isoId,
-            cloudImageId: body.cloudImageId, cloudInit: body.cloudInit,
-            networkId: body.networkId, existingDiskId: body.existingDiskId,
-            sharedPaths: body.sharedPaths, portForwards: body.portForwards,
-            usbDevices: body.usbDevices,
-            description: body.description, bootOrder: body.bootOrder,
-            displayResolution: body.displayResolution, uefi: body.uefi,
+        let spec = try EffectiveWorkloadPipeline.specFromFlat(
+            name: name,
+            vmType: body.vmType,
+            osFamily: body.osFamily,
+            cpuCount: cpuCount,
+            memoryMB: memoryMB,
+            description: body.description,
+            bootOrder: body.bootOrder,
+            displayResolution: body.displayResolution,
+            uefi: body.uefi,
             tpmEnabled: body.tpmEnabled,
+            networkId: body.networkId,
+            existingDiskId: body.existingDiskId,
+            isoId: body.isoId,
+            sharedPaths: body.sharedPaths,
+            portForwards: body.portForwards,
+            usbDevices: body.usbDevices,
         )
+        return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)
     }
 
     /// `spec.cloudInit.inline` is user-data for ISO generation. `userDataRef` is a
     /// host ISO path and is applied on spec update, not create.
     static func cloudInitConfig(from cloud: WorkloadCloudInit?) -> CloudInitConfig? {
-        guard let inline = cloud?.inline,
-              !inline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
-        return CloudInitConfig(sshAuthorizedKeys: nil, userData: inline)
+        EffectiveWorkloadPipeline.cloudInitConfig(from: cloud)
     }
 
     // MARK: - Guest Info

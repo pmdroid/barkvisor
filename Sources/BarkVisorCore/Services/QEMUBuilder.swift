@@ -194,10 +194,10 @@ public enum QEMUBuilder {
     }
 
     public static func launchConfig(ctx: QEMUBuildContext) throws -> QEMULaunchConfig {
-        let resolved = WorkloadSpecResolver.resolve(ctx.spec)
-        let spec = resolved.spec
+        let effective = try EffectiveWorkloadPipeline.resolve(ctx.spec)
+        let spec = effective.resolved
         let disk = ctx.disk
-        let guestType = try WorkloadSpecProjector.resolveGuestType(spec)
+        let guestType = effective.launchGuestType
         let profile = try GuestProfiles.require(guestType)
         let qemuBinary = try binary(for: guestType)
         let vmID = spec.metadata.id ?? ctx.vm.id
@@ -209,7 +209,7 @@ public enum QEMUBuilder {
         let bootOrder = spec.spec.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
         let machine = spec.spec.machine ?? profile.machine
-        let accelerator = resolved.accelerator ?? QEMUBuilder.accelerator
+        let accelerator = effective.accelerator ?? QEMUBuilder.accelerator
         let backend = WorkloadBackendProjector.project(
             guestType: guestType,
             accelerator: accelerator,
@@ -220,7 +220,7 @@ public enum QEMUBuilder {
             "-machine", machine, "-accel", backend.accelerator,
             "-cpu", cpuModel(for: backend.accelerator),
         ]
-        if resolved.hugepages {
+        if effective.hugepages {
             args += try hugepagesArgs()
         }
         args += specResourceArgs(spec)
@@ -288,9 +288,11 @@ public enum QEMUBuilder {
     private static func bootDiskArgs(disk: Disk, windows: Bool, diskFirst: Bool) -> [String] {
         let diskBootIndex = diskFirst ? 0 : 1
         let driveArgs = [
-            "-drive", "file=\(disk.path),format=\(disk.format),if=none,id=boot0,cache=writeback",
+            "-drive",
+            "file=\(disk.path),format=\(disk.format),if=none,id=\(QEMUDeviceNames.bootDrive),cache=writeback",
         ]
-        let deviceType = windows ? "nvme,drive=boot0,serial=boot" : "virtio-blk-pci,drive=boot0"
+        let boot = QEMUDeviceNames.bootDrive
+        let deviceType = windows ? "nvme,drive=\(boot),serial=boot" : "virtio-blk-pci,drive=\(boot)"
         return driveArgs + ["-device", "\(deviceType),bootindex=\(diskBootIndex)"]
     }
 
@@ -299,7 +301,7 @@ public enum QEMUBuilder {
         for (i, iso) in isos.enumerated() {
             guard let isoPath = iso.path else { continue }
             let sanitizedISOPath = try sanitizeQEMUArg(isoPath, label: "ISO path")
-            let driveId = "cdrom\(i)"
+            let driveId = QEMUDeviceNames.cdromDrive(i)
             args += [
                 "-drive",
                 "file=\(sanitizedISOPath),format=raw,if=none,id=\(driveId),readonly=on,media=cdrom",
@@ -366,7 +368,7 @@ public enum QEMUBuilder {
             let sanitizedFormat = try sanitizeQEMUArg(extraDisk.format, label: "Additional disk format")
             args += [
                 "-drive",
-                "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=writeback,id=extra\(i)",
+                "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=writeback,id=\(QEMUDeviceNames.extraDrive(i))",
             ]
         }
         return args
