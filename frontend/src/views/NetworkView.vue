@@ -30,7 +30,6 @@ import {
 } from '../utils/homeDeviceApi'
 import { HOST_BRIDGE_SUGGESTED } from '../utils/hostBridgeFacts'
 import {
-  linuxBridgeFallbackReadiness,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
 } from '../utils/linuxBridgeSetup'
@@ -183,6 +182,7 @@ const canManageBridges = computed(() => {
   })
 })
 const linuxReadiness = ref<HostBridgeReadiness | null>(null)
+const linuxReadinessHostId = ref<string | null>(null)
 const linuxReadinessLoading = ref(false)
 const linuxSetupGroups = computed(() =>
   linuxReadiness.value ? linuxBridgeSetupGroups(linuxReadiness.value) : [],
@@ -338,19 +338,25 @@ async function loadBridgeContext() {
 }
 
 async function fetchLinuxReadiness() {
+  const device = bridgeDevice.value
+  const requestHost = device?.hostId ?? ''
   linuxReadinessLoading.value = true
+  if (linuxReadinessHostId.value !== requestHost) {
+    linuxReadiness.value = null
+    linuxReadinessHostId.value = requestHost
+  }
   try {
-    const device = bridgeDevice.value
     const path =
       device && useHomeUnion.value
         ? deviceHostBridgeReadinessPath(device)
         : '/system/host-bridge-readiness'
     const { data } = await api.get<HostBridgeReadiness>(path)
+    if ((bridgeDevice.value?.hostId ?? '') !== requestHost) return
     linuxReadiness.value = data
   } catch {
-    if (linuxReadiness.value == null) {
-      linuxReadiness.value = linuxBridgeFallbackReadiness
-    }
+    if ((bridgeDevice.value?.hostId ?? '') !== requestHost) return
+    // Same Device: keep a prior successful snapshot. First miss stays null
+    // so Manage Bridges can show "Could not read" instead of a fake DTO.
   } finally {
     linuxReadinessLoading.value = false
   }

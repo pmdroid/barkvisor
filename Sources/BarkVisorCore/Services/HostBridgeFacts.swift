@@ -240,7 +240,9 @@ public enum HostBridgeFactsService {
             return name
         }
         let facts = probe(source: source)
-        guard let name = facts.bridges.first?.name else {
+        let preferred = facts.bridges.first(where: { $0.name == suggestedBridgeName })
+            ?? facts.bridges.first
+        guard let name = preferred?.name else {
             throw BarkVisorError.preconditionFailed(
                 """
                 This template requires bridged networking, but no host bridge is present. \
