@@ -221,4 +221,33 @@ public enum HostBridgeFactsService {
             "Interface '\(bridge)' is already used by network \"\(existing.name)\". Each interface can only have one bridge.",
         )
     }
+
+    /// Interface for a bridged template that did not pass `networkId`.
+    /// macOS: first active managed-daemon `BridgeRecord`. Linux: live facts, never `BridgeRecord`.
+    public static func activeBridgedInterface(
+        records: [BridgeRecord],
+        source: any HostBridgeFactSource = LiveHostBridgeFactSource(),
+    ) throws -> String {
+        if PlatformCapabilities.supportsManagedBridgeDaemon {
+            guard let name = records.first(where: { $0.status == "active" })?.interface else {
+                throw BarkVisorError.preconditionFailed(
+                    """
+                    This template requires bridged networking, but no bridge is active. \
+                    Install the BarkVisor Helper and enable a bridge in Settings > Network.
+                    """,
+                )
+            }
+            return name
+        }
+        let facts = probe(source: source)
+        guard let name = facts.bridges.first?.name else {
+            throw BarkVisorError.preconditionFailed(
+                """
+                This template requires bridged networking, but no host bridge is present. \
+                Create a Linux bridge (for example \(suggestedBridgeName)) in Manage Bridges, then retry.
+                """,
+            )
+        }
+        return name
+    }
 }
