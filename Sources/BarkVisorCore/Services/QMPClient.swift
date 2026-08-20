@@ -1,7 +1,7 @@
 import Foundation
 
 /// QMP (QEMU Machine Protocol) JSON socket client
-/// Not an actor — uses synchronous blocking socket I/O, called from within MetricsCollector
+/// Not an actor — uses synchronous blocking socket I/O (metrics balloon/blockstats and QGA).
 public final class QMPClient: @unchecked Sendable {
     private let socketPath: String
     private let timeoutSeconds: Int

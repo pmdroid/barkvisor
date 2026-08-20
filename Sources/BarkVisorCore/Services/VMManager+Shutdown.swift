@@ -117,6 +117,7 @@ extension VMManager {
         for (vmID, _) in runningVMs {
             await consoleBuffers?.detach(vmID: vmID)
             await metricsCollector?.stop(vmID: vmID)
+            await guestAgentInventory?.stop(vmID: vmID)
         }
         await qmpEventListener?.stopAll()
         await processMonitor?.stopAllProcessSources()
