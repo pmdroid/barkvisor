@@ -14,6 +14,7 @@ APP_SOURCES = [
     "Sources/Theme/Theme.swift",
     "Sources/Models/Models.swift",
     "Sources/Models/LoginURI.swift",
+    "Sources/Models/LoginOfferQR.swift",
     "Sources/Models/StreamSupport.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
@@ -275,6 +276,7 @@ def main() -> None:
             [
                 child_file("Sources/Models/Models.swift"),
                 child_file("Sources/Models/LoginURI.swift"),
+                child_file("Sources/Models/LoginOfferQR.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
             ],
             "Models",

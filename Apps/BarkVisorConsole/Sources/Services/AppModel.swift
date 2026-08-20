@@ -91,6 +91,7 @@ final class AppModel {
     var networks: [NetworkRecord] = []
     var logs: [ServerLogEntry] = []
     var pairing: PairingIssue?
+    var loginOffer: LoginOfferIssue?
     var actionIDs: Set<String> = []
     var phoneTab: PhoneTab = .home
     var homeRows: [HomeWorkloadRow] = []
@@ -229,6 +230,7 @@ final class AppModel {
         devices = []
         totals = nil
         pairing = nil
+        loginOffer = nil
         about = nil
         logs = []
         phase = url == nil ? .connect : .login
@@ -268,6 +270,7 @@ final class AppModel {
         devices = []
         totals = nil
         pairing = nil
+        loginOffer = nil
         about = nil
         logs = []
         phase = .connect
@@ -365,6 +368,33 @@ final class AppModel {
         do {
             try await requireClient().revokePairingCode()
             pairing = nil
+        } catch {
+            handle(error)
+        }
+    }
+
+    func issueLoginOffer() async {
+        banner = nil
+        do {
+            let host = LoginOfferHost.advertisedHost(pickerSelection: nil, pickerAvailable: false)
+            loginOffer = try await requireClient().issueLoginOffer(advertisedHost: host)
+        } catch {
+            handle(error)
+        }
+    }
+
+    func loadLoginOffer() async {
+        do {
+            loginOffer = try await requireClient().loginOffer()
+        } catch {
+            handle(error)
+        }
+    }
+
+    func revokeLoginOffer() async {
+        do {
+            try await requireClient().revokeLoginOffer()
+            loginOffer = nil
         } catch {
             handle(error)
         }
@@ -627,6 +657,7 @@ final class AppModel {
             logs = await optional { try await client.logs() } ?? logs
         case .settings:
             await loadPairing()
+            await loadLoginOffer()
             await refreshAbout()
         case .devices:
             _ = try? await refreshDevices()

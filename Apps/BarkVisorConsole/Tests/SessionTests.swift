@@ -92,4 +92,45 @@ struct SessionTests {
         #expect(DeviceURL.sameOrigin(a, b))
         #expect(!DeviceURL.sameOrigin(a, c))
     }
+
+    @Test func `login offer advertised host is omitted without a pairing picker`() {
+        #expect(LoginOfferHost.advertisedHost(pickerSelection: "192.168.0.8", pickerAvailable: false) == nil)
+        #expect(LoginOfferHost.advertisedHost(pickerSelection: "  nas  ", pickerAvailable: true) == "nas")
+        #expect(LoginOfferHost.advertisedHost(pickerSelection: "  ", pickerAvailable: true) == nil)
+        #expect(LoginOfferHost.advertisedHost(pickerSelection: nil, pickerAvailable: true) == nil)
+    }
+
+    @Test func `login offer issue request omits empty advertised host`() throws {
+        let encoder = JSONEncoder()
+        let empty = try encoder.encode(LoginOfferIssueRequest(advertisedHost: nil))
+        #expect(String(data: empty, encoding: .utf8) == "{}")
+        let blank = try encoder.encode(LoginOfferIssueRequest(advertisedHost: "  "))
+        #expect(String(data: blank, encoding: .utf8) == "{}")
+        let stamped = try encoder.encode(LoginOfferIssueRequest(advertisedHost: " 192.168.0.8 "))
+        #expect(String(data: stamped, encoding: .utf8) == #"{"advertisedHost":"192.168.0.8"}"#)
+    }
+
+    @Test func `login offer json is a sign-in uri with a qr`() throws {
+        let json = Data(
+            #"{"code":"ABCD-EFGH","expiresAt":"2026-08-16T22:10:00.000Z","ttlSeconds":180,"uri":"barkvisor://login/v1?code=ABCD-EFGH&host=192.168.0.8&port=7777","host":"192.168.0.8","port":7777}"#
+                .utf8,
+        )
+        let offer = try JSONDecoder().decode(LoginOfferIssue.self, from: json)
+        #expect(offer.code == "ABCD-EFGH")
+        #expect(offer.ttlSeconds == 180)
+        #expect(offer.port == 7_777)
+        let payload = try LoginURI.parse(offer.uri)
+        #expect(payload.code == offer.code)
+        #expect(payload.host == offer.host)
+        #expect(payload.port == offer.port)
+        #expect(LoginOfferQR.cgImage(from: offer.uri) != nil)
+        #expect(PairingExpiry.label(expiresAt: offer.expiresAt, now: iso("2026-08-16T22:07:00.000Z")) == "Expires in 3 minutes")
+        #expect(PairingExpiry.label(expiresAt: offer.expiresAt, now: iso("2026-08-16T22:10:00.000Z")) == "Expired")
+    }
+
+    private func iso(_ raw: String) -> Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: raw)!
+    }
 }
