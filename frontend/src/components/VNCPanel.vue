@@ -2,11 +2,11 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import rfbModule from '@novnc/novnc/lib/rfb.js'
 const RFB = (rfbModule as any).default || rfbModule
-import { getWSTicket } from '../api/client'
+import { mintStreamTickets } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { copyGuestText, readLocalClipboard, textFromPasteEvent } from '../utils/vncClipboard'
 import { consoleSocketPath, consoleSocketQuery, vncWindowPath } from '../utils/consoleHome'
-import { isSelfDevice, type DeviceApiTarget } from '../utils/homeDeviceApi'
+import { type DeviceApiTarget } from '../utils/homeDeviceApi'
 
 const props = withDefaults(
   defineProps<{
@@ -67,10 +67,9 @@ async function connect() {
   let ticket: string
   let session: string | undefined
   try {
-    ticket = await getWSTicket(props.vmId, props.device)
-    if (props.device && !isSelfDevice(props.device)) {
-      session = await getWSTicket(props.vmId)
-    }
+    const minted = await mintStreamTickets(props.vmId, props.device)
+    ticket = minted.ticket
+    session = minted.session
   } catch {
     status.value = 'ticket failed'
     return

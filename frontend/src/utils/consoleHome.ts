@@ -10,6 +10,7 @@ import {
   isSelfDevice,
   type DeviceApiTarget,
 } from './homeDeviceApi'
+import { streamSocketQuery } from './streamTicket'
 
 export { deviceVmConsolePath, deviceVmVncPath, deviceWsTicketPath }
 
@@ -46,7 +47,5 @@ export function wsTicketPath(device: DeviceApiTarget | null | undefined): string
 
 /** Device ticket, plus a Home-minted `session=` ticket for member tunnels. */
 export function consoleSocketQuery(ticket: string, session?: string | null): string {
-  const params = new URLSearchParams({ ticket })
-  if (session) params.set('session', session)
-  return params.toString()
+  return streamSocketQuery(ticket, session)
 }

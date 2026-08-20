@@ -128,7 +128,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         vmState: deps.vmManager, consoleBuffers: deps.consoleBuffers, keys: deps.keys,
     ).register(app: app)
     VNCController(vmState: deps.vmManager, keys: deps.keys).register(app: app)
-    // JWTAuthMiddleware skips Device `?ticket=` on this path (Bearer / session=).
+    // StreamTicketPolicy: Home tunnel spends session=, not Device ticket=.
     HomeConsoleProxyController().register(app: protected)
 }
 
