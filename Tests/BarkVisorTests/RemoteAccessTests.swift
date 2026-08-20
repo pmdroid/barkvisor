@@ -164,6 +164,13 @@ struct RemoteAccessTests {
             PairingAddresses.advertisedHosts(from: ifaces, tailnet: tailnet, advertiseUrl: nil)
                 .first == "box.tailnet.ts.net",
         )
+        let down = TailnetInfo(
+            available: false, ip: nil, dnsName: "stale.tailnet.ts.net",
+        )
+        #expect(
+            PairingAddresses.advertisedHosts(from: ifaces, tailnet: down, advertiseUrl: nil)
+                == ["192.168.0.4", "100.64.12.34"],
+        )
     }
 
     @Test func `gate exempts health contract and capabilities only`() {

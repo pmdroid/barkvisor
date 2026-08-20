@@ -378,8 +378,10 @@ public enum PairingAddresses {
             }
         }
         add(advertiseUrl)
-        add(tailnet?.dnsName)
-        add(tailnet?.ip)
+        if tailnet?.available == true {
+            add(tailnet?.dnsName)
+            add(tailnet?.ip)
+        }
         let rest = advertisedIPv4(from: interfaces).filter { seen.insert($0).inserted }
         return preferred + rest
     }
