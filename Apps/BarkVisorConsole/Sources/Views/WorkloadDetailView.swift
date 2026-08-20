@@ -104,6 +104,7 @@ struct WorkloadDetailView: View {
                             Task {
                                 guest = nil
                                 await model.restartWorkload(workload, on: device)
+                                guest = await model.guestInfo(for: workload.id, on: device)
                             }
                         }
                         .disabled(!WorkloadRestart.isEnabled(device: device, busy: busy))
@@ -126,9 +127,10 @@ struct WorkloadDetailView: View {
                 workloadID: workloadID,
                 state: workload.state,
                 reachable: device.isReachable,
+                busy: busy,
             )) {
                 while !Task.isCancelled {
-                    if !device.isReachable { return }
+                    if !device.isReachable || busy { return }
                     guest = await model.guestInfo(for: workload.id, on: device)
                     guard let interval = GuestInfoRefresh.pollIntervalSeconds(
                         guest: guest,

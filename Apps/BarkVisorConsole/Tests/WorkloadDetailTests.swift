@@ -314,9 +314,18 @@ struct WorkloadDetailTests {
             state: "running",
             reachable: false,
         )
+        let acting = GuestInfoRefresh.taskID(
+            deviceID: "peer",
+            workloadID: "vm-1",
+            state: "running",
+            reachable: true,
+            busy: true,
+        )
         #expect(live != down)
-        #expect(live.hasSuffix("/up"))
-        #expect(down.hasSuffix("/down"))
+        #expect(live != acting)
+        #expect(live.hasSuffix("/up/idle"))
+        #expect(down.hasSuffix("/down/idle"))
+        #expect(acting.hasSuffix("/up/busy"))
     }
 
     private func snapshot(
