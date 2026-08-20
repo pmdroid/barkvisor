@@ -47,6 +47,7 @@
         var onFailure: ((String) -> Void)?
         private let session = AVCaptureSession()
         private let sessionQueue = DispatchQueue(label: "dev.barkvisor.login-qr")
+        private var previewLayer: AVCaptureVideoPreviewLayer?
         private var handled = false
         private var appeared = false
 
@@ -111,8 +112,13 @@
             let preview = AVCaptureVideoPreviewLayer(session: session)
             preview.videoGravity = .resizeAspectFill
             preview.frame = view.bounds
-            preview.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
             view.layer.addSublayer(preview)
+            previewLayer = preview
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            previewLayer?.frame = view.bounds
         }
 
         private func startIfNeeded() {
