@@ -165,6 +165,16 @@ struct GuestListeningPortsTests {
         let kept = GuestListeningPorts.selectPublished([rpc, sshd, vite, mdns].compactMap(\.self))
         #expect(Set(kept.map(\.port)) == [22, 5_173])
         #expect(GuestListeningPorts.isPublishedPort(8_081))
+        #expect(GuestListeningPorts.isPublishedPort(8_123))
+        #expect(GuestListeningPorts.isPublishedPort(8_096))
+        #expect(GuestListeningPorts.isPublishedPort(32_400))
+        #expect(GuestListeningPorts.isPublishedPort(18_789))
+        #expect(GuestListeningPorts.label(for: 8_123) == "Home Assistant")
+        #expect(GuestListeningPorts.label(for: 8_096) == "Jellyfin")
+        #expect(GuestListeningPorts.label(for: 32_400) == "Plex")
+        #expect(GuestListeningPorts.label(for: 18_789) == "OpenClaw")
+        #expect(GuestListeningPorts.impliedScheme(for: 8_123) == "http")
+        #expect(!GuestListeningPorts.isPublishedPort(8_006))
         #expect(!GuestListeningPorts.isPublishedPort(111))
     }
 
