@@ -354,6 +354,7 @@ async function fetchRemoteAccess() {
 }
 
 async function saveRemoteAccess() {
+  if (!remoteAccess.value) return
   remoteAccessSaving.value = true
   try {
     const { data } = await api.put<RemoteAccessStatus>('/home/settings/remote-access', {
@@ -821,14 +822,14 @@ onUnmounted(() => {
           placeholder="hostname, MagicDNS, or tailnet IP"
           autocomplete="off"
           spellcheck="false"
-          :disabled="remoteAccessLoading || remoteAccessSaving"
+          :disabled="!remoteAccess || remoteAccessLoading || remoteAccessSaving"
         />
       </div>
       <label class="pairing-hint" style="display:flex;gap:8px;align-items:center;text-align:left;margin:0 0 12px">
         <input
           type="checkbox"
           v-model="requireTailnetDraft"
-          :disabled="remoteAccessLoading || remoteAccessSaving"
+          :disabled="!remoteAccess || remoteAccessLoading || remoteAccessSaving"
           style="width:16px;height:16px;cursor:pointer"
         />
         Require Tailscale (or LAN) for the Home API off this network
@@ -838,7 +839,7 @@ onUnmounted(() => {
           size="sm"
           variant="primary"
           :loading="remoteAccessSaving"
-          :disabled="remoteAccessLoading"
+          :disabled="!remoteAccess || remoteAccessLoading"
           @click="saveRemoteAccess"
         >
           Save remote access

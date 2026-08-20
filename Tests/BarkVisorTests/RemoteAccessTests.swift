@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import Testing
+@testable import BarkVisor
 @testable import BarkVisorCore
 
 @Suite("Remote access (PAS-89)")
@@ -163,6 +164,21 @@ struct RemoteAccessTests {
             PairingAddresses.advertisedHosts(from: ifaces, tailnet: tailnet, advertiseUrl: nil)
                 .first == "box.tailnet.ts.net",
         )
+    }
+
+    @Test func `gate exempts health contract and capabilities only`() {
+        #expect(RemoteAccessGate.isExempt("/"))
+        #expect(RemoteAccessGate.isExempt("/index.html"))
+        #expect(RemoteAccessGate.isExempt("/api/health"))
+        #expect(RemoteAccessGate.isExempt("/api/openapi.yaml"))
+        #expect(RemoteAccessGate.isExempt("/api/contract"))
+        #expect(RemoteAccessGate.isExempt("/api/workloadspec.schema.json"))
+        #expect(RemoteAccessGate.isExempt("/api/system/capabilities"))
+        #expect(!RemoteAccessGate.isExempt("/api/auth/login"))
+        #expect(!RemoteAccessGate.isExempt("/api/system/remote-access"))
+        #expect(!RemoteAccessGate.isExempt("/api/vms/1/console"))
+        #expect(!RemoteAccessGate.isExempt("/api/home/devices/x/v1/vms/y/vnc"))
+        #expect(!RemoteAccessGate.isExempt("/api/auth/ws-ticket"))
     }
 
     @Test func `inventory snapshot includes tailnet field`() throws {

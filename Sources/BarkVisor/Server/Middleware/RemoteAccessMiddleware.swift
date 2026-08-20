@@ -9,7 +9,7 @@ struct RemoteAccessGateMiddleware: AsyncMiddleware {
         chainingTo next: any AsyncResponder,
     ) async throws -> Vapor.Response {
         let path = request.url.path
-        if isExempt(path) {
+        if RemoteAccessGate.isExempt(path) {
             return try await next.respond(to: request)
         }
         let require = try await request.db.read { db in
@@ -28,8 +28,10 @@ struct RemoteAccessGateMiddleware: AsyncMiddleware {
         }
         return try await next.respond(to: request)
     }
+}
 
-    private func isExempt(_ path: String) -> Bool {
+enum RemoteAccessGate {
+    static func isExempt(_ path: String) -> Bool {
         if !path.hasPrefix("/api/") { return true }
         switch path {
         case "/api/health",
