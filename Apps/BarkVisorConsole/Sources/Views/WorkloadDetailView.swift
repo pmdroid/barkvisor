@@ -81,7 +81,7 @@ struct WorkloadDetailView: View {
                 )
             }
 
-            if workload.canStart || workload.canStop {
+            if workload.canStart || workload.canStop || workload.canRestart {
                 Section {
                     if workload.canStart {
                         Button("Start") {
@@ -99,8 +99,17 @@ struct WorkloadDetailView: View {
                         }
                         .disabled(busy)
                     }
+                    if workload.canRestart {
+                        Button("Restart") {
+                            Task {
+                                guest = nil
+                                await model.restartWorkload(workload, on: device)
+                            }
+                        }
+                        .disabled(!WorkloadRestart.isEnabled(device: device, busy: busy))
+                    }
                 } footer: {
-                    Text("Stop sends ACPI. Force Stop does not shut the guest down cleanly.")
+                    Text("Stop and Restart send ACPI. Force Stop does not shut the guest down cleanly.")
                 }
             }
         }
