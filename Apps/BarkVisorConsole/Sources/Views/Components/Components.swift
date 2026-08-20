@@ -31,6 +31,43 @@ struct StatusLabel: View {
     }
 }
 
+struct WorkloadRowPowerActions: ViewModifier {
+    var actions: [WorkloadListAction]
+    var onStart: () -> Void
+    var onStop: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if actions.contains(.start) {
+                    Button(WorkloadListAction.start.title, action: onStart)
+                        .tint(.green)
+                }
+                if actions.contains(.acpiStop) {
+                    Button(WorkloadListAction.acpiStop.title, action: onStop)
+                }
+            }
+            .contextMenu {
+                if actions.contains(.start) {
+                    Button(WorkloadListAction.start.title, action: onStart)
+                }
+                if actions.contains(.acpiStop) {
+                    Button(WorkloadListAction.acpiStop.title, action: onStop)
+                }
+            }
+    }
+}
+
+extension View {
+    func workloadRowPowerActions(
+        _ actions: [WorkloadListAction],
+        onStart: @escaping () -> Void,
+        onStop: @escaping () -> Void,
+    ) -> some View {
+        modifier(WorkloadRowPowerActions(actions: actions, onStart: onStart, onStop: onStop))
+    }
+}
+
 struct DevicePicker: View {
     @Environment(AppModel.self) private var model
 
@@ -41,7 +78,7 @@ struct DevicePicker: View {
                 set: { next in
                     guard let device = model.devices.first(where: { $0.hostId == next }) else { return }
                     Task { await model.select(device) }
-                }
+                },
             )) {
                 ForEach(model.devices) { device in
                     Text(device.title).tag(device.hostId)
@@ -53,13 +90,13 @@ struct DevicePicker: View {
 }
 
 #if os(iOS)
-struct ShareSheet: UIViewControllerRepresentable {
-    var items: [Any]
+    struct ShareSheet: UIViewControllerRepresentable {
+        var items: [Any]
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        func makeUIViewController(context: Context) -> UIActivityViewController {
+            UIActivityViewController(activityItems: items, applicationActivities: nil)
+        }
+
+        func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
     }
-
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
-}
 #endif

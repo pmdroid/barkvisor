@@ -169,6 +169,84 @@ struct WorkloadDetailTests {
         #expect(HomeDeviceHealthSnapshot.placeholderSelf.title == "This Device")
     }
 
+    @Test func `home list start and ACPI stop hide when unreachable or in flight`() {
+        let stopped = fixtureWorkload(state: "stopped")
+        let running = fixtureWorkload(state: "running")
+        let starting = fixtureWorkload(state: "starting")
+        let error = fixtureWorkload(state: "error")
+        let stopping = fixtureWorkload(state: "stopping")
+
+        #expect(
+            WorkloadListActions.resolve(workload: stopped, deviceReachable: true, inFlight: false)
+                == [.start],
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: error, deviceReachable: true, inFlight: false)
+                == [.start],
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: running, deviceReachable: true, inFlight: false)
+                == [.acpiStop],
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: starting, deviceReachable: true, inFlight: false)
+                == [.acpiStop],
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: stopping, deviceReachable: true, inFlight: false)
+                .isEmpty,
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: running, deviceReachable: false, inFlight: false)
+                .isEmpty,
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: stopped, deviceReachable: false, inFlight: false)
+                .isEmpty,
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: running, deviceReachable: true, inFlight: true)
+                .isEmpty,
+        )
+        #expect(
+            WorkloadListActions.resolve(workload: stopped, deviceReachable: true, inFlight: true)
+                .isEmpty,
+        )
+        #expect(WorkloadListAction.acpiStop.title == "Stop")
+        #expect(WorkloadListAction.start.title == "Start")
+    }
+
+    @Test func `start and ACPI stop use This Device or Home proxy paths`() throws {
+        let client = try APIClient(baseURL: #require(URL(string: "http://192.168.30.1:7777")), token: "t")
+        let selfDevice = snapshot(hostId: "self", role: "self", title: "Studio")
+        let member = snapshot(hostId: "peer", role: "member", title: "Living Room")
+        #expect(client.scoped("/vms/vm-1/start", on: selfDevice) == "/api/vms/vm-1/start")
+        #expect(client.scoped("/vms/vm-1/stop", on: selfDevice) == "/api/vms/vm-1/stop")
+        #expect(client.scoped("/vms/vm-1/start", on: nil) == "/api/vms/vm-1/start")
+        #expect(
+            client.scoped("/vms/vm-1/start", on: member)
+                == "/api/home/devices/peer/v1/vms/vm-1/start",
+        )
+        #expect(
+            client.scoped("/vms/vm-1/stop", on: member)
+                == "/api/home/devices/peer/v1/vms/vm-1/stop",
+        )
+    }
+
+    @Test func `ACPI stop body is not force`() throws {
+        let encoder = JSONEncoder()
+        let acpi = try JSONSerialization.jsonObject(
+            with: encoder.encode(WorkloadStopBody(force: false, method: "acpi")),
+        ) as? [String: Any]
+        #expect(acpi?["force"] as? Bool == false)
+        #expect(acpi?["method"] as? String == "acpi")
+        let force = try JSONSerialization.jsonObject(
+            with: encoder.encode(WorkloadStopBody(force: true, method: "force")),
+        ) as? [String: Any]
+        #expect(force?["force"] as? Bool == true)
+        #expect(force?["method"] as? String == "force")
+    }
+
     @Test func `action key matches home row and falls back to bare ID`() {
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
         let haos = fixtureWorkload(id: "vm-1", name: "haos")

@@ -21,6 +21,48 @@ enum WorkloadStream {
     }
 }
 
+/// Home / Workloads list power actions. Force Stop stays on Workload detail.
+enum WorkloadListAction: String, Equatable, Hashable {
+    case start
+    case acpiStop
+
+    var title: String {
+        switch self {
+        case .start: "Start"
+        case .acpiStop: "Stop"
+        }
+    }
+}
+
+enum WorkloadListActions {
+    /// Start and ACPI Stop only. Hidden when the Device is unreachable or a start/stop is in flight.
+    static func resolve(
+        canStart: Bool,
+        canStop: Bool,
+        deviceReachable: Bool,
+        inFlight: Bool,
+    ) -> [WorkloadListAction] {
+        guard deviceReachable, !inFlight else { return [] }
+        var actions: [WorkloadListAction] = []
+        if canStart { actions.append(.start) }
+        if canStop { actions.append(.acpiStop) }
+        return actions
+    }
+
+    static func resolve(
+        workload: Workload,
+        deviceReachable: Bool,
+        inFlight: Bool,
+    ) -> [WorkloadListAction] {
+        resolve(
+            canStart: workload.canStart,
+            canStop: workload.canStop,
+            deviceReachable: deviceReachable,
+            inFlight: inFlight,
+        )
+    }
+}
+
 enum WorkloadStreamAccess: Equatable {
     case available
     case deviceUnreachable
