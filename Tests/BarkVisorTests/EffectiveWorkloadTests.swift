@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
@@ -194,5 +195,133 @@ struct EffectiveWorkloadTests {
         let effective = try EffectiveWorkloadPipeline.evaluate(spec)
         #expect(effective.portableGuestType == hostLinux)
         #expect(try GuestProfiles.require(effective.portableGuestType).id == hostLinux)
+    }
+
+    @Test func `flat windows create with uefi keeps tpm omitted`() throws {
+        let windows = try GuestProfiles.defaultID(osFamily: "windows")
+        let spec = try EffectiveWorkloadPipeline.specFromFlat(
+            name: "win",
+            vmType: windows,
+            osFamily: nil,
+            cpuCount: fixtureCPUCount,
+            memoryMB: 4_096,
+            uefi: true,
+            tpmEnabled: nil,
+        )
+        #expect(spec.spec.firmware == nil)
+        let params = try EffectiveWorkloadPipeline.createParams(
+            from: spec,
+            extras: CreateWorkloadExtras(uefi: true),
+        )
+        #expect(params.uefi == true)
+        #expect(params.tpmEnabled == nil)
+        #expect(params.vmType.hasPrefix("windows"))
+    }
+}
+
+final class EffectiveWorkloadCreateTests {
+    private let dbPool: DatabasePool
+    private let tmpDir: URL
+    private let hostLinux: String
+    private let fixtureCPUCount: Int
+    private let backgroundTasks = BackgroundTaskManager()
+
+    init() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        tmpDir = tmp
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        dbPool = pool
+        hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        fixtureCPUCount = min(2, max(1, PlatformHost.cpuCount))
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: tmpDir)
+    }
+
+    @Test func `duplicate create id does not attach a free disk`() async throws {
+        let now = "2026-01-01T00:00:00Z"
+        let guest = hostLinux
+        let cpus = fixtureCPUCount
+        let takenBoot = tmpDir.appendingPathComponent("disk-taken-boot.qcow2")
+        FileManager.default.createFile(atPath: takenBoot.path, contents: Data())
+        try await dbPool.write { db in
+            try Disk(
+                id: "disk-taken-boot",
+                name: "taken-boot",
+                path: takenBoot.path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: now,
+            ).insert(db)
+            var existing = VM(
+                id: "vm-taken",
+                name: "taken",
+                vmType: guest,
+                state: "stopped",
+                cpuCount: cpus,
+                memoryMb: 512,
+                bootDiskId: "disk-taken-boot",
+                networkId: nil,
+                cloudInitPath: nil,
+                description: nil,
+                bootOrder: nil,
+                displayResolution: nil,
+                additionalDiskIds: nil,
+                uefi: true,
+                tpmEnabled: false,
+                macAddress: "52:54:00:00:00:01",
+                sharedPaths: nil,
+                portForwards: nil,
+                usbDevices: nil,
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: now,
+                updatedAt: now,
+            )
+            existing.syncSpecProjection(bumpGeneration: false)
+            try existing.insert(db)
+        }
+        let freePath = tmpDir.appendingPathComponent("disk-free.qcow2")
+        FileManager.default.createFile(atPath: freePath.path, contents: Data())
+        try await dbPool.write { db in
+            try Disk(
+                id: "disk-free",
+                name: "free",
+                path: freePath.path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: now,
+            ).insert(db)
+        }
+
+        let params = CreateVMParams(
+            id: "vm-taken",
+            name: "collision",
+            vmType: hostLinux,
+            cpuCount: fixtureCPUCount,
+            memoryMB: 512,
+            existingDiskId: "disk-free",
+        )
+        let err = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.createVM(
+                params: params, db: dbPool, backgroundTasks: backgroundTasks,
+            )
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("vm-taken"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
+        }
+        let disk = try #require(try await dbPool.read { db in try Disk.fetchOne(db, key: "disk-free") })
+        #expect(disk.vmId == nil)
     }
 }

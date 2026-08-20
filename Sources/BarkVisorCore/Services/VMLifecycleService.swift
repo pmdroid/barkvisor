@@ -190,6 +190,9 @@ extension VMLifecycleService {
     ) async throws -> BootDiskResult {
         if let existingId = params.existingDiskId {
             let diskID = try await db.write { db in
+                if try VM.fetchOne(db, key: vmID) != nil {
+                    throw BarkVisorError.conflict("Workload \(vmID) already exists")
+                }
                 guard let disk = try Disk.fetchOne(db, key: existingId) else {
                     throw BarkVisorError.badRequest("Disk not found")
                 }
