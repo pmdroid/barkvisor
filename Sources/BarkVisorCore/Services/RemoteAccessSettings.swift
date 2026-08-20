@@ -62,6 +62,7 @@ public enum RemoteAccessSettings {
                 _ = try AppSetting.deleteOne(db, key: advertiseUrlKey)
             }
         }
+        requireCache.reset()
         return try load(from: db)
     }
 
@@ -79,6 +80,17 @@ public enum RemoteAccessSettings {
             advertiseUrl: settings.advertiseUrl,
             requireTailnetForRemote: settings.requireTailnetForRemote,
         )
+    }
+
+    public static let requireCacheTTL: TimeInterval = 5
+
+    public static func cachedRequireTailnet(from db: Database, now: Date = Date()) throws -> Bool {
+        if let cached = requireCache.load(now: now) {
+            return cached
+        }
+        let value = try load(from: db).requireTailnetForRemote
+        requireCache.store(value, now: now)
+        return value
     }
 
     /// Loopback, RFC1918, ULA, and CGNAT `100.64.0.0/10` (minus metadata).
@@ -117,5 +129,31 @@ public enum RemoteAccessSettings {
             }
         }
         return host
+    }
+
+    private static let requireCache = RequireFlagCache()
+}
+
+private final class RequireFlagCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: (flag: Bool, expiresAt: Date)?
+
+    func load(now: Date) -> Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let value, value.expiresAt > now else { return nil }
+        return value.flag
+    }
+
+    func store(_ flag: Bool, now: Date) {
+        lock.lock()
+        value = (flag, now.addingTimeInterval(RemoteAccessSettings.requireCacheTTL))
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        value = nil
+        lock.unlock()
     }
 }

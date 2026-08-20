@@ -13,7 +13,7 @@ struct RemoteAccessGateMiddleware: AsyncMiddleware {
             return try await next.respond(to: request)
         }
         let require = try await request.db.read { db in
-            try RemoteAccessSettings.load(from: db).requireTailnetForRemote
+            try RemoteAccessSettings.cachedRequireTailnet(from: db)
         }
         guard require else {
             return try await next.respond(to: request)

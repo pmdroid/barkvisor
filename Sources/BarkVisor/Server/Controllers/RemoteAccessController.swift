@@ -30,13 +30,22 @@ struct RemoteAccessController: RouteCollection {
     func updateSettings(req: Vapor.Request) async throws -> RemoteAccessStatus {
         _ = try req.requireUser
         let body = try req.content.decode(RemoteAccessUpdateRequest.self)
-        try await req.db.write { db in
-            _ = try RemoteAccessSettings.save(
-                requireTailnetForRemote: body.requireTailnetForRemote,
-                advertiseUrl: body.advertiseUrl,
-                updateAdvertiseUrl: body.advertiseUrl != nil,
-                db: db,
-            )
+        if let requireTailnetForRemote = body.requireTailnetForRemote {
+            try await req.db.write { db in
+                _ = try RemoteAccessSettings.save(
+                    requireTailnetForRemote: requireTailnetForRemote,
+                    db: db,
+                )
+            }
+        }
+        if let advertiseUrl = body.advertiseUrl {
+            try await req.db.write { db in
+                _ = try RemoteAccessSettings.save(
+                    advertiseUrl: advertiseUrl,
+                    updateAdvertiseUrl: true,
+                    db: db,
+                )
+            }
         }
         AuditService.log(
             action: "home.settings.remote_access",

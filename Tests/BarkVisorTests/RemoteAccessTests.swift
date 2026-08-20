@@ -127,6 +127,19 @@ struct RemoteAccessTests {
         }
         #expect(cleared.requireTailnetForRemote)
         #expect(cleared.advertiseUrl == nil)
+        try pool.write { db in
+            _ = try RemoteAccessSettings.save(requireTailnetForRemote: true, db: db)
+        }
+        #expect(throws: BarkVisorError.self) {
+            try pool.write { db in
+                _ = try RemoteAccessSettings.save(
+                    advertiseUrl: "8.8.8.8",
+                    updateAdvertiseUrl: true,
+                    db: db,
+                )
+            }
+        }
+        #expect(try pool.read { try RemoteAccessSettings.load(from: $0).requireTailnetForRemote })
     }
 
     @Test func `peer policy allows LAN tailnet and loopback, not public`() {
