@@ -4,8 +4,8 @@ import Vapor
 
 /// Home WebSocket tunnel for member VNC / serial console (PAS-200).
 ///
-/// Registered on the JWT group. `JWTAuthMiddleware` treats this path as
-/// Bearer or Home `?session=` and forwards Device `?ticket=` unspent.
+/// Registered on the JWT group. StreamTicketPolicy: Bearer or Home `?session=`;
+/// Device `?ticket=` is forwarded unspent.
 struct HomeConsoleProxyController {
     var devices: DeviceRegistry?
     var dataDir: URL
@@ -111,18 +111,15 @@ struct HomeConsoleProxyController {
 }
 
 enum HomeConsoleProxy {
-    /// Presence + UUID shape. The owning Device spends `ticket`/`token` on its
-    /// store; Home must not `validateTicket` that value (wrong store).
+    /// Presence + UUID shape. Spend is StreamTicketPolicy on the owner Device.
     static func requireTicket(_ req: Vapor.Request) throws {
-        let ticket = req.query[String.self, at: "ticket"] ?? req.query[String.self, at: "token"]
-        guard let ticket, !ticket.isEmpty else {
-            throw Abort(
-                .unauthorized,
-                reason: "Missing ticket. Use POST /api/auth/ws-ticket to obtain one.",
-            )
-        }
-        guard UUID(uuidString: ticket) != nil else {
-            throw Abort(.unauthorized, reason: "Invalid ticket")
+        let ticket = StreamTicketPolicy.deviceTicket(fromQuery: req.url.query)
+            ?? req.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+            ?? req.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
+        do {
+            try StreamTicketPolicy.requirePassThroughDeviceTicket(ticket)
+        } catch let error as BarkVisorError {
+            throw Abort(.unauthorized, reason: error.errorDescription ?? "Unauthorized")
         }
     }
 

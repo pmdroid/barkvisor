@@ -112,6 +112,25 @@ enum StreamReconnect {
     }
 }
 
+/// Stream credential transport. Policy lives in BarkVisorCore `StreamTicketPolicy`.
+enum StreamTickets {
+    static let ticketQueryName = "ticket"
+    static let sessionQueryName = "session"
+
+    static func needsHomeSession(_ device: HomeDeviceHealthSnapshot?) -> Bool {
+        guard let device else { return false }
+        return !device.isSelf
+    }
+
+    static func queryItems(ticket: String, session: String?) -> [URLQueryItem] {
+        var items = [URLQueryItem(name: ticketQueryName, value: ticket)]
+        if let session, !session.isEmpty {
+            items.append(URLQueryItem(name: sessionQueryName, value: session))
+        }
+        return items
+    }
+}
+
 enum StreamURL {
     static func console(
         base: URL,
@@ -176,11 +195,7 @@ enum StreamURL {
         let prefix = components.path.hasSuffix("/") ? String(components.path.dropLast()) : components.path
         let trimmed = path.hasPrefix("/") ? path : "/\(path)"
         components.path = prefix + trimmed
-        var items = [URLQueryItem(name: "ticket", value: ticket)]
-        if let session, !session.isEmpty {
-            items.append(URLQueryItem(name: "session", value: session))
-        }
-        components.queryItems = items
+        components.queryItems = StreamTickets.queryItems(ticket: ticket, session: session)
         components.fragment = nil
         guard let url = components.url else { throw APIError.invalidURL }
         return url

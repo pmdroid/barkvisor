@@ -206,7 +206,7 @@ struct AuthController: RouteCollection {
             }
         let ticket = await WebSocketTicketStore.shared.createTicket(
             forUserID: authUser.userId, username: authUser.username,
-            targetVMID: body?.vmID,
+            targetVMID: body?.vmID.flatMap { $0.isEmpty ? nil : $0 },
         )
         return WSTicketResponse(ticket: ticket)
     }

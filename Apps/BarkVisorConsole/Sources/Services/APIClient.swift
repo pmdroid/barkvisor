@@ -157,7 +157,7 @@ struct APIClient {
         on device: HomeDeviceHealthSnapshot?,
     ) async throws -> (ticket: String, session: String?) {
         let ticket = try await createWSTicket(vmID: vmID, on: device)
-        if let device, !device.isSelf {
+        if StreamTickets.needsHomeSession(device) {
             return try await (ticket, createHomeSessionTicket(vmID: vmID))
         }
         return (ticket, nil)

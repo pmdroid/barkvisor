@@ -42,14 +42,13 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
-        // Home console/VNC: Device `?ticket=` is forwarded. Auth is Bearer or
-        // Home-minted `?session=` — never spend the Device ticket here.
-        if Self.isHomeConsoleTunnel(request) {
+        // Stream policy (PAS-237): Home tunnel never spends Device `?ticket=`.
+        if StreamTicketPolicy.site(path: request.url.path) == .homeTunnel {
             return try await authenticateHomeTunnel(request, chainingTo: next)
         }
 
         // Accept ticket from ?ticket= query param (short-lived, single-use)
-        if let ticketParam = request.query[String.self, at: "ticket"] {
+        if let ticketParam = request.query[String.self, at: StreamTicketPolicy.ticketQueryName] {
             if let userInfo = await WebSocketTicketStore.shared.validateTicket(ticketParam) {
                 request.authenticatedUser = AuthenticatedUser(
                     userId: userInfo.userID,
@@ -178,12 +177,6 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         return matched
     }
 
-    private static func isHomeConsoleTunnel(_ request: Vapor.Request) -> Bool {
-        let path = request.url.path
-        guard path.contains("/api/home/devices/") else { return false }
-        return path.hasSuffix("/vnc") || path.hasSuffix("/console")
-    }
-
     private func authenticateHomeTunnel(
         _ request: Vapor.Request,
         chainingTo next: any AsyncResponder,
@@ -219,10 +212,8 @@ struct JWTAuthMiddleware: AsyncMiddleware {
     }
 }
 
-/// Home VNC/console tunnel: Bearer JWT or a Home-minted `?session=` ticket
-/// scoped to `:vmId`. Does **not** consume `?ticket=` / `?token=` — those are
-/// the Device ticket (noVNC rewrites `ticket` to `token`). Browser WebSockets
-/// cannot set `Authorization`, so the SPA exchanges the JWT for `session=`.
+/// Home VNC/console tunnel: Bearer JWT or Home-minted `?session=` (PAS-237).
+/// Device `?ticket=` / noVNC `?token=` are passed through unspent.
 struct HomeTunnelAuthMiddleware: AsyncMiddleware {
     let keys: JWTKeyCollection
 
@@ -243,13 +234,15 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
             )
             return try await next.respond(to: request)
         }
-        if let session = request.query[String.self, at: "session"], !session.isEmpty {
+        let session = StreamTicketPolicy.homeSession(fromQuery: request.url.query)
+            ?? request.query[String.self, at: StreamTicketPolicy.sessionQueryName]
+        if let session, !session.isEmpty {
             guard let vmID = request.parameters.get("vmId"), !vmID.isEmpty else {
                 throw Abort(.unauthorized, reason: "Missing vm")
             }
             guard let userInfo = await WebSocketTicketStore.shared.validateTicket(session, forVMID: vmID)
             else {
-                throw Abort(.unauthorized, reason: "Invalid or expired session")
+                throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredSessionReason)
             }
             request.authenticatedUser = AuthenticatedUser(
                 userId: userInfo.userID,
