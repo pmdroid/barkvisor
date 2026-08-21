@@ -551,6 +551,34 @@ enum WorkloadISOMedia {
     }
 }
 
+enum WorkloadISOLibraryLoad: Equatable {
+    case pending
+    case loaded([LibraryImage])
+    case failed
+
+    var isKnown: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
+    var images: [LibraryImage] {
+        if case let .loaded(images) = self { return images }
+        return []
+    }
+
+    var showsSpinner: Bool {
+        if case .pending = self { return true }
+        return false
+    }
+
+    /// Nil from GET /images is a finished failure unless a prior load succeeded.
+    func applying(_ images: [LibraryImage]?) -> Self {
+        if let images { return .loaded(images) }
+        if isKnown { return self }
+        return .failed
+    }
+}
+
 enum WorkloadISOAccess: Equatable {
     case available
     case deviceUnreachable

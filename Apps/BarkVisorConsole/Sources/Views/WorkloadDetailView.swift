@@ -9,8 +9,7 @@ struct WorkloadDetailView: View {
     @State private var pendingForceStop = false
     @State private var guest: GuestInfo?
     @State private var networkMode: String?
-    @State private var fetchedLibrary: [LibraryImage] = []
-    @State private var libraryLoadSucceeded = false
+    @State private var libraryLoad: WorkloadISOLibraryLoad = .pending
     @State private var selectedISOID = ""
 
     var body: some View {
@@ -128,11 +127,7 @@ struct WorkloadDetailView: View {
                 networkMode = await model.networkMode(for: workload.networkId, on: device)
             }
             .task(id: WorkloadISOMedia.libraryTaskID(deviceID: deviceID, reachable: device.isReachable)) {
-                guard device.isReachable else { return }
-                if let images = await model.libraryImages(on: device) {
-                    fetchedLibrary = images
-                    libraryLoadSucceeded = true
-                }
+                await loadLibrary()
             }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,
@@ -197,14 +192,14 @@ struct WorkloadDetailView: View {
         if model.selectedDevice?.hostId == deviceID, !model.images.isEmpty {
             return model.images
         }
-        return fetchedLibrary
+        return libraryLoad.images
     }
 
     private var libraryKnown: Bool {
         if model.selectedDevice?.hostId == deviceID, !model.images.isEmpty {
             return true
         }
-        return libraryLoadSucceeded
+        return libraryLoad.isKnown
     }
 
     private var isoAccess: WorkloadISOAccess {
@@ -248,28 +243,35 @@ struct WorkloadDetailView: View {
             }
 
             if isoAccess.allowsChange {
-                if !libraryKnown {
+                if libraryKnown {
+                    if attachableISOs.isEmpty {
+                        Text("No ready ISOs in this Device Library")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Attach", selection: $selectedISOID) {
+                            Text("Select ISO").tag("")
+                            ForEach(attachableISOs) { image in
+                                Text(image.name).tag(image.id)
+                            }
+                        }
+                        Button("Attach") {
+                            let isoID = selectedISOID
+                            guard !isoID.isEmpty else { return }
+                            Task {
+                                await model.attachISO(isoID, to: workload, on: device)
+                                selectedISOID = ""
+                            }
+                        }
+                        .disabled(selectedISOID.isEmpty || busy)
+                    }
+                } else if libraryLoad.showsSpinner {
                     ProgressView()
                         .controlSize(.small)
-                } else if attachableISOs.isEmpty {
-                    Text("No ready ISOs in this Device Library")
-                        .foregroundStyle(.secondary)
                 } else {
-                    Picker("Attach", selection: $selectedISOID) {
-                        Text("Select ISO").tag("")
-                        ForEach(attachableISOs) { image in
-                            Text(image.name).tag(image.id)
-                        }
+                    Button("Retry") {
+                        Task { await loadLibrary() }
                     }
-                    Button("Attach") {
-                        let isoID = selectedISOID
-                        guard !isoID.isEmpty else { return }
-                        Task {
-                            await model.attachISO(isoID, to: workload, on: device)
-                            selectedISOID = ""
-                        }
-                    }
-                    .disabled(selectedISOID.isEmpty || busy)
+                    .disabled(busy)
                 }
             }
         } header: {
@@ -277,6 +279,12 @@ struct WorkloadDetailView: View {
         } footer: {
             isoFooter
         }
+    }
+
+    private func loadLibrary() async {
+        guard device.isReachable else { return }
+        if !libraryLoad.isKnown { libraryLoad = .pending }
+        libraryLoad = libraryLoad.applying(await model.libraryImages(on: device))
     }
 
     @ViewBuilder

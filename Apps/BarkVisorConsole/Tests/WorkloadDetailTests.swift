@@ -410,6 +410,24 @@ struct WorkloadDetailTests {
         #expect(WorkloadISOMedia.libraryTaskID(deviceID: "peer", reachable: false).hasSuffix("/down"))
     }
 
+    @Test func `failed library load stops the spinner and is not known`() {
+        #expect(WorkloadISOLibraryLoad.pending.showsSpinner)
+        #expect(!WorkloadISOLibraryLoad.pending.isKnown)
+        let failed = WorkloadISOLibraryLoad.pending.applying(nil)
+        #expect(failed == .failed)
+        #expect(!failed.showsSpinner)
+        #expect(!failed.isKnown)
+        let loaded = WorkloadISOLibraryLoad.pending.applying([])
+        #expect(loaded.isKnown)
+        #expect(!loaded.showsSpinner)
+        #expect(loaded.applying(nil) == loaded)
+        let retry = WorkloadISOLibraryLoad.failed.applying([
+            libraryImage(id: "iso-fedora", name: "Fedora DVD", status: "ready"),
+        ])
+        #expect(retry.isKnown)
+        #expect(retry.images.map(\.id) == ["iso-fedora"])
+    }
+
     @Test func `iso attach uses home proxy for members`() throws {
         let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")), token: nil)
         let studio = snapshot(hostId: "self", role: "self", title: "Studio")
