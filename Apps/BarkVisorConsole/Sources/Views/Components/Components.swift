@@ -16,7 +16,8 @@ struct StatusLabel: View {
         switch key.lowercased() {
         case "running", "guest_ready", "reachable", "ready": "checkmark.circle.fill"
         case "failed", "error", "unreachable": "exclamationmark.triangle.fill"
-        case "starting", "stopping", "provisioning", "deleting", "degraded": "clock.fill"
+        case "starting", "stopping", "provisioning", "deleting", "degraded",
+             "downloading", "decompressing", "uploading": "clock.fill"
         case "stopped": "pause.circle"
         default: "circle"
         }
