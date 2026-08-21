@@ -226,7 +226,7 @@ struct QEMUBuilderValidationTests {
 
     @Test func `socketArgs keep lossy VNC and qemu-vdagent clipboard`() {
         let sockets = VMSockets(vmID: "01234567-89ab-cdef-0123-456789abcdef")
-        let args = QEMUBuilder.socketArgs(sockets)
+        let args = QEMUBuilder.socketArgs(sockets, vdagentClipboard: true)
         #expect(args.contains("-vnc"))
         if let idx = args.firstIndex(of: "-vnc") {
             #expect(args[idx + 1] == "unix:\(sockets.vnc.path),lossy=on")
@@ -235,6 +235,32 @@ struct QEMUBuilderValidationTests {
         #expect(args.contains("qemu-vdagent,id=vdagent,name=vdagent,clipboard=on"))
         #expect(args.contains("virtserialport,chardev=vdagent,name=com.redhat.spice.0"))
         #expect(args.contains("virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"))
+    }
+
+    @Test func `socketArgs omit qemu-vdagent when this Device QEMU has no such chardev`() {
+        let sockets = VMSockets(vmID: "01234567-89ab-cdef-0123-456789abcdef")
+        let args = QEMUBuilder.socketArgs(sockets, vdagentClipboard: false)
+        #expect(!args.contains { $0.contains("qemu-vdagent") })
+        #expect(!args.contains { $0.contains("com.redhat.spice.0") })
+        #expect(args.contains("virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"))
+        #expect(args.contains("-vnc"))
+    }
+
+    @Test func `chardev help lists qemu-vdagent only as its own backend`() {
+        let withDriver = """
+        Available chardev backend types:
+          socket
+          qemu-vdagent
+          file
+        """
+        let packaged = """
+        Available chardev backend types:
+          socket
+          file
+        """
+        #expect(QEMUChardev.helpListsVdagent(withDriver))
+        #expect(!QEMUChardev.helpListsVdagent(packaged))
+        #expect(!QEMUChardev.helpListsVdagent("spice-vdagent in guest"))
     }
 
     // MARK: - Firmware
