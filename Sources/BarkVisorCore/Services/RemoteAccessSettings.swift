@@ -84,6 +84,11 @@ public enum RemoteAccessSettings {
 
     public static let requireCacheTTL: TimeInterval = 5
 
+    /// Fresh in-memory flag. Nil means the caller must load from SQLite.
+    public static func cachedRequireTailnet(now: Date = Date()) -> Bool? {
+        requireCache.load(now: now)
+    }
+
     public static func cachedRequireTailnet(from db: Database, now: Date = Date()) throws -> Bool {
         if let cached = requireCache.load(now: now) {
             return cached
@@ -91,6 +96,10 @@ public enum RemoteAccessSettings {
         let value = try load(from: db).requireTailnetForRemote
         requireCache.store(value, now: now)
         return value
+    }
+
+    static func resetRequireCache() {
+        requireCache.reset()
     }
 
     /// Loopback, RFC1918, ULA, and CGNAT `100.64.0.0/10` (minus metadata).
@@ -114,21 +123,22 @@ public enum RemoteAccessSettings {
         if raw.contains("/") {
             throw BarkVisorError.badRequest("Invalid advertise URL")
         }
-        var host = raw
-        if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
-            let inner = String(host[host.index(after: host.startIndex) ..< close])
-            let rest = host[host.index(after: close)...]
+        // `[ipv6]:port` or `[ipv6]`. Unbracketed IPv6 is never host:port.
+        if raw.hasPrefix("["), let close = raw.firstIndex(of: "]") {
+            let inner = String(raw[raw.index(after: raw.startIndex) ..< close])
+            let rest = raw[raw.index(after: close)...]
             if rest.isEmpty || rest.hasPrefix(":") {
                 return inner
             }
         }
-        if let colon = host.lastIndex(of: ":"), !host.contains("]") {
-            let after = host[host.index(after: colon)...]
+        // IPv4 or hostname `host:port` (single colon). Multiple colons are IPv6.
+        if let colon = raw.lastIndex(of: ":"), raw.firstIndex(of: ":") == colon {
+            let after = raw[raw.index(after: colon)...]
             if !after.isEmpty, after.allSatisfy(\.isNumber) {
-                host = String(host[..<colon])
+                return String(raw[..<colon])
             }
         }
-        return host
+        return raw
     }
 
     private static let requireCache = RequireFlagCache()

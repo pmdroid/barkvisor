@@ -86,10 +86,22 @@ struct RemoteAccessTests {
     @Test func `advertise host strips scheme and port`() throws {
         #expect(try RemoteAccessSettings.parseAdvertiseHost("  ") == nil)
         #expect(try RemoteAccessSettings.parseAdvertiseHost("100.64.1.2") == "100.64.1.2")
+        #expect(try RemoteAccessSettings.parseAdvertiseHost("192.168.1.9:8080") == "192.168.1.9")
         #expect(try RemoteAccessSettings.parseAdvertiseHost("http://box.ts.net:7777") == "box.ts.net")
         #expect(try RemoteAccessSettings.parseAdvertiseHost("box.ts.net:7777") == "box.ts.net")
         #expect(
             try RemoteAccessSettings.parseAdvertiseHost("http://box.ts.net/ignored") == "box.ts.net",
+        )
+        #expect(
+            try RemoteAccessSettings.parseAdvertiseHost("fd12:3456:789a::1") == "fd12:3456:789a::1",
+        )
+        #expect(
+            try RemoteAccessSettings.parseAdvertiseHost("[fd12:3456:789a::1]:7777")
+                == "fd12:3456:789a::1",
+        )
+        #expect(
+            try RemoteAccessSettings.parseAdvertiseHost("http://[fd12:3456:789a::1]:7777")
+                == "fd12:3456:789a::1",
         )
         #expect(throws: BarkVisorError.self) {
             try RemoteAccessSettings.parseAdvertiseHost("8.8.8.8")
@@ -206,15 +218,36 @@ struct RemoteAccessTests {
         #expect(!RemoteAccessGate.isExempt("/api/auth/ws-ticket"))
     }
 
-    @Test func `inventory snapshot includes tailnet field`() throws {
+    @Test func `require-tailnet cache hits without a database`() throws {
+        RemoteAccessSettings.resetRequireCache()
+        #expect(RemoteAccessSettings.cachedRequireTailnet() == nil)
+        let (pool, dir) = try isolatedDB()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try pool.write { db in
+            _ = try RemoteAccessSettings.save(requireTailnetForRemote: true, db: db)
+        }
+        #expect(RemoteAccessSettings.cachedRequireTailnet() == nil)
+        let loaded = try pool.read { try RemoteAccessSettings.cachedRequireTailnet(from: $0) }
+        #expect(loaded)
+        #expect(RemoteAccessSettings.cachedRequireTailnet() == true)
+    }
+
+    @Test func `inventory snapshot uses last-known tailnet without probing`() throws {
+        TailscaleProbe.resetCache()
+        TailscaleProbe.seedCache(
+            TailnetInfo(available: true, ip: "100.64.9.9", dnsName: "box.ts.net"),
+            now: Date().addingTimeInterval(-60),
+        )
+        #expect(TailscaleProbe.lastKnown()?.ip == "100.64.9.9")
+        TailscaleProbe.seedCache(
+            TailnetInfo(available: true, ip: "100.64.9.9", dnsName: "box.ts.net"),
+        )
         let inv = HostInventoryService.snapshot(
             hostId: "11111111-1111-1111-1111-111111111111",
         )
+        #expect(inv.networking.tailnet?.ip == "100.64.9.9")
+        #expect(inv.networking.tailnet?.dnsName == "box.ts.net")
         let data = try JSONEncoder().encode(inv)
-        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let networking = try #require(object["networking"] as? [String: Any])
-        let tailnet = try #require(networking["tailnet"] as? [String: Any])
-        #expect(tailnet["available"] is Bool)
         let decoded = try JSONDecoder().decode(HostInventory.self, from: data)
         #expect(decoded.networking.tailnet == inv.networking.tailnet)
     }

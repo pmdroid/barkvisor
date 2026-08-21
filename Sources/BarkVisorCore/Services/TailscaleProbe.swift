@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 
 /// Reads Tailscale as an external dependency (PAS-89). Never vendors the binary.
@@ -46,8 +47,26 @@ public enum TailscaleProbe {
         return info
     }
 
+    /// Stale-ok result. Nil if this process has never probed.
+    public static func lastKnown() -> TailnetInfo? {
+        cache.lastKnown()
+    }
+
+    /// Run `detect()` off this thread when the TTL cache is empty or expired.
+    public static func refreshOffRequest(now: Date = Date()) {
+        guard cache.beginRefreshIfStale(now: now) else { return }
+        DispatchQueue.global(qos: .utility).async {
+            defer { cache.endRefresh() }
+            _ = detect()
+        }
+    }
+
     public static func resetCache() {
         cache.reset()
+    }
+
+    static func seedCache(_ info: TailnetInfo, now: Date = Date()) {
+        cache.store(info, now: now)
     }
 
     public static func findExecutable() -> String? {
@@ -121,12 +140,34 @@ public enum TailscaleProbe {
 private final class ProbeCache: @unchecked Sendable {
     private let lock = NSLock()
     private var value: (info: TailnetInfo, expiresAt: Date)?
+    private var refreshing = false
 
     func load(now: Date) -> TailnetInfo? {
         lock.lock()
         defer { lock.unlock() }
         guard let value, value.expiresAt > now else { return nil }
         return value.info
+    }
+
+    func lastKnown() -> TailnetInfo? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value?.info
+    }
+
+    func beginRefreshIfStale(now: Date) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let value, value.expiresAt > now { return false }
+        if refreshing { return false }
+        refreshing = true
+        return true
+    }
+
+    func endRefresh() {
+        lock.lock()
+        refreshing = false
+        lock.unlock()
     }
 
     func store(_ info: TailnetInfo, now: Date) {
@@ -138,6 +179,7 @@ private final class ProbeCache: @unchecked Sendable {
     func reset() {
         lock.lock()
         value = nil
+        refreshing = false
         lock.unlock()
     }
 }

@@ -75,7 +75,7 @@ public enum HostInventoryService {
             storage: storage,
             networking: NetworkingInfo(
                 interfaces: interfaces,
-                tailnet: TailscaleProbe.detect(),
+                tailnet: cachedTailnet(),
             ),
             virtualization: VirtualizationInfo(
                 accelerator: accelerator,
@@ -117,6 +117,13 @@ public enum HostInventoryService {
 
     static func resetMetricsSliceCache() {
         sliceCache.reset()
+    }
+
+    /// Last-known tailnet for request paths. A cold `detect()` can
+    /// `PlatformProcess.run` + `Thread.sleep`; refresh that off-request.
+    private static func cachedTailnet() -> TailnetInfo? {
+        TailscaleProbe.refreshOffRequest()
+        return TailscaleProbe.lastKnown()
     }
 
     // MARK: - Probes

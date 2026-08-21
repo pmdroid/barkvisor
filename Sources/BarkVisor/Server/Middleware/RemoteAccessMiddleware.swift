@@ -12,8 +12,12 @@ struct RemoteAccessGateMiddleware: AsyncMiddleware {
         if RemoteAccessGate.isExempt(path) {
             return try await next.respond(to: request)
         }
-        let require = try await request.db.read { db in
-            try RemoteAccessSettings.cachedRequireTailnet(from: db)
+        let require = if let cached = RemoteAccessSettings.cachedRequireTailnet() {
+            cached
+        } else {
+            try await request.db.read { db in
+                try RemoteAccessSettings.cachedRequireTailnet(from: db)
+            }
         }
         guard require else {
             return try await next.respond(to: request)
