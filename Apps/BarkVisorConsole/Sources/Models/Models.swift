@@ -226,6 +226,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var memoryMB: Int
     var bootDiskId: String
     var isoId: String?
+    var isoIds: [String]?
     var networkId: String?
     var description: String?
     var pendingChanges: Bool?
@@ -245,6 +246,13 @@ struct Workload: Decodable, Identifiable, Hashable {
     var canStop: Bool { state == "running" || state == "starting" }
     /// Same as the web Workload detail Restart button: running only.
     var canRestart: Bool { state == "running" }
+
+    /// `isoIds` when present, otherwise the legacy single `isoId`.
+    var attachedISOIds: [String] {
+        if let isoIds, !isoIds.isEmpty { return isoIds }
+        if let isoId, !isoId.isEmpty { return [isoId] }
+        return []
+    }
 
     var guestOSFamily: String {
         vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
@@ -503,6 +511,94 @@ struct LibraryImage: Decodable, Identifiable, Hashable {
     var error: String?
     var createdAt: String
     var updatedAt: String
+
+    var isReadyISO: Bool { imageType == "iso" && status == "ready" }
+}
+
+struct WorkloadISOMediaItem: Identifiable, Hashable {
+    var id: String
+    var name: String?
+    var isMissing: Bool
+
+    var displayName: String {
+        if let name, !name.isEmpty { return name }
+        let prefix = id.prefix(8)
+        return isMissing ? "Missing image (\(prefix)…)" : "\(prefix)…"
+    }
+}
+
+enum WorkloadISOMedia {
+    /// `libraryKnown` is false until GET /images succeeds; then missing IDs are real.
+    static func attached(
+        ids: [String],
+        library: [LibraryImage],
+        libraryKnown: Bool,
+    ) -> [WorkloadISOMediaItem] {
+        ids.map { id in
+            if let image = library.first(where: { $0.id == id }) {
+                return WorkloadISOMediaItem(id: id, name: image.name, isMissing: false)
+            }
+            return WorkloadISOMediaItem(id: id, name: nil, isMissing: libraryKnown)
+        }
+    }
+
+    static func attachable(library: [LibraryImage], attachedIDs: [String]) -> [LibraryImage] {
+        library.filter { $0.isReadyISO && !attachedIDs.contains($0.id) }
+    }
+
+    static func libraryTaskID(deviceID: String, reachable: Bool) -> String {
+        "\(deviceID)/\(reachable ? "up" : "down")"
+    }
+}
+
+enum WorkloadISOLibraryLoad: Equatable {
+    case pending
+    case loaded([LibraryImage])
+    case failed
+
+    var isKnown: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
+    var images: [LibraryImage] {
+        if case let .loaded(images) = self { return images }
+        return []
+    }
+
+    var showsSpinner: Bool {
+        if case .pending = self { return true }
+        return false
+    }
+
+    /// Nil from GET /images is a finished failure unless a prior load succeeded.
+    func applying(_ images: [LibraryImage]?) -> Self {
+        if let images { return .loaded(images) }
+        if isKnown { return self }
+        return .failed
+    }
+}
+
+enum WorkloadISOAccess: Equatable {
+    case available
+    case deviceUnreachable
+    case busy
+
+    static func resolve(reachable: Bool, busy: Bool) -> WorkloadISOAccess {
+        if !reachable { return .deviceUnreachable }
+        if busy { return .busy }
+        return .available
+    }
+
+    var allowsChange: Bool { self == .available }
+
+    var reason: String? {
+        switch self {
+        case .available: nil
+        case .deviceUnreachable: "That Device is unreachable."
+        case .busy: "This Workload is busy."
+        }
+    }
 }
 
 struct DiskRecord: Decodable, Identifiable, Hashable {
@@ -591,6 +687,10 @@ enum WorkloadWebLink {
 struct WorkloadStopBody: Encodable {
     var force: Bool
     var method: String
+}
+
+struct ISOMediaBody: Encodable {
+    var isoId: String
 }
 
 struct EmptyJSON: Encodable {}

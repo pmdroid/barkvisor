@@ -314,6 +314,28 @@ final class AppModel {
         }
     }
 
+    func attachISO(_ isoID: String, to workload: Workload, on device: HomeDeviceHealthSnapshot) async {
+        await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
+            try await client.attachISO(workload.id, isoID: isoID, on: resolved)
+        }
+    }
+
+    func ejectISO(_ isoID: String, from workload: Workload, on device: HomeDeviceHealthSnapshot) async {
+        await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
+            try await client.ejectISO(workload.id, isoID: isoID, on: resolved)
+        }
+    }
+
+    func libraryImages(on device: HomeDeviceHealthSnapshot) async -> [LibraryImage]? {
+        guard device.isReachable else { return nil }
+        do {
+            return try await requireClient().images(on: device)
+        } catch {
+            handle(error)
+            return nil
+        }
+    }
+
     func guestInfo(for workloadID: String, on device: HomeDeviceHealthSnapshot?) async -> GuestInfo? {
         await optional { try await requireClient().guestInfo(workloadID, on: device) }
     }
