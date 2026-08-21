@@ -303,6 +303,7 @@ struct APIDecodingTests {
             memoryMB: 1024,
             bootDiskId: "disk-1",
             isoId: nil,
+            isoIds: nil,
             networkId: nil,
             description: nil,
             pendingChanges: nil,

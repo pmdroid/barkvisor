@@ -9,6 +9,8 @@ struct WorkloadDetailView: View {
     @State private var pendingForceStop = false
     @State private var guest: GuestInfo?
     @State private var networkMode: String?
+    @State private var libraryLoad: WorkloadISOLibraryLoad = .pending
+    @State private var selectedISOID = ""
 
     var body: some View {
         List {
@@ -81,6 +83,8 @@ struct WorkloadDetailView: View {
                 )
             }
 
+            isoSection
+
             if workload.canStart || workload.canStop || workload.canRestart {
                 Section {
                     if workload.canStart {
@@ -121,6 +125,9 @@ struct WorkloadDetailView: View {
         #endif
             .task(id: "\(deviceID)/\(workload.networkId ?? "")") {
                 networkMode = await model.networkMode(for: workload.networkId, on: device)
+            }
+            .task(id: WorkloadISOMedia.libraryTaskID(deviceID: deviceID, reachable: device.isReachable)) {
+                await loadLibrary()
             }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,
@@ -179,6 +186,114 @@ struct WorkloadDetailView: View {
     private var busy: Bool {
         let key = WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id)
         return model.actionIDs.contains(key) || model.actionIDs.contains(workload.id)
+    }
+
+    private var deviceLibrary: [LibraryImage] {
+        if model.selectedDevice?.hostId == deviceID, !model.images.isEmpty {
+            return model.images
+        }
+        return libraryLoad.images
+    }
+
+    private var libraryKnown: Bool {
+        if model.selectedDevice?.hostId == deviceID, !model.images.isEmpty {
+            return true
+        }
+        return libraryLoad.isKnown
+    }
+
+    private var isoAccess: WorkloadISOAccess {
+        WorkloadISOAccess.resolve(reachable: device.isReachable, busy: busy)
+    }
+
+    private var isoMedia: [WorkloadISOMediaItem] {
+        WorkloadISOMedia.attached(
+            ids: workload.attachedISOIds,
+            library: deviceLibrary,
+            libraryKnown: libraryKnown,
+        )
+    }
+
+    private var attachableISOs: [LibraryImage] {
+        WorkloadISOMedia.attachable(library: deviceLibrary, attachedIDs: workload.attachedISOIds)
+    }
+
+    private var isoSection: some View {
+        Section {
+            if isoMedia.isEmpty {
+                Text("None attached")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(isoMedia) { item in
+                    LabeledContent {
+                        if isoAccess.allowsChange {
+                            Button("Eject") {
+                                Task { await model.ejectISO(item.id, from: workload, on: device) }
+                            }
+                            .disabled(busy)
+                        }
+                    } label: {
+                        Text(item.displayName)
+                        if item.isMissing {
+                            Text("Missing from this Device Library")
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+
+            if isoAccess.allowsChange {
+                if libraryKnown {
+                    if attachableISOs.isEmpty {
+                        Text("No ready ISOs in this Device Library")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Attach", selection: $selectedISOID) {
+                            Text("Select ISO").tag("")
+                            ForEach(attachableISOs) { image in
+                                Text(image.name).tag(image.id)
+                            }
+                        }
+                        Button("Attach") {
+                            let isoID = selectedISOID
+                            guard !isoID.isEmpty else { return }
+                            Task {
+                                await model.attachISO(isoID, to: workload, on: device)
+                                selectedISOID = ""
+                            }
+                        }
+                        .disabled(selectedISOID.isEmpty || busy)
+                    }
+                } else if libraryLoad.showsSpinner {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button("Retry") {
+                        Task { await loadLibrary() }
+                    }
+                    .disabled(busy)
+                }
+            }
+        } header: {
+            Text("ISO")
+        } footer: {
+            isoFooter
+        }
+    }
+
+    private func loadLibrary() async {
+        guard device.isReachable else { return }
+        if !libraryLoad.isKnown { libraryLoad = .pending }
+        libraryLoad = libraryLoad.applying(await model.libraryImages(on: device))
+    }
+
+    @ViewBuilder
+    private var isoFooter: some View {
+        if let reason = isoAccess.reason {
+            Text(reason)
+        } else if workload.pendingChanges == true {
+            Text("Restart the Workload to apply media changes.")
+        }
     }
 
     @ViewBuilder
