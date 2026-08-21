@@ -696,6 +696,10 @@ enum PairingExpiry {
         return minutes == 1 ? "Expires in 1 minute" : "Expires in \(minutes) minutes"
     }
 
+    static func isActive(expiresAt: String, now: Date = Date()) -> Bool {
+        remainingSeconds(expiresAt: expiresAt, now: now) > 0
+    }
+
     private static func parseISO8601(_ raw: String) -> Date? {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
