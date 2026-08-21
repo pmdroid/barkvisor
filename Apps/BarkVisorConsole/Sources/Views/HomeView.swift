@@ -61,10 +61,14 @@ struct HomeView: View {
         }
         .refreshable {
             await model.refreshHome()
-            homeCanCreate = await model.anyReadyLibraryImage()
+            let ready = await model.anyReadyLibraryImage()
+            guard !Task.isCancelled else { return }
+            homeCanCreate = ready
         }
         .task(id: CreateWorkload.reachableDeviceKey(model.devices)) {
-            homeCanCreate = await model.anyReadyLibraryImage()
+            let ready = await model.anyReadyLibraryImage()
+            guard !Task.isCancelled else { return }
+            homeCanCreate = ready
         }
         .createWorkloadEntry(
             allowsDevicePicker: true,

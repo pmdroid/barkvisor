@@ -436,6 +436,7 @@ final class AppModel {
     func anyReadyLibraryImage() async -> Bool {
         if CreateWorkload.hasReadyImage(images) { return true }
         for device in devices where device.isReachable {
+            if Task.isCancelled { return false }
             if await CreateWorkload.hasReadyImage(libraryImages(on: device) ?? []) { return true }
         }
         return false

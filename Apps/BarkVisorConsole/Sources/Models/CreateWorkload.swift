@@ -34,6 +34,21 @@ enum CreateWorkload {
         devices.filter(\.isReachable).map(\.hostId).sorted().joined(separator: "\n")
     }
 
+    /// Once `deviceID` is set, never fall back to another Device. That would pair
+    /// that Device with Library images loaded for `deviceID`.
+    static func resolvedDevice(
+        deviceID: String,
+        reachable: [HomeDeviceHealthSnapshot],
+        selected: HomeDeviceHealthSnapshot?,
+    ) -> HomeDeviceHealthSnapshot? {
+        if !deviceID.isEmpty {
+            return reachable.first { $0.hostId == deviceID }
+        }
+        return selected.flatMap { $0.isReachable ? $0 : nil }
+            ?? reachable.first { $0.isSelf }
+            ?? reachable.first
+    }
+
     /// Drop a cancelled or superseded GET /images so Create cannot POST another Device's image id.
     static func shouldApplyLibraryLoad(loadID: Int, currentID: Int, cancelled: Bool) -> Bool {
         !cancelled && loadID == currentID

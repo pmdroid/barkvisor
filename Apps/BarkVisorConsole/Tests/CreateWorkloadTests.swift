@@ -66,6 +66,32 @@ struct CreateWorkloadTests {
         #expect(CreateWorkload.reachableDeviceKey([selfDevice]) != CreateWorkload.reachableDeviceKey([selfDevice, member]))
     }
 
+    @Test func `resolved device does not fall back after deviceID is set`() {
+        let selfDevice = snapshot(hostId: "self", role: "self")
+        let member = snapshot(hostId: "peer-1", role: "member")
+        #expect(
+            CreateWorkload.resolvedDevice(
+                deviceID: "",
+                reachable: [selfDevice, member],
+                selected: selfDevice,
+            )?.hostId == "self",
+        )
+        #expect(
+            CreateWorkload.resolvedDevice(
+                deviceID: "peer-1",
+                reachable: [selfDevice, member],
+                selected: selfDevice,
+            )?.hostId == "peer-1",
+        )
+        #expect(
+            CreateWorkload.resolvedDevice(
+                deviceID: "peer-1",
+                reachable: [selfDevice],
+                selected: selfDevice,
+            ) == nil,
+        )
+    }
+
     @Test func `guest type comes from image arch not host`() {
         #expect(CreateWorkload.guestType(osFamily: "linux", arch: "aarch64") == "linux-arm64")
         #expect(CreateWorkload.guestType(osFamily: "linux", arch: "arm64") == "linux-arm64")

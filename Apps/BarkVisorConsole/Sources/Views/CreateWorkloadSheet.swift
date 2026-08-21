@@ -99,10 +99,11 @@ struct CreateWorkloadSheet: View {
     }
 
     private var device: HomeDeviceHealthSnapshot? {
-        reachableDevices.first { $0.hostId == deviceID }
-            ?? model.selectedDevice.flatMap { $0.isReachable ? $0 : nil }
-            ?? reachableDevices.first { $0.isSelf }
-            ?? reachableDevices.first
+        CreateWorkload.resolvedDevice(
+            deviceID: deviceID,
+            reachable: reachableDevices,
+            selected: model.selectedDevice,
+        )
     }
 
     private var readyImages: [LibraryImage] {
