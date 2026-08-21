@@ -93,6 +93,51 @@ struct SessionTests {
         #expect(!DeviceURL.sameOrigin(a, c))
     }
 
+    @Test func `login offer write is dropped after session generation bump`() throws {
+        let origin = try DeviceURL.normalize("http://192.168.0.8:7777")
+        let other = try DeviceURL.normalize("http://10.0.0.4:7777")
+        #expect(
+            LoginOfferSession.stillCurrent(
+                generation: 3,
+                currentGeneration: 3,
+                origin: origin,
+                currentOrigin: origin,
+                token: "jwt-1",
+                currentToken: "jwt-1",
+            ),
+        )
+        #expect(
+            !LoginOfferSession.stillCurrent(
+                generation: 3,
+                currentGeneration: 4,
+                origin: origin,
+                currentOrigin: origin,
+                token: "jwt-1",
+                currentToken: "jwt-1",
+            ),
+        )
+        #expect(
+            !LoginOfferSession.stillCurrent(
+                generation: 3,
+                currentGeneration: 3,
+                origin: origin,
+                currentOrigin: other,
+                token: "jwt-1",
+                currentToken: "jwt-1",
+            ),
+        )
+        #expect(
+            !LoginOfferSession.stillCurrent(
+                generation: 3,
+                currentGeneration: 3,
+                origin: origin,
+                currentOrigin: origin,
+                token: "jwt-1",
+                currentToken: nil,
+            ),
+        )
+    }
+
     @Test func `login offer advertised host is omitted without a pairing picker`() {
         #expect(LoginOfferHost.advertisedHost(pickerSelection: "192.168.0.8", pickerAvailable: false) == nil)
         #expect(LoginOfferHost.advertisedHost(pickerSelection: "  nas  ", pickerAvailable: true) == "nas")

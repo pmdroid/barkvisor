@@ -375,27 +375,44 @@ final class AppModel {
 
     func issueLoginOffer() async {
         banner = nil
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
         do {
             let host = LoginOfferHost.advertisedHost(pickerSelection: nil, pickerAvailable: false)
-            loginOffer = try await requireClient().issueLoginOffer(advertisedHost: host)
+            let offer = try await requireClient().issueLoginOffer(advertisedHost: host)
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            loginOffer = offer
         } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
             handle(error)
         }
     }
 
     func loadLoginOffer() async {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
         do {
-            loginOffer = try await requireClient().loginOffer()
+            let offer = try await requireClient().loginOffer()
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            loginOffer = offer
         } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
             handle(error)
         }
     }
 
     func revokeLoginOffer() async {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
         do {
             try await requireClient().revokeLoginOffer()
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
             loginOffer = nil
         } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
             handle(error)
         }
     }
@@ -470,6 +487,17 @@ final class AppModel {
         sessionGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+    }
+
+    private func sessionStillCurrent(generation: Int, origin: URL?, access: String?) -> Bool {
+        LoginOfferSession.stillCurrent(
+            generation: generation,
+            currentGeneration: sessionGeneration,
+            origin: origin,
+            currentOrigin: sessionURL,
+            token: access,
+            currentToken: token,
+        )
     }
 
     private func clearSessionLocally() {

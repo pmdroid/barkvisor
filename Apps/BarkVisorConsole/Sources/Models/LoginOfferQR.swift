@@ -13,6 +13,20 @@ enum LoginOfferHost {
     }
 }
 
+/// Drop in-flight GET/POST /api/auth/login-offers results after logout or origin change.
+enum LoginOfferSession {
+    static func stillCurrent(
+        generation: Int,
+        currentGeneration: Int,
+        origin: URL?,
+        currentOrigin: URL?,
+        token: String?,
+        currentToken: String?,
+    ) -> Bool {
+        generation == currentGeneration && origin == currentOrigin && token == currentToken
+    }
+}
+
 enum LoginOfferQR {
     static func cgImage(from uri: String, scale: CGFloat = 10) -> CGImage? {
         let filter = CIFilter.qrCodeGenerator()
