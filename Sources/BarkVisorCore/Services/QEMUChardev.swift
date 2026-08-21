@@ -9,8 +9,12 @@ public enum QEMUChardev {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var cache: [String: Bool] = [:]
 
+    /// `-chardev help` lists backends without instantiating a machine.
+    /// `-machine virt` is ARM-only and fails on qemu-system-x86_64.
+    static let vdagentProbeArguments = ["-chardev", "help"]
+
     public static func supportsVdagent(binary: URL) -> Bool {
-        let key = binary.path
+        let key = binaryIdentityKey(for: binary)
         lock.lock()
         if let hit = cache[key] {
             lock.unlock()
@@ -31,11 +35,20 @@ public enum QEMUChardev {
         }
     }
 
+    /// Path plus mtime and size so an in-place QEMU upgrade re-probes.
+    static func binaryIdentityKey(for binary: URL) -> String {
+        let path = binary.path
+        let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+        let mtime = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
+        return "\(path)|\(mtime)|\(size)"
+    }
+
     private static func probeVdagent(binary: URL) -> Bool {
         guard FileManager.default.isExecutableFile(atPath: binary.path) else { return false }
         let result = try? PlatformProcess.run(
             executable: binary,
-            arguments: ["-machine", "virt", "-accel", "tcg", "-chardev", "help"],
+            arguments: vdagentProbeArguments,
             timeout: 8,
         )
         let text = (result?.stdoutString ?? "") + "\n" + (result?.stderrString ?? "")

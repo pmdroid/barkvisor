@@ -261,6 +261,35 @@ struct QEMUBuilderValidationTests {
         #expect(QEMUChardev.helpListsVdagent(withDriver))
         #expect(!QEMUChardev.helpListsVdagent(packaged))
         #expect(!QEMUChardev.helpListsVdagent("spice-vdagent in guest"))
+        #expect(!QEMUChardev.helpListsVdagent("qemu-vdagent-extra"))
+        #expect(!QEMUChardev.helpListsVdagent("prefix qemu-vdagent"))
+        #expect(QEMUChardev.helpListsVdagent("  qemu-vdagent  \n"))
+    }
+
+    @Test func `vdagent probe uses chardev help without an ARM machine`() {
+        #expect(QEMUChardev.vdagentProbeArguments == ["-chardev", "help"])
+        #expect(!QEMUChardev.vdagentProbeArguments.contains("virt"))
+        #expect(!QEMUChardev.vdagentProbeArguments.contains("-machine"))
+        #expect(!QEMUChardev.vdagentProbeArguments.contains("tcg"))
+    }
+
+    @Test func `vdagent cache key includes mtime and size so in-place upgrades re-probe`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let binary = dir.appendingPathComponent("qemu-system-fake")
+        try Data("v1".utf8).write(to: binary)
+        let first = QEMUChardev.binaryIdentityKey(for: binary)
+        try Data("v2-replaced-in-place".utf8).write(to: binary)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_700_000_000)],
+            ofItemAtPath: binary.path,
+        )
+        let second = QEMUChardev.binaryIdentityKey(for: binary)
+        #expect(first != second)
+        #expect(first.contains(binary.path))
+        #expect(second.contains(binary.path))
+        #expect(QEMUChardev.binaryIdentityKey(for: binary) == second)
     }
 
     // MARK: - Firmware
