@@ -165,6 +165,38 @@ struct LibraryCatalogTests {
         #expect(CatalogDownloadState.starting.buttonTitle == "Starting")
     }
 
+    @Test func catalogMergeKeepsPreviousImagesWhenAFetchFails() {
+        let kept = catalogImage(id: "cat-keep", name: "HAOS")
+        let next = catalogImage(id: "cat-next", name: "Ubuntu")
+        let previous = ["repo-keep": [kept], "repo-gone": [kept]]
+
+        let mixed = LibraryCatalog.mergeCatalogImages(
+            previous: previous,
+            loads: [
+                "repo-keep": .failed,
+                "repo-new": .fetched([next]),
+                "repo-empty": .fetched([]),
+            ],
+        )
+        #expect(mixed.imagesByRepo["repo-keep"]?.map(\.id) == ["cat-keep"])
+        #expect(mixed.imagesByRepo["repo-new"]?.map(\.id) == ["cat-next"])
+        #expect(mixed.imagesByRepo["repo-empty"] == nil)
+        #expect(mixed.imagesByRepo["repo-gone"] == nil)
+        #expect(!mixed.fetchFailed)
+
+        let allFailed = LibraryCatalog.mergeCatalogImages(
+            previous: previous,
+            loads: ["repo-keep": .failed, "repo-new": .failed],
+        )
+        #expect(allFailed.imagesByRepo["repo-keep"]?.map(\.id) == ["cat-keep"])
+        #expect(allFailed.fetchFailed)
+        #expect(
+            LibraryCatalog.mergeCatalogImages(previous: [:], loads: ["repo-keep": .failed]).fetchFailed
+        )
+        #expect(LibraryCatalog.emptyCatalogMessage(fetchFailed: true) == LibraryCatalog.failedCatalogCopy)
+        #expect(LibraryCatalog.emptyCatalogMessage(fetchFailed: false) == LibraryCatalog.emptyCatalogCopy)
+    }
+
     private func snapshot(
         hostId: String,
         role: String,
@@ -186,6 +218,21 @@ struct LibraryCatalogTests {
             resources: nil,
             workloadCount: nil,
             healthCounts: nil,
+        )
+    }
+
+    private func catalogImage(id: String, name: String) -> CatalogImage {
+        CatalogImage(
+            id: id,
+            repositoryId: "repo-images",
+            slug: name.lowercased(),
+            name: name,
+            description: nil,
+            imageType: "ova",
+            arch: "arm64",
+            version: "1",
+            downloadUrl: "https://example.test/\(id).qcow2",
+            sizeBytes: 100,
         )
     }
 

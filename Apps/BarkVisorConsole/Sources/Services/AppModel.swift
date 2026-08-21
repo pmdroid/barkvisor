@@ -91,6 +91,7 @@ final class AppModel {
     var catalogRepos: [ImageRepository] = []
     var catalogImagesByRepo: [String: [CatalogImage]] = [:]
     var catalogLoaded = false
+    var catalogFetchFailed = false
     var disks: [DiskRecord] = []
     var networks: [NetworkRecord] = []
     var logs: [ServerLogEntry] = []
@@ -385,24 +386,26 @@ final class AppModel {
         }
         let imageRepos = LibraryCatalog.imageRepositories(repos)
         catalogRepos = imageRepos
-        var map: [String: [CatalogImage]] = [:]
-        await withTaskGroup(of: (String, [CatalogImage]).self) { group in
+        var loads: [String: CatalogRepoLoad] = [:]
+        await withTaskGroup(of: (String, CatalogRepoLoad).self) { group in
             for repo in imageRepos {
                 group.addTask {
                     do {
                         let images = try await client.catalogImages(repositoryID: repo.id, on: device)
-                        return (repo.id, images)
+                        return (repo.id, .fetched(images))
                     } catch {
-                        return (repo.id, [])
+                        return (repo.id, .failed)
                     }
                 }
             }
-            for await item in group where !item.1.isEmpty {
-                map[item.0] = item.1
+            for await item in group {
+                loads[item.0] = item.1
             }
         }
         guard generation == catalogGeneration else { return }
-        catalogImagesByRepo = map
+        let merged = LibraryCatalog.mergeCatalogImages(previous: catalogImagesByRepo, loads: loads)
+        catalogImagesByRepo = merged.imagesByRepo
+        catalogFetchFailed = merged.fetchFailed
         catalogLoaded = true
     }
 
@@ -722,6 +725,7 @@ final class AppModel {
         catalogRepos = []
         catalogImagesByRepo = [:]
         catalogLoaded = false
+        catalogFetchFailed = false
         disks = []
         networks = []
     }

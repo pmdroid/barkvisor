@@ -26,7 +26,7 @@ struct LibraryView: View {
                 }
             } else if model.catalogGroups.isEmpty {
                 Section("Catalog") {
-                    Text(LibraryCatalog.emptyCatalogCopy)
+                    Text(LibraryCatalog.emptyCatalogMessage(fetchFailed: model.catalogFetchFailed))
                         .foregroundStyle(.secondary)
                 }
             } else {

@@ -3,6 +3,7 @@ import Foundation
 enum LibraryCatalog {
     static let emptyLibraryCopy = "Download an image from the catalog below."
     static let emptyCatalogCopy = "No catalog images. Sync repositories in the web UI."
+    static let failedCatalogCopy = "Couldn't load catalog images. Pull to refresh."
 
     #if os(iOS)
     static let preferSelfDevice = true
@@ -45,6 +46,34 @@ enum LibraryCatalog {
         }
     }
 
+    /// `failed` keeps the previous row; a successful empty fetch drops it.
+    static func mergeCatalogImages(
+        previous: [String: [CatalogImage]],
+        loads: [String: CatalogRepoLoad],
+    ) -> CatalogImagesMerge {
+        var map: [String: [CatalogImage]] = [:]
+        var anyFetched = false
+        var anyFailed = false
+        for (id, load) in loads {
+            switch load {
+            case let .fetched(images):
+                anyFetched = true
+                if !images.isEmpty { map[id] = images }
+            case .failed:
+                anyFailed = true
+                if let kept = previous[id], !kept.isEmpty { map[id] = kept }
+            }
+        }
+        return CatalogImagesMerge(
+            imagesByRepo: map,
+            fetchFailed: anyFailed && !anyFetched,
+        )
+    }
+
+    static func emptyCatalogMessage(fetchFailed: Bool) -> String {
+        fetchFailed ? failedCatalogCopy : emptyCatalogCopy
+    }
+
     static func downloadState(local: LibraryImage?, starting: Bool) -> CatalogDownloadState {
         if let local {
             switch local.status {
@@ -71,6 +100,16 @@ struct CatalogGroup: Identifiable, Hashable {
     var repo: ImageRepository
     var images: [CatalogImage]
     var id: String { repo.id }
+}
+
+enum CatalogRepoLoad: Equatable {
+    case fetched([CatalogImage])
+    case failed
+}
+
+struct CatalogImagesMerge: Equatable {
+    var imagesByRepo: [String: [CatalogImage]]
+    var fetchFailed: Bool
 }
 
 enum CatalogDownloadState: Equatable {
