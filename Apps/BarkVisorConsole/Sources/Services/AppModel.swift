@@ -500,9 +500,6 @@ final class AppModel {
             pairing = issued
         } catch {
             guard pairingGeneration == generation else { return }
-            if advertisedHost != nil {
-                pairing = nil
-            }
             handle(error)
         }
     }
