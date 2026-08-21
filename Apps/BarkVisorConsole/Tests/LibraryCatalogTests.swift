@@ -154,10 +154,15 @@ struct LibraryCatalogTests {
         #expect(LibraryCatalog.downloadState(local: downloading, starting: true) == .downloading)
         #expect(LibraryCatalog.downloadState(local: ready, starting: false) == .ready)
         #expect(LibraryCatalog.downloadState(local: failed, starting: false) == .failed("checksum"))
+        #expect(LibraryCatalog.downloadState(local: failed, starting: true) == .starting)
         #expect(CatalogDownloadState.downloading.isBusy)
+        #expect(CatalogDownloadState.starting.isBusy)
+        #expect(!CatalogDownloadState.failed("checksum").isBusy)
         #expect(!CatalogDownloadState.ready.isBusy)
         #expect(CatalogDownloadState.available.buttonTitle == "Download")
         #expect(CatalogDownloadState.ready.buttonTitle == "In Library")
+        #expect(CatalogDownloadState.failed("checksum").buttonTitle == "Retry")
+        #expect(CatalogDownloadState.starting.buttonTitle == "Starting")
     }
 
     private func snapshot(

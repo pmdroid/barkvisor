@@ -51,7 +51,9 @@ enum LibraryCatalog {
             case "downloading": return .downloading
             case "decompressing": return .decompressing
             case "ready": return .ready
-            case "error": return .failed(local.error)
+            case "error":
+                if starting { return .starting }
+                return .failed(local.error)
             default: break
             }
         }
