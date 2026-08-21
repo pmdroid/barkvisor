@@ -88,10 +88,33 @@ enum PairingAdvertisedHost {
 }
 
 enum PairingQR {
+    private struct Cache {
+        var payload: String
+        var dimension: CGFloat
+        var image: CGImage
+    }
+
+    private static let lock = NSLock()
+    private static var cache: Cache?
+
     /// QR of the pairing URI (`qrPayload`), not the short code.
+    /// Same payload and size reuse the last `CGImage` so Settings' expiry tick
+    /// does not allocate a `CIContext` or run `CIQRCodeGenerator` again.
     static func image(payload: String, dimension: CGFloat = 196) -> CGImage? {
         let text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let data = text.data(using: .utf8) else { return nil }
+        guard !text.isEmpty else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        if let cache, cache.payload == text, cache.dimension == dimension {
+            return cache.image
+        }
+        guard let image = render(text: text, dimension: dimension) else { return nil }
+        cache = Cache(payload: text, dimension: dimension, image: image)
+        return image
+    }
+
+    private static func render(text: String, dimension: CGFloat) -> CGImage? {
+        guard let data = text.data(using: .utf8) else { return nil }
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
         filter.setValue(data, forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")

@@ -148,22 +148,7 @@ struct SettingsView: View {
                             .font(.title2.monospaced().weight(.bold))
                             .textSelection(.enabled)
                     }
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        VStack(alignment: .leading, spacing: 8) {
-                            if PairingExpiry.isActive(expiresAt: pairing.expiresAt, now: context.date),
-                               let qr = PairingQR.image(payload: pairing.qrPayload) {
-                                Image(decorative: qr, scale: 1)
-                                    .interpolation(.none)
-                                    .resizable()
-                                    .frame(width: 196, height: 196)
-                                    .padding(8)
-                                    .background(Color.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    .accessibilityLabel("Pairing offer QR")
-                            }
-                            LabeledContent("Expires", value: PairingExpiry.label(expiresAt: pairing.expiresAt, now: context.date))
-                        }
-                    }
+                    PairingOfferQR(payload: pairing.qrPayload, expiresAt: pairing.expiresAt)
                     Text("Changing the address issues a new code and offer. This \(Copy.device) still runs if that \(Copy.device) is unreachable.")
                         .foregroundStyle(.secondary)
                     Text(pairing.qrPayload)
@@ -249,6 +234,37 @@ struct SettingsView: View {
             Task {
                 try? await Task.sleep(for: .seconds(2))
                 copied = false
+            }
+        }
+    }
+
+    /// Renders the offer QR once per payload. `TimelineView` only ticks expiry.
+    private struct PairingOfferQR: View {
+        let payload: String
+        let expiresAt: String
+        private let qr: CGImage?
+
+        init(payload: String, expiresAt: String) {
+            self.payload = payload
+            self.expiresAt = expiresAt
+            qr = PairingQR.image(payload: payload)
+        }
+
+        var body: some View {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                VStack(alignment: .leading, spacing: 8) {
+                    if PairingExpiry.isActive(expiresAt: expiresAt, now: context.date), let qr {
+                        Image(decorative: qr, scale: 1)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 196, height: 196)
+                            .padding(8)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .accessibilityLabel("Pairing offer QR")
+                    }
+                    LabeledContent("Expires", value: PairingExpiry.label(expiresAt: expiresAt, now: context.date))
+                }
             }
         }
     }

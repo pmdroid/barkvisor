@@ -116,6 +116,18 @@ struct PairingOfferTests {
         #expect(!PairingExpiry.isActive(expiresAt: "2026-08-16T22:10:00.000Z", now: iso("2026-08-16T22:10:00.000Z")))
     }
 
+    @Test func `pairing qr reuses cgimage for the same payload`() {
+        let payload = "barkvisor://pair/v1?code=ABCD-EFGH&host=192.168.0.8&port=7777&hostId=h&fp=abc"
+        let first = PairingQR.image(payload: payload)
+        let second = PairingQR.image(payload: payload)
+        let other = PairingQR.image(payload: payload + "&x=1")
+        #expect(first != nil)
+        #expect(second != nil)
+        #expect(other != nil)
+        #expect(first === second)
+        #expect(first !== other)
+    }
+
     private func iso(_ raw: String) -> Date {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
