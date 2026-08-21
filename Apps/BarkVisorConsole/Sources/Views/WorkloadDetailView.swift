@@ -10,6 +10,7 @@ struct WorkloadDetailView: View {
     @State private var guest: GuestInfo?
     @State private var networkMode: String?
     @State private var fetchedLibrary: [LibraryImage] = []
+    @State private var libraryLoadSucceeded = false
     @State private var selectedISOID = ""
 
     var body: some View {
@@ -126,8 +127,12 @@ struct WorkloadDetailView: View {
             .task(id: "\(deviceID)/\(workload.networkId ?? "")") {
                 networkMode = await model.networkMode(for: workload.networkId, on: device)
             }
-            .task(id: deviceID) {
-                fetchedLibrary = await model.libraryImages(on: device)
+            .task(id: WorkloadISOMedia.libraryTaskID(deviceID: deviceID, reachable: device.isReachable)) {
+                guard device.isReachable else { return }
+                if let images = await model.libraryImages(on: device) {
+                    fetchedLibrary = images
+                    libraryLoadSucceeded = true
+                }
             }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,
@@ -195,12 +200,23 @@ struct WorkloadDetailView: View {
         return fetchedLibrary
     }
 
+    private var libraryKnown: Bool {
+        if model.selectedDevice?.hostId == deviceID, !model.images.isEmpty {
+            return true
+        }
+        return libraryLoadSucceeded
+    }
+
     private var isoAccess: WorkloadISOAccess {
         WorkloadISOAccess.resolve(reachable: device.isReachable, busy: busy)
     }
 
     private var isoMedia: [WorkloadISOMediaItem] {
-        WorkloadISOMedia.attached(ids: workload.attachedISOIds, library: deviceLibrary)
+        WorkloadISOMedia.attached(
+            ids: workload.attachedISOIds,
+            library: deviceLibrary,
+            libraryKnown: libraryKnown,
+        )
     }
 
     private var attachableISOs: [LibraryImage] {
@@ -232,7 +248,10 @@ struct WorkloadDetailView: View {
             }
 
             if isoAccess.allowsChange {
-                if attachableISOs.isEmpty {
+                if !libraryKnown {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if attachableISOs.isEmpty {
                     Text("No ready ISOs in this Device Library")
                         .foregroundStyle(.secondary)
                 } else {

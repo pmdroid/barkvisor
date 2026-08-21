@@ -326,13 +326,13 @@ final class AppModel {
         }
     }
 
-    func libraryImages(on device: HomeDeviceHealthSnapshot) async -> [LibraryImage] {
-        guard device.isReachable else { return [] }
+    func libraryImages(on device: HomeDeviceHealthSnapshot) async -> [LibraryImage]? {
+        guard device.isReachable else { return nil }
         do {
             return try await requireClient().images(on: device)
         } catch {
             handle(error)
-            return []
+            return nil
         }
     }
 

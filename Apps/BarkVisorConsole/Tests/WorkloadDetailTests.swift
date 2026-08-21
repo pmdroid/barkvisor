@@ -368,7 +368,11 @@ struct WorkloadDetailTests {
         )
         let attached = libraryImage(id: "iso-attached", name: "Installer", status: "ready")
         let library = [fedora, downloading, cloud, attached]
-        let media = WorkloadISOMedia.attached(ids: ["iso-attached", "iso-gone"], library: library)
+        let media = WorkloadISOMedia.attached(
+            ids: ["iso-attached", "iso-gone"],
+            library: library,
+            libraryKnown: true,
+        )
         #expect(media.count == 2)
         #expect(media[0].name == "Installer")
         #expect(!media[0].isMissing)
@@ -376,6 +380,34 @@ struct WorkloadDetailTests {
         #expect(media[1].displayName.contains("Missing image"))
         let ready = WorkloadISOMedia.attachable(library: library, attachedIDs: ["iso-attached"])
         #expect(ready.map(\.id) == ["iso-fedora"])
+    }
+
+    @Test func `attached isos are not missing until the library load succeeds`() {
+        let pending = WorkloadISOMedia.attached(
+            ids: ["iso-attached", "iso-gone"],
+            library: [],
+            libraryKnown: false,
+        )
+        #expect(pending.map(\.isMissing) == [false, false])
+        #expect(!pending[0].displayName.contains("Missing image"))
+        let failed = WorkloadISOMedia.attached(
+            ids: ["iso-gone"],
+            library: [],
+            libraryKnown: false,
+        )
+        #expect(!failed[0].isMissing)
+        let knownEmpty = WorkloadISOMedia.attached(
+            ids: ["iso-gone"],
+            library: [],
+            libraryKnown: true,
+        )
+        #expect(knownEmpty[0].isMissing)
+        #expect(
+            WorkloadISOMedia.libraryTaskID(deviceID: "peer", reachable: false)
+                != WorkloadISOMedia.libraryTaskID(deviceID: "peer", reachable: true),
+        )
+        #expect(WorkloadISOMedia.libraryTaskID(deviceID: "peer", reachable: true).hasSuffix("/up"))
+        #expect(WorkloadISOMedia.libraryTaskID(deviceID: "peer", reachable: false).hasSuffix("/down"))
     }
 
     @Test func `iso attach uses home proxy for members`() throws {

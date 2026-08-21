@@ -528,17 +528,26 @@ struct WorkloadISOMediaItem: Identifiable, Hashable {
 }
 
 enum WorkloadISOMedia {
-    static func attached(ids: [String], library: [LibraryImage]) -> [WorkloadISOMediaItem] {
+    /// `libraryKnown` is false until GET /images succeeds; then missing IDs are real.
+    static func attached(
+        ids: [String],
+        library: [LibraryImage],
+        libraryKnown: Bool,
+    ) -> [WorkloadISOMediaItem] {
         ids.map { id in
             if let image = library.first(where: { $0.id == id }) {
                 return WorkloadISOMediaItem(id: id, name: image.name, isMissing: false)
             }
-            return WorkloadISOMediaItem(id: id, name: nil, isMissing: true)
+            return WorkloadISOMediaItem(id: id, name: nil, isMissing: libraryKnown)
         }
     }
 
     static func attachable(library: [LibraryImage], attachedIDs: [String]) -> [LibraryImage] {
         library.filter { $0.isReadyISO && !attachedIDs.contains($0.id) }
+    }
+
+    static func libraryTaskID(deviceID: String, reachable: Bool) -> String {
+        "\(deviceID)/\(reachable ? "up" : "down")"
     }
 }
 
