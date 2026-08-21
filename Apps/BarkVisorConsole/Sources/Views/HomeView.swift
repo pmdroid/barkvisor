@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(AppModel.self) private var model
+    @State private var homeCanCreate = false
 
     var body: some View {
         Group {
@@ -23,8 +24,12 @@ struct HomeView: View {
                 List {
                     Section(Copy.workloads) {
                         if model.homeRows.isEmpty {
-                            Text("No workloads on reachable Devices.")
-                                .foregroundStyle(.secondary)
+                            Text(
+                                canCreate
+                                    ? "No workloads on reachable Devices. Create one from a Library image."
+                                    : CreateWorkload.emptyLibraryCopy,
+                            )
+                            .foregroundStyle(.secondary)
                         } else {
                             ForEach(model.homeRows) { row in
                                 HomeWorkloadRowView(row: row)
@@ -54,7 +59,26 @@ struct HomeView: View {
                 .platformListStyle()
             }
         }
-        .refreshable { await model.refreshHome() }
+        .refreshable {
+            await model.refreshHome()
+            let ready = await model.anyReadyLibraryImage()
+            guard !Task.isCancelled else { return }
+            homeCanCreate = ready
+        }
+        .task(id: CreateWorkload.reachableDeviceKey(model.devices)) {
+            let ready = await model.anyReadyLibraryImage()
+            guard !Task.isCancelled else { return }
+            homeCanCreate = ready
+        }
+        .createWorkloadEntry(
+            allowsDevicePicker: true,
+            images: model.images,
+            enabled: canCreate,
+        )
+    }
+
+    private var canCreate: Bool {
+        homeCanCreate || CreateWorkload.hasReadyImage(model.images)
     }
 
     private var allUnreachable: Bool {

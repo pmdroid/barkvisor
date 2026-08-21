@@ -85,6 +85,19 @@ struct WorkloadDetailView: View {
 
             isoSection
 
+            if let url = model.connectedURL {
+                Section {
+                    Link(
+                        CreateWorkload.webEditCopy,
+                        destination: WorkloadWebLink.page(
+                            base: url,
+                            workloadID: workload.id,
+                            device: device,
+                        ),
+                    )
+                }
+            }
+
             if workload.canStart || workload.canStop || workload.canRestart {
                 Section {
                     if workload.canStart {

@@ -14,6 +14,7 @@ APP_SOURCES = [
     "Sources/Theme/Theme.swift",
     "Sources/Models/Models.swift",
     "Sources/Models/LibraryCatalog.swift",
+    "Sources/Models/CreateWorkload.swift",
     "Sources/Models/LoginURI.swift",
     "Sources/Models/LoginOfferQR.swift",
     "Sources/Models/StreamSupport.swift",
@@ -30,6 +31,7 @@ APP_SOURCES = [
     "Sources/Views/HomeView.swift",
     "Sources/Views/DevicesView.swift",
     "Sources/Views/WorkloadsView.swift",
+    "Sources/Views/CreateWorkloadSheet.swift",
     "Sources/Views/WorkloadDetailView.swift",
     "Sources/Views/SerialConsoleView.swift",
     "Sources/Views/DisplayView.swift",
@@ -40,6 +42,7 @@ APP_SOURCES = [
 TEST_SOURCES = [
     "Tests/APIDecodingTests.swift",
     "Tests/LibraryCatalogTests.swift",
+    "Tests/CreateWorkloadTests.swift",
     "Tests/WorkloadDetailTests.swift",
     "Tests/LocalStreamTests.swift",
     "Tests/SessionTests.swift",
@@ -278,6 +281,7 @@ def main() -> None:
             [
                 child_file("Sources/Models/Models.swift"),
                 child_file("Sources/Models/LibraryCatalog.swift"),
+                child_file("Sources/Models/CreateWorkload.swift"),
                 child_file("Sources/Models/LoginURI.swift"),
                 child_file("Sources/Models/LoginOfferQR.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
@@ -310,6 +314,7 @@ def main() -> None:
                 child_file("Sources/Views/HomeView.swift"),
                 child_file("Sources/Views/DevicesView.swift"),
                 child_file("Sources/Views/WorkloadsView.swift"),
+                child_file("Sources/Views/CreateWorkloadSheet.swift"),
                 child_file("Sources/Views/WorkloadDetailView.swift"),
                 child_file("Sources/Views/SerialConsoleView.swift"),
                 child_file("Sources/Views/DisplayView.swift"),
@@ -339,6 +344,7 @@ def main() -> None:
             [
                 child_file("Tests/APIDecodingTests.swift"),
                 child_file("Tests/LibraryCatalogTests.swift"),
+                child_file("Tests/CreateWorkloadTests.swift"),
                 child_file("Tests/WorkloadDetailTests.swift"),
                 child_file("Tests/LocalStreamTests.swift"),
                 child_file("Tests/SessionTests.swift"),
