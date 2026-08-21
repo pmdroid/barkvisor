@@ -53,7 +53,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |
-| Settings | URL, logout, about (`/api/system/about`), Add Device pairing code. Sign-in QR is issued in the web Settings, not here. |
+| Settings | URL, logout, about (`/api/system/about`), Add Device pairing code. On Mac, issue a phone sign-in QR (`POST /api/auth/login-offers`). Changing origin signs you out. |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 

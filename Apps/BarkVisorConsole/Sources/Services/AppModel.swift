@@ -91,6 +91,7 @@ final class AppModel {
     var networks: [NetworkRecord] = []
     var logs: [ServerLogEntry] = []
     var pairing: PairingIssue?
+    var loginOffer: LoginOfferIssue?
     var actionIDs: Set<String> = []
     var phoneTab: PhoneTab = .home
     var homeRows: [HomeWorkloadRow] = []
@@ -229,6 +230,7 @@ final class AppModel {
         devices = []
         totals = nil
         pairing = nil
+        loginOffer = nil
         about = nil
         logs = []
         phase = url == nil ? .connect : .login
@@ -268,6 +270,7 @@ final class AppModel {
         devices = []
         totals = nil
         pairing = nil
+        loginOffer = nil
         about = nil
         logs = []
         phase = .connect
@@ -370,6 +373,50 @@ final class AppModel {
         }
     }
 
+    func issueLoginOffer() async {
+        banner = nil
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
+        do {
+            let host = LoginOfferHost.advertisedHost(pickerSelection: nil, pickerAvailable: false)
+            let offer = try await requireClient().issueLoginOffer(advertisedHost: host)
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            loginOffer = offer
+        } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            handle(error)
+        }
+    }
+
+    func loadLoginOffer() async {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
+        do {
+            let offer = try await requireClient().loginOffer()
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            loginOffer = offer
+        } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            handle(error)
+        }
+    }
+
+    func revokeLoginOffer() async {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
+        do {
+            try await requireClient().revokeLoginOffer()
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            loginOffer = nil
+        } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            handle(error)
+        }
+    }
+
     func refreshAll() async throws {
         try await refreshDevices()
         async let scoped: Void = refreshDeviceScoped()
@@ -440,6 +487,17 @@ final class AppModel {
         sessionGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+    }
+
+    private func sessionStillCurrent(generation: Int, origin: URL?, access: String?) -> Bool {
+        LoginOfferSession.stillCurrent(
+            generation: generation,
+            currentGeneration: sessionGeneration,
+            origin: origin,
+            currentOrigin: sessionURL,
+            token: access,
+            currentToken: token,
+        )
     }
 
     private func clearSessionLocally() {
@@ -627,6 +685,7 @@ final class AppModel {
             logs = await optional { try await client.logs() } ?? logs
         case .settings:
             await loadPairing()
+            await loadLoginOffer()
             await refreshAbout()
         case .devices:
             _ = try? await refreshDevices()
