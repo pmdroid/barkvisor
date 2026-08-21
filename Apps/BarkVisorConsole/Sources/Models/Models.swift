@@ -194,6 +194,13 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     }
 }
 
+/// iOS Devices tab badge: count of paired Devices whose health is not reachable.
+enum DevicesTabBadge {
+    static func count(in devices: [HomeDeviceHealthSnapshot]) -> Int {
+        devices.filter { !$0.isReachable }.count
+    }
+}
+
 struct HomeDeviceHealthTotals: Decodable, Hashable {
     var devices: Int
     var reachable: Int

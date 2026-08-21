@@ -218,6 +218,33 @@ struct APIDecodingTests {
         #expect(merged.unreachable.isEmpty)
     }
 
+    @Test func devicesTabBadgeCountsUnreachablePairedDevices() {
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: true)
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: false)
+        let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        #expect(DevicesTabBadge.count(in: []) == 0)
+        #expect(DevicesTabBadge.count(in: [studio]) == 0)
+        #expect(DevicesTabBadge.count(in: [snapshot(hostId: "self", role: "self", reachable: false)]) == 1)
+        #expect(DevicesTabBadge.count(in: [studio, living]) == 1)
+        #expect(DevicesTabBadge.count(in: [studio, living, garage]) == 2)
+        #expect(DevicesTabBadge.count(in: [living, garage]) == 2)
+        let listed = HomeDevice(
+            hostId: "peer",
+            role: "member",
+            fingerprint: nil,
+            displayName: "Living Room",
+            agentHost: nil,
+            agentPort: 7778,
+            pairedAt: nil
+        )
+        #expect(DevicesTabBadge.count(in: [listed.asSnapshot]) == 0)
+        let union = HomeWorkloadUnion.build(
+            devices: [studio, living, garage],
+            loads: [studio.hostId: .success([])]
+        )
+        #expect(DevicesTabBadge.count(in: [studio, living, garage]) == union.unreachable.count)
+    }
+
     @Test func homeDeviceDirectoryDoesNotMaskNon404() throws {
         #expect(try HomeDeviceDirectory.resolution(healthStatus: nil, listStatus: nil, aboutSucceeded: true) == .health)
         #expect(try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: nil, aboutSucceeded: true) == .registry)
