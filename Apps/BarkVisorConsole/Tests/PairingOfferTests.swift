@@ -75,6 +75,18 @@ struct PairingOfferTests {
         #expect(PairingAdvertisedHost.issuedHost(fromURI) == "192.168.0.8")
     }
 
+    @Test func `picker restore after unchanged reload keeps custom DNS`() {
+        let live = offer(advertisedHost: "box.home.example", hosts: ["192.168.0.8"])
+        let reloaded = live
+        #expect(reloaded == live)
+        // SettingsView is destroyed on leave; @State starts empty while AppModel still holds `live`.
+        var picker = PairingAdvertisedHost.Picker(selectedHost: "", customHost: "")
+        picker = PairingAdvertisedHost.syncPicker(from: reloaded)
+        #expect(
+            picker == .init(selectedHost: PairingAdvertisedHost.customSentinel, customHost: "box.home.example"),
+        )
+    }
+
     @Test func `changing host reissues unless unchanged or custom pending`() {
         #expect(PairingAdvertisedHost.applyListedHost(PairingAdvertisedHost.customSentinel, currentIssued: "192.168.0.8") == .skip)
         #expect(PairingAdvertisedHost.applyListedHost("192.168.0.8", currentIssued: "192.168.0.8") == .skip)

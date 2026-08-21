@@ -187,8 +187,12 @@ struct SettingsView: View {
             } header: {
                 Text("Add a \(Copy.device)")
             }
-            .task { await model.loadPairing() }
-            .onChange(of: model.pairing) { _, offer in
+            .task {
+                await model.loadPairing()
+                // Same Hashable offer does not fire onChange; restore after load like web.
+                syncPicker(from: model.pairing)
+            }
+            .onChange(of: model.pairing, initial: true) { _, offer in
                 syncPicker(from: offer)
             }
         }
