@@ -247,6 +247,35 @@ struct WorkloadDetailTests {
         #expect(force?["method"] as? String == "force")
     }
 
+    @Test func `restart matches web running-only rule`() {
+        #expect(fixtureWorkload(state: "running").canRestart)
+        #expect(!fixtureWorkload(state: "stopped").canRestart)
+        #expect(!fixtureWorkload(state: "starting").canRestart)
+        #expect(!fixtureWorkload(state: "stopping").canRestart)
+        #expect(!fixtureWorkload(state: "error").canRestart)
+    }
+
+    @Test func `restart stays enabled on this device and reachable members`() {
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio")
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
+        let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        #expect(WorkloadRestart.isEnabled(device: studio, busy: false))
+        #expect(WorkloadRestart.isEnabled(device: living, busy: false))
+        #expect(!WorkloadRestart.isEnabled(device: garage, busy: false))
+        #expect(!WorkloadRestart.isEnabled(device: living, busy: true))
+        #expect(!WorkloadRestart.isEnabled(device: studio, busy: true))
+    }
+
+    @Test func `restart path uses local api or home proxy`() {
+        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:7777")!)
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio")
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
+        #expect(client.scoped("/vms/vm-1/restart", on: nil) == "/api/vms/vm-1/restart")
+        #expect(client.scoped("/vms/vm-1/restart", on: studio) == "/api/vms/vm-1/restart")
+        #expect(client.scoped("/vms/vm-1/restart", on: living) == "/api/home/devices/peer/v1/vms/vm-1/restart")
+        #expect(client.scoped("/vms/vm-1/start", on: living) == "/api/home/devices/peer/v1/vms/vm-1/start")
+    }
+
     @Test func `action key matches home row and falls back to bare ID`() {
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
         let haos = fixtureWorkload(id: "vm-1", name: "haos")
@@ -285,9 +314,18 @@ struct WorkloadDetailTests {
             state: "running",
             reachable: false,
         )
+        let acting = GuestInfoRefresh.taskID(
+            deviceID: "peer",
+            workloadID: "vm-1",
+            state: "running",
+            reachable: true,
+            busy: true,
+        )
         #expect(live != down)
-        #expect(live.hasSuffix("/up"))
-        #expect(down.hasSuffix("/down"))
+        #expect(live != acting)
+        #expect(live.hasSuffix("/up/idle"))
+        #expect(down.hasSuffix("/down/idle"))
+        #expect(acting.hasSuffix("/up/busy"))
     }
 
     private func snapshot(

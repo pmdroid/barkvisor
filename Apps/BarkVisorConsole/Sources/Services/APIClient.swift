@@ -30,7 +30,7 @@ struct APIClient {
 
     private static let encoder: JSONEncoder = .init()
 
-    /// Device-scoped Device APIs (VMs, metrics, start/stop).
+    /// Device-scoped Device APIs (VMs, metrics, start/stop/restart).
     /// `self` stays on `/api/...`. Members go through `/api/home/devices/{id}/v1/...`.
     func scoped(_ path: String, on device: HomeDeviceHealthSnapshot?) -> String {
         let trimmed = path.hasPrefix("/") ? path : "/\(path)"
@@ -184,6 +184,10 @@ struct APIClient {
             scoped("/vms/\(id)/stop", on: device),
             body: WorkloadStopBody(force: force, method: force ? "force" : "acpi"),
         )
+    }
+
+    func restartWorkload(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws {
+        try await post(scoped("/vms/\(id)/restart", on: device), body: EmptyJSON())
     }
 
     func guestInfo(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> GuestInfo {
