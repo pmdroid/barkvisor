@@ -59,8 +59,13 @@ struct HomeView: View {
                 .platformListStyle()
             }
         }
-        .refreshable { await model.refreshHome() }
-        .task { homeCanCreate = await model.anyReadyLibraryImage() }
+        .refreshable {
+            await model.refreshHome()
+            homeCanCreate = await model.anyReadyLibraryImage()
+        }
+        .task(id: CreateWorkload.reachableDeviceKey(model.devices)) {
+            homeCanCreate = await model.anyReadyLibraryImage()
+        }
         .createWorkloadEntry(
             allowsDevicePicker: true,
             images: model.images,

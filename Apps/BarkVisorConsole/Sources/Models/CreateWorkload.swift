@@ -24,13 +24,37 @@ enum CreateWorkload {
         images.contains(where: \.isReady)
     }
 
-    static func canSubmit(name: String, image: LibraryImage?) -> Bool {
-        guard let image, image.isReady else { return false }
+    static func canSubmit(name: String, image: LibraryImage?, loadingImages: Bool = false) -> Bool {
+        guard !loadingImages, let image, image.isReady else { return false }
         return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Sorted reachable Device ids. Home re-scans Library readiness when this changes.
+    static func reachableDeviceKey(_ devices: [HomeDeviceHealthSnapshot]) -> String {
+        devices.filter(\.isReachable).map(\.hostId).sorted().joined(separator: "\n")
+    }
+
+    /// Drop a cancelled or superseded GET /images so Create cannot POST another Device's image id.
+    static func shouldApplyLibraryLoad(loadID: Int, currentID: Int, cancelled: Bool) -> Bool {
+        !cancelled && loadID == currentID
+    }
+
     static func osFamily(for image: LibraryImage) -> String {
-        image.name.localizedCaseInsensitiveContains("windows") ? "windows" : "linux"
+        osFamily(fromName: image.name)
+    }
+
+    /// Web wizard picks Linux vs Windows explicitly. Native infers from the Library name,
+    /// including official installer names like `Win11_English_x64.iso` (no "windows" substring).
+    static func osFamily(fromName raw: String) -> String {
+        isWindowsImageName(raw) ? "windows" : "linux"
+    }
+
+    static func isWindowsImageName(_ raw: String) -> Bool {
+        let haystack = raw.lowercased()
+        if haystack.contains("windows") { return true }
+        // Win11_English_x64.iso, Win10_22H2, Win8.1, Win7, WinXP. Not virtio-win or *x64* Linux ISOs.
+        let pattern = #"(?:^|[^a-z0-9])win(?:dows)?[\s._-]*(?:11|10|8(?:\.1)?|7|xp|vista|server|nt|me|9x)"#
+        return haystack.range(of: pattern, options: .regularExpression) != nil
     }
 
     static func normalizedArch(_ raw: String) -> String {

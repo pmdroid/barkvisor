@@ -24,6 +24,46 @@ struct CreateWorkloadTests {
         #expect(!CreateWorkload.canSubmit(name: "box", image: images[0]))
         #expect(CreateWorkload.canSubmit(name: " box ", image: images[1]))
         #expect(!CreateWorkload.canSubmit(name: "   ", image: images[1]))
+        #expect(!CreateWorkload.canSubmit(name: "box", image: images[1], loadingImages: true))
+    }
+
+    @Test func `windows installer names are not classified as linux`() throws {
+        #expect(CreateWorkload.osFamily(fromName: "Windows 11") == "windows")
+        #expect(CreateWorkload.osFamily(fromName: "Win11_English_x64.iso") == "windows")
+        #expect(CreateWorkload.osFamily(fromName: "Win10_22H2_English_x64.iso") == "windows")
+        #expect(CreateWorkload.osFamily(fromName: "Win8.1_English_x64.iso") == "windows")
+        #expect(CreateWorkload.osFamily(fromName: "en-us_windows_11_consumer_x64.iso") == "windows")
+        #expect(CreateWorkload.osFamily(fromName: "Ubuntu 24.04") == "linux")
+        #expect(CreateWorkload.osFamily(fromName: "alpine-virt-3.23.3-aarch64.iso") == "linux")
+        #expect(CreateWorkload.osFamily(fromName: "Fedora-KDE-Live-x86_64.iso") == "linux")
+        #expect(CreateWorkload.osFamily(fromName: "virtio-win-0.1.240.iso") == "linux")
+
+        let installer = try CreateWorkload.body(
+            name: "winbox",
+            image: image(id: "iso-w", name: "Win11_English_x64.iso", imageType: "iso", arch: "x86_64"),
+            hostCPUCount: 8,
+        )
+        #expect(installer.osFamily == "windows")
+        #expect(installer.vmType == "windows-amd64")
+        #expect(installer.memoryMB == 4_096)
+        #expect(installer.diskSizeGB == 64)
+        #expect(installer.isoId == "iso-w")
+    }
+
+    @Test func `stale library fetch is not applied`() {
+        #expect(CreateWorkload.shouldApplyLibraryLoad(loadID: 2, currentID: 2, cancelled: false))
+        #expect(!CreateWorkload.shouldApplyLibraryLoad(loadID: 1, currentID: 2, cancelled: false))
+        #expect(!CreateWorkload.shouldApplyLibraryLoad(loadID: 2, currentID: 2, cancelled: true))
+    }
+
+    @Test func `reachable device key changes with membership`() {
+        let selfDevice = snapshot(hostId: "self", role: "self")
+        let member = snapshot(hostId: "peer-1", role: "member")
+        var down = snapshot(hostId: "peer-2", role: "member")
+        down.reachability = "unreachable"
+        #expect(CreateWorkload.reachableDeviceKey([selfDevice, member, down]) == "peer-1\nself")
+        #expect(CreateWorkload.reachableDeviceKey([selfDevice, member]) == "peer-1\nself")
+        #expect(CreateWorkload.reachableDeviceKey([selfDevice]) != CreateWorkload.reachableDeviceKey([selfDevice, member]))
     }
 
     @Test func `guest type comes from image arch not host`() {

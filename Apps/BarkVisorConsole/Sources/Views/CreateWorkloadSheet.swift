@@ -13,6 +13,7 @@ struct CreateWorkloadSheet: View {
     @State private var imageID = ""
     @State private var images: [LibraryImage] = []
     @State private var loadingImages = false
+    @State private var imageLoadID = 0
     @State private var creating = false
     @State private var localError: String?
 
@@ -113,38 +114,50 @@ struct CreateWorkloadSheet: View {
     }
 
     private var canSubmit: Bool {
-        CreateWorkload.canSubmit(name: name, image: selectedImage) && device != nil
+        CreateWorkload.canSubmit(name: name, image: selectedImage, loadingImages: loadingImages)
+            && device != nil
     }
 
     private func bootstrap() async {
         if deviceID.isEmpty {
             deviceID = device?.hostId ?? ""
         }
-        if images.isEmpty {
-            images = initialImages
-            if imageID.isEmpty {
-                imageID = CreateWorkload.ready(initialImages).first?.id ?? ""
-            }
-        }
     }
 
     private func loadImages() async {
+        imageLoadID += 1
+        let loadID = imageLoadID
         guard let device else {
             images = []
+            imageID = ""
+            loadingImages = false
             return
         }
-        loadingImages = true
-        defer { loadingImages = false }
-        let loaded = await model.libraryImages(on: device)
-        images = loaded
-        let ready = CreateWorkload.ready(loaded)
-        if !ready.contains(where: { $0.id == imageID }) {
-            imageID = ready.first?.id ?? ""
+        if loadID == 1 {
+            images = initialImages
+            imageID = CreateWorkload.ready(initialImages).first?.id ?? ""
+        } else {
+            images = []
+            imageID = ""
         }
+        loadingImages = true
+        defer {
+            if loadID == imageLoadID {
+                loadingImages = false
+            }
+        }
+        let loaded = await model.libraryImages(on: device)
+        guard CreateWorkload.shouldApplyLibraryLoad(
+            loadID: loadID,
+            currentID: imageLoadID,
+            cancelled: Task.isCancelled,
+        ) else { return }
+        images = loaded
+        imageID = CreateWorkload.ready(loaded).first?.id ?? ""
     }
 
     private func submit() async {
-        guard let device, let selectedImage else { return }
+        guard !loadingImages, let device, let selectedImage else { return }
         creating = true
         localError = nil
         defer { creating = false }
