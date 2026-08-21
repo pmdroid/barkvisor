@@ -38,6 +38,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ### VNC
 
 - Copy and paste text between this computer and a desktop guest (Paste / Copy on the VNC toolbar, or ⌘V / Ctrl+V). Linux guests need `spice-vdagent`; Windows guests need Spice guest tools. Restart the Workload after upgrade so QEMU adds the vdagent channel.
+- If this Device's QEMU was built without `qemu-vdagent` (packaged BarkVisor QEMU 10.2), start omits that chardev so Workloads such as HAOS still boot. Clipboard paste is then unavailable until a QEMU with SPICE ships.
 - Display to a member Device no longer drops after the first framebuffer. The Home hop buffer is 8 MiB so QEMU RFB updates are not treated as overflow.
 - Member Display hops the agent plane straight to the QEMU VNC socket. The extra loopback through this Device's `:7777` WebSocket was dropping the RFB banner.
 - Member Display no longer dies after the first picture. Tight framebuffer reads were sent as 16 KiB+ WebSocket frames; the Home hop (NIO client max 16 KiB) closed mid-update. The hop now chunks at 12 KiB.
