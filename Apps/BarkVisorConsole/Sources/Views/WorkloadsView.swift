@@ -13,8 +13,8 @@ struct WorkloadsView: View {
                     description: Text(
                         model.selectedDevice?.isReachable == false
                             ? "This \(Copy.device.lowercased()) is unreachable."
-                            : "Create workloads in the web UI, then they appear here."
-                    )
+                            : "Create workloads in the web UI, then they appear here.",
+                    ),
                 )
             } else {
                 List(visible) { workload in
@@ -45,7 +45,6 @@ struct WorkloadsView: View {
 struct WorkloadListRow: View {
     @Environment(AppModel.self) private var model
     var workload: Workload
-    @State private var pendingForceStop = false
 
     var body: some View {
         NavigationLink {
@@ -53,57 +52,28 @@ struct WorkloadListRow: View {
                 workloadID: workload.id,
                 deviceID: model.selectedDevice?.hostId ?? "self",
                 fallbackWorkload: workload,
-                fallbackDevice: model.selectedDevice ?? .placeholderSelf
+                fallbackDevice: model.selectedDevice ?? .placeholderSelf,
             )
         } label: {
             WorkloadRow(workload: workload)
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if workload.canStart {
-                Button("Start") {
-                    Task { await model.startWorkload(workload) }
-                }
-                .tint(.green)
-                .disabled(busy)
-            }
-            if workload.canStop {
-                Button("Stop") {
-                    Task { await model.stopWorkload(workload) }
-                }
-                .disabled(busy)
-                Button("Force Stop", role: .destructive) {
-                    pendingForceStop = true
-                }
-                .disabled(busy)
-            }
-        }
-        .contextMenu {
-            if workload.canStart {
-                Button("Start") {
-                    Task { await model.startWorkload(workload) }
-                }
-            }
-            if workload.canStop {
-                Button("Stop") {
-                    Task { await model.stopWorkload(workload) }
-                }
-                Button("Force Stop", role: .destructive) {
-                    pendingForceStop = true
-                }
-            }
-        }
-        .alert("Force stop \(workload.name)?", isPresented: $pendingForceStop) {
-            Button("Force Stop", role: .destructive) {
-                Task { await model.stopWorkload(workload, force: true) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The guest will not shut down cleanly.")
+        .workloadRowPowerActions(listActions) {
+            Task { await model.startWorkload(workload) }
+        } onStop: {
+            Task { await model.stopWorkload(workload) }
         }
     }
 
     private var busy: Bool {
         WorkloadRow.isBusy(workload, model: model)
+    }
+
+    private var listActions: [WorkloadListAction] {
+        WorkloadListActions.resolve(
+            workload: workload,
+            deviceReachable: model.selectedDevice?.isReachable == true,
+            inFlight: busy,
+        )
     }
 }
 
