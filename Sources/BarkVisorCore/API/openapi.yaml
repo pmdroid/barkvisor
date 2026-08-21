@@ -24,7 +24,7 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/apps` (apps reserved)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/system/remote-access`, `/api/home/settings/remote-access`, `/api/apps` (apps reserved)
     - internal — `/api/home/devices/{id}/v1/*` mTLS member proxy
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
@@ -899,6 +899,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LibrarySettings"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/remote-access:
+    get:
+      tags: [evolving]
+      operationId: getRemoteAccess
+      x-barkvisor-stability: evolving
+      summary: Tailscale detection and remote-access settings (PAS-89)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteAccessStatus"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/settings/remote-access:
+    put:
+      tags: [evolving]
+      operationId: updateRemoteAccess
+      x-barkvisor-stability: evolving
+      summary: Require tailnet for remote Home API and set advertise URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoteAccessUpdateRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteAccessStatus"
         default:
           $ref: "#/components/responses/Error"
 
@@ -2535,6 +2571,58 @@ components:
           nullable: true
           description: Paired Device host id, or empty to clear (internet only)
 
+    TailnetInfo:
+      type: object
+      additionalProperties: false
+      required: [available]
+      properties:
+        available:
+          type: boolean
+          description: True when `tailscale ip -4` returned a usable address
+        ip:
+          type: string
+          nullable: true
+        dnsName:
+          type: string
+          nullable: true
+          description: MagicDNS name from `tailscale status --json`, trailing dot stripped
+
+    WireGuardInfo:
+      type: object
+      additionalProperties: false
+      required: [configured]
+      properties:
+        configured:
+          type: boolean
+          description: Best-effort; a wgN interface or `wg show interfaces` is present
+
+    RemoteAccessStatus:
+      type: object
+      additionalProperties: false
+      required: [tailscale, wireguard, advertiseUrl, requireTailnetForRemote]
+      properties:
+        tailscale:
+          $ref: "#/components/schemas/TailnetInfo"
+        wireguard:
+          $ref: "#/components/schemas/WireGuardInfo"
+        advertiseUrl:
+          type: string
+          nullable: true
+          description: Host stamped on pairing/login QR when the operator does not pick another
+        requireTailnetForRemote:
+          type: boolean
+
+    RemoteAccessUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        requireTailnetForRemote:
+          type: boolean
+        advertiseUrl:
+          type: string
+          nullable: true
+          description: Host or URL; empty clears. Omitted leaves the stored value.
+
     LibraryDepotImage:
       type: object
       additionalProperties: false
@@ -2964,6 +3052,11 @@ components:
               type: string
         collectedAt:
           type: string
+        networking:
+          type: object
+          properties:
+            tailnet:
+              $ref: "#/components/schemas/TailnetInfo"
 
     AgentInfo:
       type: object

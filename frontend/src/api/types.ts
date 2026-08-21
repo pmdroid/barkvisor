@@ -642,6 +642,20 @@ export interface UpdateSettings {
   updateURL?: string | null
 }
 
+/** GET /api/system/remote-access (PAS-89) */
+export interface TailnetInfo {
+  available: boolean
+  ip?: string | null
+  dnsName?: string | null
+}
+
+export interface RemoteAccessStatus {
+  tailscale: TailnetInfo
+  wireguard: { configured: boolean }
+  advertiseUrl: string | null
+  requireTailnetForRemote: boolean
+}
+
 /** GET/PUT /api/system/library/settings */
 export interface LibrarySettings {
   imageDirectory: string

@@ -84,6 +84,20 @@ struct HostInventoryTests {
 
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(object?["hostId"] as? String == Self.testHostId)
+        let networking = object?["networking"] as? [String: Any]
+        #expect(networking?["tailnet"] != nil)
+    }
+
+    @Test func `inventory decodes when tailnet is omitted`() throws {
+        var object = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(snapshot()),
+        ) as? [String: Any]
+        var networking = object?["networking"] as? [String: Any]
+        networking?.removeValue(forKey: "tailnet")
+        object?["networking"] = networking
+        let data = try JSONSerialization.data(withJSONObject: object as Any)
+        let decoded = try JSONDecoder().decode(HostInventory.self, from: data)
+        #expect(decoded.networking.tailnet == nil)
     }
 
     @Test func `snapshot persists host id under data dir`() throws {

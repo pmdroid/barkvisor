@@ -1,6 +1,7 @@
 import Foundation
 
-/// Closed Wave 0 network modes. `tailnet` / `none` are explicitly deferred (PAS-89).
+/// Closed Wave 0 network modes. Guest `tailnet` / `none` stay deferred.
+/// Host remote access (detect Tailscale, advertise tailnet IP) is PAS-89.
 ///
 /// Product copy maps onto these API values — it is **not** a fourth mode:
 /// - `isolated` → Private
@@ -44,7 +45,7 @@ public enum NetworkMode: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// Wave 0 network modes (`nat` | `bridged` | `isolated`). Tailnet is deferred.
+/// Wave 0 network modes (`nat` | `bridged` | `isolated`). Guest tailnet is deferred.
 public enum NetworkCapability {
     public static let modes = NetworkMode.allCases.map(\.rawValue)
 

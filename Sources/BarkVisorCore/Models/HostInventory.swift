@@ -104,9 +104,12 @@ public struct StorageEntry: Codable, Sendable, Equatable {
 
 public struct NetworkingInfo: Codable, Sendable, Equatable {
     public let interfaces: [NetworkInterfaceInfo]
+    /// Present when Tailscale is installed and has a tailnet IPv4 (PAS-89).
+    public let tailnet: TailnetInfo?
 
-    public init(interfaces: [NetworkInterfaceInfo]) {
+    public init(interfaces: [NetworkInterfaceInfo], tailnet: TailnetInfo? = nil) {
         self.interfaces = interfaces
+        self.tailnet = tailnet
     }
 }
 

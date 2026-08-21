@@ -36,6 +36,8 @@ Installing `barkvisor` with `dpkg`/`apt`, `dnf`/`rpm`, or `makepkg`/`pacman` sho
 
 Optional for Windows guests with TPM: install your distro’s **`swtpm`** package (not a hard dependency).
 
+Optional for off-LAN access: install **Tailscale** (`tailscaled`) from your distro or [tailscale.com/download](https://tailscale.com/download). BarkVisor detects it and can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
+
 KVM group membership (after the package creates the `barkvisor` user):
 
 ```sh

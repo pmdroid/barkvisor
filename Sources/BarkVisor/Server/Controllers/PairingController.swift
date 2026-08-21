@@ -43,12 +43,17 @@ struct PairingController: RouteCollection {
     func issue(req: Vapor.Request) async throws -> PairingIssueResponse {
         _ = try req.requireUser
         let advertised = (try? req.content.decode(IssueRequest.self))?.advertisedHost
+        let advertiseUrl = try await req.db.read { db in
+            try RemoteAccessSettings.load(from: db).advertiseUrl
+        }
+        let hosts = RemoteAccessSettings.advertisedHosts(advertiseUrl: advertiseUrl)
         do {
             let response = try PairingService.issue(
                 PairingService.IssueInput(
                     dataDir: Config.dataDir,
                     hostId: Config.hostId,
                     advertisedHost: advertised,
+                    advertisedHosts: hosts,
                 ),
                 offers: offers,
             )
@@ -68,10 +73,15 @@ struct PairingController: RouteCollection {
     func current(req: Vapor.Request) async throws -> PairingIssueResponse {
         _ = try req.requireUser
         do {
+            let advertiseUrl = try await req.db.read { db in
+                try RemoteAccessSettings.load(from: db).advertiseUrl
+            }
+            let hosts = RemoteAccessSettings.advertisedHosts(advertiseUrl: advertiseUrl)
             return try PairingService.currentOffer(
                 PairingService.IssueInput(
                     dataDir: Config.dataDir,
                     hostId: Config.hostId,
+                    advertisedHosts: hosts,
                 ),
                 offers: offers,
             )
