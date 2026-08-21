@@ -71,6 +71,21 @@ See [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
 - **Library** — images live on each Device. You can point a Device at a custom Library directory and optionally designate a depot Device so others fetch images over the agent plane instead of the internet.
 - **Native console / phone** — allow Local Network so the app can reach the dashboard Device on `:7777`. It does not talk to members directly.
 
+## Remote access (Tailscale)
+
+BarkVisor does not ship Tailscale. Install [tailscaled](https://tailscale.com/download) on the Device (and on the phone or laptop you use away from home). When `tailscale ip -4` works, the Device advertises that address and MagicDNS name in inventory and in the pairing/sign-in host picker.
+
+On **Settings → Home**:
+
+- **Advertise URL** — optional host stamped on a new pairing or sign-in QR as `host=` when you do not pick another address. Accepts a LAN IP, CGNAT `100.64/10` address, or DNS name (MagicDNS). You can paste `http://box.ts.net:7777`; only the host is stored.
+- **Require Tailscale (or LAN) for the Home API** — off by default. When on, requests to this Device from a public address return 403. Loopback, RFC1918, IPv6 unique-local, and `100.64.0.0/10` (except `100.100.100.200`) stay allowed. The gate uses the TCP peer on `:7777`, not `X-Forwarded-For`. Do not put a local reverse proxy in front of BarkVisor if you rely on this checkbox.
+
+LAN management never needs a VPN.
+
+### WireGuard (docs only)
+
+There is no in-app WireGuard control plane. If you already run `wg0` (or `wg`), BarkVisor reports that a tunnel is present. Point **Advertise URL** at the address the other Device or phone can reach through that tunnel. Do not port-forward `:7777` to the public internet.
+
 ## Recovery
 
 If a Device is wiped, it is a new Device. Re-pair it with a fresh offer. Local Workloads on other Devices are unaffected.

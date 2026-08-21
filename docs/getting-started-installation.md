@@ -33,6 +33,8 @@ ssh user@remote-mac 'sudo installer -pkg ~/BarkVisor-<version>.pkg -target /'
 
 After installation, open `http://<remote-mac-ip>:7777` in a browser to complete the web-based setup.
 
+Off-LAN: install [Tailscale](https://tailscale.com/download) separately. BarkVisor detects `tailscale` and can advertise the tailnet address; it does not bundle the Tailscale app. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
+
 ### Gatekeeper and Notarization
 
 Release builds are code-signed with a Developer ID certificate and notarized with Apple. On first launch, macOS Gatekeeper will verify the notarization ticket. If you see a "cannot be opened" warning (e.g. from an unsigned development build), right-click the app and choose **Open**, then confirm.

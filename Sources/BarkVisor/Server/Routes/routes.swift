@@ -111,6 +111,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         ),
     )
     try protected.register(collection: LibrarySettingsController())
+    try protected.register(collection: RemoteAccessController())
 
     try protected.register(
         collection: MetricsController(
