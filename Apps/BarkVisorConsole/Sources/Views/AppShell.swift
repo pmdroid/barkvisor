@@ -33,6 +33,7 @@ struct PhoneAppShell: View {
             } label: {
                 Label(Copy.devices, systemImage: "externaldrive.connected.to.line.below")
             }
+            .badge(model.unreachablePairedDeviceCount)
             Tab(value: PhoneTab.settings) {
                 NavigationStack {
                     SettingsView()

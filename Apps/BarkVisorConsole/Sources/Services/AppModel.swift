@@ -122,6 +122,10 @@ final class AppModel {
         devices.first { $0.hostId == selectedDeviceID } ?? devices.first { $0.isSelf } ?? devices.first
     }
 
+    var unreachablePairedDeviceCount: Int {
+        DevicesTabBadge.count(in: devices)
+    }
+
     var connectedURL: URL? {
         sessionURL ?? (try? DeviceURL.normalize(serverURLText))
     }
@@ -327,12 +331,17 @@ final class AppModel {
     }
 
     func refreshHome() async {
-        _ = try? await refreshDevices()
-        await refreshHomeUnion()
+        await refreshHealthAndWorkloads()
     }
 
     func refreshPhoneDevices() async {
+        await refreshHealthAndWorkloads()
+    }
+
+    /// Home and Devices pull-to-refresh share the health report and workload union.
+    private func refreshHealthAndWorkloads() async {
         _ = try? await refreshDevices()
+        await refreshHomeUnion()
     }
 
     func openPhoneTab(_ tab: PhoneTab) async {
