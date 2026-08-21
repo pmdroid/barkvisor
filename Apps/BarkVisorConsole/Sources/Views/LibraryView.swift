@@ -7,7 +7,7 @@ struct LibraryView: View {
         List {
             Section {
                 if model.images.isEmpty {
-                    Text(Copy.emptyLibrary)
+                    Text(CreateWorkload.emptyLibraryCopy)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.images) { image in
@@ -42,6 +42,11 @@ struct LibraryView: View {
         .platformListStyle()
         .refreshable { await model.refreshLibrary() }
         .task { await model.refreshLibrary() }
+        .createWorkloadEntry(
+            allowsDevicePicker: false,
+            images: model.images,
+            enabled: model.selectedDevice?.isReachable == true && CreateWorkload.hasReadyImage(model.images),
+        )
     }
 
     private var libraryFooter: String {
@@ -125,7 +130,7 @@ struct DisksView: View {
                 ContentUnavailableView(
                     "No disks",
                     systemImage: "internaldrive",
-                    description: Text("Disks created for workloads appear here.")
+                    description: Text("Disks created for workloads appear here."),
                 )
             } else {
                 List(model.disks) { disk in
@@ -151,7 +156,7 @@ struct NetworksView: View {
                 ContentUnavailableView(
                     "No networks",
                     systemImage: "globe",
-                    description: Text("NAT, bridged, and isolated networks show up here.")
+                    description: Text("NAT, bridged, and isolated networks show up here."),
                 )
             } else {
                 List(model.networks) { network in
@@ -176,7 +181,7 @@ struct LogsView: View {
                 ContentUnavailableView(
                     "No log lines",
                     systemImage: "doc.text",
-                    description: Text("Logs stay on the connected Device.")
+                    description: Text("Logs stay on the connected Device."),
                 )
             } else {
                 List(Array(model.logs.enumerated()), id: \.offset) { _, entry in

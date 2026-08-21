@@ -194,6 +194,23 @@ struct APIClient {
         try await get(scoped("/vms", on: device))
     }
 
+    /// POST /api/vms (or Home proxy). 200 returns the VM; 202 returns `{ taskID, vm }`.
+    func createWorkload(_ body: CreateWorkload.Body, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
+        var request = try makeRequest(method: "POST", path: scoped("/vms", on: device), query: [])
+        request.httpBody = try Self.encoder.encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+        let (data, response) = try await perform(request, allowRefresh: true)
+        do {
+            if response.statusCode == 202 {
+                return try Self.decoder.decode(CreateWorkloadAccepted.self, from: data).vm
+            }
+            return try Self.decoder.decode(Workload.self, from: data)
+        } catch {
+            throw APIError.decoding(error.localizedDescription)
+        }
+    }
+
     func startWorkload(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws {
         try await post(scoped("/vms/\(id)/start", on: device), body: EmptyJSON())
     }
