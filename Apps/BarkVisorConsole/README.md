@@ -49,7 +49,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List for the selected Device; a row pushes Workload detail. Same Start / ACPI Stop swipe and context menu as Home. |
-| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
+| Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop / ACPI restart. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
 | Library / Disks / Networks / Logs | Read-only lists from the Device APIs |

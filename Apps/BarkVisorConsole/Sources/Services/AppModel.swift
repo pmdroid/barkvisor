@@ -300,6 +300,13 @@ final class AppModel {
         }
     }
 
+    func restartWorkload(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
+        let target = device ?? selectedDevice
+        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
+            try await client.restartWorkload(workload.id, on: resolved)
+        }
+    }
+
     func guestInfo(for workloadID: String, on device: HomeDeviceHealthSnapshot?) async -> GuestInfo? {
         await optional { try await requireClient().guestInfo(workloadID, on: device) }
     }

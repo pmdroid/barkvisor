@@ -211,6 +211,8 @@ struct Workload: Decodable, Identifiable, Hashable {
     var isRunning: Bool { state == "running" }
     var canStart: Bool { state == "stopped" || state == "error" }
     var canStop: Bool { state == "running" || state == "starting" }
+    /// Same as the web Workload detail Restart button: running only.
+    var canRestart: Bool { state == "running" }
 
     var guestOSFamily: String {
         vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
@@ -567,6 +569,14 @@ enum WorkloadActionKey {
     static func id(hostID: String?, workloadID: String) -> String {
         guard let hostID, !hostID.isEmpty else { return workloadID }
         return "\(hostID)/\(workloadID)"
+    }
+}
+
+/// Web Restart is shown for `state === 'running'` and disabled while a control
+/// is in flight or the member Device did not answer.
+enum WorkloadRestart {
+    static func isEnabled(device: HomeDeviceHealthSnapshot, busy: Bool) -> Bool {
+        !busy && (device.isSelf || device.isReachable)
     }
 }
 

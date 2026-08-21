@@ -123,14 +123,17 @@ enum GuestInfoRefresh {
     }
 
     /// SwiftUI `.task` identity. Reachability is part of the id so a member
-    /// going down stops polling and recovery starts it again.
+    /// going down stops polling and recovery starts it again. Busy is part of
+    /// the id so ACPI restart cancels a leftover 30s sleep — POST /restart
+    /// returns with the Workload running, so `state` often does not change.
     static func taskID(
         deviceID: String,
         workloadID: String,
         state: String,
         reachable: Bool,
+        busy: Bool = false,
     ) -> String {
-        "\(deviceID)/\(workloadID)/\(state)/\(reachable ? "up" : "down")"
+        "\(deviceID)/\(workloadID)/\(state)/\(reachable ? "up" : "down")/\(busy ? "busy" : "idle")"
     }
 }
 
