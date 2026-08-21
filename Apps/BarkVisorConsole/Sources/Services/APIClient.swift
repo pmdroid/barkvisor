@@ -286,8 +286,8 @@ struct APIClient {
         }
     }
 
-    func issuePairingCode() async throws -> PairingIssue {
-        try await post("/api/pairing/codes", body: EmptyJSON())
+    func issuePairingCode(advertisedHost: String? = nil) async throws -> PairingIssue {
+        try await post("/api/pairing/codes", body: IssuePairingRequest(advertisedHost: advertisedHost))
     }
 
     func revokePairingCode() async throws {
