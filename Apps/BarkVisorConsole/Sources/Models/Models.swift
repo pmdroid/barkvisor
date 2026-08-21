@@ -40,6 +40,31 @@ struct LoginRedeemRequest: Encodable {
     var code: String
 }
 
+struct LoginOfferIssueRequest: Encodable, Equatable {
+    var advertisedHost: String?
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let trimmed = advertisedHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty {
+            try container.encode(trimmed, forKey: .advertisedHost)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case advertisedHost
+    }
+}
+
+struct LoginOfferIssue: Decodable, Hashable {
+    var code: String
+    var expiresAt: String
+    var ttlSeconds: Int
+    var uri: String
+    var host: String
+    var port: Int
+}
+
 struct SetupStatus: Decodable {
     var complete: Bool
     var joined: Bool?

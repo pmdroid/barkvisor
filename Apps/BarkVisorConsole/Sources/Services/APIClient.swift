@@ -133,6 +133,25 @@ struct APIClient {
         return SessionTokens(token: response.token, refreshToken: response.refreshToken)
     }
 
+    func loginOffer() async throws -> LoginOfferIssue? {
+        do {
+            return try await get("/api/auth/login-offers")
+        } catch let APIError.http(status, _) where status == 404 {
+            return nil
+        }
+    }
+
+    func issueLoginOffer(advertisedHost: String? = nil) async throws -> LoginOfferIssue {
+        try await post(
+            "/api/auth/login-offers",
+            body: LoginOfferIssueRequest(advertisedHost: advertisedHost),
+        )
+    }
+
+    func revokeLoginOffer() async throws {
+        try await delete("/api/auth/login-offers")
+    }
+
     func logout(refreshToken: String?) async throws {
         try await post("/api/auth/logout", body: LogoutRequest(refreshToken: refreshToken))
     }
