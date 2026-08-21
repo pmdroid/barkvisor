@@ -45,10 +45,10 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | --- | --- |
 | Connect | Device URL |
 | Sign in | `POST /api/auth/login` or scan `barkvisor://login/v1` (`POST /api/auth/login-offers/redeem`) |
-| Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail |
+| Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail. Swipe and context menu Start / ACPI Stop use the same Device or Home-proxy APIs as detail. Force Stop stays on detail. |
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
-| Workloads (Mac) | List for the selected Device; a row pushes Workload detail |
+| Workloads (Mac) | List for the selected Device; a row pushes Workload detail. Same Start / ACPI Stop swipe and context menu as Home. |
 | Workload detail | Name, Device, state/health, guest OS/IP when known, start / ACPI stop / force stop. Console and Display open on This Device or a reachable member while the Workload is running or stopping |
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
@@ -57,7 +57,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
-Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Using a Workload (start/stop, Console, Display) matches the Home web UI on This Device and on a reachable member. Create VM is not in this app. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
+Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safari. Start and ACPI Stop from the list (and Console / Display from detail) match the Home web UI on This Device and on a reachable member. Force Stop stays on detail with a confirm. Create VM is not in this app. The session JWT is never placed in a stream URL, log, or the VNC web view — only the one-use ticket (and Home `session=` on a member tunnel) enters the web view.
 
 ## Tests
 

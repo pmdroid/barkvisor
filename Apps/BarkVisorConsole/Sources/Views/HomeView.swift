@@ -9,7 +9,7 @@ struct HomeView: View {
                 ContentUnavailableView(
                     "No Devices yet",
                     systemImage: "externaldrive.badge.questionmark",
-                    description: Text("Connect to a \(Copy.home) to see workloads.")
+                    description: Text("Connect to a \(Copy.home) to see workloads."),
                 )
             } else if !model.homeLoaded {
                 ProgressView("Loading workloads…")
@@ -17,7 +17,7 @@ struct HomeView: View {
                 ContentUnavailableView(
                     "Devices unreachable",
                     systemImage: "wifi.exclamationmark",
-                    description: Text("No reachable \(Copy.device.lowercased()) to list workloads from.")
+                    description: Text("No reachable \(Copy.device.lowercased()) to list workloads from."),
                 )
             } else {
                 List {
@@ -65,7 +65,6 @@ struct HomeView: View {
 struct HomeWorkloadRowView: View {
     @Environment(AppModel.self) private var model
     var row: HomeWorkloadRow
-    @State private var pendingForceStop = false
 
     var body: some View {
         NavigationLink {
@@ -85,51 +84,22 @@ struct HomeWorkloadRowView: View {
                 }
             }
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if row.workload.canStart {
-                Button("Start") {
-                    Task { await model.startWorkload(row.workload, on: row.device) }
-                }
-                .tint(.green)
-                .disabled(busy)
-            }
-            if row.workload.canStop {
-                Button("Stop") {
-                    Task { await model.stopWorkload(row.workload, on: row.device) }
-                }
-                .disabled(busy)
-                Button("Force Stop", role: .destructive) {
-                    pendingForceStop = true
-                }
-                .disabled(busy)
-            }
-        }
-        .contextMenu {
-            if row.workload.canStart {
-                Button("Start") {
-                    Task { await model.startWorkload(row.workload, on: row.device) }
-                }
-            }
-            if row.workload.canStop {
-                Button("Stop") {
-                    Task { await model.stopWorkload(row.workload, on: row.device) }
-                }
-                Button("Force Stop", role: .destructive) {
-                    pendingForceStop = true
-                }
-            }
-        }
-        .alert("Force stop \(row.workload.name)?", isPresented: $pendingForceStop) {
-            Button("Force Stop", role: .destructive) {
-                Task { await model.stopWorkload(row.workload, force: true, on: row.device) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The guest will not shut down cleanly.")
+        .workloadRowPowerActions(listActions) {
+            Task { await model.startWorkload(row.workload, on: row.device) }
+        } onStop: {
+            Task { await model.stopWorkload(row.workload, on: row.device) }
         }
     }
 
     private var busy: Bool {
         model.actionIDs.contains(row.id)
+    }
+
+    private var listActions: [WorkloadListAction] {
+        WorkloadListActions.resolve(
+            workload: row.workload,
+            deviceReachable: row.device.isReachable,
+            inFlight: busy,
+        )
     }
 }
