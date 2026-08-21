@@ -17,7 +17,8 @@ extension Color {
         switch key.lowercased() {
         case "running", "guest_ready", "reachable", "ready": .green
         case "failed", "error", "unreachable": .red
-        case "starting", "stopping", "provisioning", "deleting", "degraded", "warn", "warning": .orange
+        case "starting", "stopping", "provisioning", "deleting", "degraded", "warn", "warning",
+             "downloading", "decompressing", "uploading": .orange
         default: .secondary
         }
     }

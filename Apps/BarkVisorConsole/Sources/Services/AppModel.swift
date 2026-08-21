@@ -39,6 +39,7 @@ enum SessionPhase: Equatable {
 
 enum PhoneTab: String, Hashable {
     case home
+    case library
     case devices
     case settings
 }
@@ -87,6 +88,10 @@ final class AppModel {
     var stats: SystemStats?
     var about: SystemAbout?
     var images: [LibraryImage] = []
+    var catalogRepos: [ImageRepository] = []
+    var catalogImagesByRepo: [String: [CatalogImage]] = [:]
+    var catalogLoaded = false
+    var catalogFetchFailed = false
     var disks: [DiskRecord] = []
     var networks: [NetworkRecord] = []
     var logs: [ServerLogEntry] = []
@@ -107,6 +112,7 @@ final class AppModel {
     private var refreshTask: Task<SessionRefreshResult, Never>?
     private var sessionGeneration = 0
     private var scopedGeneration = 0
+    private var catalogGeneration = 0
     private var homeGeneration = 0
 
     var client: APIClient? {
@@ -124,6 +130,19 @@ final class AppModel {
 
     var unreachablePairedDeviceCount: Int {
         DevicesTabBadge.count(in: devices)
+    }
+
+    /// Mac: selected Device. iOS: This Device (`role=self`) unless a picker already exists.
+    var libraryDevice: HomeDeviceHealthSnapshot? {
+        LibraryCatalog.targetDevice(
+            devices: devices,
+            selectedID: selectedDeviceID,
+            preferSelf: LibraryCatalog.preferSelfDevice,
+        )
+    }
+
+    var catalogGroups: [CatalogGroup] {
+        LibraryCatalog.groups(repos: catalogRepos, imagesByRepo: catalogImagesByRepo)
     }
 
     var connectedURL: URL? {
@@ -286,6 +305,9 @@ final class AppModel {
         UserDefaults.standard.set(device.hostId, forKey: "selectedDeviceID")
         dropScopedState()
         await refreshDeviceScoped()
+        if route == .library {
+            await refreshLibrary()
+        }
     }
 
     func open(_ next: AppRoute) async {
@@ -336,6 +358,57 @@ final class AppModel {
         }
     }
 
+    func downloadCatalogImage(_ image: CatalogImage) async {
+        let id = "catalog:\(image.id)"
+        actionIDs.insert(id)
+        defer { actionIDs.remove(id) }
+        do {
+            _ = try await requireClient().downloadCatalogImage(image.id, on: libraryDevice)
+            await refreshLibraryImages()
+        } catch {
+            handle(error)
+        }
+    }
+
+    func refreshLibrary() async {
+        guard let client else { return }
+        let generation = catalogGeneration
+        let device = libraryDevice
+        async let imagesLoad = optional { try await client.images(on: device) }
+        async let reposLoad = optional { try await client.repositories(on: device) }
+        let nextImages = await imagesLoad
+        let nextRepos = await reposLoad
+        guard generation == catalogGeneration else { return }
+        if let nextImages { images = nextImages }
+        guard let repos = nextRepos else {
+            catalogLoaded = true
+            return
+        }
+        let imageRepos = LibraryCatalog.imageRepositories(repos)
+        catalogRepos = imageRepos
+        var loads: [String: CatalogRepoLoad] = [:]
+        await withTaskGroup(of: (String, CatalogRepoLoad).self) { group in
+            for repo in imageRepos {
+                group.addTask {
+                    do {
+                        let images = try await client.catalogImages(repositoryID: repo.id, on: device)
+                        return (repo.id, .fetched(images))
+                    } catch {
+                        return (repo.id, .failed)
+                    }
+                }
+            }
+            for await item in group {
+                loads[item.0] = item.1
+            }
+        }
+        guard generation == catalogGeneration else { return }
+        let merged = LibraryCatalog.mergeCatalogImages(previous: catalogImagesByRepo, loads: loads)
+        catalogImagesByRepo = merged.imagesByRepo
+        catalogFetchFailed = merged.fetchFailed
+        catalogLoaded = true
+    }
+
     func guestInfo(for workloadID: String, on device: HomeDeviceHealthSnapshot?) async -> GuestInfo? {
         await optional { try await requireClient().guestInfo(workloadID, on: device) }
     }
@@ -371,6 +444,8 @@ final class AppModel {
         switch tab {
         case .home:
             await refreshHome()
+        case .library:
+            await refreshLibrary()
         case .devices:
             await refreshPhoneDevices()
         case .settings:
@@ -625,7 +700,7 @@ final class AppModel {
         let device = selectedDevice
         async let w = optional { try await client.workloads(on: device) }
         async let s = optional { try await client.stats(on: device) }
-        async let i = optional { try await client.images(on: device) }
+        async let i = optional { try await client.images(on: libraryDevice) }
         async let d = optional { try await client.disks(on: device) }
         async let n = optional { try await client.networks(on: device) }
         let nextWorkloads = await w
@@ -643,9 +718,14 @@ final class AppModel {
 
     private func dropScopedState() {
         scopedGeneration += 1
+        catalogGeneration += 1
         workloads = []
         stats = nil
         images = []
+        catalogRepos = []
+        catalogImagesByRepo = [:]
+        catalogLoaded = false
+        catalogFetchFailed = false
         disks = []
         networks = []
     }
@@ -720,6 +800,8 @@ final class AppModel {
             await refreshAbout()
         case .devices:
             _ = try? await refreshDevices()
+        case .library:
+            await refreshLibrary()
         default:
             await refreshDeviceScoped()
         }
@@ -782,6 +864,13 @@ final class AppModel {
             }
         } else {
             banner = error.localizedDescription
+        }
+    }
+
+    private func refreshLibraryImages() async {
+        guard let client else { return }
+        if let next = await optional({ try await client.images(on: libraryDevice) }) {
+            images = next
         }
     }
 

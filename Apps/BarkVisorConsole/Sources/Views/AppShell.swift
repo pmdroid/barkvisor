@@ -25,6 +25,14 @@ struct PhoneAppShell: View {
             } label: {
                 Label(Copy.home, systemImage: "house")
             }
+            Tab(value: PhoneTab.library) {
+                NavigationStack {
+                    LibraryView()
+                        .navigationTitle(Copy.library)
+                }
+            } label: {
+                Label(Copy.library, systemImage: "opticaldisc")
+            }
             Tab(value: PhoneTab.devices) {
                 NavigationStack {
                     DevicesView()
