@@ -12,6 +12,7 @@ import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
+import { hasReachabilityAddresses } from '../utils/deviceAddresses'
 import { canFetchDeviceWorkloads } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
@@ -184,6 +185,20 @@ async function doStop() {
         </div>
       </div>
 
+      <div
+        v-if="reachable && hasReachabilityAddresses(device.addresses)"
+        class="address-panel"
+      >
+        <div v-if="device.addresses?.lan.length" class="address-group">
+          <span class="address-label">LAN</span>
+          <code v-for="ip in device.addresses?.lan ?? []" :key="'lan-' + ip">{{ ip }}</code>
+        </div>
+        <div v-if="device.addresses?.tailnet.length" class="address-group">
+          <span class="address-label">Tailnet</span>
+          <code v-for="ip in device.addresses?.tailnet ?? []" :key="'tailnet-' + ip">{{ ip }}</code>
+        </div>
+      </div>
+
       <p v-if="!canFetchDeviceWorkloads(device)" class="unreachable-copy">
         This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Workload counts are not shown.
         This {{ DEVICE_LABEL.toLowerCase() }} is still running locally.
@@ -332,6 +347,29 @@ async function doStop() {
 .device-chip.self {
   color: var(--green);
   background: var(--green-muted);
+}
+.address-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin: 0 0 20px;
+}
+.address-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.address-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.address-group code {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 .unreachable-copy,
 .list-error,

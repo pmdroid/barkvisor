@@ -87,6 +87,12 @@ Linux install guide: [Installation (Linux)](getting-started-linux.md).
 - **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the `barkvisor` user to group `kvm` when KVM is present, then restart the service.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
 
+## Home and pairing
+
+### Device unreachable off the LAN
+
+The stored member address is the pairing `host=` (LAN or tailnet). BarkVisor does not build a VPN mesh. Install Tailscale on both Devices, then pair using the tailnet IP shown on the Device page. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
+
 ## Onboarding issues
 
 ### Re-triggering setup

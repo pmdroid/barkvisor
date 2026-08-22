@@ -61,6 +61,10 @@ struct DeviceRow: View {
 
     private var subtitle: String {
         var parts = [device.isSelf ? "This \(Copy.device)" : Copy.device, device.platformLabel, device.workloadLine]
+        if device.isReachable, let addresses = device.addresses {
+            if let lan = addresses.lan.first { parts.append("LAN \(lan)") }
+            if let tailnet = addresses.tailnet.first { parts.append("Tailnet \(tailnet)") }
+        }
         if device.isReachable, let resources = device.resources {
             if let cpu = resources.cpuLoadPercent {
                 parts.append("CPU \(Int(cpu.rounded()))%")

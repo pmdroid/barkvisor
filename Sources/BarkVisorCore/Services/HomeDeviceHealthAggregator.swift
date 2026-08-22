@@ -60,6 +60,7 @@ public enum HomeDeviceHealthAggregator {
             features: HomeDeviceFeatureSummary(from: inventory.virtualization.features),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,
+            addresses: inventory.networking.addresses,
         )
     }
 
@@ -93,6 +94,7 @@ public enum HomeDeviceHealthAggregator {
             features: reachable ? facts?.features : nil,
             workloadCount: reachable ? facts?.workloadCount : nil,
             healthCounts: reachable ? facts?.healthCounts : nil,
+            addresses: reachable ? facts?.addresses : nil,
         )
     }
 

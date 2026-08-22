@@ -776,6 +776,12 @@ export interface HomeDeviceFeatureSummary {
   usbPassthrough: boolean
 }
 
+/** LAN vs tailnet Device IPs from inventory / health (PAS-63). */
+export interface DeviceReachabilityAddresses {
+  lan: string[]
+  tailnet: string[]
+}
+
 export interface HomeDeviceHealthSnapshot {
   hostId: string
   role: HomeDeviceRole | string
@@ -792,6 +798,7 @@ export interface HomeDeviceHealthSnapshot {
   features?: HomeDeviceFeatureSummary | null
   workloadCount?: number | null
   healthCounts?: Record<string, number> | null
+  addresses?: DeviceReachabilityAddresses | null
 }
 
 export interface HomePlacementScoreRequest {

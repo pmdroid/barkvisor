@@ -48,8 +48,8 @@ A Home that survives a Device dying, not only a Device that survives the Home go
 
 ## Later — network and access
 
-- Cross-Device private network
-- Tailscale or WireGuard so a Home works off the LAN (v1: detect Tailscale, advertise tailnet, optional require-tailnet; WireGuard is docs-only)
+- Cross-Device private network (guest overlay; not LAN/tailnet Device reachability)
+- Tailscale or WireGuard so a Home works off the LAN (v1 shipped: detect Tailscale, advertise tailnet, Device LAN/tailnet IP inventory; WireGuard is docs-only)
 
 - Friendly service URLs
 - Passkeys and two-factor login

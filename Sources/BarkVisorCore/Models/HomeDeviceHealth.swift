@@ -12,6 +12,8 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
     public var features: HomeDeviceFeatureSummary?
     public var workloadCount: Int?
     public var healthCounts: [String: Int]?
+    /// LAN and tailnet IPs from inventory (PAS-63). Nil when the Device did not answer.
+    public var addresses: DeviceReachabilityAddresses?
 
     public init(
         displayName: String? = nil,
@@ -21,6 +23,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
         features: HomeDeviceFeatureSummary? = nil,
         workloadCount: Int? = nil,
         healthCounts: [String: Int]? = nil,
+        addresses: DeviceReachabilityAddresses? = nil,
     ) {
         self.displayName = displayName
         self.collectedAt = collectedAt
@@ -29,6 +32,7 @@ public struct HomeDeviceLiveFacts: Sendable, Equatable {
         self.features = features
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
+        self.addresses = addresses
     }
 }
 
@@ -131,6 +135,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
     public var features: HomeDeviceFeatureSummary?
     public var workloadCount: Int?
     public var healthCounts: [String: Int]?
+    public var addresses: DeviceReachabilityAddresses?
 
     public init(
         hostId: String,
@@ -148,6 +153,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         features: HomeDeviceFeatureSummary? = nil,
         workloadCount: Int? = nil,
         healthCounts: [String: Int]? = nil,
+        addresses: DeviceReachabilityAddresses? = nil,
     ) {
         self.hostId = hostId
         self.role = role
@@ -164,6 +170,7 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         self.features = features
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
+        self.addresses = addresses
     }
 }
 

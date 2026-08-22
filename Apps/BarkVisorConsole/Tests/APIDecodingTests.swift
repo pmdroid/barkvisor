@@ -27,7 +27,8 @@ struct APIDecodingTests {
                 "cpuLoadPercent": 12.5
               },
               "workloadCount": 2,
-              "healthCounts": { "running": 1, "stopped": 1, "failed": 0 }
+              "healthCounts": { "running": 1, "stopped": 1, "failed": 0 },
+              "addresses": { "lan": ["192.168.0.8"], "tailnet": ["100.64.1.2"] }
             },
             {
               "hostId": "dev-peer",
@@ -54,6 +55,9 @@ struct APIDecodingTests {
         #expect(report.devices[0].isReachable)
         #expect(report.devices[0].title == "Studio Mac")
         #expect(report.devices[0].workloadLine == "2 workloads")
+        #expect(report.devices[0].addresses?.lan == ["192.168.0.8"])
+        #expect(report.devices[0].addresses?.tailnet == ["100.64.1.2"])
+        #expect(report.devices[1].addresses == nil)
         #expect(report.devices[1].isReachable == false)
         #expect(report.devices[1].workloadLine == "Health unavailable")
         #expect(report.totals.reachable == 1)

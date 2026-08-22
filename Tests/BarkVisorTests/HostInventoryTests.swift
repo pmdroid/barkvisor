@@ -100,6 +100,27 @@ struct HostInventoryTests {
         #expect(decoded.networking.tailnet == nil)
     }
 
+    @Test func `inventory decodes when addresses are omitted`() throws {
+        var object = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(snapshot()),
+        ) as? [String: Any]
+        var networking = object?["networking"] as? [String: Any]
+        networking?.removeValue(forKey: "addresses")
+        object?["networking"] = networking
+        let data = try JSONSerialization.data(withJSONObject: object as Any)
+        let decoded = try JSONDecoder().decode(HostInventory.self, from: data)
+        #expect(decoded.networking.addresses == .empty)
+    }
+
+    @Test func `snapshot reachability addresses omit loopback`() {
+        let inv = snapshot()
+        #expect(!inv.networking.addresses.lan.contains("127.0.0.1"))
+        #expect(!inv.networking.addresses.tailnet.contains("127.0.0.1"))
+        if let ip = inv.networking.tailnet?.ip, inv.networking.tailnet?.available == true {
+            #expect(inv.networking.addresses.tailnet.contains(ip))
+        }
+    }
+
     @Test func `snapshot persists host id under data dir`() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "host-inv-\(UUID().uuidString)",

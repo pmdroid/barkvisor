@@ -66,21 +66,29 @@ See [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
 
 ## After Devices are paired
 
-- **Dashboard** — Device cards show reachability and Workload counts.
+- **Dashboard** — Device cards show reachability and Workload counts. Open a Device to see its LAN and tailnet IPs.
 - **Create VM** — pick any reachable Device. Recommended is a suggestion; you can place anyway. See [Create a Workload](create-workload.md).
 - **Library** — images live on each Device. You can point a Device at a custom Library directory and optionally designate a depot Device so others fetch images over the agent plane instead of the internet.
 - **Native console / phone** — allow Local Network so the app can reach the dashboard Device on `:7777`. It does not talk to members directly.
 
 ## Remote access (Tailscale)
 
-BarkVisor does not ship Tailscale. Install [tailscaled](https://tailscale.com/download) on the Device (and on the phone or laptop you use away from home). When `tailscale ip -4` works, the Device advertises that address and MagicDNS name in inventory and in the pairing/sign-in host picker.
+BarkVisor does not ship Tailscale and does not build a WireGuard mesh or VXLAN overlay. Install [tailscaled](https://tailscale.com/download) on each Device you want reachable off the LAN (and on the phone or laptop you use away from home). When `tailscale ip -4` works, that address and MagicDNS name show up in inventory, on the Device page, and in the pairing/sign-in host picker.
+
+Each Device reports **LAN** (RFC1918 / IPv6 unique-local) and **tailnet** (`100.64.0.0/10` and Tailscale IPv6) addresses. The browser still talks only to the dashboard Device on `:7777`. Members are reached through the Home proxy; the stored member target is the `host=` you picked when pairing.
+
+To keep a Home of more than one Device working away from the LAN:
+
+1. Install Tailscale on every Device in the Home.
+2. Pair using the tailnet IP or MagicDNS name so `agentHost` is an address the other Device can still reach.
+3. If you already paired on a LAN IP, issue a new offer with the tailnet address and join again.
 
 On **Settings → Home**:
 
 - **Advertise URL** — optional host stamped on a new pairing or sign-in QR as `host=` when you do not pick another address. Accepts a LAN IP, CGNAT `100.64/10` address, or DNS name (MagicDNS). You can paste `http://box.ts.net:7777`; only the host is stored.
 - **Require Tailscale (or LAN) for the Home API** — off by default. When on, requests to this Device from a public address return 403. Loopback, RFC1918, IPv6 unique-local, and `100.64.0.0/10` (except `100.100.100.200`) stay allowed. The gate uses the TCP peer on `:7777`, not `X-Forwarded-For`. Do not put a local reverse proxy in front of BarkVisor if you rely on this checkbox.
 
-LAN management never needs a VPN.
+LAN management never needs a VPN. Guest NICs stay NAT, bridged, or isolated — this is Device reachability, not a guest overlay.
 
 ### WireGuard (docs only)
 

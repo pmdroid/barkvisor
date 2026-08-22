@@ -106,10 +106,36 @@ public struct NetworkingInfo: Codable, Sendable, Equatable {
     public let interfaces: [NetworkInterfaceInfo]
     /// Present when Tailscale is installed and has a tailnet IPv4 (PAS-89).
     public let tailnet: TailnetInfo?
+    /// Classified Device IPs for LAN / tailnet reachability (PAS-63).
+    public let addresses: DeviceReachabilityAddresses
 
-    public init(interfaces: [NetworkInterfaceInfo], tailnet: TailnetInfo? = nil) {
+    public init(
+        interfaces: [NetworkInterfaceInfo],
+        tailnet: TailnetInfo? = nil,
+        addresses: DeviceReachabilityAddresses = .empty,
+    ) {
         self.interfaces = interfaces
         self.tailnet = tailnet
+        self.addresses = addresses
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case interfaces, tailnet, addresses
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        interfaces = try container.decode([NetworkInterfaceInfo].self, forKey: .interfaces)
+        tailnet = try container.decodeIfPresent(TailnetInfo.self, forKey: .tailnet)
+        addresses = try container.decodeIfPresent(DeviceReachabilityAddresses.self, forKey: .addresses)
+            ?? .empty
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(interfaces, forKey: .interfaces)
+        try container.encode(tailnet, forKey: .tailnet)
+        try container.encode(addresses, forKey: .addresses)
     }
 }
 

@@ -9,6 +9,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ## Unreleased
 
 - Remote access (PAS-89): detect Tailscale if installed (`tailscale ip -4` / MagicDNS), advertise it on inventory and pairing/sign-in QRs, optional “require tailnet for remote Home API”, WireGuard detection only. BarkVisor does not bundle Tailscale.
+- Device IP inventory (PAS-63): health and `/api/agent/inventory` list LAN vs tailnet addresses so you can pick a reachable pairing host. Off-LAN Home uses Tailscale; this is not a WireGuard mesh or VXLAN.
 - SPA inventory: Workloads, disks, networks, and logs share one Home-by-Device fetch helper (last-known when a Device is unreachable).
 
 ### Workloads list
@@ -40,6 +41,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ### VNC
 
 - Copy and paste text between this computer and a desktop guest (Paste / Copy on the VNC toolbar, or ⌘V / Ctrl+V). Linux guests need `spice-vdagent`; Windows guests need Spice guest tools. Restart the Workload after upgrade so QEMU adds the vdagent channel.
+- If this Device's QEMU was built without `qemu-vdagent` (packaged BarkVisor QEMU 10.2), start omits that chardev so Workloads such as HAOS still boot. Clipboard paste is then unavailable until a QEMU with SPICE ships.
 - Display to a member Device no longer drops after the first framebuffer. The Home hop buffer is 8 MiB so QEMU RFB updates are not treated as overflow.
 - Member Display hops the agent plane straight to the QEMU VNC socket. The extra loopback through this Device's `:7777` WebSocket was dropping the RFB banner.
 - Member Display no longer dies after the first picture. Tight framebuffer reads were sent as 16 KiB+ WebSocket frames; the Home hop (NIO client max 16 KiB) closed mid-update. The hop now chunks at 12 KiB.

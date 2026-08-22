@@ -33,6 +33,9 @@ public enum HostInventoryService {
 
         let storage = [dataDirStorage(at: dataDir)]
 
+        let tailnet = cachedTailnet()
+        let addresses = HostAddressClassifier.collect(tailnet: tailnet)
+
         let qemuBridgeHelper = qemuBridgeHelperPresent()
         let features = VirtualizationFeatures(
             bridgedNetworking: bridgedNetworkingSupported(
@@ -75,7 +78,8 @@ public enum HostInventoryService {
             storage: storage,
             networking: NetworkingInfo(
                 interfaces: interfaces,
-                tailnet: cachedTailnet(),
+                tailnet: tailnet,
+                addresses: addresses,
             ),
             virtualization: VirtualizationInfo(
                 accelerator: accelerator,

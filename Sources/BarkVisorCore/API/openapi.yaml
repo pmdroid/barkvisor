@@ -2922,6 +2922,27 @@ components:
           type: object
           additionalProperties:
             type: integer
+        addresses:
+          $ref: "#/components/schemas/DeviceReachabilityAddresses"
+
+    DeviceReachabilityAddresses:
+      type: object
+      required: [lan, tailnet]
+      description: >
+        Device IPs classified for LAN vs tailnet reachability (PAS-63).
+        Loopback, link-local, public, and metadata are omitted.
+      properties:
+        lan:
+          type: array
+          items:
+            type: string
+          description: RFC1918 IPv4 and IPv6 unique-local (not Tailscale / metadata).
+        tailnet:
+          type: array
+          items:
+            type: string
+          description: >
+            CGNAT 100.64.0.0/10 and Tailscale IPv6 fd7a:115c:a1e0::/48.
 
     HomeDeviceFeatureSummary:
       type: object
@@ -3057,6 +3078,8 @@ components:
           properties:
             tailnet:
               $ref: "#/components/schemas/TailnetInfo"
+            addresses:
+              $ref: "#/components/schemas/DeviceReachabilityAddresses"
 
     AgentInfo:
       type: object

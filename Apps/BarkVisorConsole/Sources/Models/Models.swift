@@ -134,6 +134,11 @@ struct HomeDeviceResourceSummary: Decodable, Hashable {
     var cpuLoadPercent: Double?
 }
 
+struct DeviceReachabilityAddresses: Decodable, Hashable {
+    var lan: [String]
+    var tailnet: [String]
+}
+
 struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var hostId: String
     var role: String
@@ -149,6 +154,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var resources: HomeDeviceResourceSummary?
     var workloadCount: Int?
     var healthCounts: [String: Int]?
+    var addresses: DeviceReachabilityAddresses? = nil
 
     var id: String { hostId }
 
