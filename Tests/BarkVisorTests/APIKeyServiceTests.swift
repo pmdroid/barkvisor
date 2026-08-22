@@ -75,6 +75,49 @@ final class APIKeyServiceTests {
         #expect(error?.httpStatus == 400)
     }
 
+    @Test func `hmac hash does not use jwt secret`() {
+        let plaintext = "barkvisor_" + String(repeating: "ab", count: 32)
+        let jwt = "jwt-secret-material"
+        let api = "api-key-hmac-material"
+        let apiHash = APIKeyService.hmacHash(plaintext, secret: api)
+        let jwtHash = APIKeyService.hmacHash(plaintext, secret: jwt)
+        #expect(apiHash != jwtHash)
+        #expect(apiHash == APIKeyService.hmacHash(plaintext, secret: api))
+        #expect(apiHash.count == 64)
+    }
+
+    @Test func `create hashes with api key hmac secret not jwt secret`() async throws {
+        let hmac = "api-hmac-test-secret"
+        let jwt = "jwt-test-secret"
+        let bytes = [UInt8](repeating: 0x11, count: 32)
+        let result = try await APIKeyService.create(
+            name: "Hashed",
+            expiresIn: nil,
+            userId: "user-1",
+            db: dbPool,
+            bytes: bytes,
+            hmacSecret: hmac,
+        )
+        let hex = bytes.map { String(format: "%02x", $0) }.joined()
+        #expect(result.plaintext == "barkvisor_\(hex)")
+        #expect(result.apiKey.keyHash == APIKeyService.hmacHash(result.plaintext, secret: hmac))
+        #expect(result.apiKey.keyHash != APIKeyService.hmacHash(result.plaintext, secret: jwt))
+    }
+
+    @Test func `create ignores non 32 byte material and still yields 32 raw bytes`() async throws {
+        let result = try await APIKeyService.create(
+            name: "Short",
+            expiresIn: nil,
+            userId: "user-1",
+            db: dbPool,
+            bytes: [0x01, 0x02],
+            hmacSecret: "test-hmac",
+        )
+        #expect(result.plaintext.hasPrefix("barkvisor_"))
+        #expect(result.plaintext.count == 10 + 64)
+        #expect(result.plaintext != "barkvisor_0102")
+    }
+
     // MARK: - list
 
     @Test func `list API keys`() async throws {
@@ -111,6 +154,18 @@ final class APIKeyServiceTests {
             _ = try await APIKeyService.revoke(id: created.apiKey.id, userId: "user-2", db: dbPool)
         }
         #expect(error?.httpStatus == 403)
+    }
+
+    @Test func `revoke all deletes every key`() async throws {
+        _ = try await APIKeyService.create(
+            name: "A", expiresIn: nil, userId: "user-1", db: dbPool, hmacSecret: "s",
+        )
+        _ = try await APIKeyService.create(
+            name: "B", expiresIn: nil, userId: "user-1", db: dbPool, hmacSecret: "s",
+        )
+        let removed = try await APIKeyService.revokeAll(db: dbPool)
+        #expect(removed == 2)
+        #expect(try await APIKeyService.list(userId: "user-1", db: dbPool).isEmpty)
     }
 
     // MARK: - APIKey.isExpired

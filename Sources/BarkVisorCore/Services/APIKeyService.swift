@@ -17,10 +17,14 @@ public struct APIKeyCreateResult {
 }
 
 public enum APIKeyService {
-    /// Compute HMAC-SHA256 of an API key using the JWT secret, returned as a hex string.
+    /// Compute HMAC-SHA256 of an API key using the API-key HMAC secret, returned as a hex string.
     /// This is used both when creating keys (to store the hash) and when verifying (to look up by hash).
-    public static func hmacHash(_ plaintext: String) -> String {
-        let key = SymmetricKey(data: Data(Config.jwtSecret.utf8))
+    /// Must not use `Config.jwtSecret` — pairing overwrites that file (PAS-277).
+    public static func hmacHash(
+        _ plaintext: String,
+        secret: String = Config.apiKeyHmacSecret,
+    ) -> String {
+        let key = SymmetricKey(data: Data(secret.utf8))
         let mac = HMAC<SHA256>.authenticationCode(for: Data(plaintext.utf8), using: key)
         return mac.map { String(format: "%02x", $0) }.joined()
     }
@@ -36,21 +40,22 @@ public enum APIKeyService {
         expiresIn: String?,
         userId: String,
         db: DatabasePool,
+        bytes: [UInt8] = PlatformRandom.secureBytes(count: 32),
+        hmacSecret: String = Config.apiKeyHmacSecret,
     ) async throws -> APIKeyCreateResult {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             throw BarkVisorError.badRequest("Name is required")
         }
 
-        // Generate random key
-        let randomBytes = (0 ..< 32).map { _ in UInt8.random(in: 0 ... 255) }
+        let randomBytes = bytes.count == 32 ? bytes : PlatformRandom.secureBytes(count: 32)
         let hex = randomBytes.map { String(format: "%02x", $0) }.joined()
         let plaintext = "barkvisor_\(hex)"
         let prefix = String(plaintext.prefix(15))
 
         let expiresAt = try parseExpiry(expiresIn)
         let now = iso8601.string(from: Date())
-        let hash = hmacHash(plaintext)
+        let hash = hmacHash(plaintext, secret: hmacSecret)
 
         let apiKey = APIKey(
             id: UUID().uuidString,
@@ -93,6 +98,15 @@ public enum APIKeyService {
             try APIKey.deleteOne(db, key: id)
         }
         return key
+    }
+
+    /// Delete every API key. Pairing overwrites jwt-secret and rotates the
+    /// API-key HMAC secret; leftover hashes must not keep working (PAS-277).
+    @discardableResult
+    public static func revokeAll(db: DatabasePool) async throws -> Int {
+        try await db.write { db in
+            try APIKey.deleteAll(db)
+        }
     }
 
     /// Delete all expired API keys and return how many were removed.

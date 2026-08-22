@@ -60,4 +60,35 @@ struct ConfigTests {
         #expect(process >= 0)
         #expect(process <= host + 0.5)
     }
+
+    @Test func `persist jwt secret does not touch api key hmac secret`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("api-keep", to: dir)
+        try Config.persistJWTSecret("jwt-new", to: dir)
+        #expect(Config.loadJWTSecret(from: dir) == "jwt-new")
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == "api-keep")
+        #expect(Config.apiKeyHmacSecretFileName != Config.jwtSecretFileName)
+    }
+
+    @Test func `rotate api key hmac secret replaces file with 0600`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("before", to: dir)
+        try Config.persistJWTSecret("jwt-stays", to: dir)
+        let rotated = try Config.rotateAPIKeyHmacSecret(in: dir)
+        #expect(rotated != "before")
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == rotated)
+        #expect(Config.loadJWTSecret(from: dir) == "jwt-stays")
+
+        let attrs = try FileManager.default.attributesOfItem(
+            atPath: Config.apiKeyHmacSecretFile(in: dir).path,
+        )
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        #expect(perms & 0o777 == 0o600)
+    }
 }
