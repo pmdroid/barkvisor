@@ -31,6 +31,8 @@ public final class AgentTLSServer: @unchecked Sendable {
     private let vmState: (any VMStateQuerying)?
     private let consoleBuffers: ConsoleBufferManager?
     private var reloadTask: Task<Void, Never>?
+    private let lifecycle = NSLock()
+    private var isStopped = false
 
     public private(set) var boundPort: Int?
 
@@ -64,8 +66,11 @@ public final class AgentTLSServer: @unchecked Sendable {
     }
 
     public func stop() async {
-        reloadTask?.cancel()
-        reloadTask = nil
+        let task = markStopped()
+        task?.cancel()
+        if let task {
+            await task.value
+        }
         await shutdownListener()
     }
 
@@ -78,6 +83,7 @@ public final class AgentTLSServer: @unchecked Sendable {
     /// on-disk certs match in-memory material — so a failed remint/restore does
     /// not leave the agent plane offline until process restart.
     public func reloadFromDisk(now: Date = Date()) async throws {
+        guard !stopped else { return }
         guard let dataDir, let hostId else { return }
         let fresh = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId, now: now)
         let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
@@ -110,6 +116,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         let previousMaterial = material
         let previousPresented = presentationCertificatePEM
         await shutdownListener()
+        guard !stopped else { return }
         material = fresh
         presentationCertificatePEM = presented
         do {
@@ -120,21 +127,24 @@ public final class AgentTLSServer: @unchecked Sendable {
             )
             material = previousMaterial
             presentationCertificatePEM = previousPresented
-            do {
-                try await startListener()
-            } catch let restoreError {
-                Log.server.error(
-                    """
-                    Agent mTLS listener restore failed: \(restoreError.localizedDescription). \
-                    Agent plane is offline until the next successful reload. Local runtime continues.
-                    """,
-                )
+            if !stopped {
+                do {
+                    try await startListener()
+                } catch let restoreError {
+                    Log.server.error(
+                        """
+                        Agent mTLS listener restore failed: \(restoreError.localizedDescription). \
+                        Agent plane is offline until the next successful reload. Local runtime continues.
+                        """,
+                    )
+                }
             }
             throw remintError
         }
     }
 
     private func ensureListenerRunning() async throws {
+        guard !stopped else { return }
         guard app == nil else { return }
         do {
             try await startListener()
@@ -146,7 +156,47 @@ public final class AgentTLSServer: @unchecked Sendable {
         }
     }
 
+    private var stopped: Bool {
+        lifecycle.lock()
+        defer { lifecycle.unlock() }
+        return isStopped
+    }
+
+    private func markStopped() -> Task<Void, Never>? {
+        lifecycle.lock()
+        defer { lifecycle.unlock() }
+        isStopped = true
+        let task = reloadTask
+        reloadTask = nil
+        return task
+    }
+
+    /// Keep the listener if we are still running; otherwise the caller shuts it down.
+    private func adoptListener(
+        _ app: Vapor.Application,
+        boundPort: Int?,
+        listenPort: Int,
+    ) -> Bool {
+        lifecycle.lock()
+        defer { lifecycle.unlock() }
+        guard !isStopped else { return false }
+        self.app = app
+        self.boundPort = boundPort ?? listenPort
+        self.listenPort = boundPort ?? listenPort
+        return true
+    }
+
+    private func takeListener() -> Vapor.Application? {
+        lifecycle.lock()
+        defer { lifecycle.unlock() }
+        let app = self.app
+        self.app = nil
+        self.boundPort = nil
+        return app
+    }
+
     private func startListener() async throws {
+        guard !stopped else { return }
         if testStartListenerFailuresRemaining > 0 {
             testStartListenerFailuresRemaining -= 1
             throw AgentTLSBindError.testForcedFailure
@@ -161,21 +211,17 @@ public final class AgentTLSServer: @unchecked Sendable {
             try? await app.asyncShutdown()
             throw error
         }
-        self.app = app
-        if let local = app.http.server.shared.localAddress, let bound = local.port {
-            self.boundPort = bound
-            listenPort = bound
-        } else {
-            self.boundPort = listenPort
+        let bound = app.http.server.shared.localAddress?.port
+        if !adoptListener(app, boundPort: bound, listenPort: listenPort) {
+            try? await app.asyncShutdown()
+            return
         }
         Log.server.info("BarkVisor agent mTLS listener on port \(boundPort ?? listenPort)")
     }
 
     func shutdownListener() async {
-        guard let app else { return }
+        guard let app = takeListener() else { return }
         try? await app.asyncShutdown()
-        self.app = nil
-        self.boundPort = nil
     }
 
     private func startReloadLoopIfNeeded() {
@@ -187,7 +233,7 @@ public final class AgentTLSServer: @unchecked Sendable {
                 } catch {
                     break
                 }
-                guard !Task.isCancelled else { break }
+                guard !Task.isCancelled, self?.stopped != true else { break }
                 do {
                     try await self?.reloadFromDisk()
                 } catch {

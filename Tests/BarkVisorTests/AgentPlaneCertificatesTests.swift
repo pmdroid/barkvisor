@@ -87,4 +87,56 @@ struct AgentPlaneCertificatesTests {
                 == joiner.deviceCertificatePEM,
         )
     }
+
+    @Test func `home ca rotation keeps device key so issued pairing cert still presents`() throws {
+        let issuerDir = try isolatedDir()
+        let joinerDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let now = Date()
+        let future = now.addingTimeInterval(2 * 24 * 60 * 60)
+        let issuer = try HomeCAService.loadOrCreate(
+            dataDir: issuerDir,
+            hostId: UUID().uuidString,
+        )
+        let joinerId = UUID().uuidString
+        let joiner = try HomeCAService.loadOrCreate(
+            dataDir: joinerDir,
+            hostId: joinerId,
+            now: future,
+        )
+        let csr = try HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM)
+        let issued = try HomeCAService.issueDeviceCert(
+            hostId: joinerId,
+            csrPEM: csr,
+            material: issuer,
+        )
+        let receipt = PairingPeerReceipt(
+            peerHostId: issuer.hostId,
+            peerFingerprint: issuer.deviceFingerprint,
+            caCertificatePEM: issuer.caCertificatePEM,
+            caFingerprint: issuer.caFingerprint,
+            issuedCertificatePEM: issued.certificatePEM,
+            issuedFingerprint: issued.fingerprint,
+            pairedAt: "2026-08-14T00:00:00Z",
+        )
+        #expect(
+            AgentPlaneCertificates.presentationCertificatePEM(material: joiner, receipt: receipt)
+                == issued.certificatePEM,
+        )
+
+        let rotated = try HomeCAService.loadOrCreate(
+            dataDir: joinerDir,
+            hostId: joinerId,
+            now: now,
+        )
+        #expect(rotated.caFingerprint != joiner.caFingerprint)
+        #expect(rotated.deviceKeyPEM == joiner.deviceKeyPEM)
+        #expect(
+            AgentPlaneCertificates.presentationCertificatePEM(material: rotated, receipt: receipt)
+                == issued.certificatePEM,
+        )
+    }
 }

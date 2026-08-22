@@ -495,6 +495,56 @@ struct AgentTLSServerTests {
         }
     }
 
+    @Test func `stop prevents reloadFromDisk from restarting the listener`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        let server = AgentTLSServer(
+            material: first,
+            pins: PeerPinStore(dataDir: dir),
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        await server.stop()
+        #expect(server.boundPort == nil)
+
+        try await server.reloadFromDisk()
+        #expect(server.boundPort == nil)
+    }
+
+    @Test func `overlapping stop and reload leaves the listener down`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        let now = Date()
+        let createdAt = now.addingTimeInterval(-(HomeCAService.deviceValidity + 3_600))
+        let first = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId, now: createdAt)
+        let server = AgentTLSServer(
+            material: first,
+            pins: PeerPinStore(dataDir: dir),
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+        )
+        try await server.start()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try? await server.reloadFromDisk(now: now)
+            }
+            group.addTask {
+                await server.stop()
+            }
+        }
+        #expect(server.boundPort == nil)
+        try await server.reloadFromDisk(now: now)
+        #expect(server.boundPort == nil)
+    }
+
     @Test func `startDetached failure leaves local runtime independent`() async throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }

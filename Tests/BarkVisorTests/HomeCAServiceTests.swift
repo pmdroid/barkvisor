@@ -238,6 +238,7 @@ struct HomeCAServiceTests {
 
         #expect(first.caFingerprint == second.caFingerprint)
         #expect(first.deviceFingerprint != second.deviceFingerprint)
+        #expect(first.deviceKeyPEM == second.deviceKeyPEM)
         #expect(try persistedDeviceFingerprint(in: dir) == second.deviceFingerprint)
 
         let device = try Certificate(pemEncoded: second.deviceCertificatePEM)
@@ -266,6 +267,7 @@ struct HomeCAServiceTests {
 
         #expect(first.caFingerprint == second.caFingerprint)
         #expect(first.deviceFingerprint != second.deviceFingerprint)
+        #expect(first.deviceKeyPEM == second.deviceKeyPEM)
     }
 
     @Test func `device cert outside renewal window is reused`() throws {
@@ -293,11 +295,16 @@ struct HomeCAServiceTests {
 
         #expect(first.caFingerprint != second.caFingerprint)
         #expect(first.deviceFingerprint != second.deviceFingerprint)
+        #expect(first.deviceKeyPEM == second.deviceKeyPEM)
         let ca = try Certificate(pemEncoded: second.caCertificatePEM)
         let device = try Certificate(pemEncoded: second.deviceCertificatePEM)
         #expect(HomeCAService.isCurrentlyValid(ca, now: now))
         #expect(DeviceTrust.isIssuedByHomeCA(leaf: device, ca: ca))
         #expect(DeviceTrust.hostId(from: device) == hostId)
+        #expect(AgentPlaneCertificates.certificateMatchesKey(
+            second.deviceCertificatePEM,
+            keyPEM: first.deviceKeyPEM,
+        ))
     }
 
     @Test func `pending rotation journal is applied on load`() throws {
@@ -365,6 +372,7 @@ struct HomeCAServiceTests {
 
         #expect(first.caFingerprint != second.caFingerprint)
         #expect(first.deviceFingerprint != second.deviceFingerprint)
+        #expect(first.deviceKeyPEM == second.deviceKeyPEM)
         #expect(try persistedCAFingerprint(in: dir) == second.caFingerprint)
         #expect(try persistedDeviceFingerprint(in: dir) == second.deviceFingerprint)
 
@@ -398,6 +406,7 @@ struct HomeCAServiceTests {
 
         #expect(reloaded.caFingerprint != first.caFingerprint)
         #expect(reloaded.deviceFingerprint != first.deviceFingerprint)
+        #expect(reloaded.deviceKeyPEM == first.deviceKeyPEM)
 
         let ca = try Certificate(pemEncoded: reloaded.caCertificatePEM)
         let issuedCert = try Certificate(pemEncoded: issued.certificatePEM)

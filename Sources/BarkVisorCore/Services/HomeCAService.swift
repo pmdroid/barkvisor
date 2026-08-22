@@ -351,6 +351,9 @@ public enum HomeCAService {
 
     /// Mint a replacement Home CA and local leaf, then persist them together.
     /// A crash mid-write is recovered by ``completePendingRotation``.
+    ///
+    /// The existing `agent/device.key` is reused so a pairing-issued leaf
+    /// bound to that key keeps matching after ordinary Home CA renewal.
     private static func rotateCAAndLocalDevice(
         dataDir: URL,
         now: Date,
@@ -365,22 +368,62 @@ public enum HomeCAService {
             guard let rotationHostId = DeviceTrust.hostId(from: cert) else {
                 throw HomeCAError.corruptMaterial("device.crt SAN missing after Home CA rotation")
             }
-            let issued = try issueDeviceCert(
+            device = try issueLocalDeviceFiles(
                 hostId: rotationHostId,
-                csrPEM: nil,
-                caCert: created.certificate,
-                caKey: created.key,
+                ca: created,
+                dataDir: dataDir,
                 now: now,
             )
-            guard let keyPEM = issued.privateKeyPEM else {
-                throw HomeCAError.persistFailed("Issued local device cert without a private key")
-            }
-            device = DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
         } else {
             device = nil
         }
         try persistRotatedMaterial(dataDir: dataDir, ca: created, device: device)
         return created
+    }
+
+    /// Issue a local Device leaf, reusing `agent/device.key` when it exists.
+    private static func issueLocalDeviceFiles(
+        hostId: String,
+        ca: CAFiles,
+        dataDir: URL,
+        now: Date,
+    ) throws -> DeviceFiles {
+        let keyURL = agentDirectory(in: dataDir)
+            .appendingPathComponent(deviceKeyFileName)
+        var reusedKeyPEM: String?
+        var csrPEM: String?
+        if FileManager.default.fileExists(atPath: keyURL.path) {
+            let keyPEM: String
+            do {
+                keyPEM = try String(contentsOf: keyURL, encoding: .utf8)
+                _ = try Certificate.PrivateKey(pemEncoded: keyPEM)
+                csrPEM = try makeDeviceCSR(hostId: hostId, keyPEM: keyPEM)
+            } catch {
+                throw HomeCAError.corruptMaterial(
+                    "unable to reuse device.key for remint: \(error.localizedDescription)",
+                )
+            }
+            reusedKeyPEM = keyPEM
+        } else {
+            reusedKeyPEM = nil
+            csrPEM = nil
+        }
+        let issued = try issueDeviceCert(
+            hostId: hostId,
+            csrPEM: csrPEM,
+            caCert: ca.certificate,
+            caKey: ca.key,
+            now: now,
+        )
+        let keyPEM: String
+        if let generated = issued.privateKeyPEM {
+            keyPEM = generated
+        } else if let reusedKeyPEM {
+            keyPEM = reusedKeyPEM
+        } else {
+            throw HomeCAError.persistFailed("Issued local device cert without a private key")
+        }
+        return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
     }
 
     private static func persistCAFiles(_ ca: CAFiles, dataDir: URL, serial: Int) throws {
@@ -501,28 +544,24 @@ public enum HomeCAService {
         now: Date,
     ) throws -> DeviceFiles {
         let dir = agentDirectory(in: dataDir)
-        let issued = try issueDeviceCert(
+        let issued = try issueLocalDeviceFiles(
             hostId: hostId,
-            csrPEM: nil,
-            caCert: ca.certificate,
-            caKey: ca.key,
+            ca: ca,
+            dataDir: dataDir,
             now: now,
         )
-        guard let keyPEM = issued.privateKeyPEM else {
-            throw HomeCAError.persistFailed("Issued local device cert without a private key")
-        }
         try writeAtomic(
             Data(issued.certificatePEM.utf8),
             to: dir.appendingPathComponent(deviceCertificateFileName),
             permissions: 0o644,
         )
         try writeAtomic(
-            Data(keyPEM.utf8),
+            Data(issued.keyPEM.utf8),
             to: dir.appendingPathComponent(deviceKeyFileName),
             permissions: 0o600,
         )
         try incrementSerial(in: dataDir)
-        return DeviceFiles(certificatePEM: issued.certificatePEM, keyPEM: keyPEM)
+        return issued
     }
 
     static func isExpired(_ certificate: Certificate, now: Date) -> Bool {
