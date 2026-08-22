@@ -16,10 +16,39 @@ struct StreamTicketPolicyTests {
         #expect(StreamTicketPolicy.site(path: homeConsole) == .homeTunnel)
         #expect(StreamTicketPolicy.site(path: localVNC) == .ownerDevice)
         #expect(StreamTicketPolicy.site(path: localConsole) == .ownerDevice)
-        #expect(StreamTicketPolicy.site(path: logs) == .other)
+        #expect(StreamTicketPolicy.site(path: logs) == .ownerDeviceSSE)
         #expect(StreamTicketPolicy.isHomeConsoleTunnel(homeVNC))
         #expect(!StreamTicketPolicy.isHomeConsoleTunnel(localVNC))
         #expect(!StreamTicketPolicy.isHomeConsoleTunnel("/api/home/devices/peer-1/v1/vms/vm-1/start"))
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: homeVNC))
+        #expect(StreamTicketPolicy.spendsDeviceTicket(path: localVNC))
+        #expect(StreamTicketPolicy.spendsDeviceTicket(path: logs))
+    }
+
+    @Test func `owner device stream and SSE are allowlisted; control plane is not`() {
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/state") == .ownerDevice)
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/metrics/stream") == .ownerDevice)
+        #expect(StreamTicketPolicy.ownerDeviceWorkloadID("/api/vms/vm-1/vnc") == "vm-1")
+        #expect(StreamTicketPolicy.ownerDeviceWorkloadID("/api/vms/vm-1/state") == "vm-1")
+        #expect(
+            StreamTicketPolicy.ownerDeviceWorkloadID("/api/vms/vm-1/metrics/stream") == "vm-1",
+        )
+        #expect(StreamTicketPolicy.ownerDeviceWorkloadID("/api/logs/stream") == nil)
+        #expect(StreamTicketPolicy.site(path: "/api/images/img-1/progress") == .ownerDeviceSSE)
+        #expect(StreamTicketPolicy.site(path: "/api/tasks/task-1/stream") == .ownerDeviceSSE)
+        #expect(StreamTicketPolicy.site(path: "/api/vms") == .other)
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1") == .other)
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/start") == .other)
+        #expect(StreamTicketPolicy.site(path: "/api/vms/vm-1/metrics") == .other)
+        #expect(StreamTicketPolicy.site(path: "/api/logs") == .other)
+        #expect(StreamTicketPolicy.site(path: "/api/home/devices") == .other)
+        #expect(
+            StreamTicketPolicy.site(path: "/api/home/devices/peer-1/v1/vms/vm-1/state") == .other,
+        )
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: "/api/vms/vm-1/start"))
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: "/api/vms/vm-1/metrics"))
+        #expect(StreamTicketPolicy.spendsDeviceTicket(path: "/api/vms/vm-1/metrics/stream"))
+        #expect(!StreamTicketPolicy.isOwnerDeviceStream("/api/home/devices/peer-1/v1/vms/vm-1/vnc"))
     }
 
     @Test func `device ticket accepts noVNC token rewrite`() {
