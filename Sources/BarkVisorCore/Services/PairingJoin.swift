@@ -474,17 +474,21 @@ extension PairingService {
             throw PairingError.invalidPayload("Issuer returned incomplete admin identity")
         }
         do {
-            try db.write { db in
-                if var existing = try User.filter(User.Columns.username == username).fetchOne(db) {
-                    existing.password = hash
-                    try existing.update(db)
-                    return
-                }
+            enum WriteResult {
+                case ok
+                case mismatch
+            }
+            let result: WriteResult = try db.write { db in
                 if var existing = try User.fetchOne(db, key: id) {
-                    existing.username = username
+                    if existing.username != username {
+                        return .mismatch
+                    }
                     existing.password = hash
                     try existing.update(db)
-                    return
+                    return .ok
+                }
+                if try User.filter(User.Columns.username == username).fetchOne(db) != nil {
+                    return .mismatch
                 }
                 try User(
                     id: id,
@@ -492,6 +496,12 @@ extension PairingService {
                     password: hash,
                     createdAt: iso8601.string(from: now),
                 ).insert(db)
+                return .ok
+            }
+            if case .mismatch = result {
+                throw PairingError.invalidPayload(
+                    "Admin identity id and username do not match",
+                )
             }
         } catch let error as PairingError {
             throw error
