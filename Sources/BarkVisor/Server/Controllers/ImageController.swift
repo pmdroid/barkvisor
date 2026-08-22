@@ -51,6 +51,27 @@ struct DownloadImageRequest: Content, Validatable {
 
 struct ImageController: RouteCollection {
     let downloader: ImageDownloader
+    var dataDir: URL
+    var hostId: String
+    var devices: DeviceRegistry?
+    var openClient: (@Sendable (DeviceRecord) throws -> any LibraryDepotClient)?
+    var awaitPrefetchCopy: Bool
+
+    init(
+        downloader: ImageDownloader,
+        dataDir: URL = Config.dataDir,
+        hostId: String = Config.hostId,
+        devices: DeviceRegistry? = nil,
+        openClient: (@Sendable (DeviceRecord) throws -> any LibraryDepotClient)? = nil,
+        awaitPrefetchCopy: Bool = false,
+    ) {
+        self.downloader = downloader
+        self.dataDir = dataDir
+        self.hostId = hostId
+        self.devices = devices
+        self.openClient = openClient
+        self.awaitPrefetchCopy = awaitPrefetchCopy
+    }
 
     func boot(routes: any RoutesBuilder) throws {
         let images = routes.grouped("api", "images")
@@ -58,6 +79,7 @@ struct ImageController: RouteCollection {
         images.get(":id", use: get)
         images.delete(":id", use: delete)
         images.post("download", use: startDownload)
+        images.post("prefetch", use: prefetch)
         images.get(":id", "progress", use: progress)
 
         // Tus endpoints (PATCH receives 50 MB chunks)
@@ -128,6 +150,24 @@ struct ImageController: RouteCollection {
             ImageDownloadRequest(name: body.name, url: body.url, imageType: body.imageType, arch: body.arch),
             downloader: downloader, db: req.db,
         )
+        return ImageResponse(from: image)
+    }
+
+    @Sendable
+    func prefetch(req: Vapor.Request) async throws -> ImageResponse {
+        let body = try req.content.decode(ImagePrefetchRequest.self)
+        let opener = openClient ?? { record in
+            try LibraryDepotClients.make(record: record, dataDir: self.dataDir, hostId: self.hostId)
+        }
+        let service = LibraryPrefetch(
+            localHostId: hostId,
+            dataDir: dataDir,
+            devices: devices ?? DeviceRegistry(dataDir: dataDir),
+            openClient: opener,
+            awaitCopy: awaitPrefetchCopy,
+            progress: downloader,
+        )
+        let image = try await service.start(body, db: req.db)
         return ImageResponse(from: image)
     }
 

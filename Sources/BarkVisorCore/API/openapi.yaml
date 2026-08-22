@@ -24,7 +24,7 @@ info:
 
     **Tiers:**
     - stable — `/api/vms`, `/api/disks`, `/api/networks`, `/api/images`, `/api/auth`
-    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/system/remote-access`, `/api/home/settings/remote-access`, `/api/apps` (apps reserved)
+    - evolving — `/api/agent/*`, `/api/pairing/*`, `/api/home/devices`, `/api/home/devices/health`, `/api/home/placement/score`, `/api/home/library/images`, `/api/system/remote-access`, `/api/home/settings/remote-access`, `/api/apps` (apps reserved)
     - internal — `/api/home/devices/{id}/v1/*` mTLS member proxy
   x-barkvisor-api-version: 1
   x-barkvisor-version-header: X-BarkVisor-API-Version
@@ -804,6 +804,31 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/images/prefetch:
+    post:
+      tags: [evolving]
+      operationId: prefetchImage
+      x-barkvisor-stability: evolving
+      summary: Copy a ready Library image onto this Device from a paired Device
+      description: |
+        JWT. Bytes move on the agent plane. This Device stores its own file.
+        Not content-addressed storage. Returns a local `downloading` or `ready`
+        Library row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImagePrefetchRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/capabilities:
     get:
       tags: [evolving]
@@ -1215,6 +1240,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HomePlacementScoreResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/library/images:
+    get:
+      tags: [evolving]
+      operationId: listHomeLibraryImages
+      x-barkvisor-stability: evolving
+      summary: Home-wide Library image metadata
+      description: |
+        JWT. Merges `/api/images` from this Device and reachable members.
+        File blobs stay on each Device. Unreachable members are omitted.
+        This is metadata only — not content-addressed storage.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeLibraryList"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/library/images/prefetch:
+    post:
+      tags: [evolving]
+      operationId: prefetchHomeLibraryImage
+      x-barkvisor-stability: evolving
+      summary: Copy a Home Library image onto a picked Device
+      description: |
+        JWT. Target Device pulls bytes from a Device that already has a ready
+        copy, over the agent plane. The Home proxy never carries the blob.
+        Does not add a Device column to the Images page.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HomeLibraryPrefetchRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeLibraryPrefetchResponse"
         default:
           $ref: "#/components/responses/Error"
 
@@ -2654,6 +2723,128 @@ components:
         filename:
           type: string
           nullable: true
+
+    ImagePrefetchRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceHostId, sourceImageId, name, imageType, arch]
+      properties:
+        sourceHostId:
+          type: string
+        sourceImageId:
+          type: string
+        name:
+          type: string
+        imageType:
+          type: string
+        arch:
+          type: string
+        sourceUrl:
+          type: string
+          nullable: true
+        sha256:
+          type: string
+          nullable: true
+
+    HomeLibraryCopy:
+      type: object
+      additionalProperties: false
+      required: [hostId, imageId, status]
+      properties:
+        hostId:
+          type: string
+        imageId:
+          type: string
+        status:
+          type: string
+
+    HomeLibraryImage:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          libraryKey,
+          id,
+          name,
+          imageType,
+          arch,
+          status,
+          createdAt,
+          updatedAt,
+          copies,
+          sourceHostIds,
+        ]
+      properties:
+        libraryKey:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        imageType:
+          type: string
+        arch:
+          type: string
+        status:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+          nullable: true
+        sourceUrl:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        sha256:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        copies:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeLibraryCopy"
+        sourceHostIds:
+          type: array
+          items:
+            type: string
+
+    HomeLibraryList:
+      type: object
+      additionalProperties: false
+      required: [images]
+      properties:
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeLibraryImage"
+
+    HomeLibraryPrefetchRequest:
+      type: object
+      additionalProperties: false
+      required: [libraryKey, hostId]
+      properties:
+        libraryKey:
+          type: string
+        hostId:
+          type: string
+          description: Device that should store a local copy
+
+    HomeLibraryPrefetchResponse:
+      type: object
+      additionalProperties: false
+      required: [libraryKey, hostId, image]
+      properties:
+        libraryKey:
+          type: string
+        hostId:
+          type: string
+        image:
+          $ref: "#/components/schemas/Image"
 
     PairingIssue:
       type: object

@@ -93,6 +93,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/images/{id}", stability: .stable),
         Route(method: "DELETE", path: "/api/images/{id}", stability: .stable),
         Route(method: "POST", path: "/api/images/download", stability: .stable),
+        Route(method: "POST", path: "/api/images/prefetch", stability: .evolving),
 
         // Evolving — same schema on every host, may still change before 1.0
         Route(method: "GET", path: "/api/system/capabilities", stability: .evolving),
@@ -115,6 +116,8 @@ public enum APIContract {
         Route(method: "GET", path: "/api/home/devices", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices/health", stability: .evolving),
         Route(method: "POST", path: "/api/home/placement/score", stability: .evolving),
+        Route(method: "GET", path: "/api/home/library/images", stability: .evolving),
+        Route(method: "POST", path: "/api/home/library/images/prefetch", stability: .evolving),
         Route(method: "GET", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
         Route(method: "POST", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),
         Route(method: "PUT", path: "/api/home/devices/{id}/v1/{path}", stability: .internalAccess),

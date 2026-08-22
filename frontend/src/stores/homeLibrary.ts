@@ -62,6 +62,29 @@ function asImages(data: unknown): Image[] {
   return Array.isArray(data) ? (data as Image[]) : []
 }
 
+function asHomeCatalog(data: unknown): HomeImage[] | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const rows = (data as { images?: unknown }).images
+  if (!Array.isArray(rows)) return null
+  return rows.map((row) => normalizeHomeImage(row))
+}
+
+function normalizeHomeImage(row: unknown): HomeImage {
+  const img = row as Image & {
+    libraryKey?: string
+    copies?: HomeImageCopy[]
+    sourceHostIds?: string[]
+  }
+  const copies = Array.isArray(img.copies) ? img.copies : []
+  const key = img.libraryKey || homeImageKey(img)
+  return {
+    ...img,
+    libraryKey: key,
+    copies,
+    sourceHostIds: img.sourceHostIds ?? readySourceHostIds(copies),
+  }
+}
+
 function readySourceHostIds(copies: HomeImageCopy[]): string[] {
   return copies.filter((c) => c.status === 'ready').map((c) => c.hostId)
 }
@@ -302,11 +325,26 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     }
   }
 
+  async function prefetchToDevice(libraryKey: string, hostId: string): Promise<void> {
+    await api.post('/home/library/images/prefetch', { libraryKey, hostId })
+    await fetchImages()
+  }
+
   async function fetchImages(devices?: HomeDeviceHealthSnapshot[]): Promise<void> {
     const list = devices ?? useDevicesStore().devices
     imagesLoading.value = true
     imagesError.value = null
     try {
+      try {
+        const { data } = await api.get('/home/library/images')
+        const rows = asHomeCatalog(data)
+        if (rows) {
+          images.value = rows.sort((a, b) => a.name.localeCompare(b.name))
+          return
+        }
+      } catch {
+        // Older Device: fan-out per Device.
+      }
       const reachable = list.filter(canCallDeviceAPI)
       const targets = reachable.length > 0 ? reachable : list.filter((d) => d.role === 'self')
       const settled = await Promise.allSettled(
@@ -387,6 +425,7 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     resolveImageForCreate,
     fetchAll,
     fetchImages,
+    prefetchToDevice,
     sourceLine,
     defaultLabelFor,
   }

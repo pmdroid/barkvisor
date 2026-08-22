@@ -5,7 +5,7 @@ import Testing
 struct APIDecodingTests {
     private let decoder = JSONDecoder()
 
-    @Test func homeDeviceHealthReportDecodes() throws {
+    @Test func `home device health report decodes`() throws {
         let json = """
         {
           "devices": [
@@ -60,7 +60,7 @@ struct APIDecodingTests {
         #expect(report.totals.workloadCount == 2)
     }
 
-    @Test func workloadListUsesMemoryMBAndHealth() throws {
+    @Test func `workload list uses memory MB and health`() throws {
         let json = """
         [
           {
@@ -92,14 +92,46 @@ struct APIDecodingTests {
 
         let workloads = try decoder.decode([Workload].self, from: json)
         #expect(workloads.count == 2)
-        #expect(workloads[0].memoryMB == 2048)
+        #expect(workloads[0].memoryMB == 2_048)
         #expect(workloads[0].resolvedHealth == "guest_ready")
         #expect(workloads[0].canStop)
         #expect(workloads[1].resolvedHealth == "stopped")
         #expect(workloads[1].canStart)
     }
 
-    @Test func errorEnvelopeAndSetupStatusDecode() throws {
+    @Test func `home library list decodes without device column`() throws {
+        let json = """
+        {
+          "images": [
+            {
+              "libraryKey": "sha256:abc",
+              "id": "img-1",
+              "name": "ubuntu.iso",
+              "imageType": "iso",
+              "arch": "arm64",
+              "status": "ready",
+              "sizeBytes": 1024,
+              "sourceUrl": null,
+              "error": null,
+              "sha256": "abc",
+              "createdAt": "2026-01-01T00:00:00Z",
+              "updatedAt": "2026-01-01T00:00:00Z",
+              "copies": [
+                { "hostId": "desk", "imageId": "img-1", "status": "ready" }
+              ],
+              "sourceHostIds": ["desk"]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let list = try decoder.decode(HomeLibraryList.self, from: json)
+        #expect(list.images.count == 1)
+        #expect(list.images[0].libraryKey == "sha256:abc")
+        #expect(list.images[0].asLibraryImage.name == "ubuntu.iso")
+        #expect(list.images[0].asLibraryImage.id == "sha256:abc")
+    }
+
+    @Test func `error envelope and setup status decode`() throws {
         let errorJSON = """
         {"error":true,"code":"bad_request","reason":"setup_required","status":503}
         """.data(using: .utf8)!
@@ -112,7 +144,7 @@ struct APIDecodingTests {
         #expect(setup.joined == true)
     }
 
-    @Test func deviceURLRequiresSchemeAndNormalizesPort() throws {
+    @Test func `device URL requires scheme and normalizes port`() throws {
         #expect(throws: APIError.invalidURL) {
             try DeviceURL.normalize("192.168.1.20")
         }
@@ -122,30 +154,30 @@ struct APIDecodingTests {
         let url = try DeviceURL.normalize("https://192.168.1.20")
         #expect(url.scheme == "https")
         #expect(url.host == "192.168.1.20")
-        #expect(url.port == 7777)
+        #expect(url.port == 7_777)
         #expect(try DeviceURL.normalize("http://home.local:7777/").absoluteString == "http://home.local:7777")
         #expect(
             try DeviceURL.normalize("http://192.168.30.1:7777/login").absoluteString
-                == "http://192.168.30.1:7777"
+                == "http://192.168.30.1:7777",
         )
         #expect(
             try DeviceURL.normalize("http://192.168.30.1:7777/arbitrary/path").absoluteString
-                == "http://192.168.30.1:7777"
+                == "http://192.168.30.1:7777",
         )
     }
 
-    @Test func deviceURLMigratesLegacySchemeLessStoredValue() throws {
+    @Test func `device URL migrates legacy scheme less stored value`() throws {
         #expect(DeviceURL.migrateStored("192.168.1.20") == "http://192.168.1.20")
         #expect(DeviceURL.migrateStored("  home.local:7777 ") == "http://home.local:7777")
         #expect(DeviceURL.migrateStored("http://192.168.1.20") == "http://192.168.1.20")
         #expect(DeviceURL.migrateStored("https://home.local:7777") == "https://home.local:7777")
         #expect(
             try DeviceURL.normalize(DeviceURL.migrateStored("192.168.1.20")).absoluteString
-                == "http://192.168.1.20:7777"
+                == "http://192.168.1.20:7777",
         )
     }
 
-    @Test func deviceURLSameOriginIgnoresPath() throws {
+    @Test func `device URL same origin ignores path`() throws {
         let session = try DeviceURL.normalize("http://192.168.30.1:7777/login")
         let same = try DeviceURL.normalize("http://192.168.30.1:7777/settings")
         let otherHost = try DeviceURL.normalize("http://192.168.30.2:7777")
@@ -155,7 +187,7 @@ struct APIDecodingTests {
         #expect(!DeviceURL.sameOrigin(session, otherScheme))
     }
 
-    @Test func pairingExpiryTicksFromExpiresAt() throws {
+    @Test func `pairing expiry ticks from expires at`() {
         let expiresAt = "2026-08-16T22:10:00.000Z"
         let issued = iso("2026-08-16T22:00:00.000Z")
         #expect(PairingExpiry.remainingSeconds(expiresAt: expiresAt, now: issued) == 600)
@@ -165,29 +197,29 @@ struct APIDecodingTests {
         #expect(PairingExpiry.label(expiresAt: "not-a-date", now: issued) == "Expired")
     }
 
-    @Test func memberWorkloadLinksOpenDevicePage() throws {
+    @Test func `member workload links open device page`() throws {
         let base = try DeviceURL.normalize("http://192.168.30.1:7777")
         let selfDevice = snapshot(hostId: "self", role: "self")
         let member = snapshot(hostId: "dev-peer", role: "member")
         #expect(
             WorkloadWebLink.page(base: base, workloadID: "vm-1", device: selfDevice).absoluteString
-                == "http://192.168.30.1:7777/vms/vm-1"
+                == "http://192.168.30.1:7777/vms/vm-1",
         )
         #expect(
             WorkloadWebLink.console(base: base, workloadID: "vm-1", device: selfDevice).absoluteString
-                == "http://192.168.30.1:7777/vms/vm-1/vnc"
+                == "http://192.168.30.1:7777/vms/vm-1/vnc",
         )
         #expect(
             WorkloadWebLink.page(base: base, workloadID: "vm-1", device: member).absoluteString
-                == "http://192.168.30.1:7777/devices/dev-peer"
+                == "http://192.168.30.1:7777/devices/dev-peer",
         )
         #expect(
             WorkloadWebLink.console(base: base, workloadID: "vm-1", device: member).absoluteString
-                == "http://192.168.30.1:7777/devices/dev-peer"
+                == "http://192.168.30.1:7777/devices/dev-peer",
         )
     }
 
-    @Test func homeUnionMergesReachableWorkloadsAndKeepsUnreachableExplicit() {
+    @Test func `home union merges reachable workloads and keeps unreachable explicit`() {
         let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: true)
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
         let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
@@ -199,7 +231,7 @@ struct APIDecodingTests {
             loads: [
                 studio.hostId: .success([haos, nas]),
                 living.hostId: .failure("Device timed out"),
-            ] as [String: HomeWorkloadUnion.Load]
+            ] as [String: HomeWorkloadUnion.Load],
         )
 
         #expect(merged.rows.map(\.id) == ["self/vm-1", "self/vm-2"])
@@ -210,7 +242,7 @@ struct APIDecodingTests {
         #expect(!merged.rows.contains { $0.device.hostId == "down" })
     }
 
-    @Test func homeUnionDoesNotInventRowsWhenLoadIsMissing() {
+    @Test func `home union does not invent rows when load is missing`() {
         let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: true)
         let merged = HomeWorkloadUnion.build(devices: [studio], loads: [:])
         #expect(merged.rows.isEmpty)
@@ -218,7 +250,7 @@ struct APIDecodingTests {
         #expect(merged.unreachable.isEmpty)
     }
 
-    @Test func devicesTabBadgeCountsUnreachablePairedDevices() {
+    @Test func `devices tab badge counts unreachable paired devices`() {
         let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: true)
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: false)
         let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
@@ -234,22 +266,22 @@ struct APIDecodingTests {
             fingerprint: nil,
             displayName: "Living Room",
             agentHost: nil,
-            agentPort: 7778,
-            pairedAt: nil
+            agentPort: 7_778,
+            pairedAt: nil,
         )
         #expect(DevicesTabBadge.count(in: [listed.asSnapshot]) == 0)
         let union = HomeWorkloadUnion.build(
             devices: [studio, living, garage],
-            loads: [studio.hostId: .success([])]
+            loads: [studio.hostId: .success([])],
         )
         #expect(DevicesTabBadge.count(in: [studio, living, garage]) == union.unreachable.count)
     }
 
-    @Test func homeDeviceDirectoryDoesNotMaskNon404() throws {
+    @Test func `home device directory does not mask non 404`() throws {
         #expect(try HomeDeviceDirectory.resolution(healthStatus: nil, listStatus: nil, aboutSucceeded: true) == .health)
         #expect(try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: nil, aboutSucceeded: true) == .registry)
         #expect(
-            try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: 404, aboutSucceeded: true) == .preHome
+            try HomeDeviceDirectory.resolution(healthStatus: 404, listStatus: 404, aboutSucceeded: true) == .preHome,
         )
         #expect(throws: APIError.http(status: 500, reason: "Device health request failed")) {
             try HomeDeviceDirectory.resolution(healthStatus: 500, listStatus: nil, aboutSucceeded: true)
@@ -272,7 +304,7 @@ struct APIDecodingTests {
         hostId: String,
         role: String,
         title: String? = nil,
-        reachable: Bool = true
+        reachable: Bool = true,
     ) -> HomeDeviceHealthSnapshot {
         HomeDeviceHealthSnapshot(
             hostId: hostId,
@@ -280,7 +312,7 @@ struct APIDecodingTests {
             displayName: title ?? hostId,
             fingerprint: nil,
             agentHost: nil,
-            agentPort: 7777,
+            agentPort: 7_777,
             pairedAt: nil,
             reachability: reachable ? "ok" : "unreachable",
             reachabilityError: reachable ? nil : "Device is unreachable",
@@ -288,7 +320,7 @@ struct APIDecodingTests {
             platform: nil,
             resources: nil,
             workloadCount: nil,
-            healthCounts: nil
+            healthCounts: nil,
         )
     }
 
@@ -300,7 +332,7 @@ struct APIDecodingTests {
             state: "running",
             health: "running",
             cpuCount: 2,
-            memoryMB: 1024,
+            memoryMB: 1_024,
             bootDiskId: "disk-1",
             isoId: nil,
             isoIds: nil,
@@ -310,7 +342,7 @@ struct APIDecodingTests {
             createdAt: "2026-01-01T00:00:00Z",
             updatedAt: "2026-01-02T00:00:00Z",
             status: nil,
-            portForwards: nil
+            portForwards: nil,
         )
     }
 }

@@ -5,6 +5,7 @@ import type { HomeDeviceHealthSnapshot, Image, VMTemplate } from '../api/types'
 import { homeImageKey, useHomeLibraryStore } from './homeLibrary'
 
 const originalGet = api.get
+const originalPost = api.post
 
 function snapshot(
   partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>,
@@ -58,6 +59,7 @@ describe('homeLibrary store (PAS-34)', () => {
 
   afterEach(() => {
     api.get = originalGet
+    api.post = originalPost
   })
 
   test('unions templates by slug across Devices and skips unreachable members', async () => {
@@ -175,7 +177,11 @@ describe('homeLibrary store (PAS-34)', () => {
     const x86Key = homeImageKey(img({ id: 'peer-x86', name: 'debian.iso', arch: 'x86_64' }))
     expect(store.deviceHasLibraryImage(x86Key, self)).toBe(false)
     expect(store.deviceHasLibraryImage(x86Key, peer)).toBe(true)
-    expect(get.mock.calls.map((c) => c[0])).toEqual(['/images', '/home/devices/studio/v1/images'])
+    expect(get.mock.calls.map((c) => c[0])).toEqual([
+      '/home/library/images',
+      '/images',
+      '/home/devices/studio/v1/images',
+    ])
   })
 
   test('empty image library does not treat member Devices as having a local copy', () => {
@@ -307,5 +313,70 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.deviceHasImage(key, 'studio')).toBe(true)
     expect(store.imageForDevice(key, 'studio')?.id).toBe('peer-iso')
     expect(store.imagesError).toBeNull()
+  })
+
+  test('Home catalog payload is preferred over per-Device fan-out', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const key = 'sha256:abc'
+    const get = mock((url: string) => {
+      if (url === '/home/library/images') {
+        return Promise.resolve({
+          data: {
+            images: [
+              {
+                ...img({ id: 'peer-iso', name: 'ubuntu.iso', sha256: 'abc' }),
+                libraryKey: key,
+                copies: [
+                  { hostId: 'desk', imageId: 'local-iso', status: 'ready' },
+                  { hostId: 'studio', imageId: 'peer-iso', status: 'ready' },
+                ],
+                sourceHostIds: ['desk', 'studio'],
+              },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchImages([self, peer])
+    expect(store.images).toHaveLength(1)
+    expect(store.deviceHasImage(key, 'desk')).toBe(true)
+    expect(store.deviceHasImage(key, 'studio')).toBe(true)
+    expect(get.mock.calls.map((c) => c[0])).toEqual(['/home/library/images'])
+  })
+
+  test('prefetchToDevice posts then reloads the Home catalog', async () => {
+    const post = mock(() => Promise.resolve({ data: { libraryKey: 'sha256:abc', hostId: 'studio' } }))
+    const get = mock((url: string) => {
+      if (url === '/home/library/images') {
+        return Promise.resolve({
+          data: {
+            images: [
+              {
+                ...img({ id: 'peer-iso', name: 'ubuntu.iso', sha256: 'abc', status: 'downloading' }),
+                libraryKey: 'sha256:abc',
+                copies: [
+                  { hostId: 'desk', imageId: 'local-iso', status: 'ready' },
+                  { hostId: 'studio', imageId: 'peer-iso', status: 'downloading' },
+                ],
+                sourceHostIds: ['desk'],
+              },
+            ],
+          },
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.post = post as typeof api.post
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.prefetchToDevice('sha256:abc', 'studio')
+    expect(post.mock.calls[0]?.[0]).toBe('/home/library/images/prefetch')
+    expect(post.mock.calls[0]?.[1]).toEqual({ libraryKey: 'sha256:abc', hostId: 'studio' })
+    expect(store.deviceHasImage('sha256:abc', 'studio')).toBe(false)
+    expect(store.images[0]?.copies.some((c) => c.hostId === 'studio' && c.status === 'downloading')).toBe(true)
   })
 })

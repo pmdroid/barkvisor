@@ -250,6 +250,18 @@ struct APIClient {
         try await get(scoped("/images", on: device))
     }
 
+    func homeLibrary() async throws -> HomeLibraryList {
+        try await get("/api/home/library/images")
+    }
+
+    func libraryImages(on device: HomeDeviceHealthSnapshot?) async throws -> [LibraryImage] {
+        do {
+            return try await homeLibrary().images.map(\.asLibraryImage)
+        } catch {
+            return try await images(on: device)
+        }
+    }
+
     func image(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> LibraryImage {
         try await get(scoped("/images/\(id)", on: device))
     }

@@ -29,6 +29,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Configurable Library directory (new downloads; existing files are not migrated).
 - Optional depot Device: on a local miss, fetch image bytes over the agent plane, verify checksum, then store locally. Depot down falls back to the internet.
 - Catalog pins use dated Ubuntu snapshot URLs so checksums stay stable.
+- Home Library lists image metadata from every Device. Prefetch copies the file onto a picked Device. Blobs stay local.
 
 ### Worker-only Device
 

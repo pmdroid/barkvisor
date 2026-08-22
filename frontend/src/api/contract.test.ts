@@ -70,6 +70,9 @@ describe('API contract (PAS-78)', () => {
       '/api/home/devices',
       '/api/home/devices/health',
       '/api/home/placement/score',
+      '/api/home/library/images',
+      '/api/home/library/images/prefetch',
+      '/api/images/prefetch',
     ]) {
       expect(yaml).toContain(`  ${path}:`)
     }

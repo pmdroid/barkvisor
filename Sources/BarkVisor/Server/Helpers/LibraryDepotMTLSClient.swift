@@ -77,6 +77,22 @@ enum LibraryDepotClients {
         return AgentLibraryDepotClient(record: record, materialClient: client)
     }
 
+    static func prefetch(
+        dataDir: URL = Config.dataDir,
+        hostId: String = Config.hostId,
+        downloader: ImageDownloader? = nil,
+    ) -> LibraryPrefetch {
+        LibraryPrefetch(
+            localHostId: hostId,
+            dataDir: dataDir,
+            devices: DeviceRegistry(dataDir: dataDir),
+            openClient: { record in
+                try LibraryDepotClients.make(record: record, dataDir: dataDir, hostId: hostId)
+            },
+            progress: downloader,
+        )
+    }
+
     static func acquire(
         dataDir: URL = Config.dataDir,
         hostId: String = Config.hostId,

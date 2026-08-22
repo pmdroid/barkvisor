@@ -400,7 +400,7 @@ final class AppModel {
         guard let client else { return }
         let generation = catalogGeneration
         let device = libraryDevice
-        async let imagesLoad = optional { try await client.images(on: device) }
+        async let imagesLoad = optional { try await client.libraryImages(on: device) }
         async let reposLoad = optional { try await client.repositories(on: device) }
         let nextImages = await imagesLoad
         let nextRepos = await reposLoad
@@ -753,7 +753,7 @@ final class AppModel {
         let device = selectedDevice
         async let w = optional { try await client.workloads(on: device) }
         async let s = optional { try await client.stats(on: device) }
-        async let i = optional { try await client.images(on: libraryDevice) }
+        async let i = optional { try await client.libraryImages(on: libraryDevice) }
         async let d = optional { try await client.disks(on: device) }
         async let n = optional { try await client.networks(on: device) }
         let nextWorkloads = await w
@@ -922,7 +922,7 @@ final class AppModel {
 
     private func refreshLibraryImages() async {
         guard let client else { return }
-        if let next = await optional({ try await client.images(on: libraryDevice) }) {
+        if let next = await optional({ try await client.libraryImages(on: libraryDevice) }) {
             images = next
         }
     }

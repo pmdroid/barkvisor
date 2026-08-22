@@ -100,6 +100,11 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             vmManager: deps.vmManager, healthProbes: deps.healthProbes,
         ),
     )
+    try protected.register(
+        collection: HomeLibraryController(
+            prefetch: LibraryDepotClients.prefetch(downloader: deps.imageDownloader),
+        ),
+    )
     try protected.register(collection: SystemAboutController())
     try protected.register(collection: SystemHostController())
     try protected.register(collection: SystemBridgeController())

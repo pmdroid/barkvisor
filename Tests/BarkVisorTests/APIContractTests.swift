@@ -184,6 +184,9 @@ struct APIContractTests {
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices" })
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices/health" })
         #expect(APIContract.routes.contains { $0.path == "/api/home/placement/score" })
+        #expect(APIContract.routes.contains { $0.path == "/api/home/library/images" })
+        #expect(APIContract.routes.contains { $0.path == "/api/home/library/images/prefetch" })
+        #expect(APIContract.routes.contains { $0.path == "/api/images/prefetch" })
         #expect(APIContract.routes.contains { $0.path == "/api/home/devices/{id}/v1/{path}" })
     }
 

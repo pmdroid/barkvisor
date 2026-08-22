@@ -48,3 +48,10 @@ extension HomePlacementScoreRequest: Content {}
 extension HomePlacementScoreResponse: Content {}
 extension HomePlacementCandidate: Content {}
 extension HomePlacementReason: Content {}
+extension HomeLibraryDeviceImage: Content {}
+extension HomeLibraryCopy: Content {}
+extension HomeLibraryImage: Content {}
+extension HomeLibraryList: Content {}
+extension HomeLibraryPrefetchRequest: Content {}
+extension HomeLibraryPrefetchResponse: Content {}
+extension ImagePrefetchRequest: Content {}
