@@ -105,8 +105,8 @@ public enum LinuxHostNetwork {
         return false
     }
 
-    /// `true`/`false` when `path` is readable; `nil` if the file is missing or unreadable
-    /// (fail open — do not invent a denial).
+    /// `true`/`false` when `path` is readable; `nil` if the file is missing or unreadable.
+    /// Persist and QEMU start treat `nil` as deny (`bridgeACLPermits`).
     public static func bridgeACLDecision(_ name: String, at path: String = defaultBridgeACLPath)
         -> Bool? {
         guard FileManager.default.isReadableFile(atPath: path),
@@ -115,6 +115,12 @@ public enum LinuxHostNetwork {
             return nil
         }
         return bridgeACLAllows(name, fileContents: contents)
+    }
+
+    /// Fail-closed permit check. Missing or unreadable ACL is deny (PAS-278; matches UI).
+    public static func bridgeACLPermits(_ name: String, at path: String = defaultBridgeACLPath)
+        -> Bool {
+        bridgeACLDecision(name, at: path) == true
     }
 
     /// Validate that `name` is usable as QEMU bridge backend target.
