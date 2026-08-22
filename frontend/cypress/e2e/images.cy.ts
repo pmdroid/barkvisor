@@ -14,6 +14,7 @@ describe('Image Library', () => {
     cy.get('body').then(($b) => {
       if ($b.find('table').length) {
         cy.get('table thead th').should('contain', 'Name')
+        cy.get('table thead th').should('contain', 'Device')
         cy.get('table thead th').should('contain', 'Type')
         cy.get('table thead th').should('contain', 'Arch')
         cy.get('table thead th').should('contain', 'Size')

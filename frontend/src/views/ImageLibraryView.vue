@@ -3,9 +3,12 @@ import { apiErrorMessage } from '../api/errors'
 import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
 import { useImageStore } from '../stores/images'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useDevicesStore } from '../stores/devices'
+import { useHomeLibraryStore, homeImageKey, type HomeImage } from '../stores/homeLibrary'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -19,9 +22,15 @@ import {
   resolveImageArch,
   type ImageArch,
 } from '../utils/imageArch'
+import {
+  libraryImageCopyOnDevice,
+  readyLibraryImageDeviceChips,
+} from '../utils/libraryImageDevices'
 
 const store = useImageStore()
 const caps = useCapabilitiesStore()
+const devicesStore = useDevicesStore()
+const homeLibrary = useHomeLibraryStore()
 
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 
@@ -53,38 +62,117 @@ let currentUpload: tus.Upload | null = null
 const downloadProgress = reactive<Record<string, { percent: number; bytesReceived: number; totalBytes: number | null; status: string }>>({})
 const progressStreams: Record<string, ReturnType<typeof useImageProgress>> = {}
 
+function subscribeCopyProgress(imageId: string) {
+  if (progressStreams[imageId]) return
+  const stream = useImageProgress()
+  progressStreams[imageId] = stream
+  stream.start(imageId, {
+    onProgress: (data) => {
+      downloadProgress[imageId] = {
+        percent: data.percent ?? 0,
+        bytesReceived: data.bytesReceived ?? 0,
+        totalBytes: data.totalBytes ?? null,
+        status: data.status ?? 'downloading',
+      }
+    },
+    onReady: () => {
+      stream.stop()
+      delete progressStreams[imageId]
+      delete downloadProgress[imageId]
+      void refreshLibrary()
+    },
+    onError: () => {
+      stream.stop()
+      delete progressStreams[imageId]
+      delete downloadProgress[imageId]
+      void refreshLibrary()
+    },
+  })
+}
+
 function subscribeDownloading() {
+  const selfId = selfHostId.value
+  for (const img of libraryImages.value) {
+    for (const copy of img.copies) {
+      const onThisDevice = copy.hostId === selfId || copy.hostId === 'self'
+      if (!onThisDevice) continue
+      if (copy.status === 'downloading' || copy.status === 'decompressing') {
+        subscribeCopyProgress(copy.imageId)
+      }
+    }
+  }
   for (const img of store.images) {
-    if ((img.status === 'downloading' || img.status === 'decompressing') && !progressStreams[img.id]) {
-      const stream = useImageProgress()
-      progressStreams[img.id] = stream
-      stream.start(img.id, {
-        onProgress: (data) => {
-          downloadProgress[img.id] = {
-            percent: data.percent ?? 0,
-            bytesReceived: data.bytesReceived ?? 0,
-            totalBytes: data.totalBytes ?? null,
-            status: data.status ?? 'downloading',
-          }
-        },
-        onReady: () => {
-          stream.stop()
-          delete progressStreams[img.id]
-          delete downloadProgress[img.id]
-          store.fetchAll()
-        },
-        onError: () => {
-          stream.stop()
-          delete progressStreams[img.id]
-          delete downloadProgress[img.id]
-          store.fetchAll()
-        },
-      })
+    if (img.status === 'downloading' || img.status === 'decompressing') {
+      subscribeCopyProgress(img.id)
     }
   }
 }
 
 let pollTimer: number
+
+const selfHostId = computed(() => devicesStore.selfDevice?.hostId ?? null)
+
+const libraryImages = computed<HomeImage[]>(() => {
+  if (homeLibrary.images.length > 0) return homeLibrary.images
+  return store.images.map((img) => {
+    const hostId = selfHostId.value || 'self'
+    return {
+      ...img,
+      libraryKey: homeImageKey(img),
+      sourceHostIds: img.status === 'ready' ? [hostId] : [],
+      copies: [{ hostId, imageId: img.id, status: img.status }],
+    }
+  })
+})
+
+const pageLoading = computed(() =>
+  store.loading || homeLibrary.imagesLoading || devicesStore.loading,
+)
+
+const tableColumns = [
+  { key: 'name', label: 'Name' },
+  { key: 'device', label: 'Device' },
+  { key: 'type', label: 'Type' },
+  { key: 'arch', label: 'Arch' },
+  { key: 'size', label: 'Size' },
+  { key: 'status', label: 'Status' },
+  { key: 'actions', label: '' },
+]
+
+function deviceChipsFor(img: HomeImage) {
+  return readyLibraryImageDeviceChips(
+    img,
+    devicesStore.devices,
+    (id) => homeLibrary.defaultLabelFor(id),
+  )
+}
+
+function localCopyId(img: HomeImage): string | null {
+  return libraryImageCopyOnDevice(img, selfHostId.value || 'self', selfHostId.value)?.imageId ?? null
+}
+
+function progressFor(img: HomeImage) {
+  for (const copy of img.copies) {
+    if (downloadProgress[copy.imageId]) return downloadProgress[copy.imageId]
+  }
+  return downloadProgress[img.id] ?? null
+}
+
+function rowInFlight(img: HomeImage): boolean {
+  if (img.status === 'downloading' || img.status === 'uploading' || img.status === 'decompressing') {
+    return true
+  }
+  return img.copies.some((c) =>
+    c.status === 'downloading' || c.status === 'uploading' || c.status === 'decompressing',
+  )
+}
+
+async function refreshLibrary() {
+  await Promise.all([
+    store.fetchAll(),
+    homeLibrary.fetchImages(devicesStore.devices),
+  ])
+}
 
 function resetDownloadForm() {
   dlName.value = ''
@@ -181,11 +269,14 @@ onMounted(async () => {
   await caps.fetchCapabilities().catch(() => {})
   dlArch.value = defaultArch.value
   uploadArch.value = defaultArch.value
-  await store.fetchAll()
+  await devicesStore.fetchHealth().catch(() => {})
+  await refreshLibrary()
   subscribeDownloading()
   pollTimer = window.setInterval(() => {
-    if (store.images.some(i => i.status === 'downloading' || i.status === 'uploading' || i.status === 'decompressing')) {
-      store.fetchAll().then(() => subscribeDownloading())
+    if (libraryImages.value.some(rowInFlight) || store.images.some((i) =>
+      i.status === 'downloading' || i.status === 'uploading' || i.status === 'decompressing'
+    )) {
+      refreshLibrary().then(() => subscribeDownloading())
     }
   }, 5000)
 })
@@ -211,7 +302,7 @@ async function startDownload() {
     })
     showDownload.value = false
     resetDownloadForm()
-    await store.fetchAll()
+    await refreshLibrary()
     setTimeout(subscribeDownloading, 500)
   } catch (e: any) {
     dlError.value = apiErrorMessage(e)
@@ -285,7 +376,7 @@ function startUpload() {
       uploading.value = false
       showUpload.value = false
       resetUploadForm()
-      store.fetchAll()
+      void refreshLibrary()
     },
   })
 
@@ -305,8 +396,10 @@ function cancelUpload() {
 const confirmTarget = ref<{ id: string; name: string } | null>(null)
 const deleting = ref(false)
 
-async function deleteImage(id: string, name: string) {
-  confirmTarget.value = { id, name }
+async function deleteImage(img: HomeImage) {
+  const id = localCopyId(img)
+  if (!id) return
+  confirmTarget.value = { id, name: img.name }
 }
 
 async function doDeleteImage() {
@@ -315,6 +408,7 @@ async function doDeleteImage() {
   deleting.value = true
   try {
     await store.remove(id)
+    await homeLibrary.fetchImages(devicesStore.devices)
   } finally {
     deleting.value = false
     confirmTarget.value = null
@@ -332,20 +426,35 @@ async function doDeleteImage() {
     </div>
   </div>
 
-  <EmptyState v-if="store.images.length === 0 && !store.loading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+  <p v-if="homeLibrary.imagesError" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
+    {{ homeLibrary.imagesError }}
+  </p>
 
-  <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'type', label: 'Type' }, { key: 'arch', label: 'Arch' }, { key: 'size', label: 'Size' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]">
-        <tr v-for="img in store.images" :key="img.id">
+  <EmptyState v-if="libraryImages.length === 0 && !pageLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+
+  <DataTable v-else-if="libraryImages.length > 0" :columns="tableColumns">
+        <tr v-for="img in libraryImages" :key="img.libraryKey">
           <td>
             <div style="font-weight:500">{{ img.name }}</div>
-            <ProgressBar v-if="downloadProgress[img.id]" :percent="downloadProgress[img.id].percent ?? 0" style="margin-top:4px">
-              <template v-if="downloadProgress[img.id].status === 'decompressing'">Decompressing...</template>
+            <ProgressBar v-if="progressFor(img)" :percent="progressFor(img)!.percent ?? 0" style="margin-top:4px">
+              <template v-if="progressFor(img)!.status === 'decompressing'">Decompressing...</template>
               <template v-else>
-                {{ downloadProgress[img.id].percent }}% &middot;
-                {{ formatBytes(downloadProgress[img.id].bytesReceived) }}
-                <template v-if="downloadProgress[img.id].totalBytes"> / {{ formatBytes(downloadProgress[img.id].totalBytes) }}</template>
+                {{ progressFor(img)!.percent }}% &middot;
+                {{ formatBytes(progressFor(img)!.bytesReceived) }}
+                <template v-if="progressFor(img)!.totalBytes"> / {{ formatBytes(progressFor(img)!.totalBytes) }}</template>
               </template>
             </ProgressBar>
+          </td>
+          <td>
+            <div class="device-chips">
+              <WorkloadDeviceChip
+                v-for="chip in deviceChipsFor(img)"
+                :key="chip.hostId"
+                :label="chip.label"
+                :self="chip.self"
+                :reachable="chip.reachable"
+              />
+            </div>
           </td>
           <td><span class="badge" :class="img.imageType === 'iso' ? 'badge-blue' : 'badge-purple'">{{ img.imageType }}</span></td>
           <td><span class="badge badge-gray">{{ img.arch }}</span></td>
@@ -355,7 +464,9 @@ async function doDeleteImage() {
               {{ img.status }}
             </span>
           </td>
-          <td style="text-align:right"><AppButton size="sm" @click="deleteImage(img.id, img.name)">Delete</AppButton></td>
+          <td style="text-align:right">
+            <AppButton v-if="localCopyId(img)" size="sm" @click="deleteImage(img)">Delete</AppButton>
+          </td>
         </tr>
   </DataTable>
 
@@ -491,5 +602,11 @@ async function doDeleteImage() {
   font-size: 12px;
   color: var(--text-dim);
   line-height: 1.35;
+}
+.device-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }
 </style>
