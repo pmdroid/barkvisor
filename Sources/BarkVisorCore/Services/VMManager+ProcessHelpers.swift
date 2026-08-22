@@ -62,7 +62,7 @@ extension VMManager {
         guard let running = runningVMs[vmID] else { return }
 
         // If the VM is already stopping (user-initiated ACPI powerdown), skip —
-        // stop() already has its own wait + force-kill timeout.
+        // stop() waits for ACPI; SIGKILL is only Force Stop (PAS-90).
         let currentState = try? await dbPool.read { db in
             try String.fetchOne(db, sql: "SELECT state FROM vms WHERE id = ?", arguments: [vmID])
         }

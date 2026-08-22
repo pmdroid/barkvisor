@@ -131,8 +131,17 @@ public actor VMManager: VMStateQuerying {
     }
 
     /// Register a reconnected VM (called by VMProcessMonitor during reconnection).
+    /// Same PID already adopted in this process is a no-op so reconnect cannot
+    /// drop the live `Process` handle (PAS-90).
     public func registerReconnectedVM(vmID: String, running: RunningVM) {
+        if let existing = runningVMs[vmID], existing.pid == running.pid {
+            return
+        }
         runningVMs[vmID] = running
+    }
+
+    public func isRegistered(vmID: String) -> Bool {
+        runningVMs[vmID] != nil
     }
 
     // MARK: - Start
@@ -264,13 +273,14 @@ public actor VMManager: VMStateQuerying {
 
     // MARK: - Stop
 
-    /// Graceful ACPI wait before escalating to hard kill (seconds).
+    /// How long to wait for ACPI/guest-agent stop before giving up (no SIGKILL).
     private static let acpiShutdownTimeout: TimeInterval = 60
     /// How long to wait for QEMU to exit after SIGTERM before SIGKILL.
     private static let termGraceTimeout: TimeInterval = 2
 
     /// Shutdown methods: "acpi" sends ACPI powerdown, "force" kills immediately.
-    /// ACPI returns after QMP powerdown; a background task escalates to hard kill if needed.
+    /// ACPI returns after QMP powerdown. A background task waits for exit but
+    /// does not SIGKILL — Force Stop is the only kill path (PAS-90).
     /// Force waits until the QEMU process is dead (or a short hard-kill timeout).
     public func stop(vmID: String, force: Bool, method: String = "acpi") async throws {
         guard let running = runningVMs[vmID] else {
@@ -282,13 +292,14 @@ public actor VMManager: VMStateQuerying {
         // Mark as expected stop so process monitor treats exit as clean (reconnected VMs)
         await processMonitor?.markExpectedStop(vmID: vmID)
 
-        if force || method == "force" {
+        if IndependentExecution.allowsHardKill(force: force, method: method) {
             Log.vm.info("Force stopping VM \(vmID) (PID \(running.pid))", vm: vmID)
             await hardKill(running: running, vmID: vmID, reason: "force stop")
             return
         }
 
         // Graceful stop: prefer QEMU Guest Agent (reaches guest userspace), then ACPI power button.
+        // PAS-90: ACPI must not escalate to SIGKILL. Force Stop is the only kill path.
         do {
             let methodUsed = try requestGracefulShutdown(running: running, vmID: vmID)
             Log.vm.info(
@@ -297,13 +308,15 @@ public actor VMManager: VMStateQuerying {
             )
         } catch {
             Log.vm.error(
-                "Graceful shutdown failed for VM \(vmID): \(error) — hard-killing", vm: vmID,
+                "Graceful shutdown failed for VM \(vmID): \(error) — leaving running (Force Stop required)",
+                vm: vmID,
             )
-            await hardKill(running: running, vmID: vmID, reason: "graceful shutdown failed")
-            return
+            await processMonitor?.clearExpectedStop(vmID: vmID)
+            try await updateState(vmID: vmID, state: "running")
+            throw error
         }
 
-        // Wait for graceful shutdown in the background — hard kill after acpiShutdownTimeout.
+        // Wait for graceful shutdown in the background. Do not SIGKILL on timeout.
         Task { [weak self] in
             guard let self else { return }
             let deadline = Date().addingTimeInterval(Self.acpiShutdownTimeout)
@@ -313,10 +326,9 @@ public actor VMManager: VMStateQuerying {
             }
             if await isProcessAlive(running) {
                 Log.vm.warning(
-                    "VM \(vmID) did not shut down after \(Int(Self.acpiShutdownTimeout))s graceful stop, hard-killing",
+                    "VM \(vmID) still running after \(Int(Self.acpiShutdownTimeout))s ACPI stop — Force Stop required",
                     vm: vmID,
                 )
-                await hardKill(running: running, vmID: vmID, reason: "graceful shutdown timeout")
             } else {
                 await ensureTerminationRecorded(vmID: vmID, running: running, status: 0)
             }

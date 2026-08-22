@@ -79,37 +79,47 @@ public actor VMProcessMonitor {
             return false
         }
         let pid = pids.qemuPid
-
-        guard kill(pid, 0) == 0 else {
-            Log.vm.info("VM \(vmID): process \(pid) no longer running, cleaning up", vm: vmID)
-            cleanupDeadVM(vmID: vmID)
-            return false
-        }
-
-        guard isQEMUProcess(pid: pid) else {
-            Log.vm.warning("VM \(vmID): PID \(pid) is not QEMU (PID reuse), cleaning up", vm: vmID)
-            cleanupDeadVM(vmID: vmID)
-            return false
-        }
-
-        let sockets = VMSockets(vmID: vmID)
-        guard FileManager.default.fileExists(atPath: sockets.qmp.path) else {
-            Log.vm.warning("VM \(vmID): sockets missing, killing orphaned process", vm: vmID)
-            kill(pid, SIGTERM)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
-            cleanupDeadVM(vmID: vmID)
-            return false
-        }
-
+        let processAlive = kill(pid, 0) == 0
+        let isQEMU = processAlive && isQEMUProcess(pid: pid)
+        let alreadyRegistered = await vmManager?.isRegistered(vmID: vmID) == true
         let vmRecord = try? await dbPool.read { db in
             try VM.fetchOne(db, key: vmID)
         }
-        guard let vmRecord else {
+
+        switch IndependentExecution.reconnectAction(
+            alreadyRegistered: alreadyRegistered,
+            processAlive: processAlive,
+            isQEMU: isQEMU,
+            hasDBRecord: vmRecord != nil,
+        ) {
+        case .skipAlreadyRegistered:
+            Log.vm.info("VM \(vmID): already adopted, skipping reconnect", vm: vmID)
+            return true
+        case .cleanupDead:
+            Log.vm.info("VM \(vmID): process \(pid) no longer running, cleaning up", vm: vmID)
+            cleanupDeadVM(vmID: vmID)
+            return false
+        case .cleanupPidReuse:
+            Log.vm.warning("VM \(vmID): PID \(pid) is not QEMU (PID reuse), cleaning up", vm: vmID)
+            cleanupDeadVM(vmID: vmID)
+            return false
+        case .cleanupOrphanNoRecord:
             Log.vm.warning("VM \(vmID): no DB record, killing orphaned process", vm: vmID)
             kill(pid, SIGTERM)
             cleanupDeadVM(vmID: vmID)
             return false
+        case .adopt:
+            break
+        }
+
+        guard let vmRecord else { return false }
+
+        let sockets = VMSockets(vmID: vmID)
+        if !FileManager.default.fileExists(atPath: sockets.qmp.path) {
+            Log.vm.warning(
+                "VM \(vmID): QMP socket missing — adopting live QEMU without kill (PAS-90)",
+                vm: vmID,
+            )
         }
 
         let swtpmPid = pids.swtpmPid.flatMap { candidate in
@@ -162,6 +172,10 @@ public actor VMProcessMonitor {
     /// Mark a VM as being intentionally stopped, so the process monitor treats exit as clean.
     public func markExpectedStop(vmID: String) {
         expectedStops.insert(vmID)
+    }
+
+    public func clearExpectedStop(vmID: String) {
+        expectedStops.remove(vmID)
     }
 
     // MARK: - Process Monitor (reconnected VMs)
