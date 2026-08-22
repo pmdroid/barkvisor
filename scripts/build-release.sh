@@ -649,7 +649,11 @@ if [ "$NO_SIGN" = false ]; then
     log_sub "Signing libexec binaries..."
     for bin in "$STAGE_LIBEXEC"/*; do
         [ -x "$bin" ] && file "$bin" | grep -q "Mach-O" || continue
-        sign_binary "$bin" "$BUILD_DIR/helper.entitlements"
+        ident=""
+        case "$(basename "$bin")" in
+            socket_vmnet|socket_vmnet_client) ident="socket_vmnet" ;;
+        esac
+        sign_binary "$bin" "$BUILD_DIR/helper.entitlements" "$ident"
     done
 
     # 3. Sign XPC helper

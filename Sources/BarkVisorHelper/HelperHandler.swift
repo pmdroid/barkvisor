@@ -366,7 +366,11 @@ class HelperHandler: NSObject, HelperProtocol {
         expectedVersion: String,
         reply: @escaping (Bool, String?) -> Void,
     ) {
-        // 1. Validate package path exists and is not a symlink
+        guard helperIsSafeExpectedVersion(expectedVersion) else {
+            reply(false, "Invalid expectedVersion")
+            return
+        }
+
         guard FileManager.default.fileExists(atPath: packagePath) else {
             reply(false, "Package file not found at \(packagePath)")
             return
@@ -376,68 +380,82 @@ class HelperHandler: NSObject, HelperProtocol {
             return
         }
 
-        // 2. Verify PKG code signature
+        let staged = stageUpdatePackage(from: packagePath, expectedVersion: expectedVersion)
+        guard let stagedPath = staged.path else {
+            reply(false, staged.error ?? "Failed to stage package")
+            return
+        }
+
+        if let error = verifyStagedPackage(stagedPath, expectedVersion: expectedVersion) {
+            try? FileManager.default.removeItem(atPath: stagedPath)
+            reply(false, error)
+            return
+        }
+
+        // Reply now, before the installer kills this process.
+        // The postinstall script runs `launchctl bootout` on the helper daemon,
+        // so any code after a synchronous installer call would never execute.
+        reply(true, nil)
+        launchInstaller(stagedPath: stagedPath, originalPath: packagePath)
+    }
+
+    private func verifyStagedPackage(_ stagedPath: String, expectedVersion: String) -> String? {
+        if isSymlink(atPath: stagedPath) {
+            return "Refusing to install: staged package path is a symlink"
+        }
+
         let (sigOk, sigOutput) = runProcess(
             "/usr/sbin/pkgutil",
-            arguments: ["--check-signature", packagePath],
+            arguments: ["--check-signature", stagedPath],
         )
         if !sigOk {
-            reply(false, "Package signature verification failed: \(sigOutput)")
-            return
+            return "Package signature verification failed: \(sigOutput)"
         }
 
-        // Verify signing team ID matches our known team ID
-        // pkgutil output contains lines like: "Developer ID Installer: Name (TEAM_ID)"
-        let teamIDPattern = "\\(([A-Z0-9]+)\\)"
-        if let range = sigOutput.range(of: teamIDPattern, options: .regularExpression) {
-            let match = sigOutput[range]
-            let extractedID = String(match.dropFirst().dropLast()) // Remove parentheses
-            if extractedID != kHelperTeamID {
-                reply(
-                    false, "Package signed by unexpected team ID: \(extractedID) (expected \(kHelperTeamID))",
-                )
-                return
-            }
-        } else {
-            reply(false, "Could not extract team ID from package signature")
-            return
+        guard let extractedID = helperTeamIDFromPkgutilOutput(sigOutput) else {
+            return "Could not extract team ID from package signature"
+        }
+        if extractedID != kHelperTeamID {
+            return "Package signed by unexpected team ID: \(extractedID) (expected \(kHelperTeamID))"
         }
 
-        // 3. Verify Apple notarization
         let (notarizeOk, notarizeOutput) = runProcess(
             "/usr/sbin/spctl",
-            arguments: ["-a", "-t", "install", packagePath],
+            arguments: ["-a", "-t", "install", stagedPath],
         )
         if !notarizeOk {
-            reply(false, "Package notarization check failed: \(notarizeOutput)")
-            return
+            return "Package notarization check failed: \(notarizeOutput)"
         }
 
-        // 4. All checks passed — reply now, before the installer kills this process.
-        //    The postinstall script runs `launchctl bootout` on the helper daemon,
-        //    so any code after a synchronous installer call would never execute.
-        reply(true, nil)
+        guard let packageVersion = extractPackageVersion(fromPackagePath: stagedPath) else {
+            return "Could not read package version"
+        }
+        guard helperVersionsMatch(expected: expectedVersion, package: packageVersion) else {
+            return "Package version \(packageVersion) does not match expected \(expectedVersion)"
+        }
+        return nil
+    }
 
-        // Run the installer asynchronously after a short delay so the XPC reply
-        // is delivered before the postinstall script kills this daemon.
+    private func launchInstaller(stagedPath: String, originalPath: String) {
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/sbin/installer")
-            proc.arguments = ["-pkg", packagePath, "-target", "/"]
+            proc.arguments = ["-pkg", stagedPath, "-target", "/"]
             let pipe = Pipe()
             proc.standardOutput = pipe
             proc.standardError = pipe
             do {
                 try proc.run()
                 proc.waitUntilExit()
-                // This code only runs if the process survives (non-self-update PKG).
-                try? FileManager.default.removeItem(atPath: packagePath)
+                try? FileManager.default.removeItem(atPath: stagedPath)
+                try? FileManager.default.removeItem(atPath: originalPath)
                 if proc.terminationStatus != 0 {
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     let output = String(data: data, encoding: .utf8) ?? ""
                     NSLog("BarkVisor: installer failed after reply: \(output)")
                 }
             } catch {
+                try? FileManager.default.removeItem(atPath: stagedPath)
                 NSLog("BarkVisor: failed to launch installer: \(error)")
             }
         }

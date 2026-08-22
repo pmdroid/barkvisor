@@ -48,7 +48,8 @@ public let kHelperTeamID = "W363QN58YY"
     func getAllBridgeStates(reply: @escaping (String) -> Void)
 
     /// Install a software update from a signed PKG file.
-    /// Verifies code signature, notarization, and team ID before running the installer.
+    /// Copies the PKG to a helper-owned path, then verifies signature, notarization,
+    /// team ID, and `expectedVersion` before running the installer.
     /// The reply may never arrive if the postinstall script restarts this process.
     func installUpdate(
         packagePath: String,
