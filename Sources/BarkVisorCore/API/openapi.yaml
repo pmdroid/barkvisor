@@ -131,6 +131,129 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
+        "202":
+          description: Password accepted; TOTP or a recovery code is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginChallengeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/login/challenge:
+    post:
+      tags: [auth]
+      operationId: completeLoginChallenge
+      security: []
+      x-barkvisor-stability: stable
+      summary: Complete a TOTP login challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginChallengeRequest"
+      responses:
+        "200":
+          description: JWT and opaque refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/totp:
+    get:
+      tags: [evolving]
+      operationId: getTOTPStatus
+      x-barkvisor-stability: evolving
+      summary: Two-factor status for the signed-in password session
+      responses:
+        "200":
+          description: TOTP status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPStatus"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/totp/setup:
+    post:
+      tags: [evolving]
+      operationId: beginTOTPSetup
+      x-barkvisor-stability: evolving
+      summary: Start TOTP enrollment and return a shared secret
+      responses:
+        "200":
+          description: Authenticator secret and otpauth URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPSetup"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/totp/confirm:
+    post:
+      tags: [evolving]
+      operationId: confirmTOTPSetup
+      x-barkvisor-stability: evolving
+      summary: Confirm TOTP with a code from the authenticator app
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPCodeRequest"
+      responses:
+        "200":
+          description: One-time recovery codes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPRecoveryCodes"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/totp/disable:
+    post:
+      tags: [evolving]
+      operationId: disableTOTP
+      x-barkvisor-stability: evolving
+      summary: Turn off TOTP using the account password plus a code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPDisableRequest"
+      responses:
+        "204":
+          description: Two-factor authentication disabled
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/totp/recovery-codes:
+    post:
+      tags: [evolving]
+      operationId: regenerateTOTPRecoveryCodes
+      x-barkvisor-stability: evolving
+      summary: Replace unused recovery codes after a TOTP confirmation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPCodeRequest"
+      responses:
+        "200":
+          description: New one-time recovery codes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPRecoveryCodes"
         default:
           $ref: "#/components/responses/Error"
 
@@ -1677,6 +1800,79 @@ components:
           type: string
         refreshToken:
           type: string
+
+    LoginChallengeResponse:
+      type: object
+      required: [totpRequired, challengeToken, challengeExpiresAt]
+      properties:
+        totpRequired:
+          type: boolean
+        challengeToken:
+          type: string
+        challengeExpiresAt:
+          type: string
+
+    LoginChallengeRequest:
+      type: object
+      required: [challengeToken, code]
+      properties:
+        challengeToken:
+          type: string
+        code:
+          type: string
+          description: Authenticator TOTP or a one-time recovery code
+
+    TOTPStatus:
+      type: object
+      required: [enabled, pending, recoveryCodesRemaining]
+      properties:
+        enabled:
+          type: boolean
+        pending:
+          type: boolean
+        recoveryCodesRemaining:
+          type: integer
+        enabledAt:
+          type: string
+          nullable: true
+
+    TOTPSetup:
+      type: object
+      required: [secret, otpauthUrl, issuer, account]
+      properties:
+        secret:
+          type: string
+        otpauthUrl:
+          type: string
+        issuer:
+          type: string
+        account:
+          type: string
+
+    TOTPCodeRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+
+    TOTPDisableRequest:
+      type: object
+      required: [password, code]
+      properties:
+        password:
+          type: string
+        code:
+          type: string
+
+    TOTPRecoveryCodes:
+      type: object
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes:
+          type: array
+          items:
+            type: string
 
     RefreshRequest:
       type: object

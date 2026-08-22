@@ -368,8 +368,9 @@ struct DatabaseMigrationTests {
 
         let expected = [
             "api_keys", "app_settings", "audit_log", "bridges", "disks", "guest_info",
-            "image_repositories", "images", "networks", "repository_images", "ssh_keys",
-            "tus_uploads", "users", "vm_templates", "vms",
+            "image_repositories", "images", "login_challenges", "login_offers", "networks",
+            "refresh_tokens", "repository_images", "ssh_keys", "totp_recovery_codes",
+            "tus_uploads", "user_totp", "users", "vm_templates", "vms",
         ]
         for table in expected {
             #expect(tables.contains(table), "Expected table '\(table)' to exist, got: \(tables)")

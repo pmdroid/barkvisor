@@ -109,10 +109,24 @@ struct APIClient {
         )
     }
 
-    func login(username: String, password: String) async throws -> SessionTokens {
-        let response: LoginResponse = try await post(
+    func login(username: String, password: String) async throws -> PasswordLoginResult {
+        let body: LoginOrChallenge = try await post(
             "/api/auth/login",
             body: LoginRequest(username: username, password: password),
+        )
+        if body.totpRequired == true, let challenge = body.challengeToken, !challenge.isEmpty {
+            return .totpChallenge(token: challenge, expiresAt: body.challengeExpiresAt ?? "")
+        }
+        guard let token = body.token, let refresh = body.refreshToken, !token.isEmpty else {
+            throw APIError.decoding("Login response missing tokens")
+        }
+        return .session(SessionTokens(token: token, refreshToken: refresh))
+    }
+
+    func completeLoginChallenge(challengeToken: String, code: String) async throws -> SessionTokens {
+        let response: LoginResponse = try await post(
+            "/api/auth/login/challenge",
+            body: LoginChallengeRequest(challengeToken: challengeToken, code: code),
         )
         return SessionTokens(token: response.token, refreshToken: response.refreshToken)
     }
@@ -314,6 +328,7 @@ struct APIClient {
 
     private func isAuthBootstrap(_ path: String) -> Bool {
         path == "/api/auth/login"
+            || path == "/api/auth/login/challenge"
             || path == "/api/auth/refresh"
             || path == "/api/auth/logout"
             || path == "/api/auth/login-offers/redeem"

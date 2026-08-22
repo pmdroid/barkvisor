@@ -10,26 +10,55 @@ const auth = useAuthStore()
 const router = useRouter()
 const username = ref('')
 const password = ref('')
+const totpCode = ref('')
+const challengeToken = ref('')
 const error = ref('')
 const loading = ref(false)
 
-async function submit() {
+async function submitPassword() {
   error.value = ''
   loading.value = true
   try {
-    await auth.login(username.value, password.value)
-    router.push('/vms')
-  } catch (e: any) {
+    const outcome = await auth.login(username.value, password.value)
+    password.value = ''
+    if (outcome.totpRequired) {
+      challengeToken.value = outcome.challengeToken
+      totpCode.value = ''
+      return
+    }
+    await router.push('/vms')
+  } catch (e: unknown) {
     error.value = apiErrorMessage(e, 'Login failed')
   } finally {
     loading.value = false
   }
 }
+
+async function submitChallenge() {
+  error.value = ''
+  loading.value = true
+  try {
+    await auth.completeLoginChallenge(challengeToken.value, totpCode.value.trim())
+    totpCode.value = ''
+    challengeToken.value = ''
+    await router.push('/vms')
+  } catch (e: unknown) {
+    error.value = apiErrorMessage(e, 'Invalid authenticator code')
+  } finally {
+    loading.value = false
+  }
+}
+
+function backToPassword() {
+  challengeToken.value = ''
+  totpCode.value = ''
+  error.value = ''
+}
 </script>
 
 <template>
   <div class="login-page">
-    <form class="login-card" @submit.prevent="submit">
+    <form v-if="!challengeToken" class="login-card" @submit.prevent="submitPassword">
       <img src="/app-icon.png" class="login-logo" alt="BarkVisor" />
       <h1>BarkVisor</h1>
       <p class="login-subtitle">Sign in to manage your virtual machines</p>
@@ -41,8 +70,28 @@ async function submit() {
         <label>Password</label>
         <input v-model="password" type="password" placeholder="password" />
       </div>
-      <FormError v-if="error" :message="error" />
+      <FormError v-if="error" class="login-error" :message="error" />
       <AppButton variant="primary" class="login-btn" :loading="loading" loading-text="Signing in...">Sign In</AppButton>
+    </form>
+
+    <form v-else class="login-card" @submit.prevent="submitChallenge">
+      <img src="/app-icon.png" class="login-logo" alt="BarkVisor" />
+      <h1>BarkVisor</h1>
+      <p class="login-subtitle">Enter the authenticator code for this Device, or a recovery code.</p>
+      <div class="form-group">
+        <label>Authenticator code</label>
+        <input
+          v-model="totpCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          autofocus
+          placeholder="123456"
+        />
+      </div>
+      <FormError v-if="error" class="login-error" :message="error" />
+      <AppButton variant="primary" class="login-btn" :loading="loading" loading-text="Verifying...">Verify</AppButton>
+      <button type="button" class="login-back" :disabled="loading" @click="backToPassword">Back</button>
     </form>
   </div>
 </template>
@@ -87,6 +136,14 @@ async function submit() {
   padding: 11px;
   font-size: 14px;
   margin-top: 4px;
+}
+.login-back {
+  margin-top: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
 }
 .login-card .form-group { text-align: left; }
 </style>

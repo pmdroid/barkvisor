@@ -95,6 +95,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M009_AuthSessions.identifier) { db in
             try M009_AuthSessions.migrate(db)
         }
+        migrator.registerMigration(M010_TOTP.identifier) { db in
+            try M010_TOTP.migrate(db)
+        }
     }
 }
 

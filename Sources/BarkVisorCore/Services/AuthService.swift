@@ -20,6 +20,72 @@ public enum AuthService {
         db: DatabasePool,
         now: Date = Date(),
     ) async throws -> (token: String, user: User) {
+        let user = try await authenticatePassword(
+            username: username, password: password, hasher: hasher, db: db,
+        )
+        if try await TOTPService.isEnabled(userId: user.id, db: db) {
+            throw BarkVisorError.forbidden("Two-factor authentication required")
+        }
+        let token = try await signAccessToken(user: user, keys: keys, now: now)
+        return (token, user)
+    }
+
+    public static func loginSession(
+        username: String,
+        password: String,
+        hasher: PasswordHasher,
+        keys: JWTKeyCollection,
+        db: DatabasePool,
+        now: Date = Date(),
+    ) async throws -> AuthSessionTokens {
+        switch try await passwordLogin(
+            username: username, password: password, hasher: hasher, keys: keys, db: db, now: now,
+        ) {
+        case let .session(session):
+            return session
+        case .totpChallenge:
+            throw BarkVisorError.forbidden("Two-factor authentication required")
+        }
+    }
+
+    /// Password login. Issues tokens when TOTP is off; otherwise a short-lived challenge.
+    public static func passwordLogin(
+        username: String,
+        password: String,
+        hasher: PasswordHasher,
+        keys: JWTKeyCollection,
+        db: DatabasePool,
+        now: Date = Date(),
+    ) async throws -> PasswordLoginResult {
+        let user = try await authenticatePassword(
+            username: username, password: password, hasher: hasher, db: db,
+        )
+        if try await TOTPService.isEnabled(userId: user.id, db: db) {
+            let challenge = try await TOTPService.issueLoginChallenge(userId: user.id, db: db, now: now)
+            return .totpChallenge(challenge)
+        }
+        return try await .session(issueSession(user: user, keys: keys, db: db, now: now))
+    }
+
+    public static func completeLoginChallenge(
+        challengeToken: String,
+        code: String,
+        keys: JWTKeyCollection,
+        db: DatabasePool,
+        now: Date = Date(),
+    ) async throws -> AuthSessionTokens {
+        let user = try await TOTPService.consumeLoginChallenge(
+            token: challengeToken, code: code, db: db, now: now,
+        )
+        return try await issueSession(user: user, keys: keys, db: db, now: now)
+    }
+
+    public static func authenticatePassword(
+        username: String,
+        password: String,
+        hasher: PasswordHasher,
+        db: DatabasePool,
+    ) async throws -> User {
         let user = try await db.read { db in
             try User.filter(User.Columns.username == username).fetchOne(db)
         }
@@ -47,27 +113,16 @@ public enum AuthService {
         guard passwordMatch else {
             throw BarkVisorError.unauthorized("Invalid credentials")
         }
-
-        let token = try await signAccessToken(user: user, keys: keys, now: now)
-        return (token, user)
+        return user
     }
 
-    public static func loginSession(
-        username: String,
-        password: String,
-        hasher: PasswordHasher,
+    public static func issueSession(
+        user: User,
         keys: JWTKeyCollection,
         db: DatabasePool,
         now: Date = Date(),
     ) async throws -> AuthSessionTokens {
-        let (token, user) = try await login(
-            username: username,
-            password: password,
-            hasher: hasher,
-            keys: keys,
-            db: db,
-            now: now,
-        )
+        let token = try await signAccessToken(user: user, keys: keys, now: now)
         let refresh = try await issueRefreshToken(userId: user.id, db: db, now: now)
         return AuthSessionTokens(token: token, refreshToken: refresh, user: user)
     }

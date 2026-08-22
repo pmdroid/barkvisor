@@ -47,6 +47,7 @@ export function isAuthBootstrapRequest(config?: { url?: string } | null): boolea
   const path = requestPath(config?.url)
   return (
     path.endsWith('/auth/login') ||
+    path.endsWith('/auth/login/challenge') ||
     path.endsWith('/auth/refresh') ||
     path.endsWith('/auth/logout') ||
     path.endsWith('/auth/login-offers/redeem')

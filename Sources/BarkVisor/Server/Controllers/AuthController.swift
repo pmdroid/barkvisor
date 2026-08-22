@@ -19,6 +19,40 @@ struct LoginResponse: Content {
     let refreshToken: String
 }
 
+struct LoginChallengeResponse: Content {
+    let totpRequired: Bool
+    let challengeToken: String
+    let challengeExpiresAt: String
+}
+
+struct LoginChallengeRequest: Content, Validatable {
+    let challengeToken: String
+    let code: String
+
+    static func validations(_ validations: inout Validations) {
+        validations.add("challengeToken", as: String.self, is: !.empty)
+        validations.add("code", as: String.self, is: !.empty)
+    }
+}
+
+struct TOTPCodeRequest: Content, Validatable {
+    let code: String
+
+    static func validations(_ validations: inout Validations) {
+        validations.add("code", as: String.self, is: !.empty)
+    }
+}
+
+struct TOTPDisableRequest: Content, Validatable {
+    let password: String
+    let code: String
+
+    static func validations(_ validations: inout Validations) {
+        validations.add("password", as: String.self, is: !.empty)
+        validations.add("code", as: String.self, is: !.empty)
+    }
+}
+
 struct RefreshRequest: Content, Validatable {
     let refreshToken: String
 
@@ -61,6 +95,7 @@ struct AuthController: RouteCollection {
         let auth = routes.grouped("api", "auth")
         let limited = auth.grouped(loginRateLimit)
         limited.post("login", use: login)
+        limited.post("login", "challenge", use: completeLoginChallenge)
         limited.post("refresh", use: refresh)
         limited.post("logout", use: logout)
         limited.post("login-offers", "redeem", use: redeemLoginOffer)
@@ -72,23 +107,41 @@ struct AuthController: RouteCollection {
         offers.post(use: issueLoginOffer)
         offers.get(use: currentLoginOffer)
         offers.delete(use: revokeLoginOffer)
+
+        let totp = routes.grouped("api", "auth", "totp")
+        totp.get(use: totpStatus)
+        totp.post("setup", use: totpSetup)
+        totp.post("confirm", use: totpConfirm)
+        totp.post("disable", use: totpDisable)
+        totp.post("recovery-codes", use: totpRegenerateRecoveryCodes)
     }
 
     @Sendable
-    func login(req: Vapor.Request) async throws -> LoginResponse {
+    func login(req: Vapor.Request) async throws -> Response {
         try LoginRequest.validate(content: req)
         let body = try req.content.decode(LoginRequest.self)
 
         do {
-            let session = try await AuthService.loginSession(
+            let result = try await AuthService.passwordLogin(
                 username: body.username, password: body.password,
                 hasher: BcryptHasher.shared, keys: keys, db: req.db,
             )
-            AuditService.log(
-                action: "auth.login", resourceType: "user", resourceId: session.user.id,
-                resourceName: session.user.username, req: req,
-            )
-            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+            switch result {
+            case let .session(session):
+                AuditService.log(
+                    action: "auth.login", resourceType: "user", resourceId: session.user.id,
+                    resourceName: session.user.username, req: req,
+                )
+                return try await LoginResponse(token: session.token, refreshToken: session.refreshToken)
+                    .encodeResponse(for: req)
+            case let .totpChallenge(challenge):
+                AuditService.log(action: "auth.login.totp_required", resourceType: "user", req: req)
+                return try await LoginChallengeResponse(
+                    totpRequired: true,
+                    challengeToken: challenge.challengeToken,
+                    challengeExpiresAt: challenge.expiresAt,
+                ).encodeResponse(status: .accepted, for: req)
+            }
         } catch {
             // Log failed attempts without exposing the submitted username (could be a mistyped password)
             if let bvError = error as? BarkVisorError {
@@ -102,6 +155,25 @@ struct AuthController: RouteCollection {
                     )
                 }
             }
+            throw error
+        }
+    }
+
+    @Sendable
+    func completeLoginChallenge(req: Vapor.Request) async throws -> LoginResponse {
+        try LoginChallengeRequest.validate(content: req)
+        let body = try req.content.decode(LoginChallengeRequest.self)
+        do {
+            let session = try await AuthService.completeLoginChallenge(
+                challengeToken: body.challengeToken, code: body.code, keys: keys, db: req.db,
+            )
+            AuditService.log(
+                action: "auth.login", resourceType: "user", resourceId: session.user.id,
+                resourceName: session.user.username, req: req,
+            )
+            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+        } catch {
+            AuditService.log(action: "auth.login.failed", detail: "Invalid authenticator code", req: req)
             throw error
         }
     }
@@ -217,5 +289,79 @@ struct AuthController: RouteCollection {
             targetVMID: body?.vmID.flatMap { $0.isEmpty ? nil : $0 },
         )
         return WSTicketResponse(ticket: ticket)
+    }
+
+    @Sendable
+    func totpStatus(req: Vapor.Request) async throws -> TOTPStatus {
+        let authUser = try requirePasswordSession(req)
+        return try await TOTPService.status(userId: authUser.userId, db: req.db)
+    }
+
+    @Sendable
+    func totpSetup(req: Vapor.Request) async throws -> TOTPSetup {
+        let authUser = try requirePasswordSession(req)
+        let setup = try await TOTPService.beginSetup(
+            userId: authUser.userId, username: authUser.username, db: req.db,
+        )
+        AuditService.log(
+            action: "auth.totp.setup", resourceType: "user", resourceId: authUser.userId,
+            resourceName: authUser.username, req: req,
+        )
+        return setup
+    }
+
+    @Sendable
+    func totpConfirm(req: Vapor.Request) async throws -> TOTPRecoveryCodes {
+        let authUser = try requirePasswordSession(req)
+        try TOTPCodeRequest.validate(content: req)
+        let body = try req.content.decode(TOTPCodeRequest.self)
+        let codes = try await TOTPService.confirmSetup(
+            userId: authUser.userId, code: body.code, db: req.db,
+        )
+        AuditService.log(
+            action: "auth.totp.enable", resourceType: "user", resourceId: authUser.userId,
+            resourceName: authUser.username, req: req,
+        )
+        return codes
+    }
+
+    @Sendable
+    func totpDisable(req: Vapor.Request) async throws -> HTTPStatus {
+        let authUser = try requirePasswordSession(req)
+        try TOTPDisableRequest.validate(content: req)
+        let body = try req.content.decode(TOTPDisableRequest.self)
+        _ = try await AuthService.authenticatePassword(
+            username: authUser.username, password: body.password,
+            hasher: BcryptHasher.shared, db: req.db,
+        )
+        try await TOTPService.disable(userId: authUser.userId, code: body.code, db: req.db)
+        AuditService.log(
+            action: "auth.totp.disable", resourceType: "user", resourceId: authUser.userId,
+            resourceName: authUser.username, req: req,
+        )
+        return .noContent
+    }
+
+    @Sendable
+    func totpRegenerateRecoveryCodes(req: Vapor.Request) async throws -> TOTPRecoveryCodes {
+        let authUser = try requirePasswordSession(req)
+        try TOTPCodeRequest.validate(content: req)
+        let body = try req.content.decode(TOTPCodeRequest.self)
+        let codes = try await TOTPService.regenerateRecoveryCodes(
+            userId: authUser.userId, code: body.code, db: req.db,
+        )
+        AuditService.log(
+            action: "auth.totp.recovery_codes", resourceType: "user", resourceId: authUser.userId,
+            resourceName: authUser.username, req: req,
+        )
+        return codes
+    }
+
+    private func requirePasswordSession(_ req: Vapor.Request) throws -> AuthenticatedUser {
+        let user = try req.requireUser
+        guard user.authMethod == "jwt" else {
+            throw BarkVisorError.forbidden("Two-factor settings require a signed-in password session")
+        }
+        return user
     }
 }

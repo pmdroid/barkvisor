@@ -61,7 +61,7 @@ struct LoginView: View {
     @Environment(AppModel.self) private var model
     @FocusState private var focused: Field?
 
-    private enum Field { case user, password }
+    private enum Field { case user, password, totp }
 
     var body: some View {
         @Bindable var model = model
@@ -80,17 +80,39 @@ struct LoginView: View {
                         .textContentType(.password)
                         .focused($focused, equals: .password)
                         .onSubmit { Task { await model.signIn() } }
+                    if model.loginChallengeToken != nil {
+                        TextField("Authenticator code", text: $model.totpCode)
+                            .textContentType(.oneTimeCode)
+                            .focused($focused, equals: .totp)
+                        #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numberPad)
+                        #endif
+                            .onSubmit { Task { await model.submitTOTP() } }
+                    }
                 } header: {
                     Text("Sign In")
                 } footer: {
-                    Text("Same admin user as the web UI on this Device.")
+                    if model.loginChallengeToken != nil {
+                        Text("Enter the authenticator code for this Device, or a recovery code.")
+                    } else {
+                        Text("Same admin user as the web UI on this Device.")
+                    }
                 }
 
                 Section {
-                    Button("Sign In") {
-                        Task { await model.signIn() }
+                    if model.loginChallengeToken != nil {
+                        Button("Verify") {
+                            Task { await model.submitTOTP() }
+                        }
+                        .disabled(model.busy || model.totpCode.isEmpty)
+                    } else {
+                        Button("Sign In") {
+                            Task { await model.signIn() }
+                        }
+                        .disabled(model.busy || model.username.isEmpty || model.password.isEmpty)
                     }
-                    .disabled(model.busy || model.username.isEmpty || model.password.isEmpty)
                     #if os(iOS)
                         NavigationLink("Scan QR") {
                             LoginQRScanner(

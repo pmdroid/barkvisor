@@ -31,6 +31,17 @@ struct SessionTests {
         #expect(decoded.refreshToken == "bvrt_abc")
     }
 
+    @Test func `login challenge response does not look like a session`() throws {
+        let data = Data(
+            #"{"totpRequired":true,"challengeToken":"bvch_abc","challengeExpiresAt":"2026-01-01T00:05:00Z"}"#
+                .utf8,
+        )
+        let decoded = try JSONDecoder().decode(LoginOrChallenge.self, from: data)
+        #expect(decoded.totpRequired == true)
+        #expect(decoded.challengeToken == "bvch_abc")
+        #expect(decoded.token == nil)
+    }
+
     @Test func `login uri is not pairing`() throws {
         let uri = "barkvisor://login/v1?code=ABCD-EFGH&host=192.168.0.8&port=7777"
         let payload = try LoginURI.parse(uri)

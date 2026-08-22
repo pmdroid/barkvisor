@@ -26,6 +26,15 @@ import {
   type LoginOffer,
 } from '../api/loginOffer'
 import { loginOfferSvg } from '../utils/qrSvg'
+import {
+  beginTOTPSetup,
+  confirmTOTPSetup,
+  disableTOTP,
+  getTOTPStatus,
+  regenerateRecoveryCodes,
+  type TOTPSetup,
+  type TOTPStatus,
+} from '../api/totp'
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
@@ -48,7 +57,7 @@ const route = useRoute()
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
 const inAppUpdate = useFeature('inAppUpdate')
-const tab = ref<'home' | 'library' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+const tab = ref<'home' | 'library' | 'security' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
 
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
@@ -510,6 +519,95 @@ async function doRevoke() {
   }
 }
 
+const totpStatus = ref<TOTPStatus | null>(null)
+const totpSetup = ref<TOTPSetup | null>(null)
+const totpCode = ref('')
+const totpPassword = ref('')
+const recoveryCodes = ref<string[]>([])
+const totpLoading = ref(false)
+const totpCopied = ref(false)
+
+async function loadTOTP() {
+  try {
+    totpStatus.value = await getTOTPStatus()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  }
+}
+
+async function openSecurityTab() {
+  tab.value = 'security'
+  await loadTOTP()
+}
+
+async function startTOTP() {
+  totpLoading.value = true
+  totpCode.value = ''
+  recoveryCodes.value = []
+  try {
+    totpSetup.value = await beginTOTPSetup()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    totpLoading.value = false
+  }
+}
+
+async function confirmTOTP() {
+  if (!totpCode.value.trim()) return
+  totpLoading.value = true
+  try {
+    recoveryCodes.value = await confirmTOTPSetup(totpCode.value.trim())
+    totpSetup.value = null
+    totpCode.value = ''
+    await loadTOTP()
+    toast.success('Two-factor authentication is on')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    totpLoading.value = false
+  }
+}
+
+async function turnOffTOTP() {
+  if (!totpPassword.value || !totpCode.value.trim()) return
+  totpLoading.value = true
+  try {
+    await disableTOTP(totpPassword.value, totpCode.value.trim())
+    totpPassword.value = ''
+    totpCode.value = ''
+    recoveryCodes.value = []
+    await loadTOTP()
+    toast.success('Two-factor authentication is off')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    totpLoading.value = false
+  }
+}
+
+async function newRecoveryCodes() {
+  if (!totpCode.value.trim()) return
+  totpLoading.value = true
+  try {
+    recoveryCodes.value = await regenerateRecoveryCodes(totpCode.value.trim())
+    totpCode.value = ''
+    await loadTOTP()
+    toast.success('New recovery codes generated')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    totpLoading.value = false
+  }
+}
+
+function copyRecoveryCodes() {
+  if (!recoveryCodes.value.length) return
+  void navigator.clipboard.writeText(recoveryCodes.value.join('\n'))
+  totpCopied.value = true
+  setTimeout(() => (totpCopied.value = false), 2000)
+}
+
 // SSH Keys
 const showAddSSHKey = ref(false)
 const newSSHKeyName = ref('')
@@ -778,6 +876,7 @@ onUnmounted(() => {
   <div class="tabs">
     <button :class="{ active: tab === 'home' }" @click="openHomeTab">{{ HOME_LABEL }}</button>
     <button :class="{ active: tab === 'library' }" @click="openLibraryTab">Library</button>
+    <button :class="{ active: tab === 'security' }" @click="openSecurityTab">Sign-in</button>
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
@@ -1010,6 +1109,77 @@ onUnmounted(() => {
           @click="saveDepotSettings"
         >
           Save Library depot
+        </AppButton>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-factor (PAS-86). API keys stay on their own tab. -->
+  <div v-if="tab === 'security'">
+    <div class="pairing-card" style="margin-bottom:16px">
+      <h3 style="margin:0 0 8px">Two-factor authentication</h3>
+      <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        Require an authenticator app after the password when signing in to this Device.
+        API keys are not affected. Phone sign-in QR codes still work once you are already signed in.
+      </p>
+      <p v-if="totpStatus?.enabled" class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        On. {{ totpStatus.recoveryCodesRemaining }} recovery codes remaining.
+      </p>
+      <p v-else class="pairing-hint" style="text-align:left;margin:0 0 12px">Off.</p>
+      <AppButton
+        v-if="!totpStatus?.enabled && !totpSetup"
+        variant="primary"
+        :loading="totpLoading"
+        @click="startTOTP"
+      >
+        Enable authenticator
+      </AppButton>
+    </div>
+
+    <div v-if="totpSetup" class="pairing-card" style="margin-bottom:16px">
+      <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        Scan this QR in your authenticator app, or enter the secret, then confirm with a code.
+      </p>
+      <PairingQr v-if="totpSetup.otpauthUrl" :payload="totpSetup.otpauthUrl" />
+      <p class="mono" style="font-size:13px;word-break:break-all;margin:12px 0">{{ totpSetup.secret }}</p>
+      <div class="form-group" style="text-align:left">
+        <label>Authenticator code</label>
+        <input v-model="totpCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />
+      </div>
+      <AppButton variant="primary" :loading="totpLoading" :disabled="!totpCode.trim()" @click="confirmTOTP">
+        Confirm
+      </AppButton>
+    </div>
+
+    <div v-if="recoveryCodes.length" class="pairing-card" style="margin-bottom:16px">
+      <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
+        Save these recovery codes. Each one works once if you lose the authenticator.
+      </p>
+      <pre class="mono" style="text-align:left;font-size:13px;line-height:1.6">{{ recoveryCodes.join('\n') }}</pre>
+      <AppButton size="sm" @click="copyRecoveryCodes">{{ totpCopied ? 'Copied!' : 'Copy codes' }}</AppButton>
+    </div>
+
+    <div v-if="totpStatus?.enabled" class="pairing-card">
+      <div class="form-group" style="text-align:left">
+        <label>Authenticator or recovery code</label>
+        <input v-model="totpCode" type="text" autocomplete="one-time-code" />
+      </div>
+      <div class="form-group" style="text-align:left">
+        <label>Password (required to turn off)</label>
+        <input v-model="totpPassword" type="password" />
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <AppButton size="sm" :loading="totpLoading" :disabled="!totpCode.trim()" @click="newRecoveryCodes">
+          New recovery codes
+        </AppButton>
+        <AppButton
+          size="sm"
+          variant="danger"
+          :loading="totpLoading"
+          :disabled="!totpPassword || !totpCode.trim()"
+          @click="turnOffTOTP"
+        >
+          Turn off two-factor
         </AppButton>
       </div>
     </div>

@@ -31,6 +31,20 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(username: string, password: string) {
     const { data } = await api.post('/auth/login', { username, password })
+    if (data?.totpRequired === true && typeof data.challengeToken === 'string') {
+      return {
+        totpRequired: true as const,
+        challengeToken: data.challengeToken,
+        challengeExpiresAt: typeof data.challengeExpiresAt === 'string' ? data.challengeExpiresAt : '',
+      }
+    }
+    const nextRefresh = typeof data.refreshToken === 'string' ? data.refreshToken : ''
+    persistSession(data.token, nextRefresh)
+    return { totpRequired: false as const }
+  }
+
+  async function completeLoginChallenge(challengeToken: string, code: string) {
+    const { data } = await api.post('/auth/login/challenge', { challengeToken, code })
     const nextRefresh = typeof data.refreshToken === 'string' ? data.refreshToken : ''
     persistSession(data.token, nextRefresh)
   }
@@ -51,5 +65,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, refreshToken, isAuthenticated, login, logout }
+  return { token, refreshToken, isAuthenticated, login, completeLoginChallenge, logout }
 })

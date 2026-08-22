@@ -78,6 +78,8 @@ final class AppModel {
     var serverURLText: String
     var username: String
     var password: String = ""
+    var totpCode: String = ""
+    var loginChallengeToken: String?
     var banner: String?
     var busy = false
 
@@ -228,16 +230,50 @@ final class AppModel {
             let url = try DeviceURL.normalize(serverURLText)
             serverURLText = url.absoluteString
             var api = APIClient(baseURL: url, token: nil)
-            let session = try await api.login(username: username, password: password)
+            switch try await api.login(username: username, password: password) {
+            case let .session(session):
+                persistSession(session, origin: url)
+                password = ""
+                totpCode = ""
+                loginChallengeToken = nil
+                try await refreshAll()
+                phase = .ready
+                startPolling()
+            case let .totpChallenge(token, _):
+                password = ""
+                totpCode = ""
+                loginChallengeToken = token
+            }
+        } catch APIError.setupRequired {
+            phase = .setupRequired
+        } catch APIError.unauthorized {
+            banner = "Invalid username or password"
+        } catch {
+            banner = error.localizedDescription
+        }
+    }
+
+    func submitTOTP() async {
+        banner = nil
+        busy = true
+        defer { busy = false }
+        guard let challenge = loginChallengeToken, !totpCode.isEmpty else { return }
+        do {
+            let url = try DeviceURL.normalize(serverURLText)
+            var api = APIClient(baseURL: url, token: nil)
+            let session = try await api.completeLoginChallenge(
+                challengeToken: challenge, code: totpCode,
+            )
             persistSession(session, origin: url)
-            password = ""
+            totpCode = ""
+            loginChallengeToken = nil
             try await refreshAll()
             phase = .ready
             startPolling()
         } catch APIError.setupRequired {
             phase = .setupRequired
         } catch APIError.unauthorized {
-            banner = "Invalid username or password"
+            banner = "Invalid authenticator code"
         } catch {
             banner = error.localizedDescription
         }
@@ -271,6 +307,8 @@ final class AppModel {
     func disconnect() {
         logout()
         sessionURL = nil
+        loginChallengeToken = nil
+        totpCode = ""
         phase = .connect
     }
 

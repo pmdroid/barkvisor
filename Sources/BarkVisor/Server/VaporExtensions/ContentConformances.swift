@@ -22,6 +22,9 @@ extension WorkloadHealthSummary: Content {}
 extension WorkloadHealthSpec: Content {}
 extension ProcessHealthStatus: Content {}
 extension APIContractSummary: Content {}
+extension TOTPStatus: Content {}
+extension TOTPSetup: Content {}
+extension TOTPRecoveryCodes: Content {}
 extension VMImage: Content {}
 extension VMTemplate: Content {}
 extension User: Content {}

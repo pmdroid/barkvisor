@@ -47,11 +47,48 @@ describe('auth store (PAS-242)', () => {
     ) as typeof api.post
 
     const store = useAuthStore()
-    await store.login('admin', 'secret')
+    const outcome = await store.login('admin', 'secret')
+    expect(outcome.totpRequired).toBe(false)
     expect(store.token).toBe('jwt-1')
     expect(store.refreshToken).toBe('bvrt_abc')
     expect(localStorage.getItem('token')).toBe('jwt-1')
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('bvrt_abc')
+  })
+
+  test('login with totpRequired does not persist a session', async () => {
+    api.post = mock(() =>
+      Promise.resolve({
+        status: 202,
+        data: {
+          totpRequired: true,
+          challengeToken: 'bvch_abc',
+          challengeExpiresAt: '2026-01-01T00:05:00Z',
+        },
+      }),
+    ) as typeof api.post
+
+    const store = useAuthStore()
+    const outcome = await store.login('admin', 'secret')
+    expect(outcome).toEqual({
+      totpRequired: true,
+      challengeToken: 'bvch_abc',
+      challengeExpiresAt: '2026-01-01T00:05:00Z',
+    })
+    expect(store.token).toBe('')
+    expect(localStorage.getItem('token')).toBeNull()
+  })
+
+  test('completeLoginChallenge stores the JWT and refresh token', async () => {
+    api.post = mock((url: string, body: unknown) => {
+      expect(url).toBe('/auth/login/challenge')
+      expect(body).toEqual({ challengeToken: 'bvch_abc', code: '123456' })
+      return Promise.resolve({ data: { token: 'jwt-2', refreshToken: 'bvrt_def' } })
+    }) as typeof api.post
+
+    const store = useAuthStore()
+    await store.completeLoginChallenge('bvch_abc', '123456')
+    expect(store.token).toBe('jwt-2')
+    expect(store.refreshToken).toBe('bvrt_def')
   })
 
   test('logout posts the refresh family then clears local session', async () => {
@@ -172,6 +209,7 @@ describe('auth store (PAS-242)', () => {
 
   test('bootstrap auth paths are not treated as session 401s', () => {
     expect(isAuthBootstrapRequest({ url: '/auth/login' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/login/challenge' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/refresh' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/logout' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/login-offers/redeem' })).toBe(true)
