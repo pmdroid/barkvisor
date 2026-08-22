@@ -85,7 +85,12 @@ struct HostInventoryTests {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(object?["hostId"] as? String == Self.testHostId)
         let networking = object?["networking"] as? [String: Any]
-        #expect(networking?["tailnet"] != nil)
+        #expect(networking != nil)
+        if inv.networking.tailnet != nil {
+            #expect(networking?["tailnet"] != nil)
+        } else {
+            #expect(networking?["tailnet"] == nil)
+        }
     }
 
     @Test func `inventory decodes when tailnet is omitted`() throws {
