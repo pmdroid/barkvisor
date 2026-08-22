@@ -148,11 +148,11 @@ export function useCreateVMWizard(
       || null
   })
 
-  const selectedLibraryKey = computed(() => {
-    if (!selectedImage.value) return selectedImageId.value
-    return 'libraryKey' in selectedImage.value && selectedImage.value.libraryKey
-      ? selectedImage.value.libraryKey
-      : homeImageKey(selectedImage.value)
+  const selectedLibraryKey = computed((): string => {
+    const img = selectedImage.value
+    if (!img) return selectedImageId.value
+    const key = 'libraryKey' in img ? img.libraryKey : undefined
+    return typeof key === 'string' && key ? key : homeImageKey(img)
   })
 
   /**

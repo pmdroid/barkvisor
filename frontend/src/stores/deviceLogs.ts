@@ -40,7 +40,7 @@ export function mergeHomeLogRows(rows: HomeLogRow[], limit: number): HomeLogRow[
 export const useDeviceLogsStore = defineStore('deviceLogs', () => {
   const inventory = createHomeInventory<LogEntry>()
   const tail = useTicketedEventSource()
-  let pollTimer: number | undefined
+  let pollTimer: ReturnType<typeof setInterval> | undefined
 
   function entriesFor(hostId: string): LogEntry[] {
     return inventory.listFor(hostId)

@@ -759,7 +759,7 @@ async function loadLocalDetail(existingVersion?: number) {
   const loadVersion = existingVersion ?? ++detailLoadVersion
   stopRealtimeSync()
   guestInfo.value = null
-  diskUsages.value = {}
+  diskStore.clearUsages()
   try {
     await Promise.all([
       store.fetchOne(vmId.value),

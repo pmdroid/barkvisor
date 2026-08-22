@@ -194,6 +194,21 @@ function ipPortsFor(row: HomeWorkloadRow) {
   })
 }
 
+function bridgedIpLinks(row: HomeWorkloadRow) {
+  const view = ipPortsFor(row)
+  return view.kind === 'bridged-ip' ? view.links : []
+}
+
+function natHostPorts(row: HomeWorkloadRow) {
+  const view = ipPortsFor(row)
+  return view.kind === 'nat-localhost' ? view.hostPorts : []
+}
+
+function portMapLabels(row: HomeWorkloadRow) {
+  const view = ipPortsFor(row)
+  return view.kind === 'port-map' ? view.labels : []
+}
+
 function networkModeFor(row: HomeWorkloadRow) {
   if (!row.vm.networkId) return null
   const fromHost = deviceNetworks.networksFor(row.hostId).find((n) => n.id === row.vm.networkId)
@@ -427,7 +442,7 @@ async function doStop() {
             </template>
             <template v-else-if="ipPortsFor(row).kind === 'bridged-ip'">
               <div style="display:flex;flex-wrap:wrap;gap:4px">
-                <div v-for="(link, i) in ipPortsFor(row).links" :key="i" style="display:flex;align-items:center;gap:6px">
+                <div v-for="(link, i) in bridgedIpLinks(row)" :key="i" style="display:flex;align-items:center;gap:6px">
                   <a v-if="link.href" :href="link.href" target="_blank" class="ip-text" style="text-decoration:none;color:var(--accent)" @click.stop>{{ link.label }}</a>
                   <code v-else class="ip-text">{{ link.label }}</code>
                   <button class="ip-copy" @click.stop="copyText(`${rowKey(row)}-${i}`, link.copyText)" :title="copied[`${rowKey(row)}-${i}`] ? 'Copied!' : 'Copy address'">
@@ -439,7 +454,7 @@ async function doStop() {
             </template>
             <template v-else-if="ipPortsFor(row).kind === 'nat-localhost'">
               <div style="display:flex;flex-wrap:wrap;gap:4px">
-                <div v-for="port in ipPortsFor(row).hostPorts" :key="port" style="display:flex;align-items:center;gap:6px">
+                <div v-for="port in natHostPorts(row)" :key="port" style="display:flex;align-items:center;gap:6px">
                   <code class="ip-text">localhost:{{ port }}</code>
                   <button class="ip-copy" @click.stop="copyText(`${rowKey(row)}-${port}`, `localhost:${port}`)" :title="copied[`${rowKey(row)}-${port}`] ? 'Copied!' : 'Copy address'">
                     <AppIcon v-if="!copied[`${rowKey(row)}-${port}`]" name="copy" :size="13" style="stroke-width:2" />
@@ -450,7 +465,7 @@ async function doStop() {
             </template>
             <template v-else-if="ipPortsFor(row).kind === 'port-map'">
               <div style="display:flex;flex-wrap:wrap;gap:4px">
-                <code v-for="label in ipPortsFor(row).labels" :key="label" class="ip-text">{{ label }}</code>
+                <code v-for="label in portMapLabels(row)" :key="label" class="ip-text">{{ label }}</code>
               </div>
             </template>
             <span v-else style="color:var(--text-dim);font-size:12px">-</span>

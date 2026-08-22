@@ -30,7 +30,7 @@ const CURRENT = 'current'
 export const useLogStore = defineStore('logs', () => {
   const inventory = createHomeInventory<LogEntry>()
   const tail = useTicketedEventSource()
-  let pollTimer: number | undefined
+  let pollTimer: ReturnType<typeof setInterval> | undefined
 
   const entries = computed(() => inventory.listFor(CURRENT))
   const loading = computed(() => inventory.isLoading(CURRENT))

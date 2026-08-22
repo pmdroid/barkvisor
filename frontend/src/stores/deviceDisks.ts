@@ -76,6 +76,10 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
     }
   }
 
+  function replaceUsages(hostId: string, next: Record<string, DiskUsage>): void {
+    usagesByHost.value = { ...usagesByHost.value, [hostId]: { ...next } }
+  }
+
   function dropUsage(hostId: string, diskId: string): void {
     const current = usagesFor(hostId)
     if (!(diskId in current)) return
@@ -216,6 +220,7 @@ export const useDeviceDisksStore = defineStore('deviceDisks', () => {
     replaceList: inventory.replaceList,
     replaceOne: inventory.replaceOne,
     replaceUsage,
+    replaceUsages,
     dropUsage,
     applySummary,
     noteSelf: inventory.noteSelf,

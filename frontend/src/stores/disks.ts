@@ -73,6 +73,10 @@ export const useDiskStore = defineStore('disks', () => {
     home.replaceUsage(rememberSelf(), id, usage)
   }
 
+  function clearUsages() {
+    home.replaceUsages(rememberSelf(), {})
+  }
+
   function applySummary(next: StorageSummary) {
     home.applySummary(rememberSelf(), next)
   }
@@ -109,6 +113,7 @@ export const useDiskStore = defineStore('disks', () => {
     applyOne,
     applyRemove,
     applyUsage,
+    clearUsages,
     applySummary,
     create,
     remove,
