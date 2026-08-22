@@ -1,3 +1,6 @@
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import Foundation
 
 /// SSRF protection utilities for validating URLs against private/internal hosts.
@@ -79,7 +82,7 @@ public enum SSRFGuard {
     /// Validate a URL, checking both the hostname string and resolved IPs.
     /// Returns a descriptive error string if the URL targets a private host, or nil if safe.
     public static func validate(url: URL) -> String? {
-        guard let host = url.host?.lowercased() else {
+        guard let host = url.host?.lowercased(), !host.isEmpty else {
             return "URL has no host"
         }
 
@@ -95,6 +98,29 @@ public enum SSRFGuard {
 
         return nil
     }
+
+    /// Whether a redirect hop may be fetched. Default URLSession follows blindly;
+    /// Library downloads must re-run ``validate(url:)`` (scheme + DNS) on Location.
+    public static func shouldFollowRedirect(to url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), Config.allowedURLSchemes.contains(scheme) else {
+            return false
+        }
+        return validate(url: url) == nil
+    }
+
+    /// URLSession that only follows hops ``shouldFollowRedirect(to:)`` allows.
+    public static func urlSession(resourceTimeout: TimeInterval = 60) -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForResource = resourceTimeout
+        return URLSession(
+            configuration: config,
+            delegate: SSRFRedirectGate.shared,
+            delegateQueue: nil,
+        )
+    }
+
+    /// Shared catalog/default fetch session (do not use URLSession.shared).
+    public static let defaultSession: URLSession = urlSession()
 
     // MARK: - Private helpers
 
@@ -119,5 +145,24 @@ public enum SSRFGuard {
         default:
             return nil
         }
+    }
+}
+
+/// Refuses redirect hops that fail ``SSRFGuard.validate(url:)`` (private DNS, bad scheme).
+final class SSRFRedirectGate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = SSRFRedirectGate()
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void,
+    ) {
+        guard let url = request.url, SSRFGuard.shouldFollowRedirect(to: url) else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }

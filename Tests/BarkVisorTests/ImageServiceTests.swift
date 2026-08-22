@@ -271,6 +271,50 @@ final class ImageServiceTests {
         }
         #expect(miss == nil)
     }
+
+    @Test func `start download rejects private URL before inserting`() async throws {
+        let pool = dbPool
+        let downloader = ImageDownloader(dbPool: { pool })
+        await #expect(throws: BarkVisorError.self) {
+            try await ImageService.startDownload(
+                ImageDownloadRequest(
+                    name: "evil",
+                    url: "http://127.0.0.1/cloud.iso",
+                    imageType: "iso",
+                    arch: "arm64",
+                ),
+                downloader: downloader,
+                db: pool,
+            )
+        }
+        let count = try await pool.read { db in try VMImage.fetchCount(db) }
+        #expect(count == 0)
+    }
+
+    @Test func `catalog download rejects private URL without starting`() async throws {
+        let downloader = RecordingCatalogStartDownloader()
+        let source = "http://169.254.169.254/latest/cloud.img"
+        let sourceURL = try #require(URL(string: source))
+        let repoImage = RepositoryImage(
+            id: "ri-ssrf", repositoryId: "repo-1", slug: "cloud",
+            name: "Cloud", description: nil, imageType: "cloud-image", arch: "arm64",
+            version: "1", downloadUrl: source, sizeBytes: nil,
+        )
+        let pool = dbPool
+        await #expect(throws: BarkVisorError.self) {
+            try await ImageService.startOrDetectCatalogDownload(
+                repoImage: repoImage,
+                sourceURL: sourceURL,
+                checksum: nil,
+                downloader: downloader,
+                db: pool,
+            )
+        }
+        let count = try await pool.read { db in try VMImage.fetchCount(db) }
+        #expect(count == 0)
+        let started = await downloader.startedIDs
+        #expect(started.isEmpty)
+    }
 }
 
 private actor RecordingCatalogStartDownloader: ImageDownloadStarting {

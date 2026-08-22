@@ -66,12 +66,9 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private var libraryPollers: [String: Task<Void, Never>] = [:]
     private let dbPool: () -> GRDB.DatabasePool
 
-    /// Shared session for all downloads (reuses connections, avoids per-download overhead)
-    private static let downloadSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForResource = 3_600
-        return URLSession(configuration: config)
-    }()
+    /// Shared session for all downloads (reuses connections, avoids per-download overhead).
+    /// Redirects are gated by SSRFGuard.validate so a public URL cannot 302 to loopback.
+    private static let downloadSession: URLSession = SSRFGuard.urlSession(resourceTimeout: 3_600)
 
     public init(dbPool: @escaping @Sendable () -> GRDB.DatabasePool) {
         self.dbPool = dbPool
@@ -159,6 +156,9 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private func performDownload(
         imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
     ) async throws {
+        if !url.isFileURL, let ssrfError = SSRFGuard.validate(url: url) {
+            throw BarkVisorError.downloadFailed(ssrfError)
+        }
         #if canImport(FoundationNetworking) && !canImport(Darwin)
             // Linux FoundationNetworking: use download(from:) (no URLSession.AsyncBytes).
             let (tempURL, response) = try await Self.downloadSession.download(from: url)

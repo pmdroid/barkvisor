@@ -74,6 +74,14 @@ public enum ImageService {
         guard let sourceURL = URL(string: request.url) else {
             throw BarkVisorError.badRequest("Invalid URL")
         }
+        guard let scheme = sourceURL.scheme?.lowercased(),
+              Config.allowedURLSchemes.contains(scheme)
+        else {
+            throw BarkVisorError.badRequest("Invalid URL. Only http:// and https:// URLs are allowed.")
+        }
+        if let ssrfError = SSRFGuard.validate(url: sourceURL) {
+            throw BarkVisorError.badRequest(ssrfError)
+        }
 
         let now = iso8601.string(from: Date())
         let id = UUID().uuidString
@@ -157,6 +165,9 @@ public enum ImageService {
         downloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> CatalogDownloadClaim {
+        if let ssrfError = SSRFGuard.validate(url: sourceURL) {
+            throw BarkVisorError.badRequest(ssrfError)
+        }
         let request = LibraryDepotFetchRequest(
             sourceUrl: repoImage.downloadUrl,
             name: repoImage.name,

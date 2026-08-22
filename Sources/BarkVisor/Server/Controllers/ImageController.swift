@@ -111,17 +111,9 @@ struct ImageController: RouteCollection {
         try DownloadImageRequest.validate(content: req)
         let body = try req.content.decode(DownloadImageRequest.self)
 
-        // SSRF protection: validate URL scheme and block private/internal hosts
-        guard let parsedURL = URL(string: body.url),
-              let scheme = parsedURL.scheme?.lowercased(),
-              Config.allowedURLSchemes.contains(scheme)
-        else {
-            throw Abort(.badRequest, reason: "Invalid URL. Only http:// and https:// URLs are allowed.")
-        }
-        if let host = parsedURL.host?.lowercased(), SSRFGuard.isPrivateHost(host) {
-            throw Abort(
-                .badRequest, reason: "URLs pointing to private or internal addresses are not allowed",
-            )
+        // SSRF: scheme allowlist + SSRFGuard.validate (hostname and DNS).
+        if let reason = Self.downloadURLRejection(body.url) {
+            throw Abort(.badRequest, reason: reason)
         }
 
         let image = try await ImageService.startDownload(
@@ -337,5 +329,19 @@ struct ImageController: RouteCollection {
         var headers = tusHeaders()
         headers.add(name: .contentLength, value: "0")
         return Response(status: .noContent, headers: headers)
+    }
+
+    /// Classifier for POST /api/images/download. Scheme + ``SSRFGuard.validate(url:)``.
+    static func downloadURLRejection(_ urlString: String) -> String? {
+        guard let parsedURL = URL(string: urlString),
+              let scheme = parsedURL.scheme?.lowercased(),
+              Config.allowedURLSchemes.contains(scheme)
+        else {
+            return "Invalid URL. Only http:// and https:// URLs are allowed."
+        }
+        if let ssrfError = SSRFGuard.validate(url: parsedURL) {
+            return ssrfError
+        }
+        return nil
     }
 }
