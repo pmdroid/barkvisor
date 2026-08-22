@@ -159,6 +159,42 @@ struct WorkloadSpecOverrideTests {
         }
     }
 
+    @Test func `overlay machine with comma is rejected`() {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "virt,accel=tcg"),
+        ))
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        }
+        #expect(err?.httpStatus == 400)
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("overrides.linux.machine"))
+        #expect(text.contains("comma"))
+    }
+
+    @Test func `overlay machine outside allowed set is rejected`() {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "pc"),
+        ))
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        }
+        #expect(err?.httpStatus == 400)
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("overrides.linux.machine"))
+        #expect(text.contains("q35"))
+        #expect(text.contains("virt"))
+    }
+
+    @Test func `overlay machine allowed types are accepted`() throws {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "virt"),
+            macos: WorkloadSpecOverlay(machine: "q35"),
+        ))
+        try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        try WorkloadSpecResolver.validate(spec, host: macosCaps())
+    }
+
     @Test func `argv override is rejected with field path`() {
         let json = """
         {

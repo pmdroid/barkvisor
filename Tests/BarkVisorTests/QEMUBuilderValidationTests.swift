@@ -201,6 +201,41 @@ struct QEMUBuilderValidationTests {
         #expect(QEMUBuilder.machineType(for: "windows-amd64") == "q35")
     }
 
+    @Test func `machine rejects commas`() {
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.validateMachine("virt,accel=tcg")
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.localizedDescription.contains("comma") == true)
+    }
+
+    @Test func `machine only allows guest profile types`() throws {
+        for type in GuestProfiles.qemuMachines {
+            _ = try QEMUBuilder.validateMachine(type)
+        }
+        #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.validateMachine("pc")
+        }
+    }
+
+    @Test func `extra networks are rejected`() {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "net-test"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: min(2, max(1, PlatformHost.cpuCount)), memoryMb: 512),
+                networks: [
+                    WorkloadNetwork(mode: "nat"),
+                    WorkloadNetwork(mode: "isolated"),
+                ],
+            ),
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.networkArgs(spec: spec, network: nil)
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.localizedDescription.contains("spec.networks") == true)
+    }
+
     @Test func `accelerator is host platform specific`() {
         #if os(macOS)
             #expect(QEMUBuilder.accelerator == "hvf")

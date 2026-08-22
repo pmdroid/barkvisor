@@ -198,6 +198,7 @@ public enum WorkloadSpecProjector {
             throw BarkVisorError.badRequest("spec.resources.memoryMb must be 128...1048576")
         }
         _ = try resolveGuestType(resolved)
+        try validateMachineAndNetworks(spec)
         for disk in spec.spec.disks {
             guard ["boot", "data", "cdrom"].contains(disk.role) else {
                 throw BarkVisorError.badRequest("Unknown disk role '\(disk.role)'")
@@ -232,6 +233,22 @@ public enum WorkloadSpecProjector {
         }
         _ = try WorkloadClass.parse(spec.spec.workloadClass)
         try AgentWorkloadPolicy.validate(spec: spec, network: nil)
+    }
+
+    /// PAS-284: `-machine` is a comma-sensitive QEMU arg; builder only attaches networks[0].
+    private static func validateMachineAndNetworks(_ spec: WorkloadSpec) throws {
+        if let machine = spec.spec.machine {
+            do {
+                _ = try QEMUBuilder.validateMachine(machine, label: "spec.machine")
+            } catch let error as BarkVisorError {
+                throw BarkVisorError.badRequest(error.localizedDescription)
+            }
+        }
+        if spec.spec.networks.count > 1 {
+            throw BarkVisorError.badRequest(
+                "spec.networks supports at most 1 network until multi-NIC is available",
+            )
+        }
     }
 
     /// Resolve guest profile id from spec, defaulting arch from the host when omitted.

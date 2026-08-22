@@ -150,6 +150,13 @@ public enum WorkloadSpecResolver {
         if let resolution = overlay.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)
         }
+        if let machine = overlay.machine {
+            do {
+                _ = try QEMUBuilder.validateMachine(machine, label: "\(path).machine")
+            } catch let error as BarkVisorError {
+                throw BarkVisorError.badRequest(error.localizedDescription)
+            }
+        }
         if overlay.hugepages != nil, platform != .linux {
             throw BarkVisorError.badRequest("\(path).hugepages is only valid on linux")
         }
