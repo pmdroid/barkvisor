@@ -24,17 +24,37 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
         self._setupComplete = hasAdmin
     }
 
+    /// Same path set as `HomeDeviceProxy.isConsoleLocalOnly` for setup.
+    static func isSetupAPIPath(_ path: String) -> Bool {
+        path == "/api/setup" || path.hasPrefix("/api/setup/")
+    }
+
+    /// Same peer check as pairing join (`SetupOrJWTMiddleware`) and the
+    /// Home member proxy. The listener binds `0.0.0.0`; a LAN client must
+    /// not create an admin or finish setup, including after pairing join
+    /// which leaves this window open.
+    static func requireConsoleLocalClient(_ peer: String?) throws {
+        guard PairingPayload.isConsoleLocalClient(peer) else {
+            throw Abort(.forbidden, reason: "Setup is limited to this Device")
+        }
+    }
+
     func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
+        let path = request.url.path
+
+        if Self.isSetupAPIPath(path) {
+            let peer = request.remoteAddress?.ipAddress ?? request.peerAddress?.ipAddress
+            try Self.requireConsoleLocalClient(peer)
+        }
+
         if isSetupComplete {
             return try await next.respond(to: request)
         }
 
-        let path = request.url.path
-
         // Always allow: static assets, health, setup wizard, and public capabilities
         // (UI needs platform flags before admin exists).
         if !path.hasPrefix("/api/")
-            || path.hasPrefix("/api/setup")
+            || Self.isSetupAPIPath(path)
             || path.hasPrefix("/api/health")
             || path == "/api/system/capabilities"
             || path == "/api/openapi.yaml"
@@ -53,5 +73,16 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
     /// Called by SetupController after admin user is created.
     func markComplete() {
         lock.withLock { _setupComplete = true }
+    }
+}
+
+/// Route-level twin of the SetupMiddleware path check. Pairing join does
+/// not call `markComplete`, so these routes stay open until the wizard
+/// finishes — but only for a loopback peer.
+struct ConsoleLocalSetupMiddleware: AsyncMiddleware {
+    func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
+        let peer = request.remoteAddress?.ipAddress ?? request.peerAddress?.ipAddress
+        try SetupMiddleware.requireConsoleLocalClient(peer)
+        return try await next.respond(to: request)
     }
 }
