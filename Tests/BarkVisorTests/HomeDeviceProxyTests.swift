@@ -44,6 +44,9 @@ struct HomeDeviceProxyTests {
                 == "/api/pairing/redeem",
         )
         #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.memberAPIPath(components: ["agent", "pairing", "identity"])
+        }
+        #expect(throws: BarkVisorError.self) {
             try HomeDeviceProxy.memberAPIPath(
                 components: ["agent", "library", "images", "img-1", "content"],
             )
@@ -77,6 +80,17 @@ struct HomeDeviceProxyTests {
         }
         try HomeDeviceProxy.rejectConsoleLocalOnly("/api/vms")
         try HomeDeviceProxy.rejectConsoleLocalOnly("/api/pairing/redeem")
+        #expect(HomeDeviceProxy.isPairingIdentityPath("/api/agent/pairing/identity"))
+        #expect(throws: BarkVisorError.self) {
+            try HomeDeviceProxy.rejectPairingIdentity("/api/agent/pairing/identity")
+        }
+        let identityURL = try HomeDeviceProxy.memberURL(
+            host: "192.168.1.9",
+            port: 7_778,
+            path: "/api/agent/pairing/identity",
+        )
+        #expect(identityURL.path == "/api/agent/pairing/identity")
+        #expect(identityURL.scheme == "https")
         #expect(throws: BarkVisorError.self) {
             try HomeDeviceProxy.memberURL(
                 host: "192.168.1.9",

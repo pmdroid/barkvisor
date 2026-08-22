@@ -102,6 +102,7 @@ extension PairingService {
         hostId: String,
         now: Date = Date(),
         client: any PairingHTTPClient,
+        identityClient: (any PairingIdentityClient)? = nil,
         pins: PeerPinStore? = nil,
         db: DatabasePool? = nil,
         keys: JWTKeyCollection? = nil,
@@ -118,22 +119,22 @@ extension PairingService {
         // Issuer already consumed this offer on HTTP 200. A local decode /
         // applyTrust failure must retry from this pending body for the same
         // one-time code. A newly issued QR from the same host must redeem
-        // again instead of reusing stale material.
+        // again instead of reusing stale material. Pending never stores
+        // jwtSecret / admin hash (PAS-283).
         if let pending = loadPendingRedeem(dataDir: dataDir),
            pendingMatches(pending, expected: payload) {
-            let result = try await applyTrust(
+            return try await finishJoin(
                 response: pending.response,
                 expected: payload,
                 dataDir: dataDir,
                 localHostId: hostId,
                 now: now,
+                identityClient: identityClient,
                 pins: pins,
                 db: db,
                 keys: keys,
                 devices: devices,
             )
-            clearPendingRedeem(dataDir: dataDir)
-            return result
         }
 
         // Validate + pin the contract target (string encodings + DNS) before
@@ -200,13 +201,47 @@ extension PairingService {
         } catch {
             throw PairingError.invalidPayload("Issuer returned an invalid pairing response")
         }
-        persistPendingRedeem(remote, code: payload.code, dataDir: dataDir)
-
-        let result = try await applyTrust(
+        return try await finishJoin(
             response: remote,
             expected: payload,
             dataDir: dataDir,
             localHostId: hostId,
+            now: now,
+            identityClient: identityClient,
+            pins: pins,
+            db: db,
+            keys: keys,
+            devices: devices,
+        )
+    }
+
+    /// Persist device-trust only, copy login over mTLS, then applyTrust.
+    static func finishJoin(
+        response: PairingRedeemResponse,
+        expected: PairingPayload,
+        dataDir: URL,
+        localHostId: String,
+        now: Date,
+        identityClient: (any PairingIdentityClient)?,
+        pins: PeerPinStore?,
+        db: DatabasePool?,
+        keys: JWTKeyCollection?,
+        devices: DeviceRegistry?,
+    ) async throws -> PairingJoinResponse {
+        let trustOnly = withoutSharedIdentity(response)
+        persistPendingRedeem(trustOnly, code: expected.code, dataDir: dataDir)
+        let withIdentity = try await copySharedIdentity(
+            onto: trustOnly,
+            expected: expected,
+            dataDir: dataDir,
+            localHostId: localHostId,
+            identityClient: identityClient,
+        )
+        let result = try await applyTrust(
+            response: withIdentity,
+            expected: expected,
+            dataDir: dataDir,
+            localHostId: localHostId,
             now: now,
             pins: pins,
             db: db,
@@ -215,6 +250,52 @@ extension PairingService {
         )
         clearPendingRedeem(dataDir: dataDir)
         return result
+    }
+
+    /// HTTP redeem is ignored for jwtSecret / adminUser. Copy those over
+    /// the agent plane after the QR fingerprint binds (PAS-283).
+    static func copySharedIdentity(
+        onto response: PairingRedeemResponse,
+        expected: PairingPayload,
+        dataDir: URL,
+        localHostId: String,
+        identityClient: (any PairingIdentityClient)?,
+    ) async throws -> PairingRedeemResponse {
+        guard let identityClient else { return withoutSharedIdentity(response) }
+        guard let host = expected.host, !host.isEmpty else {
+            throw PairingError.invalidPayload("Pairing host is missing from the QR / request")
+        }
+        let material: HomeCertificateMaterial
+        do {
+            material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: localHostId)
+        } catch {
+            throw PairingError.unavailable(
+                "Home CA is unavailable; local runtime continues: \(error.localizedDescription)",
+            )
+        }
+        let identity: PairingSharedIdentity
+        do {
+            identity = try await identityClient.fetchSharedIdentity(
+                PairingIdentityFetch(
+                    host: host,
+                    agentPort: expected.agentPort,
+                    material: material,
+                    issuedCertificatePEM: response.issuedCertificatePEM,
+                    trustCertificatePEM: response.caCertificatePEM,
+                ),
+            )
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.redeemFailed(
+                status: 502,
+                reason: "Unable to copy Home login over the agent plane: \(error.localizedDescription)",
+            )
+        }
+        var copy = withoutSharedIdentity(response)
+        copy.jwtSecret = identity.jwtSecret
+        copy.adminUser = identity.adminUser
+        return copy
     }
 
     public static func receiptURL(in dataDir: URL) -> URL {
@@ -250,7 +331,11 @@ extension PairingService {
         let url = pendingRedeemURL(in: dataDir)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(PendingRedeemRecord.self, from: data)
+        guard var record = try? JSONDecoder().decode(PendingRedeemRecord.self, from: data) else {
+            return nil
+        }
+        record.response = withoutSharedIdentity(record.response)
+        return record
     }
 
     static func persistPendingRedeem(
@@ -259,7 +344,10 @@ extension PairingService {
         dataDir: URL,
     ) {
         let url = pendingRedeemURL(in: dataDir)
-        let record = PendingRedeemRecord(codeHash: PairingCode.hash(code), response: response)
+        let record = PendingRedeemRecord(
+            codeHash: PairingCode.hash(code),
+            response: withoutSharedIdentity(response),
+        )
         guard let data = try? JSONEncoder().encode(record) else { return }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),

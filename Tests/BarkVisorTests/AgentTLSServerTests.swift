@@ -73,6 +73,66 @@ struct AgentTLSServerTests {
         }
     }
 
+    @Test func `serves shared identity only on the mTLS listener`() async throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let hostId = UUID().uuidString
+        try Config.persistJWTSecret("agent-plane-secret", to: dir)
+        let material = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
+        let pool = try DatabasePool(path: dir.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        try await pool.write { db in
+            try User(
+                id: "admin-1",
+                username: "pascal",
+                password: "hashed:shared",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        let server = AgentTLSServer(
+            material: material,
+            pins: PeerPinStore(dataDir: dir),
+            hostname: "127.0.0.1",
+            port: 0,
+            dataDir: dir,
+            hostId: hostId,
+            database: pool,
+        )
+        try await server.start()
+        do {
+            let port = try #require(server.boundPort)
+            let client = AgentMTLSClient(material: material)
+            let url = try HomeDeviceProxy.memberURL(
+                host: "127.0.0.1",
+                port: port,
+                path: PairingService.identityPath,
+            )
+            let response = try await client.send(HomeDeviceProxyRequest(method: "GET", url: url))
+            #expect((200 ... 299).contains(response.status))
+            let identity = try JSONDecoder().decode(PairingSharedIdentity.self, from: response.body)
+            #expect(identity.jwtSecret == "agent-plane-secret")
+            #expect(identity.adminUser?.id == "admin-1")
+            #expect(identity.adminUser?.username == "pascal")
+            #expect(identity.adminUser?.passwordHash == "hashed:shared")
+
+            let fetch = AgentMTLSPairingIdentityClient()
+            let copied = try await fetch.fetchSharedIdentity(
+                PairingIdentityFetch(
+                    host: "127.0.0.1",
+                    agentPort: port,
+                    material: material,
+                    issuedCertificatePEM: material.deviceCertificatePEM,
+                    trustCertificatePEM: material.caCertificatePEM,
+                ),
+            )
+            #expect(copied.jwtSecret == "agent-plane-secret")
+            await server.stop()
+        } catch {
+            await server.stop()
+            throw error
+        }
+    }
+
     @Test func `accepts pairwise pinned foreign cert`() async throws {
         let localDir = try isolatedDir()
         let peerDir = try isolatedDir()

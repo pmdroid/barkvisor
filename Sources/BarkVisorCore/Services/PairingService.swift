@@ -7,8 +7,9 @@ import X509
 ///
 /// The existing Device issues a short-lived code / QR. The joining Device
 /// redeems it and both sides record pairwise pins. Home CA issues a peer
-/// cert as trust material on the wire. Redeem also attaches the issuer
-/// jwt-secret and admin user hash so one login works on both Devices.
+/// cert as trust material on the wire. HTTP redeem is device-trust only
+/// (PAS-283). Shared login (jwt-secret + admin hash) is copied over mTLS
+/// after the QR fingerprint binds.
 ///
 /// Re-pair uses this same issue / redeem / join surface — a later pairing
 /// code for a hostId already on this Device replaces the pin and registry
@@ -18,6 +19,7 @@ public enum PairingService {
     public static let defaultTTL: TimeInterval = 10 * 60
     public static let receiptFileName = "pairing-peer.json"
     public static let pendingRedeemFileName = "pairing-redeem-pending.json"
+    public static let identityPath = "/api/agent/pairing/identity"
 
     /// Disk-only wrapper so a pending redeem cannot be reused for a later
     /// offer from the same host (new one-time code).
@@ -187,23 +189,17 @@ public enum PairingService {
         public var issuerHostId: String
         public var request: PairingRedeemRequest
         public var now: Date
-        public var jwtSecret: String?
-        public var adminUser: PairingAdminUser?
 
         public init(
             dataDir: URL,
             issuerHostId: String,
             request: PairingRedeemRequest,
             now: Date = Date(),
-            jwtSecret: String? = nil,
-            adminUser: PairingAdminUser? = nil,
         ) {
             self.dataDir = dataDir
             self.issuerHostId = issuerHostId
             self.request = request
             self.now = now
-            self.jwtSecret = jwtSecret
-            self.adminUser = adminUser
         }
     }
 
@@ -276,7 +272,7 @@ public enum PairingService {
                 now: input.now,
                 devices: devices,
             )
-            return attachIdentity(replayed, input: input)
+            return replayed
         }
         // New unused code: first pair or PAS-77 re-pair. issueAndPin
         // replaces any previous pin for this hostId; registerPairedDevice
@@ -312,18 +308,15 @@ public enum PairingService {
             now: input.now,
             devices: devices,
         )
-        return attachIdentity(
-            PairingRedeemResponse(
-                hostId: input.issuerHostId,
-                deviceCertificatePEM: material.deviceCertificatePEM,
-                deviceFingerprint: material.deviceFingerprint,
-                caCertificatePEM: material.caCertificatePEM,
-                caFingerprint: material.caFingerprint,
-                issuedCertificatePEM: issued.certificatePEM,
-                issuedFingerprint: issued.fingerprint,
-                agentPort: consumed.agentPort,
-            ),
-            input: input,
+        return PairingRedeemResponse(
+            hostId: input.issuerHostId,
+            deviceCertificatePEM: material.deviceCertificatePEM,
+            deviceFingerprint: material.deviceFingerprint,
+            caCertificatePEM: material.caCertificatePEM,
+            caFingerprint: material.caFingerprint,
+            issuedCertificatePEM: issued.certificatePEM,
+            issuedFingerprint: issued.fingerprint,
+            agentPort: consumed.agentPort,
         )
     }
 
@@ -406,23 +399,37 @@ public enum PairingService {
         )
     }
 
-    /// Shared login material for the joiner (PAS-81). Reads `dataDir/jwt-secret`
-    /// when RedeemInput does not pass one; never generates a secret here.
-    static func attachIdentity(
-        _ response: PairingRedeemResponse,
-        input: RedeemInput,
-    ) -> PairingRedeemResponse {
+    /// Shared login material for the joiner (PAS-81). Served on the agent
+    /// plane after redeem, never on cleartext HTTP (PAS-283). Reads
+    /// `dataDir/jwt-secret` when a secret is not passed; never generates one.
+    public static func sharedIdentity(
+        dataDir: URL,
+        jwtSecret: String? = nil,
+        adminUser: PairingAdminUser? = nil,
+        db: DatabasePool? = nil,
+    ) throws -> PairingSharedIdentity {
+        let secret = jwtSecret ?? Config.loadJWTSecret(from: dataDir)
+        let admin: PairingAdminUser? = if let adminUser {
+            adminUser
+        } else if let db {
+            try loadAdminUser(db: db)
+        } else {
+            nil
+        }
+        let copiedSecret: String? = if let secret, !secret.isEmpty { secret } else { nil }
+        let copiedAdmin: PairingAdminUser? =
+            if let admin, !admin.id.isEmpty, !admin.username.isEmpty, !admin.passwordHash.isEmpty {
+                admin
+            } else {
+                nil
+            }
+        return PairingSharedIdentity(jwtSecret: copiedSecret, adminUser: copiedAdmin)
+    }
+
+    static func withoutSharedIdentity(_ response: PairingRedeemResponse) -> PairingRedeemResponse {
         var copy = response
-        let secret = input.jwtSecret ?? Config.loadJWTSecret(from: input.dataDir)
-        if let secret, !secret.isEmpty {
-            copy.jwtSecret = secret
-        }
-        if let admin = input.adminUser,
-           !admin.id.isEmpty,
-           !admin.username.isEmpty,
-           !admin.passwordHash.isEmpty {
-            copy.adminUser = admin
-        }
+        copy.jwtSecret = nil
+        copy.adminUser = nil
         return copy
     }
 

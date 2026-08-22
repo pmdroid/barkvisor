@@ -18,6 +18,7 @@ public enum HomeDeviceProxy {
         try rejectNestedHome(path)
         try rejectConsoleLocalOnly(path)
         try rejectLibraryBytes(path)
+        try rejectPairingIdentity(path)
         return path
     }
 
@@ -98,6 +99,21 @@ public enum HomeDeviceProxy {
                 "Library image bytes are served on the agent plane, not the Home proxy",
             )
         }
+    }
+
+    /// jwt-secret + admin hash stay on mTLS. The Home proxy must not
+    /// fetch another Device's login material with a dashboard JWT.
+    public static func rejectPairingIdentity(_ path: String) throws {
+        if isPairingIdentityPath(path) {
+            throw BarkVisorError.badRequest(
+                "Home login is copied on the agent plane, not the Home proxy",
+            )
+        }
+    }
+
+    public static func isPairingIdentityPath(_ path: String) -> Bool {
+        path == PairingService.identityPath
+            || path.hasPrefix(PairingService.identityPath + "/")
     }
 
     /// Setup and first-run join stay on the host listener. The agent-plane

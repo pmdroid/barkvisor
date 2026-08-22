@@ -47,7 +47,7 @@ struct PairingIdentityTests {
         return PairingAdminUser(id: id, username: username, passwordHash: hash)
     }
 
-    @Test func `redeem attaches jwt secret and admin hash not plaintext`() throws {
+    @Test func `redeem omits jwt secret and admin hash`() throws {
         let issuerDir = try isolatedDir("iss")
         let joinerDir = try isolatedDir("join")
         defer {
@@ -58,6 +58,11 @@ struct PairingIdentityTests {
         let issuerId = UUID().uuidString
         let joinerId = UUID().uuidString
         let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let admin = PairingAdminUser(
+            id: "user-home",
+            username: "pascal",
+            passwordHash: "$2b$12$storedhashnotplaintextxxxx",
+        )
         let offers = PairingOfferStore(dataDir: issuerDir)
         let issued = try PairingService.issue(
             PairingService.IssueInput(
@@ -67,11 +72,6 @@ struct PairingIdentityTests {
                 advertisedHosts: ["192.168.0.8"],
             ),
             offers: offers,
-        )
-        let admin = PairingAdminUser(
-            id: "user-home",
-            username: "pascal",
-            passwordHash: "$2b$12$storedhashnotplaintextxxxx",
         )
         let remote = try PairingService.redeem(
             PairingService.RedeemInput(
@@ -84,62 +84,38 @@ struct PairingIdentityTests {
                     deviceCertificatePEM: joiner.deviceCertificatePEM,
                     caCertificatePEM: joiner.caCertificatePEM,
                 ),
-                jwtSecret: "issuer-hmac-secret",
-                adminUser: admin,
             ),
             offers: offers,
         )
-        #expect(remote.jwtSecret == "issuer-hmac-secret")
-        #expect(remote.adminUser == admin)
+        #expect(remote.jwtSecret == nil)
+        #expect(remote.adminUser == nil)
         let encoded = try JSONEncoder().encode(remote)
         let json = try #require(String(data: encoded, encoding: .utf8))
-        #expect(json.contains("passwordHash"))
+        #expect(!json.contains("issuer-hmac-secret"))
         #expect(!json.contains("home-password"))
-        #expect(!json.contains("\"password\""))
+        #expect(!json.contains("passwordHash"))
+
+        let identity = try PairingService.sharedIdentity(
+            dataDir: issuerDir,
+            adminUser: admin,
+        )
+        #expect(identity.jwtSecret == "issuer-hmac-secret")
+        #expect(identity.adminUser == admin)
+        let identityJSON = try #require(
+            String(data: JSONEncoder().encode(identity), encoding: .utf8),
+        )
+        #expect(identityJSON.contains("passwordHash"))
+        #expect(!identityJSON.contains("home-password"))
+        #expect(!identityJSON.contains("\"password\""))
     }
 
-    @Test func `redeem loads jwt secret from issuer data dir`() throws {
+    @Test func `shared identity loads jwt secret from issuer data dir`() throws {
         let issuerDir = try isolatedDir("iss-file")
-        let joinerDir = try isolatedDir("join-file")
-        defer {
-            try? FileManager.default.removeItem(at: issuerDir)
-            try? FileManager.default.removeItem(at: joinerDir)
-        }
+        defer { try? FileManager.default.removeItem(at: issuerDir) }
         try Config.persistJWTSecret("from-disk-secret", to: issuerDir)
-        let issuerId = UUID().uuidString
-        let joiner = try HomeCAService.loadOrCreate(
-            dataDir: joinerDir,
-            hostId: UUID().uuidString,
-        )
-        let offers = PairingOfferStore(dataDir: issuerDir)
-        let issued = try PairingService.issue(
-            PairingService.IssueInput(
-                dataDir: issuerDir,
-                hostId: issuerId,
-                advertisedHost: "192.168.0.8",
-                advertisedHosts: ["192.168.0.8"],
-            ),
-            offers: offers,
-        )
-        let remote = try PairingService.redeem(
-            PairingService.RedeemInput(
-                dataDir: issuerDir,
-                issuerHostId: issuerId,
-                request: PairingRedeemRequest(
-                    code: issued.code,
-                    hostId: joiner.hostId,
-                    csrPEM: HomeCAService.makeDeviceCSR(
-                        hostId: joiner.hostId,
-                        keyPEM: joiner.deviceKeyPEM,
-                    ),
-                    deviceCertificatePEM: joiner.deviceCertificatePEM,
-                    caCertificatePEM: joiner.caCertificatePEM,
-                ),
-            ),
-            offers: offers,
-        )
-        #expect(remote.jwtSecret == "from-disk-secret")
-        #expect(remote.adminUser == nil)
+        let identity = try PairingService.sharedIdentity(dataDir: issuerDir)
+        #expect(identity.jwtSecret == "from-disk-secret")
+        #expect(identity.adminUser == nil)
     }
 
     @Test func `applyTrust replaces jwt secret upserts admin and reloads hmac`() async throws {
@@ -455,7 +431,7 @@ struct PairingIdentityTests {
         #expect(admin?.passwordHash == "hashed:first")
     }
 
-    @Test func `join copies identity through existing redeem`() async throws {
+    @Test func `join copies identity over the agent plane not http redeem`() async throws {
         let issuerDir = try isolatedDir("iss-join")
         let joinerDir = try isolatedDir("join-join")
         defer {
@@ -489,27 +465,37 @@ struct PairingIdentityTests {
         await keys.add(hmac: .init(from: "joiner-local"), digestAlgorithm: .sha256)
         let client = IdentityRedeemClient { body in
             let request = try JSONDecoder().decode(PairingRedeemRequest.self, from: body)
-            return try PairingService.redeem(
+            var remote = try PairingService.redeem(
                 PairingService.RedeemInput(
                     dataDir: issuerDir,
                     issuerHostId: issuerId,
                     request: request,
-                    jwtSecret: "home-jwt",
-                    adminUser: admin,
                 ),
                 offers: offers,
             )
+            remote.jwtSecret = "from-cleartext-http"
+            remote.adminUser = PairingAdminUser(
+                id: "evil",
+                username: "evil",
+                passwordHash: "hashed:evil",
+            )
+            return remote
         }
+        let identityClient = StubIdentityClient(
+            identity: PairingSharedIdentity(jwtSecret: "home-jwt", adminUser: admin),
+        )
         let result = try await PairingService.join(
             request: PairingJoinRequest(qrPayload: issued.qrPayload),
             dataDir: joinerDir,
             hostId: joinerId,
             client: client,
+            identityClient: identityClient,
             db: joinerDB,
             keys: keys,
         )
         #expect(result.peerHostId == issuerId)
         #expect(Config.loadJWTSecret(from: joinerDir) == "home-jwt")
+        #expect(Config.loadJWTSecret(from: joinerDir) != "from-cleartext-http")
         let copied = try await joinerDB.read { db in
             try User.filter(User.Columns.username == "pascal").fetchOne(db)
         }
@@ -523,6 +509,109 @@ struct PairingIdentityTests {
         )
         #expect(user.username == "pascal")
         #expect(!token.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: PairingService.pendingRedeemURL(in: joinerDir).path))
+    }
+
+    @Test func `join without identity client ignores jwtSecret on http redeem`() async throws {
+        let issuerDir = try isolatedDir("iss-ignore")
+        let joinerDir = try isolatedDir("join-ignore")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        try Config.persistJWTSecret("keep-local", to: joinerDir)
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.22",
+                advertisedHosts: ["192.168.0.22"],
+            ),
+            offers: offers,
+        )
+        let client = IdentityRedeemClient { body in
+            let request = try JSONDecoder().decode(PairingRedeemRequest.self, from: body)
+            var remote = try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: issuerDir,
+                    issuerHostId: issuerId,
+                    request: request,
+                ),
+                offers: offers,
+            )
+            remote.jwtSecret = "from-cleartext-http"
+            return remote
+        }
+        _ = try await PairingService.join(
+            request: PairingJoinRequest(qrPayload: issued.qrPayload),
+            dataDir: joinerDir,
+            hostId: joinerId,
+            client: client,
+        )
+        #expect(Config.loadJWTSecret(from: joinerDir) == "keep-local")
+    }
+
+    @Test func `pending redeem file omits jwtSecret even when http body included it`() async throws {
+        let issuerDir = try isolatedDir("iss-pend")
+        let joinerDir = try isolatedDir("join-pend")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        _ = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.21",
+                advertisedHosts: ["192.168.0.21"],
+            ),
+            offers: offers,
+        )
+        let client = IdentityRedeemClient { body in
+            let request = try JSONDecoder().decode(PairingRedeemRequest.self, from: body)
+            var remote = try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: issuerDir,
+                    issuerHostId: issuerId,
+                    request: request,
+                ),
+                offers: offers,
+            )
+            remote.jwtSecret = "must-not-persist"
+            remote.adminUser = PairingAdminUser(
+                id: "home-admin",
+                username: "admin",
+                passwordHash: "hashed:x",
+            )
+            return remote
+        }
+        let receiptURL = PairingService.receiptURL(in: joinerDir)
+        try FileManager.default.createDirectory(at: receiptURL, withIntermediateDirectories: true)
+        await #expect(throws: PairingError.self) {
+            try await PairingService.join(
+                request: PairingJoinRequest(qrPayload: issued.qrPayload),
+                dataDir: joinerDir,
+                hostId: joinerId,
+                client: client,
+            )
+        }
+        let pending = try #require(PairingService.loadPendingRedeem(dataDir: joinerDir))
+        #expect(pending.response.jwtSecret == nil)
+        #expect(pending.response.adminUser == nil)
+        let data = try Data(contentsOf: PairingService.pendingRedeemURL(in: joinerDir))
+        let raw = try #require(String(data: data, encoding: .utf8))
+        #expect(!raw.contains("must-not-persist"))
+        #expect(!raw.contains("passwordHash"))
     }
 }
 
@@ -548,6 +637,17 @@ private func honestRedeemResponse(
         issuedFingerprint: issued.fingerprint,
         agentPort: 7_778,
     )
+}
+
+private struct StubIdentityClient: PairingIdentityClient {
+    let identity: PairingSharedIdentity
+
+    func fetchSharedIdentity(_ request: PairingIdentityFetch) async throws -> PairingSharedIdentity {
+        #expect(!request.issuedCertificatePEM.isEmpty)
+        #expect(!request.trustCertificatePEM.isEmpty)
+        #expect((1 ... 65_535).contains(request.agentPort))
+        return identity
+    }
 }
 
 private struct IdentityRedeemClient: PairingHTTPClient {

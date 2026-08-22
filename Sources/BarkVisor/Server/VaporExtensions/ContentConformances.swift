@@ -39,6 +39,7 @@ extension DiskImageInfo: Content {}
 extension HostInventory: Content {}
 extension TemplateCompatibilityReport: Content {}
 extension AgentPeerIdentity: Content {}
+extension PairingSharedIdentity: Content {}
 extension HomeDevice: Content {}
 extension HomeDeviceList: Content {}
 extension HomeDeviceHealthReport: Content {}

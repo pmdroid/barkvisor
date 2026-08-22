@@ -974,6 +974,27 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/agent/pairing/identity:
+    get:
+      tags: [out-of-band]
+      operationId: getAgentPairingIdentity
+      x-barkvisor-stability: out-of-band
+      summary: Shared Home login (agent port 7778 only)
+      description: |
+        Served only on the mTLS agent plane after device-trust redeem.
+        Returns the issuer jwt-secret and admin password hash so both
+        Devices share one login. Not on HTTP redeem and not the Home proxy.
+      security: []
+      responses:
+        "200":
+          description: Shared login material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingSharedIdentity"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/agent/library/images:
     get:
       tags: [out-of-band]
@@ -1093,15 +1114,15 @@ paths:
       tags: [evolving]
       operationId: redeemPairingCode
       x-barkvisor-stability: evolving
-      summary: Redeem a pairing code; return trust material and shared identity copy
+      summary: Redeem a pairing code; return device-trust material
       description: |
         Public, rate-limited. The joining Device presents the short code, its
         Home-CA-issued Device certificate, the issuing Home CA, and a CSR.
         The issuer consumes the code, pins the presented certificate, issues
         a Home-CA cert, and returns trust material including the issued
-        agentPort plus optional shared identity copy (issuer jwtSecret and
-        adminUser with id, username, and password hash; never a plaintext
-        password). Local SQLite still owns VM runtime.
+        agentPort. Shared login (jwt-secret and admin hash) is not on this
+        HTTP body; the joiner copies it over mTLS after the QR fingerprint
+        binds. Local SQLite still owns VM runtime.
       security: []
       requestBody:
         required: true
@@ -2760,16 +2781,18 @@ components:
           type: integer
         apiVersion:
           type: integer
+
+    PairingSharedIdentity:
+      type: object
+      description: >
+        Shared Home login copied over mTLS after pairing redeem. Password is
+        the stored hash only. jwtSecret is omitted when the issuer has none.
+      properties:
         jwtSecret:
           type: string
-          description: >
-            Optional issuer Home JWT HMAC secret (dataDir/jwt-secret).
-            Omitted when the issuer has no secret to copy.
+          description: Issuer Home JWT HMAC secret (dataDir/jwt-secret)
         adminUser:
           $ref: "#/components/schemas/PairingAdminUser"
-          description: >
-            Optional first password-backed admin row copied from the issuer.
-            Omitted when no such user exists.
 
     PairingAdminUser:
       type: object

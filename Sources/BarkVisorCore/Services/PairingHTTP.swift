@@ -18,6 +18,34 @@ public protocol PairingHTTPClient: Sendable {
     func postJSON(url: URL, body: Data) async throws -> PairingHTTPResponse
 }
 
+/// Inputs for copying Home login over the agent plane (PAS-283).
+public struct PairingIdentityFetch: Sendable {
+    public var host: String
+    public var agentPort: Int
+    public var material: HomeCertificateMaterial
+    public var issuedCertificatePEM: String
+    public var trustCertificatePEM: String
+
+    public init(
+        host: String,
+        agentPort: Int,
+        material: HomeCertificateMaterial,
+        issuedCertificatePEM: String,
+        trustCertificatePEM: String,
+    ) {
+        self.host = host
+        self.agentPort = agentPort
+        self.material = material
+        self.issuedCertificatePEM = issuedCertificatePEM
+        self.trustCertificatePEM = trustCertificatePEM
+    }
+}
+
+/// mTLS fetch of jwt-secret + admin hash. Not the cleartext HTTP redeem.
+public protocol PairingIdentityClient: Sendable {
+    func fetchSharedIdentity(_ request: PairingIdentityFetch) async throws -> PairingSharedIdentity
+}
+
 public struct URLSessionPairingHTTPClient: PairingHTTPClient {
     public var timeout: TimeInterval
 

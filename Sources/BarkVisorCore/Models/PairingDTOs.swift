@@ -90,6 +90,17 @@ public struct PairingAdminUser: Codable, Sendable, Equatable {
     }
 }
 
+/// Shared login copied over the agent plane after device-trust redeem (PAS-81 / PAS-283).
+public struct PairingSharedIdentity: Codable, Sendable, Equatable {
+    public var jwtSecret: String?
+    public var adminUser: PairingAdminUser?
+
+    public init(jwtSecret: String? = nil, adminUser: PairingAdminUser? = nil) {
+        self.jwtSecret = jwtSecret
+        self.adminUser = adminUser
+    }
+}
+
 /// Trust material returned by a successful redeem.
 public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var hostId: String
@@ -101,8 +112,8 @@ public struct PairingRedeemResponse: Codable, Sendable, Equatable {
     public var issuedFingerprint: String
     public var agentPort: Int
     public var apiVersion: Int
-    /// Issuer HMAC secret (`dataDir/jwt-secret`). Optional so older pending
-    /// redeem files still decode; redeem attaches it when present (PAS-81).
+    /// In-memory / legacy pending decode only. HTTP redeem must omit this
+    /// (PAS-283); join copies it over mTLS after the QR fingerprint binds.
     public var jwtSecret: String?
     public var adminUser: PairingAdminUser?
 

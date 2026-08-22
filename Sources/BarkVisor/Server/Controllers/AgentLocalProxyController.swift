@@ -148,6 +148,7 @@ struct AgentLocalProxyController: RouteCollection {
             try response.content.encode(peer)
             return response
         }
+        try HomeDeviceProxy.rejectPairingIdentity(path)
         try HomeDeviceProxy.rejectNestedHome(path)
         try HomeDeviceProxy.rejectConsoleLocalOnly(path)
         guard path.hasPrefix("/api/") else {

@@ -28,7 +28,7 @@ On a Device that already finished setup:
 
 The chosen address is the `host=` in that offer. Changing the address issues a new code and resets the expiry. The offer expires; Revoke it if unused.
 
-Join redeem is HTTP on `:7777`. Allowed addresses are RFC1918, IPv6 unique-local, and CGNAT `100.64.0.0/10`. Loopback, link-local, public IPs, and metadata (`169.254.169.254`, `100.100.100.200`) stay blocked. A name is resolved on the joining Device, not when the offer is issued.
+Join redeem is HTTP on `:7777` and copies device-trust only (certificates and pins). Shared login (jwt-secret and admin hash) is copied over mTLS on `:7778` after the QR fingerprint binds. Allowed addresses are RFC1918, IPv6 unique-local, and CGNAT `100.64.0.0/10`. Loopback, link-local, public IPs, and metadata (`169.254.169.254`, `100.100.100.200`) stay blocked. A name is resolved on the joining Device, not when the offer is issued.
 
 Older joiners that only accept RFC1918 still reject a `100.64/10` offer. Upgrade the joining Device, or pick a LAN IP both sides can reach.
 

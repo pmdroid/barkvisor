@@ -10,9 +10,9 @@ extension PairingRedeemResponse: Content {}
 extension PairingJoinRequest: Content {}
 extension PairingJoinResponse: Content {}
 
-/// Pairing issue / redeem (PAS-45). JWT on the issuer; redeem is public
-/// and uses a dedicated pairing limiter that stays on when login limiting
-/// is disabled. Join uses the same pairing limiter. Join requires a QR
+/// Pairing issue / redeem (PAS-45). Redeem is public, rate-limited, and
+/// returns device-trust only. Shared login is copied over mTLS after join
+/// (PAS-283). Join uses the same pairing limiter. Join requires a QR
 /// payload and is console-local until setup completes, then JWT.
 struct PairingController: RouteCollection {
     let offers: PairingOfferStore
@@ -117,14 +117,11 @@ struct PairingController: RouteCollection {
             }
         }
         do {
-            let admin = try PairingService.loadAdminUser(db: req.db)
             let response = try PairingService.redeem(
                 PairingService.RedeemInput(
                     dataDir: Config.dataDir,
                     issuerHostId: Config.hostId,
                     request: body,
-                    jwtSecret: Config.jwtSecret,
-                    adminUser: admin,
                 ),
                 offers: offers,
             )
@@ -162,6 +159,7 @@ struct PairingController: RouteCollection {
                 dataDir: Config.dataDir,
                 hostId: Config.hostId,
                 client: URLSessionPairingHTTPClient(),
+                identityClient: AgentMTLSPairingIdentityClient(),
                 db: req.db,
                 keys: keys,
             )
