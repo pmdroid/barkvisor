@@ -4,12 +4,18 @@ import Foundation
 public enum PlatformPaths {
     /// Application data directory.
     /// - Override: `BARKVISOR_DATA_DIR` (absolute path)
-    /// - Installed: `/var/lib/barkvisor` on all platforms
+    /// - Installed: `/var/lib/barkvisor` on all platforms (pkg, Homebrew, Linux)
     /// - Dev macOS: `~/Library/Application Support/BarkVisor`
     /// - Dev Linux: `~/.local/share/barkvisor` (or `$XDG_DATA_HOME/barkvisor`)
     public static func dataDir(isInstalled: Bool) -> URL {
-        if let override = ProcessInfo.processInfo.environment["BARKVISOR_DATA_DIR"],
-           !override.isEmpty {
+        dataDir(
+            isInstalled: isInstalled,
+            dataDirOverride: ProcessInfo.processInfo.environment["BARKVISOR_DATA_DIR"],
+        )
+    }
+
+    public static func dataDir(isInstalled: Bool, dataDirOverride: String?) -> URL {
+        if let override = dataDirOverride, !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
         if isInstalled {
@@ -81,14 +87,26 @@ public enum PlatformPaths {
             .appendingPathComponent("barkvisor", isDirectory: true)
     }
 
-    /// True when a host-arch QEMU binary is present under libexec.
-    public static func isInstalled(libexecDir: String) -> Bool {
-        let fm = FileManager.default
-        let candidates = [
-            "\(libexecDir)/qemu-system-aarch64",
-            "\(libexecDir)/qemu-system-x86_64",
-        ]
-        return candidates.contains { fm.isExecutableFile(atPath: $0) }
+    /// Packaged SPA path used to detect an installed layout (PAS-293).
+    public static func shareFrontendIndexPath(prefix: String) -> String {
+        "\(prefix)/share/barkvisor/frontend/dist/index.html"
+    }
+
+    /// Installed daemon vs `swift run`. Does not require libexec QEMU (PAS-287).
+    ///
+    /// True when `BARKVISOR_DATA_DIR` is set, or when the binary lives in `*/bin`
+    /// and `$prefix/share/barkvisor/frontend/dist/index.html` exists.
+    public static func isInstalled(
+        prefix: String,
+        binaryDirectoryIsBin: Bool,
+        dataDirOverride: String?,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) -> Bool {
+        if let override = dataDirOverride, !override.isEmpty {
+            return true
+        }
+        guard binaryDirectoryIsBin else { return false }
+        return fileExists(shareFrontendIndexPath(prefix: prefix))
     }
 
     // MARK: - Settings (UserDefaults on macOS, JSON on Linux)
