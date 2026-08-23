@@ -17,6 +17,13 @@ struct LoginRequest: Content, Validatable {
 struct LoginResponse: Content {
     let token: String
     let refreshToken: String
+    let role: String
+}
+
+struct AuthMeResponse: Content {
+    let id: String
+    let username: String
+    let role: String
 }
 
 struct RefreshRequest: Content, Validatable {
@@ -67,11 +74,23 @@ struct AuthController: RouteCollection {
     }
 
     func bootProtected(routes: any RoutesBuilder) throws {
+        routes.get("api", "auth", "me", use: me)
         routes.post("api", "auth", "ws-ticket", use: createWSTicket)
         let offers = routes.grouped("api", "auth", "login-offers")
         offers.post(use: issueLoginOffer)
         offers.get(use: currentLoginOffer)
         offers.delete(use: revokeLoginOffer)
+    }
+
+    @Sendable
+    func me(req: Vapor.Request) async throws -> AuthMeResponse {
+        let authUser = try req.requireUser
+        let user = try await req.db.read { db in
+            try User.fetchOne(db, key: authUser.userId)
+        }
+        let role = user?.userRole ?? UserRolePolicy.parseStored(authUser.role)
+        let username = user?.username ?? authUser.username
+        return AuthMeResponse(id: authUser.userId, username: username, role: role.rawValue)
     }
 
     @Sendable
@@ -88,7 +107,11 @@ struct AuthController: RouteCollection {
                 action: "auth.login", resourceType: "user", resourceId: session.user.id,
                 resourceName: session.user.username, req: req,
             )
-            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+            return LoginResponse(
+                token: session.token,
+                refreshToken: session.refreshToken,
+                role: session.user.userRole.rawValue,
+            )
         } catch {
             // Log failed attempts without exposing the submitted username (could be a mistyped password)
             if let bvError = error as? BarkVisorError {
@@ -118,7 +141,11 @@ struct AuthController: RouteCollection {
                 action: "auth.refresh", resourceType: "user", resourceId: session.user.id,
                 resourceName: session.user.username, req: req,
             )
-            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+            return LoginResponse(
+                token: session.token,
+                refreshToken: session.refreshToken,
+                role: session.user.userRole.rawValue,
+            )
         } catch {
             AuditService.log(action: "auth.refresh.failed", detail: "Invalid refresh token", req: req)
             throw error
@@ -194,7 +221,11 @@ struct AuthController: RouteCollection {
                 action: "auth.login_offer.redeem", resourceType: "user",
                 resourceId: session.user.id, resourceName: session.user.username, req: req,
             )
-            return LoginResponse(token: session.token, refreshToken: session.refreshToken)
+            return LoginResponse(
+                token: session.token,
+                refreshToken: session.refreshToken,
+                role: session.user.userRole.rawValue,
+            )
         } catch {
             AuditService.log(
                 action: "auth.login_offer.redeem.failed", detail: "Invalid sign-in code", req: req,

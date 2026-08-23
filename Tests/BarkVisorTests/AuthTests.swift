@@ -36,9 +36,27 @@ struct AuthTests {
             apiKeyKind: APIKeyKind.inference.rawValue,
         )
         #expect(user.apiKeyKind == "inference")
+        #expect(user.role == UserRole.admin.rawValue)
         #expect(
-            OllamaAuthPolicy.principal(authMethod: user.authMethod, apiKeyKind: user.apiKeyKind)
-                == .inferenceKey,
+            OllamaAuthPolicy.principal(
+                userRole: user.role, authMethod: user.authMethod, apiKeyKind: user.apiKeyKind,
+            ) == .inferenceKey,
+        )
+    }
+
+    @Test func `authenticated inference user JWT`() {
+        let user = AuthenticatedUser(
+            userId: "user-2",
+            username: "reader",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.inference.rawValue,
+        )
+        #expect(user.userRole == .inference)
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: user.role, authMethod: user.authMethod, apiKeyKind: nil,
+            ) == .inferenceKey,
         )
     }
 

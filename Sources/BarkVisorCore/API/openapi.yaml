@@ -176,6 +176,22 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: getAuthMe
+      x-barkvisor-stability: stable
+      summary: Current user id, username, and Home role (admin or inference)
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthMeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/auth/login-offers:
     post:
       tags: [evolving]
@@ -1933,12 +1949,28 @@ components:
 
     LoginResponse:
       type: object
-      required: [token, refreshToken]
+      required: [token, refreshToken, role]
       properties:
         token:
           type: string
         refreshToken:
           type: string
+        role:
+          type: string
+          enum: [admin, inference]
+          description: Home role. Tokens inherit this role. Admin may also mint inference-only API keys.
+
+    AuthMeResponse:
+      type: object
+      required: [id, username, role]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, inference]
 
     RefreshRequest:
       type: object

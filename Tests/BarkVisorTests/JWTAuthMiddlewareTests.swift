@@ -284,4 +284,68 @@ struct JWTAuthMiddlewareTests {
         )
         try JWTAuthMiddleware.enforceInferenceACL(allowed)
     }
+
+    @Test func `inference JWT cannot pull mint keys or attach USB`() async throws {
+        let app = try await makeApp()
+        defer { Task { await stop(app) } }
+
+        func deny(_ path: String, method: HTTPMethod) throws {
+            let req = request(app, path: path)
+            req.method = method
+            req.authenticatedUser = AuthenticatedUser(
+                userId: "user-1",
+                username: "reader",
+                authMethod: "jwt",
+                apiKeyId: nil,
+                role: UserRole.inference.rawValue,
+            )
+            do {
+                try JWTAuthMiddleware.enforceInferenceACL(req)
+                Issue.record("expected forbidden for \(method.rawValue) \(path)")
+            } catch let error as AbortError {
+                #expect(error.status == .forbidden)
+            }
+        }
+
+        try deny("/api/ollama/pull", method: .POST)
+        try deny("/api/auth/keys", method: .POST)
+        try deny("/api/vms/vm-1/usb", method: .POST)
+        try deny("/api/home/devices", method: .GET)
+
+        let me = request(app, path: "/api/auth/me")
+        me.authenticatedUser = AuthenticatedUser(
+            userId: "user-1",
+            username: "reader",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.inference.rawValue,
+        )
+        try JWTAuthMiddleware.enforceInferenceACL(me)
+
+        let completions = request(app, path: "/v1/chat/completions")
+        completions.method = .POST
+        completions.authenticatedUser = AuthenticatedUser(
+            userId: "user-1",
+            username: "reader",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.inference.rawValue,
+        )
+        try JWTAuthMiddleware.enforceInferenceACL(completions)
+    }
+
+    @Test func `admin JWT keeps pull and attach`() async throws {
+        let app = try await makeApp()
+        defer { Task { await stop(app) } }
+        let req = request(app, path: "/api/ollama/pull")
+        req.method = .POST
+        req.authenticatedUser = AuthenticatedUser(
+            userId: "user-1",
+            username: "admin",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
+        )
+        try JWTAuthMiddleware.enforceInferenceACL(req)
+    }
 }

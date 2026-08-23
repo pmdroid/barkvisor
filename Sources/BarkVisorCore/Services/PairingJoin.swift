@@ -555,6 +555,7 @@ extension PairingService {
                     username: parsed.username,
                     password: parsed.hash,
                     createdAt: iso8601.string(from: now),
+                    role: UserRole.admin.rawValue,
                 ).insert(db)
                 return .ok
             }
