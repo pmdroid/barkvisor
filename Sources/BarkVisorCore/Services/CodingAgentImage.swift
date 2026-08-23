@@ -1,7 +1,7 @@
 import Foundation
 
 /// One Linux Library image (arm64 + x86_64) with git, a web terminal, and
-/// coding-agent CLIs (PAS-271). Presets are Device Ollama vs BYO
+/// coding-agent CLIs (PAS-271). Presets are Home Ollama grant vs BYO
 /// `OPENAI_BASE_URL`, not a second disk image.
 public enum CodingAgentImage {
     public static let name = "Coding Agent"
@@ -13,6 +13,8 @@ public enum CodingAgentImage {
     public static let deviceOllamaHost = AgentNetworkCage.slirpGateway
     public static let deviceOllamaPort = AgentNetworkCage.ollamaPort
     public static let deviceOllamaBaseURL = "http://\(deviceOllamaHost):\(deviceOllamaPort)/v1"
+    /// Home Ollama grant (PAS-272). Same slirp URL; the cage guestfwd is the grant.
+    public static let homeOllamaGrantURL = deviceOllamaBaseURL
 
     public static let defaultCPUCount = 2
     public static let defaultMemoryMB = 2_048
@@ -188,7 +190,7 @@ public enum CodingAgentImage {
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let userData = existing.isEmpty
-            ? Self.userData(openaiBaseURL: deviceOllamaBaseURL)
+            ? Self.userData(openaiBaseURL: homeOllamaGrantURL)
             : existing
         if existing.isEmpty {
             try CloudInitService.validateUserData(userData)

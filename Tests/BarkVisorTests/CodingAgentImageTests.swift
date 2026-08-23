@@ -64,6 +64,7 @@ struct CodingAgentImageTests {
         }
         #expect(CodingAgentImage.usesDeviceOllama(CodingAgentImage.deviceOllamaBaseURL))
         #expect(!CodingAgentImage.usesDeviceOllama("http://10.0.2.2:11434@evil.com/v1"))
+        #expect(CodingAgentImage.homeOllamaGrantURL == CodingAgentImage.deviceOllamaBaseURL)
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
         #expect(CodingAgentImage.posixSingleQuoted("http://10.0.2.2:11434/v1") == "'http://10.0.2.2:11434/v1'")
     }

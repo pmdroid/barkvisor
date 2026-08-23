@@ -1,6 +1,7 @@
 export const CODING_AGENT_NAME = 'Coding Agent'
 export const CODING_AGENT_SLUGS = ['coding-agent-arm64', 'coding-agent-x86_64'] as const
 export const DEVICE_OLLAMA_BASE_URL = 'http://10.0.2.2:11434/v1'
+export const HOME_OLLAMA_GRANT_URL = DEVICE_OLLAMA_BASE_URL
 export const TTYD_VERSION = '1.7.7'
 export const TTYD_SHA256_AARCH64 =
   'b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165'
@@ -19,7 +20,11 @@ export const OPENCODE_SHA256_X86_64 =
 export const WEB_TERMINAL_PORT = 7681
 export const ALLOW_HOST_OLLAMA_YAML = 'barkvisor_allow_host_ollama: true'
 
-export type OpenAIPreset = 'device-ollama' | 'byo'
+export type OpenAIPreset = 'home-ollama' | 'device-ollama' | 'byo'
+
+export function isHomeOllamaGrant(preset: OpenAIPreset): boolean {
+  return preset === 'home-ollama' || preset === 'device-ollama'
+}
 
 export function isCodingAgentImage(img: {
   name?: string | null
@@ -37,7 +42,7 @@ export function defaultWorkloadClassForImage(img: { name?: string | null; slug?:
 
 export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   const trimmed = (raw ?? '').trim()
-  if (!trimmed) return DEVICE_OLLAMA_BASE_URL
+  if (!trimmed) return HOME_OLLAMA_GRANT_URL
   if (/[\s"'`$\\]/.test(trimmed)) throw new Error('OPENAI_BASE_URL is invalid')
   let url: URL
   try {
@@ -162,6 +167,6 @@ export function mergeCodingAgentUserData(
   const trimmed = existing.trim()
   if (trimmed) return trimmed
   if (!isCodingAgentImage(img)) return existing
-  const url = preset === 'byo' ? normalizeOpenAIBaseURL(byoURL) : DEVICE_OLLAMA_BASE_URL
+  const url = isHomeOllamaGrant(preset) ? HOME_OLLAMA_GRANT_URL : normalizeOpenAIBaseURL(byoURL)
   return codingAgentUserData(url)
 }

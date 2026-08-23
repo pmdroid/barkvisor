@@ -3,7 +3,7 @@ import AppSelect from '../ui/AppSelect.vue'
 import CloudInitEditor from '../CloudInitEditor.vue'
 import type { Image, SSHKey } from '../../api/types'
 import type { OpenAIPreset } from '../../utils/codingAgentImage'
-import { DEVICE_OLLAMA_BASE_URL } from '../../utils/codingAgentImage'
+import { HOME_OLLAMA_GRANT_URL } from '../../utils/codingAgentImage'
 
 defineProps<{
   osType: 'linux' | 'windows'
@@ -95,11 +95,11 @@ function setMode(m: 'iso' | 'cloud') {
         <button
           type="button"
           class="preset-card"
-          :class="{ selected: openaiPreset === 'device-ollama' }"
-          @click="emit('update:openaiPreset', 'device-ollama')"
+          :class="{ selected: openaiPreset === 'home-ollama' || openaiPreset === 'device-ollama' }"
+          @click="emit('update:openaiPreset', 'home-ollama')"
         >
-          Device Ollama
-          <span class="preset-hint">{{ DEVICE_OLLAMA_BASE_URL }}</span>
+          Home Ollama grant
+          <span class="preset-hint">{{ HOME_OLLAMA_GRANT_URL }}</span>
         </button>
         <button
           type="button"

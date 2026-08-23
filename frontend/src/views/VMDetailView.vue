@@ -31,6 +31,7 @@ import type {
 import PortForwardEditor from '../components/PortForwardEditor.vue'
 import { useToastStore } from '../stores/toast'
 import ConsolePanel from '../components/ConsolePanel.vue'
+import ChatPanel from '../components/ChatPanel.vue'
 import VNCPanel from '../components/VNCPanel.vue'
 import MetricsPanel from '../components/MetricsPanel.vue'
 import LogsPanel from '../components/LogsPanel.vue'
@@ -83,6 +84,9 @@ import {
   startOnBootFooterFromWorkload,
   startOnBootLabel,
 } from '../utils/workloadStartOnBoot'
+import { consoleTabLabel, isCodingAgentSession } from '../utils/codingAgentSession'
+import { chatIsVisible } from '../utils/chatCompletions'
+import { useOllamaStore } from '../stores/ollama'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -158,6 +162,10 @@ const agentCage = computed(() => isAgentWorkload(vm.value))
 const grantCopy = computed(() => workloadGrantCopy(parseWorkloadClass(vm.value?.workloadClass ?? vm.value?.spec?.spec?.workloadClass)))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
 const startOnBootHint = computed(() => startOnBootFooterFromWorkload(vm.value))
+const ollamaStore = useOllamaStore()
+const codingAgent = computed(() => isCodingAgentSession(vm.value))
+const showAgentChat = computed(() => codingAgent.value && chatIsVisible(ollamaStore.anyReachable, ollamaStore.models.length))
+const consoleLabel = computed(() => consoleTabLabel(vm.value))
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
@@ -173,6 +181,10 @@ watch(isMemberDetail, (remote) => {
 watch(showMemberConnect, (ok) => {
   if (!isMemberDetail.value || !memberDevice.value) return
   if (!ok && (tab.value === 'console' || tab.value === 'vnc')) tab.value = 'overview'
+})
+
+watch(showAgentChat, (ok) => {
+  if (!ok && tab.value === 'chat') tab.value = 'overview'
 })
 
 watch(tab, (value) => {
@@ -1099,13 +1111,15 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
     <div v-if="!isMemberDetail" class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
+      <div v-if="showAgentChat" class="tab" :class="{ active: tab === 'chat' }" @click="tab = 'chat'">Chat</div>
+      <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
       <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
-      <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">Console</div>
+      <div v-if="showAgentChat" class="tab" :class="{ active: tab === 'chat' }" @click="tab = 'chat'">Chat</div>
+      <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
       <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
@@ -1502,6 +1516,10 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
     </div>
 
+    <ChatPanel
+      v-if="tab === 'chat' && showAgentChat"
+      compact
+    />
     <ConsolePanel
       v-if="tab === 'console' && showMemberConnect"
       :key="`console-${vmId}-${isMemberDetail ? hostId : 'local'}`"
