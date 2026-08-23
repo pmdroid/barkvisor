@@ -141,6 +141,31 @@ public enum QEMUBuilder {
         return value
     }
 
+    /// `-machine` must be a known GuestProfiles type with no comma properties.
+    /// When `guestType` is set, the value must match that profile's machine
+    /// (`virt` on ARM, `q35` on x86) — QEMU rejects the other type at start.
+    public static func validateMachine(
+        _ value: String,
+        label: String = "machine",
+        guestType: String? = nil,
+    ) throws -> String {
+        let sanitized = try sanitizeQEMUArg(value, label: label)
+        if let guestType {
+            let profile = try GuestProfiles.require(guestType)
+            guard sanitized == profile.machine else {
+                throw BarkVisorError.invalidArgument(
+                    "\(label) must be \(profile.machine) for guestType \(guestType)",
+                )
+            }
+            return sanitized
+        }
+        guard GuestProfiles.qemuMachines.contains(sanitized) else {
+            let list = GuestProfiles.qemuMachines.sorted().joined(separator: ", ")
+            throw BarkVisorError.invalidArgument("\(label) must be one of: \(list)")
+        }
+        return sanitized
+    }
+
     /// Validates a shared path: no commas (QEMU injection), must exist, and within allowed prefixes.
     /// Home is always allowed. macOS also allows `/Volumes/`; Linux also allows `/mnt/` and `/media/`.
     public static func validateSharedPath(_ path: String) throws {
@@ -208,7 +233,10 @@ public enum QEMUBuilder {
         let windows = profile.isWindows
         let bootOrder = spec.spec.bootOrder ?? "cd"
         let diskFirst = bootOrder.first == "c"
-        let machine = spec.spec.machine ?? profile.machine
+        let machine = try validateMachine(
+            spec.spec.machine ?? profile.machine,
+            guestType: guestType,
+        )
         let accelerator = effective.accelerator ?? QEMUBuilder.accelerator
         let backend = WorkloadBackendProjector.project(
             guestType: guestType,
@@ -382,6 +410,11 @@ public enum QEMUBuilder {
     /// Internal for tests (PAS-67). Missing `network` is implicit NAT.
     static func networkArgs(spec: WorkloadSpec, network: Network?) throws
         -> (args: [String], needsSocketVmnetWrap: Bool) {
+        guard spec.spec.networks.count <= 1 else {
+            throw BarkVisorError.badRequest(
+                "spec.networks supports at most 1 network until multi-NIC is available",
+            )
+        }
         var netdevArgs = ""
         var deviceArgs = "virtio-net-pci,netdev=net0"
         // True only when QEMU must be exec'd under socket_vmnet_client (macOS bridged).

@@ -159,6 +159,88 @@ struct WorkloadSpecOverrideTests {
         }
     }
 
+    @Test func `overlay machine with comma is rejected`() {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "virt,accel=tcg"),
+        ))
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        }
+        #expect(err?.httpStatus == 400)
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("overrides.linux.machine"))
+        #expect(text.contains("comma"))
+    }
+
+    @Test func `overlay machine outside allowed set is rejected`() {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "pc"),
+        ))
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        }
+        #expect(err?.httpStatus == 400)
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("overrides.linux.machine"))
+        #expect(text.contains("q35"))
+        #expect(text.contains("virt"))
+    }
+
+    @Test func `overlay machine allowed types are accepted`() throws {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "virt"),
+            macos: WorkloadSpecOverlay(machine: "virt"),
+        ))
+        try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        try WorkloadSpecResolver.validate(spec, host: macosCaps())
+    }
+
+    @Test func `overlay machine that does not match merged guestType is rejected`() throws {
+        let spec = baseSpec(overrides: WorkloadOverrides(
+            linux: WorkloadSpecOverlay(machine: "q35"),
+        ))
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec, host: linuxCaps())
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.code == "invalid_argument")
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("overrides.linux.machine"))
+        #expect(text.contains("virt"))
+        #expect(text.contains("linux-arm64"))
+    }
+
+    @Test func `overlay guestType rejects base machine from the other arch`() throws {
+        let native = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let nativeMachine = try GuestProfiles.require(native).machine
+        let foreignMachine = nativeMachine == "virt" ? "q35" : "virt"
+        let overlay = WorkloadSpecOverlay(guestType: native)
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "ov"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 1_024),
+                guestType: native,
+                machine: foreignMachine,
+            ),
+            overrides: WorkloadSpecResolver.HostPlatform.current == .linux
+                ? WorkloadOverrides(linux: overlay)
+                : WorkloadOverrides(macos: overlay),
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecResolver.validate(spec)
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.code == "invalid_argument")
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("spec.machine"))
+        #expect(text.contains(nativeMachine))
+        #expect(text.contains(native))
+        let projectorErr = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
+        #expect(projectorErr?.code == "invalid_argument")
+    }
+
     @Test func `argv override is rejected with field path`() {
         let json = """
         {

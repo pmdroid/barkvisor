@@ -123,10 +123,15 @@ public enum WorkloadSpecResolver {
     ) throws {
         var trial = spec
         trial.spec = merge(spec.spec, with: overlay)
+        let guestType: String
         do {
-            _ = try WorkloadSpecProjector.resolveGuestType(trial)
+            guestType = try WorkloadSpecProjector.resolveGuestType(trial)
         } catch let error as BarkVisorError {
             throw BarkVisorError.badRequest("\(path): \(error.localizedDescription)")
+        }
+        if let machine = trial.spec.machine {
+            let label = overlay.machine != nil ? "\(path).machine" : "spec.machine"
+            _ = try QEMUBuilder.validateMachine(machine, label: label, guestType: guestType)
         }
     }
 
@@ -149,6 +154,9 @@ public enum WorkloadSpecResolver {
         }
         if let resolution = overlay.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)
+        }
+        if let machine = overlay.machine {
+            _ = try QEMUBuilder.validateMachine(machine, label: "\(path).machine")
         }
         if overlay.hugepages != nil, platform != .linux {
             throw BarkVisorError.badRequest("\(path).hugepages is only valid on linux")

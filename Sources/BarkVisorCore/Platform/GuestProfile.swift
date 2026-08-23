@@ -100,6 +100,10 @@ public enum GuestProfiles {
         uniqueKeysWithValues: all.map { ($0.id, $0) },
     )
 
+    /// QEMU `-machine` types we launch (`virt`, `q35`). Overlay and spec must
+    /// match this set and the resolved guestType's arch (ARM=`virt`, x86=`q35`).
+    public static let qemuMachines: Set<String> = Set(all.map(\.machine))
+
     public static var supportedIDs: [String] {
         all.map(\.id)
     }
