@@ -42,6 +42,22 @@ describe('useCreateVMPayload (PAS-240)', () => {
     expect(req.displayResolution).toBeUndefined()
     expect(req.networkId).toBeUndefined()
     expect(req.usbDevices).toBeUndefined()
+    expect(req.workloadClass).toBeUndefined()
+  })
+
+  test('agent class strips USB, shares, and hostfwds', () => {
+    const req = buildCreateVMPayload({
+      ...base,
+      usbAvailable: true,
+      usbDevices: [{ vendorId: '0x1234', productId: '0x5678' }],
+      sharedPaths: ['/tmp/share'],
+      portForwards: [{ protocol: 'tcp', hostPort: 8080, guestPort: 80 }],
+      workloadClass: 'agent',
+    })
+    expect(req.workloadClass).toBe('agent')
+    expect(req.usbDevices).toBeUndefined()
+    expect(req.sharedPaths).toBeUndefined()
+    expect(req.portForwards).toBeUndefined()
   })
 
   test('guest-type is a call-site value, not resolved here', () => {

@@ -20,6 +20,7 @@ struct WorkloadDetailView: View {
                 }
                 LabeledContent("State", value: workload.state.replacingOccurrences(of: "_", with: " ").capitalized)
                 LabeledContent(Copy.device, value: device.title)
+                LabeledContent("Class", value: workload.grantCopy)
                 LabeledContent("Guest OS", value: WorkloadGuestSummary.osLabel(workload: workload, guest: guest))
                 if let ip = WorkloadGuestSummary.ipLabel(guest: guest) {
                     LabeledContent("IP", value: ip)
@@ -297,7 +298,7 @@ struct WorkloadDetailView: View {
     private func loadLibrary() async {
         guard device.isReachable else { return }
         if !libraryLoad.isKnown { libraryLoad = .pending }
-        libraryLoad = libraryLoad.applying(await model.libraryImages(on: device))
+        libraryLoad = await libraryLoad.applying(model.libraryImages(on: device))
     }
 
     @ViewBuilder

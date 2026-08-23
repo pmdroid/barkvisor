@@ -25,6 +25,7 @@ public struct CreateVMParams: Sendable {
     public let tpmEnabled: Bool?
     public let overrides: WorkloadOverrides?
     public let health: WorkloadHealthSpec?
+    public let workloadClass: String?
 
     public init(
         id: String? = nil,
@@ -48,6 +49,7 @@ public struct CreateVMParams: Sendable {
         tpmEnabled: Bool? = nil,
         overrides: WorkloadOverrides? = nil,
         health: WorkloadHealthSpec? = nil,
+        workloadClass: String? = nil,
     ) {
         self.id = id
         self.name = name
@@ -70,6 +72,7 @@ public struct CreateVMParams: Sendable {
         self.tpmEnabled = tpmEnabled
         self.overrides = overrides
         self.health = health
+        self.workloadClass = workloadClass
     }
 }
 
@@ -87,6 +90,7 @@ public struct UpdateVMParams: Sendable {
     public let sharedPaths: [String]?
     public let uefi: Bool?
     public let tpmEnabled: Bool?
+    public let workloadClass: String?
 
     public init(
         name: String? = nil,
@@ -102,6 +106,7 @@ public struct UpdateVMParams: Sendable {
         sharedPaths: [String]? = nil,
         uefi: Bool? = nil,
         tpmEnabled: Bool? = nil,
+        workloadClass: String? = nil,
     ) {
         self.name = name
         self.cpuCount = cpuCount
@@ -116,6 +121,7 @@ public struct UpdateVMParams: Sendable {
         self.sharedPaths = sharedPaths
         self.uefi = uefi
         self.tpmEnabled = tpmEnabled
+        self.workloadClass = workloadClass
     }
 }
 

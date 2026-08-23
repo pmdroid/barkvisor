@@ -95,6 +95,11 @@ struct WorkloadRow: View {
                 Text("\(workload.cpuCount) vCPU · \(workload.memoryMB) MB · \(workload.guestOSFamily)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if workload.isAgentClass {
+                    Text(workload.grantCopy)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             StatusLabel.health(workload.resolvedHealth)

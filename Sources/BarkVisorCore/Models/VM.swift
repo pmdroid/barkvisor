@@ -60,6 +60,8 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var overridesJson: String?
     /// PAS-65 HTTP/TCP health-check config (Linear `spec.health`).
     public var healthJson: String?
+    /// PAS-268: `house` | `agent`. Nil on pre-M010 rows is house.
+    public var workloadClass: String?
     public var specGeneration: Int
     public var createdAt: String
     public var updatedAt: String
@@ -90,6 +92,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         specJson: String? = nil,
         overridesJson: String? = nil,
         healthJson: String? = nil,
+        workloadClass: String? = WorkloadClass.house.rawValue,
         specGeneration: Int = 1,
         createdAt: String,
         updatedAt: String,
@@ -119,6 +122,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.specJson = specJson
         self.overridesJson = overridesJson
         self.healthJson = healthJson
+        self.workloadClass = workloadClass
         self.specGeneration = specGeneration
         self.createdAt = createdAt
         self.updatedAt = updatedAt

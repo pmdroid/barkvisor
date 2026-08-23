@@ -191,6 +191,14 @@ public actor VMManager: VMStateQuerying {
             let (process, stdoutPipe, stderrPipe) = configureQEMUProcess(launch: launch, vmID: vmID)
             try process.run()
             let pid = process.processIdentifier
+            if (try? WorkloadClass.parse(loaded.vm.workloadClass)) == .agent {
+                do {
+                    try AgentNetworkCage.applyLinuxFilter(pid: pid, vmID: vmID)
+                } catch {
+                    process.terminate()
+                    throw error
+                }
+            }
 
             // Write PID file (line 1: QEMU PID, line 2: swtpm PID)
             let swtpmPid = swtpmProc?.processIdentifier ?? -1

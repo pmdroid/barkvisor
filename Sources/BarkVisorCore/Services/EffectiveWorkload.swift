@@ -162,6 +162,7 @@ public enum EffectiveWorkloadPipeline {
         sharedPaths: [String]? = nil,
         portForwards: [PortForwardRule]? = nil,
         usbDevices: [USBPassthroughDevice]? = nil,
+        workloadClass: String? = nil,
     ) throws -> WorkloadSpec {
         let guestType = try flatGuestType(vmType: vmType, osFamily: osFamily)
         var disks: [WorkloadDisk] = []
@@ -193,6 +194,7 @@ public enum EffectiveWorkloadPipeline {
                 usb: usb,
                 display: displayResolution.map { WorkloadDisplay(resolution: $0) },
                 sharedPaths: sharedPaths,
+                workloadClass: workloadClass,
             ),
         )
     }
@@ -259,6 +261,7 @@ public enum EffectiveWorkloadPipeline {
             tpmEnabled: extras.tpmEnabled ?? spec.spec.firmware?.tpm,
             overrides: spec.overrides,
             health: spec.spec.health,
+            workloadClass: spec.spec.workloadClass,
         )
     }
 
