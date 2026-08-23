@@ -132,9 +132,17 @@ public enum Config {
         "\(shareDir)/qemu"
     }
 
-    /// Whether running from installed daemon layout (vs. dev build)
+    /// Whether running from installed daemon layout (vs. dev build).
+    /// Share frontend and/or `BARKVISOR_DATA_DIR`, not bundled libexec QEMU (PAS-293).
     public static var isInstalled: Bool {
-        PlatformPaths.isInstalled(libexecDir: libexecDir)
+        let binDir = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+            .resolvingSymlinksInPath()
+            .deletingLastPathComponent()
+        return PlatformPaths.isInstalled(
+            prefix: prefix,
+            binaryDirectoryIsBin: binDir.lastPathComponent == "bin",
+            dataDirOverride: ProcessInfo.processInfo.environment["BARKVISOR_DATA_DIR"],
+        )
     }
 
     public static let jwtSecretFileName = "jwt-secret"
