@@ -294,6 +294,58 @@ struct QEMUBuilderValidationTests {
 
     // MARK: - Firmware
 
+    // MARK: - socket_vmnet (PAS-278)
+
+    @Test func `socket_vmnet candidates are per-iface only`() {
+        let iface = "en0"
+        let candidates = QEMUBuilder.socketVmnetSocketCandidates(bridgeInterface: iface)
+        #expect(candidates == [
+            "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
+            "/var/run/socket_vmnet.bridged.\(iface)",
+        ])
+        #expect(!candidates.contains("/var/run/socket_vmnet"))
+        #expect(!candidates.contains("/opt/homebrew/var/run/socket_vmnet"))
+        #expect(QEMUBuilder.isSharedSocketVmnetPath("/var/run/socket_vmnet"))
+        #expect(QEMUBuilder.isSharedSocketVmnetPath("/opt/homebrew/var/run/socket_vmnet"))
+        #expect(!QEMUBuilder.isSharedSocketVmnetPath("/var/run/socket_vmnet.bridged.en0"))
+    }
+
+    @Test func `shared socket_vmnet is not a fallback when per-iface is missing`() {
+        let exists: (String) -> Bool = { path in
+            QEMUBuilder.isSharedSocketVmnetPath(path)
+        }
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.resolveSocketVmnetSocketPath(
+                bridgeInterface: "en0",
+                dbSocketPath: "/var/run/socket_vmnet",
+                fileExists: exists,
+            )
+        }
+        #expect(err?.code == "process_spawn_failed")
+        #expect(err?.errorDescription?.contains("en0") == true)
+        #expect(err?.errorDescription?.contains("socket_vmnet daemon socket not found") == true)
+    }
+
+    @Test func `per-iface socket_vmnet is used when present`() throws {
+        let perIface = "/var/run/socket_vmnet.bridged.en1"
+        let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
+            bridgeInterface: "en1",
+            dbSocketPath: "/var/run/socket_vmnet",
+            fileExists: { $0 == perIface || QEMUBuilder.isSharedSocketVmnetPath($0) },
+        )
+        #expect(path == perIface)
+    }
+
+    @Test func `db per-iface socket_vmnet is preferred when present`() throws {
+        let dbPath = "/var/run/socket_vmnet.bridged.en2"
+        let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
+            bridgeInterface: "en0",
+            dbSocketPath: dbPath,
+            fileExists: { $0 == dbPath },
+        )
+        #expect(path == dbPath)
+    }
+
     @Test func `firmwareArgs omits pflash when UEFI is disabled`() throws {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(id: "vm-uefi-off", name: "off"),

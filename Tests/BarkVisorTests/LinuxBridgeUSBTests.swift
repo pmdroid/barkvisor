@@ -99,4 +99,18 @@ struct LinuxBridgeUSBTests {
         #expect(!LinuxHostNetwork.bridgeACLAllows("docker0", fileContents: contents))
         #expect(LinuxHostNetwork.bridgeACLAllows("docker0", fileContents: "allow all\n"))
     }
+
+    @Test func `missing or empty ACL is deny for persist gate`() throws {
+        #expect(!LinuxHostNetwork.bridgeACLPermits("br0", at: "/no/such/qemu-bridge.conf"))
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("bridge.conf").path
+        try "".write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(!LinuxHostNetwork.bridgeACLPermits("br0", at: path))
+        try "allow br0\n".write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(LinuxHostNetwork.bridgeACLPermits("br0", at: path))
+        #expect(!LinuxHostNetwork.bridgeACLPermits("docker0", at: path))
+    }
 }

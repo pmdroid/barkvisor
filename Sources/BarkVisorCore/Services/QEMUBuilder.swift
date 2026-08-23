@@ -637,6 +637,39 @@ public enum QEMUBuilder {
 
     // MARK: - socket_vmnet resolution
 
+    /// Homebrew/lima shared sockets (not per-iface). Must not be used as a fallback.
+    static func isSharedSocketVmnetPath(_ path: String) -> Bool {
+        path == "/var/run/socket_vmnet" || path == "/opt/homebrew/var/run/socket_vmnet"
+    }
+
+    /// Per-iface sockets only. Shared `/var/run/socket_vmnet` is not a fallback (PAS-278).
+    public static func socketVmnetSocketCandidates(bridgeInterface: String) -> [String] {
+        [
+            "/opt/homebrew/var/run/socket_vmnet.bridged.\(bridgeInterface)",
+            "/var/run/socket_vmnet.bridged.\(bridgeInterface)",
+        ]
+    }
+
+    /// Resolve the daemon socket for `bridgeInterface`. Missing per-iface socket is an error.
+    static func resolveSocketVmnetSocketPath(
+        bridgeInterface: String?,
+        dbSocketPath: String? = nil,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) throws -> String {
+        if let dbPath = dbSocketPath, !isSharedSocketVmnetPath(dbPath), fileExists(dbPath) {
+            return dbPath
+        }
+        let iface = bridgeInterface ?? "en0"
+        guard let socketPath = socketVmnetSocketCandidates(bridgeInterface: iface).first(where: fileExists)
+        else {
+            throw BarkVisorError.processSpawnFailed(
+                "socket_vmnet daemon socket not found for \(iface). "
+                    + "Install a managed bridge for that interface, then retry.",
+            )
+        }
+        return socketPath
+    }
+
     public static func resolveSocketVmnet(bridgeInterface: String?, dbSocketPath: String? = nil)
         throws -> (client: URL, socketPath: String) {
         #if os(macOS)
@@ -645,30 +678,10 @@ public enum QEMUBuilder {
                 package: "socket_vmnet",
                 extraPaths: ["/opt/socket_vmnet/bin/socket_vmnet_client"],
             )
-
-            // Prefer socket path from DB (kept current by bridge helper)
-            if let dbPath = dbSocketPath, FileManager.default.fileExists(atPath: dbPath) {
-                return (clientBin, dbPath)
-            }
-
-            // Fallback: scan filesystem for socket (backward compat)
-            let iface = bridgeInterface ?? "en0"
-            let socketCandidates = [
-                "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
-                "/var/run/socket_vmnet.bridged.\(iface)",
-                "/opt/homebrew/var/run/socket_vmnet",
-                "/var/run/socket_vmnet",
-            ]
-
-            guard let socketPath = socketCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
-            else {
-                throw BarkVisorError.processSpawnFailed(
-                    "socket_vmnet daemon socket not found. For bridged networking run:\n"
-                        + "sudo brew services start socket_vmnet\n"
-                        + "For true bridged mode on \(iface), see: https://github.com/lima-vm/socket_vmnet",
-                )
-            }
-
+            let socketPath = try resolveSocketVmnetSocketPath(
+                bridgeInterface: bridgeInterface,
+                dbSocketPath: dbSocketPath,
+            )
             return (clientBin, socketPath)
         #else
             throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
