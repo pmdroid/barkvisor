@@ -81,6 +81,7 @@ public enum AuthService {
             sub: .init(value: user.id),
             username: user.username,
             exp: .init(value: now.addingTimeInterval(accessTokenTTL)),
+            role: user.userRole.rawValue,
         )
         return try await keys.sign(payload)
     }

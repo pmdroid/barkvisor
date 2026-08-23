@@ -193,5 +193,18 @@ struct ModelCodableTests {
         let decoded = try JSONDecoder().decode(UserPayload.self, from: data)
         #expect(decoded.sub.value == "user-1")
         #expect(decoded.username == "admin")
+        #expect(decoded.role == nil)
+    }
+
+    @Test func `user payload role decodes`() throws {
+        let payload = UserPayload(
+            sub: .init(value: "user-1"),
+            username: "reader",
+            exp: .init(value: Date().addingTimeInterval(3_600)),
+            role: UserRole.inference.rawValue,
+        )
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(UserPayload.self, from: data)
+        #expect(decoded.role == UserRole.inference.rawValue)
     }
 }
