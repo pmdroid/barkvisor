@@ -62,6 +62,9 @@ struct CodingAgentImageTests {
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIBaseURL("http://10.0.2.2:11434@evil.com/v1")
         }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("http:example.com/v1")
+        }
         #expect(CodingAgentImage.usesDeviceOllama(CodingAgentImage.deviceOllamaBaseURL))
         #expect(!CodingAgentImage.usesDeviceOllama("http://10.0.2.2:11434@evil.com/v1"))
         #expect(CodingAgentImage.homeOllamaGrantURL == CodingAgentImage.deviceOllamaBaseURL)
@@ -94,9 +97,21 @@ struct CodingAgentImageTests {
         #expect(!yaml.contains("opencode.ai/install"))
         #expect(!yaml.contains("| bash"))
         #expect(AgentNetworkCage.allowHostOllama(userData: yaml))
-        let byo = CodingAgentImage.userData(openaiBaseURL: "https://api.openai.com/v1")
+        #expect(yaml.contains("export OPENAI_API_KEY='ollama'"))
+        let byo = CodingAgentImage.userData(
+            openaiBaseURL: "https://api.openai.com/v1",
+            openaiAPIKey: "sk-test",
+        )
         try CloudInitService.validateUserData(byo)
         #expect(byo.contains("https://api.openai.com/v1"))
+        #expect(byo.contains("export OPENAI_API_KEY='sk-test'"))
+        #expect(try CodingAgentImage.normalizeOpenAIAPIKey(nil) == "ollama")
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIAPIKey("", required: true)
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIAPIKey("sk-$(id)")
+        }
         #expect(!byo.contains(AgentNetworkCage.allowHostOllamaYAML))
         #expect(!AgentNetworkCage.allowHostOllama(userData: byo))
         let spoof = CodingAgentImage.userData(openaiBaseURL: "http://10.0.2.2:11434@evil.com/v1")
@@ -194,7 +209,10 @@ struct CodingAgentImageTests {
             #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
         }
         #expect(console.contains("isShellSafeOpenAIBaseURL"))
+        #expect(console.contains("isShellSafeOpenAIAPIKey"))
         #expect(frontend.contains("OPENAI_BASE_URL_SAFE"))
+        #expect(frontend.contains("OPENAI_API_KEY_SAFE"))
+        #expect(frontend.contains("url.hostname"))
     }
 }
 

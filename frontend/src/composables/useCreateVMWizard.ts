@@ -371,6 +371,7 @@ export function useCreateVMWizard(
   const cloudUserData = ref('')
   const openaiPreset = ref<OpenAIPreset>('home-ollama')
   const byoOpenAIURL = ref(HOME_OLLAMA_GRANT_URL)
+  const byoOpenAIAPIKey = ref('')
 
   watch(selectedImage, (img, prev) => {
     const now = isCodingAgentImage(img)
@@ -764,6 +765,7 @@ export function useCreateVMWizard(
           selectedImage.value,
           openaiPreset.value,
           byoOpenAIURL.value,
+          byoOpenAIAPIKey.value,
         ),
         displayResolution: displayResolution.value,
         selectedNetworkId: selectedNetworkId.value,
@@ -861,6 +863,7 @@ export function useCreateVMWizard(
     cloudUserData,
     openaiPreset,
     byoOpenAIURL,
+    byoOpenAIAPIKey,
     isCodingAgentSelected: computed(() => isCodingAgentImage(selectedImage.value)),
     filteredImages,
     foreignArchImageCount,

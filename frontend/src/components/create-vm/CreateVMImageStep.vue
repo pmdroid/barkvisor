@@ -18,6 +18,7 @@ defineProps<{
   isCodingAgentSelected?: boolean
   openaiPreset?: OpenAIPreset
   byoOpenAIURL?: string
+  byoOpenAIAPIKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   'update:cloudUserData': [value: string]
   'update:openaiPreset': [value: OpenAIPreset]
   'update:byoOpenAIURL': [value: string]
+  'update:byoOpenAIAPIKey': [value: string]
 }>()
 
 function setMode(m: 'iso' | 'cloud') {
@@ -111,13 +113,22 @@ function setMode(m: 'iso' | 'cloud') {
           <span class="preset-hint">HTTPS endpoint</span>
         </button>
       </div>
-      <input
-        v-if="openaiPreset === 'byo'"
-        :value="byoOpenAIURL"
-        placeholder="https://api.example/v1"
-        style="margin-top:8px"
-        @input="emit('update:byoOpenAIURL', ($event.target as HTMLInputElement).value)"
-      />
+      <template v-if="openaiPreset === 'byo'">
+        <input
+          :value="byoOpenAIURL"
+          placeholder="https://api.example/v1"
+          style="margin-top:8px"
+          @input="emit('update:byoOpenAIURL', ($event.target as HTMLInputElement).value)"
+        />
+        <input
+          :value="byoOpenAIAPIKey"
+          type="password"
+          autocomplete="off"
+          placeholder="OPENAI_API_KEY"
+          style="margin-top:8px"
+          @input="emit('update:byoOpenAIAPIKey', ($event.target as HTMLInputElement).value)"
+        />
+      </template>
       <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">
         Agent class: WAN yes, house no. Presets share this Library image.
       </div>

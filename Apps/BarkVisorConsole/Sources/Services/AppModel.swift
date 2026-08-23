@@ -443,6 +443,7 @@ final class AppModel {
         on device: HomeDeviceHealthSnapshot,
         workloadClass: String? = nil,
         openaiBaseURL: String? = nil,
+        openaiAPIKey: String? = nil,
     ) async -> Workload? {
         let key = "create/\(device.hostId)"
         actionIDs.insert(key)
@@ -454,6 +455,7 @@ final class AppModel {
                 hostCPUCount: device.resources?.cpuCount,
                 workloadClass: workloadClass,
                 openaiBaseURL: openaiBaseURL,
+                openaiAPIKey: openaiAPIKey,
             )
             let created = try await requireClient().createWorkload(body, on: device)
             await refreshDeviceScoped()

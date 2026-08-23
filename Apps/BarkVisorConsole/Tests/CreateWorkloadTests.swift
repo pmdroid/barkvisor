@@ -210,13 +210,23 @@ struct CreateWorkloadTests {
         let cloudInit = encoded["cloudInit"] as? [String: Any]
         #expect((cloudInit?["userData"] as? String)?.contains("10.0.2.2:11434") == true)
 
+        #expect(throws: CreateWorkload.DraftError.missingOpenAIAPIKey) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: coding,
+                hostCPUCount: 8,
+                openaiBaseURL: "https://api.example/v1",
+            )
+        }
         let byo = try CreateWorkload.body(
             name: "coder",
             image: coding,
             hostCPUCount: 8,
             openaiBaseURL: "https://api.example/v1",
+            openaiAPIKey: "sk-test",
         )
         #expect(byo.cloudInit?.userData?.contains("https://api.example/v1") == true)
+        #expect(byo.cloudInit?.userData?.contains("OPENAI_API_KEY='sk-test'") == true)
 
         let house = try CreateWorkload.body(
             name: "coder",

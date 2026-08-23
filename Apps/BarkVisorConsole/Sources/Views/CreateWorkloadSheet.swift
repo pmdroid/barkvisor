@@ -19,6 +19,7 @@ struct CreateWorkloadSheet: View {
     @State private var workloadClass = "house"
     @State private var openaiPreset = "home-ollama"
     @State private var byoOpenAIURL = CodingAgentImage.homeOllamaGrantURL
+    @State private var byoOpenAIAPIKey = ""
 
     var body: some View {
         Form {
@@ -75,6 +76,11 @@ struct CreateWorkloadSheet: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
+                        #endif
+                        SecureField("OPENAI_API_KEY", text: $byoOpenAIAPIKey)
+                        #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
                         #endif
                     }
                 }
@@ -211,12 +217,14 @@ struct CreateWorkloadSheet: View {
         let openaiURL = isCodingAgent
             ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL)
             : nil
+        let openaiKey = isCodingAgent && openaiPreset == "byo" ? byoOpenAIAPIKey : nil
         guard let created = await model.createWorkload(
             name: name,
             image: selectedImage,
             on: device,
             workloadClass: workloadClass,
             openaiBaseURL: openaiURL,
+            openaiAPIKey: openaiKey,
         ) else {
             localError = model.banner ?? "Could not create the Workload"
             return

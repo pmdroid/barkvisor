@@ -41,6 +41,12 @@ export function defaultWorkloadClassForImage(img: { name?: string | null; slug?:
 }
 
 const OPENAI_BASE_URL_SAFE = /^[A-Za-z0-9:\/._%-]+$/
+const OPENAI_API_KEY_SAFE = /^[A-Za-z0-9._+=-]+$/
+export const DEFAULT_OPENAI_API_KEY = 'ollama'
+
+export function isShellSafeOpenAIAPIKey(value: string): boolean {
+  return OPENAI_API_KEY_SAFE.test(value)
+}
 
 export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   const trimmed = (raw ?? '').trim()
@@ -55,9 +61,23 @@ export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   if (url.username || url.password) {
     throw new Error('OPENAI_BASE_URL is invalid')
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    !url.hostname ||
+    !/^https?:\/\//i.test(trimmed)
+  ) {
     throw new Error('OPENAI_BASE_URL must be an http(s) URL')
   }
+  return trimmed
+}
+
+export function normalizeOpenAIAPIKey(raw: string | null | undefined, required = false): string {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) {
+    if (required) throw new Error('OPENAI_API_KEY is required')
+    return DEFAULT_OPENAI_API_KEY
+  }
+  if (!isShellSafeOpenAIAPIKey(trimmed)) throw new Error('OPENAI_API_KEY is invalid')
   return trimmed
 }
 
@@ -79,8 +99,12 @@ export function usesDeviceOllama(url: string): boolean {
   return port === 11434
 }
 
-export function codingAgentUserData(openaiBaseURL: string): string {
+export function codingAgentUserData(
+  openaiBaseURL: string,
+  openaiAPIKey = DEFAULT_OPENAI_API_KEY,
+): string {
   const quotedURL = posixSingleQuoted(openaiBaseURL)
+  const quotedKey = posixSingleQuoted(openaiAPIKey)
   const marker = usesDeviceOllama(openaiBaseURL) ? `${ALLOW_HOST_OLLAMA_YAML}\n` : ''
   return `${marker}package_update: true
 packages:
@@ -95,12 +119,12 @@ write_files:
     permissions: '0644'
     content: |
       OPENAI_BASE_URL=${openaiBaseURL}
-      OPENAI_API_KEY=ollama
+      OPENAI_API_KEY=${openaiAPIKey}
   - path: /etc/profile.d/barkvisor-openai.sh
     permissions: '0644'
     content: |
       export OPENAI_BASE_URL=${quotedURL}
-      export OPENAI_API_KEY="\${OPENAI_API_KEY:-ollama}"
+      export OPENAI_API_KEY=${quotedKey}
   - path: /etc/systemd/system/ttyd.service
     permissions: '0644'
     content: |
@@ -171,10 +195,14 @@ export function mergeCodingAgentUserData(
   img: { name?: string | null; slug?: string | null } | null | undefined,
   preset: OpenAIPreset,
   byoURL: string,
+  byoAPIKey = '',
 ): string {
   const trimmed = existing.trim()
   if (trimmed) return trimmed
   if (!isCodingAgentImage(img)) return existing
   const url = isHomeOllamaGrant(preset) ? HOME_OLLAMA_GRANT_URL : normalizeOpenAIBaseURL(byoURL)
-  return codingAgentUserData(url)
+  const key = isHomeOllamaGrant(preset)
+    ? DEFAULT_OPENAI_API_KEY
+    : normalizeOpenAIAPIKey(byoAPIKey, true)
+  return codingAgentUserData(url, key)
 }

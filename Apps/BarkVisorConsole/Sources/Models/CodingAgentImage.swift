@@ -57,6 +57,26 @@ enum CodingAgentImage {
         return trimmed
     }
 
+    static let defaultOpenAIAPIKey = "ollama"
+
+    static func isShellSafeOpenAIAPIKey(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || "._+=-".contains(ch))
+        }
+    }
+
+    static func normalizeOpenAIAPIKey(_ raw: String?, required: Bool = false) throws -> String {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            if required { throw CreateWorkload.DraftError.missingOpenAIAPIKey }
+            return defaultOpenAIAPIKey
+        }
+        guard isShellSafeOpenAIAPIKey(trimmed) else {
+            throw CreateWorkload.DraftError.invalidOpenAIAPIKey
+        }
+        return trimmed
+    }
+
     static func posixSingleQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
@@ -76,8 +96,12 @@ enum CodingAgentImage {
         return (comps.port ?? 80) == 11_434
     }
 
-    static func userData(openaiBaseURL: String) -> String {
+    static func userData(
+        openaiBaseURL: String,
+        openaiAPIKey: String = defaultOpenAIAPIKey,
+    ) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
+        let quotedKey = posixSingleQuoted(openaiAPIKey)
         let marker = usesDeviceOllama(openaiBaseURL) ? "\(allowHostOllamaYAML)\n" : ""
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64
@@ -103,12 +127,12 @@ enum CodingAgentImage {
             permissions: '0644'
             content: |
               OPENAI_BASE_URL=\(openaiBaseURL)
-              OPENAI_API_KEY=ollama
+              OPENAI_API_KEY=\(openaiAPIKey)
           - path: /etc/profile.d/barkvisor-openai.sh
             permissions: '0644'
             content: |
               export OPENAI_BASE_URL=\(quotedURL)
-              export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
+              export OPENAI_API_KEY=\(quotedKey)
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
             content: |

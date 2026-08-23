@@ -73,6 +73,26 @@ public enum CodingAgentImage {
         return trimmed
     }
 
+    public static let defaultOpenAIAPIKey = "ollama"
+
+    public static func isShellSafeOpenAIAPIKey(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || "._+=-".contains(ch))
+        }
+    }
+
+    public static func normalizeOpenAIAPIKey(_ raw: String?, required: Bool = false) throws -> String {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            if required { throw BarkVisorError.badRequest("OPENAI_API_KEY is required") }
+            return defaultOpenAIAPIKey
+        }
+        guard isShellSafeOpenAIAPIKey(trimmed) else {
+            throw BarkVisorError.badRequest("OPENAI_API_KEY is invalid")
+        }
+        return trimmed
+    }
+
     public static func posixSingleQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
@@ -87,8 +107,12 @@ public enum CodingAgentImage {
         return port == deviceOllamaPort
     }
 
-    public static func userData(openaiBaseURL: String) -> String {
+    public static func userData(
+        openaiBaseURL: String,
+        openaiAPIKey: String = defaultOpenAIAPIKey,
+    ) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
+        let quotedKey = posixSingleQuoted(openaiAPIKey)
         let marker = usesDeviceOllama(openaiBaseURL)
             ? "\(AgentNetworkCage.allowHostOllamaYAML)\n"
             : ""
@@ -116,12 +140,12 @@ public enum CodingAgentImage {
             permissions: '0644'
             content: |
               OPENAI_BASE_URL=\(openaiBaseURL)
-              OPENAI_API_KEY=ollama
+              OPENAI_API_KEY=\(openaiAPIKey)
           - path: /etc/profile.d/barkvisor-openai.sh
             permissions: '0644'
             content: |
               export OPENAI_BASE_URL=\(quotedURL)
-              export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
+              export OPENAI_API_KEY=\(quotedKey)
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
             content: |
