@@ -520,41 +520,34 @@ public enum QEMUBuilder {
     ) throws -> String {
         let suffix = ",guest-reset=off,id=usb-pt-\(index)"
         let identified = stored.serialNumber != nil
-            || (stored.deviceId?.contains(":") == true && stored.deviceId?.hasPrefix("bus:") != true
+            || stored.deviceId?.hasPrefix("bus:") == true
+            || (stored.deviceId?.contains(":") == true
                 && (stored.deviceId?.split(separator: ":").count ?? 0) >= 3)
 
-        if identified {
-            let lookup = stored.deviceId ?? USBDeviceIdentity.make(
-                vendorId: stored.vendorId,
-                productId: stored.productId,
-                serial: stored.serialNumber,
-            ).id
-            let host = try USBPassthroughService.resolve(deviceId: lookup, hostDevices: hostDevices)
-            guard host.attachable else {
-                throw BarkVisorError.badRequest(
-                    host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
-                )
-            }
-            if let bus = host.bus, let address = host.address {
-                return "usb-host,hostbus=\(bus),hostaddr=\(address)\(suffix)"
-            }
+        guard identified else {
             throw BarkVisorError.conflict(
-                "USB device \(lookup) resolved without bus/address; refusing vendor/product fallback",
+                "USB device \(stored.vendorId):\(stored.productId) has no bus/address; "
+                    + "refusing vendor/product fallback. Re-attach the device.",
             )
         }
 
-        if let deviceId = stored.deviceId, deviceId.hasPrefix("bus:"),
-           let parsed = USBDeviceIdentity.parse(deviceId),
-           let bus = parsed.bus, let address = parsed.address {
-            if let host = try? USBPassthroughService.resolve(
-                deviceId: deviceId, hostDevices: hostDevices,
-            ), let hostBus = host.bus, let hostAddr = host.address {
-                return "usb-host,hostbus=\(hostBus),hostaddr=\(hostAddr)\(suffix)"
-            }
+        let lookup = stored.deviceId ?? USBDeviceIdentity.make(
+            vendorId: stored.vendorId,
+            productId: stored.productId,
+            serial: stored.serialNumber,
+        ).id
+        let host = try USBPassthroughService.resolve(deviceId: lookup, hostDevices: hostDevices)
+        guard host.attachable else {
+            throw BarkVisorError.badRequest(
+                host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
+            )
+        }
+        if let bus = host.bus, let address = host.address {
             return "usb-host,hostbus=\(bus),hostaddr=\(address)\(suffix)"
         }
-
-        return "usb-host,vendorid=\(stored.vendorId),productid=\(stored.productId)\(suffix)"
+        throw BarkVisorError.conflict(
+            "USB device \(lookup) resolved without bus/address; refusing vendor/product fallback",
+        )
     }
 
     private static func miscArgs(spec: WorkloadSpec, vmID: String) throws -> [String] {
