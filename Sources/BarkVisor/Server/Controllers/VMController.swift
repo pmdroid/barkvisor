@@ -33,6 +33,7 @@ struct VMResponse: Content {
     let usbDevices: [USBPassthroughDevice]?
     let pendingChanges: Bool
     let workloadClass: String
+    let startOnBoot: Bool
     let createdAt: String
     let updatedAt: String
 
@@ -73,6 +74,7 @@ struct VMResponse: Content {
         self.usbDevices = usb.isEmpty ? nil : usb
         self.workloadClass = (try? WorkloadClass.parse(vm.workloadClass).rawValue)
             ?? WorkloadClass.house.rawValue
+        self.startOnBoot = vm.startOnBoot
     }
 }
 
@@ -139,6 +141,7 @@ struct UpdateVMRequest: Content, Validatable {
     let tpmEnabled: Bool?
     let spec: WorkloadSpec?
     var workloadClass: String?
+    var startOnBoot: Bool?
 
     static func validations(_ validations: inout Validations) {
         validations.add(
@@ -287,12 +290,19 @@ struct VMController: RouteCollection {
         try UpdateVMRequest.validate(content: req)
         let body = try req.content.decode(UpdateVMRequest.self)
 
-        let vm: VM
+        var vm: VM
         if var spec = body.spec {
             if spec.spec.workloadClass == nil {
                 spec.spec.workloadClass = body.workloadClass
             }
             vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
+            if let startOnBoot = body.startOnBoot, startOnBoot != vm.startOnBoot {
+                vm = try await VMLifecycleService.updateVM(
+                    id: id,
+                    params: UpdateVMParams(startOnBoot: startOnBoot),
+                    db: req.db,
+                )
+            }
         } else {
             let updateParams = UpdateVMParams(
                 name: body.name, cpuCount: body.cpuCount, memoryMB: body.memoryMB,
@@ -301,7 +311,7 @@ struct VMController: RouteCollection {
                 description: body.description, bootOrder: body.bootOrder,
                 displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
                 sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
-                workloadClass: body.workloadClass,
+                workloadClass: body.workloadClass, startOnBoot: body.startOnBoot,
             )
             vm = try await VMLifecycleService.updateVM(
                 id: id, params: updateParams, db: req.db,

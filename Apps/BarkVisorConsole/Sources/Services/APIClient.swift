@@ -226,6 +226,15 @@ struct APIClient {
         try await post(scoped("/vms/\(id)/restart", on: device), body: EmptyJSON())
     }
 
+    func setStartOnBoot(_ id: String, enabled: Bool, on device: HomeDeviceHealthSnapshot?) async throws {
+        let _: Workload = try await send(
+            method: "PATCH",
+            path: scoped("/vms/\(id)", on: device),
+            body: WorkloadStartOnBootBody(startOnBoot: enabled),
+            as: Workload.self,
+        )
+    }
+
     func guestInfo(_ id: String, on device: HomeDeviceHealthSnapshot?) async throws -> GuestInfo {
         try await get(scoped("/vms/\(id)/guest-info", on: device))
     }

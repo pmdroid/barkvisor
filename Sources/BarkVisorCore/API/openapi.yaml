@@ -1814,6 +1814,11 @@ components:
             $ref: "#/components/schemas/USBDevice"
         pendingChanges:
           type: boolean
+        startOnBoot:
+          type: boolean
+          description: >
+            Start this Workload after the Device boots. Default false so House
+            appliances stay stopped. Daemon restart on the same boot does not start it.
         createdAt:
           type: string
         updatedAt:
@@ -1940,6 +1945,9 @@ components:
           nullable: true
         backend:
           $ref: "#/components/schemas/VMRuntimeBackend"
+        startOnBoot:
+          type: boolean
+          description: Start after Device boot (host-only, not in the portable spec).
 
     VMRuntimeBackend:
       type: object
@@ -2178,6 +2186,8 @@ components:
           type: string
         spec:
           $ref: "#/components/schemas/WorkloadSpec"
+        startOnBoot:
+          type: boolean
 
     VMTaskAccepted:
       type: object

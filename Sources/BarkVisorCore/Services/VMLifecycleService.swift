@@ -69,6 +69,7 @@ public enum VMLifecycleService {
             uefi: params.uefi,
             tpmEnabled: params.tpmEnabled,
             workloadClass: params.workloadClass,
+            startOnBoot: params.startOnBoot,
         )
         try validateUpdateVMInputs(params: normalized)
 
@@ -86,12 +87,15 @@ public enum VMLifecycleService {
             let hardwareChanged = detectHardwareChanges(
                 params: normalized, encoded: encodedFields, vm: vm,
             )
+            let specTouched = hardwareChanged
+                || params.name != nil
+                || params.description != nil
 
             applyUpdates(params: normalized, encoded: encodedFields, to: &vm)
 
             if isRunning, hardwareChanged { vm.pendingChanges = true }
             vm.updatedAt = iso8601.string(from: Date())
-            vm.syncSpecProjection(bumpGeneration: true)
+            vm.syncSpecProjection(bumpGeneration: specTouched)
 
             try vm.update(db)
             return vm

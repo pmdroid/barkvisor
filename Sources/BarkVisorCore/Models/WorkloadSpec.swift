@@ -406,6 +406,8 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
     public var healthError: String?
     /// Effective QEMU backend for this workload (PAS-73).
     public var backend: VMRuntimeBackend
+    /// PAS-258: start after Device boot. Host-only, not part of the portable spec.
+    public var startOnBoot: Bool
 
     public init(
         state: VMState,
@@ -416,6 +418,7 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         health: WorkloadHealth,
         healthError: String? = nil,
         backend: VMRuntimeBackend,
+        startOnBoot: Bool = false,
     ) {
         self.state = state
         self.pendingChanges = pendingChanges
@@ -425,6 +428,7 @@ public struct VMRuntimeStatus: Codable, Equatable, Sendable {
         self.health = health
         self.healthError = healthError
         self.backend = backend
+        self.startOnBoot = startOnBoot
     }
 }
 
