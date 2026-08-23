@@ -1,3 +1,4 @@
+#if os(macOS)
 import BarkVisorHelperProtocol
 import Foundation
 import Testing
@@ -106,3 +107,4 @@ struct HelperXPCClientPolicyTests {
         #expect(main.contains("#if DEBUG"))
     }
 }
+#endif
