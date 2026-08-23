@@ -192,7 +192,7 @@ struct OllamaController: RouteCollection {
         _ = try OllamaChatProxy.parseBufferedRequest(body)
         let client = try await resolvedClient(db: db)
         if OllamaLocalProbe.wantsStream(fromChatBody: body) {
-            return OllamaChatProxy.stream(client.chatCompletionsStream(body: body))
+            return try await OllamaChatProxy.stream(client.chatCompletionsStream(body: body))
         }
         let upstream = try await client.chatCompletions(body: body)
         return OllamaChatHTTP.response(

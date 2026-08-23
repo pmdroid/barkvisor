@@ -7,7 +7,9 @@ import Vapor
 enum OllamaChatProxy {
     static let streamTimeoutSeconds: Int64 = 3_600
 
-    static func stream(_ chunks: AsyncThrowingStream<Data, Error>) -> Response {
+    static func stream(_ chunks: AsyncThrowingStream<Data, Error>) async throws -> Response {
+        let source = ChunkSource(chunks)
+        let first = try await source.next()
         var headers = HTTPHeaders()
         headers.replaceOrAdd(name: .contentType, value: "text/event-stream")
         headers.replaceOrAdd(name: .cacheControl, value: "no-cache")
@@ -18,7 +20,12 @@ enum OllamaChatProxy {
             headers: headers,
             body: .init(asyncStream: { writer in
                 do {
-                    for try await chunk in chunks {
+                    if let first {
+                        var buffer = ByteBufferAllocator().buffer(capacity: first.count)
+                        buffer.writeBytes(first)
+                        try await writer.write(.buffer(buffer))
+                    }
+                    while let chunk = try await source.next() {
                         var buffer = ByteBufferAllocator().buffer(capacity: chunk.count)
                         buffer.writeBytes(chunk)
                         try await writer.write(.buffer(buffer))
@@ -46,5 +53,18 @@ enum OllamaChatProxy {
             headers: headers,
             body: .init(data: body),
         )
+    }
+}
+
+/// Owns the SSE iterator so Vapor's @Sendable body writer can resume after the first chunk.
+private final class ChunkSource: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<Data, Error>.Iterator
+
+    init(_ chunks: AsyncThrowingStream<Data, Error>) {
+        iterator = chunks.makeAsyncIterator()
+    }
+
+    func next() async throws -> Data? {
+        try await iterator.next()
     }
 }

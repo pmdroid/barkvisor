@@ -110,18 +110,19 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !modelName.isEmpty, !streaming else { return }
+        guard let client = model.client else {
+            error = "Sign in required"
+            return
+        }
         draft = ""
         error = nil
         let user = ChatTurn(role: "user", content: text)
         turns.append(user)
         turns.append(ChatTurn(role: "assistant", content: ""))
         let history = turns.dropLast().map { ChatWireMessage(role: $0.role, content: $0.content) }
-        guard let client = model.client else {
-            error = "Sign in required"
-            return
-        }
         streaming = true
         sendTask = Task {
+            defer { streaming = false }
             do {
                 try await client.streamChatCompletions(
                     model: modelName,
@@ -145,7 +146,6 @@ struct ChatView: View {
                     }
                 }
             }
-            streaming = false
         }
     }
 }

@@ -93,4 +93,30 @@ describe('chat store (PAS-270)', () => {
     expect(chat.streaming).toBe(false)
     expect(chat.draft).toBe('')
   })
+
+  test('abort does not leave streaming stuck', async () => {
+    api.get = mock(() => Promise.resolve({ data: reachable })) as typeof api.get
+    localStorage.setItem('token', 'jwt-1')
+    const auth = useAuthStore()
+    auth.token = 'jwt-1'
+    await useOllamaStore().fetchCatalog()
+    const chat = useChatStore()
+    chat.draft = 'hello'
+    const aborted = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    await chat.send(async () => {
+      throw aborted
+    })
+    expect(chat.streaming).toBe(false)
+    expect(chat.messages).toHaveLength(2)
+  })
+
+  test('a failed catalog fetch hides Chat', async () => {
+    api.get = mock(() => Promise.reject(new TypeError('Failed to fetch'))) as typeof api.get
+    const ollama = useOllamaStore()
+    ollama.catalog = reachable
+    const chat = useChatStore()
+    expect(chat.visible).toBe(true)
+    await ollama.fetchCatalog()
+    expect(chat.visible).toBe(false)
+  })
 })

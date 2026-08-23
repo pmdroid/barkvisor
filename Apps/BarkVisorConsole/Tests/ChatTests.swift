@@ -43,6 +43,7 @@ struct ChatTests {
         #expect(ChatAvailability.defaultModel(in: catalog) == "llama3:latest")
         #expect(!ChatAvailability.visible(anyReachable: true, modelCount: 0))
         #expect(!ChatAvailability.visible(catalog: nil))
+        #expect(ChatAvailability.defaultModel(in: nil).isEmpty)
         #expect(AppRoute.chat.title == "Chat")
         #expect(AppRoute.chat.symbol == "bubble.left.and.bubble.right")
         #expect(PhoneTab.chat.rawValue == "chat")
