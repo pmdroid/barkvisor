@@ -82,7 +82,7 @@ struct NetworkCapabilityTests {
         #endif
         guard HostInfoService.interfaceExists(iface) else { return }
         #if os(Linux)
-            if let allowed = LinuxHostNetwork.bridgeACLDecision(iface), !allowed {
+            if !LinuxHostNetwork.bridgeACLPermits(iface) {
                 let err = #expect(throws: BarkVisorError.self) {
                     try NetworkCapability.requireBridgedInterface(iface)
                 }
@@ -102,6 +102,7 @@ struct NetworkCapabilityTests {
         #expect(!LinuxHostNetwork.bridgeACLAllows("", fileContents: "allow all"))
         let missing = LinuxHostNetwork.bridgeACLDecision("br0", at: "/no/such/qemu-bridge.conf")
         #expect(missing == nil)
+        #expect(!LinuxHostNetwork.bridgeACLPermits("br0", at: "/no/such/qemu-bridge.conf"))
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -114,7 +114,8 @@ public enum NetworkCapability {
     ///
     /// Checks product bridged capability, IFNAMSIZ-safe name, that the host
     /// interface exists (`HostInfoService.interfaceExists`), and (Linux) that
-    /// a readable qemu-bridge-helper ACL allows the name.
+    /// qemu-bridge-helper ACL permits the name. Missing/unreadable ACL is deny
+    /// (PAS-278; matches UI `aclAllowsSuggested != true`).
     public static func requireBridgedInterface(_ name: String) throws {
         try PlatformCapabilities.requireBridgedNetworking()
         try validateBridgeName(name)
@@ -122,7 +123,7 @@ public enum NetworkCapability {
             throw BarkVisorError.interfaceMissing(name)
         }
         #if os(Linux)
-            if let allowed = LinuxHostNetwork.bridgeACLDecision(name), !allowed {
+            guard LinuxHostNetwork.bridgeACLPermits(name) else {
                 throw BarkVisorError.bridgeHelperDenied(name)
             }
         #endif
