@@ -124,4 +124,45 @@ struct CodingAgentSessionTests {
         #expect(await store.port(for: "vm-coder") == nil)
         #expect(await store.occupiedHostPorts().isEmpty)
     }
+
+    @Test func `loopback host port is parsed from QEMU netdev`() {
+        let netdev =
+            "user,id=net0,hostfwd=tcp::8080-:80,hostfwd=tcp:127.0.0.1:17681-:7681"
+        #expect(
+            CodingAgentSession.loopbackHostPort(fromQEMUArguments: ["-netdev", netdev]) == 17_681,
+        )
+        #expect(
+            CodingAgentSession.loopbackHostPort(
+                fromQEMUArguments: [CodingAgentSession.loopbackHostfwd(hostPort: 9_001)],
+            ) == 9_001,
+        )
+        #expect(CodingAgentSession.loopbackHostPort(fromQEMUArguments: ["-netdev", "user,id=net0"]) == nil)
+        #expect(
+            CodingAgentSession.loopbackHostPort(
+                fromQEMUArguments: ["hostfwd=tcp:127.0.0.1:17681-:22"],
+            ) == nil,
+        )
+    }
+
+    @Test func `recovered ttyd host port prefers QEMU argv over pid file`() {
+        let netdev = "user,id=net0,\(CodingAgentSession.loopbackHostfwd(hostPort: 17_681))"
+        #expect(
+            CodingAgentSession.recoveredTerminalHostPort(
+                qemuArguments: ["-netdev", netdev],
+                pidFilePort: 9_001,
+            ) == 17_681,
+        )
+        #expect(
+            CodingAgentSession.recoveredTerminalHostPort(
+                qemuArguments: nil,
+                pidFilePort: 9_001,
+            ) == 9_001,
+        )
+        #expect(
+            CodingAgentSession.recoveredTerminalHostPort(
+                qemuArguments: ["-netdev", "user,id=net0"],
+                pidFilePort: nil,
+            ) == nil,
+        )
+    }
 }

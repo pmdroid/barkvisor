@@ -90,6 +90,46 @@ public enum CodingAgentSession {
         "hostfwd=tcp:127.0.0.1:\(hostPort)-:\(guestPort)"
     }
 
+    /// Host port from QEMU `-netdev` `hostfwd=tcp:127.0.0.1:HOST-:GUEST`.
+    public static func loopbackHostPort(
+        fromQEMUArguments arguments: [String],
+        guestPort: Int = CodingAgentImage.webTerminalPort,
+    ) -> Int? {
+        let prefix = "hostfwd=tcp:127.0.0.1:"
+        let suffix = "-:\(guestPort)"
+        for arg in arguments {
+            var searchStart = arg.startIndex
+            while let prefixRange = arg.range(of: prefix, range: searchStart ..< arg.endIndex) {
+                let portStart = prefixRange.upperBound
+                guard let suffixRange = arg.range(of: suffix, range: portStart ..< arg.endIndex)
+                else {
+                    searchStart = portStart
+                    continue
+                }
+                let token = arg[portStart ..< suffixRange.lowerBound]
+                if token.allSatisfy(\.isNumber), let port = Int(token),
+                   (1 ... 65_535).contains(port) {
+                    return port
+                }
+                searchStart = portStart
+            }
+        }
+        return nil
+    }
+
+    /// Live QEMU argv first, then the pid-file copy (daemon restart).
+    public static func recoveredTerminalHostPort(
+        qemuArguments: [String]?,
+        pidFilePort: Int?,
+        guestPort: Int = CodingAgentImage.webTerminalPort,
+    ) -> Int? {
+        if let qemuArguments,
+           let port = loopbackHostPort(fromQEMUArguments: qemuArguments, guestPort: guestPort) {
+            return port
+        }
+        return pidFilePort
+    }
+
     public static func wantsWebTerminal(userData: String?) -> Bool {
         guard let userData, !userData.isEmpty else { return false }
         return userData.contains("ttyd") && userData.contains("\(CodingAgentImage.webTerminalPort)")

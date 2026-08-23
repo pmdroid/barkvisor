@@ -359,6 +359,75 @@ final class PortRegistryTests {
         #expect(PortRegistry.probeListen(port: port, proto: "udp") == true)
     }
 
+    @Test func `probeListen is false while loopback TCP is bound`() {
+        #if os(Linux)
+            let sockType = Int32(SOCK_STREAM.rawValue)
+        #else
+            let sockType = SOCK_STREAM
+        #endif
+        let fd = socket(AF_INET, sockType, 0)
+        #expect(fd >= 0)
+        defer { close(fd) }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = 0
+        addr.sin_addr = in_addr(s_addr: in_addr_t(INADDR_LOOPBACK).bigEndian)
+        let bindResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        #expect(bindResult == 0)
+
+        var bound = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameResult = withUnsafeMutablePointer(to: &bound) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                getsockname(fd, sockPtr, &len)
+            }
+        }
+        #expect(nameResult == 0)
+        let port = Int(UInt16(bigEndian: bound.sin_port))
+        #expect(port > 0)
+        #expect(PortRegistry.probeListen(port: port, proto: "tcp") == false)
+    }
+
+    @Test func `nextFree skips a loopback-bound TCP port`() async throws {
+        #if os(Linux)
+            let sockType = Int32(SOCK_STREAM.rawValue)
+        #else
+            let sockType = SOCK_STREAM
+        #endif
+        let fd = socket(AF_INET, sockType, 0)
+        #expect(fd >= 0)
+        defer { close(fd) }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = 0
+        addr.sin_addr = in_addr(s_addr: in_addr_t(INADDR_LOOPBACK).bigEndian)
+        let bindResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        #expect(bindResult == 0)
+
+        var bound = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameResult = withUnsafeMutablePointer(to: &bound) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                getsockname(fd, sockPtr, &len)
+            }
+        }
+        #expect(nameResult == 0)
+        let occupied = Int(UInt16(bigEndian: bound.sin_port))
+        #expect(occupied > 0)
+        let port = try await PortRegistry.nextFree(preferred: occupied, proto: "tcp", db: dbPool)
+        #expect(port > occupied)
+    }
+
     // MARK: - Helpers
 
     private func insertVM(
