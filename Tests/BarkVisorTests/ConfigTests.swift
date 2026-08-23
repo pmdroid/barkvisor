@@ -153,16 +153,31 @@ struct ConfigTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let lock = NSLock()
-        var secrets: [String] = []
+        final class LockedSecrets: @unchecked Sendable {
+            private let lock = NSLock()
+            private var values: [String] = []
+
+            func append(_ secret: String) {
+                lock.lock()
+                values.append(secret)
+                lock.unlock()
+            }
+
+            func snapshot() -> [String] {
+                lock.lock()
+                defer { lock.unlock() }
+                return values
+            }
+        }
+
+        let secrets = LockedSecrets()
         DispatchQueue.concurrentPerform(iterations: 32) { _ in
             let result = Config.ensureAPIKeyHmacSecret(in: dir)
-            lock.lock()
             secrets.append(result.secret)
-            lock.unlock()
         }
-        #expect(Set(secrets).count == 1)
-        #expect(Config.loadAPIKeyHmacSecret(from: dir) == secrets[0])
-        #expect(!secrets[0].isEmpty)
+        let collected = secrets.snapshot()
+        #expect(Set(collected).count == 1)
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == collected[0])
+        #expect(!collected[0].isEmpty)
     }
 }
