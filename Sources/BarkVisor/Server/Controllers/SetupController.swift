@@ -4,14 +4,14 @@ import GRDB
 import JWTKit
 import Vapor
 
-/// Handles the web-based onboarding wizard. All endpoints are unprotected (no JWT)
-/// but only accessible when setup has not been completed yet.
+/// Handles the web-based onboarding wizard. No JWT. Console-local only
+/// because the HTTP listener binds 0.0.0.0; mutating steps 404 after setup.
 struct SetupController: RouteCollection {
     let setupMiddleware: SetupMiddleware
     let keys: JWTKeyCollection
 
     func boot(routes: any RoutesBuilder) throws {
-        let setup = routes.grouped("api", "setup")
+        let setup = routes.grouped("api", "setup").grouped(ConsoleLocalSetupMiddleware())
         setup.get("status", use: getStatus)
         setup.post("admin", use: createAdmin)
         setup.get("interfaces", use: listInterfaces)
@@ -20,6 +20,14 @@ struct SetupController: RouteCollection {
         setup.post("repositories", "sync", use: syncRepositories)
         setup.get("repositories", "status", use: repositorySyncStatus)
         setup.post("complete", use: complete)
+    }
+
+    /// Mutating wizard steps that must stay console-local while setup is open.
+    static let mutatingSetupPaths = ["/api/setup/admin", "/api/setup/complete"]
+
+    static func requireConsoleLocal(_ req: Request) throws {
+        let peer = req.remoteAddress?.ipAddress ?? req.peerAddress?.ipAddress
+        try SetupMiddleware.requireConsoleLocalClient(peer)
     }
 
     // MARK: - Status
@@ -64,6 +72,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func createAdmin(req: Request) async throws -> AdminResponse {
+        try Self.requireConsoleLocal(req)
         guard !setupMiddleware.isSetupComplete else {
             throw Abort(.notFound)
         }
@@ -288,6 +297,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func complete(req: Request) async throws -> CompleteResponse {
+        try Self.requireConsoleLocal(req)
         guard !setupMiddleware.isSetupComplete else {
             throw Abort(.notFound)
         }
