@@ -9,7 +9,9 @@ import NIOPosix
 
 /// Resolves once, validates, then fetches via AsyncHTTPClient `dnsOverride` so
 /// TCP uses the approved IP while Host and TLS SNI stay on the original hostname.
+/// Each 3xx Location is re-pinned with ``SSRFGuard.pinEndpoint`` before connect.
 class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let maxRedirects = 16
     private var work: Task<Void, Never>?
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -55,6 +57,35 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func fetch(request: URLRequest, url: URL, pin: PinnedEndpoint) async throws {
+        var currentRequest = request
+        var currentURL = url
+        var currentPin = pin
+        var seen: Set<String> = [url.absoluteString]
+
+        for _ in 0 ... Self.maxRedirects {
+            try Task.checkCancellation()
+            if let next = try await performHop(
+                request: currentRequest, url: currentURL, pin: currentPin,
+            ) {
+                guard seen.insert(next.absoluteString).inserted else {
+                    throw URLError(.httpTooManyRedirects)
+                }
+                currentPin = try SSRFGuard.pinEndpoint(url: next)
+                currentURL = next
+                currentRequest.url = next
+                currentRequest.httpMethod = "GET"
+                currentRequest.httpBody = nil
+                continue
+            }
+            return
+        }
+        throw URLError(.httpTooManyRedirects)
+    }
+
+    /// Returns the next URL when following a 3xx hop; nil after delivering the final response.
+    private func performHop(
+        request: URLRequest, url: URL, pin: PinnedEndpoint,
+    ) async throws -> URL? {
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
         config.dnsOverride = [pin.originalHost: pin.connectIP]
@@ -71,20 +102,23 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             configuration: config,
         )
         do {
-            try await executePinned(http: http, request: request, url: url, timeout: timeout)
+            let next = try await sendHop(
+                http: http, request: request, url: url, timeout: timeout,
+            )
             try await http.shutdown()
+            return next
         } catch {
             try? await http.shutdown()
             throw error
         }
     }
 
-    private func executePinned(
+    private func sendHop(
         http: HTTPClient,
         request: URLRequest,
         url: URL,
         timeout: TimeInterval,
-    ) async throws {
+    ) async throws -> URL? {
         var outbound = HTTPClientRequest(url: url.absoluteString)
         outbound.method = HTTPMethod(rawValue: request.httpMethod ?? "GET")
         if let body = request.httpBody {
@@ -97,6 +131,18 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
 
         let response = try await http.execute(outbound, timeout: .seconds(Int64(timeout.rounded(.up))))
         try Task.checkCancellation()
+        let status = Int(response.status.code)
+        let location = response.headers.first(name: "location")
+        let nextURL = SSRFGuard.redirectTarget(
+            statusCode: status, location: location, from: url,
+        )
+        if let nextURL, SSRFGuard.shouldFollowRedirect(to: nextURL),
+           (try? SSRFGuard.pinEndpoint(url: nextURL)) != nil {
+            for try await _ in response.body {
+                try Task.checkCancellation()
+            }
+            return nextURL
+        }
 
         var headerFields: [String: String] = [:]
         for header in response.headers {
@@ -104,7 +150,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         }
         guard let httpResponse = HTTPURLResponse(
             url: url,
-            statusCode: Int(response.status.code),
+            statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: headerFields,
         )
@@ -112,7 +158,6 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             throw URLError(.badServerResponse)
         }
         client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
-
         for try await buffer in response.body {
             try Task.checkCancellation()
             let data = Data(buffer.readableBytesView)
@@ -121,6 +166,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             }
         }
         client?.urlProtocolDidFinishLoading(self)
+        return nil
     }
 
     private func fail(_ error: Error) {

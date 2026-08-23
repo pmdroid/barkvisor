@@ -208,6 +208,31 @@ struct SSRFProtectionTests {
         #expect(SSRFGuard.fetchRejection(for: ftp) != nil)
     }
 
+    @Test func `redirectTarget refuses private and file hops`() throws {
+        let from = try #require(URL(string: "https://cdn.example/a.img"))
+        let relative = SSRFGuard.redirectTarget(statusCode: 302, location: "/b.img", from: from)
+        #expect(relative?.absoluteString == "https://cdn.example/b.img")
+        #expect(SSRFGuard.redirectTarget(statusCode: 200, location: "/b.img", from: from) == nil)
+
+        let loopback = try #require(
+            SSRFGuard.redirectTarget(
+                statusCode: 302, location: "http://127.0.0.1/secret", from: from,
+            ),
+        )
+        #expect(!SSRFGuard.shouldFollowRedirect(to: loopback))
+        #expect(throws: SSRFPinError.self) {
+            _ = try SSRFGuard.pinEndpoint(url: loopback)
+        }
+
+        let fileHop = try #require(
+            SSRFGuard.redirectTarget(
+                statusCode: 302, location: "file:///etc/passwd", from: from,
+            ),
+        )
+        #expect(!SSRFGuard.shouldFollowRedirect(to: fileHop))
+        #expect(SSRFGuard.fetchRejection(for: fileHop) != nil)
+    }
+
     @Test func `pinEndpoint keeps SNI host and drops private answers`() throws {
         let url = try #require(URL(string: "https://cloud-images.example/img.qcow2"))
 

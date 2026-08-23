@@ -172,7 +172,7 @@ public actor RepositorySyncService {
         // SSRF protection: validate URL does not target private/internal hosts.
         // This check runs at sync time (not just repo creation) to defend against
         // DNS rebinding where a hostname's resolution changes after initial validation.
-        if let ssrfError = SSRFGuard.validate(url: url) {
+        if let ssrfError = SSRFGuard.fetchRejection(for: url) {
             throw BarkVisorError.repositorySyncFailed(ssrfError)
         }
 

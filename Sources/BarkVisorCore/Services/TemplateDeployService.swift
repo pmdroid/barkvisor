@@ -192,7 +192,10 @@ public enum TemplateDeployService {
         imageDownloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> DeployResult {
-        guard let sourceURL = URL(string: repoImage.downloadUrl) else {
+        guard let sourceURL = URL(string: repoImage.downloadUrl),
+              let scheme = sourceURL.scheme?.lowercased(),
+              Config.allowedURLSchemes.contains(scheme)
+        else {
             throw BarkVisorError.badRequest("Invalid download URL for image")
         }
         let claim = try await ImageService.startOrDetectCatalogDownload(

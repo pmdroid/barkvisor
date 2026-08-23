@@ -135,6 +135,22 @@ public enum SSRFGuard {
         )
     }
 
+    /// Absolute URL for an HTTP redirect hop, or nil when the status is not a hop.
+    public static func redirectTarget(
+        statusCode: Int,
+        location: String?,
+        from requestURL: URL,
+    ) -> URL? {
+        switch statusCode {
+        case 301, 302, 303, 307, 308:
+            break
+        default:
+            return nil
+        }
+        guard let location, !location.isEmpty else { return nil }
+        return URL(string: location, relativeTo: requestURL)?.absoluteURL
+    }
+
     /// Whether a redirect hop may be fetched. Default URLSession follows blindly;
     /// Library downloads must re-run ``validate(url:)`` (scheme + DNS) on Location.
     public static func shouldFollowRedirect(to url: URL) -> Bool {
