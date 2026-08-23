@@ -54,7 +54,14 @@ final class SSRFPinnedHopClient: @unchecked Sendable {
             sslContext = nil
         }
 
+        // Attach the body consumer before connect. A localhost 200 often delivers
+        // head+body+end on one event-loop tick; creating the stream after waitHead
+        // lets Linux drop those buffered bytes (empty URLSession data, HTTP 200).
+        let (stream, continuation) = AsyncThrowingStream<ByteBuffer, Error>.makeStream(
+            bufferingPolicy: .unbounded,
+        )
         let box = SSRFHopExchange()
+        box.startBody(continuation)
         let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .connectTimeout(.seconds(15))
             .channelInitializer { channel in
@@ -71,14 +78,17 @@ final class SSRFPinnedHopClient: @unchecked Sendable {
                     )
                 }
             }
-        let channel = try await bootstrap.connect(to: address).get()
-        let responseHead = try await box.waitHead()
-        let stream = AsyncThrowingStream<ByteBuffer, Error> { continuation in
-            box.startBody(continuation)
-            continuation.onTermination = { @Sendable _ in
-                channel.close(mode: .all, promise: nil)
-            }
+        let channel: Channel
+        do {
+            channel = try await bootstrap.connect(to: address).get()
+        } catch {
+            continuation.finish(throwing: error)
+            throw error
         }
+        continuation.onTermination = { @Sendable _ in
+            channel.close(mode: .all, promise: nil)
+        }
+        let responseHead = try await box.waitHead()
         return (responseHead, stream)
     }
 
