@@ -158,6 +158,8 @@ struct HomeDeviceHealthTests {
         #expect(live.features?.kvmDevice == false)
         #expect(live.features?.bridgedNetworking == false)
         #expect(live.features?.usbPassthrough == false)
+        #expect(live.features?.gpuPassthrough == false)
+        #expect(live.features?.vfio == false)
         #expect(live.workloadCount == 3)
         #expect(live.healthCounts?["stopped"] == 2)
         let inventoryOnly = HomeDeviceHealthAggregator.facts(from: decoded, summary: nil)

@@ -256,6 +256,24 @@ describe('fail-closed capabilities (PAS-37 / PAS-94)', () => {
     expect(store.isSupported('bridgedNetworking')).toBe(false)
     expect(store.isSupported('kvmDevice')).toBe(true)
     expect(store.isSupported('unknownFeature')).toBe(false)
+    expect(store.isSupported('gpuPassthrough')).toBe(false)
+  })
+
+  test('gpuPassthrough flag is fail-closed until the document says so', async () => {
+    globalThis.fetch = mock().mockResolvedValue(jsonResponse({
+      ...arm64Caps,
+      supportsGPUPassthrough: true,
+      supportsVFIO: false,
+      details: [
+        { code: 'gpuPassthrough', supported: true },
+        { code: 'vfio', supported: false, reasonCode: 'os_unsupported', remediation: 'Linux only' },
+      ],
+    })) as unknown as typeof fetch
+    const store = useCapabilitiesStore()
+    await store.fetchCapabilities()
+    expect(store.isSupported('gpuPassthrough')).toBe(true)
+    expect(store.isSupported('vfio')).toBe(false)
+    expect(store.explanationFor('vfio')).toBe('Linux only')
   })
 
   test('uses server networkModes and falls back when omitted', async () => {

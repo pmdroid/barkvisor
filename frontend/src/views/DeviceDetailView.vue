@@ -2,17 +2,21 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage } from '../api/errors'
-import type { HomeDeviceHealthSnapshot } from '../api/types'
+import api from '../api/client'
+import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
+import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
-import { canFetchDeviceWorkloads } from '../utils/homeDeviceApi'
+import { parseSystemCapabilities } from '../utils/capabilitiesParse'
+import { gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { canFetchDeviceWorkloads, deviceCapabilitiesPath } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
@@ -51,6 +55,26 @@ const showLoadingWorkloads = computed(() =>
 const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
 const showCreate = ref(false)
+const deviceCaps = ref<CurrentHostCapabilities | null>(null)
+
+const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
+const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
+
+async function refreshCapabilities(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !canFetchDeviceWorkloads(row)) {
+    deviceCaps.value = null
+    return
+  }
+  const host = row.hostId
+  try {
+    const { data } = await api.get(deviceCapabilitiesPath(row))
+    if (hostId.value !== host) return
+    deviceCaps.value = parseSystemCapabilities(data)
+  } catch {
+    if (hostId.value !== host) return
+    deviceCaps.value = null
+  }
+}
 
 function clearHostTransientState() {
   stopConfirm.value = null
@@ -62,6 +86,7 @@ function clearHostTransientState() {
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
   await workloads.fetchFor(row)
+  await refreshCapabilities(row)
 }
 
 let refreshSeq = 0
@@ -182,6 +207,12 @@ async function doStop() {
             {{ reachable ? 'Reachable' : 'Unreachable' }}
           </span>
         </div>
+      </div>
+
+      <div v-if="deviceCaps" class="gpu-card">
+        <div class="gpu-card-title">GPU passthrough</div>
+        <p class="gpu-card-status">{{ gpuReady ? 'This Device reports IOMMU, vfio-pci, and KVM.' : 'Not available on this Device.' }}</p>
+        <UnsupportedHint :text="gpuExplanation" />
       </div>
 
       <p v-if="!canFetchDeviceWorkloads(device)" class="unreachable-copy">
@@ -363,6 +394,22 @@ async function doStop() {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+}
+.gpu-card {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated, var(--bg-hover));
+}
+.gpu-card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.gpu-card-status {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 @media (max-width: 768px) {
