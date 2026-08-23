@@ -190,8 +190,9 @@ enum Seeder {
             }) ?? false
     }
 
-    /// Remote catalog first; fall back to `repos/templates.json` in the checkout
-    /// (the live catalog — `Server/Resources/templates.json` is unused).
+    /// Remote catalog first; then the installed share copy; then
+    /// `repos/templates.json` walking up from the working directory
+    /// (`Server/Resources/templates.json` is unused).
     private static func loadTemplateCatalog() async throws -> TemplateCatalog? {
         if let url = URL(string: defaultTemplatesURL) {
             if let (data, response) = try? await URLSession.shared.data(from: url),
@@ -209,11 +210,26 @@ enum Seeder {
         return nil
     }
 
-    private static func localTemplatesCatalogURL() -> URL? {
-        var dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    /// Homebrew installs the catalog at `$prefix/share/barkvisor/templates.json`
+    /// (`Config.shareDir`). Brew services pin WorkingDirectory to
+    /// `/var/lib/barkvisor`, so a cwd walk never reaches the keg copy.
+    static func localTemplatesCatalogURL(
+        shareDir: String = Config.shareDir,
+        currentDirectory: String = FileManager.default.currentDirectoryPath,
+    ) -> URL? {
+        let fm = FileManager.default
+        let shareRoot = URL(fileURLWithPath: shareDir, isDirectory: true)
+        let installed = [
+            shareRoot.appendingPathComponent("templates.json"),
+            shareRoot.appendingPathComponent("repos/templates.json"),
+        ]
+        for candidate in installed where fm.isReadableFile(atPath: candidate.path) {
+            return candidate
+        }
+        var dir = URL(fileURLWithPath: currentDirectory, isDirectory: true)
         for _ in 0 ..< 8 {
             let candidate = dir.appendingPathComponent("repos/templates.json")
-            if FileManager.default.isReadableFile(atPath: candidate.path) {
+            if fm.isReadableFile(atPath: candidate.path) {
                 return candidate
             }
             dir.deleteLastPathComponent()

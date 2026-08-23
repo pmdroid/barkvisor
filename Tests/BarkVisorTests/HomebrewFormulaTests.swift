@@ -80,6 +80,15 @@ struct HomebrewFormulaTests {
         #expect(formula.contains("/var/lib/barkvisor"))
     }
 
+    @Test func `formula installs templates.json into shareDir`() throws {
+        let formula = try read("packaging/homebrew/barkvisor.rb")
+        #expect(formula.contains("(share/\"barkvisor\").install \"repos/templates.json\""))
+        #expect(formula.contains("assert_path_exists share/\"barkvisor/templates.json\""))
+        let plist = try read("packaging/homebrew/homebrew.mxcl.barkvisor.plist")
+        #expect(plist.contains("<key>WorkingDirectory</key>"))
+        #expect(plist.contains("<string>/var/lib/barkvisor</string>"))
+    }
+
     @Test func `formula does not ship a helper LaunchDaemon`() throws {
         let formula = try read("packaging/homebrew/barkvisor.rb")
         #expect(!formula.contains("dev.barkvisor.helper"))

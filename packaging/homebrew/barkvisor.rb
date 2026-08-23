@@ -34,6 +34,8 @@ class Barkvisor < Formula
 
     bin.install binary => "barkvisor"
     (share/"barkvisor/frontend").install "frontend/dist"
+    # Same path as scripts/build-release.sh: share/barkvisor/templates.json.
+    # Seeder reads Config.shareDir; brew services cwd is /var/lib/barkvisor.
     (share/"barkvisor").install "repos/templates.json"
 
     (pkgshare/"postinstall").write (buildpath/"packaging/homebrew/postinstall.sh").read
@@ -84,6 +86,7 @@ class Barkvisor < Formula
 
   test do
     assert_path_exists bin/"barkvisor"
+    assert_path_exists share/"barkvisor/templates.json"
     plist = (prefix/"homebrew.mxcl.barkvisor.plist").read
     assert_match "AbandonProcessGroup", plist
     assert_match "_barkvisor", plist
