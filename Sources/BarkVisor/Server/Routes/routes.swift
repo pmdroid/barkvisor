@@ -106,6 +106,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
         collection: HomeOllamaController(
             backgroundTasks: deps.backgroundTasks,
             localOllama: ollama,
+            keys: deps.keys,
         ),
     )
     try protected.register(collection: SystemAboutController())

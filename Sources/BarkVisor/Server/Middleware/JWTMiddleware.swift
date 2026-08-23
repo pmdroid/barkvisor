@@ -344,8 +344,8 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         guard let pool = request.application.databaseIfPresent?.pool else {
             return UserRolePolicy.parseSession(sessionFallback).rawValue
         }
-        // Member Devices only store the admin row from pairing. Home re-sends
-        // the caller's JWT over mTLS, so a missing local row is expected for
+        // Member Devices only store the admin row from pairing. Home mints a
+        // short-lived hop JWT over mTLS, so a missing local row is expected for
         // inference users; use the signed claim instead of 401.
         let user = try await pool.read { db in
             try User.fetchOne(db, key: userId)
