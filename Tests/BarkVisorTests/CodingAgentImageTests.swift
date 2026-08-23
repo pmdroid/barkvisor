@@ -49,6 +49,7 @@ struct CodingAgentImageTests {
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIBaseURL("https://evil\n.com")
         }
+        #expect(CodingAgentImage.homeOllamaGrantURL == CodingAgentImage.deviceOllamaBaseURL)
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
     }
 

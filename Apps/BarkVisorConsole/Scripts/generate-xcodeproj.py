@@ -16,6 +16,7 @@ APP_SOURCES = [
     "Sources/Models/LibraryCatalog.swift",
     "Sources/Models/CreateWorkload.swift",
     "Sources/Models/CodingAgentImage.swift",
+    "Sources/Models/CodingAgentSession.swift",
     "Sources/Models/LoginURI.swift",
     "Sources/Models/LoginOfferQR.swift",
     "Sources/Models/PairingOffer.swift",
@@ -52,6 +53,7 @@ TEST_SOURCES = [
     "Tests/SessionTests.swift",
     "Tests/PairingOfferTests.swift",
     "Tests/ChatTests.swift",
+    "Tests/CodingAgentSessionTests.swift",
 ]
 
 
@@ -289,6 +291,7 @@ def main() -> None:
                 child_file("Sources/Models/LibraryCatalog.swift"),
                 child_file("Sources/Models/CreateWorkload.swift"),
                 child_file("Sources/Models/CodingAgentImage.swift"),
+                child_file("Sources/Models/CodingAgentSession.swift"),
                 child_file("Sources/Models/LoginURI.swift"),
                 child_file("Sources/Models/LoginOfferQR.swift"),
                 child_file("Sources/Models/PairingOffer.swift"),
@@ -360,6 +363,7 @@ def main() -> None:
                 child_file("Tests/SessionTests.swift"),
                 child_file("Tests/PairingOfferTests.swift"),
                 child_file("Tests/ChatTests.swift"),
+                child_file("Tests/CodingAgentSessionTests.swift"),
             ],
             "Tests",
         )
