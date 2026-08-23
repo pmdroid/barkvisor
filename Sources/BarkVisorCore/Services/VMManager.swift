@@ -178,11 +178,32 @@ public actor VMManager: VMStateQuerying {
             let sockets = VMSockets(vmID: vmID)
             sockets.removeStale()
 
+            let userData = CloudInitService.storedUserData(vmID: vmID)
+            var loopbackHostfwds: [QEMULoopbackForward] = []
+            if CodingAgentSession.wantsWebTerminal(userData: userData) {
+                let occupied = await CodingAgentSessionStore.shared.occupiedHostPorts()
+                let hostPort = try await PortRegistry.nextFree(
+                    preferred: CodingAgentImage.webTerminalPort,
+                    proto: "tcp",
+                    excludingVM: vmID,
+                    extraOccupied: occupied,
+                    db: dbPool,
+                )
+                loopbackHostfwds.append(
+                    QEMULoopbackForward(
+                        hostPort: hostPort,
+                        guestPort: CodingAgentImage.webTerminalPort,
+                    ),
+                )
+                await CodingAgentSessionStore.shared.record(vmID: vmID, terminalHostPort: hostPort)
+            }
+
             let launch = try QEMUBuilder.launchConfig(ctx: QEMUBuildContext(
                 vm: loaded.vm, disk: loaded.disk, isos: loaded.isos, network: loaded.network,
                 additionalDisks: loaded.additionalDisks,
                 sockets: sockets,
                 bridgeSocketPath: bridgeSocketPath,
+                loopbackHostfwds: loopbackHostfwds,
             ))
             swtpmProc = try await startSwtpmIfNeeded(launch: launch, vmID: vmID, vmName: loaded.vm.name)
 
@@ -253,6 +274,7 @@ public actor VMManager: VMStateQuerying {
                 vm: vmID,
             )
         } catch {
+            await CodingAgentSessionStore.shared.remove(vmID: vmID)
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
             Log.vm.error("VM start failed: \(error.localizedDescription)", vm: vmID)
             do {
@@ -281,6 +303,7 @@ public actor VMManager: VMStateQuerying {
     /// ACPI returns after QMP powerdown; a background task escalates to hard kill if needed.
     /// Force waits until the QEMU process is dead (or a short hard-kill timeout).
     public func stop(vmID: String, force: Bool, method: String = "acpi") async throws {
+        await CodingAgentSessionStore.shared.remove(vmID: vmID)
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
         }

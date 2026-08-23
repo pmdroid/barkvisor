@@ -5,6 +5,7 @@ enum CodingAgentImage {
     static let name = "Coding Agent"
     static let slugs: Set<String> = ["coding-agent-arm64", "coding-agent-x86_64"]
     static let deviceOllamaBaseURL = "http://10.0.2.2:11434/v1"
+    static let homeOllamaGrantURL = deviceOllamaBaseURL
     static let defaultMemoryMB = 2_048
     static let defaultDiskGB = 20
     static let webTerminalPort = 7_681
@@ -29,7 +30,7 @@ enum CodingAgentImage {
 
     static func normalizeOpenAIBaseURL(_ raw: String?) throws -> String {
         let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmed.isEmpty { return deviceOllamaBaseURL }
+        if trimmed.isEmpty { return homeOllamaGrantURL }
         if trimmed.contains(where: { $0.isNewline || $0 == "\"" || $0.isWhitespace }) {
             throw CreateWorkload.DraftError.invalidOpenAIBaseURL
         }

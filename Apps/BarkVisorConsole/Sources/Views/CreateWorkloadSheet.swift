@@ -17,8 +17,8 @@ struct CreateWorkloadSheet: View {
     @State private var creating = false
     @State private var localError: String?
     @State private var workloadClass = "house"
-    @State private var openaiPreset = "device-ollama"
-    @State private var byoOpenAIURL = CodingAgentImage.deviceOllamaBaseURL
+    @State private var openaiPreset = "home-ollama"
+    @State private var byoOpenAIURL = CodingAgentImage.homeOllamaGrantURL
 
     var body: some View {
         Form {
@@ -66,7 +66,7 @@ struct CreateWorkloadSheet: View {
 
                 if isCodingAgent {
                     Picker("OPENAI_BASE_URL", selection: $openaiPreset) {
-                        Text("Device Ollama").tag("device-ollama")
+                        Text("Home Ollama grant").tag("home-ollama")
                         Text("Bring your own").tag("byo")
                     }
                     if openaiPreset == "byo" {
@@ -144,7 +144,7 @@ struct CreateWorkloadSheet: View {
 
     private var footerCopy: String {
         if isCodingAgent {
-            let url = openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.deviceOllamaBaseURL
+            let url = openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL
             return "Agent cage. OPENAI_BASE_URL \(url). Presets share this Library image. \(CreateWorkload.webEditCopy)"
         }
         return workloadClass == "agent"
@@ -199,7 +199,7 @@ struct CreateWorkloadSheet: View {
     private func applyCodingAgentDefaults() {
         workloadClass = CodingAgentImage.defaultClass(forName: selectedImage?.name)
         if !CodingAgentImage.matches(name: selectedImage?.name) {
-            openaiPreset = "device-ollama"
+            openaiPreset = "home-ollama"
         }
     }
 
@@ -209,7 +209,7 @@ struct CreateWorkloadSheet: View {
         localError = nil
         defer { creating = false }
         let openaiURL = isCodingAgent
-            ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.deviceOllamaBaseURL)
+            ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL)
             : nil
         guard let created = await model.createWorkload(
             name: name,
