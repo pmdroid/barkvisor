@@ -49,7 +49,17 @@ struct CodingAgentImageTests {
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIBaseURL("https://evil\n.com")
         }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("https://x.test/$(id)")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("https://x.test/`id`")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL(#"https://x.test/a\b"#)
+        }
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
+        #expect(CodingAgentImage.posixSingleQuoted("http://10.0.2.2:11434/v1") == "'http://10.0.2.2:11434/v1'")
     }
 
     @Test func `default user-data is valid cloud-init and names the tools`() throws {
@@ -63,13 +73,24 @@ struct CodingAgentImageTests {
         #expect(yaml.contains(CodingAgentImage.ttydSha256Aarch64))
         #expect(yaml.contains(CodingAgentImage.ttydSha256Amd64))
         #expect(yaml.contains("/usr/local/bin"))
-        #expect(yaml.contains("su -s /bin/bash"))
-        #expect(yaml.contains("claude.ai/install.sh"))
-        #expect(yaml.contains("opencode.ai/install"))
-        #expect(yaml.contains("OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\""))
+        #expect(!yaml.contains("export OPENAI_BASE_URL=\""))
+        #expect(yaml.contains("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'"))
+        #expect(yaml.contains(AgentNetworkCage.allowHostOllamaMarker))
+        #expect(yaml.contains(CodingAgentImage.claudeSha256Aarch64))
+        #expect(yaml.contains(CodingAgentImage.claudeSha256Amd64))
+        #expect(yaml.contains(CodingAgentImage.opencodeSha256Aarch64))
+        #expect(yaml.contains(CodingAgentImage.opencodeSha256Amd64))
+        #expect(yaml.contains("anthropics/claude-code/releases"))
+        #expect(yaml.contains("anomalyco/opencode/releases"))
+        #expect(!yaml.contains("claude.ai/install.sh"))
+        #expect(!yaml.contains("opencode.ai/install"))
+        #expect(!yaml.contains("| bash"))
+        #expect(AgentNetworkCage.allowHostOllama(userData: yaml))
         let byo = CodingAgentImage.userData(openaiBaseURL: "https://api.openai.com/v1")
         try CloudInitService.validateUserData(byo)
         #expect(byo.contains("https://api.openai.com/v1"))
+        #expect(!byo.contains(AgentNetworkCage.allowHostOllamaMarker))
+        #expect(!AgentNetworkCage.allowHostOllama(userData: byo))
     }
 
     @Test func `create defaults inject agent class and ollama user-data`() throws {

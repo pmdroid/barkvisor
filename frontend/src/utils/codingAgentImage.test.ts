@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  ALLOW_HOST_OLLAMA_MARKER,
+  CLAUDE_SHA256_AARCH64,
   CODING_AGENT_SLUGS,
   DEVICE_OLLAMA_BASE_URL,
+  OPENCODE_SHA256_AARCH64,
   codingAgentUserData,
   defaultWorkloadClassForImage,
   isCodingAgentImage,
@@ -26,6 +29,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(normalizeOpenAIBaseURL('https://api.openai.com/v1')).toBe('https://api.openai.com/v1')
     expect(() => normalizeOpenAIBaseURL('ftp://x')).toThrow()
     expect(() => normalizeOpenAIBaseURL('https://x y')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x.test/$(id)')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x.test/`id`')).toThrow()
   })
 
   test('user-data installs git, web terminal, coding-agent CLIs', () => {
@@ -36,9 +41,16 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).toContain('systemctl enable --now ttyd')
     expect(yaml).toContain('sha256sum -c')
     expect(yaml).toContain('/usr/local/bin')
-    expect(yaml).toContain('claude.ai/install.sh')
-    expect(yaml).toContain('opencode.ai/install')
-    expect(yaml).toContain('OPENAI_BASE_URL="http://10.0.2.2:11434/v1"')
+    expect(yaml).not.toContain('export OPENAI_BASE_URL="')
+    expect(yaml).toContain("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'")
+    expect(yaml).toContain(ALLOW_HOST_OLLAMA_MARKER)
+    expect(yaml).toContain(CLAUDE_SHA256_AARCH64)
+    expect(yaml).toContain(OPENCODE_SHA256_AARCH64)
+    expect(yaml).toContain('anthropics/claude-code/releases')
+    expect(yaml).toContain('anomalyco/opencode/releases')
+    expect(yaml).not.toContain('claude.ai/install.sh')
+    expect(yaml).not.toContain('opencode.ai/install')
+    expect(yaml).not.toContain('| bash')
   })
 
   test('merge keeps typed cloud-init and fills Device Ollama otherwise', () => {

@@ -21,10 +21,25 @@ struct AgentNetworkCageTests {
         )
         #expect(!AgentNetworkCage.allowHostOllama(userData: nil))
         #expect(!AgentNetworkCage.allowHostOllama(userData: "packages:\n  - git\n"))
-        #expect(AgentNetworkCage.allowHostOllama(userData: "OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\""))
+        #expect(!AgentNetworkCage.allowHostOllama(userData: "# see 10.0.2.2:11434 in a comment\npackages:\n  - git\n"))
+        #expect(
+            AgentNetworkCage.allowHostOllama(
+                userData: "export OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\"",
+            ),
+        )
+        #expect(
+            AgentNetworkCage.allowHostOllama(
+                userData: "export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'",
+            ),
+        )
+        #expect(
+            AgentNetworkCage.allowHostOllama(
+                userData: "\(AgentNetworkCage.allowHostOllamaMarker)\npackage_update: true\n",
+            ),
+        )
         let open = AgentNetworkCage.seatbeltProfile(allowHostOllama: true)
-        #expect(open.contains("127.0.0.1:11434"))
-        #expect(!AgentNetworkCage.seatbeltProfile.contains("127.0.0.1:11434"))
+        #expect(open.contains("127.0.0.1:\(AgentNetworkCage.ollamaPort)"))
+        #expect(!AgentNetworkCage.seatbeltProfile.contains("127.0.0.1:\(AgentNetworkCage.ollamaPort)"))
     }
 
     @Test func `seatbelt denies RFC1918 and loopback`() {

@@ -24,6 +24,18 @@ public enum CodingAgentImage {
         "b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165"
     public static let ttydSha256Amd64 =
         "8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55"
+    /// Claude Code GitHub release (anthropics/claude-code SHASUMS256.txt).
+    public static let claudeVersion = "2.1.241"
+    public static let claudeSha256Aarch64 =
+        "d3563afb0328eee644b5b830c3de42699b56a0d83de3423a466a0e2065b2417d"
+    public static let claudeSha256Amd64 =
+        "c171011648d71b96a0956469a46315a4c826ccba7e20854ae62aa5c776d6a794"
+    /// OpenCode GitHub release tarballs (anomalyco/opencode).
+    public static let opencodeVersion = "1.18.21"
+    public static let opencodeSha256Aarch64 =
+        "d30d2cba74617f4e7b96e25563c9572ffe453f9eae70fc0df16286813537ee72"
+    public static let opencodeSha256Amd64 =
+        "d910c3ed7613bb5791a328904615d41cc25b7d3a6b470e3199ab0426a995b38a"
 
     public static func matches(name: String?, slug: String? = nil) -> Bool {
         if let slug {
@@ -44,7 +56,9 @@ public enum CodingAgentImage {
     public static func normalizeOpenAIBaseURL(_ raw: String?) throws -> String {
         let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty { return deviceOllamaBaseURL }
-        if trimmed.contains(where: { $0.isNewline || $0 == "\"" || $0.isWhitespace }) {
+        if trimmed.contains(where: { ch in
+            ch.isNewline || ch.isWhitespace || "\"'`$\\".contains(ch)
+        }) {
             throw BarkVisorError.badRequest("OPENAI_BASE_URL is invalid")
         }
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
@@ -55,14 +69,32 @@ public enum CodingAgentImage {
         return trimmed
     }
 
+    public static func posixSingleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    public static func usesDeviceOllama(_ url: String) -> Bool {
+        url == deviceOllamaBaseURL
+            || url.hasPrefix("http://\(deviceOllamaHost):\(deviceOllamaPort)")
+    }
+
     public static func userData(openaiBaseURL: String) -> String {
-        let url = openaiBaseURL
+        let quotedURL = posixSingleQuoted(openaiBaseURL)
+        let marker = usesDeviceOllama(openaiBaseURL)
+            ? "\(AgentNetworkCage.allowHostOllamaMarker)\n"
+            : ""
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64
         let shaX64 = ttydSha256Amd64
+        let claudeVer = claudeVersion
+        let claudeArm = claudeSha256Aarch64
+        let claudeX64 = claudeSha256Amd64
+        let ocVer = opencodeVersion
+        let ocArm = opencodeSha256Aarch64
+        let ocX64 = opencodeSha256Amd64
         let ttydPort = webTerminalPort
         return """
-        package_update: true
+        \(marker)package_update: true
         packages:
           - git
           - qemu-guest-agent
@@ -74,7 +106,7 @@ public enum CodingAgentImage {
           - path: /etc/profile.d/barkvisor-openai.sh
             permissions: '0644'
             content: |
-              export OPENAI_BASE_URL="\(url)"
+              export OPENAI_BASE_URL=\(quotedURL)
               export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
@@ -99,23 +131,40 @@ public enum CodingAgentImage {
               set -euo pipefail
               arch=$(uname -m)
               case "$arch" in
-                aarch64|arm64) ttyd_arch=aarch64; ttyd_sha=\(shaArm) ;;
-                *) ttyd_arch=x86_64; ttyd_sha=\(shaX64) ;;
+                aarch64|arm64)
+                  ttyd_arch=aarch64; ttyd_sha=\(shaArm)
+                  claude_tar=claude-linux-arm64.tar.gz; claude_sha=\(claudeArm)
+                  oc_tar=opencode-linux-arm64.tar.gz; oc_sha=\(ocArm)
+                  ;;
+                *)
+                  ttyd_arch=x86_64; ttyd_sha=\(shaX64)
+                  claude_tar=claude-linux-x64.tar.gz; claude_sha=\(claudeX64)
+                  oc_tar=opencode-linux-x64.tar.gz; oc_sha=\(ocX64)
+                  ;;
               esac
-              tmp=$(mktemp)
-              curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/\(ttydVer)/ttyd.${ttyd_arch}" -o "$tmp"
-              echo "${ttyd_sha}  $tmp" | sha256sum -c -
-              install -m 0755 "$tmp" /usr/local/bin/ttyd
-              rm -f "$tmp"
-              if id ubuntu >/dev/null 2>&1; then
-                su -s /bin/bash -c 'curl -fsSL https://claude.ai/install.sh | bash' ubuntu || true
-                su -s /bin/bash -c 'curl -fsSL https://opencode.ai/install | bash' ubuntu || true
-                for bin in /home/ubuntu/.local/bin/claude /home/ubuntu/.local/bin/opencode /home/ubuntu/.opencode/bin/opencode; do
-                  if [ -x "$bin" ]; then
-                    install -m 0755 "$bin" "/usr/local/bin/$(basename "$bin")" || true
-                  fi
-                done
-              fi
+              install_sha() {
+                local url="$1" sha="$2" dest="$3"
+                local tmp
+                tmp=$(mktemp)
+                curl -fsSL "$url" -o "$tmp"
+                echo "${sha}  ${tmp}" | sha256sum -c -
+                install -m 0755 "$tmp" "$dest"
+                rm -f "$tmp"
+              }
+              install_tarball_bin() {
+                local url="$1" sha="$2" bin="$3"
+                local tmp dir
+                tmp=$(mktemp)
+                dir=$(mktemp -d)
+                curl -fsSL "$url" -o "$tmp"
+                echo "${sha}  ${tmp}" | sha256sum -c -
+                tar -xzf "$tmp" -C "$dir"
+                install -m 0755 "$dir/$bin" "/usr/local/bin/$bin"
+                rm -rf "$tmp" "$dir"
+              }
+              install_sha "https://github.com/tsl0922/ttyd/releases/download/\(ttydVer)/ttyd.${ttyd_arch}" "$ttyd_sha" /usr/local/bin/ttyd
+              install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v\(claudeVer)/${claude_tar}" "$claude_sha" claude
+              install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v\(ocVer)/${oc_tar}" "$oc_sha" opencode
         runcmd:
           - systemctl enable --now qemu-guest-agent
           - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]

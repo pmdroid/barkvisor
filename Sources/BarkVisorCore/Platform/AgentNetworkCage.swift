@@ -28,12 +28,22 @@ public enum AgentNetworkCage {
         [Config.port, Config.agentPort]
     }
 
-    /// Device Ollama guestfwd/seatbelt/iptables exception. Opt-in via cloud-init
-    /// that names `10.0.2.2:11434` (Coding Agent Device-Ollama preset). Other
-    /// Agent-class NAT Workloads keep the loopback black-hole.
+    /// Full-line marker emitted in Coding Agent Device-Ollama user-data.
+    public static let allowHostOllamaMarker = "# barkvisor:allow-host-ollama"
+
+    /// Device Ollama guestfwd/seatbelt/iptables exception. Opt-in via the
+    /// marker line or an `OPENAI_BASE_URL` assignment to the Device Ollama
+    /// endpoint (not a raw substring). Other Agent-class NAT Workloads keep
+    /// the loopback black-hole.
     public static func allowHostOllama(userData: String?) -> Bool {
         guard let userData, !userData.isEmpty else { return false }
-        return userData.contains("\(slirpGateway):\(ollamaPort)")
+        let hasMarker = userData.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+            .contains { $0.trimmingCharacters(in: .whitespaces) == allowHostOllamaMarker }
+        if hasMarker { return true }
+        let host = NSRegularExpression.escapedPattern(for: slirpGateway)
+        let pattern =
+            #"(?m)^[ \t]*(?:export[ \t]+)?OPENAI_BASE_URL=['"]http://\#(host):\#(ollamaPort)(?:/v1)?/?['"]"#
+        return userData.range(of: pattern, options: .regularExpression) != nil
     }
 
     /// Extra `-netdev user` suffixes for Agent NAT (not isolated).
@@ -98,7 +108,7 @@ public enum AgentNetworkCage {
         (deny network-outbound (remote ip "224.0.0.0/4"))
         """
         if allowHostOllama {
-            profile += "(allow network-outbound (remote tcp \"127.0.0.1:11434\"))\n"
+            profile += "(allow network-outbound (remote tcp \"127.0.0.1:\(ollamaPort)\"))\n"
         }
         return profile
     }
