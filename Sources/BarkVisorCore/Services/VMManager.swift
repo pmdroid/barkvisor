@@ -301,6 +301,7 @@ public actor VMManager: VMStateQuerying {
 
             clearHealthError(for: vmID)
             try await updateState(vmID: vmID, state: "running")
+            await CodingAgentLifecycleService.onStart(vm: loaded.vm, db: dbPool)
 
             await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
             await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
@@ -345,6 +346,9 @@ public actor VMManager: VMStateQuerying {
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
         }
+        await CodingAgentLifecycleService.onStop(
+            vmID: vmID, db: dbPool, reason: CodingAgentLifecycle.stopReason,
+        )
 
         try await updateState(vmID: vmID, state: "stopping")
 

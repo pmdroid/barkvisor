@@ -79,7 +79,13 @@ import {
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
-import { consoleTabLabel, isCodingAgentSession } from '../utils/codingAgentSession'
+import {
+  consoleTabLabel,
+  isCodingAgentSession,
+  SESSION_NO_PUSH,
+  sessionReceiptCopy,
+  sessionWarningCopy,
+} from '../utils/codingAgentSession'
 import { chatIsVisible } from '../utils/chatCompletions'
 import { useOllamaStore } from '../stores/ollama'
 import { useCapabilitiesStore } from '../stores/capabilities'
@@ -159,6 +165,10 @@ const ollamaStore = useOllamaStore()
 const codingAgent = computed(() => isCodingAgentSession(vm.value))
 const showAgentChat = computed(() => codingAgent.value && chatIsVisible(ollamaStore.anyReachable, ollamaStore.models.length))
 const consoleLabel = computed(() => consoleTabLabel(vm.value))
+const session = computed(() => vm.value?.session ?? null)
+const sessionReceipt = computed(() => sessionReceiptCopy(session.value?.receipt))
+const showResetDialog = ref(false)
+const showBurnDialog = ref(false)
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
@@ -569,6 +579,31 @@ async function startWorkload() {
     return
   }
   await store.start(vmId.value)
+}
+
+async function sessionAction(kind: 'resume' | 'reset' | 'burn') {
+  if (isMemberDetail.value) {
+    const device = memberDevice.value
+    if (!device || !canFetchDeviceWorkloads(device)) return
+    if (kind === 'burn') {
+      await homeWorkloads.burnSession(device, vmId.value)
+      router.push('/vms')
+      return
+    }
+    if (kind === 'resume') await homeWorkloads.resumeSession(device, vmId.value)
+    else await homeWorkloads.resetSession(device, vmId.value)
+    guestInfo.value = null
+    guestInfoLoaded.value = false
+    await fetchGuestInfo()
+    return
+  }
+  if (kind === 'burn') {
+    await store.burnSession(vmId.value)
+    router.push('/vms')
+    return
+  }
+  if (kind === 'resume') await store.resumeSession(vmId.value)
+  else await store.resetSession(vmId.value)
 }
 
 async function restartWorkload() {
@@ -1113,6 +1148,16 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     </div>
     <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
 
+    <div v-if="codingAgent && session?.warning" class="pending-banner">
+      {{ sessionWarningCopy(session.remainingSeconds) }}
+    </div>
+
+    <div v-if="codingAgent && sessionReceipt" class="pending-banner" :class="{ 'session-nopush': sessionReceipt.loud }">
+      Stopped at {{ sessionReceipt.stoppedAt }}.
+      <strong v-if="sessionReceipt.loud">{{ SESSION_NO_PUSH }}</strong>
+      <span v-else>Last git push {{ sessionReceipt.git }}.</span>
+    </div>
+
     <div v-if="vm.pendingChanges" class="pending-banner">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -1137,6 +1182,26 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     </div>
 
     <div v-if="tab === 'overview'">
+      <div v-if="codingAgent && session" class="card" style="margin-bottom:16px">
+        <div class="detail-row">
+          <span class="detail-label">Session TTL</span>
+          <span>{{ session.expiryAction === 'stop' ? 'Stop (keep disk)' : session.expiryAction }}</span>
+        </div>
+        <div v-if="session.expiresAt" class="detail-row">
+          <span class="detail-label">Expires</span>
+          <span class="mono">{{ session.expiresAt }}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <AppButton
+            v-if="vm.state === 'stopped' || vm.state === 'error'"
+            variant="primary"
+            :disabled="controlDisabled"
+            @click="action('resume', () => sessionAction('resume'))"
+          >Resume</AppButton>
+          <AppButton :disabled="controlDisabled" @click="showResetDialog = true">Reset to Library image</AppButton>
+          <AppButton variant="danger" :disabled="controlDisabled" @click="showBurnDialog = true">Burn</AppButton>
+        </div>
+      </div>
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
           <div></div>
@@ -1672,6 +1737,30 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
   </div>
 
   <!-- Delete VM Dialog -->
+  <div v-if="showResetDialog" class="modal-overlay" @click.self="showResetDialog = false">
+    <div class="modal" style="max-width:420px">
+      <h2>Reset to Library image</h2>
+      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
+        Replace the boot disk with a fresh Coding Agent image. Guest files that were not pushed are lost.
+      </p>
+      <div class="modal-actions">
+        <AppButton @click="showResetDialog = false">Cancel</AppButton>
+        <AppButton variant="danger" :disabled="controlDisabled" @click="showResetDialog = false; action('reset', () => sessionAction('reset'))">Reset</AppButton>
+      </div>
+    </div>
+  </div>
+  <div v-if="showBurnDialog" class="modal-overlay" @click.self="showBurnDialog = false">
+    <div class="modal" style="max-width:420px">
+      <h2>Burn session</h2>
+      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
+        Destroy <strong>{{ vm?.name }}</strong> and unload the local-model grant. This does not keep the disk.
+      </p>
+      <div class="modal-actions">
+        <AppButton @click="showBurnDialog = false">Cancel</AppButton>
+        <AppButton variant="danger" :disabled="controlDisabled" @click="showBurnDialog = false; action('burn', () => sessionAction('burn'))">Burn</AppButton>
+      </div>
+    </div>
+  </div>
   <div v-if="showDeleteDialog" class="modal-overlay" @click.self="!deletingVM && (showDeleteDialog = false)">
     <div class="modal" style="max-width:420px">
       <h2>Delete VM</h2>
@@ -1734,6 +1823,12 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
   border-radius: var(--radius-sm);
   font-size: 13px;
   color: var(--amber, #f59e0b);
+}
+.session-nopush {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  font-weight: 600;
 }
 .emu-banner {
   display: flex;

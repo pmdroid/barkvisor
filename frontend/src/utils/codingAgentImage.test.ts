@@ -45,6 +45,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).toContain('/etc/default/barkvisor-openai')
     expect(yaml).toContain('EnvironmentFile=-/etc/default/barkvisor-openai')
     expect(yaml).not.toContain('OPENAI_BASE_URL="http://')
+    expect(yaml).toContain('/etc/git-hooks/pre-push')
+    expect(yaml).toContain('/var/lib/barkvisor/last-git-push')
   })
 
   test('merge keeps typed cloud-init and fills Device Ollama otherwise', () => {

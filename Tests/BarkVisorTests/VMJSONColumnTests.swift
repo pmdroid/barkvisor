@@ -70,6 +70,20 @@ struct VMJSONColumnTests {
         #expect(vm.decodedPortForwards.isEmpty)
         #expect(vm.decodedUSBDevices.isEmpty)
         #expect(vm.decodedHealth == nil)
+        #expect(vm.decodedSession == nil)
+    }
+
+    @Test func `session json round trip`() {
+        var vm = makeVM()
+        vm.setSession(
+            CodingAgentLifecycle.seed(
+                ttlSeconds: 3_600, grant: "home-ollama", cloudImageId: "img-1", diskSizeGB: 20,
+            ),
+        )
+        #expect(vm.decodedSession?.grant == "home-ollama")
+        #expect(vm.decodedSession?.cloudImageId == "img-1")
+        vm.setSession(nil)
+        #expect(vm.decodedSession == nil)
     }
 
     @Test func `setters encode empty as nil`() {

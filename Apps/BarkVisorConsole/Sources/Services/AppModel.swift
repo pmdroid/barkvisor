@@ -352,6 +352,27 @@ final class AppModel {
         }
     }
 
+    func resumeSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
+        let target = device ?? selectedDevice
+        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
+            _ = try await client.resumeSession(workload.id, on: resolved)
+        }
+    }
+
+    func resetSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
+        let target = device ?? selectedDevice
+        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
+            _ = try await client.resetSession(workload.id, on: resolved)
+        }
+    }
+
+    func burnSession(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
+        let target = device ?? selectedDevice
+        await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
+            try await client.burnSession(workload.id, on: resolved)
+        }
+    }
+
     func attachISO(_ isoID: String, to workload: Workload, on device: HomeDeviceHealthSnapshot) async {
         await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
             try await client.attachISO(workload.id, isoID: isoID, on: resolved)

@@ -9,6 +9,10 @@ import {
   codingAgentTerminalPath,
   consoleTabLabel,
   isCodingAgentSession,
+  SESSION_EXPIRY_ACTION,
+  SESSION_NO_PUSH,
+  sessionReceiptCopy,
+  sessionWarningCopy,
 } from './codingAgentSession'
 
 describe('codingAgentSession (PAS-272)', () => {
@@ -37,5 +41,26 @@ describe('codingAgentSession (PAS-272)', () => {
       OPENAI_BASE_URL: HOME_OLLAMA_GRANT_URL,
       OPENAI_API_KEY: 'barkvisor_abc',
     })
+  })
+
+  test('PAS-273: TTL stop, 15-minute warning, NO PUSH receipt', () => {
+    expect(SESSION_EXPIRY_ACTION).toBe('stop')
+    expect(SESSION_NO_PUSH).toBe('NO PUSH')
+    expect(sessionWarningCopy(15 * 60)).toBe('Session expires in 15 minutes. TTL stop keeps the disk.')
+    expect(sessionWarningCopy(60)).toBe('Session expires in 1 minute. TTL stop keeps the disk.')
+    expect(sessionReceiptCopy({
+      stoppedAt: '2026-08-23T12:00:00Z',
+      lastGitPushAt: null,
+      noPush: true,
+    })).toEqual({
+      stoppedAt: '2026-08-23T12:00:00Z',
+      git: 'NO PUSH',
+      loud: true,
+    })
+    expect(sessionReceiptCopy({
+      stoppedAt: '2026-08-23T12:00:00Z',
+      lastGitPushAt: '2026-08-23T11:00:00Z',
+      noPush: false,
+    })?.loud).toBe(false)
   })
 })

@@ -196,6 +196,14 @@ struct DatabaseMigrationTests {
         }
     }
 
+    @Test func `m013 adds sessionJson column`() throws {
+        let queue = try migratedQueue()
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(columns.contains("sessionJson"))
+        }
+    }
+
     @Test func `m008 adds listening port columns on guest_info`() throws {
         let queue = try migratedQueue()
         try queue.read { db in

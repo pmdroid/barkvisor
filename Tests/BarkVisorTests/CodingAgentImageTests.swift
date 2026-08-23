@@ -80,6 +80,8 @@ struct CodingAgentImageTests {
         #expect(yaml.contains("OPENAI_BASE_URL='http://10.0.2.2:11434/v1'"))
         #expect(yaml.contains("/etc/default/barkvisor-openai"))
         #expect(yaml.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+        #expect(yaml.contains("/etc/git-hooks/pre-push"))
+        #expect(yaml.contains("/var/lib/barkvisor/last-git-push"))
         #expect(!yaml.contains("OPENAI_BASE_URL=\"http://"))
         let byo = CodingAgentImage.userData(openaiBaseURL: "https://api.openai.com/v1")
         try CloudInitService.validateUserData(byo)
