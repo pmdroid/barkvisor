@@ -109,6 +109,43 @@ public enum APIKeyService {
         }
     }
 
+    /// HMAC hashes created with `jwtSecret` never verify after the first
+    /// `api-key-hmac-secret` is generated. Plaintext is not stored, so they
+    /// cannot be rehashed. Bcrypt `$2` hashes still upgrade on next use.
+    @discardableResult
+    public static func revokeUnverifiableHmacKeys(db: DatabasePool) async throws -> Int {
+        try await db.write { db in
+            let keys = try APIKey.fetchAll(db)
+            var removed = 0
+            for key in keys where !isBcryptHash(key.keyHash) {
+                try key.delete(db)
+                removed += 1
+            }
+            return removed
+        }
+    }
+
+    /// On first generation of `api-key-hmac-secret`, drop leftover HMAC rows so
+    /// `list()` does not show keys that can never authenticate.
+    @discardableResult
+    public static func revokeUnverifiableKeysIfHmacSecretGenerated(
+        db: DatabasePool,
+        dataDir: URL,
+    ) async throws -> Int {
+        let generated = Config.ensureAPIKeyHmacSecret(in: dataDir).generated
+        guard generated else { return 0 }
+        let removed = try await revokeUnverifiableHmacKeys(db: db)
+        if removed > 0 {
+            Log.auth.critical(
+                """
+                Dropped \(removed) API key(s) hashed with jwtSecret. \
+                Reissue them; plaintext is not stored so they cannot be rehashed.
+                """,
+            )
+        }
+        return removed
+    }
+
     /// Delete all expired API keys and return how many were removed.
     @discardableResult
     public static func deleteExpired(db: DatabasePool) async throws -> Int {

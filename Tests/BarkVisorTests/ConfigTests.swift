@@ -73,6 +73,29 @@ struct ConfigTests {
         #expect(Config.apiKeyHmacSecretFileName != Config.jwtSecretFileName)
     }
 
+    @Test func `ensure api key hmac secret reports first generation then reuse`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let first = Config.ensureAPIKeyHmacSecret(in: dir)
+        #expect(first.generated)
+        #expect(!first.secret.isEmpty)
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == first.secret)
+
+        let again = Config.ensureAPIKeyHmacSecret(in: dir)
+        #expect(!again.generated)
+        #expect(again.secret == first.secret)
+
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: other) }
+        try Config.persistAPIKeyHmacSecret("pre-existing", to: other)
+        let loaded = Config.ensureAPIKeyHmacSecret(in: other)
+        #expect(!loaded.generated)
+        #expect(loaded.secret == "pre-existing")
+    }
+
     @Test func `rotate api key hmac secret replaces file with 0600`() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

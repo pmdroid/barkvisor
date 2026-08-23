@@ -168,6 +168,49 @@ final class APIKeyServiceTests {
         #expect(try await APIKeyService.list(userId: "user-1", db: dbPool).isEmpty)
     }
 
+    @Test func `first hmac secret generation drops jwtSecret hashed keys`() async throws {
+        try await insertKey(id: "hmac-dead", name: "Dead HMAC", hash: "abc123notbcrypt")
+        try await insertKey(id: "bcrypt-keep", name: "Legacy bcrypt", hash: "$2b$10$legacyhash")
+
+        let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+            db: dbPool, dataDir: tmpDir,
+        )
+        #expect(removed == 1)
+        let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
+        #expect(Set(remaining.map(\.id)) == ["bcrypt-keep"])
+        #expect(Config.loadAPIKeyHmacSecret(from: tmpDir) != nil)
+    }
+
+    @Test func `existing hmac secret leaves stored keys listed`() async throws {
+        try Config.persistAPIKeyHmacSecret("already-there", to: tmpDir)
+        try await insertKey(id: "live-hmac", name: "Live", hash: "deadbeefcafebabe")
+
+        let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+            db: dbPool, dataDir: tmpDir,
+        )
+        #expect(removed == 0)
+        let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
+        #expect(Set(remaining.map(\.id)) == ["live-hmac"])
+    }
+
+    @Test func `first hmac secret generation with empty table is a no-op`() async throws {
+        let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+            db: dbPool, dataDir: tmpDir,
+        )
+        #expect(removed == 0)
+        #expect(try await APIKeyService.list(userId: "user-1", db: dbPool).isEmpty)
+    }
+
+    private func insertKey(id: String, name: String, hash: String) async throws {
+        let key = APIKey(
+            id: id, name: name, keyHash: hash, keyPrefix: "barkvisor_abcde",
+            userId: "user-1", expiresAt: nil, lastUsedAt: nil, createdAt: "2025-01-01T00:00:00Z",
+        )
+        try await dbPool.write { db in
+            try key.insert(db)
+        }
+    }
+
     // MARK: - APIKey.isExpired
 
     @Test func `api key not expired when nil`() {

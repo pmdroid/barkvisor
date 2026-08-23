@@ -228,9 +228,18 @@ public enum Config {
     /// HMAC key for API keys. Never `jwtSecret`; pairing overwrites of jwt-secret
     /// must not silently invalidate stored API-key hashes (PAS-277).
     public static var apiKeyHmacSecret: String {
+        ensureAPIKeyHmacSecret(in: dataDir).secret
+    }
+
+    /// Load or create `api-key-hmac-secret`. `generated` is true when the file
+    /// did not exist (upgrade from jwtSecret-keyed hashes).
+    public static func ensureAPIKeyHmacSecret(in dataDir: URL) -> (
+        secret: String, generated: Bool,
+    ) {
         if let existing = loadAPIKeyHmacSecret(from: dataDir) {
-            return existing
+            return (existing, false)
         }
+
         let secret = PlatformRandom.secureBase64(byteCount: 32)
         do {
             try persistAPIKeyHmacSecret(secret, to: dataDir)
@@ -243,7 +252,7 @@ public enum Config {
                 """,
             )
         }
-        return secret
+        return (secret, true)
     }
 
     /// Allowed URL schemes for repository URLs
