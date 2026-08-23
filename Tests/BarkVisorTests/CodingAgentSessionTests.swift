@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
@@ -118,11 +119,62 @@ struct CodingAgentSessionTests {
     @Test func `session store drops the ttyd host port on remove`() async {
         let store = CodingAgentSessionStore()
         await store.record(vmID: "vm-coder", terminalHostPort: 17_681)
+        await store.record(vmID: "vm-other", terminalHostPort: 17_682)
         #expect(await store.port(for: "vm-coder") == 17_681)
-        #expect(await store.occupiedHostPorts() == [17_681])
+        let occupied = await store.occupiedHostPorts()
+        #expect(Set(occupied) == [17_681, 17_682])
         await store.remove(vmID: "vm-coder")
         #expect(await store.port(for: "vm-coder") == nil)
-        #expect(await store.occupiedHostPorts().isEmpty)
+        #expect(await store.occupiedHostPorts() == [17_682])
+        await store.remove(vmID: "vm-coder")
+        #expect(await store.occupiedHostPorts() == [17_682])
+    }
+
+    @Test func `handleTermination and stopAll drop the ttyd host port`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let manager = VMManager(dbPool: pool)
+        let store = CodingAgentSessionStore.shared
+
+        let crashID = "vm-coder-crash-\(UUID().uuidString)"
+        await manager.registerReconnectedVM(
+            vmID: crashID,
+            running: Self.deadRunningVM(),
+            codingAgentHostPort: 17_681,
+        )
+        #expect(await store.port(for: crashID) == 17_681)
+        await manager.handleTermination(vmID: crashID, status: 1)
+        #expect(await store.port(for: crashID) == nil)
+        let afterCrash = await store.occupiedHostPorts()
+        #expect(!Set(afterCrash).contains(17_681))
+
+        let stopID = "vm-coder-stopall-\(UUID().uuidString)"
+        await manager.registerReconnectedVM(
+            vmID: stopID,
+            running: Self.deadRunningVM(),
+            codingAgentHostPort: 17_690,
+        )
+        #expect(await store.port(for: stopID) == 17_690)
+        await manager.stopAll()
+        #expect(await store.port(for: stopID) == nil)
+        let afterStopAll = await store.occupiedHostPorts()
+        #expect(!Set(afterStopAll).contains(17_690))
+    }
+
+    private static func deadRunningVM() -> RunningVM {
+        RunningVM(
+            process: nil,
+            pid: 2_000_000_001,
+            serialSocketPath: "/tmp/barkvisor-none.serial",
+            vncSocketPath: "/tmp/barkvisor-none.vnc",
+            qmpSocketPath: "/tmp/barkvisor-none.qmp",
+            qmpEventSocketPath: "/tmp/barkvisor-none.event",
+            swtpmProcess: nil,
+            reconnected: true,
+        )
     }
 
     @Test func `loopback host port is parsed from QEMU netdev`() {

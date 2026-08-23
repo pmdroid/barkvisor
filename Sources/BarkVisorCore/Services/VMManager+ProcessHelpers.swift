@@ -12,6 +12,7 @@ extension VMManager {
             )
             return
         }
+        await CodingAgentSessionStore.shared.remove(vmID: vmID)
 
         let newState = status == 0 ? "stopped" : "error"
         let errorMsg = status != 0 ? "QEMU exited with status \(status)" : nil
@@ -27,8 +28,7 @@ extension VMManager {
             Log.vm.error("VM terminated unexpectedly (exit status \(status))", vm: vmID)
         }
 
-        await CodingAgentSessionStore.shared.remove(vmID: vmID)
-        cleanup(vmID: vmID)
+        await cleanup(vmID: vmID)
         runningVMs.removeValue(forKey: vmID)
 
         // Stop recording console, metrics, and event listener
@@ -180,7 +180,8 @@ extension VMManager {
 
     // MARK: - Cleanup
 
-    public func cleanup(vmID: String) {
+    public func cleanup(vmID: String) async {
+        await CodingAgentSessionStore.shared.remove(vmID: vmID)
         if let running = runningVMs[vmID] {
             AgentNetworkCage.removeLinuxFilter(pid: running.pid, vmID: vmID)
             terminateSwtpm(running, vmID: vmID)

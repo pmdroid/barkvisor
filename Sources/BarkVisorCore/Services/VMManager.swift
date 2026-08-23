@@ -228,6 +228,7 @@ public actor VMManager: VMStateQuerying {
                         guestPort: CodingAgentImage.webTerminalPort,
                     ),
                 )
+                // Dropped in cleanup() (handleTermination, stopAll, shutdownAll).
                 await CodingAgentSessionStore.shared.record(vmID: vmID, terminalHostPort: hostPort)
             }
 
