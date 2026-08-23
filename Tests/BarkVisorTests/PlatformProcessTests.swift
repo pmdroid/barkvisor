@@ -31,4 +31,13 @@ struct PlatformProcessTests {
             }
         #endif
     }
+
+    @Test func `arguments reads this process argv`() {
+        #if os(macOS) || os(Linux)
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let args = PlatformProcess.arguments(pid: pid)
+            #expect(args != nil)
+            #expect(args?.isEmpty == false)
+        #endif
+    }
 }
