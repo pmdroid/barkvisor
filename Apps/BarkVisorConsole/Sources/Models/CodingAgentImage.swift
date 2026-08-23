@@ -61,6 +61,12 @@ enum CodingAgentImage {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    static func isShellSafeOpenAIBaseURL(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || ":/._%-".contains(ch))
+        }
+    }
+
     static func usesDeviceOllama(_ url: String) -> Bool {
         guard let comps = URLComponents(string: url),
               comps.user == nil, comps.password == nil,
@@ -93,6 +99,11 @@ enum CodingAgentImage {
           - jq
           - ca-certificates
         write_files:
+          - path: /etc/default/barkvisor-openai
+            permissions: '0644'
+            content: |
+              OPENAI_BASE_URL=\(openaiBaseURL)
+              OPENAI_API_KEY=ollama
           - path: /etc/profile.d/barkvisor-openai.sh
             permissions: '0644'
             content: |
@@ -109,6 +120,7 @@ enum CodingAgentImage {
               [Service]
               Type=simple
               User=ubuntu
+              EnvironmentFile=-/etc/default/barkvisor-openai
               ExecStart=/usr/local/bin/ttyd --writable --port \(ttydPort) tmux new -A -s main
               Restart=on-failure
 
