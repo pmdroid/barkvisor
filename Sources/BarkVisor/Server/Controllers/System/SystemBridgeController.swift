@@ -43,7 +43,8 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    /// install/start/stop/remove require the macOS managed bridge daemon (XPC helper).
+    /// install/start/stop/remove require a managed bridge daemon (unsupported;
+    /// macOS uses operator-managed Homebrew socket_vmnet).
     /// Product bridged networking on Linux uses host bridges without these lifecycle routes.
     private static func requireManagedBridgeDaemon() throws {
         try PlatformCapabilities.requireManagedBridgeDaemon()
@@ -72,7 +73,7 @@ struct SystemBridgeController: RouteCollection {
             )
         }
 
-        // Delegate to privilege service (XPC helper on macOS); shared helper owns network row.
+        // PrivilegeService on macOS is probe-only (PAS-294); this route still 501s.
         do {
             try await PrivilegeService.shared.installBridge(interface: iface)
             let db = req.db

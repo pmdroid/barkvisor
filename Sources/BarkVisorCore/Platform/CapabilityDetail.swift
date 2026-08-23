@@ -318,7 +318,7 @@ public enum CapabilityDetailBuilder {
             code: .qemuBridgeHelper,
             supported: false,
             reason: .osUnsupported,
-            remediation: "qemu-bridge-helper is a Linux QEMU tool. macOS uses the managed socket_vmnet helper.",
+            remediation: "qemu-bridge-helper is a Linux QEMU tool. macOS uses Homebrew socket_vmnet.",
         )
     }
 

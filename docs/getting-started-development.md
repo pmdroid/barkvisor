@@ -60,7 +60,7 @@ QEMU resources (`-L` data dir, firmware, keymaps):
 2. `/usr/local/share/qemu/<name>`
 3. Leftover `{prefix}/share/barkvisor/qemu/<name>`
 
-The privileged XPC helper is still installed by the pkg. Linux still uses distro QEMU.
+The pkg does not ship a privileged helper. Linux still uses distro QEMU.
 
 ## Project Structure
 

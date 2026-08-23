@@ -112,7 +112,7 @@ The entitlements applied to both the main app and helper binaries are:
 - `com.apple.security.network.server` -- required for the Vapor HTTP server
 - `com.apple.security.network.client` -- required for outbound connections (image downloads, repository sync)
 
-Signing order: shared libraries in `lib/barkvisor/` first, then helper binaries in `libexec/barkvisor/`, then the XPC helper, then the main executable.
+Signing order: shared libraries in `lib/barkvisor/` first, then helper binaries in `libexec/barkvisor/`, then the main executable.
 
 ### Step 11: Create standalone archive
 

@@ -696,7 +696,6 @@ DIST
 <p>This installer will:</p>
 <ul>
 <li>Install the BarkVisor server daemon</li>
-<li>Install the BarkVisor daemon and privileged helper</li>
 <li>Requires Homebrew: <code>brew install qemu swtpm socket_vmnet</code></li>
 <li>Create the <code>_barkvisor</code> system user</li>
 <li>Start the server as a LaunchDaemon</li>
