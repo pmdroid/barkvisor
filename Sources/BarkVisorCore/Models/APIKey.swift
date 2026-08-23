@@ -58,7 +58,7 @@ public struct APIKey: Codable, Sendable, FetchableRecord, PersistableRecord, Tab
     }
 
     public var apiKeyKind: APIKeyKind {
-        APIKeyKind(rawValue: kind) ?? .full
+        APIKeyKind.parseStored(kind)
     }
 }
 

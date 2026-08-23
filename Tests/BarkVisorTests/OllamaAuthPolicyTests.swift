@@ -60,6 +60,11 @@ struct OllamaAuthPolicyTests {
         )
         #expect(OllamaAuthPolicy.principal(authMethod: "apikey", apiKeyKind: "full") == .fullKey)
         #expect(OllamaAuthPolicy.principal(authMethod: "jwt", apiKeyKind: nil) == .session)
+        #expect(
+            OllamaAuthPolicy.principal(authMethod: "apikey", apiKeyKind: "admin-beta") == .inferenceKey,
+        )
+        #expect(APIKeyKind.parseStored("mystery") == .inference)
+        #expect(APIKeyKind.parseStored("full") == .full)
     }
 
     @Test func `inference user role is inference even with a full key or JWT`() {

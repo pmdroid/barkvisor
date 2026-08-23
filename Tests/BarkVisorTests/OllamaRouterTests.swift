@@ -120,5 +120,8 @@ struct OllamaRouterTests {
         )
         #expect(OllamaRouter.pick(model: "llama3", catalog: catalog, now: now)?.hostId == "only")
         #expect(OllamaRouter.pick(model: "missing", catalog: catalog, now: now) == nil)
+        #expect(OllamaHomeMap.needsProbe(model: "llama3", catalog: catalog, now: now) == false)
+        #expect(OllamaHomeMap.needsProbe(model: "missing", catalog: catalog, now: now) == true)
+        #expect(OllamaHomeMap.needsProbe(model: "llama3", catalog: nil, now: now) == true)
     }
 }

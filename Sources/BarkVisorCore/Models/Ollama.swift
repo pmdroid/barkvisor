@@ -5,6 +5,12 @@ import Foundation
 public enum APIKeyKind: String, Codable, Sendable, CaseIterable {
     case full
     case inference
+
+    /// Unknown stored values fail closed as inference, not full admin.
+    public static func parseStored(_ raw: String?) -> APIKeyKind {
+        guard let raw, let kind = APIKeyKind(rawValue: raw) else { return .inference }
+        return kind
+    }
 }
 
 /// Host Ollama detect + HTTP snapshot (PAS-269). Not a model runner.

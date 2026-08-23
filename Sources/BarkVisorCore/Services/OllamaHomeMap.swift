@@ -92,4 +92,14 @@ public enum OllamaHomeMap {
             refreshedAt: persisted.refreshedAt,
         )
     }
+
+    /// Completions use the stored map unless the model has no live Device.
+    public static func needsProbe(
+        model: String,
+        catalog: OllamaHomeCatalog?,
+        now: Date = Date(),
+    ) -> Bool {
+        guard let catalog else { return true }
+        return OllamaRouter.pick(model: model, catalog: catalog, now: now) == nil
+    }
 }

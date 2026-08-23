@@ -11,10 +11,12 @@ public enum OllamaAuthPolicy {
 
     public static func principal(authMethod: String, apiKeyKind: String?) -> Principal {
         if authMethod == "apikey" {
-            if apiKeyKind == APIKeyKind.inference.rawValue {
+            switch APIKeyKind.parseStored(apiKeyKind) {
+            case .inference:
                 return .inferenceKey
+            case .full:
+                return .fullKey
             }
-            return .fullKey
         }
         return .session
     }

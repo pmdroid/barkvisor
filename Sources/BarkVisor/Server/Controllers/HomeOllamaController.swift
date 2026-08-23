@@ -180,7 +180,7 @@ struct HomeOllamaController: RouteCollection {
         }
         let data = Data(buffer.readableBytesView)
         let model = try OllamaChatProxy.parseBufferedRequest(data)
-        let catalog = try await refresh(db: req.db, user: user)
+        let catalog = try await catalogForCompletion(model: model, db: req.db, user: user)
         guard let picked = OllamaRouter.pick(model: model, catalog: catalog, now: now?() ?? Date())
         else {
             throw BarkVisorError.notFound("No Device has Ollama model \(model)")
@@ -254,6 +254,19 @@ struct HomeOllamaController: RouteCollection {
     func catalogFromStore() throws -> OllamaHomeCatalog {
         let persisted = try store.load()
         return OllamaHomeMap.catalog(persisted: persisted, now: now?() ?? Date())
+    }
+
+    func catalogForCompletion(
+        model: String,
+        db: DatabasePool,
+        user: AuthenticatedUser,
+    ) async throws -> OllamaHomeCatalog {
+        let now = now?() ?? Date()
+        let stored = try? catalogFromStore()
+        if !OllamaHomeMap.needsProbe(model: model, catalog: stored, now: now), let stored {
+            return stored
+        }
+        return try await refresh(db: db, user: user)
     }
 
     private func targetHost(
