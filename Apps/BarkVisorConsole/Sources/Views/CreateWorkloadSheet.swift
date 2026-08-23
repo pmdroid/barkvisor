@@ -197,8 +197,9 @@ struct CreateWorkloadSheet: View {
     }
 
     private func applyCodingAgentDefaults() {
-        if CodingAgentImage.matches(name: selectedImage?.name) {
-            workloadClass = "agent"
+        workloadClass = CodingAgentImage.defaultClass(forName: selectedImage?.name)
+        if !CodingAgentImage.matches(name: selectedImage?.name) {
+            openaiPreset = "device-ollama"
         }
     }
 

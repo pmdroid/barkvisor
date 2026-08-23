@@ -372,13 +372,22 @@ export function useCreateVMWizard(
   const openaiPreset = ref<OpenAIPreset>('device-ollama')
   const byoOpenAIURL = ref(DEVICE_OLLAMA_BASE_URL)
 
-  watch(selectedImage, (img) => {
-    if (!isCodingAgentImage(img)) return
-    workloadClass.value = 'agent'
-    mode.value = 'cloud'
-    openaiPreset.value = 'device-ollama'
-    if (memoryMB.value < 2048) memoryMB.value = 2048
-    if (diskSizeGB.value < 20) diskSizeGB.value = 20
+  watch(selectedImage, (img, prev) => {
+    const now = isCodingAgentImage(img)
+    const was = isCodingAgentImage(prev)
+    if (now && !was) {
+      workloadClass.value = 'agent'
+      mode.value = 'cloud'
+      openaiPreset.value = 'device-ollama'
+      if (memoryMB.value < 2048) memoryMB.value = 2048
+      if (diskSizeGB.value < 20) diskSizeGB.value = 20
+      return
+    }
+    if (was && !now && osType.value === 'linux') {
+      workloadClass.value = 'house'
+      memoryMB.value = 1024
+      diskSizeGB.value = 10
+    }
   })
 
   // Dynamic step mapping (PAS-182): Basics → Image → Place → Hardware → Drivers? → Storage → Network → Summary
