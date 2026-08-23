@@ -635,7 +635,7 @@ struct HostGPUDevice: Decodable, Hashable, Identifiable {
     var claimedByVMName: String?
 
     var canAttach: Bool {
-        attachable == true && claimedByVMId == nil && inUseByHost != true
+        attachable == true && claimedByVMId == nil
     }
 
     var occupancyCopy: String? {
@@ -643,7 +643,7 @@ struct HostGPUDevice: Decodable, Hashable, Identifiable {
             return "Attached to \(claimedByVMName)"
         }
         if inUseByHost == true {
-            return "In use by host Ollama"
+            return "In use by host"
         }
         return excludedReason
     }

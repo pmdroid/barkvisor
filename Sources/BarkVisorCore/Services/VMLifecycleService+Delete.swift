@@ -40,6 +40,8 @@ extension VMLifecycleService {
             }
         }
 
+        GPUPassthroughService.releaseVFIO(vm.decodedGPUDevices)
+
         if vm.cloudInitPath != nil {
             let ciDir = Config.dataDir.appendingPathComponent("cloud-init/\(vm.id)")
             try? FileManager.default.removeItem(at: ciDir)

@@ -124,8 +124,7 @@ struct SystemHostController: RouteCollection {
 
     @Sendable
     func listGPUDevices(req: Vapor.Request) async throws -> [HostGPUDeviceResponse] {
-        let hostOllama = GPUPassthroughService.liveHostOllamaReachable()
-        let hostDevices = GPUDeviceService.listDevices(hostOllamaReachable: hostOllama)
+        let hostDevices = GPUDeviceService.listDevices()
         let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
         return hostDevices.map { dev in
             let claim = GPUPassthroughService.claimedBy(host: dev, vms: allVMs)

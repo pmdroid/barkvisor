@@ -15,7 +15,7 @@ import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
@@ -228,7 +228,7 @@ async function doStop() {
             <span class="gpu-name">{{ gpu.name }}</span>
             <span class="gpu-meta">{{ gpu.pciAddress }} · IOMMU {{ gpu.iommuGroup }}</span>
             <span v-if="gpu.claimedByVMName" class="gpu-busy">Attached to {{ gpu.claimedByVMName }}</span>
-            <span v-else-if="gpu.inUseByHost" class="gpu-busy">Host Ollama</span>
+            <span v-else-if="gpu.inUseByHost" class="gpu-busy">{{ gpuHostOccupancyLabel(true) }}</span>
           </li>
         </ul>
         <p v-if="gpuReady" class="gpu-card-status">Guest Ollama path: {{ GUEST_OLLAMA_PATH }}</p>

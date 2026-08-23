@@ -170,7 +170,8 @@ struct WorkloadDetailView: View {
                         if let occupancy = gpu.occupancyCopy {
                             Text(occupancy)
                                 .foregroundStyle(.secondary)
-                        } else if workload.canStart {
+                        }
+                        if workload.canStart {
                             Button("Attach \(gpu.pciAddress)") {
                                 Task {
                                     await model.attachGPU(gpu.pciAddress, to: workload, on: device)

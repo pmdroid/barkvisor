@@ -43,43 +43,43 @@ struct GPUPassthroughTests {
             vfioDevice: vfioDev.path,
             kvmDevice: kvm.path,
         )
-        let listed = GPUDeviceService.listDevices(
-            from: paths, hostOllamaReachable: false,
-        )
+        let listed = GPUDeviceService.listDevices(from: paths)
         #expect(listed.count == 1)
         #expect(listed[0].pciAddress == "0000:01:00.0")
         #expect(listed[0].iommuGroup == "14")
         #expect(listed[0].groupAddresses == ["0000:01:00.0", "0000:01:00.1"])
         #expect(listed[0].attachable)
         #expect(listed[0].guestOllamaPath == GPUPassthroughService.guestOllamaPath)
-        #expect(!listed[0].inUseByHost)
+        #expect(listed[0].inUseByHost)
+        #expect(listed[0].excludedReason == GPUPassthroughService.hostGuestExclusiveMessage)
     }
 
-    @Test func `host ollama blocks attach on a host-bound card`() throws {
-        let host = HostGPUDevice(
+    @Test func `host occupancy is the gpu driver not an ollama probe`() {
+        let nvidia = VFIODisplayDevice(
             pciAddress: "0000:01:00.0",
             iommuGroup: "14",
             vendorId: "10de",
             deviceId: "2684",
-            name: "NVIDIA",
             driver: "nvidia",
-            vfioBound: false,
-            inUseByHost: true,
-            attachable: false,
-            excludedReason: GPUPassthroughService.hostGuestExclusiveMessage,
             groupAddresses: ["0000:01:00.0"],
         )
-        let err = #expect(throws: BarkVisorError.self) {
-            _ = try GPUPassthroughService.resolveAttachable(
-                deviceId: host.pciAddress, hostDevices: [host],
-            )
-        }
-        if case let .forbidden(message) = err {
-            #expect(message.contains("host"))
-            #expect(message.contains("guest"))
-        } else {
-            Issue.record("expected forbidden, got \(String(describing: err))")
-        }
+        let occupied = GPUDeviceService.project(nvidia, iommuReady: true)
+        #expect(occupied.inUseByHost)
+        #expect(occupied.attachable)
+        #expect(occupied.excludedReason == GPUPassthroughService.hostGuestExclusiveMessage)
+
+        let vfio = VFIODisplayDevice(
+            pciAddress: "0000:01:00.0",
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+            driver: "vfio-pci",
+            groupAddresses: ["0000:01:00.0"],
+        )
+        let guest = GPUDeviceService.project(vfio, iommuReady: true)
+        #expect(!guest.inUseByHost)
+        #expect(guest.vfioBound)
+        #expect(guest.attachable)
     }
 
     @Test func `same card cannot attach to two workloads`() throws {
@@ -122,7 +122,7 @@ struct GPUPassthroughTests {
             vfioDevice: root.appendingPathComponent("vfio").path,
             kvmDevice: root.appendingPathComponent("kvm").path,
         )
-        #expect(GPUDeviceService.listDevices(from: paths, hostOllamaReachable: true).isEmpty)
+        #expect(GPUDeviceService.listDevices(from: paths).isEmpty)
     }
 
     @Test func `qemu vfio args cover the iommu group`() throws {
@@ -163,7 +163,7 @@ struct GPUPassthroughTests {
             } else {
                 Issue.record("expected unsupportedFeature, got \(String(describing: err))")
             }
-            #expect(GPUDeviceService.listDevices(hostOllamaReachable: true).isEmpty)
+            #expect(GPUDeviceService.listDevices().isEmpty)
         #endif
     }
 
@@ -178,6 +178,88 @@ struct GPUPassthroughTests {
         #expect(yaml.contains("127.0.0.1:11434"))
         #expect(yaml.contains("barkvisor-guest-ollama"))
         #expect(!yaml.contains("10.0.2.2:11434"))
+    }
+
+    @Test func `post-create gpu user-data installs guest ollama`() throws {
+        let attached = CodingAgentImage.userDataForGPU(gpuAttached: true)
+        try CloudInitService.validateUserData(attached)
+        #expect(attached.contains("barkvisor-guest-ollama"))
+        #expect(attached.contains("127.0.0.1:11434"))
+        #expect(!attached.contains("10.0.2.2:11434"))
+        #expect(CodingAgentImage.isManagedUserData(attached))
+        #expect(CodingAgentImage.cloudInitInstanceID(vmID: "vm-1", gpuAttached: true) == "vm-1-gpu")
+
+        let detached = CodingAgentImage.userDataForGPU(gpuAttached: false)
+        try CloudInitService.validateUserData(detached)
+        #expect(!detached.contains("barkvisor-guest-ollama"))
+        #expect(detached.contains("10.0.2.2:11434"))
+        #expect(CodingAgentImage.cloudInitInstanceID(vmID: "vm-1", gpuAttached: false) == "vm-1")
+
+        let gpu = GPUPassthroughDevice(
+            pciAddress: "0000:01:00.0",
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+        )
+        let params = CreateVMParams(
+            name: "coder",
+            vmType: "linux-arm64",
+            cpuCount: 2,
+            memoryMB: 1_024,
+            diskSizeGB: 10,
+            cloudImageId: "img-1",
+            gpuDevices: [gpu],
+        )
+        let applied = try CodingAgentImage.applyingCreateDefaults(
+            params: params, imageName: "Coding Agent",
+        )
+        #expect(applied.cloudInit?.userData?.contains("barkvisor-guest-ollama") == true)
+        #expect(applied.cloudInit?.userData?.contains("127.0.0.1:11434") == true)
+    }
+
+    @Test func `vfio bind verifies the driver symlink not the write-only bind node`() throws {
+        let fake = FakeVFIOSysfs()
+        let address = "0000:01:00.0"
+        fake.exists.insert("/sys/bus/pci/devices/\(address)")
+        fake.driver[address] = "nvidia"
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        try VFIOBinder.bind(addresses: [address], paths: paths, sysfs: fake.sysfs)
+        #expect(fake.driver[address] == "vfio-pci")
+        #expect(fake.writes.contains { $0.path.hasSuffix("driver_override") && $0.text.contains("vfio-pci") })
+        #expect(fake.writes.contains { $0.path.hasSuffix("/bind") && $0.path.contains("vfio-pci") })
+        #expect(!fake.readBindNode)
+
+        try VFIOBinder.unbind(addresses: [address], paths: paths, sysfs: fake.sysfs)
+        #expect(fake.driver[address] != "vfio-pci")
+        #expect(fake.writes.contains { $0.path.hasSuffix("/unbind") && $0.path.contains("vfio-pci") })
+        #expect(fake.writes.contains { $0.path.hasSuffix("drivers_probe") })
+    }
+
+    @Test func `qemu vfio args bind path uses sysfs without reading bind`() throws {
+        let fake = FakeVFIOSysfs()
+        let address = "0000:01:00.0"
+        fake.exists.insert("/sys/bus/pci/devices/\(address)")
+        fake.driver[address] = "nvidia"
+        let gpu = WorkloadGPUDevice(
+            pciAddress: address,
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+            groupAddresses: [address],
+        )
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        let args = try QEMUBuilder.vfioPCIArgs(gpu: [gpu], bind: true, bindPaths: paths, sysfs: fake.sysfs)
+        #expect(args == ["-device", "vfio-pci,host=\(address),id=vfio-pt-0"])
+        #expect(fake.driver[address] == "vfio-pci")
+        #expect(!fake.readBindNode)
     }
 
     @Test func `host ollama grant is skipped when a gpu is attached`() {
@@ -223,6 +305,36 @@ struct GPUPassthroughTests {
             createdAt: "2026-08-23T00:00:00Z",
             updatedAt: "2026-08-23T00:00:00Z",
         )
+    }
+
+    private final class FakeVFIOSysfs: @unchecked Sendable {
+        var exists: Set<String> = []
+        var driver: [String: String] = [:]
+        var writes: [(path: String, text: String)] = []
+        var readBindNode = false
+
+        var sysfs: VFIOSysfs {
+            VFIOSysfs(
+                fileExists: { [weak self] path in self?.exists.contains(path) ?? false },
+                currentDriver: { [weak self] address in self?.driver[address] },
+                write: { [weak self] text, path in
+                    guard let self else { return }
+                    self.writes.append((path, text))
+                    let addr = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if path.hasSuffix("/bind"), path.contains("vfio-pci") {
+                        self.driver[addr] = "vfio-pci"
+                    }
+                    if path.hasSuffix("/unbind"), path.contains("vfio-pci") {
+                        self.driver[addr] = nil
+                    }
+                    if path.hasSuffix("drivers_probe") {
+                        if self.driver[addr] == nil {
+                            self.driver[addr] = "nvidia"
+                        }
+                    }
+                },
+            )
+        }
     }
 
     private func writePCIDevice(

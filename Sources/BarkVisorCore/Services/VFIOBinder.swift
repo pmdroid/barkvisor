@@ -4,82 +4,153 @@ import Foundation
 public struct VFIOBindPaths: Sendable, Equatable {
     public var devicesRoot: String
     public var vfioPciDriver: String
+    public var driversProbe: String
 
-    public init(devicesRoot: String, vfioPciDriver: String) {
+    public init(devicesRoot: String, vfioPciDriver: String, driversProbe: String) {
         self.devicesRoot = devicesRoot
         self.vfioPciDriver = vfioPciDriver
+        self.driversProbe = driversProbe
     }
 
     public static let linuxHost = VFIOBindPaths(
         devicesRoot: "/sys/bus/pci/devices",
         vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+        driversProbe: "/sys/bus/pci/drivers_probe",
     )
 }
 
-/// Bind PCI addresses to vfio-pci. Fail closed if sysfs writes do not land.
+/// Testable sysfs I/O for vfio bind/unbind. Bind and unbind nodes are write-only
+/// on Linux; verification must not read them.
+public struct VFIOSysfs: Sendable {
+    public var fileExists: @Sendable (String) -> Bool
+    public var currentDriver: @Sendable (String) -> String?
+    public var write: @Sendable (String, String) throws -> Void
+
+    public init(
+        fileExists: @escaping @Sendable (String) -> Bool,
+        currentDriver: @escaping @Sendable (String) -> String?,
+        write: @escaping @Sendable (String, String) throws -> Void,
+    ) {
+        self.fileExists = fileExists
+        self.currentDriver = currentDriver
+        self.write = write
+    }
+
+    public static func posix(
+        devicesRoot: String = VFIOBindPaths.linuxHost.devicesRoot,
+    ) -> VFIOSysfs {
+        VFIOSysfs(
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            currentDriver: { address in
+                let driverLink = URL(fileURLWithPath: devicesRoot, isDirectory: true)
+                    .appendingPathComponent(address, isDirectory: true)
+                    .appendingPathComponent("driver")
+                    .path
+                return (try? FileManager.default.destinationOfSymbolicLink(atPath: driverLink))
+                    .map { URL(fileURLWithPath: $0).lastPathComponent }
+            },
+            write: { text, path in
+                try text.write(to: URL(fileURLWithPath: path), atomically: false, encoding: .utf8)
+            },
+        )
+    }
+}
+
+/// Bind PCI addresses to vfio-pci. Fail closed if the driver symlink does not land.
 public enum VFIOBinder {
     public static func bind(
         addresses: [String],
         paths: VFIOBindPaths = .linuxHost,
         fileManager: FileManager = .default,
+        sysfs: VFIOSysfs? = nil,
     ) throws {
+        _ = fileManager
+        let io = sysfs ?? .posix(devicesRoot: paths.devicesRoot)
         for raw in addresses {
             let address = GPUPassthroughService.normalizePCIAddress(raw)
             guard GPUPassthroughService.isPCIAddress(address) else {
                 throw BarkVisorError.badRequest("Invalid GPU PCI address \(raw)")
             }
-            try bindOne(address: address, paths: paths, fileManager: fileManager)
+            try bindOne(address: address, paths: paths, sysfs: io)
         }
     }
 
-    private static func bindOne(
-        address: String,
-        paths: VFIOBindPaths,
-        fileManager: FileManager,
+    public static func unbind(
+        addresses: [String],
+        paths: VFIOBindPaths = .linuxHost,
+        fileManager: FileManager = .default,
+        sysfs: VFIOSysfs? = nil,
     ) throws {
+        _ = fileManager
+        let io = sysfs ?? .posix(devicesRoot: paths.devicesRoot)
+        for raw in addresses {
+            let address = GPUPassthroughService.normalizePCIAddress(raw)
+            guard GPUPassthroughService.isPCIAddress(address) else {
+                throw BarkVisorError.badRequest("Invalid GPU PCI address \(raw)")
+            }
+            try unbindOne(address: address, paths: paths, sysfs: io)
+        }
+    }
+
+    private static func bindOne(address: String, paths: VFIOBindPaths, sysfs: VFIOSysfs) throws {
         let deviceDir = URL(fileURLWithPath: paths.devicesRoot, isDirectory: true)
             .appendingPathComponent(address, isDirectory: true)
-        guard fileManager.fileExists(atPath: deviceDir.path) else {
+        guard sysfs.fileExists(deviceDir.path) else {
             throw BarkVisorError.forbidden(
                 "GPU \(address) is missing from sysfs; refusing vfio bind",
             )
         }
-        let driverLink = deviceDir.appendingPathComponent("driver")
-        let current = (try? fileManager.destinationOfSymbolicLink(atPath: driverLink.path))
-            .map { URL(fileURLWithPath: $0).lastPathComponent }
-        if current == "vfio-pci" { return }
+        if sysfs.currentDriver(address) == "vfio-pci" { return }
 
-        let override = deviceDir.appendingPathComponent("driver_override")
-        try write("vfio-pci\n", to: override, fileManager: fileManager)
+        let override = deviceDir.appendingPathComponent("driver_override").path
+        try write("vfio-pci\n", to: override, sysfs: sysfs)
 
-        if current != nil {
-            let unbind = driverLink.appendingPathComponent("unbind")
-            try write("\(address)\n", to: unbind, fileManager: fileManager)
+        if sysfs.currentDriver(address) != nil {
+            let unbind = deviceDir.appendingPathComponent("driver").appendingPathComponent("unbind").path
+            try write("\(address)\n", to: unbind, sysfs: sysfs)
         }
 
         let bind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
             .appendingPathComponent("bind")
-        try write("\(address)\n", to: bind, fileManager: fileManager)
+            .path
+        try write("\(address)\n", to: bind, sysfs: sysfs)
 
-        let bound = (try? fileManager.destinationOfSymbolicLink(atPath: driverLink.path))
-            .map { URL(fileURLWithPath: $0).lastPathComponent }
-        if bound == "vfio-pci" { return }
-        let bindText = (try? String(contentsOf: bind, encoding: .utf8)) ?? ""
-        guard bindText.contains(address) else {
+        guard sysfs.currentDriver(address) == "vfio-pci" else {
             throw BarkVisorError.forbidden(
                 "GPU \(address) did not bind to vfio-pci; refusing QEMU start",
             )
         }
     }
 
-    private static func write(_ text: String, to url: URL, fileManager: FileManager) throws {
-        do {
-            try text.write(to: url, atomically: false, encoding: .utf8)
-        } catch {
+    private static func unbindOne(address: String, paths: VFIOBindPaths, sysfs: VFIOSysfs) throws {
+        let deviceDir = URL(fileURLWithPath: paths.devicesRoot, isDirectory: true)
+            .appendingPathComponent(address, isDirectory: true)
+        guard sysfs.fileExists(deviceDir.path) else { return }
+        guard sysfs.currentDriver(address) == "vfio-pci" else { return }
+
+        let unbind = URL(fileURLWithPath: paths.vfioPciDriver, isDirectory: true)
+            .appendingPathComponent("unbind")
+            .path
+        try write("\(address)\n", to: unbind, sysfs: sysfs)
+
+        let override = deviceDir.appendingPathComponent("driver_override").path
+        try write("\n", to: override, sysfs: sysfs)
+        try write("\(address)\n", to: paths.driversProbe, sysfs: sysfs)
+
+        if sysfs.currentDriver(address) == "vfio-pci" {
             throw BarkVisorError.forbidden(
-                "vfio-pci sysfs write failed at \(url.lastPathComponent): \(error.localizedDescription)",
+                "GPU \(address) is still bound to vfio-pci after unbind",
             )
         }
-        _ = fileManager
+    }
+
+    private static func write(_ text: String, to path: String, sysfs: VFIOSysfs) throws {
+        do {
+            try sysfs.write(text, path)
+        } catch {
+            throw BarkVisorError.forbidden(
+                "vfio-pci sysfs write failed at \(URL(fileURLWithPath: path).lastPathComponent): \(error.localizedDescription)",
+            )
+        }
     }
 }

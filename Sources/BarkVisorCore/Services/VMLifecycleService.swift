@@ -96,7 +96,7 @@ public enum VMLifecycleService {
 
         let encodedFields = encodeUpdateFields(params: normalized)
 
-        return try await db.write { db -> VM in
+        let vm = try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -125,6 +125,10 @@ public enum VMLifecycleService {
             try vm.update(db)
             return vm
         }
+        if params.gpuDevices != nil {
+            try syncCodingAgentCloudInitForGPU(vm: vm)
+        }
+        return vm
     }
 
     /// Replace VM columns from a WorkloadSpec (PAS-35). Refreshes stored `specJson`.
@@ -150,7 +154,7 @@ public enum VMLifecycleService {
             normalized.spec.gpu = gpuDevices.map { GPUPassthroughService.workload(from: $0) }
         }
         let spec = normalized
-        return try await db.write { db -> VM in
+        let (vm, gpuChanged) = try await db.write { db -> (VM, Bool) in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -166,8 +170,12 @@ public enum VMLifecycleService {
             vm.updatedAt = iso8601.string(from: Date())
             vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
-            return vm
+            return (vm, before.gpuDevices != vm.gpuDevices)
         }
+        if gpuChanged {
+            try syncCodingAgentCloudInitForGPU(vm: vm)
+        }
+        return vm
     }
 
     // MARK: - Delete VM

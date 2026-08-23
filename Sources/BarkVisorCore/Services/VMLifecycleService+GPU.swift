@@ -7,19 +7,17 @@ extension VMLifecycleService {
         deviceId: String,
         db: DatabasePool,
         hostDevices: [HostGPUDevice]? = nil,
-        hostOllamaReachable: Bool? = nil,
     ) async throws -> VM {
         try PlatformCapabilities.requireGPUPassthrough()
-        let hosts = try listedGPUs(hostDevices: hostDevices, hostOllamaReachable: hostOllamaReachable)
+        let hosts = try listedGPUs(hostDevices: hostDevices)
         let host = try GPUPassthroughService.resolveAttachable(deviceId: deviceId, hostDevices: hosts)
         guard let vm = try await db.read({ db in try VM.fetchOne(db, key: vmID) }) else {
             throw BarkVisorError.notFound()
         }
         var devices = vm.decodedGPUDevices
-        if GPUPassthroughService.contains(devices, host: host) {
-            return vm
+        if !GPUPassthroughService.contains(devices, host: host) {
+            devices.append(GPUPassthroughService.passthrough(from: host))
         }
-        devices.append(GPUPassthroughService.passthrough(from: host))
         return try await updateVM(
             id: vmID,
             params: UpdateVMParams(gpuDevices: devices),
@@ -37,22 +35,29 @@ extension VMLifecycleService {
             throw BarkVisorError.notFound()
         }
         let remaining = GPUPassthroughService.removing(vm.decodedGPUDevices, deviceId: deviceId)
-        return try await updateVM(
+        let removed = vm.decodedGPUDevices.filter { device in
+            !remaining.contains { $0.pciAddress == device.pciAddress }
+        }
+        let updated = try await updateVM(
             id: vmID,
             params: UpdateVMParams(gpuDevices: remaining),
             db: db,
         )
+        let stopped = vm.state == "stopped" || vm.state == "error"
+        if stopped {
+            GPUPassthroughService.releaseVFIO(removed)
+        }
+        return updated
     }
 
     static func persistableGPUDevices(
         _ devices: [GPUPassthroughDevice]?,
         hostDevices: [HostGPUDevice]? = nil,
-        hostOllamaReachable: Bool? = nil,
     ) throws -> [GPUPassthroughDevice]? {
         guard devices != nil else { return nil }
         if devices?.isEmpty == true { return [] }
         try PlatformCapabilities.requireGPUPassthrough()
-        let hosts = try listedGPUs(hostDevices: hostDevices, hostOllamaReachable: hostOllamaReachable)
+        let hosts = try listedGPUs(hostDevices: hostDevices)
         return try GPUPassthroughService.normalizeForPersist(devices, hostDevices: hosts)
     }
 
@@ -72,13 +77,30 @@ extension VMLifecycleService {
         )
     }
 
+    static func syncCodingAgentCloudInitForGPU(vm: VM) throws {
+        let stored = CloudInitService.storedUserData(vmID: vm.id)
+        guard CodingAgentImage.isManagedUserData(stored) else { return }
+        let gpuAttached = !vm.decodedGPUDevices.isEmpty
+        let userData = CodingAgentImage.userDataForGPU(gpuAttached: gpuAttached)
+        try CloudInitService.validateUserData(userData)
+        let keys = CloudInitService.sshAuthorizedKeys(from: stored)
+        _ = try CloudInitService.generateISO(
+            vmID: vm.id,
+            vmName: vm.name,
+            sshKeys: keys,
+            userData: userData,
+            instanceID: CodingAgentImage.cloudInitInstanceID(vmID: vm.id, gpuAttached: gpuAttached),
+        )
+    }
+
+    static func releaseGPUDevices(_ devices: [GPUPassthroughDevice]?) {
+        GPUPassthroughService.releaseVFIO(devices ?? [])
+    }
+
     private static func listedGPUs(
         hostDevices: [HostGPUDevice]?,
-        hostOllamaReachable: Bool?,
     ) throws -> [HostGPUDevice] {
         if let hostDevices { return hostDevices }
-        return GPUDeviceService.listDevices(
-            hostOllamaReachable: hostOllamaReachable ?? GPUPassthroughService.liveHostOllamaReachable(),
-        )
+        return GPUDeviceService.listDevices()
     }
 }

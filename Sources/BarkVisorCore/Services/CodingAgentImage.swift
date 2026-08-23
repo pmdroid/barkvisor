@@ -244,6 +244,21 @@ public enum CodingAgentImage {
         return yaml + guestOllamaRun
     }
 
+    public static func isManagedUserData(_ userData: String?) -> Bool {
+        (userData ?? "").contains("barkvisor-coding-agent-setup")
+    }
+
+    public static func userDataForGPU(gpuAttached: Bool) -> String {
+        userData(
+            openaiBaseURL: gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL,
+            installGuestOllama: gpuAttached,
+        )
+    }
+
+    public static func cloudInitInstanceID(vmID: String, gpuAttached: Bool) -> String {
+        gpuAttached ? "\(vmID)-gpu" : vmID
+    }
+
     public static func applyingCreateDefaults(
         params: CreateVMParams,
         imageName: String?,

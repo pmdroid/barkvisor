@@ -50,17 +50,11 @@ public struct HostGPUDevice: Codable, Equatable, Sendable {
 public enum GPUDeviceService {
     /// List display-class PCI devices in IOMMU groups. Empty when IOMMU is off.
     public static func listDevices(
-        hostOllamaReachable: Bool,
         fileManager: FileManager = .default,
     ) -> [HostGPUDevice] {
         #if os(Linux)
-            listDevices(
-                from: .linuxHost,
-                hostOllamaReachable: hostOllamaReachable,
-                fileManager: fileManager,
-            )
+            listDevices(from: .linuxHost, fileManager: fileManager)
         #else
-            _ = hostOllamaReachable
             _ = fileManager
             return []
         #endif
@@ -68,36 +62,29 @@ public enum GPUDeviceService {
 
     public static func listDevices(
         from paths: VFIOProbePaths,
-        hostOllamaReachable: Bool,
         fileManager: FileManager = .default,
     ) -> [HostGPUDevice] {
         let facts = VFIOProbe.collect(from: paths, fileManager: fileManager)
         guard facts.iommuEnabled else { return [] }
         let iommuReady = VFIOProbe.gpuPassthroughSupported(os: "Linux", facts: facts)
         return VFIOProbe.listDisplayDevices(from: paths, fileManager: fileManager).map { row in
-            project(
-                row,
-                iommuReady: iommuReady,
-                hostOllamaReachable: hostOllamaReachable,
-            )
+            project(row, iommuReady: iommuReady)
         }
     }
 
     public static func project(
         _ row: VFIODisplayDevice,
         iommuReady: Bool,
-        hostOllamaReachable: Bool,
     ) -> HostGPUDevice {
         let vfioBound = row.driver == "vfio-pci"
         let hostDriver = GPUPassthroughService.isHostGPUDriver(row.driver)
-        let inUseByHost = !vfioBound && hostDriver && hostOllamaReachable
+        let inUseByHost = !vfioBound && hostDriver
         var attachable = iommuReady
         var reason: String?
         if !iommuReady {
             attachable = false
             reason = GPUPassthroughService.iommuNotReadyMessage
         } else if inUseByHost {
-            attachable = false
             reason = GPUPassthroughService.hostGuestExclusiveMessage
         }
         return HostGPUDevice(

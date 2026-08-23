@@ -35,3 +35,8 @@ export function gpuPassthroughSupported(
   if (caps.supportsGPUPassthrough === true) return true
   return gpuPassthroughDetail(caps)?.supported === true
 }
+
+/** Occupancy is the host GPU driver, not an Ollama TCP probe. */
+export function gpuHostOccupancyLabel(inUseByHost: boolean | undefined): string | null {
+  return inUseByHost ? 'In use by host' : null
+}

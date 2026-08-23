@@ -81,7 +81,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
@@ -1777,7 +1777,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <div style="font-weight:500">{{ dev.name }}</div>
               <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }}</div>
               <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
-              <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">In use by host Ollama</div>
+              <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">{{ gpuHostOccupancyLabel(true) }}</div>
               <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
             </td>
             <td><span class="badge badge-gray">{{ dev.iommuGroup }}</span></td>

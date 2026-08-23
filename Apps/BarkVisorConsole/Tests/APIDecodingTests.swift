@@ -326,6 +326,22 @@ struct APIDecodingTests {
         #expect(gpu.canAttach)
         #expect(gpu.guestOllamaPath == GPUPassthroughCopy.guestOllamaPath)
         #expect(gpu.occupancyCopy == nil)
+
+        let busyJSON = """
+        {
+          "id": "0000:01:00.0",
+          "pciAddress": "0000:01:00.0",
+          "iommuGroup": "14",
+          "vendorId": "10de",
+          "deviceId": "2684",
+          "name": "NVIDIA",
+          "attachable": true,
+          "inUseByHost": true
+        }
+        """.data(using: .utf8)!
+        let busy = try decoder.decode(HostGPUDevice.self, from: busyJSON)
+        #expect(busy.canAttach)
+        #expect(busy.occupancyCopy == "In use by host")
     }
 
     @Test func `gpu passthrough copy prefers server remediation`() {

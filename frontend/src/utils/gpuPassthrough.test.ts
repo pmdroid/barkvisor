@@ -3,6 +3,7 @@ import { defaultCapabilities } from './capabilitiesParse'
 import {
   GUEST_OLLAMA_PATH,
   GPU_IOMMU_NOT_READY,
+  gpuHostOccupancyLabel,
   gpuPassthroughExplanation,
   gpuPassthroughSupported,
 } from './gpuPassthrough'
@@ -76,5 +77,11 @@ describe('gpuPassthrough copy (PAS-275)', () => {
     }
     expect(gpuPassthroughSupported(caps)).toBe(false)
     expect(gpuPassthroughExplanation(caps)).toContain('intel_iommu')
+  })
+
+  test('host occupancy is the driver not Ollama', () => {
+    expect(gpuHostOccupancyLabel(true)).toBe('In use by host')
+    expect(gpuHostOccupancyLabel(false)).toBeNull()
+    expect(gpuHostOccupancyLabel(undefined)).toBeNull()
   })
 })

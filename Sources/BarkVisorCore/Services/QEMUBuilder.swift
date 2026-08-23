@@ -573,12 +573,15 @@ public enum QEMUBuilder {
         bind: Bool,
         bindPaths: VFIOBindPaths = .linuxHost,
         fileManager: FileManager = .default,
+        sysfs: VFIOSysfs? = nil,
     ) throws -> [String] {
         guard !gpu.isEmpty else { return [] }
         let stored = gpu.map { GPUPassthroughService.passthrough(from: $0) }
         let addresses = try GPUPassthroughService.qemuHostAddresses(from: stored)
         if bind {
-            try VFIOBinder.bind(addresses: addresses, paths: bindPaths, fileManager: fileManager)
+            try VFIOBinder.bind(
+                addresses: addresses, paths: bindPaths, fileManager: fileManager, sysfs: sysfs,
+            )
         }
         var args: [String] = []
         for (i, address) in addresses.enumerated() {

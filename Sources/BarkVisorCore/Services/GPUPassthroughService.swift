@@ -1,13 +1,5 @@
 import Foundation
 
-#if os(macOS)
-    import Darwin
-#elseif canImport(Glibc)
-    import Glibc
-#elseif canImport(Musl)
-    import Musl
-#endif
-
 /// Resolve, claim, and persist PCIe GPU passthrough (PAS-275).
 public enum GPUPassthroughService {
     public static let guestOllamaPath = "http://127.0.0.1:11434/v1"
@@ -16,7 +8,7 @@ public enum GPUPassthroughService {
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
 
     public static let hostGuestExclusiveMessage =
-        "This GPU is in use by the host (Ollama). The same card cannot be host and guest."
+        "This GPU is bound to a host driver. Attaching it takes the card from the host. The same card cannot be host and guest."
 
     public static let hostGPUDrivers: Set<String> = [
         "nvidia", "nvidia_drm", "nvidiafb", "amdgpu", "i915", "nouveau", "xe",
@@ -158,9 +150,6 @@ public enum GPUPassthroughService {
             if let claim = claimedBy(host: host, vms: vms, excludingVMId: excludingVMId) {
                 throw BarkVisorError.conflict("GPU is attached to \(claim.name)")
             }
-            if host.inUseByHost {
-                throw BarkVisorError.forbidden(hostGuestExclusiveMessage)
-            }
         }
     }
 
@@ -221,25 +210,19 @@ public enum GPUPassthroughService {
         return ordered
     }
 
-    public static func liveHostOllamaReachable() -> Bool {
-        tcpReachable(host: "127.0.0.1", port: AgentNetworkCage.ollamaPort)
-    }
-
-    static func tcpReachable(host: String, port: Int) -> Bool {
-        var hints = addrinfo()
-        hints.ai_family = AF_INET
-        hints.ai_socktype = Int32(SOCK_STREAM)
-        var info: UnsafeMutablePointer<addrinfo>?
-        let portText = String(port)
-        guard getaddrinfo(host, portText, &hints, &info) == 0, let info else { return false }
-        defer { freeaddrinfo(info) }
-        let fd = socket(info.pointee.ai_family, info.pointee.ai_socktype, info.pointee.ai_protocol)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-        var timeout = timeval(tv_sec: 0, tv_usec: 200_000)
-        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-        return connect(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0
+    public static func releaseVFIO(
+        _ devices: [GPUPassthroughDevice],
+        paths: VFIOBindPaths = .linuxHost,
+        sysfs: VFIOSysfs? = nil,
+    ) {
+        guard !devices.isEmpty else { return }
+        let addresses = (try? qemuHostAddresses(from: devices)) ?? []
+        guard !addresses.isEmpty else { return }
+        do {
+            try VFIOBinder.unbind(addresses: addresses, paths: paths, sysfs: sysfs)
+        } catch {
+            Log.vm.warning("vfio-pci unbind failed: \(error.localizedDescription)")
+        }
     }
 
     private static func syntheticHost(_ device: GPUPassthroughDevice) -> HostGPUDevice {
