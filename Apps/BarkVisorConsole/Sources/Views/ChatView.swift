@@ -151,14 +151,16 @@ struct ChatView: View {
             } catch is CancellationError {
             } catch {
                 await MainActor.run {
+                    guard generation == streamGeneration else { return }
                     self.error = error.localizedDescription
-                    if turns.last?.content.isEmpty == true {
-                        turns.removeLast()
-                        if turns.last?.isUser == true {
-                            draft = text
-                            turns.removeLast()
-                        }
-                    }
+                    ChatStreamApply.rollbackFailedSend(
+                        turns: &turns,
+                        draft: &draft,
+                        originalText: text,
+                        assistantID: assistantID,
+                        generation: generation,
+                        currentGeneration: streamGeneration,
+                    )
                 }
             }
             await MainActor.run {

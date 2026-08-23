@@ -70,6 +70,26 @@ enum ChatStreamApply {
         guard let index = turns.firstIndex(where: { $0.id == assistantID }) else { return }
         turns[index].content += delta
     }
+
+    /// Drop only this send's empty assistant (and its user prompt) on failure.
+    static func rollbackFailedSend(
+        turns: inout [ChatTurn],
+        draft: inout String,
+        originalText: String,
+        assistantID: UUID,
+        generation: Int,
+        currentGeneration: Int,
+    ) {
+        guard generation == currentGeneration else { return }
+        guard let index = turns.firstIndex(where: { $0.id == assistantID }) else { return }
+        guard turns[index].content.isEmpty else { return }
+        if index > 0, turns[index - 1].isUser {
+            draft = originalText
+            turns.removeSubrange((index - 1) ... index)
+        } else {
+            turns.remove(at: index)
+        }
+    }
 }
 
 enum ChatAvailability {

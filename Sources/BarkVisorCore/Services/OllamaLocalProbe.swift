@@ -35,7 +35,7 @@ public enum OllamaLocalProbe {
     }
 
     public static func modelName(fromChatBody body: Data) throws -> String {
-        try modelName(fromObject: try chatObject(from: body))
+        try modelName(fromObject: chatObject(from: body))
     }
 
     public static func modelName(fromObject object: [String: Any]) throws -> String {

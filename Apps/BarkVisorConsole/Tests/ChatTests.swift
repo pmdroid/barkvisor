@@ -87,6 +87,39 @@ struct ChatTests {
         #expect(turns[3].content == "ok")
     }
 
+    @Test func `stale send errors do not roll back a newer turn`() {
+        let first = ChatTurn(role: "assistant", content: "")
+        let second = ChatTurn(role: "assistant", content: "ok")
+        var turns = [
+            ChatTurn(role: "user", content: "one"),
+            first,
+            ChatTurn(role: "user", content: "two"),
+            second,
+        ]
+        var draft = ""
+        ChatStreamApply.rollbackFailedSend(
+            turns: &turns,
+            draft: &draft,
+            originalText: "one",
+            assistantID: first.id,
+            generation: 1,
+            currentGeneration: 2,
+        )
+        #expect(turns.count == 4)
+        #expect(turns[3].content == "ok")
+        #expect(draft.isEmpty)
+        ChatStreamApply.rollbackFailedSend(
+            turns: &turns,
+            draft: &draft,
+            originalText: "one",
+            assistantID: first.id,
+            generation: 2,
+            currentGeneration: 2,
+        )
+        #expect(turns.map(\.content) == ["two", "ok"])
+        #expect(draft == "one")
+    }
+
     @Test func `sse drains open AI token lines`() {
         var buffer =
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n" +

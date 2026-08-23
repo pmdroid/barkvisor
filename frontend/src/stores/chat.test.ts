@@ -144,6 +144,38 @@ describe('chat store (PAS-270)', () => {
     expect(chat.streaming).toBe(false)
   })
 
+  test('a late error from a stopped send does not remove the next turn', async () => {
+    api.get = mock(() => Promise.resolve({ data: reachable })) as typeof api.get
+    localStorage.setItem('token', 'jwt-1')
+    const auth = useAuthStore()
+    auth.token = 'jwt-1'
+    await useOllamaStore().fetchCatalog()
+    const chat = useChatStore()
+    chat.draft = 'first'
+    let release!: (err?: Error) => void
+    const blocked = new Promise<void>((_, reject) => {
+      release = (err) => reject(err ?? new Error('boom'))
+    })
+    const first = chat.send(async () => {
+      await blocked
+    })
+    chat.stop()
+    chat.draft = 'second'
+    await chat.send(async (opts) => {
+      opts.onDelta('ok')
+    })
+    release(new Error('stale'))
+    await first.catch(() => undefined)
+    expect(chat.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: '' },
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'ok' },
+    ])
+    expect(chat.error).toBeNull()
+    expect(chat.draft).toBe('')
+  })
+
   test('a failed catalog fetch hides Chat', async () => {
     api.get = mock(() => Promise.reject(new TypeError('Failed to fetch'))) as typeof api.get
     const ollama = useOllamaStore()

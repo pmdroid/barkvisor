@@ -90,10 +90,12 @@ export const useChatStore = defineStore('chat', () => {
       })
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return
+      if (generation !== streamGeneration) return
       error.value = err instanceof Error ? err.message : 'Chat failed'
-      const last = messages.value[messages.value.length - 1]
-      if (last?.role === 'assistant' && last.content === '') {
-        messages.value = messages.value.slice(0, -2)
+      const idx = messages.value.findIndex((turn) => turn.id === assistantId)
+      if (idx >= 0 && messages.value[idx].content === '') {
+        const start = idx > 0 && messages.value[idx - 1].role === 'user' ? idx - 1 : idx
+        messages.value = messages.value.slice(0, start)
         draft.value = text
       }
     } finally {
