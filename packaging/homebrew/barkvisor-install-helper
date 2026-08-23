@@ -5,6 +5,7 @@ set -euo pipefail
 
 LABEL="dev.barkvisor.helper"
 HELPER_NAME="dev.barkvisor.helper"
+HELPER_IDENTIFIER="dev.barkvisor.helper"
 DEST_ROOT="${DEST_ROOT:-}"
 SKIP_LAUNCHCTL="${SKIP_LAUNCHCTL:-}"
 
@@ -19,6 +20,56 @@ script_dir() {
     cd "$(dirname "$src")" && pwd
 }
 
+is_group_or_world_writable() {
+    local path="$1"
+    local mode
+    mode="$(stat -f %OLp "$path")"
+    [ $((8#$mode & 8#022)) -ne 0 ]
+}
+
+homebrew_prefixes() {
+    local prefixes=()
+    if [ -n "${HOMEBREW_PREFIX:-}" ]; then
+        prefixes+=("$HOMEBREW_PREFIX")
+    fi
+    if command -v brew >/dev/null 2>&1; then
+        local bp
+        bp="$(brew --prefix 2>/dev/null || true)"
+        if [ -n "$bp" ]; then
+            prefixes+=("$bp")
+        fi
+    fi
+    prefixes+=("/opt/homebrew" "/usr/local")
+    local p seen=""
+    for p in "${prefixes[@]}"; do
+        case " $seen " in
+            *" $p "*) continue ;;
+        esac
+        seen="$seen $p"
+        printf '%s\n' "$p"
+    done
+}
+
+helper_under_homebrew_prefix() {
+    local resolved="$1"
+    local p canon
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        if [ -d "$p" ]; then
+            canon="$(cd "$p" && pwd -P)"
+        else
+            canon="$p"
+        fi
+        if [ "$resolved" = "$canon" ] || [[ "$resolved" == "$canon"/* ]]; then
+            return 0
+        fi
+        if [ "$resolved" = "$p" ] || [[ "$resolved" == "$p"/* ]]; then
+            return 0
+        fi
+    done < <(homebrew_prefixes)
+    return 1
+}
+
 SCRIPT_DIR="$(script_dir)"
 HELPER_SRC="${HELPER_SRC:-$SCRIPT_DIR/../libexec/$HELPER_NAME}"
 PLIST_SRC="${HELPER_PLIST:-$SCRIPT_DIR/../share/barkvisor/$HELPER_NAME.plist}"
@@ -26,9 +77,8 @@ PLIST_SRC="${HELPER_PLIST:-$SCRIPT_DIR/../share/barkvisor/$HELPER_NAME.plist}"
 HELPER_DEST="${DEST_ROOT}/Library/PrivilegedHelperTools/$HELPER_NAME"
 PLIST_DEST="${DEST_ROOT}/Library/LaunchDaemons/$HELPER_NAME.plist"
 
-if [ -z "$DEST_ROOT" ] && [ "$(id -u)" -ne 0 ]; then
-    echo "barkvisor-install-helper must run as root (sudo)." >&2
-    echo "NAT Workloads work without the helper. Bridged networking needs it." >&2
+if [ -L "$HELPER_SRC" ]; then
+    echo "Refusing to install: helper path is a symlink: $HELPER_SRC" >&2
     exit 1
 fi
 
@@ -38,9 +88,37 @@ if [ ! -f "$HELPER_SRC" ] || [ ! -x "$HELPER_SRC" ]; then
     exit 1
 fi
 
+HELPER_PARENT="$(cd "$(dirname "$HELPER_SRC")" && pwd -P)"
+HELPER_SRC="$HELPER_PARENT/$(basename "$HELPER_SRC")"
+
+if [ -L "$HELPER_SRC" ]; then
+    echo "Refusing to install: helper path is a symlink: $HELPER_SRC" >&2
+    exit 1
+fi
+
+if is_group_or_world_writable "$HELPER_SRC"; then
+    echo "Refusing to install: helper is group/world-writable: $HELPER_SRC" >&2
+    exit 1
+fi
+if is_group_or_world_writable "$HELPER_PARENT"; then
+    echo "Refusing to install: helper directory is group/world-writable: $HELPER_PARENT" >&2
+    exit 1
+fi
+
+if [ -z "$DEST_ROOT" ] && ! helper_under_homebrew_prefix "$HELPER_SRC"; then
+    echo "Refusing to install: helper is not under a Homebrew prefix: $HELPER_SRC" >&2
+    exit 1
+fi
+
 if [ ! -f "$PLIST_SRC" ]; then
     echo "Helper LaunchDaemon plist not found at $PLIST_SRC" >&2
     echo "Set HELPER_PLIST to packaging/homebrew/dev.barkvisor.helper.plist." >&2
+    exit 1
+fi
+
+if [ -z "$DEST_ROOT" ] && [ "$(id -u)" -ne 0 ]; then
+    echo "barkvisor-install-helper must run as root (sudo)." >&2
+    echo "NAT Workloads work without the helper. Bridged networking needs it." >&2
     exit 1
 fi
 
@@ -51,6 +129,12 @@ fi
 
 if ! codesign --verify --strict "$HELPER_SRC"; then
     echo "Refusing to install an unsigned helper: $HELPER_SRC" >&2
+    exit 1
+fi
+
+HELPER_IDENT="$(codesign --display --verbose=2 "$HELPER_SRC" 2>&1 | sed -n 's/^Identifier=//p' | head -n 1)"
+if [ "$HELPER_IDENT" != "$HELPER_IDENTIFIER" ]; then
+    echo "Refusing to install: helper identifier is '${HELPER_IDENT:-missing}', expected $HELPER_IDENTIFIER" >&2
     exit 1
 fi
 

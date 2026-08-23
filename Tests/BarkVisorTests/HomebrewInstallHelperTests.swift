@@ -23,6 +23,12 @@ struct HomebrewInstallHelperTests {
         #expect(script.contains("LaunchDaemons"))
         #expect(script.contains("dev.barkvisor.helper"))
         #expect(script.contains("codesign --verify --strict"))
+        #expect(script.contains("codesign --display --verbose=2"))
+        #expect(script.contains("Identifier="))
+        #expect(script.contains("helper path is a symlink"))
+        #expect(script.contains("group/world-writable"))
+        #expect(script.contains("not under a Homebrew prefix"))
+        #expect(script.contains("stat -f %OLp"))
         #expect(script.contains("MachServices"))
         #expect(script.contains("NAT Workloads"))
         #expect(script.contains("launchctl bootstrap"))
@@ -91,6 +97,11 @@ struct HomebrewInstallHelperTests {
         #expect(packaging.contains("barkvisor-install-helper"))
         #expect(packaging.contains("NAT"))
         #expect(packaging.contains("PrivilegedHelperTools"))
+        #expect(packaging.contains("## Maintainer notes"))
+        #expect(packaging.contains("brew style"))
+        #expect(packaging.contains("brew bottle"))
+        #expect(packaging.contains("sha256"))
+        #expect(packaging.localizedCaseInsensitiveContains("tap"))
 
         let installation = try read("docs/getting-started-installation.md")
         #expect(installation.contains("getting-started-homebrew.md"))
@@ -126,13 +137,10 @@ struct HomebrewInstallHelperTests {
     }
 
     #if os(macOS)
-        @Test func `install helper copies into DEST_ROOT without launchctl`() throws {
-            let dest = FileManager.default.temporaryDirectory
-                .appendingPathComponent("bv-helper-\(UUID().uuidString)", isDirectory: true)
-            let helperSrc = dest.appendingPathComponent("signed-helper")
-            defer { try? FileManager.default.removeItem(at: dest) }
-
-            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        private func compileSignedHelper(
+            at helperSrc: URL,
+            identifier: String = "dev.barkvisor.helper",
+        ) throws {
             let compile = Process()
             compile.executableURL = URL(fileURLWithPath: "/usr/bin/cc")
             compile.arguments = ["-o", helperSrc.path, "-x", "c", "-"]
@@ -146,11 +154,21 @@ struct HomebrewInstallHelperTests {
 
             let sign = Process()
             sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            sign.arguments = ["--force", "--sign", "-", helperSrc.path]
+            sign.arguments = [
+                "--force", "--sign", "-",
+                "--identifier", identifier,
+                helperSrc.path,
+            ]
             try sign.run()
             sign.waitUntilExit()
             #expect(sign.terminationStatus == 0)
+        }
 
+        private func runInstallHelper(
+            dest: URL,
+            helperSrc: URL,
+            extraEnv: [String: String] = [:],
+        ) throws -> (status: Int32, log: String) {
             let script = repoRoot.appendingPathComponent("packaging/homebrew/barkvisor-install-helper")
             let plist = repoRoot.appendingPathComponent(
                 "packaging/homebrew/dev.barkvisor.helper.plist",
@@ -158,20 +176,35 @@ struct HomebrewInstallHelperTests {
             let install = Process()
             install.executableURL = URL(fileURLWithPath: "/bin/bash")
             install.arguments = [script.path]
-            install.environment = [
+            var env: [String: String] = [
                 "PATH": "/usr/bin:/bin",
                 "DEST_ROOT": dest.path,
                 "HELPER_SRC": helperSrc.path,
                 "HELPER_PLIST": plist.path,
                 "SKIP_LAUNCHCTL": "1",
             ]
+            extraEnv.forEach { env[$0.key] = $0.value }
+            install.environment = env
             let out = Pipe()
             install.standardOutput = out
             install.standardError = out
             try install.run()
             install.waitUntilExit()
             let log = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            #expect(install.terminationStatus == 0, "install helper failed: \(log)")
+            return (install.terminationStatus, log)
+        }
+
+        @Test func `install helper copies into DEST_ROOT without launchctl`() throws {
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bv-helper-\(UUID().uuidString)", isDirectory: true)
+            let helperSrc = dest.appendingPathComponent("signed-helper")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try compileSignedHelper(at: helperSrc)
+
+            let result = try runInstallHelper(dest: dest, helperSrc: helperSrc)
+            #expect(result.status == 0, "install helper failed: \(result.log)")
 
             let copied = dest.appendingPathComponent("Library/PrivilegedHelperTools/dev.barkvisor.helper")
             let written = dest.appendingPathComponent("Library/LaunchDaemons/dev.barkvisor.helper.plist")
@@ -191,26 +224,79 @@ struct HomebrewInstallHelperTests {
             try Data("not a signed helper\n".utf8).write(to: helperSrc)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helperSrc.path)
 
-            let script = repoRoot.appendingPathComponent("packaging/homebrew/barkvisor-install-helper")
-            let plist = repoRoot.appendingPathComponent(
-                "packaging/homebrew/dev.barkvisor.helper.plist",
+            let result = try runInstallHelper(dest: dest, helperSrc: helperSrc)
+            #expect(result.status != 0)
+            let copied = dest.appendingPathComponent("Library/PrivilegedHelperTools/dev.barkvisor.helper")
+            #expect(!FileManager.default.fileExists(atPath: copied.path))
+        }
+
+        @Test func `install helper refuses a symlink helper`() throws {
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bv-helper-symlink-\(UUID().uuidString)", isDirectory: true)
+            let helperSrc = dest.appendingPathComponent("signed-helper")
+            let link = dest.appendingPathComponent("helper-link")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try compileSignedHelper(at: helperSrc)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: helperSrc)
+
+            let result = try runInstallHelper(dest: dest, helperSrc: link)
+            #expect(result.status != 0)
+            #expect(result.log.contains("symlink"))
+            let copied = dest.appendingPathComponent("Library/PrivilegedHelperTools/dev.barkvisor.helper")
+            #expect(!FileManager.default.fileExists(atPath: copied.path))
+        }
+
+        @Test func `install helper refuses a world-writable helper`() throws {
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bv-helper-writable-\(UUID().uuidString)", isDirectory: true)
+            let helperSrc = dest.appendingPathComponent("signed-helper")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try compileSignedHelper(at: helperSrc)
+            try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: helperSrc.path)
+
+            let result = try runInstallHelper(dest: dest, helperSrc: helperSrc)
+            #expect(result.status != 0)
+            #expect(result.log.contains("group/world-writable"))
+            let copied = dest.appendingPathComponent("Library/PrivilegedHelperTools/dev.barkvisor.helper")
+            #expect(!FileManager.default.fileExists(atPath: copied.path))
+        }
+
+        @Test func `install helper refuses the wrong codesign identifier`() throws {
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bv-helper-ident-\(UUID().uuidString)", isDirectory: true)
+            let helperSrc = dest.appendingPathComponent("signed-helper")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try compileSignedHelper(at: helperSrc, identifier: "not.barkvisor.helper")
+
+            let result = try runInstallHelper(dest: dest, helperSrc: helperSrc)
+            #expect(result.status != 0)
+            #expect(result.log.contains("identifier"))
+            let copied = dest.appendingPathComponent("Library/PrivilegedHelperTools/dev.barkvisor.helper")
+            #expect(!FileManager.default.fileExists(atPath: copied.path))
+        }
+
+        @Test func `install helper refuses a helper outside Homebrew prefixes`() throws {
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("bv-helper-prefix-\(UUID().uuidString)", isDirectory: true)
+            let helperSrc = dest.appendingPathComponent("signed-helper")
+            defer { try? FileManager.default.removeItem(at: dest) }
+
+            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try compileSignedHelper(at: helperSrc)
+
+            let result = try runInstallHelper(
+                dest: dest,
+                helperSrc: helperSrc,
+                extraEnv: ["DEST_ROOT": ""],
             )
-            let install = Process()
-            install.executableURL = URL(fileURLWithPath: "/bin/bash")
-            install.arguments = [script.path]
-            install.environment = [
-                "PATH": "/usr/bin:/bin",
-                "DEST_ROOT": dest.path,
-                "HELPER_SRC": helperSrc.path,
-                "HELPER_PLIST": plist.path,
-                "SKIP_LAUNCHCTL": "1",
-            ]
-            let out = Pipe()
-            install.standardOutput = out
-            install.standardError = out
-            try install.run()
-            install.waitUntilExit()
-            #expect(install.terminationStatus != 0)
+            #expect(result.status != 0)
+            #expect(result.log.contains("Homebrew prefix"))
             let copied = dest.appendingPathComponent("Library/PrivilegedHelperTools/dev.barkvisor.helper")
             #expect(!FileManager.default.fileExists(atPath: copied.path))
         }

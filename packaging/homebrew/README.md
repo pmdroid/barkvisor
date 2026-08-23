@@ -55,6 +55,18 @@ sudo rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
 sudo rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
 ```
 
+## Maintainer notes
+
+There is no public tap yet. Install from this checkout with `brew install --formula ./packaging/homebrew/barkvisor.rb`. When a tap exists, keep the tap formula identical to this file and bump the tap on each Device release.
+
+After formula edits, run Homebrew's linter on this checkout:
+
+```sh
+brew style ./packaging/homebrew/barkvisor.rb
+```
+
+Do not attach bottles in this repo. `head` builds from source until a tap publishes bottles (`brew bottle` / GitHub Packages). Do not commit `sha256` bottle lines here until that tap is live.
+
 ## Tests
 
 `Tests/BarkVisorTests/HomebrewFormulaTests.swift` covers the daemon formula.
