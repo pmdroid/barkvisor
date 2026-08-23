@@ -27,6 +27,18 @@ struct DiskServiceVirtualSizeTests {
         #expect(DiskService.jsonInt64(nil) == nil)
     }
 
+    @Test func `spaceNeededToCreate raw is full size qcow2 is capped`() {
+        #expect(DiskService.spaceNeededToCreate(sizeGB: 32, format: "raw") == 32 * 1_073_741_824)
+        #expect(DiskService.spaceNeededToCreate(sizeGB: 32, format: "qcow2") == 1_073_741_824)
+        #expect(DiskService.spaceNeededToCreate(sizeGB: 1, format: "qcow2") == 1_073_741_824)
+    }
+
+    @Test func `looksLikeNoSpace matches qemu and posix wording`() {
+        #expect(DiskService.looksLikeNoSpace("qemu-img: No space left on device"))
+        #expect(DiskService.looksLikeNoSpace("ENOSPC"))
+        #expect(!DiskService.looksLikeNoSpace("permission denied"))
+    }
+
     @Test func `grow decision uses virtual size not sparse file size`() {
         // 32 GiB virtual HAOS image vs 10 GiB request must not resize (would shrink).
         let virtual: Int64 = 34_359_738_368

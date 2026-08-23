@@ -6,6 +6,8 @@ public enum BarkVisorError: Error, LocalizedError {
     case firmwareNotFound(String)
     case unknownVMType(String)
     case diskCreateFailed(String)
+    /// Volume does not have room for the write (HTTP 507).
+    case insufficientDiskSpace(freeBytes: Int64, neededBytes: Int64)
     case cloudInitFailed(String)
     case monitorError(String)
     case vmNotRunning(String)
@@ -48,6 +50,8 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .firmwareNotFound(msg): return msg
         case let .unknownVMType(t): return "Unknown VM type: \(t)"
         case let .diskCreateFailed(msg): return msg
+        case let .insufficientDiskSpace(free, needed):
+            return "Not enough disk space: \(Self.bytesText(free)) free, need \(Self.bytesText(needed))."
         case let .cloudInitFailed(msg): return msg
         case let .monitorError(msg): return msg
         case let .vmNotRunning(id): return "VM \(id) is not running"
@@ -95,6 +99,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .firmwareNotFound: return "firmware_not_found"
         case .unknownVMType: return "unknown_vm_type"
         case .diskCreateFailed: return "disk_create_failed"
+        case .insufficientDiskSpace: return "insufficient_disk_space"
         case .cloudInitFailed: return "cloud_init_failed"
         case .monitorError: return "monitor_error"
         case .vmNotRunning: return "vm_not_running"
@@ -142,6 +147,8 @@ public enum BarkVisorError: Error, LocalizedError {
             return 412
         case .unsupportedFeature, .interfaceMissing, .bridgeHelperDenied, .bridgeNotReady:
             return 422
+        case .insufficientDiskSpace:
+            return 507
         default:
             return 500
         }
@@ -157,5 +164,11 @@ public enum BarkVisorError: Error, LocalizedError {
             with: "<path>",
             options: .regularExpression,
         )
+    }
+
+    private static func bytesText(_ n: Int64) -> String {
+        if n >= 1_073_741_824 { return String(format: "%.1f GiB", Double(n) / 1_073_741_824) }
+        if n >= 1_048_576 { return String(format: "%.0f MiB", Double(n) / 1_048_576) }
+        return "\(n) B"
     }
 }
