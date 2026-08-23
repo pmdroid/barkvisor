@@ -3,12 +3,15 @@ import Foundation
 /// Resolve, claim, and persist USB passthrough by stable id (PAS-84).
 public enum USBPassthroughService {
     public static func passthrough(from host: HostUSBDevice) -> USBPassthroughDevice {
-        USBPassthroughDevice(
-            vendorId: host.vendorId,
-            productId: host.productId,
-            label: host.name,
-            serialNumber: host.serialNumber,
-            deviceId: host.id,
+        persistUniquePair(
+            USBPassthroughDevice(
+                vendorId: host.vendorId,
+                productId: host.productId,
+                label: host.name,
+                serialNumber: host.serialNumber,
+                deviceId: host.id,
+            ),
+            host: host,
         )
     }
 
@@ -64,7 +67,8 @@ public enum USBPassthroughService {
 
     public static func busAddressIdentityError(_ id: String) -> BarkVisorError {
         .conflict(
-            "USB device id \(id) is a bus address, which is not stable across replug. Re-attach using serial.",
+            "USB device id \(id) is a bus address, which is not stable across replug. "
+                + "Re-attach using serial or a unique vendor/product pair.",
         )
     }
 
@@ -77,7 +81,7 @@ public enum USBPassthroughService {
             throw BarkVisorError.badRequest("Invalid USB device id")
         }
         if USBDeviceIdentity.isBusAddressId(trimmed) || (parsed.serial == nil && parsed.bus != nil) {
-            throw busAddressIdentityError(trimmed)
+            return try resolveLiveBusAddress(parsed, hostDevices: hostDevices)
         }
         let matched = hostDevices.filter { matches(parsed, host: $0) }
         if matched.count == 1, let found = matched.first {
@@ -100,6 +104,31 @@ public enum USBPassthroughService {
             }
         }
         throw BarkVisorError.notFound("USB device \(trimmed) is not connected")
+    }
+
+    /// `bus:BBB.AAA` locates a currently plugged device. It is not persisted.
+    private static func resolveLiveBusAddress(
+        _ parsed: USBDeviceIdentity.Ref,
+        hostDevices: [HostUSBDevice],
+    ) throws -> HostUSBDevice {
+        let live = hostDevices.filter { $0.bus == parsed.bus && $0.address == parsed.address }
+        if live.count > 1 {
+            throw BarkVisorError.conflict(
+                "USB device id \(parsed.id) matches multiple host devices; unplug extras or attach by serial",
+            )
+        }
+        guard let found = live.first else {
+            throw BarkVisorError.notFound("USB device \(parsed.id) is not connected")
+        }
+        let samePair = hostDevices.filter {
+            $0.vendorId == found.vendorId && $0.productId == found.productId && $0.attachable
+        }
+        if found.serialNumber == nil, samePair.count > 1 {
+            throw BarkVisorError.conflict(
+                "Multiple USB devices share \(found.vendorId):\(found.productId); attach by serial",
+            )
+        }
+        return found
     }
 
     public static func resolveAttachable(

@@ -166,97 +166,52 @@ struct USBPassthroughTests {
         #expect(!args.contains { $0.contains("vendorid=") })
     }
 
-    @Test func `qemu args fail closed for legacy vendor product attachments`() {
-        let host = HostUSBDevice(
-            vendorId: "0x1234", productId: "0x5678", name: "Probe",
-            manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
-        )
-        let usb = [WorkloadUSBDevice(vendorId: "0x1234", productId: "0x5678", label: "legacy")]
-        let err = #expect(throws: BarkVisorError.self) {
-            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [host])
-        }
-        if case let .conflict(message) = err {
-            #expect(message.contains("Re-attach"))
-            #expect(!message.contains("vendorid="))
-        } else {
-            Issue.record("expected conflict, got \(String(describing: err))")
-        }
-    }
-
-    @Test func `qemu args use hostbus when bus id resolves and is attachable`() throws {
-        let host = HostUSBDevice(
-            vendorId: "0x1234", productId: "0x5678", name: "Probe",
-            manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
-        )
-        let usb = [
-            WorkloadUSBDevice(
-                vendorId: "0x1234", productId: "0x5678", label: "Probe",
-                deviceId: host.id,
-            ),
-        ]
-        let args = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [host])
-        #expect(args.contains { $0.contains("usb-host,hostbus=3,hostaddr=2") })
-        #expect(!args.contains { $0.contains("vendorid=") })
-    }
-
-    @Test func `qemu args fail closed for stale bus address without host`() {
-        let usb = [
-            WorkloadUSBDevice(
-                vendorId: "0x1234", productId: "0x5678", label: "Probe",
-                deviceId: "bus:003.002",
-            ),
-        ]
-        let err = #expect(throws: BarkVisorError.self) {
-            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [])
-        }
-        if case let .notFound(message) = err {
-            #expect(message?.contains("bus:003.002") == true)
-        } else {
-            Issue.record("expected notFound, got \(String(describing: err))")
-        }
-    }
-
-    @Test func `qemu args fail closed when bus id resolves to excluded device`() {
-        let disk = HostUSBDevice(
-            vendorId: "0x0781", productId: "0x5567", name: "Cruzer",
-            manufacturer: "SanDisk", serialNumber: nil, bus: 1, address: 8,
-            attachable: false, excludedReason: USBDeviceIdentity.massStorageExclusionReason,
-        )
-        let usb = [
-            WorkloadUSBDevice(
-                vendorId: "0x0781", productId: "0x5567", label: "Cruzer",
-                deviceId: disk.id,
-            ),
-        ]
-        let err = #expect(throws: BarkVisorError.self) {
-            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [disk])
-        }
-        if case let .badRequest(message) = err {
-            #expect(message.contains("mass storage"))
-            #expect(!message.contains("vendorid="))
-        } else {
-            Issue.record("expected badRequest, got \(String(describing: err))")
-        }
-    }
-
-    @Test func `legacy bus identity throws at resolve normalize and qemu`() {
+    @Test func `unique serial-less pair persists without bus id and qemu uses hostbus`() throws {
         let host = HostUSBDevice(
             vendorId: "0x1234", productId: "0x5678", name: "Probe",
             manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
         )
         #expect(host.id == "bus:003.002")
-        let resolveErr = #expect(throws: BarkVisorError.self) {
-            _ = try USBPassthroughService.resolveAttachable(
-                deviceId: host.id, hostDevices: [host],
-            )
-        }
-        if case let .conflict(message) = resolveErr {
-            #expect(message.contains("bus address"))
-            #expect(message.contains("Re-attach"))
-        } else {
-            Issue.record("expected conflict, got \(String(describing: resolveErr))")
-        }
 
+        let listed = try USBPassthroughService.resolveAttachable(
+            deviceId: host.id, hostDevices: [host],
+        )
+        #expect(listed.bus == 3)
+        #expect(listed.address == 2)
+
+        let byPair = try USBPassthroughService.resolveAttachable(
+            deviceId: "0x1234:0x5678", hostDevices: [host],
+        )
+        #expect(byPair.vendorId == "0x1234")
+
+        let stored = USBPassthroughService.passthrough(from: host)
+        #expect(stored.deviceId == "0x1234:0x5678")
+        #expect(stored.serialNumber == nil)
+
+        let normalized = try USBPassthroughService.normalizeOne(stored, hostDevices: [host])
+        #expect(normalized.deviceId == "0x1234:0x5678")
+        #expect(USBPassthroughService.contains([normalized], host: host))
+
+        let args = try QEMUBuilder.usbHostArgs(
+            usb: [USBPassthroughService.workload(from: normalized)],
+            hostDevices: [host],
+        )
+        #expect(args.contains { $0.contains("usb-host,hostbus=3,hostaddr=2") })
+        #expect(!args.contains { $0.contains("vendorid=") })
+    }
+
+    @Test func `qemu args fail closed when unique pair host is missing`() {
+        let usb = [WorkloadUSBDevice(vendorId: "0x1234", productId: "0x5678", label: "legacy")]
+        #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [])
+        }
+    }
+
+    @Test func `stored bus identity is rejected at persist and qemu`() {
+        let host = HostUSBDevice(
+            vendorId: "0x1234", productId: "0x5678", name: "Probe",
+            manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
+        )
         let stored = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
             deviceId: "bus:003.002",
@@ -266,6 +221,7 @@ struct USBPassthroughTests {
         }
         if case let .conflict(message) = persistErr {
             #expect(message.contains("bus address"))
+            #expect(message.contains("vendor/product"))
         } else {
             Issue.record("expected conflict, got \(String(describing: persistErr))")
         }
@@ -285,6 +241,46 @@ struct USBPassthroughTests {
             #expect(!message.contains("hostbus="))
         } else {
             Issue.record("expected conflict, got \(String(describing: qemuErr))")
+        }
+    }
+
+    @Test func `qemu args fail closed for stale bus address without host`() {
+        let usb = [
+            WorkloadUSBDevice(
+                vendorId: "0x1234", productId: "0x5678", label: "Probe",
+                deviceId: "bus:003.002",
+            ),
+        ]
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [])
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("bus address"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
+        }
+    }
+
+    @Test func `qemu args fail closed when bus id is stored for excluded device`() {
+        let disk = HostUSBDevice(
+            vendorId: "0x0781", productId: "0x5567", name: "Cruzer",
+            manufacturer: "SanDisk", serialNumber: nil, bus: 1, address: 8,
+            attachable: false, excludedReason: USBDeviceIdentity.massStorageExclusionReason,
+        )
+        let usb = [
+            WorkloadUSBDevice(
+                vendorId: "0x0781", productId: "0x5567", label: "Cruzer",
+                deviceId: disk.id,
+            ),
+        ]
+        let err = #expect(throws: BarkVisorError.self) {
+            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [disk])
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("bus address"))
+            #expect(!message.contains("vendorid="))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
         }
     }
 
@@ -327,6 +323,17 @@ struct USBPassthroughTests {
             #expect(message.contains("Multiple USB devices"))
         } else {
             Issue.record("expected conflict, got \(String(describing: persistErr))")
+        }
+
+        let listedErr = #expect(throws: BarkVisorError.self) {
+            _ = try USBPassthroughService.resolveAttachable(
+                deviceId: hosts[0].id, hostDevices: hosts,
+            )
+        }
+        if case let .conflict(message) = listedErr {
+            #expect(message.contains("Multiple USB devices"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: listedErr))")
         }
 
         let qemuErr = #expect(throws: BarkVisorError.self) {
@@ -649,6 +656,24 @@ final class USBClaimWriteTests {
         }
         #expect(error?.code == "conflict")
         #expect(error?.errorDescription?.contains("htpc") == true)
+    }
+
+    @Test func `updateVMSpec persists unique serial-less pair not bus id`() async throws {
+        let host = HostUSBDevice(
+            vendorId: "0x1234", productId: "0x5678", name: "Probe",
+            manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
+        )
+        try await insertVM(id: "vm-usb-pair", name: "usb-pair", usb: nil)
+        let existing = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-usb-pair") }
+        let vm = try #require(existing)
+        var spec = WorkloadSpecProjector.fromVM(vm)
+        spec.spec.guestType = hostLinux
+        spec.spec.usb = [USBPassthroughService.workload(from: USBPassthroughService.passthrough(from: host))]
+        let updated = try await VMLifecycleService.updateVMSpec(
+            id: "vm-usb-pair", spec: spec, db: dbPool, hostDevices: [host],
+        )
+        #expect(updated.decodedUSBDevices.first?.deviceId == "0x1234:0x5678")
+        #expect(updated.decodedUSBDevices.first?.serialNumber == nil)
     }
 
     @Test func `create validation rejects USB claimed by another VM`() async throws {
