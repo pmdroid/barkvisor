@@ -412,6 +412,37 @@ struct SSRFProtectionTests {
         #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
     }
 
+    @Test func `pinned HEAD keeps Content-Length without a body`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/ok") {
+                return (200, [:], "would-be-body")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+
+        let host = "ssrf-head.test"
+        pinLoopback(host: host)
+        let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
+        var request = URLRequest(url: start)
+        request.httpMethod = "HEAD"
+        let session = SSRFGuard.urlSession(resourceTimeout: 5)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(for: request)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 200)
+        #expect(data.isEmpty)
+        #expect(http.value(forHTTPHeaderField: "Content-Length") == String("would-be-body".utf8.count))
+        #expect(server.hitCount() == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+    }
+
     @Test func `failed HTTPClient shutdown is not counted`() {
         SSRFPinnedURLProtocol.resetTestHooks()
         defer { SSRFPinnedURLProtocol.resetTestHooks() }
@@ -516,7 +547,10 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
         var buf = [UInt8](repeating: 0, count: 1_024)
         let n = recv(client, &buf, buf.count, 0)
         guard n > 0, let text = String(bytes: buf.prefix(Int(n)), encoding: .utf8) else { return }
-        let path = text.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+        let requestLine = text.split(separator: "\r\n", maxSplits: 1).first ?? ""
+        let parts = requestLine.split(separator: " ")
+        let method = parts.first.map(String.init) ?? "GET"
+        let path = parts.dropFirst().first.map(String.init) ?? "/"
         lock.lock()
         hits += 1
         lock.unlock()
@@ -525,8 +559,12 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
         for (key, value) in headers {
             response += "\(key): \(value)\r\n"
         }
-        response += "\r\n\(body)"
-        sendAll(client, Array(response.utf8))
+        response += "\r\n"
+        var payload = Array(response.utf8)
+        if method.caseInsensitiveCompare("HEAD") != .orderedSame {
+            payload += Array(body.utf8)
+        }
+        sendAll(client, payload)
     }
 }
 

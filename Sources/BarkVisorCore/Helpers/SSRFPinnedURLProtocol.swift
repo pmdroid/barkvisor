@@ -164,11 +164,23 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
                 protoClient?.urlProtocol(self, didLoad: data)
             }
         }
-        if let expected = Int(head.headers.first(name: "content-length") ?? ""),
+        if expectsResponseBody(method: request.httpMethod, status: status),
+           let expected = Int(head.headers.first(name: "content-length") ?? ""),
            expected > 0, delivered == 0 {
             throw URLError(.cannotParseResponse)
         }
         return nil
+    }
+
+    /// HEAD and RFC 9110 no-content statuses advertise Content-Length without a body.
+    private func expectsResponseBody(method: String?, status: Int) -> Bool {
+        if method?.caseInsensitiveCompare("HEAD") == .orderedSame {
+            return false
+        }
+        if (100 ..< 200).contains(status) || status == 204 || status == 304 {
+            return false
+        }
+        return true
     }
 
     private func notifyFinish() {
