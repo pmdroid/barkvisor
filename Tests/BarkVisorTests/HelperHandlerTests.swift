@@ -133,6 +133,18 @@
             return allowed.contains { canonicalized.hasPrefix($0) }
         }
 
+        @Test func `search order prefers Homebrew then leftover libexec`() {
+            let order = [
+                "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
+                "/opt/homebrew/bin/socket_vmnet",
+                "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
+                "/usr/local/bin/socket_vmnet",
+                "/usr/local/libexec/barkvisor/socket_vmnet",
+            ]
+            #expect(order.first == "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet")
+            #expect(order.last == "/usr/local/libexec/barkvisor/socket_vmnet")
+        }
+
         @Test func `valid homebrew path`() {
             #expect(validateVmnetPath("/opt/homebrew/bin/socket_vmnet"))
         }

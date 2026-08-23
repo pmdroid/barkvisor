@@ -19,16 +19,18 @@ extension HelperHandler {
         chmod(path, 0o777)
     }
 
+    /// Homebrew first (PAS-287). Leftover libexec copy last. Signature-check every hit.
+    static let socketVmnetSearchPaths = [
+        "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
+        "/opt/homebrew/bin/socket_vmnet",
+        "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
+        "/usr/local/bin/socket_vmnet",
+        "/usr/local/libexec/barkvisor/socket_vmnet",
+    ]
+
     func resolveSocketVmnet() -> (path: String?, candidates: [String]) {
-        let trustedPath = "/usr/local/libexec/barkvisor/socket_vmnet"
-        if FileManager.default.isExecutableFile(atPath: trustedPath) {
-            return (trustedPath, [trustedPath])
-        }
-        let fallbackCandidates = [
-            "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
-            "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
-        ]
-        for candidate in fallbackCandidates {
+        let candidates = Self.socketVmnetSearchPaths
+        for candidate in candidates {
             guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
             let url = URL(fileURLWithPath: candidate)
             var code: SecStaticCode?
@@ -36,10 +38,10 @@ extension HelperHandler {
                   let code
             else { continue }
             if SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess {
-                return (candidate, [trustedPath] + fallbackCandidates)
+                return (candidate, candidates)
             }
         }
-        return (nil, [trustedPath] + fallbackCandidates)
+        return (nil, candidates)
     }
 
     @discardableResult
