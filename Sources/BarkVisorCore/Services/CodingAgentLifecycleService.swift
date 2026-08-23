@@ -113,7 +113,13 @@ public enum CodingAgentLifecycleService {
             }
             if session.pendingStopReason != nil {
                 if await vmManager.isActiveOrStarting(vm.id) {
-                    continue
+                    if session.pendingStopReason == CodingAgentLifecycle.ttlReason {
+                        guard await requestTTLStop(vmID: vm.id, vmManager: vmManager) else {
+                            continue
+                        }
+                    } else {
+                        continue
+                    }
                 }
                 await onTerminated(vmID: vm.id, db: db, now: now, unloader: unloader)
                 continue
@@ -122,17 +128,7 @@ public enum CodingAgentLifecycleService {
                 expiresAt: session.expiresAt, vmState: vm.state, now: now,
             ) else { continue }
             await markStopIntent(vmID: vm.id, reason: CodingAgentLifecycle.ttlReason, db: db)
-            do {
-                try await vmManager.stop(vmID: vm.id, force: false, method: "acpi")
-            } catch {
-                Log.vm.warning(
-                    "Coding session TTL stop failed: \(error.localizedDescription)",
-                    vm: vm.id,
-                )
-            }
-            if await vmManager.isActiveOrStarting(vm.id) {
-                continue
-            }
+            guard await requestTTLStop(vmID: vm.id, vmManager: vmManager) else { continue }
             await onTerminated(vmID: vm.id, db: db, now: now, unloader: unloader)
         }
     }
@@ -152,6 +148,7 @@ public enum CodingAgentLifecycleService {
         if vm.state == "running" || vm.state == "starting" || vm.state == "stopping" {
             await markStopIntent(vmID: vmID, reason: CodingAgentLifecycle.resetReason, db: db)
             try? await vmManager.stop(vmID: vmID, force: true, method: "force")
+            try await waitUntilInactive(vmID: vmID, vmManager: vmManager)
             (vm, _) = try await load(vmID: vmID, db: db)
             session = try requireAgentSession(vm: vm)
         }
@@ -208,10 +205,7 @@ public enum CodingAgentLifecycleService {
             await markStopIntent(vmID: vmID, reason: CodingAgentLifecycle.burnReason, db: db)
             try? await vmManager.stop(vmID: vmID, force: true, method: "force")
         }
-        for _ in 0 ..< 20 {
-            if await !vmManager.isActiveOrStarting(vmID) { break }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
+        try await waitUntilInactive(vmID: vmID, vmManager: vmManager)
         await unloadGrantIfLast(stopped: vm, db: db, unloader: unloader)
         return try await VMLifecycleService.deleteVM(
             id: vmID, keepDisk: false, vmManager: vmManager,
@@ -261,6 +255,33 @@ public enum CodingAgentLifecycleService {
                 "Coding session grant unload failed: \(error.localizedDescription)",
                 vm: stopped.id,
             )
+        }
+    }
+
+    /// ACPI TTL stop. False means try again next tick: the call threw, or the guest is still up.
+    private static func requestTTLStop(
+        vmID: String,
+        vmManager: some CodingAgentControlling,
+    ) async -> Bool {
+        do {
+            try await vmManager.stop(vmID: vmID, force: false, method: "acpi")
+        } catch {
+            Log.vm.warning(
+                "Coding session TTL stop failed: \(error.localizedDescription)",
+                vm: vmID,
+            )
+            return false
+        }
+        return await !vmManager.isActiveOrStarting(vmID)
+    }
+
+    private static func waitUntilInactive(
+        vmID: String,
+        vmManager: some CodingAgentControlling,
+    ) async throws {
+        for _ in 0 ..< 20 {
+            if await !vmManager.isActiveOrStarting(vmID) { return }
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 }

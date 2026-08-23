@@ -151,7 +151,7 @@ struct CodingAgentLifecycleTests {
         await CodingAgentLifecycleService.tick(
             now: expired, vmManager: runtime, db: pool, unloader: unloader,
         )
-        #expect(runtime.stopCount == 1)
+        #expect(runtime.stopCount == 2)
         #expect(!unloader.didUnload)
 
         runtime.active = false
@@ -162,6 +162,98 @@ struct CodingAgentLifecycleTests {
         #expect(session?.receipt?.reason == CodingAgentLifecycle.ttlReason)
         #expect(session?.pendingStopReason == nil)
         #expect(unloader.didUnload)
+    }
+
+    @Test func `tick retries TTL stop after a failed attempt`() async throws {
+        let start = try anchorDate()
+        let (dir, pool, vmID) = try await isolatedAgentSession(startedAt: start, ttlSeconds: 60)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runtime = FakeCodingAgentRuntime()
+        runtime.active = true
+        runtime.stopError = BarkVisorError.monitorError("guest-agent failed")
+        let unloader = RecordingUnloader()
+        let expired = start.addingTimeInterval(61)
+
+        await CodingAgentLifecycleService.tick(
+            now: expired, vmManager: runtime, db: pool, unloader: unloader,
+        )
+        #expect(runtime.stopCount == 1)
+        var session = try await loadedSession(vmID: vmID, db: pool)
+        #expect(session?.receipt == nil)
+        #expect(session?.pendingStopReason == CodingAgentLifecycle.ttlReason)
+        #expect(!unloader.didUnload)
+
+        await CodingAgentLifecycleService.tick(
+            now: expired, vmManager: runtime, db: pool, unloader: unloader,
+        )
+        #expect(runtime.stopCount == 2)
+        session = try await loadedSession(vmID: vmID, db: pool)
+        #expect(session?.receipt == nil)
+        #expect(!unloader.didUnload)
+
+        runtime.stopError = nil
+        runtime.active = false
+        await CodingAgentLifecycleService.tick(
+            now: expired, vmManager: runtime, db: pool, unloader: unloader,
+        )
+        #expect(runtime.stopCount == 2)
+        session = try await loadedSession(vmID: vmID, db: pool)
+        #expect(session?.receipt?.reason == CodingAgentLifecycle.ttlReason)
+        #expect(unloader.didUnload)
+    }
+
+    @Test func `tick does not finalize TTL after a failed stop while occupancy is gone`() async throws {
+        let start = try anchorDate()
+        let (dir, pool, vmID) = try await isolatedAgentSession(startedAt: start, ttlSeconds: 60)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runtime = FakeCodingAgentRuntime()
+        runtime.active = false
+        runtime.stopError = BarkVisorError.vmNotRunning(vmID)
+        let unloader = RecordingUnloader()
+        let expired = start.addingTimeInterval(61)
+
+        await CodingAgentLifecycleService.tick(
+            now: expired, vmManager: runtime, db: pool, unloader: unloader,
+        )
+        #expect(runtime.stopCount == 1)
+        var session = try await loadedSession(vmID: vmID, db: pool)
+        #expect(session?.receipt == nil)
+        #expect(session?.pendingStopReason == CodingAgentLifecycle.ttlReason)
+        #expect(!unloader.didUnload)
+
+        runtime.stopError = nil
+        await CodingAgentLifecycleService.tick(
+            now: expired, vmManager: runtime, db: pool, unloader: unloader,
+        )
+        session = try await loadedSession(vmID: vmID, db: pool)
+        #expect(session?.receipt?.reason == CodingAgentLifecycle.ttlReason)
+        #expect(unloader.didUnload)
+    }
+
+    @Test func `reset waits for occupancy before requiring a stopped Workload`() async throws {
+        let start = try anchorDate()
+        let (dir, pool, vmID) = try await isolatedAgentSession(startedAt: start, ttlSeconds: 60)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runtime = FakeCodingAgentRuntime()
+        runtime.active = true
+        runtime.releaseAfterOccupancyCalls = 3
+        runtime.db = pool
+
+        do {
+            try await CodingAgentLifecycleService.reset(vmID: vmID, vmManager: runtime, db: pool)
+            Issue.record("reset should stop at the missing Library image, not succeed")
+        } catch let BarkVisorError.conflict(message) {
+            Issue.record("reset conflicted instead of waiting for stop: \(message)")
+        } catch let BarkVisorError.badRequest(message) {
+            #expect(message.contains("Library image"))
+        } catch {
+            Issue.record("unexpected reset error: \(error)")
+        }
+        #expect(runtime.stopCount == 1)
+        #expect(runtime.lastMethod == "force")
+        #expect(runtime.occupancyCalls >= 3)
+        let session = try await loadedSession(vmID: vmID, db: pool)
+        #expect(session?.pendingStopReason == CodingAgentLifecycle.resetReason)
     }
 
     @Test func `force stop unloads grant after termination when last agent`() async throws {
@@ -207,16 +299,33 @@ private final class FakeCodingAgentRuntime: CodingAgentControlling, @unchecked S
     var stopCount = 0
     var lastMethod: String?
     var active = true
+    var stopError: Error?
+    var occupancyCalls = 0
+    var releaseAfterOccupancyCalls: Int?
+    var db: DatabasePool?
 
     func stop(vmID _: String, force _: Bool, method: String) async throws {
         stopCount += 1
         lastMethod = method
+        if let stopError { throw stopError }
     }
 
     func start(vmID _: String) async throws {}
 
-    func isActiveOrStarting(_: String) async -> Bool {
-        active
+    func isActiveOrStarting(_ vmID: String) async -> Bool {
+        occupancyCalls += 1
+        if let releaseAfterOccupancyCalls, occupancyCalls >= releaseAfterOccupancyCalls {
+            active = false
+            if let db {
+                try? await db.write { db in
+                    try db.execute(
+                        sql: "UPDATE vms SET state = 'stopped' WHERE id = ?",
+                        arguments: [vmID],
+                    )
+                }
+            }
+        }
+        return active
     }
 }
 
