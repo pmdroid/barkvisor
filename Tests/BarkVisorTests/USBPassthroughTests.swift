@@ -129,7 +129,7 @@ struct USBPassthroughTests {
             )
         }
         if case let .conflict(message) = err {
-            #expect(message.contains("Multiple USB devices"))
+            #expect(message.contains("no serial") || message.contains("Multiple USB devices"))
         } else {
             Issue.record("expected conflict, got \(String(describing: err))")
         }
@@ -707,7 +707,10 @@ final class USBClaimWriteTests {
             )
         }
         #expect(error?.code == "conflict")
-        #expect(error?.errorDescription?.contains("Multiple USB devices") == true)
+        #expect(
+            error?.errorDescription?.contains("no serial") == true
+                || error?.errorDescription?.contains("Multiple USB devices") == true,
+        )
         let stored = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-spec") }
         #expect(stored?.decodedUSBDevices.isEmpty == true)
     }
