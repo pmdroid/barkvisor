@@ -16,6 +16,27 @@ public enum SocketVmnetDiscovery {
         sharedSocketPaths.contains(path)
     }
 
+    /// Host NICs the Homebrew shared socket typically attaches to. Never `"vmnet"` —
+    /// that name is not a real interface and fails `NetworkCapability.requireBridgedInterface`.
+    public static let sharedUplinkCandidates = ["en0", "en1"]
+
+    /// Real host interface to hang the shared Homebrew socket on (template/network rows).
+    public static func sharedUplinkInterface(
+        interfaceExists: (String) -> Bool = HostInfoService.interfaceExists,
+        extraNames: () -> [String] = { HostInfoService.listInterfaces().map(\.name) },
+    ) -> String? {
+        if let name = sharedUplinkCandidates.first(where: interfaceExists) {
+            return name
+        }
+        return extraNames().first { name in
+            !isLoopbackInterface(name) && interfaceExists(name)
+        }
+    }
+
+    public static func isLoopbackInterface(_ name: String) -> Bool {
+        name == "lo" || name == "lo0"
+    }
+
     public static func perInterfaceSocketPaths(_ interface: String) -> [String] {
         [
             "/opt/homebrew/var/run/socket_vmnet.bridged.\(interface)",
@@ -34,6 +55,7 @@ public enum SocketVmnetDiscovery {
         listBridged: (String) -> [String] = { dir in
             (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         },
+        sharedUplink: () -> String? = { sharedUplinkInterface() },
     ) -> [(interface: String, path: String)] {
         var found: [(String, String)] = []
         var seen = Set<String>()
@@ -49,8 +71,15 @@ public enum SocketVmnetDiscovery {
                 add(iface, "\(dir)/\(name)")
             }
         }
-        for path in sharedSocketPaths {
-            add("vmnet", path)
+        // Shared Homebrew socket is not a host iface named "vmnet". Attach it to a
+        // real uplink so template deploy / Network.bridge pass requireBridgedInterface.
+        if let iface = sharedUplink(), !iface.isEmpty, !isLoopbackInterface(iface) {
+            let already = Set(found.map(\.0))
+            if !already.contains(iface) {
+                for path in sharedSocketPaths {
+                    add(iface, path)
+                }
+            }
         }
         return found
     }
@@ -58,7 +87,10 @@ public enum SocketVmnetDiscovery {
     public static func socketAvailable(
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
     ) -> Bool {
-        !existingSockets(fileExists: fileExists).isEmpty
+        if sharedSocketPaths.contains(where: fileExists) {
+            return true
+        }
+        return !existingSockets(fileExists: fileExists, sharedUplink: { nil }).isEmpty
     }
 
     public static func bridgeStates(

@@ -47,11 +47,28 @@ struct HostBridgeReadinessTests {
 
     @Test func `mac socket_vmnet present is ready without linux remediations`() {
         let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
-            bridges: [HostBridgeSnapshot(name: "vmnet", enslaved: [])],
+            bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
             macSocketVmnet: true,
         ))
         #expect(facts.ready)
         #expect(facts.remediations.isEmpty)
+        #expect(facts.bridges.map(\.name) == ["en0"])
+    }
+
+    @Test func `bridged template deploy uses socket uplink not vmnet`() throws {
+        struct MacSockets: HostBridgeFactSource {
+            func inputs() -> HostBridgeFactInputs {
+                HostBridgeFactInputs(
+                    bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                    macSocketVmnet: true,
+                )
+            }
+        }
+        let iface = try HostBridgeFactsService.activeBridgedInterface(
+            records: [], source: MacSockets(),
+        )
+        #expect(iface == "en0")
+        #expect(iface != "vmnet")
     }
 
     @Test func `facts seam is ready only with helper ACL and a bridge`() {
