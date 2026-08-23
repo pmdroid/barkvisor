@@ -50,6 +50,7 @@ public enum OllamaAuthPolicy {
              ("GET", "/api/ollama/tags"),
              ("GET", "/api/ollama/ps"),
              ("GET", "/api/ollama/status"),
+             ("GET", "/api/ollama/snapshot"),
              ("GET", "/api/home/ollama/models"),
              ("GET", "/api/home/ollama/status"),
              ("GET", "/v1/models"),

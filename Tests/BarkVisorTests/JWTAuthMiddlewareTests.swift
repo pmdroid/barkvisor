@@ -335,6 +335,17 @@ struct JWTAuthMiddlewareTests {
             role: UserRole.inference.rawValue,
         )
         try JWTAuthMiddleware.enforceInferenceACL(completions)
+
+        let snapshot = request(app, path: "/api/ollama/snapshot")
+        snapshot.method = .GET
+        snapshot.authenticatedUser = AuthenticatedUser(
+            userId: "user-1",
+            username: "reader",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.inference.rawValue,
+        )
+        try JWTAuthMiddleware.enforceInferenceACL(snapshot)
     }
 
     @Test func `admin JWT keeps pull and attach`() async throws {
