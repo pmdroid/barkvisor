@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-@Suite("Pairing advertised host (PAS-226)")
+@Suite("Pairing advertised host (PAS-226 / PAS-285)")
 struct PairingAdvertisedHostTests {
     private func isolatedDir(_ label: String = "pair-adv") throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -81,7 +81,7 @@ struct PairingAdvertisedHostTests {
         #expect(current.qrPayload.contains("host=10.0.0.4"))
     }
 
-    @Test func `explicit advertised host is rejected without falling back`() throws {
+    @Test func `invalid advertised host is rejected without revoking the current offer`() throws {
         let dir = try isolatedDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let hostId = UUID().uuidString
@@ -95,7 +95,7 @@ struct PairingAdvertisedHostTests {
             ),
             offers: offers,
         )
-        #expect(try offers.load() != nil)
+        let stored = try #require(try offers.load())
         let blocked = [
             "localhost",
             "foo.internal",
@@ -115,7 +115,10 @@ struct PairingAdvertisedHostTests {
                     offers: offers,
                 )
             }
-            #expect(try offers.load() == nil)
+            let kept = try #require(try offers.load())
+            #expect(kept.codeHash == stored.codeHash)
+            #expect(kept.codeDisplay == stored.codeDisplay)
+            #expect(kept.advertisedHost == "192.168.0.8")
         }
     }
 }

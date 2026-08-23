@@ -157,7 +157,9 @@ struct PairingHTTPTests {
                 offers: offers,
             )
         }
-        #expect(try offers.load() == nil)
+        let kept = try #require(try offers.load())
+        #expect(kept.advertisedHost == "100.64.1.8")
+        #expect(kept.codeDisplay == issued.code)
     }
 
     @Test func `setup window join stays console local even for CGNAT peers`() {
