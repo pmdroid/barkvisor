@@ -45,6 +45,9 @@ struct HomebrewInstallHelperTests {
         #expect(formula.contains("--product\", \"BarkVisorHelper\""))
         #expect(formula.contains("libexec.install helper => \"dev.barkvisor.helper\""))
         #expect(formula.contains("bin.install buildpath/\"packaging/homebrew/barkvisor-install-helper\""))
+        #expect(formula.contains("--identifier\", \"dev.barkvisor.app\""))
+        #expect(formula.contains("bin/\"barkvisor\""))
+        #expect(formula.contains("libexec/\"dev.barkvisor.helper\""))
         #expect(formula.contains("codesign\", \"--verify\", \"--strict\""))
         #expect(formula.contains("dev.barkvisor.helper.plist"))
         #expect(formula.contains("NAT Workloads work without the privileged helper"))
@@ -64,9 +67,19 @@ struct HomebrewInstallHelperTests {
 
     @Test func `operator docs say NAT works without the helper`() throws {
         let homebrew = try read("docs/getting-started-homebrew.md")
+        #expect(homebrew.contains("## Requirements"))
+        #expect(homebrew.contains("depends_on arch: :arm64"))
+        #expect(homebrew.contains("/opt/homebrew"))
+        #expect(homebrew.contains("/var/lib/barkvisor"))
+        #expect(homebrew.contains("brew upgrade barkvisor"))
+        #expect(homebrew.contains("sudo brew services restart barkvisor"))
+        #expect(homebrew.contains("log stream"))
         #expect(homebrew.contains("barkvisor-install-helper"))
         #expect(homebrew.contains("/Library/PrivilegedHelperTools"))
         #expect(homebrew.contains("MachServices") || homebrew.contains("dev.barkvisor.helper"))
+        #expect(homebrew.contains("Do not mix"))
+        #expect(homebrew.contains("port 7777"))
+        #expect(homebrew.contains("sudo rm -rf /var/lib/barkvisor"))
         #expect(homebrew.localizedCaseInsensitiveContains("NAT"))
         #expect(homebrew.contains("Home"))
         #expect(homebrew.contains("Device"))
@@ -87,6 +100,7 @@ struct HomebrewInstallHelperTests {
 
         let firstLaunch = try read("docs/getting-started-first-launch.md")
         #expect(firstLaunch.contains("barkvisor-install-helper"))
+        #expect(firstLaunch.contains("sudo brew services stop barkvisor"))
 
         let quickstart = try read("docs/getting-started-quickstart.md")
         #expect(quickstart.contains("getting-started-homebrew.md"))

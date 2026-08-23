@@ -12,11 +12,67 @@ public let kHelperSocketVmnetIdentifier = "socket_vmnet"
 /// PKG identifier used by `pkgbuild` / `productbuild` in `scripts/build-release.sh`.
 public let kHelperPackageIdentifier = "dev.barkvisor"
 
+/// Code-signing identifier of the Device daemon (XPC client).
+public let kHelperClientIdentifier = "dev.barkvisor.app"
+
 /// Root-owned directory the helper copies update PKGs into before verification.
 public let kHelperUpdateStagingDir = "/var/db/barkvisor-helper/updates"
 
 public func helperCodeRequirement(identifier: String, teamID: String) -> String {
     "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"\(teamID)\""
+}
+
+/// Identifier-only requirement used after Team ID fails (Homebrew ad-hoc).
+public func helperClientIdentifierRequirement(identifier: String = kHelperClientIdentifier) -> String {
+    "identifier \"\(identifier)\""
+}
+
+public func helperHomebrewPrefixes(extraPrefix: String? = nil) -> [String] {
+    var prefixes = ["/opt/homebrew", "/usr/local"]
+    if let extra = extraPrefix?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !extra.isEmpty,
+       !prefixes.contains(extra) {
+        prefixes.insert(extra, at: 0)
+    }
+    return prefixes
+}
+
+public func helperClientPathIsHomebrewBarkVisor(_ path: String, prefixes: [String]) -> Bool {
+    let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    let name = URL(fileURLWithPath: resolved).lastPathComponent
+    guard name == "barkvisor" || name == "BarkVisorApp" else { return false }
+    return prefixes.contains { prefix in
+        let p = URL(fileURLWithPath: prefix).resolvingSymlinksInPath().standardizedFileURL.path
+        return resolved == p || resolved.hasPrefix(p + "/")
+    }
+}
+
+/// Release SMJobBless stays Team ID. Homebrew keg clients are ad-hoc and
+/// accepted only when the executable lives under a Homebrew prefix.
+public func helperAllowsXPCClient(
+    identifier: String?,
+    teamID: String?,
+    isAdHoc: Bool,
+    executablePath: String?,
+    homebrewPrefixes: [String] = helperHomebrewPrefixes(),
+) -> Bool {
+    guard identifier == kHelperClientIdentifier else { return false }
+    if teamID == kHelperTeamID {
+        return true
+    }
+    guard isAdHoc,
+          let executablePath,
+          helperClientPathIsHomebrewBarkVisor(executablePath, prefixes: homebrewPrefixes)
+    else {
+        return false
+    }
+    return true
+}
+
+public func helperSigningIsAdHoc(teamID: String?, flags: UInt32 = 0) -> Bool {
+    let csAdhoc: UInt32 = 0x0000_0002
+    if flags & csAdhoc != 0 { return true }
+    return teamID == nil || teamID?.isEmpty == true
 }
 
 public func helperNormalizedVersion(_ version: String) -> String {

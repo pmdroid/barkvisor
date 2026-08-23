@@ -104,7 +104,10 @@ The daemon handles SIGTERM and SIGINT signals for graceful shutdown. When the da
 To stop the daemon:
 
 ```sh
-# macOS (launchd)
+# macOS (Homebrew)
+sudo brew services stop barkvisor
+
+# macOS (.pkg launchd)
 sudo launchctl bootout system/dev.barkvisor
 
 # Linux (systemd)

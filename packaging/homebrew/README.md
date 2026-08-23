@@ -10,7 +10,7 @@ This is not a Linux path. Linux uses systemd packages in [packaging/linux](../li
 |------|------|
 | `bin/barkvisor` | Device daemon |
 | `bin/barkvisor-install-helper` | Optional copy of the privileged helper (PAS-292) |
-| `libexec/dev.barkvisor.helper` | Signed helper binary kept in the keg |
+| `libexec/dev.barkvisor.helper` | Ad-hoc signed helper (`codesign -s -`) kept in the keg |
 | `share/barkvisor/frontend/` | SPA |
 | `share/barkvisor/templates.json` | Built-in template catalog |
 | `share/barkvisor/postinstall` | Creates `_barkvisor` and `/var/lib/barkvisor` |
@@ -43,7 +43,7 @@ To install the helper into Apple's privileged locations:
 sudo barkvisor-install-helper
 ```
 
-That copies the **signed** keg helper to `/Library/PrivilegedHelperTools/dev.barkvisor.helper` and writes `/Library/LaunchDaemons/dev.barkvisor.helper.plist` with `MachServices` `dev.barkvisor.helper`.
+That copies the **ad-hoc signed** keg helper to `/Library/PrivilegedHelperTools/dev.barkvisor.helper` and writes `/Library/LaunchDaemons/dev.barkvisor.helper.plist` with `MachServices` `dev.barkvisor.helper`. The formula also ad-hoc signs `bin/barkvisor` as `dev.barkvisor.app`. The helper accepts that client only under the Homebrew prefix; `.pkg` SMJobBless still requires the BarkVisor Team ID.
 
 You still need Homebrew `socket_vmnet` for bridges.
 

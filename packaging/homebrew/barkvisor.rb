@@ -40,11 +40,17 @@ class Barkvisor < Formula
     end
     odie "swift build did not produce BarkVisorHelper" if helper.nil?
 
-    system "codesign", "--force", "--sign", "-", helper
-    system "codesign", "--verify", "--strict", helper
-
     bin.install binary => "barkvisor"
     libexec.install helper => "dev.barkvisor.helper"
+    # Ad-hoc sign both keg binaries with stable identifiers. The helper
+    # accepts this only for clients under the Homebrew prefix (PAS-292).
+    # pkg/SMJobBless still requires the BarkVisor Team ID.
+    system "codesign", "--force", "--sign", "-",
+           "--identifier", "dev.barkvisor.app", bin/"barkvisor"
+    system "codesign", "--force", "--sign", "-",
+           "--identifier", "dev.barkvisor.helper", libexec/"dev.barkvisor.helper"
+    system "codesign", "--verify", "--strict", bin/"barkvisor"
+    system "codesign", "--verify", "--strict", libexec/"dev.barkvisor.helper"
     bin.install buildpath/"packaging/homebrew/barkvisor-install-helper"
     chmod 0755, bin/"barkvisor-install-helper"
     (share/"barkvisor/frontend").install "frontend/dist"
