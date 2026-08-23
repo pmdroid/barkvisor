@@ -47,6 +47,32 @@ struct APIContractTests {
         let health = try #require(asStringKeyed(schemas["HomeDeviceHealthReport"]))
         let healthRequired = try #require(health["required"] as? [String])
         #expect(healthRequired == ["devices", "totals"])
+
+        let caps = try #require(asStringKeyed(schemas["SystemCapabilities"]))
+        let capsProps = try #require(asStringKeyed(caps["properties"]))
+        #expect(asStringKeyed(capsProps["supportsGPUPassthrough"])?["type"] as? String == "boolean")
+        #expect(asStringKeyed(capsProps["supportsVFIO"])?["type"] as? String == "boolean")
+        let details = try #require(asStringKeyed(capsProps["details"]))
+        let detailItems = try #require(asStringKeyed(details["items"]))
+        #expect(detailItems["$ref"] as? String == "#/components/schemas/CapabilityDetail")
+
+        let feature = try #require(asStringKeyed(schemas["HomeDeviceFeatureSummary"]))
+        let featureProps = try #require(asStringKeyed(feature["properties"]))
+        #expect(asStringKeyed(featureProps["gpuPassthrough"])?["type"] as? String == "boolean")
+        #expect(asStringKeyed(featureProps["vfio"])?["type"] as? String == "boolean")
+
+        let detail = try #require(asStringKeyed(schemas["CapabilityDetail"]))
+        let detailProps = try #require(asStringKeyed(detail["properties"]))
+        let code = try #require(asStringKeyed(detailProps["code"]))
+        #expect(Set(code["enum"] as? [String] ?? []) == Set(CapabilityCode.allCases.map(\.rawValue)))
+        let reason = try #require(asStringKeyed(detailProps["reasonCode"]))
+        let reasonCodes = Set(reason["enum"] as? [String] ?? [])
+        #expect(reasonCodes.isSuperset(of: [
+            "os_unsupported",
+            "iommu_missing",
+            "vfio_missing",
+            "gpu_missing",
+        ]))
     }
 
     @Test func `docs copy matches bundled spec`() throws {
