@@ -88,8 +88,9 @@ public enum PairingService {
             advertisedHost: host,
         )
         do {
-            try store.replace(offer)
-            try clearIdentityGrant(dataDir: input.dataDir)
+            try store.replace(offer) {
+                try clearIdentityGrant(dataDir: input.dataDir)
+            }
         } catch let error as PairingError {
             throw error
         } catch {
@@ -175,8 +176,9 @@ public enum PairingService {
     public static func revoke(dataDir: URL, offers: PairingOfferStore? = nil) throws {
         let store = offers ?? PairingOfferStore(dataDir: dataDir)
         do {
-            try store.clear()
-            try clearIdentityGrant(dataDir: dataDir)
+            try store.clear {
+                try clearIdentityGrant(dataDir: dataDir)
+            }
         } catch let error as PairingError {
             throw error
         } catch {
@@ -274,15 +276,18 @@ public enum PairingService {
                 now: input.now,
                 devices: devices,
             )
-            if let offer = try store.load() {
+            // Grant expiry comes from the offer replay already validated.
+            // Persist only if that consumed offer is still on disk, under the
+            // same lock issue/revoke hold while clearing the grant.
+            try store.ifConsumed(codeHash: replayed.codeHash) {
                 try persistIdentityGrant(
                     dataDir: input.dataDir,
                     hostId: joinerHostId,
-                    fingerprint: replayed.issuedFingerprint,
-                    expiresAt: offer.expiresAt,
+                    fingerprint: replayed.response.issuedFingerprint,
+                    expiresAt: replayed.expiresAt,
                 )
             }
-            return replayed
+            return replayed.response
         }
         // New unused code: first pair or PAS-77 re-pair. issueAndPin
         // replaces any previous pin for this hostId; registerPairedDevice
@@ -366,6 +371,12 @@ public enum PairingService {
 
     // MARK: - Private
 
+    private struct ConsumedReplay {
+        var response: PairingRedeemResponse
+        var codeHash: String
+        var expiresAt: String
+    }
+
     /// Same joiner may retry after a successful consume (lost 200, local
     /// applyTrust failure) until the offer TTL elapses. The CSR must still
     /// match the pinned Device certificate; a different key is not signed.
@@ -380,7 +391,7 @@ public enum PairingService {
         csrPEM: String,
         material: HomeCertificateMaterial,
         now: Date,
-    ) throws -> PairingRedeemResponse? {
+    ) throws -> ConsumedReplay? {
         guard let offer = try store.load(), offer.consumedAt != nil else {
             return nil
         }
@@ -403,15 +414,19 @@ public enum PairingService {
             material: material,
             now: now,
         )
-        return PairingRedeemResponse(
-            hostId: material.hostId,
-            deviceCertificatePEM: material.deviceCertificatePEM,
-            deviceFingerprint: material.deviceFingerprint,
-            caCertificatePEM: material.caCertificatePEM,
-            caFingerprint: material.caFingerprint,
-            issuedCertificatePEM: issued.certificatePEM,
-            issuedFingerprint: issued.fingerprint,
-            agentPort: offer.agentPort,
+        return ConsumedReplay(
+            response: PairingRedeemResponse(
+                hostId: material.hostId,
+                deviceCertificatePEM: material.deviceCertificatePEM,
+                deviceFingerprint: material.deviceFingerprint,
+                caCertificatePEM: material.caCertificatePEM,
+                caFingerprint: material.caFingerprint,
+                issuedCertificatePEM: issued.certificatePEM,
+                issuedFingerprint: issued.fingerprint,
+                agentPort: offer.agentPort,
+            ),
+            codeHash: offer.codeHash,
+            expiresAt: offer.expiresAt,
         )
     }
 

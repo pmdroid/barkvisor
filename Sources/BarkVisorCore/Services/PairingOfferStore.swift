@@ -65,6 +65,9 @@ public final class PairingOfferStore: @unchecked Sendable {
 
     public let fileURL: URL
     private let lock = NSLock()
+    /// Tests: run after `load()` releases the store lock so issue/revoke can
+    /// interleave before redeem persists an identity grant.
+    var afterLoad: (() throws -> Void)?
 
     public init(dataDir: URL) {
         self.fileURL = dataDir
@@ -78,22 +81,52 @@ public final class PairingOfferStore: @unchecked Sendable {
 
     public func load() throws -> PairingOffer? {
         lock.lock()
-        defer { lock.unlock() }
-        return try loadLocked()
+        let offer: PairingOffer?
+        do {
+            offer = try loadLocked()
+        } catch {
+            lock.unlock()
+            throw error
+        }
+        lock.unlock()
+        try afterLoad?()
+        return offer
     }
 
     public func replace(_ offer: PairingOffer) throws {
+        try replace(offer, then: {})
+    }
+
+    /// Persist `offer`, then run `extra` before releasing the store lock so
+    /// grant file I/O cannot race a concurrent redeem persist.
+    public func replace(_ offer: PairingOffer, then extra: () throws -> Void) throws {
         lock.lock()
         defer { lock.unlock() }
         try persistLocked(offer)
+        try extra()
     }
 
     public func clear() throws {
+        try clear(then: {})
+    }
+
+    public func clear(then extra: () throws -> Void) throws {
         lock.lock()
         defer { lock.unlock() }
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try FileManager.default.removeItem(at: fileURL)
         }
+        try extra()
+    }
+
+    /// Run `body` only while the on-disk offer is still this consumed code.
+    /// No-op if issue or revoke already replaced or cleared it.
+    public func ifConsumed(codeHash: String, _ body: () throws -> Void) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let current = try loadLocked(), current.consumedAt != nil else { return }
+        guard PairingCode.hashesEqual(current.codeHash, codeHash) else { return }
+        try body()
     }
 
     /// Consume the matching unused, unexpired offer. Returns the offer
