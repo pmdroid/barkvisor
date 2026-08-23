@@ -22,7 +22,7 @@ struct AuthenticatedUser {
         authMethod: String,
         apiKeyId: String?,
         apiKeyKind: String? = nil,
-        role: String = UserRole.admin.rawValue,
+        role: String,
     ) {
         self.userId = userId
         self.username = username
@@ -344,13 +344,16 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         guard let pool = request.application.databaseIfPresent?.pool else {
             return UserRolePolicy.parseSession(sessionFallback).rawValue
         }
+        // Member Devices only store the admin row from pairing. Home re-sends
+        // the caller's JWT over mTLS, so a missing local row is expected for
+        // inference users; use the signed claim instead of 401.
         let user = try await pool.read { db in
             try User.fetchOne(db, key: userId)
         }
-        guard let user else {
-            throw Abort(.unauthorized, reason: "Invalid or expired token")
+        if let user {
+            return user.userRole.rawValue
         }
-        return user.userRole.rawValue
+        return UserRolePolicy.parseSession(sessionFallback).rawValue
     }
 }
 
