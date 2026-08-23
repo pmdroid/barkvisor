@@ -176,6 +176,26 @@ struct CodingAgentImageTests {
         #expect(kept.cloudInit?.userData?.contains("vim") == true)
         #expect(kept.cloudInit?.userData?.contains("ttyd") != true)
     }
+
+    @Test func `console and frontend user-data keep ttyd EnvironmentFile`() throws {
+        let root = repoRoot()
+        let console = try String(
+            contentsOf: root.appendingPathComponent(
+                "Apps/BarkVisorConsole/Sources/Models/CodingAgentImage.swift",
+            ),
+            encoding: .utf8,
+        )
+        let frontend = try String(
+            contentsOf: root.appendingPathComponent("frontend/src/utils/codingAgentImage.ts"),
+            encoding: .utf8,
+        )
+        for source in [console, frontend] {
+            #expect(source.contains("/etc/default/barkvisor-openai"))
+            #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+        }
+        #expect(console.contains("isShellSafeOpenAIBaseURL"))
+        #expect(frontend.contains("OPENAI_BASE_URL_SAFE"))
+    }
 }
 
 private func repoRoot() -> URL {

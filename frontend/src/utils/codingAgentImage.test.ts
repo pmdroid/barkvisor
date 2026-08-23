@@ -35,6 +35,9 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(() => normalizeOpenAIBaseURL('http://10.0.2.2:11434@evil.com/v1')).toThrow()
     expect(usesDeviceOllama(DEVICE_OLLAMA_BASE_URL)).toBe(true)
     expect(usesDeviceOllama('http://10.0.2.2:11434@evil.com/v1')).toBe(false)
+    expect(() => normalizeOpenAIBaseURL('https://x$(reboot).example/v1')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x`id`.example/v1')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x$HOME.example/v1')).toThrow()
   })
 
   test('user-data installs git, web terminal, coding-agent CLIs', () => {
