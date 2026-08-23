@@ -414,7 +414,8 @@ public enum CapabilityDetailBuilder {
         case .osUnsupported:
             return "GPU passthrough is not available on macOS. Use a Linux Device with IOMMU, vfio-pci, and KVM."
         case .kvmMissing:
-            return "GPU passthrough needs KVM (/dev/kvm). This Device is not using KVM."
+            return "GPU passthrough needs KVM (/dev/kvm). Install qemu-kvm, add this user to the kvm group, "
+                + "or enable nested virtualization, then confirm /dev/kvm exists."
         case .iommuMissing:
             return "IOMMU is not active (\(probe.iommuGroupCount) IOMMU groups). "
                 + "Enable intel_iommu=on or amd_iommu=on on the kernel command line, then reboot."

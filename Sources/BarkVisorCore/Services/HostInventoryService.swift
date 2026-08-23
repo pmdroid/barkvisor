@@ -133,7 +133,7 @@ public enum HostInventoryService {
 
     // MARK: - Probes
 
-    /// Placement / health flags from the live probe (PAS-274 gpu/vfio included).
+    /// Placement / health flags. VFIO sysfs is TTL-cached inside `VFIOProbe.live()`.
     public static func featureSummary() -> HomeDeviceFeatureSummary {
         let osName = PlatformHost.platformName
         let qemuBridgeHelper = qemuBridgeHelperPresent()

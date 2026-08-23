@@ -83,6 +83,37 @@ struct SetupConsoleLocalTests {
         expectForbidden("192.168.1.10")
     }
 
+    @Test func `empty-password setup keeps stored role`() throws {
+        let (dir, pool) = try isolatedPool()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try pool.write { db in
+            try User(
+                id: "u-inf",
+                username: "agent",
+                password: "",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.inference.rawValue,
+            ).insert(db)
+            try SetupController.setPasswordIfEmpty(username: "agent", hash: "hashed-pw", db: db)
+            let row = try User.filter(User.Columns.username == "agent").fetchOne(db)
+            #expect(row?.password == "hashed-pw")
+            #expect(row?.role == UserRole.inference.rawValue)
+        }
+        try pool.write { db in
+            try User(
+                id: "u-adm",
+                username: "pascal",
+                password: "",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.admin.rawValue,
+            ).insert(db)
+            try SetupController.setPasswordIfEmpty(username: "pascal", hash: "hashed-admin", db: db)
+            let row = try User.filter(User.Columns.username == "pascal").fetchOne(db)
+            #expect(row?.password == "hashed-admin")
+            #expect(row?.role == UserRole.admin.rawValue)
+        }
+    }
+
     @Test func `setup controller rejects requests without a console-local peer`() async throws {
         var env = Environment(name: "testing", arguments: ["barkvisor-test"])
         env.commandInput = CommandInput(arguments: ["barkvisor-test"])

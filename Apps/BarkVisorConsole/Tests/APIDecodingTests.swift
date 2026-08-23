@@ -314,6 +314,15 @@ struct APIDecodingTests {
             GPUPassthroughCopy.explanation(supported: false, remediation: nil, platform: "macOS")
                 .contains("macOS"),
         )
+        let kvm = GPUPassthroughCopy.explanation(
+            supported: false,
+            remediation: "GPU passthrough needs KVM (/dev/kvm). Install qemu-kvm, add this user to the kvm group, or enable nested virtualization, then confirm /dev/kvm exists.",
+            platform: "Linux",
+        )
+        #expect(kvm.contains("qemu-kvm"))
+        #expect(kvm.localizedCaseInsensitiveContains("nested"))
+        #expect(!kvm.localizedCaseInsensitiveContains("node"))
+        #expect(!kvm.localizedCaseInsensitiveContains("cluster"))
     }
 
     private func iso(_ raw: String) -> Date {

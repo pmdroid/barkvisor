@@ -38,6 +38,26 @@ describe('gpuPassthrough copy (PAS-274)', () => {
     expect(gpuPassthroughExplanation(caps)).toContain(GPU_ATTACH_UNAVAILABLE)
   })
 
+  test('linux missing kvm uses actionable server remediation', () => {
+    const caps = {
+      ...defaultCapabilities,
+      platform: 'Linux',
+      details: [
+        {
+          code: 'gpuPassthrough',
+          supported: false,
+          reasonCode: 'kvm_missing',
+          remediation:
+            'GPU passthrough needs KVM (/dev/kvm). Install qemu-kvm, add this user to the kvm group, or enable nested virtualization, then confirm /dev/kvm exists.',
+        },
+      ],
+    }
+    expect(gpuPassthroughSupported(caps)).toBe(false)
+    expect(gpuPassthroughExplanation(caps)).toContain('qemu-kvm')
+    expect(gpuPassthroughExplanation(caps)).toMatch(/nested/i)
+    expect(gpuPassthroughExplanation(caps)).not.toMatch(/node|cluster|quorum/i)
+  })
+
   test('linux missing iommu uses server remediation', () => {
     const caps = {
       ...defaultCapabilities,

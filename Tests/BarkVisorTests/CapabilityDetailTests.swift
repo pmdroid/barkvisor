@@ -213,6 +213,9 @@ struct CapabilityDetailTests {
         let gpu = CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: inv)
         #expect(!gpu.supported)
         #expect(gpu.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
+        #expect(gpu.remediation?.contains("qemu-kvm") == true)
+        #expect(gpu.remediation?.localizedCaseInsensitiveContains("nested") == true)
+        #expect(gpu.remediation?.contains("/dev/kvm") == true)
         #expect(CapabilityDetailBuilder.detail(for: .vfio, inventory: inv).supported)
     }
 

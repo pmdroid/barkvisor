@@ -89,6 +89,30 @@ struct VFIOProbeTests {
         #expect(VFIOProbe.vfioSupported(os: "Linux", facts: noGpu))
     }
 
+    @Test func `cached live facts reuse load within ttl`() {
+        VFIOProbe.resetLiveCache()
+        defer { VFIOProbe.resetLiveCache() }
+        var loads = 0
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let first = VFIOProbe.cachedLive(now: t0, ttl: 5) {
+            loads += 1
+            return VFIOHostFacts(iommuGroupCount: 3, gpuCount: 1)
+        }
+        let second = VFIOProbe.cachedLive(now: t0.addingTimeInterval(2), ttl: 5) {
+            loads += 1
+            return VFIOHostFacts(iommuGroupCount: 99, gpuCount: 9)
+        }
+        #expect(first.iommuGroupCount == 3)
+        #expect(second.iommuGroupCount == 3)
+        #expect(loads == 1)
+        let expired = VFIOProbe.cachedLive(now: t0.addingTimeInterval(6), ttl: 5) {
+            loads += 1
+            return VFIOHostFacts(iommuGroupCount: 4, gpuCount: 2)
+        }
+        #expect(expired.iommuGroupCount == 4)
+        #expect(loads == 2)
+    }
+
     @Test func `display class is pci base 03`() {
         #expect(VFIOProbe.isDisplayClass("0x030000"))
         #expect(VFIOProbe.isDisplayClass("0x030200\n"))

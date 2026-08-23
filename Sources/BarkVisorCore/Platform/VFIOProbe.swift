@@ -109,13 +109,31 @@ public struct VFIOInventoryFacts: Codable, Sendable, Equatable {
 
 /// Probe IOMMU groups, vfio-pci, and KVM. Does not bind devices or emit QEMU `-device vfio-pci`.
 public enum VFIOProbe {
+    private static let liveCache = VFIOLiveCache()
+
     /// Live host. Non-Linux is always empty (no macOS GPU passthrough).
+    /// Linux sysfs walks are memoized for the metrics poll TTL so Home Device
+    /// list/health requests do not re-scan IOMMU groups on every poll.
     public static func live(fileManager: FileManager = .default) -> VFIOHostFacts {
         #if os(Linux)
-            collect(from: .linuxHost, fileManager: fileManager)
+            cachedLive(now: Date(), ttl: HostInventoryService.metricsSliceTTL) {
+                collect(from: .linuxHost, fileManager: fileManager)
+            }
         #else
             VFIOHostFacts()
         #endif
+    }
+
+    static func cachedLive(
+        now: Date,
+        ttl: TimeInterval,
+        load: () -> VFIOHostFacts,
+    ) -> VFIOHostFacts {
+        liveCache.facts(now: now, ttl: ttl, load: load)
+    }
+
+    static func resetLiveCache() {
+        liveCache.reset()
     }
 
     /// Read a sysfs-shaped tree. Used by tests with a temp directory.
@@ -222,5 +240,32 @@ public enum VFIOProbe {
 
     private static func isLinux(_ os: String) -> Bool {
         os.caseInsensitiveCompare("Linux") == .orderedSame
+    }
+}
+
+/// Process-lifetime VFIO facts for request paths (same TTL as metrics slices).
+private final class VFIOLiveCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entry: (facts: VFIOHostFacts, expiresAt: Date)?
+
+    func facts(now: Date, ttl: TimeInterval, load: () -> VFIOHostFacts) -> VFIOHostFacts {
+        lock.lock()
+        if let entry, entry.expiresAt > now {
+            let facts = entry.facts
+            lock.unlock()
+            return facts
+        }
+        lock.unlock()
+        let facts = load()
+        lock.lock()
+        entry = (facts, now.addingTimeInterval(ttl))
+        lock.unlock()
+        return facts
+    }
+
+    func reset() {
+        lock.lock()
+        entry = nil
+        lock.unlock()
     }
 }
