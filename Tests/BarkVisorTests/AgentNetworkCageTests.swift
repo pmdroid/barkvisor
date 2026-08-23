@@ -39,8 +39,10 @@ struct AgentNetworkCageTests {
             ),
         )
         let open = AgentNetworkCage.seatbeltProfile(allowHostOllama: true)
-        #expect(open.contains("127.0.0.1:\(AgentNetworkCage.ollamaPort)"))
-        #expect(open.contains("224.0.0.0/4\"))\n(allow network-outbound (remote tcp \"127.0.0.1:\(AgentNetworkCage.ollamaPort)\"))"))
+        let ollamaAllow =
+            "(allow network-outbound (remote tcp \"127.0.0.1:\(AgentNetworkCage.ollamaPort)\"))"
+        #expect(open.contains(ollamaAllow))
+        #expect(open.contains("224.0.0.0/4\"))\n\(ollamaAllow)"))
         #expect(!open.contains("224.0.0.0/4\"))(allow"))
         #expect(!AgentNetworkCage.seatbeltProfile.contains("127.0.0.1:\(AgentNetworkCage.ollamaPort)"))
     }
