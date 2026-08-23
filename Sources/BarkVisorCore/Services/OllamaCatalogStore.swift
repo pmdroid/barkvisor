@@ -6,6 +6,7 @@ public final class OllamaCatalogStore: @unchecked Sendable {
 
     public let fileURL: URL
     private let lock = NSLock()
+    private var cached: OllamaPersistedMap?
 
     public init(dataDir: URL) {
         self.fileURL = dataDir
@@ -41,11 +42,16 @@ public final class OllamaCatalogStore: @unchecked Sendable {
     }
 
     private func loadLocked() throws -> OllamaPersistedMap {
+        if let cached { return cached }
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            return OllamaPersistedMap()
+            let empty = OllamaPersistedMap()
+            cached = empty
+            return empty
         }
         let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(OllamaPersistedMap.self, from: data)
+        let map = try JSONDecoder().decode(OllamaPersistedMap.self, from: data)
+        cached = map
+        return map
     }
 
     private func persistLocked(_ map: OllamaPersistedMap) throws {
@@ -57,5 +63,6 @@ public final class OllamaCatalogStore: @unchecked Sendable {
             [.posixPermissions: 0o600],
             ofItemAtPath: fileURL.path,
         )
+        cached = map
     }
 }

@@ -37,4 +37,23 @@ struct OllamaCatalogStoreTests {
         let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
         #expect(perms & 0o777 == 0o600)
     }
+
+    @Test func `load after save does not reread disk`() throws {
+        let dir = try isolatedDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = OllamaCatalogStore(dataDir: dir)
+        let snap = OllamaDeviceSnapshot(
+            hostId: "desk",
+            installed: true,
+            reachable: true,
+            installHint: "brew",
+            probedAt: "2026-08-22T00:00:00Z",
+            models: [OllamaLocalModel(name: "llama3:latest", running: true)],
+        )
+        _ = try store.upsert(snap)
+        try FileManager.default.removeItem(at: store.fileURL)
+        let loaded = try store.load()
+        #expect(loaded.devices.count == 1)
+        #expect(loaded.devices[0].hostId == "desk")
+    }
 }
