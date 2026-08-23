@@ -73,4 +73,24 @@ struct ChatTests {
         #expect(object?["model"] as? String == "llama3:latest")
         #expect(APIClient.chatCompletionsPath == "/v1/chat/completions")
     }
+
+    @Test func `chat stream retries once after 401 with a refreshed token`() async throws {
+        var client = APIClient(
+            baseURL: try #require(URL(string: "http://127.0.0.1:7777")),
+            token: "old",
+        )
+        client.refreshOnce = { "new" }
+        var request = URLRequest(url: try #require(URL(string: "http://127.0.0.1:7777/v1/chat/completions")))
+        request.setValue("Bearer old", forHTTPHeaderField: "Authorization")
+        let retry = try await client.retryAfter401(request, status: 401, allowRefresh: true)
+        #expect(retry?.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+        do {
+            _ = try await client.retryAfter401(request, status: 401, allowRefresh: false)
+            Issue.record("expected unauthorized when refresh is already spent")
+        } catch {
+            #expect(error as? APIError == .unauthorized)
+        }
+        let unchanged = try await client.retryAfter401(request, status: 200, allowRefresh: true)
+        #expect(unchanged?.value(forHTTPHeaderField: "Authorization") == nil)
+    }
 }
