@@ -89,6 +89,9 @@ struct DaemonRestartIsolationTests {
         let text = try Self.readRepoFile("Resources/dev.barkvisor.plist")
         #expect(text.contains("AbandonProcessGroup"))
         #expect(text.contains("<true/>"))
+        let homebrew = try Self.readRepoFile("packaging/homebrew/homebrew.mxcl.barkvisor.plist")
+        #expect(homebrew.contains("AbandonProcessGroup"))
+        #expect(homebrew.contains("<true/>"))
     }
 
     private static func readRepoFile(_ relative: String) throws -> String {
