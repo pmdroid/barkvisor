@@ -69,13 +69,16 @@ struct WorkloadSpecProjectorTests {
         #expect(spec.spec.sharedPaths == ["/Users/test/share"])
         #expect(spec.spec.workloadClass == "house")
         #expect(spec.spec.health == nil)
+        #expect(WorkloadSpecProjector.status(from: makeVM()).startOnBoot == false)
     }
 
     @Test func `round trip apply does not lose column values`() throws {
         var vm = makeVM()
         let spec = WorkloadSpecProjector.fromVM(vm)
+        vm.startOnBoot = true
         try WorkloadSpecProjector.apply(spec, to: &vm)
 
+        #expect(vm.startOnBoot)
         #expect(vm.name == "media")
         #expect(vm.vmType == "linux-arm64")
         #expect(vm.cpuCount == fixtureCPUCount)

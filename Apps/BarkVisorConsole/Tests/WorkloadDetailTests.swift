@@ -266,8 +266,8 @@ struct WorkloadDetailTests {
         #expect(!WorkloadRestart.isEnabled(device: studio, busy: true))
     }
 
-    @Test func `restart path uses local api or home proxy`() {
-        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:7777")!)
+    @Test func `restart path uses local api or home proxy`() throws {
+        let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")))
         let studio = snapshot(hostId: "self", role: "self", title: "Studio")
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
         #expect(client.scoped("/vms/vm-1/restart", on: nil) == "/api/vms/vm-1/restart")
@@ -355,6 +355,48 @@ struct WorkloadDetailTests {
         #expect(legacy.attachedISOIds == ["iso-legacy"])
         #expect(fixtureWorkload(isoIds: []).attachedISOIds.isEmpty)
         #expect(fixtureWorkload().attachedISOIds.isEmpty)
+    }
+
+    @Test func `startOnBoot is off when omitted so House appliances stay stopped`() throws {
+        let omitted = try decoder.decode(Workload.self, from: Data("""
+        {
+          "id": "vm-1",
+          "name": "haos",
+          "vmType": "linux-arm64",
+          "state": "stopped",
+          "cpuCount": 2,
+          "memoryMB": 2048,
+          "bootDiskId": "disk-1",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "updatedAt": "2026-01-02T00:00:00Z"
+        }
+        """.utf8))
+        #expect(!omitted.startsOnDeviceBoot)
+        #expect(omitted.startOnBootFooter.contains("House appliances stay stopped"))
+
+        let on = try decoder.decode(Workload.self, from: Data("""
+        {
+          "id": "vm-2",
+          "name": "agent",
+          "vmType": "linux-arm64",
+          "state": "stopped",
+          "cpuCount": 2,
+          "memoryMB": 2048,
+          "bootDiskId": "disk-1",
+          "workloadClass": "agent",
+          "startOnBoot": true,
+          "status": { "startOnBoot": true },
+          "createdAt": "2026-01-01T00:00:00Z",
+          "updatedAt": "2026-01-02T00:00:00Z"
+        }
+        """.utf8))
+        #expect(on.startsOnDeviceBoot)
+        #expect(on.startOnBootFooter.contains("Agent cage stays on"))
+        #expect(WorkloadStartOnBoot.label.contains("Device"))
+
+        let data = try JSONEncoder().encode(WorkloadStartOnBootBody(startOnBoot: true))
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(object?["startOnBoot"] as? Bool == true)
     }
 
     @Test func `ready isos come from that device library excluding attached`() {

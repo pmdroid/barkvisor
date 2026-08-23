@@ -100,5 +100,6 @@ extension VMLifecycleService {
         if let klass = params.workloadClass {
             vm.workloadClass = (try? WorkloadClass.parse(klass).rawValue) ?? vm.workloadClass
         }
+        if let startOnBoot = params.startOnBoot { vm.startOnBoot = startOnBoot }
     }
 }

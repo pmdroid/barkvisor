@@ -36,6 +36,8 @@ struct DTOTests {
         #expect(response.tpmEnabled == false)
         #expect(response.macAddress == "52:54:00:12:34:56")
         #expect(response.pendingChanges == true)
+        #expect(response.startOnBoot == false)
+        #expect(response.status.startOnBoot == false)
         #expect(response.additionalDiskIds == ["disk-2", "disk-3"])
         #expect(response.sharedPaths == ["/Users/test/share"])
         #expect(response.portForwards?.count == 1)
@@ -76,6 +78,7 @@ struct DTOTests {
         #expect(response.isoIds == nil)
         #expect(response.isoId == nil)
         #expect(response.health == .stopped)
+        #expect(response.startOnBoot == false)
     }
 
     @Test func `vm response iso id backwards compat`() {
