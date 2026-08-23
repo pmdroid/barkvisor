@@ -36,7 +36,13 @@ extension HelperHandler {
             guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
                   let code
             else { continue }
-            if SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess {
+            let reqString = "identifier \"socket_vmnet\""
+            var requirement: SecRequirement?
+            guard SecRequirementCreateWithString(reqString as CFString, [], &requirement)
+                == errSecSuccess,
+                let requirement
+            else { continue }
+            if SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess {
                 return (resolved, candidates)
             }
         }
