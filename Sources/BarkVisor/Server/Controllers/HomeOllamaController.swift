@@ -179,7 +179,7 @@ struct HomeOllamaController: RouteCollection {
             throw BarkVisorError.badRequest("Missing chat completion body")
         }
         let data = Data(buffer.readableBytesView)
-        let model = try OllamaLocalProbe.modelName(fromChatBody: data)
+        let model = try OllamaChatProxy.parseBufferedRequest(data)
         let catalog = try await refresh(db: req.db, user: user)
         guard let picked = OllamaRouter.pick(model: model, catalog: catalog, now: now?() ?? Date())
         else {
@@ -195,12 +195,10 @@ struct HomeOllamaController: RouteCollection {
             body: data,
             user: user,
         )
-        var headers = HTTPHeaders()
-        headers.replaceOrAdd(name: .contentType, value: "application/json")
-        return Response(
-            status: HTTPResponseStatus(statusCode: result.status),
-            headers: headers,
-            body: .init(data: result.body),
+        return OllamaChatHTTP.response(
+            status: result.status,
+            headers: result.headers,
+            body: result.body,
         )
     }
 

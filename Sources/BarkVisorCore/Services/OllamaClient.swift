@@ -5,10 +5,12 @@ import Foundation
 
 public struct OllamaHTTPResponse: Sendable {
     public var status: Int
+    public var headers: [(String, String)]
     public var body: Data
 
-    public init(status: Int, body: Data) {
+    public init(status: Int, headers: [(String, String)] = [], body: Data) {
         self.status = status
+        self.headers = headers
         self.body = body
     }
 }
@@ -219,7 +221,11 @@ public struct URLSessionOllamaTransport: OllamaHTTPTransport {
         let request = Self.request(method: method, url: url, headers: headers, body: body, timeout: 30)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        return OllamaHTTPResponse(status: status, body: data)
+        return OllamaHTTPResponse(
+            status: status,
+            headers: OllamaChatProxy.headers(from: response),
+            body: data,
+        )
     }
 
     public func stream(

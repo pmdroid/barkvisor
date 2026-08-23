@@ -46,7 +46,7 @@ export const useOllamaStore = defineStore('ollama', () => {
   }
 
   async function start(name: string, hostId?: string): Promise<void> {
-    await api.post('/home/ollama/start', { name, hostId })
+    await api.post('/home/ollama/start', hostId ? { name, hostId } : { name })
   }
 
   async function stop(name: string, hostId?: string): Promise<void> {

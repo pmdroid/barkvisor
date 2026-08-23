@@ -189,15 +189,13 @@ struct OllamaController: RouteCollection {
     }
 
     func complete(body: Data, db: DatabasePool) async throws -> Response {
-        _ = try OllamaLocalProbe.modelName(fromChatBody: body)
+        _ = try OllamaChatProxy.parseBufferedRequest(body)
         let client = try await resolvedClient(db: db)
         let upstream = try await client.chatCompletions(body: body)
-        var headers = HTTPHeaders()
-        headers.replaceOrAdd(name: .contentType, value: "application/json")
-        return Response(
-            status: HTTPResponseStatus(statusCode: upstream.status),
-            headers: headers,
-            body: .init(data: upstream.body),
+        return OllamaChatHTTP.response(
+            status: upstream.status,
+            headers: upstream.headers,
+            body: upstream.body,
         )
     }
 

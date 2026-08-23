@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import type { OllamaCatalogModel } from '../api/types'
+import type { OllamaCatalogModel, OllamaTaskAccepted } from '../api/types'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import ProgressBar from '../components/ui/ProgressBar.vue'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useAuthStore } from '../stores/auth'
 import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
+import { ollamaPullPercent, ollamaPullTaskPath, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const auth = useAuthStore()
@@ -21,6 +24,9 @@ const poller = useTaskPoller()
 const pullName = ref('')
 const pullHost = ref('')
 const pulling = ref(false)
+const cancelling = ref(false)
+const pullTask = ref<OllamaTaskAccepted | null>(null)
+const cancelledByUser = ref(false)
 const apiKeyDraft = ref('')
 const keySaving = ref(false)
 
@@ -32,6 +38,14 @@ const hostOptions = computed(() =>
       label: row.displayName?.trim() || row.hostId,
     })),
 )
+
+const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
+const pullIndeterminate = computed(() => pullPercent.value == null)
+const pullProgressLabel = computed(() => {
+  const progress = pullPercent.value
+  if (progress == null) return 'Pulling…'
+  return `Pulling ${progress}%`
+})
 
 let pollTimer: number
 onMounted(() => {
@@ -53,37 +67,63 @@ function locationLabel(model: OllamaCatalogModel): string {
     .join(', ')
 }
 
+function pullPath(task: OllamaTaskAccepted): string {
+  return ollamaPullTaskPath(task, devices.selfDevice?.hostId)
+}
+
 async function pullModel() {
   const name = pullName.value.trim()
   if (!name) return
   pulling.value = true
+  cancelledByUser.value = false
   try {
     const task = await store.pull(name, pullHost.value || undefined)
-    const path =
-      task.hostId === devices.selfDevice?.hostId
-        ? undefined
-        : `/home/devices/${task.hostId}/v1/tasks/${task.taskID}`
-    await poller.poll(task.taskID, {
-      path,
+    pullTask.value = task
+    const event = await poller.poll(task.taskID, {
+      path: pullPath(task),
       onComplete: () => {
         toast.success(`Ollama pulled ${name}`)
         void store.fetchCatalog()
       },
       onFailed: (event) => {
-        toast.error(event.error || `Ollama could not pull ${name}`)
+        if (event.status === 'cancelled' || cancelledByUser.value) {
+          toast.success(`Ollama pull cancelled`)
+        } else {
+          toast.error(event.error || `Ollama could not pull ${name}`)
+        }
       },
     })
-    pullName.value = ''
+    if (event.status === 'completed') pullName.value = ''
+  } catch (e: unknown) {
+    if (cancelledByUser.value) {
+      toast.success('Ollama pull cancelled')
+    } else {
+      toast.error(apiErrorMessage(e))
+    }
+  } finally {
+    pulling.value = false
+    pullTask.value = null
+  }
+}
+
+async function cancelPull() {
+  const task = pullTask.value
+  if (!task) return
+  cancelledByUser.value = true
+  cancelling.value = true
+  try {
+    await api.delete(pullPath(task))
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
-    pulling.value = false
+    poller.stop()
+    cancelling.value = false
   }
 }
 
 async function startModel(model: OllamaCatalogModel) {
   try {
-    await store.start(model.name, model.locations[0]?.hostId)
+    await store.start(ollamaStartBody(model.name).name)
     toast.success(`Ollama loaded ${model.name}`)
     await store.fetchCatalog()
   } catch (e: unknown) {
@@ -142,9 +182,19 @@ async function saveKey() {
             <option value="">Any reachable {{ DEVICE_LABEL }}</option>
             <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
-          <AppButton variant="primary" :disabled="!pullName.trim()" :loading="pulling" loading-text="Pulling..." @click="pullModel">
+          <AppButton variant="primary" :disabled="!pullName.trim() || pulling" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel">
             Pull
           </AppButton>
+          <AppButton v-if="pulling" variant="ghost" :loading="cancelling" loading-text="Cancelling..." @click="cancelPull">
+            Cancel
+          </AppButton>
+        </div>
+        <div v-if="pulling" style="margin-top:10px">
+          <ProgressBar
+            :percent="pullPercent"
+            :indeterminate="pullIndeterminate"
+            :label="pullProgressLabel"
+          />
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ extension AppRoute {
         case .dashboard: "square.grid.2x2"
         case .devices: "externaldrive.connected.to.line.below"
         case .workloads: "display"
+        case .models: "cube"
         case .library: "opticaldisc"
         case .disks: "internaldrive"
         case .networks: "globe"

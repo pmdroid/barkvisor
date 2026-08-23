@@ -5,6 +5,7 @@ import type { OllamaHomeCatalog } from '../api/types'
 import { useOllamaStore } from './ollama'
 
 const originalGet = api.get
+const originalPost = api.post
 
 const reachable: OllamaHomeCatalog = {
   anyReachable: true,
@@ -42,6 +43,7 @@ describe('ollama store (PAS-269)', () => {
 
   afterEach(() => {
     api.get = originalGet
+    api.post = originalPost
   })
 
   test('shows Models when a Device has reachable Ollama', async () => {
@@ -58,6 +60,15 @@ describe('ollama store (PAS-269)', () => {
     await store.fetchCatalog()
     expect(store.anyReachable).toBe(false)
     expect(store.models).toEqual([])
+  })
+
+  test('start omits hostId so Home picks the Device', async () => {
+    const post = mock(() => Promise.resolve({ data: {} }))
+    api.post = post as typeof api.post
+    const store = useOllamaStore()
+    await store.start('llama3:latest')
+    expect(post.mock.calls[0]?.[0]).toBe('/home/ollama/start')
+    expect(post.mock.calls[0]?.[1]).toEqual({ name: 'llama3:latest' })
   })
 
   test('a failed fetch hides Models', async () => {

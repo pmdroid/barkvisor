@@ -38,6 +38,10 @@ public enum OllamaLocalProbe {
         guard let object = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
             throw BarkVisorError.badRequest("Chat completion body must be JSON")
         }
+        return try modelName(fromObject: object)
+    }
+
+    public static func modelName(fromObject object: [String: Any]) throws -> String {
         guard let model = object["model"] as? String else {
             throw BarkVisorError.badRequest("Chat completion requires model")
         }
