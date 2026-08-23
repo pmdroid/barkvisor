@@ -431,8 +431,8 @@ extension PairingService {
     /// Check id/username compatibility first so a mismatch cannot swap the
     /// on-disk HMAC key while the admin row and in-memory keyring stay local.
     /// Persist the JWT secret before upserting admin. A secret write failure
-    /// must leave the previous password hash in place so login stays consistent
-    /// with the on-disk HMAC key until retry.
+    /// must leave the previous password hash in place. If upsert then fails,
+    /// restore the previous secret so disk and DB stay aligned.
     static func applySharedIdentity(
         _ response: PairingRedeemResponse,
         dataDir: URL,
@@ -449,6 +449,7 @@ extension PairingService {
             try ensureAdminCompatible(admin, db: db)
         }
         let secret = response.jwtSecret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let previousSecret = Config.loadJWTSecret(from: dataDir)
         if !secret.isEmpty {
             do {
                 try Config.persistJWTSecret(secret, to: dataDir)
@@ -464,7 +465,18 @@ extension PairingService {
                     "Unable to persist shared identity; local runtime continues",
                 )
             }
-            try upsertAdmin(admin, db: db, now: now)
+            do {
+                try upsertAdmin(admin, db: db, now: now)
+            } catch {
+                if !secret.isEmpty {
+                    if let previousSecret {
+                        try? Config.persistJWTSecret(previousSecret, to: dataDir)
+                    } else {
+                        try? FileManager.default.removeItem(at: Config.jwtSecretFile(in: dataDir))
+                    }
+                }
+                throw error
+            }
         }
         if !secret.isEmpty, let keys {
             await keys.add(hmac: .init(from: secret), digestAlgorithm: .sha256)
