@@ -10,7 +10,7 @@ import { useCapabilitiesStore } from '../stores/capabilities'
  * | managedBridgeDaemon   | NetworkView Manage Bridges (macOS), SetupView skip            |
  * | hostBridgeManagement  | NetworkView Manage Bridges (Linux checklist)                  |
  * | usbPassthrough        | CreateVM network step, CreateVM summary, VMDetail attach USB  |
- * | inAppUpdate           | SettingsView updates tab                                      |
+ * | inAppUpdate           | Always off — upgrade via Homebrew or the distro package        |
  *
  * Prefer disable + server remediation over hide. Setup omits the macOS-only
  * bridge-install step instead of showing a dead wizard page.
