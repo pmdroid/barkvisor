@@ -1,6 +1,7 @@
 import Foundation
 
-/// Path ACL for inference tokens (PAS-269). Full keys and console JWT keep :7777.
+/// Path ACL for inference callers (PAS-269 keys, PAS-286 user role).
+/// Admin session and full keys keep :7777. Inference fails closed.
 public enum OllamaAuthPolicy {
     public enum Principal: String, Sendable, Equatable {
         case session
@@ -16,6 +17,18 @@ public enum OllamaAuthPolicy {
             return .fullKey
         }
         return .session
+    }
+
+    /// Tokens inherit the user role. An admin inference token is still inference.
+    public static func principal(
+        userRole: String?,
+        authMethod: String,
+        apiKeyKind: String?,
+    ) -> Principal {
+        if UserRolePolicy.parseStored(userRole) == .inference {
+            return .inferenceKey
+        }
+        return principal(authMethod: authMethod, apiKeyKind: apiKeyKind)
     }
 
     public static func allows(principal: Principal, method: String, path: String) -> Bool {
@@ -40,7 +53,8 @@ public enum OllamaAuthPolicy {
              ("GET", "/api/home/ollama/models"),
              ("GET", "/api/home/ollama/status"),
              ("GET", "/v1/models"),
-             ("GET", "/api/v1/models"):
+             ("GET", "/api/v1/models"),
+             ("GET", "/api/auth/me"):
             return true
         case ("POST", "/v1/chat/completions"),
              ("POST", "/api/v1/chat/completions"),

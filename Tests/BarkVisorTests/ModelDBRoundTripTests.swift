@@ -23,6 +23,20 @@ final class ModelDBRoundTripTests {
         try dbPool.write { db in try user.insert(db) }
         let fetched = try dbPool.read { db in try User.fetchOne(db, key: "u1") }
         #expect(fetched?.username == "alice")
+        #expect(fetched?.role == UserRole.admin.rawValue)
+    }
+
+    @Test func `user inference role round trip`() throws {
+        let user = User(
+            id: "u-inf",
+            username: "reader",
+            password: "hash123",
+            createdAt: "2025-01-01T00:00:00Z",
+            role: UserRole.inference.rawValue,
+        )
+        try dbPool.write { db in try user.insert(db) }
+        let fetched = try dbPool.read { db in try User.fetchOne(db, key: "u-inf") }
+        #expect(fetched?.userRole == .inference)
     }
 
     @Test func `user unique username`() throws {

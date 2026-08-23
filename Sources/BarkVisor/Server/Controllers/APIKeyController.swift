@@ -27,7 +27,10 @@ struct APIKeyController: RouteCollection {
 
         try CreateAPIKeyRequest.validate(content: req)
         let body = try req.content.decode(CreateAPIKeyRequest.self)
-        let kind = try Self.parseKind(body.kind)
+        let kind = try UserRolePolicy.inheritKeyKind(
+            userRole: authUser.userRole,
+            requested: Self.parseKind(body.kind),
+        )
         let result = try await APIKeyService.create(
             name: body.name, expiresIn: body.expiresIn,
             userId: authUser.userId, db: req.db, kind: kind,

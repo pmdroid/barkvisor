@@ -54,6 +54,7 @@ struct AuthServiceTests {
         #expect(session.refreshToken.hasPrefix("bvrt_"))
         let payload = try await keys.verify(session.token, as: UserPayload.self)
         #expect(payload.username == "admin")
+        #expect(payload.role == UserRole.admin.rawValue)
         #expect(
             abs(payload.exp.value.timeIntervalSince1970 - now.addingTimeInterval(2 * 60 * 60).timeIntervalSince1970) < 1,
         )
