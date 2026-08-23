@@ -63,6 +63,12 @@ enum SessionRefreshResult: Equatable {
             return .unavailable(api.localizedDescription)
         }
     }
+
+    /// No refresh token or Device origin: permanent, not a transport blip.
+    static func fromLocalMaterial(refreshToken: String?, origin: URL?) -> SessionRefreshResult? {
+        if refreshToken == nil || origin == nil { return .unauthorized }
+        return nil
+    }
 }
 
 @Observable
@@ -679,8 +685,14 @@ final class AppModel {
         let origin = sessionURL
         let task = Task<SessionRefreshResult, Never> { [weak self] in
             guard let self else { return .unavailable("Sign in required") }
+            if let blocked = SessionRefreshResult.fromLocalMaterial(
+                refreshToken: presented,
+                origin: origin,
+            ) {
+                return blocked
+            }
             guard let presented, let origin else {
-                return .unavailable("Sign in required")
+                return .unauthorized
             }
             do {
                 var api = APIClient(baseURL: origin, token: nil)
