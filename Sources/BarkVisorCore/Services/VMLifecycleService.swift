@@ -13,10 +13,20 @@ public enum VMLifecycleService {
     ) async throws -> CreateVMResult {
         var params = params
         if let imageId = params.cloudImageId {
-            let image = try await db.read { db in try VMImage.fetchOne(db, key: imageId) }
+            let identified = try await db.read { db -> (name: String?, slug: String?) in
+                guard let image = try VMImage.fetchOne(db, key: imageId) else {
+                    return (nil, nil)
+                }
+                let slug = try RepositoryImage
+                    .filter(Column("name") == image.name)
+                    .filter(Column("arch") == image.arch)
+                    .fetchOne(db)?.slug
+                return (image.name, slug)
+            }
             params = try CodingAgentImage.applyingCreateDefaults(
                 params: params,
-                imageName: image?.name,
+                imageName: identified.name,
+                imageSlug: identified.slug,
             )
         }
         try await validateCreateVMInputs(params: params, db: db)
