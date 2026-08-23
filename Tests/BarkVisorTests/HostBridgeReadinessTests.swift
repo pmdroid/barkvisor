@@ -121,6 +121,22 @@ struct HostBridgeReadinessTests {
         }
     }
 
+    @Test func `status map uniquifies duplicate socket ifaces`() {
+        struct Dup: HostBridgeFactSource {
+            func inputs() -> HostBridgeFactInputs {
+                HostBridgeFactInputs(
+                    bridges: [
+                        HostBridgeSnapshot(name: "en0", enslaved: []),
+                        HostBridgeSnapshot(name: "en0", enslaved: []),
+                    ],
+                    macSocketVmnet: true,
+                )
+            }
+        }
+        let map = HostBridgeFactsService.statusByInterface(records: [], source: Dup())
+        #expect(map == ["en0": "active"])
+    }
+
     @Test func `status map on Linux uses facts not fabricated records`() {
         let fromDB = HostBridgeFactsService.statusByInterface(records: [
             BridgeRecord(

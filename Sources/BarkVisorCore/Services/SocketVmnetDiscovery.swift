@@ -58,10 +58,13 @@ public enum SocketVmnetDiscovery {
         sharedUplink: () -> String? = { sharedUplinkInterface() },
     ) -> [(interface: String, path: String)] {
         var found: [(String, String)] = []
-        var seen = Set<String>()
+        var seenPaths = Set<String>()
+        var seenInterfaces = Set<String>()
         func add(_ interface: String, _ path: String) {
-            guard fileExists(path), !seen.contains(path) else { return }
-            seen.insert(path)
+            guard fileExists(path), !seenPaths.contains(path), !seenInterfaces.contains(interface)
+            else { return }
+            seenPaths.insert(path)
+            seenInterfaces.insert(interface)
             found.append((interface, path))
         }
         for dir in ["/opt/homebrew/var/run", "/usr/local/var/run", "/var/run"] {
@@ -73,12 +76,10 @@ public enum SocketVmnetDiscovery {
         }
         // Shared Homebrew socket is not a host iface named "vmnet". Attach it to a
         // real uplink so template deploy / Network.bridge pass requireBridgedInterface.
+        // One path only — extra Homebrew prefixes must not duplicate the interface key.
         if let iface = sharedUplink(), !iface.isEmpty, !isLoopbackInterface(iface) {
-            let already = Set(found.map(\.0))
-            if !already.contains(iface) {
-                for path in sharedSocketPaths {
-                    add(iface, path)
-                }
+            if let path = sharedSocketPaths.first(where: fileExists) {
+                add(iface, path)
             }
         }
         return found

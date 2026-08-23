@@ -231,11 +231,20 @@ public enum HostBridgeFactsService {
 
     /// Interface → status for setup / system UI.
     /// macOS: managed-daemon DB rows. Linux: live facts (not fabricated plist rows).
-    public static func statusByInterface(records: [BridgeRecord]) -> [String: String] {
+    public static func statusByInterface(
+        records: [BridgeRecord],
+        source: any HostBridgeFactSource = LiveHostBridgeFactSource(),
+    ) -> [String: String] {
         if PlatformCapabilities.supportsManagedBridgeDaemon {
-            return Dictionary(uniqueKeysWithValues: records.map { ($0.interface, $0.status) })
+            return Dictionary(
+                records.map { ($0.interface, $0.status) },
+                uniquingKeysWith: { _, last in last },
+            )
         }
-        return Dictionary(uniqueKeysWithValues: probe().bridges.map { ($0.name, "active") })
+        return Dictionary(
+            probe(source: source).bridges.map { ($0.name, "active") },
+            uniquingKeysWith: { _, last in last },
+        )
     }
 
     /// One bridged `Network` row per host interface.

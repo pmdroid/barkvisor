@@ -423,6 +423,39 @@ struct QEMUBuilderValidationTests {
         #expect(found[0].path.hasSuffix("socket_vmnet.bridged.en0"))
     }
 
+    @Test func `existingSockets keeps one row per interface when prefixes collide`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: { path in
+                path == "/opt/homebrew/var/run/socket_vmnet"
+                    || path == "/usr/local/var/run/socket_vmnet"
+                    || path.hasSuffix("socket_vmnet.bridged.en0")
+            },
+            listBridged: { dir in
+                if dir == "/opt/homebrew/var/run" || dir == "/usr/local/var/run" {
+                    return ["socket_vmnet.bridged.en0"]
+                }
+                return []
+            },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en0"])
+        #expect(found[0].path.hasSuffix("socket_vmnet.bridged.en0"))
+        #expect(found[0].path.hasPrefix("/opt/homebrew/var/run"))
+    }
+
+    @Test func `existingSockets keeps one shared path when several prefixes exist`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: {
+                $0 == "/opt/homebrew/var/run/socket_vmnet"
+                    || $0 == "/usr/local/var/run/socket_vmnet"
+            },
+            listBridged: { _ in [] },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en0"])
+        #expect(found.map(\.path) == ["/opt/homebrew/var/run/socket_vmnet"])
+    }
+
     @Test func `shared socket_vmnet listed when uplink differs from per-iface`() {
         let found = SocketVmnetDiscovery.existingSockets(
             fileExists: { path in
