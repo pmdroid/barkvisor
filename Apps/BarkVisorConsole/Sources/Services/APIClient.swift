@@ -316,7 +316,7 @@ struct APIClient {
     func streamChatCompletions(
         model: String,
         messages: [ChatWireMessage],
-        onDelta: @escaping (String) -> Void,
+        onDelta: @escaping (String) async -> Void,
     ) async throws {
         var request = try makeRequest(method: "POST", path: Self.chatCompletionsPath, query: [])
         request.timeoutInterval = 3_600
@@ -418,7 +418,7 @@ struct APIClient {
     private func streamChatBytes(
         _ request: URLRequest,
         allowRefresh: Bool,
-        onDelta: @escaping (String) -> Void,
+        onDelta: @escaping (String) async -> Void,
     ) async throws {
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -440,13 +440,13 @@ struct APIClient {
             buffer.append("\n")
             let deltas = ChatSSE.drain(buffer: &buffer)
             for delta in deltas {
-                onDelta(delta)
+                await onDelta(delta)
             }
         }
         if !buffer.isEmpty {
             buffer.append("\n")
             for delta in ChatSSE.drain(buffer: &buffer) {
-                onDelta(delta)
+                await onDelta(delta)
             }
         }
     }

@@ -132,18 +132,13 @@ struct ChatView: View {
         turns.append(assistant)
         let history = turns.dropLast().map { ChatWireMessage(role: $0.role, content: $0.content) }
         streaming = true
-        sendTask = Task { @MainActor in
-            defer {
-                if generation == streamGeneration {
-                    streaming = false
-                }
-            }
+        sendTask = Task {
             do {
                 try await client.streamChatCompletions(
                     model: modelName,
                     messages: Array(history),
                 ) { delta in
-                    Task { @MainActor in
+                    await MainActor.run {
                         ChatStreamApply.append(
                             delta: delta,
                             to: &turns,
@@ -154,15 +149,21 @@ struct ChatView: View {
                     }
                 }
             } catch is CancellationError {
-                return
             } catch {
-                self.error = error.localizedDescription
-                if turns.last?.content.isEmpty == true {
-                    turns.removeLast()
-                    if turns.last?.isUser == true {
-                        draft = text
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    if turns.last?.content.isEmpty == true {
                         turns.removeLast()
+                        if turns.last?.isUser == true {
+                            draft = text
+                            turns.removeLast()
+                        }
                     }
+                }
+            }
+            await MainActor.run {
+                if generation == streamGeneration {
+                    streaming = false
                 }
             }
         }
