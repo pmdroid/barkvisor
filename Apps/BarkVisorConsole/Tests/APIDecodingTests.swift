@@ -316,6 +316,7 @@ struct APIDecodingTests {
           "attachable": true,
           "inUseByHost": false,
           "guestOllamaPath": "http://127.0.0.1:11434/v1",
+          "groupAddresses": ["0000:01:00.0", "0000:01:00.1"],
           "claimedByVMId": null,
           "claimedByVMName": null
         }
@@ -326,6 +327,13 @@ struct APIDecodingTests {
         #expect(gpu.canAttach)
         #expect(gpu.guestOllamaPath == GPUPassthroughCopy.guestOllamaPath)
         #expect(gpu.occupancyCopy == nil)
+        #expect(
+            GPUPassthroughCopy.groupMatesLabel(
+                pciAddress: gpu.pciAddress, groupAddresses: gpu.groupAddresses,
+            ) == "0000:01:00.1",
+        )
+        #expect(GPUPassthroughCopy.singleDisplayWarning.contains("one GPU"))
+        #expect(GPUPassthroughCopy.groupMatesLabel(pciAddress: "0000:01:00.0", groupAddresses: nil) == "none")
 
         let busyJSON = """
         {

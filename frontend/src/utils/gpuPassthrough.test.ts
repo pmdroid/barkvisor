@@ -3,7 +3,10 @@ import { defaultCapabilities } from './capabilitiesParse'
 import {
   GUEST_OLLAMA_PATH,
   GPU_IOMMU_NOT_READY,
+  GPU_SINGLE_DISPLAY_WARNING,
   gpuDetachAllowed,
+  gpuGroupMateAddresses,
+  gpuGroupMatesLabel,
   gpuHostOccupancyLabel,
   gpuPassthroughExplanation,
   gpuPassthroughSupported,
@@ -93,5 +96,19 @@ describe('gpuPassthrough copy (PAS-275)', () => {
     expect(gpuDetachAllowed('starting')).toBe(false)
     expect(gpuDetachAllowed('stopping')).toBe(false)
     expect(gpuDetachAllowed(undefined)).toBe(false)
+  })
+
+  test('group mates omit the GPU itself', () => {
+    expect(gpuGroupMateAddresses('0000:01:00.0', ['0000:01:00.0', '0000:01:00.1'])).toEqual([
+      '0000:01:00.1',
+    ])
+    expect(gpuGroupMatesLabel('0000:01:00.0', ['0000:01:00.0', '0000:01:00.1'])).toBe('0000:01:00.1')
+    expect(gpuGroupMatesLabel('0000:01:00.0', ['0000:01:00.0'])).toBe('none')
+    expect(gpuGroupMatesLabel('0000:01:00.0', undefined)).toBe('none')
+  })
+
+  test('single-GPU display warning is loud copy', () => {
+    expect(GPU_SINGLE_DISPLAY_WARNING).toContain('one GPU')
+    expect(GPU_SINGLE_DISPLAY_WARNING).toContain('host display')
   })
 })

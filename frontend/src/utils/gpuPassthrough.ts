@@ -6,6 +6,25 @@ export const GUEST_OLLAMA_PATH = 'http://127.0.0.1:11434/v1'
 export const GPU_IOMMU_NOT_READY =
   'GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready.'
 
+export const GPU_SINGLE_DISPLAY_WARNING =
+  'This Device lists one GPU. Passing it through can blank the host display.'
+
+/** Other PCI addresses in the same IOMMU group (not the GPU itself). */
+export function gpuGroupMateAddresses(
+  pciAddress: string,
+  groupAddresses?: string[] | null,
+): string[] {
+  return (groupAddresses ?? []).filter((addr) => addr && addr !== pciAddress)
+}
+
+export function gpuGroupMatesLabel(
+  pciAddress: string,
+  groupAddresses?: string[] | null,
+): string {
+  const mates = gpuGroupMateAddresses(pciAddress, groupAddresses)
+  return mates.length ? mates.join(', ') : 'none'
+}
+
 export function gpuPassthroughDetail(
   caps: CurrentHostCapabilities | null | undefined,
 ): CapabilityDetail | undefined {

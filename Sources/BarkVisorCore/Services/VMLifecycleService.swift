@@ -362,6 +362,9 @@ extension VMLifecycleService {
             vmID: vmID, vmName: params.name,
             sshKeys: ciKeys,
             userData: ciUserData,
+            instanceID: CodingAgentImage.cloudInitInstanceID(
+                vmID: vmID, userData: ciUserData, gpuDevices: params.gpuDevices,
+            ),
         )
         return isoURL.path
     }
@@ -483,6 +486,7 @@ extension VMLifecycleService {
         let sshKeys = params.cloudInit?.sshAuthorizedKeys?.filter { !$0.isEmpty } ?? []
         let userData = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines)
         let vmName = params.name
+        let gpuDevices = params.gpuDevices
         let hasCloudInit = !sshKeys.isEmpty || !(userData ?? "").isEmpty
 
         await backgroundTasks.submit(taskID, kind: .vmProvision) { @Sendable in
@@ -497,6 +501,9 @@ extension VMLifecycleService {
                         try CloudInitService.generateISO(
                             vmID: vmID, vmName: vmName,
                             sshKeys: sshKeys, userData: userData,
+                            instanceID: CodingAgentImage.cloudInitInstanceID(
+                                vmID: vmID, userData: userData, gpuDevices: gpuDevices,
+                            ),
                         ).path
                     } else {
                         nil

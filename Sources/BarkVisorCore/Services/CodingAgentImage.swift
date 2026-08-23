@@ -259,6 +259,16 @@ public enum CodingAgentImage {
         gpuAttached ? "\(vmID)-gpu" : vmID
     }
 
+    /// Managed Coding Agent ISOs flip `instance-id` so cloud-init re-runs on GPU attach/detach.
+    public static func cloudInitInstanceID(
+        vmID: String,
+        userData: String?,
+        gpuDevices: [GPUPassthroughDevice]?,
+    ) -> String? {
+        guard isManagedUserData(userData) else { return nil }
+        return cloudInitInstanceID(vmID: vmID, gpuAttached: !(gpuDevices ?? []).isEmpty)
+    }
+
     public static func applyingCreateDefaults(
         params: CreateVMParams,
         imageName: String?,

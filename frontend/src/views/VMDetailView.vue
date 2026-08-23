@@ -81,7 +81,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, gpuDetachAllowed, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
@@ -278,6 +278,7 @@ const gpuCaps = computed(() => (
 ))
 const gpuReady = computed(() => gpuPassthroughSupported(gpuCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(gpuCaps.value))
+const singleGPUDisplay = computed(() => hostGPUDevices.value.length === 1)
 const editCpuMax = computed(() => {
   if (isMemberDetail.value) {
     const n = memberCaps.value?.hostCpuCount
@@ -917,6 +918,7 @@ async function loadLocalDetail(existingVersion?: number) {
       store.fetchAll(),
       fetchNetworks(),
       fetchImages(),
+      fetchGPUDevices(),
       ...(managedBridge.available ? [fetchBridges()] : []),
     ])
     if (loadVersion !== detailLoadVersion) return
@@ -1677,6 +1679,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
         <p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px">
           {{ gpuReady ? 'Attach like USB. Guest Ollama is ' + GUEST_OLLAMA_PATH + '. The same card cannot be host and guest.' : 'Not available on this Device.' }}
         </p>
+        <p
+          v-if="gpuReady && singleGPUDisplay"
+          role="alert"
+          style="font-size:13px;font-weight:700;color:var(--red);margin:0 0 12px"
+        >{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
         <UnsupportedHint v-if="!gpuReady" :text="gpuExplanation" />
         <DataTable v-else :columns="[{ key: 'gpu', label: 'GPU' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
           <tr v-for="dev in (vm.gpuDevices || [])" :key="dev.pciAddress">
@@ -1684,7 +1691,10 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <div style="font-weight:500">{{ dev.label || dev.pciAddress }}</div>
               <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }}</div>
             </td>
-            <td><span class="badge badge-gray">{{ dev.iommuGroup }}</span></td>
+            <td>
+              <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
+              <div style="font-size:11px;color:var(--text-dim)">Group mates: {{ gpuGroupMatesLabel(dev.pciAddress, dev.groupAddresses) }}</div>
+            </td>
             <td style="text-align:right">
               <span v-if="!gpuDetachAllowed(vm?.state)" style="font-size:12px;color:var(--text-dim)">Stop the Workload to detach</span>
               <AppButton v-else size="sm" variant="danger" :disabled="gpuLoading || (isMemberDetail && !memberReachable)" @click="gpuDetach(dev)">Detach</AppButton>
@@ -1766,6 +1776,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
     <div v-if="gpuReady && showAttachGPU" class="modal-overlay" @click.self="showAttachGPU = false">
       <div class="modal">
         <h2>Attach GPU</h2>
+        <p
+          v-if="singleGPUDisplay"
+          role="alert"
+          style="font-size:13px;font-weight:700;color:var(--red);margin:0 0 12px"
+        >{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
         <EmptyState v-if="hostGPUDevices.length === 0" :title="isMemberDetail ? 'No GPUs in an IOMMU group on that Device.' : 'No GPUs in an IOMMU group on this Device.'" />
         <DataTable v-else :columns="[{ key: 'gpu', label: 'GPU' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
           <tr
@@ -1780,7 +1795,10 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">{{ gpuHostOccupancyLabel(true) }}</div>
               <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
             </td>
-            <td><span class="badge badge-gray">{{ dev.iommuGroup }}</span></td>
+            <td>
+              <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
+              <div style="font-size:11px;color:var(--text-dim)">Group mates: {{ gpuGroupMatesLabel(dev.pciAddress, dev.groupAddresses) }}</div>
+            </td>
             <td style="text-align:right">
               <span v-if="dev.claimedByVMId" style="font-size:12px;color:var(--text-dim)">In use</span>
               <span v-else-if="dev.attachable === false" style="font-size:12px;color:var(--text-dim)">Unavailable</span>

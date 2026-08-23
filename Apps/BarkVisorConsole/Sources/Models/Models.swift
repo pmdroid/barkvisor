@@ -589,6 +589,13 @@ enum GPUPassthroughCopy {
         "This Device has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is \(guestOllamaPath). The same card cannot be host and guest."
     static let iommuNotReady =
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
+    static let singleDisplayWarning =
+        "This Device lists one GPU. Passing it through can blank the host display."
+
+    static func groupMatesLabel(pciAddress: String, groupAddresses: [String]?) -> String {
+        let mates = (groupAddresses ?? []).filter { !$0.isEmpty && $0 != pciAddress }
+        return mates.isEmpty ? "none" : mates.joined(separator: ", ")
+    }
 
     static func explanation(supported: Bool, remediation: String?, platform: String) -> String {
         if supported {

@@ -145,9 +145,21 @@ struct WorkloadDetailView: View {
                     Text(GPUPassthroughCopy.iommuNotReady)
                         .foregroundStyle(.secondary)
                 }
+                if hostGPUs.count == 1 {
+                    Text(GPUPassthroughCopy.singleDisplayWarning)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.red)
+                }
                 if let attached = workload.gpuDevices, !attached.isEmpty {
                     ForEach(attached) { gpu in
                         LabeledContent(gpu.displayName, value: "IOMMU \(gpu.iommuGroup)")
+                        LabeledContent(
+                            "Group mates",
+                            value: GPUPassthroughCopy.groupMatesLabel(
+                                pciAddress: gpu.pciAddress,
+                                groupAddresses: gpu.groupAddresses,
+                            ),
+                        )
                         if workload.canDetachGPU {
                             Button("Detach \(gpu.pciAddress)", role: .destructive) {
                                 Task {
@@ -167,6 +179,13 @@ struct WorkloadDetailView: View {
                         !(workload.gpuDevices ?? []).contains(where: { $0.pciAddress == gpu.pciAddress })
                     }) { gpu in
                         LabeledContent(gpu.name, value: "IOMMU \(gpu.iommuGroup)")
+                        LabeledContent(
+                            "Group mates",
+                            value: GPUPassthroughCopy.groupMatesLabel(
+                                pciAddress: gpu.pciAddress,
+                                groupAddresses: gpu.groupAddresses,
+                            ),
+                        )
                         if let occupancy = gpu.occupancyCopy {
                             Text(occupancy)
                                 .foregroundStyle(.secondary)

@@ -15,7 +15,7 @@ import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
@@ -223,10 +223,12 @@ async function doStop() {
         <div class="gpu-card-title">GPU passthrough</div>
         <p class="gpu-card-status">{{ gpuReady ? 'This Device reports IOMMU, vfio-pci, and KVM.' : 'Not available on this Device.' }}</p>
         <UnsupportedHint :text="gpuExplanation" />
+        <p v-if="gpuReady && hostGPUs.length === 1" class="gpu-warning" role="alert">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
         <ul v-if="hostGPUs.length" class="gpu-list">
           <li v-for="gpu in hostGPUs" :key="gpu.pciAddress">
             <span class="gpu-name">{{ gpu.name }}</span>
             <span class="gpu-meta">{{ gpu.pciAddress }} · IOMMU {{ gpu.iommuGroup }}</span>
+            <span class="gpu-meta">Group mates: {{ gpuGroupMatesLabel(gpu.pciAddress, gpu.groupAddresses) }}</span>
             <span v-if="gpu.claimedByVMName" class="gpu-busy">Attached to {{ gpu.claimedByVMName }}</span>
             <span v-else-if="gpu.inUseByHost" class="gpu-busy">{{ gpuHostOccupancyLabel(true) }}</span>
           </li>
@@ -445,6 +447,12 @@ async function doStop() {
 .gpu-name { font-weight: 500; }
 .gpu-meta { font-family: var(--font-mono); color: var(--text-dim); }
 .gpu-busy { color: var(--red); }
+.gpu-warning {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--red);
+}
 
 @media (max-width: 768px) {
   .detail-header h1,

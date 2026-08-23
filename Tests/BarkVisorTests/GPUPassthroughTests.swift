@@ -182,6 +182,12 @@ struct GPUPassthroughTests {
     }
 
     @Test func `post-create gpu user-data installs guest ollama`() throws {
+        let gpu = GPUPassthroughDevice(
+            pciAddress: "0000:01:00.0",
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+        )
         let attached = CodingAgentImage.userDataForGPU(gpuAttached: true)
         try CloudInitService.validateUserData(attached)
         #expect(attached.contains("barkvisor-guest-ollama"))
@@ -189,18 +195,26 @@ struct GPUPassthroughTests {
         #expect(!attached.contains("10.0.2.2:11434"))
         #expect(CodingAgentImage.isManagedUserData(attached))
         #expect(CodingAgentImage.cloudInitInstanceID(vmID: "vm-1", gpuAttached: true) == "vm-1-gpu")
+        #expect(
+            CodingAgentImage.cloudInitInstanceID(
+                vmID: "vm-1", userData: attached, gpuDevices: [gpu],
+            ) == "vm-1-gpu",
+        )
 
         let detached = CodingAgentImage.userDataForGPU(gpuAttached: false)
         try CloudInitService.validateUserData(detached)
         #expect(!detached.contains("barkvisor-guest-ollama"))
         #expect(detached.contains("10.0.2.2:11434"))
         #expect(CodingAgentImage.cloudInitInstanceID(vmID: "vm-1", gpuAttached: false) == "vm-1")
-
-        let gpu = GPUPassthroughDevice(
-            pciAddress: "0000:01:00.0",
-            iommuGroup: "14",
-            vendorId: "10de",
-            deviceId: "2684",
+        #expect(
+            CodingAgentImage.cloudInitInstanceID(
+                vmID: "vm-1", userData: detached, gpuDevices: [],
+            ) == "vm-1",
+        )
+        #expect(
+            CodingAgentImage.cloudInitInstanceID(
+                vmID: "vm-1", userData: "packages:\n  - git\n", gpuDevices: [gpu],
+            ) == nil,
         )
         let params = CreateVMParams(
             name: "coder",
