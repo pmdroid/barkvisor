@@ -2,66 +2,80 @@ import Foundation
 
 /// Centralized binary and resource resolution.
 ///
-/// In a release install, binaries live in `{prefix}/libexec/barkvisor/` and resources
-/// (firmware, keymaps) in `{prefix}/share/barkvisor/qemu/`. During development these
-/// won't exist, so we fall back to Homebrew / system paths.
+/// macOS (PAS-287): Homebrew first (`brew install qemu` / `socket_vmnet` / `swtpm`),
+/// then a leftover `{prefix}/libexec/barkvisor/` copy if one exists.
+/// Linux: leftover libexec, then distro FHS.
 public enum BundleResolver {
     // MARK: - Helpers (executables)
 
-    /// Resolve a helper binary by name.
-    /// Checks: installed libexec/ → platform bin paths → PATH lookup.
-    public static func helper(_ name: String) throws -> URL {
-        // 1. Installed location
-        let installed = "\(Config.libexecDir)/\(name)"
-        if FileManager.default.isExecutableFile(atPath: installed) {
-            return URL(fileURLWithPath: installed)
-        }
-        // 2. Platform search paths (Homebrew on macOS; FHS on Linux)
-        var candidates = [
-            "/opt/homebrew/bin/\(name)",
-            "/usr/local/bin/\(name)",
-            "/usr/bin/\(name)",
-        ]
-        #if os(Linux)
-            candidates += [
+    /// Search order for `helper(_:)`. First existing executable wins.
+    public static func helperCandidates(_ name: String) -> [String] {
+        let libexec = "\(Config.libexecDir)/\(name)"
+        #if os(macOS)
+            return [
+                "/opt/homebrew/bin/\(name)",
+                "/usr/local/bin/\(name)",
+                libexec,
+            ]
+        #else
+            var candidates = [
+                libexec,
+                "/usr/bin/\(name)",
+                "/usr/local/bin/\(name)",
                 "/usr/lib/qemu/\(name)",
                 "/usr/libexec/\(name)",
             ]
-            // Rocky/Alma/RHEL: qemu-kvm package ships only /usr/libexec/qemu-kvm
-            // (no qemu-system-x86_64 binary name).
             if name == "qemu-system-x86_64" {
                 candidates += [
                     "/usr/libexec/qemu-kvm",
                     "/usr/bin/qemu-kvm",
                 ]
             }
+            return candidates
         #endif
-        if let found = firstExisting(candidates) {
+    }
+
+    /// Resolve a helper binary by name.
+    public static func helper(_ name: String) throws -> URL {
+        if let found = firstExecutable(helperCandidates(name)) {
             return URL(fileURLWithPath: found)
         }
-        // 3. PATH search via `which`
         if let found = whichLookup(name) {
             return found
         }
-        throw BarkVisorError.processSpawnFailed(
-            "\(name) not found. Install via package manager or ensure it is in your PATH.",
-        )
+        #if os(macOS)
+            let hint = "brew install qemu  (also: brew install swtpm socket_vmnet)"
+        #else
+            let hint = "install via the distro package manager or ensure it is in PATH"
+        #endif
+        throw BarkVisorError.processSpawnFailed("\(name) not found. \(hint)")
     }
 
-    /// Resolve a helper that lives under a Homebrew opt prefix (e.g. socket_vmnet).
-    /// Checks: installed libexec/ → /opt/homebrew/opt/{package}/bin → /usr/local/opt/{package}/bin → custom paths.
-    public static func optHelper(_ name: String, package: String, extraPaths: [String] = []) throws
-        -> URL {
-        let installed = "\(Config.libexecDir)/\(name)"
-        if FileManager.default.isExecutableFile(atPath: installed) {
-            return URL(fileURLWithPath: installed)
-        }
-        var candidates = [
+    /// Search order for Homebrew opt-prefix tools (e.g. socket_vmnet).
+    public static func optHelperCandidates(
+        _ name: String,
+        package: String,
+        extraPaths: [String] = [],
+    ) -> [String] {
+        let libexec = "\(Config.libexecDir)/\(name)"
+        var brew = [
             "/opt/homebrew/opt/\(package)/bin/\(name)",
             "/usr/local/opt/\(package)/bin/\(name)",
         ]
-        candidates.append(contentsOf: extraPaths)
-        if let found = firstExisting(candidates) {
+        brew.append(contentsOf: extraPaths)
+        #if os(macOS)
+            return brew + [libexec]
+        #else
+            return [libexec] + brew
+        #endif
+    }
+
+    /// Resolve a helper that lives under a Homebrew opt prefix (e.g. socket_vmnet).
+    public static func optHelper(_ name: String, package: String, extraPaths: [String] = []) throws
+        -> URL {
+        if let found = firstExecutable(
+            optHelperCandidates(name, package: package, extraPaths: extraPaths),
+        ) {
             return URL(fileURLWithPath: found)
         }
         throw BarkVisorError.processSpawnFailed(
@@ -84,24 +98,26 @@ public enum BundleResolver {
     // MARK: - Resources (firmware, data files)
 
     /// Resolve a QEMU resource file (firmware, vgabios, keymaps, etc.).
-    /// Checks: installed share/ → Homebrew share → Linux FHS qemu share/lib paths.
     public static func qemuResource(_ name: String) -> URL? {
-        // 1. Installed location
-        let installed = "\(Config.qemuShareDir)/\(name)"
-        if FileManager.default.fileExists(atPath: installed) {
-            return URL(fileURLWithPath: installed)
-        }
-        // 2. Homebrew / system / Linux FHS (incl. distro firmware dirs)
-        let candidates = [
-            "/opt/homebrew/share/qemu/\(name)",
-            "/usr/local/share/qemu/\(name)",
-            "/usr/share/qemu/\(name)",
-            "/usr/lib/qemu/\(name)",
-            "/usr/share/AAVMF/\(name)",
-            "/usr/share/OVMF/\(name)",
-            "/usr/share/edk2/ovmf/\(name)",
-            "/usr/share/edk2/aarch64/\(name)",
-        ]
+        #if os(macOS)
+            let candidates = [
+                "/opt/homebrew/share/qemu/\(name)",
+                "/usr/local/share/qemu/\(name)",
+                "\(Config.qemuShareDir)/\(name)",
+            ]
+        #else
+            let candidates = [
+                "\(Config.qemuShareDir)/\(name)",
+                "/opt/homebrew/share/qemu/\(name)",
+                "/usr/local/share/qemu/\(name)",
+                "/usr/share/qemu/\(name)",
+                "/usr/lib/qemu/\(name)",
+                "/usr/share/AAVMF/\(name)",
+                "/usr/share/OVMF/\(name)",
+                "/usr/share/edk2/ovmf/\(name)",
+                "/usr/share/edk2/aarch64/\(name)",
+            ]
+        #endif
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)
         }
@@ -109,18 +125,22 @@ public enum BundleResolver {
     }
 
     /// Resolve the QEMU data directory for the `-L` flag.
-    /// Returns the installed share/qemu/ directory if it exists, otherwise Homebrew/Linux share paths.
     public static func qemuDataDir() -> URL? {
-        let installed = Config.qemuShareDir
-        if FileManager.default.fileExists(atPath: installed) {
-            return URL(fileURLWithPath: installed)
-        }
-        let candidates = [
-            "/opt/homebrew/share/qemu",
-            "/usr/local/share/qemu",
-            "/usr/share/qemu",
-            "/usr/lib/qemu",
-        ]
+        #if os(macOS)
+            let candidates = [
+                "/opt/homebrew/share/qemu",
+                "/usr/local/share/qemu",
+                Config.qemuShareDir,
+            ]
+        #else
+            let candidates = [
+                Config.qemuShareDir,
+                "/opt/homebrew/share/qemu",
+                "/usr/local/share/qemu",
+                "/usr/share/qemu",
+                "/usr/lib/qemu",
+            ]
+        #endif
         if let found = firstExisting(candidates) {
             return URL(fileURLWithPath: found)
         }
@@ -131,6 +151,10 @@ public enum BundleResolver {
 
     private static func firstExisting(_ paths: [String]) -> String? {
         paths.first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    private static func firstExecutable(_ paths: [String]) -> String? {
+        paths.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private static func whichLookup(_ name: String) -> URL? {

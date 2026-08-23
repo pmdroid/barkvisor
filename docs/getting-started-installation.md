@@ -53,25 +53,11 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
 /usr/local/
   bin/
     barkvisor                   # Main server daemon
-  libexec/barkvisor/
-    qemu-system-aarch64         # QEMU VM emulator (aarch64, HVF-enabled)
-    qemu-img                    # Disk image utility
-    swtpm                       # Software TPM 2.0 emulator (Windows 11 support)
-    socket_vmnet                # Bridged networking daemon
-    socket_vmnet_client         # Client for socket_vmnet
-    xz                          # XZ/LZMA decompression (for compressed images)
-    mkisofs                     # ISO creation (cloud-init seed drives)
+  libexec/barkvisor/            # unused for QEMU (Homebrew); leftover-safe
   lib/barkvisor/
-    *.dylib                     # Bundled shared libraries (GLib, GnuTLS, etc.)
+    *.dylib                     # daemon dylibs if any
   share/barkvisor/
     templates.json              # Built-in VM template catalog
-    qemu/
-      edk2-aarch64-code.fd          # UEFI firmware
-      AAVMF_CODE.secboot.fd         # UEFI firmware with Secure Boot
-      vgabios-ramfb.bin              # VGA BIOS for ramfb display
-      vgabios-virtio.bin             # VGA BIOS for virtio-gpu
-      efi-virtio.rom                 # VirtIO PXE boot ROM
-      keymaps/                       # QEMU keyboard mappings
     frontend/
       dist/
         index.html              # Vue.js single-page application
@@ -84,7 +70,13 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
     dev.barkvisor.helper             # Privileged XPC helper daemon (bridged networking)
 ```
 
-All helper binaries (QEMU, swtpm, socket_vmnet, xz, mkisofs) and their shared-library dependencies are built from source and bundled. No Homebrew packages are required at runtime.
+QEMU, swtpm, and socket_vmnet are **not** in the pkg. Install them with Homebrew before starting Workloads:
+
+```sh
+brew install qemu swtpm socket_vmnet
+```
+
+The privileged XPC helper (`dev.barkvisor.helper`) is still in the pkg. That is required for bridged networking.
 
 ## Data Directory
 

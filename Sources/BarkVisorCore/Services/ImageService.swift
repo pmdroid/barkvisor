@@ -82,6 +82,7 @@ public enum ImageService {
         let filename = "\(id).\(ext)"
         let imagesDir = try await db.read { try Config.imagesDir(from: $0) }
         try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        try DiskService.requireVolumeSpace(neededBytes: 1_073_741_824, at: imagesDir.path)
         let destination = imagesDir.appendingPathComponent(filename)
 
         let image = VMImage(

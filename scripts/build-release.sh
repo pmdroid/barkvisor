@@ -4,8 +4,9 @@ set -euo pipefail
 # =============================================================================
 # BarkVisor Release Build Script
 # =============================================================================
-# Builds all dependencies from source, assembles the .app bundle, bundles
-# dylibs, code signs, and creates a DMG.
+# Builds the frontend and Swift daemon, assembles the install layout, signs,
+# and creates a .pkg. QEMU/socket_vmnet/swtpm are Homebrew at runtime unless
+# BUNDLE_HYPERVISOR_DEPS=true.
 #
 # Usage:
 #   ./scripts/build-release.sh                  # Full build
@@ -125,8 +126,17 @@ XZ_SHA256="${XZ_SHA256:-}"
 # =============================================================================
 log "Checking build prerequisites..."
 
+# PAS-287: Homebrew QEMU/socket_vmnet/swtpm at runtime unless explicitly bundling.
+BUNDLE_HYPERVISOR_DEPS="${BUNDLE_HYPERVISOR_DEPS:-false}"
+
 MISSING_DEPS=()
-for cmd in meson ninja pkg-config dylibbundler autoconf automake glibtoolize gawk mkisofs; do
+if [ "$BUNDLE_HYPERVISOR_DEPS" = true ]; then
+    PREREQ_CMDS=(meson ninja pkg-config dylibbundler autoconf automake glibtoolize gawk mkisofs)
+else
+    # xz + mkisofs still ship in the pkg (cloud-init ISO + image decompress).
+    PREREQ_CMDS=(dylibbundler xz mkisofs)
+fi
+for cmd in "${PREREQ_CMDS[@]}"; do
     if ! command -v "$cmd" &>/dev/null; then
         MISSING_DEPS+=("$cmd")
     fi
@@ -137,6 +147,7 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     exit 1
 fi
 
+if [ "$BUNDLE_HYPERVISOR_DEPS" = true ]; then
 # Set up Python venv with distlib (needed by swtpm/libtpms build)
 VENV_DIR="$DEPS_DIR/venv"
 if [ ! -d "$VENV_DIR" ]; then
@@ -145,9 +156,13 @@ if [ ! -d "$VENV_DIR" ]; then
     uv add distlib
 fi
 export PATH="$VENV_DIR/bin:$PATH"
+fi
 
 mkdir -p "$DEPS_SRC" "$DEPS_PREFIX"/{bin,lib,share,include}
 
+if [ "$BUNDLE_HYPERVISOR_DEPS" != true ]; then
+    log "PAS-287: not building QEMU/swtpm/socket_vmnet (runtime: brew install qemu swtpm socket_vmnet)"
+else
 # =============================================================================
 # Step 1: Build QEMU from source
 # =============================================================================
@@ -355,6 +370,7 @@ if [ ! -f "$AAVMF_FW" ]; then
 else
     log "AAVMF firmware: already present"
 fi
+fi  # BUNDLE_HYPERVISOR_DEPS
 
 # =============================================================================
 # Step 6: Build frontend
@@ -443,35 +459,52 @@ cat > "$STAGE_LAUNCHD/dev.barkvisor.helper.plist" <<PLIST
 </plist>
 PLIST
 
-# Helper binaries → /usr/local/libexec/barkvisor/
-log_sub "Copying helper binaries..."
-for bin in qemu-system-aarch64 qemu-img swtpm \
-           socket_vmnet socket_vmnet_client xz; do
-    if [ -f "$DEPS_PREFIX/bin/$bin" ]; then
-        cp "$DEPS_PREFIX/bin/$bin" "$STAGE_LIBEXEC/$bin"
-        log_sub "  $bin (from deps)"
-    else
-        echo "ERROR: $bin not found in $DEPS_PREFIX/bin — build may have failed"
+stage_host_tool() {
+    local name="$1"
+    local brew_pkg="${2:-$1}"
+    local src
+    src="$(command -v "$name" 2>/dev/null || true)"
+    if [ -z "$src" ] || [ ! -f "$src" ]; then
+        echo "ERROR: $name not found — install via: brew install $brew_pkg"
         exit 1
     fi
-done
+    cp "$src" "$STAGE_LIBEXEC/$name"
+    chmod u+w "$STAGE_LIBEXEC/$name"
+    log_sub "  $name (from $src)"
+}
 
-# mkisofs from cdrtools (Homebrew prerequisite)
-MKISOFS_PATH="$(command -v mkisofs 2>/dev/null || true)"
-if [ -n "$MKISOFS_PATH" ]; then
-    cp "$MKISOFS_PATH" "$STAGE_LIBEXEC/mkisofs"
-    chmod u+w "$STAGE_LIBEXEC/mkisofs"
-    MKISOFS_VER="$(mkisofs --version 2>&1 | head -1 || true)"
-    log_sub "  mkisofs ($MKISOFS_VER)"
+# Helper binaries (only when bundling hypervisor deps)
+if [ "$BUNDLE_HYPERVISOR_DEPS" = true ]; then
+    log_sub "Copying helper binaries..."
+    for bin in qemu-system-aarch64 qemu-img swtpm \
+               socket_vmnet socket_vmnet_client xz; do
+        if [ -f "$DEPS_PREFIX/bin/$bin" ]; then
+            cp "$DEPS_PREFIX/bin/$bin" "$STAGE_LIBEXEC/$bin"
+            log_sub "  $bin (from deps)"
+        else
+            echo "ERROR: $bin not found in $DEPS_PREFIX/bin — build may have failed"
+            exit 1
+        fi
+    done
+    MKISOFS_PATH="$(command -v mkisofs 2>/dev/null || true)"
+    if [ -n "$MKISOFS_PATH" ]; then
+        cp "$MKISOFS_PATH" "$STAGE_LIBEXEC/mkisofs"
+        chmod u+w "$STAGE_LIBEXEC/mkisofs"
+        log_sub "  mkisofs"
+    else
+        echo "ERROR: mkisofs not found — install via: brew install cdrtools"
+        exit 1
+    fi
+    log_sub "Copying QEMU firmware and data..."
+    QEMU_SHARE="$DEPS_PREFIX/share/qemu"
 else
-    echo "ERROR: mkisofs not found — install via: brew install cdrtools"
-    exit 1
+    log_sub "Not copying QEMU/socket_vmnet/swtpm (Homebrew at runtime)"
+    QEMU_SHARE=""
+    stage_host_tool xz xz
+    stage_host_tool mkisofs cdrtools
 fi
 
-# QEMU firmware and data files → /usr/local/share/barkvisor/qemu/
-log_sub "Copying QEMU firmware and data..."
-QEMU_SHARE="$DEPS_PREFIX/share/qemu"
-
+if [ -n "$QEMU_SHARE" ]; then
 FIRMWARE_FILES=(
     edk2-aarch64-code.fd
     AAVMF_CODE.secboot.fd
@@ -491,6 +524,7 @@ done
 # Keymaps directory
 if [ -d "$QEMU_SHARE/keymaps" ]; then
     cp -r "$QEMU_SHARE/keymaps" "$STAGE_QEMU/keymaps"
+fi
 fi
 
 # Frontend dist → /usr/local/share/barkvisor/frontend/dist/
@@ -705,7 +739,8 @@ DIST
 <p>This installer will:</p>
 <ul>
 <li>Install the BarkVisor server daemon</li>
-<li>Install QEMU and networking helpers</li>
+<li>Install the BarkVisor daemon and privileged helper</li>
+<li>Requires Homebrew: <code>brew install qemu swtpm socket_vmnet</code></li>
 <li>Create the <code>_barkvisor</code> system user</li>
 <li>Start the server as a LaunchDaemon</li>
 </ul>
@@ -775,7 +810,7 @@ fi
 echo ""
 log "Install layout:"
 log_sub "/usr/local/bin/barkvisor                          (server daemon)"
-log_sub "/usr/local/libexec/barkvisor/                     (QEMU, swtpm, etc.)"
+log_sub "/usr/local/libexec/barkvisor/                     (xz, mkisofs; QEMU from Homebrew)"
 log_sub "/usr/local/lib/barkvisor/                         (shared libraries)"
 log_sub "/usr/local/share/barkvisor/                       (frontend, firmware)"
 log_sub "/Library/PrivilegedHelperTools/dev.barkvisor.helper"

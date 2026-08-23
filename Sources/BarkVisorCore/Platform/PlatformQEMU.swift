@@ -161,7 +161,7 @@ public enum PlatformQEMU {
     /// How to obtain AAVMF secure-boot firmware on this platform.
     public static var aavmfSecureBootInstallHint: String {
         #if os(macOS)
-            "Reinstall BarkVisor or run scripts/build-release.sh to bundle firmware."
+            "brew install qemu  (AAVMF/edk2 firmware ships in the qemu bottle)"
         #else
             "apt: qemu-efi-aarch64  |  pacman: edk2-armvirt"
         #endif
