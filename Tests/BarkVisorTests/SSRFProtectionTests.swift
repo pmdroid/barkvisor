@@ -1,12 +1,6 @@
-#if canImport(Darwin)
-    import Darwin
-#elseif canImport(Glibc)
-    import Glibc
-#endif
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
-import Dispatch
 import Foundation
 import Testing
 @testable import BarkVisor
@@ -191,102 +185,55 @@ struct SSRFProtectionTests {
         #expect(publicURL == nil)
     }
 
-    @Test func `library download session does not follow redirect to loopback`() async throws {
-        let target = try LocalRedirectHTTPServer(location: "http://127.0.0.1:9/secret")
-        defer { target.stop() }
-        let url = try #require(URL(string: "http://127.0.0.1:\(target.port)/image.iso"))
-        // 127.0.0.1 itself is private, so validate rejects before fetch. Prove the
-        // hop gate: session must not follow Location even if the first URL were public.
+    @Test func `library download session does not follow redirect to loopback`() throws {
         let privateLocation = try #require(URL(string: "http://127.0.0.1:9/secret"))
         #expect(!SSRFGuard.shouldFollowRedirect(to: privateLocation))
+        let fileHop = try #require(URL(string: "file:///etc/passwd"))
+        #expect(!SSRFGuard.shouldFollowRedirect(to: fileHop))
+    }
+
+    @Test func `pinned session refuses loopback before connect`() async throws {
+        let url = try #require(URL(string: "http://127.0.0.1/image.iso"))
         let session = SSRFGuard.urlSession(resourceTimeout: 5)
         defer { session.invalidateAndCancel() }
-        let (_, response) = try await session.data(from: url)
-        let http = try #require(response as? HTTPURLResponse)
-        #expect((300 ... 399).contains(http.statusCode))
-        #expect(target.connectionCount == 1)
-    }
-}
-
-/// Serves a 302 so tests can prove Library URLSession does not follow a private Location.
-private final class LocalRedirectHTTPServer: @unchecked Sendable {
-    let port: Int
-    private let fd: Int32
-    private let lock = NSLock()
-    private var _connections = 0
-
-    var connectionCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return _connections
-    }
-
-    init(location: String) throws {
-        let sock = socket(AF_INET, PlatformSocket.stream, 0)
-        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
-        var yes: Int32 = 1
-        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        addr.sin_port = 0
-        let bindRC = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bindRC == 0, listen(sock, 8) == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("bind")
-        }
-        var got = sockaddr_in()
-        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(sock, $0, &len)
-            }
-        }
-        guard nameRC == 0 else {
-            close(sock)
-            throw BarkVisorError.badRequest("getsockname")
-        }
-        self.fd = sock
-        self.port = Int(UInt16(bigEndian: got.sin_port))
-        let ready = DispatchSemaphore(value: 0)
-        Thread.detachNewThread { [fd = sock, location] in
-            ready.signal()
-            while true {
-                var clientAddr = sockaddr_in()
-                var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-                let client = withUnsafeMutablePointer(to: &clientAddr) { ptr in
-                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        accept(fd, $0, &clientLen)
-                    }
-                }
-                if client < 0 { break }
-                self.lock.lock()
-                self._connections += 1
-                self.lock.unlock()
-                var buf = [UInt8](repeating: 0, count: 1_024)
-                _ = read(client, &buf, buf.count)
-                let payload = Data(
-                    "HTTP/1.1 302 Found\r\nLocation: \(location)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                        .utf8,
-                )
-                payload.withUnsafeBytes { raw in
-                    guard let base = raw.baseAddress else { return }
-                    _ = write(client, base, raw.count)
-                }
-                close(client)
-            }
-        }
-        if ready.wait(timeout: .now() + .seconds(5)) != .success {
-            close(sock)
-            throw BarkVisorError.badRequest("accept thread did not start")
+        await #expect(throws: (any Error).self) {
+            _ = try await session.data(from: url)
         }
     }
 
-    func stop() {
-        close(fd)
+    @Test func `fetchRejection blocks file and ftp schemes`() throws {
+        let fileWithHost = try #require(URL(string: "file://cloud-images.ubuntu.com/etc/passwd"))
+        let ftp = try #require(URL(string: "ftp://example.com/a.iso"))
+        #expect(SSRFGuard.fetchRejection(for: fileWithHost) != nil)
+        #expect(SSRFGuard.fetchRejection(for: ftp) != nil)
+    }
+
+    @Test func `pinEndpoint keeps SNI host and drops private answers`() throws {
+        let url = try #require(URL(string: "https://cloud-images.example/img.qcow2"))
+
+        let pin = try SSRFGuard.pinEndpoint(url: url, resolvedIPs: ["93.184.216.34", "1.1.1.1"])
+        #expect(pin.originalHost == "cloud-images.example")
+        #expect(pin.connectIP == "93.184.216.34")
+        #expect(pin.port == 443)
+        #expect(pin.usesTLS)
+
+        do {
+            _ = try SSRFGuard.pinEndpoint(url: url, resolvedIPs: ["1.1.1.1", "127.0.0.1"])
+            Issue.record("mixed public/private answers must not pin")
+        } catch let SSRFPinError.rejected(message) {
+            #expect(message.contains("private"))
+        }
+
+        do {
+            _ = try SSRFGuard.pinEndpoint(url: url, resolvedIPs: [])
+            Issue.record("empty DNS must not pin")
+        } catch let SSRFPinError.rejected(message) {
+            #expect(message.contains("could not be resolved"))
+        }
+
+        let fileURL = try #require(URL(string: "file://cloud-images.example/etc/passwd"))
+        #expect(throws: SSRFPinError.self) {
+            _ = try SSRFGuard.pinEndpoint(url: fileURL, resolvedIPs: ["93.184.216.34"])
+        }
     }
 }

@@ -99,19 +99,55 @@ public enum SSRFGuard {
         return nil
     }
 
+    /// Scheme allowlist plus ``validate(url:)``. Catalog/remote input must never
+    /// claim the local `file://` download path.
+    public static func fetchRejection(for url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), Config.allowedURLSchemes.contains(scheme) else {
+            return "Invalid URL. Only http:// and https:// URLs are allowed."
+        }
+        return validate(url: url)
+    }
+
+    /// Resolve once and pick a single public IP for the TCP connect.
+    /// TLS SNI and the HTTP Host header stay on `originalHost`.
+    public static func pinEndpoint(url: URL, resolvedIPs: [String]? = nil) throws -> PinnedEndpoint {
+        guard let scheme = url.scheme?.lowercased(), Config.allowedURLSchemes.contains(scheme) else {
+            throw SSRFPinError.rejected("Invalid URL. Only http:// and https:// URLs are allowed.")
+        }
+        guard let host = url.host, !host.isEmpty else {
+            throw SSRFPinError.rejected("URL has no host")
+        }
+        if isPrivateHost(host.lowercased()) {
+            throw SSRFPinError.rejected("URL targets a private/internal host: \(host.lowercased())")
+        }
+        let ips = resolvedIPs ?? resolvedIPStrings(host)
+        if ips.isEmpty {
+            throw SSRFPinError.rejected("URL hostname '\(host)' could not be resolved")
+        }
+        if ips.contains(where: { isPrivateHost($0) }) {
+            throw SSRFPinError.rejected(
+                "URL hostname '\(host)' resolves to a private/internal IP address",
+            )
+        }
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        return PinnedEndpoint(
+            originalHost: host, connectIP: ips[0], port: port, usesTLS: scheme == "https",
+        )
+    }
+
     /// Whether a redirect hop may be fetched. Default URLSession follows blindly;
     /// Library downloads must re-run ``validate(url:)`` (scheme + DNS) on Location.
     public static func shouldFollowRedirect(to url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), Config.allowedURLSchemes.contains(scheme) else {
-            return false
-        }
-        return validate(url: url) == nil
+        fetchRejection(for: url) == nil
     }
 
     /// URLSession that only follows hops ``shouldFollowRedirect(to:)`` allows.
+    /// HTTP(S) is handled by ``SSRFPinnedURLProtocol``, which connects to the
+    /// address ``pinEndpoint`` approved and keeps Host / TLS SNI on the original name.
     public static func urlSession(resourceTimeout: TimeInterval = 60) -> URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForResource = resourceTimeout
+        config.protocolClasses = [SSRFPinnedURLProtocol.self]
         return URLSession(
             configuration: config,
             delegate: SSRFRedirectGate.shared,
@@ -144,6 +180,24 @@ public enum SSRFGuard {
             return String(bytes: buf.prefix(while: { $0 != 0 }).map(UInt8.init), encoding: .utf8)
         default:
             return nil
+        }
+    }
+}
+
+/// Connect to `connectIP` while HTTP Host and TLS SNI stay `originalHost`.
+public struct PinnedEndpoint: Equatable, Sendable {
+    public let originalHost: String
+    public let connectIP: String
+    public let port: Int
+    public let usesTLS: Bool
+}
+
+public enum SSRFPinError: Error, Equatable, LocalizedError {
+    case rejected(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .rejected(message): message
         }
     }
 }

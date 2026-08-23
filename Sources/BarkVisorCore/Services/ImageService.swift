@@ -165,7 +165,7 @@ public enum ImageService {
         downloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> CatalogDownloadClaim {
-        if let ssrfError = SSRFGuard.validate(url: sourceURL) {
+        if let ssrfError = SSRFGuard.fetchRejection(for: sourceURL) {
             throw BarkVisorError.badRequest(ssrfError)
         }
         let request = LibraryDepotFetchRequest(

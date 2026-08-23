@@ -177,7 +177,9 @@ public actor RepositorySyncService {
         }
 
         let maxCatalogSize = 10 * 1_024 * 1_024
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Do not use URLSession.shared: it follows redirects without
+        // re-running SSRFGuard.validate / pinEndpoint.
+        let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ... 299).contains(httpResponse.statusCode)
         else {

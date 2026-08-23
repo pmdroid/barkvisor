@@ -156,7 +156,7 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private func performDownload(
         imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
     ) async throws {
-        if !url.isFileURL, let ssrfError = SSRFGuard.validate(url: url) {
+        if !url.isFileURL, let ssrfError = SSRFGuard.fetchRejection(for: url) {
             throw BarkVisorError.downloadFailed(ssrfError)
         }
         #if canImport(FoundationNetworking) && !canImport(Darwin)
