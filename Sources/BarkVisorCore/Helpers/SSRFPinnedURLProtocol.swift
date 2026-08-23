@@ -207,8 +207,7 @@ private final class SSRFPinnedHopClient: @unchecked Sendable {
             return http
         }
         if let http {
-            try? await http.shutdown()
-            SSRFPinnedURLProtocol.recordShutdown()
+            await Self.shutdownAndCount(http)
         }
         dnsOverride = next
         let created = SSRFPinnedURLProtocol.makeHTTPClient(
@@ -223,79 +222,96 @@ private final class SSRFPinnedHopClient: @unchecked Sendable {
         didShutdown = true
         guard let http else { return }
         self.http = nil
-        try? await http.shutdown()
-        SSRFPinnedURLProtocol.recordShutdown()
+        await Self.shutdownAndCount(http)
+    }
+
+    /// Counts a teardown only when `HTTPClient.shutdown()` returns.
+    private static func shutdownAndCount(_ http: HTTPClient) async {
+        do {
+            try await http.shutdown()
+            SSRFPinnedURLProtocol.finishShutdown(succeeded: true)
+        } catch {
+            SSRFPinnedURLProtocol.finishShutdown(succeeded: false)
+        }
     }
 }
 
-private final class SSRFPinnedURLProtocolHooks: @unchecked Sendable {
-    let lock = NSLock()
-    var httpClientsCreated = 0
-    var httpClientsShutdown = 0
-    var dnsOverrides: [[String: String]] = []
-    var pinnedURLs: [String] = []
-    var pinEndpointOverride: (@Sendable (URL) throws -> PinnedEndpoint)?
-}
+#if DEBUG
+    private final class SSRFPinnedURLProtocolHooks: @unchecked Sendable {
+        let lock = NSLock()
+        var httpClientsCreated = 0
+        var httpClientsShutdown = 0
+        var dnsOverrides: [[String: String]] = []
+        var pinnedURLs: [String] = []
+        var pinEndpointOverride: (@Sendable (URL) throws -> PinnedEndpoint)?
+    }
+#endif
 
 extension SSRFPinnedURLProtocol {
-    private static let hooks = SSRFPinnedURLProtocolHooks()
+    #if DEBUG
+        private static let hooks = SSRFPinnedURLProtocolHooks()
 
-    static var httpClientsCreated: Int {
-        hooks.lock.lock()
-        defer { hooks.lock.unlock() }
-        return hooks.httpClientsCreated
-    }
-
-    static var httpClientsShutdown: Int {
-        hooks.lock.lock()
-        defer { hooks.lock.unlock() }
-        return hooks.httpClientsShutdown
-    }
-
-    static var dnsOverrides: [[String: String]] {
-        hooks.lock.lock()
-        defer { hooks.lock.unlock() }
-        return hooks.dnsOverrides
-    }
-
-    static var pinnedURLs: [String] {
-        hooks.lock.lock()
-        defer { hooks.lock.unlock() }
-        return hooks.pinnedURLs
-    }
-
-    static var pinEndpointOverride: (@Sendable (URL) throws -> PinnedEndpoint)? {
-        get {
+        static var httpClientsCreated: Int {
             hooks.lock.lock()
             defer { hooks.lock.unlock() }
-            return hooks.pinEndpointOverride
+            return hooks.httpClientsCreated
         }
-        set {
+
+        static var httpClientsShutdown: Int {
             hooks.lock.lock()
             defer { hooks.lock.unlock() }
-            hooks.pinEndpointOverride = newValue
+            return hooks.httpClientsShutdown
         }
-    }
 
-    static func resetTestHooks() {
-        hooks.lock.lock()
-        defer { hooks.lock.unlock() }
-        hooks.httpClientsCreated = 0
-        hooks.httpClientsShutdown = 0
-        hooks.dnsOverrides = []
-        hooks.pinnedURLs = []
-        hooks.pinEndpointOverride = nil
-    }
+        static var dnsOverrides: [[String: String]] {
+            hooks.lock.lock()
+            defer { hooks.lock.unlock() }
+            return hooks.dnsOverrides
+        }
+
+        static var pinnedURLs: [String] {
+            hooks.lock.lock()
+            defer { hooks.lock.unlock() }
+            return hooks.pinnedURLs
+        }
+
+        static var pinEndpointOverride: (@Sendable (URL) throws -> PinnedEndpoint)? {
+            get {
+                hooks.lock.lock()
+                defer { hooks.lock.unlock() }
+                return hooks.pinEndpointOverride
+            }
+            set {
+                hooks.lock.lock()
+                defer { hooks.lock.unlock() }
+                hooks.pinEndpointOverride = newValue
+            }
+        }
+
+        static func resetTestHooks() {
+            hooks.lock.lock()
+            defer { hooks.lock.unlock() }
+            hooks.httpClientsCreated = 0
+            hooks.httpClientsShutdown = 0
+            hooks.dnsOverrides = []
+            hooks.pinnedURLs = []
+            hooks.pinEndpointOverride = nil
+        }
+    #endif
 
     static func pinEndpoint(url: URL) throws -> PinnedEndpoint {
-        hooks.lock.lock()
-        let override = hooks.pinEndpointOverride
-        hooks.lock.unlock()
-        let pin = try override?(url) ?? SSRFGuard.pinEndpoint(url: url)
-        hooks.lock.lock()
-        hooks.pinnedURLs.append(url.absoluteString)
-        hooks.lock.unlock()
-        return pin
+        #if DEBUG
+            hooks.lock.lock()
+            let override = hooks.pinEndpointOverride
+            hooks.lock.unlock()
+            let pin = try override?(url) ?? SSRFGuard.pinEndpoint(url: url)
+            hooks.lock.lock()
+            hooks.pinnedURLs.append(url.absoluteString)
+            hooks.lock.unlock()
+            return pin
+        #else
+            return try SSRFGuard.pinEndpoint(url: url)
+        #endif
     }
 
     fileprivate static func makeHTTPClient(dnsOverride: [String: String], timeout: TimeInterval) -> HTTPClient {
@@ -307,10 +323,12 @@ extension SSRFPinnedURLProtocol {
             connect: .seconds(15),
             read: .seconds(Int64(timeout.rounded(.up))),
         )
-        hooks.lock.lock()
-        hooks.httpClientsCreated += 1
-        hooks.dnsOverrides.append(dnsOverride)
-        hooks.lock.unlock()
+        #if DEBUG
+            hooks.lock.lock()
+            hooks.httpClientsCreated += 1
+            hooks.dnsOverrides.append(dnsOverride)
+            hooks.lock.unlock()
+        #endif
         // POSIX sockets: connect() the IP literal. Network.framework is not used
         // so it cannot re-resolve the original hostname at TLS time.
         return HTTPClient(
@@ -319,10 +337,14 @@ extension SSRFPinnedURLProtocol {
         )
     }
 
-    fileprivate static func recordShutdown() {
-        hooks.lock.lock()
-        defer { hooks.lock.unlock() }
-        hooks.httpClientsShutdown += 1
+    /// Increments the test shutdown counter only after a successful teardown.
+    static func finishShutdown(succeeded: Bool) {
+        #if DEBUG
+            guard succeeded else { return }
+            hooks.lock.lock()
+            defer { hooks.lock.unlock() }
+            hooks.httpClientsShutdown += 1
+        #endif
     }
 }
 

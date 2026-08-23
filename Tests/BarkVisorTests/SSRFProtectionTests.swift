@@ -334,6 +334,15 @@ struct SSRFProtectionTests {
         #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
         #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
     }
+
+    @Test func `failed HTTPClient shutdown is not counted`() {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+        SSRFPinnedURLProtocol.finishShutdown(succeeded: true)
+        SSRFPinnedURLProtocol.finishShutdown(succeeded: false)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 0)
+    }
 }
 
 private func pinLoopback(host: String) {
@@ -356,7 +365,6 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
     private let fd: Int32
     private let lock = NSLock()
     private var hits = 0
-    private var running = true
     private let handler: @Sendable (String) -> (Int, [String: String], String)
 
     init(_ handler: @escaping @Sendable (String) -> (Int, [String: String], String)) throws {
@@ -395,9 +403,9 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
         let ready = DispatchSemaphore(value: 0)
         Thread.detachNewThread { [weak self] in
             ready.signal()
-            while let server = self, server.running {
+            while let server = self {
                 let client = accept(listenFD, nil, nil)
-                if client < 0 { continue }
+                if client < 0 { break }
                 server.handle(client: client)
             }
         }
@@ -411,7 +419,6 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
     }
 
     func stop() {
-        running = false
         close(fd)
     }
 
