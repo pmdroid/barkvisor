@@ -82,7 +82,7 @@ api.interceptors.response.use(
 
 /**
  * Exchange the current JWT for a short-lived, single-use ticket
- * suitable for use in URL query parameters (WebSocket, SSE, downloads).
+ * suitable for use in URL query parameters (WebSocket, SSE).
  * Tickets expire after 30 seconds and can only be used once.
  */
 export async function getWSTicket(

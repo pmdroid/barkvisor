@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { getWSTicket } from '../api/client'
+import api from '../api/client'
+import { apiErrorMessage } from '../api/errors'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import TabGroup from '../components/ui/TabGroup.vue'
+import { useTaskPoller } from '../composables/useTaskPoller'
 import { useDeviceLogsStore, LOG_HISTORY_LIMIT, LOG_TAIL_CAP, type HomeLogRow } from '../stores/deviceLogs'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useLogStore } from '../stores/logs'
+import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
+import { requestDiagnosticsBundle, saveBlob } from '../utils/diagnosticsBundle'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
@@ -21,6 +25,9 @@ const homeLogs = useDeviceLogsStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const devicesStore = useDevicesStore()
 const vmStore = useVMStore()
+const toast = useToastStore()
+const diagnosticsPoller = useTaskPoller()
+const diagnosticsBusy = ref(false)
 
 const category = ref('')
 const level = ref('warn')
@@ -207,11 +214,20 @@ function rowKey(row: HomeLogRow, index: number): string {
 }
 
 async function downloadDiagnostics() {
-  let ticket: string
+  if (diagnosticsBusy.value) return
+  diagnosticsBusy.value = true
   try {
-    ticket = await getWSTicket()
-  } catch { return }
-  window.open(`/api/diagnostics/bundle?ticket=${ticket}`, '_blank')
+    await requestDiagnosticsBundle({
+      post: (path) => api.post(path),
+      poll: (taskID) => diagnosticsPoller.poll(taskID),
+      download: (path) => api.get(path, { responseType: 'blob' }),
+      save: saveBlob,
+    })
+  } catch (error) {
+    toast.error(apiErrorMessage(error, 'Diagnostic bundle failed'))
+  } finally {
+    diagnosticsBusy.value = false
+  }
 }
 
 watch([category, level, timeRange], () => {
@@ -230,6 +246,7 @@ onMounted(() => {
   void refresh()
 })
 onUnmounted(() => {
+  diagnosticsPoller.stop()
   store.clear()
   homeLogs.clear()
 })
@@ -265,7 +282,7 @@ onUnmounted(() => {
         <option value="">All Time</option>
       </AppSelect>
       <AppButton :variant="liveTail ? 'primary' : 'ghost'" style="min-width:140px;text-align:center" @click="toggleLiveTail">{{ liveTail ? 'Stop Tail' : 'Live Tail' }}</AppButton>
-      <AppButton icon="download" @click="downloadDiagnostics">Diagnostics</AppButton>
+      <AppButton icon="download" :loading="diagnosticsBusy" loading-text="Diagnostics" @click="downloadDiagnostics">Diagnostics</AppButton>
     </div>
   </div>
 

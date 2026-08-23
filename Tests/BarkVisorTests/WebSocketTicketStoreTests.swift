@@ -57,6 +57,15 @@ struct WebSocketTicketStoreTests {
         #expect(second == nil)
     }
 
+    @Test func `unscoped SSE rejects a Workload scoped ticket`() async {
+        let store = WebSocketTicketStore.shared
+        let ticket = await store.createTicket(forUserID: "u1", username: "admin", targetVMID: "vm-1")
+
+        let unscoped = await store.validateTicket(ticket)
+        #expect(unscoped == nil, "VM-scoped tickets must not authenticate logs/progress SSE")
+        #expect(await store.validateTicket(ticket, forVMID: "vm-1") == nil)
+    }
+
     @Test func `invalid ticket returns nil`() async {
         let store = WebSocketTicketStore.shared
         let result = await store.validateTicket("nonexistent-ticket", forVMID: "vm-1")

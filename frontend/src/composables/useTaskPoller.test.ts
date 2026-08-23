@@ -28,4 +28,29 @@ describe('useTaskPoller (PAS-34)', () => {
     expect(event.status).toBe('completed')
     expect(get.mock.calls[0]?.[0]).toBe('/home/devices/peer-1/v1/tasks/t1')
   })
+
+  test('stop rejects an in-flight poll', async () => {
+    let resolveGet: ((value: unknown) => void) | undefined
+    const get = mock(
+      () =>
+        new Promise((resolve) => {
+          resolveGet = resolve
+        }),
+    )
+    api.get = get as typeof api.get
+    const { poll, stop } = useTaskPoller()
+    const pending = poll('t-stop')
+    stop()
+    await expect(pending).rejects.toThrow('Task polling stopped')
+    resolveGet?.({
+      data: {
+        taskID: 't-stop',
+        kind: 'vmProvision',
+        status: 'completed',
+        progress: 100,
+        error: null,
+        resultPayload: null,
+      },
+    })
+  })
 })
