@@ -115,6 +115,7 @@ struct CreateWorkloadTests {
         #expect(linuxBody.cloudImageId == "img-l")
         #expect(linuxBody.isoId == nil)
         #expect(linuxBody.workloadClass == nil)
+        #expect(linuxBody.cloudInit == nil)
 
         let agentBody = try CreateWorkload.body(
             name: "cage",
@@ -163,6 +164,53 @@ struct CreateWorkloadTests {
         #expect(isoJSON["isoId"] as? String == "iso-1")
         #expect(isoJSON["cloudImageId"] == nil)
         #expect(isoJSON["vmType"] as? String == "linux-arm64")
+    }
+
+    @Test func `coding agent image defaults to agent class and device ollama`() throws {
+        let image = image(id: "img-ca", name: "Coding Agent", imageType: "cloud-image", arch: "arm64")
+        #expect(CodingAgentImage.matches(name: image.name))
+        #expect(CodingAgentImage.matches(name: "Ubuntu", slug: "coding-agent-x86_64"))
+        #expect(!CodingAgentImage.matches(name: "Ubuntu 24.04 LTS", slug: "ubuntu-24.04-arm64"))
+
+        let body = try CreateWorkload.body(name: "coder", image: image, hostCPUCount: 8)
+        #expect(body.workloadClass == "agent")
+        #expect(body.memoryMB == 2_048)
+        #expect(body.diskSizeGB == 20)
+        #expect(body.cloudImageId == "img-ca")
+        #expect(body.cloudInit?.userData?.contains("OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\"") == true)
+        #expect(body.cloudInit?.userData?.contains("git") == true)
+        #expect(body.cloudInit?.userData?.contains("ttyd") == true)
+        #expect(body.cloudInit?.userData?.contains("claude.ai/install.sh") == true)
+
+        let encoded = try json(body)
+        #expect(encoded["workloadClass"] as? String == "agent")
+        let cloudInit = encoded["cloudInit"] as? [String: Any]
+        #expect((cloudInit?["userData"] as? String)?.contains("10.0.2.2:11434") == true)
+
+        let byo = try CreateWorkload.body(
+            name: "coder",
+            image: image,
+            hostCPUCount: 8,
+            openaiBaseURL: "https://api.example/v1",
+        )
+        #expect(byo.cloudInit?.userData?.contains("https://api.example/v1") == true)
+
+        let house = try CreateWorkload.body(
+            name: "coder",
+            image: image,
+            hostCPUCount: 8,
+            workloadClass: "house",
+        )
+        #expect(house.workloadClass == "house")
+
+        #expect(throws: CreateWorkload.DraftError.invalidOpenAIBaseURL) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: image,
+                hostCPUCount: 8,
+                openaiBaseURL: "not a url",
+            )
+        }
     }
 
     @Test func `body rejects empty name and unread image`() {

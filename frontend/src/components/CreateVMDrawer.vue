@@ -44,6 +44,9 @@ const {
   selectedSSHKeyId,
   showCloudInit,
   cloudUserData,
+  openaiPreset,
+  byoOpenAIURL,
+  isCodingAgentSelected,
   filteredImages,
   selectedImage,
   formatBytes,
@@ -137,11 +140,16 @@ function openUSBPicker() {
         :filteredImages="filteredImages"
         :sshKeys="sshKeys"
         :formatBytes="formatBytes"
+        :isCodingAgentSelected="isCodingAgentSelected"
+        :openaiPreset="openaiPreset"
+        :byoOpenAIURL="byoOpenAIURL"
         @update:mode="mode = $event"
         @update:selectedImageId="selectedImageId = $event"
         @update:selectedSSHKeyId="selectedSSHKeyId = $event"
         @update:showCloudInit="showCloudInit = $event"
         @update:cloudUserData="cloudUserData = $event"
+        @update:openaiPreset="openaiPreset = $event"
+        @update:byoOpenAIURL="byoOpenAIURL = $event"
       />
 
       <CreateVMPlaceStep
