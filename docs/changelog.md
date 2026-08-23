@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Ollama (PAS-269): if Ollama is reachable on a Device, Home shows **Ollama** for pull/start/stop and a merged catalog. Chat completions (`/v1/chat/completions`) route by model name — already-running, then the healthier Device. Inference API keys can list models and complete; they cannot pull or see the upstream Ollama key. BarkVisor does not require Ollama to install.
 - Bridged start on Linux denies when `/etc/qemu/bridge.conf` is missing or unreadable (same as the Networks UI). macOS no longer falls back to a shared socket_vmnet socket; the per-interface daemon socket is required.
 - Remote access (PAS-89): detect Tailscale if installed (`tailscale ip -4` / MagicDNS), advertise it on inventory and pairing/sign-in QRs, optional “require tailnet for remote Home API”, WireGuard detection only. BarkVisor does not bundle Tailscale.
 - SPA inventory: Workloads, disks, networks, and logs share one Home-by-Device fetch helper (last-known when a Device is unreachable).

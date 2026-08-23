@@ -30,6 +30,7 @@ const router = createRouter({
       meta: { bare: true },
     },
     { path: '/images', name: 'images', component: () => import('../views/ImageLibraryView.vue') },
+    { path: '/models', name: 'models', component: () => import('../views/ModelsView.vue') },
     { path: '/disks', name: 'disks', component: () => import('../views/DiskView.vue') },
     { path: '/networks', name: 'networks', component: () => import('../views/NetworkView.vue') },
     { path: '/registry', name: 'registry', component: () => import('../views/RegistryView.vue') },

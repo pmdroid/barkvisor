@@ -39,6 +39,7 @@ struct VirtUIErrorTests {
             .conflict("conflict"),
             .portInUse("port in use"),
             .preconditionFailed("precondition"),
+            .badGateway("Ollama is not reachable"),
             .internalError("internal"),
         ]
 
@@ -90,6 +91,8 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.portInUse("").httpStatus == 409)
         #expect(BarkVisorError.portInUse("").code == "port_in_use")
         #expect(BarkVisorError.preconditionFailed("").httpStatus == 412)
+        #expect(BarkVisorError.badGateway("").httpStatus == 502)
+        #expect(BarkVisorError.badGateway("").code == "bad_gateway")
         #expect(BarkVisorError.unsupportedFeature(.usbPassthrough).httpStatus == 422)
         #expect(BarkVisorError.interfaceMissing("br0").httpStatus == 422)
         #expect(BarkVisorError.interfaceMissing("br0").code == "interface_missing")

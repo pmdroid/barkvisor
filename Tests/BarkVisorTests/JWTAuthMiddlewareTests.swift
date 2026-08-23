@@ -253,4 +253,35 @@ struct JWTAuthMiddlewareTests {
             throw error
         }
     }
+
+    @Test func `inference token cannot call pull or the rest of the Home API`() async throws {
+        let app = try await makeApp()
+        defer { Task { await stop(app) } }
+        let denied = request(app, path: "/api/ollama/pull")
+        denied.method = .POST
+        denied.authenticatedUser = AuthenticatedUser(
+            userId: "user-1",
+            username: "admin",
+            authMethod: "apikey",
+            apiKeyId: "key-1",
+            apiKeyKind: APIKeyKind.inference.rawValue,
+        )
+        do {
+            try JWTAuthMiddleware.enforceInferenceACL(denied)
+            Issue.record("expected forbidden")
+        } catch let error as AbortError {
+            #expect(error.status == .forbidden)
+        }
+
+        let allowed = request(app, path: "/v1/chat/completions")
+        allowed.method = .POST
+        allowed.authenticatedUser = AuthenticatedUser(
+            userId: "user-1",
+            username: "admin",
+            authMethod: "apikey",
+            apiKeyId: "key-1",
+            apiKeyKind: APIKeyKind.inference.rawValue,
+        )
+        try JWTAuthMiddleware.enforceInferenceACL(allowed)
+    }
 }

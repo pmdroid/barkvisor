@@ -452,6 +452,7 @@ const apiKeys = ref<APIKeyResponse[]>([])
 const showCreate = ref(false)
 const newKeyName = ref('')
 const newKeyExpiry = ref('90d')
+const newKeyKind = ref('full')
 const createLoading = ref(false)
 const createdKey = ref<string | null>(null)
 const copied = ref(false)
@@ -468,6 +469,7 @@ async function createKey() {
     const { data } = await api.post('/auth/keys', {
       name: newKeyName.value.trim(),
       expiresIn: newKeyExpiry.value,
+      kind: newKeyKind.value,
     })
     createdKey.value = data.key
     newKeyName.value = ''
@@ -1026,9 +1028,10 @@ onUnmounted(() => {
 
     <EmptyState v-if="apiKeys.length === 0" icon="key" title="No API keys yet. Create one to allow external tools to access BarkVisor." />
 
-    <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'key', label: 'Key' }, { key: 'expires', label: 'Expires' }, { key: 'lastUsed', label: 'Last Used' }, { key: 'created', label: 'Created' }, { key: 'actions', label: '', align: 'right' }]">
+    <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'kind', label: 'Kind' }, { key: 'key', label: 'Key' }, { key: 'expires', label: 'Expires' }, { key: 'lastUsed', label: 'Last Used' }, { key: 'created', label: 'Created' }, { key: 'actions', label: '', align: 'right' }]">
           <tr v-for="k in apiKeys" :key="k.id">
             <td style="font-weight:500">{{ k.name }}</td>
+            <td><span class="badge badge-gray">{{ k.kind === 'inference' ? 'inference' : 'full' }}</span></td>
             <td class="mono" style="color:var(--text-secondary)">{{ k.keyPrefix }}...</td>
             <td><span class="badge" :class="expiryClass(k.expiresAt)">{{ expiryLabel(k.expiresAt) }}</span></td>
             <td style="color:var(--text-secondary)">{{ k.lastUsedAt ? formatDate(k.lastUsedAt) : 'Never' }}</td>
@@ -1361,6 +1364,13 @@ onUnmounted(() => {
             <option value="90d">90 days</option>
             <option value="1y">1 year</option>
             <option value="never">Never</option>
+          </AppSelect>
+        </div>
+        <div class="form-group">
+          <label>Kind</label>
+          <AppSelect v-model="newKeyKind">
+            <option value="full">Full (this Home API)</option>
+            <option value="inference">Inference (Ollama list + chat completions)</option>
           </AppSelect>
         </div>
         <div class="modal-actions">
