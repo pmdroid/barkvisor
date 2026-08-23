@@ -526,9 +526,10 @@ public enum QEMUBuilder {
         return try usbHostArgs(usb: spec.spec.usb, hostDevices: hostDevices)
     }
 
-    /// Builds `usb-host` args. Serial-identified devices resolve to the current
-    /// bus/address so two sticks with the same vid:pid stay distinct. Missing
-    /// topology fails closed — never fall back to vendorid/productid.
+    /// Builds `usb-host` args. Serial-identified devices resolve to the live
+    /// host bus/address so two sticks with the same vid:pid stay distinct.
+    /// `bus:BBB.AAA` is not a selection id. Missing topology fails closed —
+    /// never fall back to vendorid/productid for a serial match.
     public static func usbHostArgs(
         usb: [WorkloadUSBDevice],
         hostDevices: [HostUSBDevice],
@@ -552,8 +553,10 @@ public enum QEMUBuilder {
         index: Int,
     ) throws -> String {
         let suffix = ",guest-reset=off,id=usb-pt-\(index)"
+        if let deviceId = stored.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
+            throw USBPassthroughService.busAddressIdentityError(deviceId)
+        }
         let identified = stored.serialNumber != nil
-            || stored.deviceId?.hasPrefix("bus:") == true
             || (stored.deviceId?.contains(":") == true
                 && (stored.deviceId?.split(separator: ":").count ?? 0) >= 3)
 

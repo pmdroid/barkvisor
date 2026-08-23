@@ -33,10 +33,12 @@ public enum USBPassthroughService {
     }
 
     public static func matches(_ device: USBPassthroughDevice, host: HostUSBDevice) -> Bool {
-        if let deviceId = device.deviceId, deviceId == host.id {
+        if let deviceId = device.deviceId, !USBDeviceIdentity.isBusAddressId(deviceId),
+           deviceId == host.id {
             return true
         }
-        if let deviceId = device.deviceId, let parsed = USBDeviceIdentity.parse(deviceId) {
+        if let deviceId = device.deviceId, !USBDeviceIdentity.isBusAddressId(deviceId),
+           let parsed = USBDeviceIdentity.parse(deviceId) {
             if matches(parsed, host: host) { return true }
         }
         if let serial = USBDeviceIdentity.normalizedSerial(device.serialNumber),
@@ -50,18 +52,20 @@ public enum USBPassthroughService {
     }
 
     public static func matches(_ ref: USBDeviceIdentity.Ref, host: HostUSBDevice) -> Bool {
-        if ref.id == host.id { return true }
+        if !USBDeviceIdentity.isBusAddressId(ref.id), ref.id == host.id { return true }
         if let serial = ref.serial, let hostSerial = host.serialNumber, serial == hostSerial {
             if ref.vendorId.isEmpty || ref.vendorId == host.vendorId,
                ref.productId.isEmpty || ref.productId == host.productId {
                 return true
             }
         }
-        if ref.serial == nil, let bus = ref.bus, let address = ref.address,
-           host.bus == bus, host.address == address {
-            return true
-        }
         return false
+    }
+
+    public static func busAddressIdentityError(_ id: String) -> BarkVisorError {
+        .conflict(
+            "USB device id \(id) is a bus address, which is not stable across replug. Re-attach using serial.",
+        )
     }
 
     public static func resolve(
@@ -71,6 +75,9 @@ public enum USBPassthroughService {
         let trimmed = deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let parsed = USBDeviceIdentity.parse(trimmed) else {
             throw BarkVisorError.badRequest("Invalid USB device id")
+        }
+        if USBDeviceIdentity.isBusAddressId(trimmed) || (parsed.serial == nil && parsed.bus != nil) {
+            throw busAddressIdentityError(trimmed)
         }
         let matched = hostDevices.filter { matches(parsed, host: $0) }
         if matched.count == 1, let found = matched.first {
@@ -189,8 +196,12 @@ public enum USBPassthroughService {
         _ device: USBPassthroughDevice,
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
+        if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
+            throw busAddressIdentityError(deviceId)
+        }
+
         if let deviceId = device.deviceId, let parsed = USBDeviceIdentity.parse(deviceId),
-           parsed.serial != nil || parsed.bus != nil {
+           parsed.serial != nil {
             if let host = try? resolve(deviceId: deviceId, hostDevices: hostDevices) {
                 guard host.attachable else {
                     throw BarkVisorError.badRequest(
@@ -246,13 +257,7 @@ public enum USBPassthroughService {
             )
         }
         if let host = samePair.first {
-            return USBPassthroughDevice(
-                vendorId: host.vendorId,
-                productId: host.productId,
-                label: device.label ?? host.name,
-                serialNumber: host.serialNumber,
-                deviceId: host.id,
-            )
+            return persistUniquePair(device, host: host)
         }
         return USBPassthroughDevice(
             vendorId: vid,
@@ -260,6 +265,28 @@ public enum USBPassthroughService {
             label: device.label,
             serialNumber: nil,
             deviceId: "\(vid):\(pid)",
+        )
+    }
+
+    private static func persistUniquePair(
+        _ device: USBPassthroughDevice,
+        host: HostUSBDevice,
+    ) -> USBPassthroughDevice {
+        if host.serialNumber == nil, USBDeviceIdentity.isBusAddressId(host.id) {
+            return USBPassthroughDevice(
+                vendorId: host.vendorId,
+                productId: host.productId,
+                label: device.label ?? host.name,
+                serialNumber: nil,
+                deviceId: "\(host.vendorId):\(host.productId)",
+            )
+        }
+        return USBPassthroughDevice(
+            vendorId: host.vendorId,
+            productId: host.productId,
+            label: device.label ?? host.name,
+            serialNumber: host.serialNumber,
+            deviceId: host.id,
         )
     }
 
