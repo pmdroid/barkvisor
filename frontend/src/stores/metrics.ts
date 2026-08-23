@@ -39,6 +39,7 @@ export const useMetricsStore = defineStore('metrics', () => {
 
     void loadHistory(`/vms/${encodeURIComponent(vmId)}/metrics`, myEpoch)
     stream.start({
+      vmID: vmId,
       url: (ticket) => `/api/vms/${vmId}/metrics/stream?ticket=${ticket}`,
       reconnect: true,
       onMessage: (event) => {

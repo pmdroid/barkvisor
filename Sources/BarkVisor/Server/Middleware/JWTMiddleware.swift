@@ -42,23 +42,24 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
     func respond(to request: Vapor.Request, chainingTo next: any AsyncResponder) async throws
         -> Vapor.Response {
-        // Stream policy (PAS-237): Home tunnel never spends Device `?ticket=`.
-        if StreamTicketPolicy.site(path: request.url.path) == .homeTunnel {
+        // PAS-280: spend Device `?ticket=` only on owner-Device stream/SSE paths.
+        switch StreamTicketPolicy.site(path: request.url.path) {
+        case .homeTunnel:
             return try await authenticateHomeTunnel(request, chainingTo: next)
-        }
-
-        // Accept ticket from ?ticket= query param (short-lived, single-use)
-        if let ticketParam = request.query[String.self, at: StreamTicketPolicy.ticketQueryName] {
-            if let userInfo = await WebSocketTicketStore.shared.validateTicket(ticketParam) {
-                request.authenticatedUser = AuthenticatedUser(
-                    userId: userInfo.userID,
-                    username: userInfo.username,
-                    authMethod: "ticket",
-                    apiKeyId: nil,
+        case .ownerDevice:
+            if let ticket = Self.deviceTicket(from: request) {
+                return try await authenticateOwnerDeviceTicket(
+                    request, ticket: ticket, chainingTo: next,
                 )
-                return try await next.respond(to: request)
             }
-            throw Abort(.unauthorized, reason: "Invalid or expired ticket")
+        case .ownerDeviceSSE:
+            if let ticket = Self.deviceTicket(from: request) {
+                return try await authenticateOwnerDeviceSSETicket(
+                    request, ticket: ticket, chainingTo: next,
+                )
+            }
+        case .other:
+            break
         }
 
         // Accept token from Bearer header only (query param removed to prevent token leakage in logs/history)
@@ -175,6 +176,54 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             )
         }
         return matched
+    }
+
+    private static func deviceTicket(from request: Vapor.Request) -> String? {
+        StreamTicketPolicy.deviceTicket(fromQuery: request.url.query)
+            ?? request.query[String.self, at: StreamTicketPolicy.ticketQueryName]
+            ?? request.query[String.self, at: StreamTicketPolicy.tokenRewriteQueryName]
+    }
+
+    private func authenticateOwnerDeviceTicket(
+        _ request: Vapor.Request,
+        ticket: String,
+        chainingTo next: any AsyncResponder,
+    ) async throws -> Vapor.Response {
+        guard let vmID = StreamTicketPolicy.ownerDeviceWorkloadID(request.url.path)
+            ?? request.parameters.get("id")
+            ?? request.parameters.get("vmId"),
+            !vmID.isEmpty
+        else {
+            throw Abort(.unauthorized, reason: "Missing vm")
+        }
+        guard let userInfo = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: vmID)
+        else {
+            throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
+        }
+        request.authenticatedUser = AuthenticatedUser(
+            userId: userInfo.userID,
+            username: userInfo.username,
+            authMethod: "ticket",
+            apiKeyId: nil,
+        )
+        return try await next.respond(to: request)
+    }
+
+    private func authenticateOwnerDeviceSSETicket(
+        _ request: Vapor.Request,
+        ticket: String,
+        chainingTo next: any AsyncResponder,
+    ) async throws -> Vapor.Response {
+        guard let userInfo = await WebSocketTicketStore.shared.validateTicket(ticket) else {
+            throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
+        }
+        request.authenticatedUser = AuthenticatedUser(
+            userId: userInfo.userID,
+            username: userInfo.username,
+            authMethod: "ticket",
+            apiKeyId: nil,
+        )
+        return try await next.respond(to: request)
     }
 
     private func authenticateHomeTunnel(

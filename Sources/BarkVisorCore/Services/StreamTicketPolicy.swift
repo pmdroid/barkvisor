@@ -24,16 +24,28 @@ public enum StreamTicketPolicy {
     public enum Site: Equatable, Sendable {
         /// Owner Device spends `ticket` / `token` (one-use, Workload-scoped).
         case ownerDevice
+        /// Owner Device SSE without a Workload id (logs, image progress, tasks).
+        /// File downloads such as `/api/diagnostics/bundle/{id}/download` are `.other`.
+        case ownerDeviceSSE
         /// Home tunnel: spend Home `session`; pass Device ticket through unspent.
         case homeTunnel
-        /// Other JWT routes (SSE, logs): unscoped `ticket` spend if present.
+        /// Other JWT routes: Bearer or API key only. Never spend Device `ticket`.
         case other
     }
 
     public static func site(path: String) -> Site {
         if isHomeConsoleTunnel(path) { return .homeTunnel }
         if isOwnerDeviceStream(path) { return .ownerDevice }
+        if isOwnerDeviceSSE(path) { return .ownerDeviceSSE }
         return .other
+    }
+
+    /// JWT middleware may spend `?ticket=` only on these sites (PAS-280).
+    public static func spendsDeviceTicket(path: String) -> Bool {
+        switch site(path: path) {
+        case .ownerDevice, .ownerDeviceSSE: return true
+        case .homeTunnel, .other: return false
+        }
     }
 
     /// `/api/home/devices/{id}/v1/vms/{vmId}/vnc|console`
@@ -42,11 +54,37 @@ public enum StreamTicketPolicy {
         return path.hasSuffix("/vnc") || path.hasSuffix("/console")
     }
 
-    /// `/api/vms/{id}/vnc|console` on the owner Device (and the agent hop).
+    /// `/api/vms/{id}/vnc|console|state` and `/api/vms/{id}/metrics/stream`.
     public static func isOwnerDeviceStream(_ path: String) -> Bool {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-        guard parts.count == 4, parts[0] == "api", parts[1] == "vms" else { return false }
-        return parts[3] == "vnc" || parts[3] == "console"
+        guard parts.count >= 4, parts[0] == "api", parts[1] == "vms" else { return false }
+        switch parts.count {
+        case 4:
+            return parts[3] == "vnc" || parts[3] == "console" || parts[3] == "state"
+        case 5:
+            return parts[3] == "metrics" && parts[4] == "stream"
+        default:
+            return false
+        }
+    }
+
+    /// Workload id on owner-Device stream/SSE paths. Nil for unscoped SSE.
+    public static func ownerDeviceWorkloadID(_ path: String) -> String? {
+        guard isOwnerDeviceStream(path) else { return nil }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        let id = parts[2]
+        return id.isEmpty ? nil : id
+    }
+
+    /// `/api/logs/stream`, `/api/images/{id}/progress`, `/api/tasks/{id}/stream`.
+    /// Not `/api/diagnostics/bundle` (POST) or `.../bundle/{id}/download` (Bearer).
+    public static func isOwnerDeviceSSE(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        if parts == ["api", "logs", "stream"] { return true }
+        guard parts.count == 4, parts[0] == "api", !parts[2].isEmpty else { return false }
+        if parts[1] == "images", parts[3] == "progress" { return true }
+        if parts[1] == "tasks", parts[3] == "stream" { return true }
+        return false
     }
 
     public static func queryItems(from raw: String?) -> [URLQueryItem] {

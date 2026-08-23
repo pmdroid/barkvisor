@@ -12,6 +12,7 @@ export function useTaskPoller() {
   const task: Ref<TaskEvent | null> = ref(null)
   const polling = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
+  let rejectPoll: ((error: Error) => void) | null = null
 
   async function poll(taskID: string, { interval = 1000, path, onComplete, onFailed }: {
     interval?: number
@@ -25,7 +26,13 @@ export function useTaskPoller() {
     const url = path ?? `/tasks/${taskID}`
 
     return new Promise<TaskEvent>((resolve, reject) => {
+      rejectPoll = reject
       const check = async () => {
+        if (!polling.value) {
+          rejectPoll = null
+          reject(new Error('Task polling stopped'))
+          return
+        }
         try {
           const { data } = await api.get(url)
           task.value = data
@@ -33,6 +40,7 @@ export function useTaskPoller() {
 
           if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
             polling.value = false
+            rejectPoll = null
             if (data.status === 'completed') onComplete?.(data)
             else onFailed?.(data)
             resolve(data)
@@ -42,6 +50,7 @@ export function useTaskPoller() {
           consecutiveErrors++
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
             polling.value = false
+            rejectPoll = null
             const errorEvent: TaskEvent = {
               taskID,
               kind: 'vmProvision' as TaskEvent['kind'],
@@ -68,6 +77,9 @@ export function useTaskPoller() {
       timer = null
     }
     polling.value = false
+    const reject = rejectPoll
+    rejectPoll = null
+    reject?.(new Error('Task polling stopped'))
   }
 
   return { task, polling, poll, stop }
