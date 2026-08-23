@@ -526,9 +526,9 @@ public enum QEMUBuilder {
         return try usbHostArgs(usb: spec.spec.usb, hostDevices: hostDevices)
     }
 
-    /// Builds `usb-host` args. Serial or unique vendor/product records resolve
-    /// to the live host bus/address. `bus:BBB.AAA` is not a stored selection
-    /// id. Missing topology fails closed — never vendorid/productid.
+    /// Builds `usb-host` args. Serial identity resolves first; live `hostbus`/
+    /// `hostaddr` are emitted after that match. `bus:BBB.AAA` and vendor/product
+    /// are not selection ids. Missing topology fails closed.
     public static func usbHostArgs(
         usb: [WorkloadUSBDevice],
         hostDevices: [HostUSBDevice],
@@ -552,24 +552,14 @@ public enum QEMUBuilder {
         index: Int,
     ) throws -> String {
         let suffix = ",guest-reset=off,id=usb-pt-\(index)"
-        let resolvedStore: USBPassthroughDevice
         if let deviceId = stored.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            resolvedStore = try USBPassthroughService.normalizeOne(
-                stored,
-                hostDevices: hostDevices,
-            )
-            if let converted = resolvedStore.deviceId,
-               USBDeviceIdentity.isBusAddressId(converted) {
-                throw USBPassthroughService.busAddressIdentityError(converted)
-            }
-        } else {
-            resolvedStore = stored
+            throw USBPassthroughService.busAddressIdentityError(deviceId)
         }
 
-        let lookup = resolvedStore.deviceId ?? USBDeviceIdentity.make(
-            vendorId: resolvedStore.vendorId,
-            productId: resolvedStore.productId,
-            serial: resolvedStore.serialNumber,
+        let lookup = stored.deviceId ?? USBDeviceIdentity.make(
+            vendorId: stored.vendorId,
+            productId: stored.productId,
+            serial: stored.serialNumber,
         ).id
         let host = try USBPassthroughService.resolve(deviceId: lookup, hostDevices: hostDevices)
         guard host.attachable else {

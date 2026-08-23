@@ -3,15 +3,12 @@ import Foundation
 /// Resolve, claim, and persist USB passthrough by stable id (PAS-84).
 public enum USBPassthroughService {
     public static func passthrough(from host: HostUSBDevice) -> USBPassthroughDevice {
-        persistUniquePair(
-            USBPassthroughDevice(
-                vendorId: host.vendorId,
-                productId: host.productId,
-                label: host.name,
-                serialNumber: host.serialNumber,
-                deviceId: host.id,
-            ),
-            host: host,
+        USBPassthroughDevice(
+            vendorId: host.vendorId,
+            productId: host.productId,
+            label: host.name,
+            serialNumber: host.serialNumber,
+            deviceId: host.id,
         )
     }
 
@@ -52,8 +49,7 @@ public enum USBPassthroughService {
             return true
         }
         // Legacy records stored bus:BBB.AAA as deviceId. That is not a
-        // selection id, but it still occupies the live device at that address
-        // until persist rewrites it to serial or a unique vendor/product pair.
+        // selection id, but it still occupies the live device at that address.
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId),
            let parsed = USBDeviceIdentity.parse(deviceId),
            let bus = parsed.bus, let address = parsed.address,
@@ -82,7 +78,13 @@ public enum USBPassthroughService {
     public static func busAddressIdentityError(_ id: String) -> BarkVisorError {
         .conflict(
             "USB device id \(id) is a bus address, which is not stable across replug. "
-                + "Re-attach using serial or a unique vendor/product pair.",
+                + "Re-attach using a serial number.",
+        )
+    }
+
+    public static func missingSerialIdentityError(_ id: String) -> BarkVisorError {
+        .conflict(
+            "USB device \(id) has no serial; refusing vendor/product attach",
         )
     }
 
@@ -95,7 +97,10 @@ public enum USBPassthroughService {
             throw BarkVisorError.badRequest("Invalid USB device id")
         }
         if USBDeviceIdentity.isBusAddressId(trimmed) || (parsed.serial == nil && parsed.bus != nil) {
-            return try resolveLiveBusAddress(parsed, hostDevices: hostDevices)
+            throw busAddressIdentityError(trimmed)
+        }
+        if parsed.serial == nil {
+            throw missingSerialIdentityError(trimmed)
         }
         let matched = hostDevices.filter { matches(parsed, host: $0) }
         if matched.count == 1, let found = matched.first {
@@ -106,43 +111,7 @@ public enum USBPassthroughService {
                 "USB device id \(trimmed) matches multiple host devices; unplug extras or attach by serial",
             )
         }
-        if parsed.serial == nil, parsed.bus == nil, !parsed.vendorId.isEmpty {
-            let samePair = hostDevices.filter {
-                $0.vendorId == parsed.vendorId && $0.productId == parsed.productId && $0.attachable
-            }
-            if samePair.count == 1, let found = samePair.first { return found }
-            if samePair.count > 1 {
-                throw BarkVisorError.conflict(
-                    "Multiple USB devices share \(parsed.vendorId):\(parsed.productId); attach by serial or device id",
-                )
-            }
-        }
         throw BarkVisorError.notFound("USB device \(trimmed) is not connected")
-    }
-
-    /// `bus:BBB.AAA` locates a currently plugged device. It is not persisted.
-    private static func resolveLiveBusAddress(
-        _ parsed: USBDeviceIdentity.Ref,
-        hostDevices: [HostUSBDevice],
-    ) throws -> HostUSBDevice {
-        let live = hostDevices.filter { $0.bus == parsed.bus && $0.address == parsed.address }
-        if live.count > 1 {
-            throw BarkVisorError.conflict(
-                "USB device id \(parsed.id) matches multiple host devices; unplug extras or attach by serial",
-            )
-        }
-        guard let found = live.first else {
-            throw BarkVisorError.notFound("USB device \(parsed.id) is not connected")
-        }
-        let samePair = hostDevices.filter {
-            $0.vendorId == found.vendorId && $0.productId == found.productId && $0.attachable
-        }
-        if found.serialNumber == nil, samePair.count > 1 {
-            throw BarkVisorError.conflict(
-                "Multiple USB devices share \(found.vendorId):\(found.productId); attach by serial",
-            )
-        }
-        return found
     }
 
     public static func resolveAttachable(
@@ -205,10 +174,20 @@ public enum USBPassthroughService {
         guard let parsed = USBDeviceIdentity.parse(trimmed) else {
             return devices.filter { $0.deviceId != trimmed }
         }
+        if USBDeviceIdentity.isBusAddressId(trimmed),
+           let bus = parsed.bus, let address = parsed.address {
+            return removingBusAddress(
+                devices,
+                bus: bus,
+                address: address,
+                persistedBusId: parsed.id,
+                hostDevices: hostDevices,
+            )
+        }
         let resolvedHost = hostDevices.isEmpty
             ? nil
             : (try? resolve(deviceId: trimmed, hostDevices: hostDevices))
-        let persistedId = resolvedHost.flatMap { passthrough(from: $0).deviceId }
+        let persistedId = resolvedHost.map(\.id)
         return devices.filter { device in
             if let existing = device.deviceId {
                 if existing == parsed.id { return false }
@@ -252,19 +231,7 @@ public enum USBPassthroughService {
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            do {
-                let host = try resolve(deviceId: deviceId, hostDevices: hostDevices)
-                guard host.attachable else {
-                    throw BarkVisorError.badRequest(
-                        host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
-                    )
-                }
-                return persistUniquePair(device, host: host)
-            } catch let error as BarkVisorError {
-                guard case .notFound = error else { throw error }
-                // Device moved or unplugged. Drop the bus id and keep
-                // serial / vendor/product from the stored record.
-            }
+            throw busAddressIdentityError(deviceId)
         }
 
         if let deviceId = device.deviceId, let parsed = USBDeviceIdentity.parse(deviceId),
@@ -315,46 +282,31 @@ public enum USBPassthroughService {
 
         let vid = USBDeviceIdentity.normalizeHexId(device.vendorId)
         let pid = USBDeviceIdentity.normalizeHexId(device.productId)
-        let samePair = hostDevices.filter {
-            $0.vendorId == vid && $0.productId == pid && $0.attachable
-        }
-        if samePair.count > 1 {
-            throw BarkVisorError.conflict(
-                "Multiple USB devices share \(vid):\(pid); attach by serial or device id",
-            )
-        }
-        if let host = samePair.first {
-            return persistUniquePair(device, host: host)
-        }
-        return USBPassthroughDevice(
-            vendorId: vid,
-            productId: pid,
-            label: device.label,
-            serialNumber: nil,
-            deviceId: "\(vid):\(pid)",
-        )
+        throw missingSerialIdentityError("\(vid):\(pid)")
     }
 
-    private static func persistUniquePair(
-        _ device: USBPassthroughDevice,
-        host: HostUSBDevice,
-    ) -> USBPassthroughDevice {
-        if host.serialNumber == nil, USBDeviceIdentity.isBusAddressId(host.id) {
-            return USBPassthroughDevice(
-                vendorId: host.vendorId,
-                productId: host.productId,
-                label: device.label ?? host.name,
-                serialNumber: nil,
-                deviceId: "\(host.vendorId):\(host.productId)",
-            )
+    /// Detach `bus:BBB.AAA` only against live bus/address (or that host's persisted
+    /// id). A miss leaves the list unchanged — callers map that to 404.
+    private static func removingBusAddress(
+        _ devices: [USBPassthroughDevice],
+        bus: Int,
+        address: Int,
+        persistedBusId: String,
+        hostDevices: [HostUSBDevice],
+    ) -> [USBPassthroughDevice] {
+        let live = hostDevices.filter { $0.bus == bus && $0.address == address }
+        let host = live.count == 1 ? live.first : nil
+        let derivedId = host.flatMap { passthrough(from: $0).deviceId }
+        return devices.filter { device in
+            if let existing = device.deviceId {
+                if existing == persistedBusId { return false }
+                if let derivedId, existing == derivedId { return false }
+            }
+            if let host, matches(device, host: host) {
+                return false
+            }
+            return true
         }
-        return USBPassthroughDevice(
-            vendorId: host.vendorId,
-            productId: host.productId,
-            label: device.label ?? host.name,
-            serialNumber: host.serialNumber,
-            deviceId: host.id,
-        )
     }
 
     private static func legacyVIDPIDMatch(
@@ -378,7 +330,7 @@ public enum USBPassthroughService {
         _ device: USBPassthroughDevice,
         hostDevices: [HostUSBDevice],
     ) -> HostUSBDevice {
-        if let deviceId = device.deviceId,
+        if let deviceId = device.deviceId, !USBDeviceIdentity.isBusAddressId(deviceId),
            let host = try? resolve(deviceId: deviceId, hostDevices: hostDevices) {
             return host
         }
@@ -411,7 +363,7 @@ public enum USBPassthroughService {
             productId: ref.productId.isEmpty ? fallback.productId : ref.productId,
             name: fallback.label ?? "USB Device",
             manufacturer: nil,
-            serialNumber: ref.serial ?? fallback.serialNumber,
+            serialNumber: ref.serial,
             bus: ref.bus,
             address: ref.address,
         )
