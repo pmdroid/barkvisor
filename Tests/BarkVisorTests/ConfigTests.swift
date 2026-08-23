@@ -148,6 +148,19 @@ struct ConfigTests {
         }
     }
 
+    @Test func `persist hmac secret can replace an existing file`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("first", to: dir)
+        try Config.persistAPIKeyHmacSecret("second", to: dir)
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == "second")
+        try Config.persistJWTSecret("jwt-a", to: dir)
+        try Config.persistJWTSecret("jwt-b", to: dir)
+        #expect(Config.loadJWTSecret(from: dir) == "jwt-b")
+    }
+
     @Test func `ensure api key hmac secret concurrent callers share one secret`() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

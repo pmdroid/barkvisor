@@ -223,11 +223,12 @@ public enum Config {
             if exists, isDirectory.boolValue {
                 throw CocoaError(.fileWriteInvalidFileName)
             }
+            // `replaceItemAt` on Linux Foundation can delete dest and then fail
+            // (PAS-277 rotate / pairing applyTrust tests). Same-dir rename is enough.
             if exists {
-                _ = try FileManager.default.replaceItemAt(file, withItemAt: temp)
-            } else {
-                try FileManager.default.moveItem(at: temp, to: file)
+                try FileManager.default.removeItem(at: file)
             }
+            try FileManager.default.moveItem(at: temp, to: file)
         } catch {
             try? FileManager.default.removeItem(at: temp)
             throw error
