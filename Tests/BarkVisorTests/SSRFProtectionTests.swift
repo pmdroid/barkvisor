@@ -293,15 +293,63 @@ struct SSRFProtectionTests {
         defer { session.invalidateAndCancel() }
 
         let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
         let http = try #require(response as? HTTPURLResponse)
         #expect(http.statusCode == 200)
         #expect(String(data: data, encoding: .utf8) == "pinned-ok")
         #expect(server.hitCount() == 2)
         #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
         #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
-        #expect(SSRFPinnedURLProtocol.dnsOverrides == [[host: "127.0.0.1"]])
+        #expect(SSRFPinnedURLProtocol.dnsOverrides == [[host: "127.0.0.1"], [host: "127.0.0.1"]])
         #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/a") })
         #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/b") })
+    }
+
+    @Test func `one hop client reused when redirect host changes`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let portBox = HopPortBox()
+        let hostA = "example.com"
+        let hostB = "example.net"
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/a") {
+                return (302, ["Location": "http://\(hostB):\(portBox.port)/b"], "")
+            }
+            if path.hasPrefix("/b") {
+                return (200, [:], "cross-host-ok")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+        portBox.port = server.port
+        SSRFPinnedURLProtocol.pinEndpointOverride = { url in
+            guard let requestHost = url.host, requestHost == hostA || requestHost == hostB else {
+                throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+            }
+            return PinnedEndpoint(
+                originalHost: requestHost,
+                connectIP: "127.0.0.1",
+                port: url.port ?? server.port,
+                usesTLS: false,
+            )
+        }
+        let start = try #require(URL(string: "http://\(hostA):\(server.port)/a"))
+        let session = SSRFGuard.urlSession(resourceTimeout: 5)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 200)
+        #expect(String(data: data, encoding: .utf8) == "cross-host-ok")
+        #expect(server.hitCount() == 2)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+        #expect(SSRFPinnedURLProtocol.dnsOverrides == [
+            [hostA: "127.0.0.1"],
+            [hostB: "127.0.0.1"],
+        ])
     }
 
     @Test func `private Location is not followed`() async throws {
@@ -326,6 +374,7 @@ struct SSRFProtectionTests {
         defer { session.invalidateAndCancel() }
 
         let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
         let http = try #require(response as? HTTPURLResponse)
         #expect(http.statusCode == 302)
         #expect(String(data: data, encoding: .utf8) != "leaked")
@@ -342,6 +391,17 @@ struct SSRFProtectionTests {
         SSRFPinnedURLProtocol.finishShutdown(succeeded: false)
         #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
         #expect(SSRFPinnedURLProtocol.httpClientsCreated == 0)
+    }
+}
+
+private final class HopPortBox: @unchecked Sendable {
+    var port = 0
+}
+
+private func waitForHopShutdown() async {
+    for _ in 0 ..< 100 {
+        if SSRFPinnedURLProtocol.httpClientsShutdown >= 1 { return }
+        try? await Task.sleep(nanoseconds: 20_000_000)
     }
 }
 
@@ -419,6 +479,7 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
     }
 
     func stop() {
+        shutdown(fd, SHUT_RDWR)
         close(fd)
     }
 
@@ -437,9 +498,19 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
             response += "\(key): \(value)\r\n"
         }
         response += "\r\n\(body)"
-        let bytes = Array(response.utf8)
-        _ = bytes.withUnsafeBytes { raw in
-            send(client, raw.baseAddress, raw.count, 0)
+        sendAll(client, Array(response.utf8))
+    }
+}
+
+private func sendAll(_ fd: Int32, _ bytes: [UInt8]) {
+    bytes.withUnsafeBytes { raw in
+        guard let base = raw.baseAddress else { return }
+        var sent = 0
+        let total = raw.count
+        while sent < total {
+            let n = send(fd, base.advanced(by: sent), total - sent, 0)
+            if n <= 0 { return }
+            sent += n
         }
     }
 }
