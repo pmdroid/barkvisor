@@ -428,9 +428,11 @@ extension PairingService {
     /// Copy issuer login onto this Device. Local SQLite still owns runtime
     /// (PAS-47 / PAS-90); peers are not contacted.
     ///
+    /// Check id/username compatibility first so a mismatch cannot swap the
+    /// on-disk HMAC key while the admin row and in-memory keyring stay local.
     /// Persist the JWT secret before upserting admin. A secret write failure
-    /// must leave the previous password hash in place so login stays consistent
-    /// with the on-disk HMAC key until retry.
+    /// must leave the previous password hash in place. If upsert then fails,
+    /// restore the previous secret so disk and DB stay aligned.
     static func applySharedIdentity(
         _ response: PairingRedeemResponse,
         dataDir: URL,
@@ -443,7 +445,11 @@ extension PairingService {
                 "Unable to persist shared identity; local runtime continues",
             )
         }
+        if let admin = response.adminUser, let db {
+            try ensureAdminCompatible(admin, db: db)
+        }
         let secret = response.jwtSecret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let previousSecret = Config.loadJWTSecret(from: dataDir)
         if !secret.isEmpty {
             do {
                 try Config.persistJWTSecret(secret, to: dataDir)
@@ -459,39 +465,34 @@ extension PairingService {
                     "Unable to persist shared identity; local runtime continues",
                 )
             }
-            try upsertAdmin(admin, db: db, now: now)
+            do {
+                try upsertAdmin(admin, db: db, now: now)
+            } catch {
+                if !secret.isEmpty {
+                    if let previousSecret {
+                        try? Config.persistJWTSecret(previousSecret, to: dataDir)
+                    } else {
+                        try? FileManager.default.removeItem(at: Config.jwtSecretFile(in: dataDir))
+                    }
+                }
+                throw error
+            }
         }
         if !secret.isEmpty, let keys {
             await keys.add(hmac: .init(from: secret), digestAlgorithm: .sha256)
         }
     }
 
-    static func upsertAdmin(_ admin: PairingAdminUser, db: DatabasePool, now: Date) throws {
-        let id = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hash = admin.passwordHash
-        guard !id.isEmpty, !username.isEmpty, !hash.isEmpty else {
-            throw PairingError.invalidPayload("Issuer returned incomplete admin identity")
-        }
+    private static func ensureAdminCompatible(_ admin: PairingAdminUser, db: DatabasePool) throws {
+        let parsed = try parsedAdmin(admin)
         do {
-            try db.write { db in
-                if var existing = try User.filter(User.Columns.username == username).fetchOne(db) {
-                    existing.password = hash
-                    try existing.update(db)
-                    return
-                }
-                if var existing = try User.fetchOne(db, key: id) {
-                    existing.username = username
-                    existing.password = hash
-                    try existing.update(db)
-                    return
-                }
-                try User(
-                    id: id,
-                    username: username,
-                    password: hash,
-                    createdAt: iso8601.string(from: now),
-                ).insert(db)
+            let conflicts = try db.read { db in
+                try adminIdentityConflicts(id: parsed.id, username: parsed.username, db: db)
+            }
+            if conflicts {
+                throw PairingError.invalidPayload(
+                    "Admin identity id and username do not match",
+                )
             }
         } catch let error as PairingError {
             throw error
@@ -500,5 +501,66 @@ extension PairingService {
                 "Unable to persist admin identity: \(error.localizedDescription)",
             )
         }
+    }
+
+    static func upsertAdmin(_ admin: PairingAdminUser, db: DatabasePool, now: Date) throws {
+        let parsed = try parsedAdmin(admin)
+        do {
+            enum WriteResult {
+                case ok
+                case mismatch
+            }
+            let result: WriteResult = try db.write { db in
+                if try adminIdentityConflicts(id: parsed.id, username: parsed.username, db: db) {
+                    return .mismatch
+                }
+                if var existing = try User.fetchOne(db, key: parsed.id) {
+                    existing.password = parsed.hash
+                    try existing.update(db)
+                    return .ok
+                }
+                try User(
+                    id: parsed.id,
+                    username: parsed.username,
+                    password: parsed.hash,
+                    createdAt: iso8601.string(from: now),
+                ).insert(db)
+                return .ok
+            }
+            if case .mismatch = result {
+                throw PairingError.invalidPayload(
+                    "Admin identity id and username do not match",
+                )
+            }
+        } catch let error as PairingError {
+            throw error
+        } catch {
+            throw PairingError.unavailable(
+                "Unable to persist admin identity: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    private static func parsedAdmin(
+        _ admin: PairingAdminUser,
+    ) throws -> (id: String, username: String, hash: String) {
+        let id = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hash = admin.passwordHash
+        guard !id.isEmpty, !username.isEmpty, !hash.isEmpty else {
+            throw PairingError.invalidPayload("Issuer returned incomplete admin identity")
+        }
+        return (id, username, hash)
+    }
+
+    private static func adminIdentityConflicts(
+        id: String,
+        username: String,
+        db: Database,
+    ) throws -> Bool {
+        if let existing = try User.fetchOne(db, key: id) {
+            return existing.username != username
+        }
+        return try User.filter(User.Columns.username == username).fetchOne(db) != nil
     }
 }

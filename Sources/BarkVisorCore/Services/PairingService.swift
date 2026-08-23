@@ -62,9 +62,6 @@ public enum PairingService {
         offers: PairingOfferStore? = nil,
     ) throws -> PairingIssueResponse {
         let store = offers ?? PairingOfferStore(dataDir: input.dataDir)
-        if let raw = input.advertisedHost, PairingPayload.sanitizeHost(raw) == nil {
-            try? revoke(dataDir: input.dataDir, offers: store)
-        }
         let host = try advertisedHost(from: input)
         let material: HomeCertificateMaterial
         do {
