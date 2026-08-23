@@ -46,10 +46,21 @@ public struct RunningVM: @unchecked Sendable {
 public struct VMPidFile: Equatable, Sendable {
     public let qemuPid: Int32
     public let swtpmPid: Int32?
+    /// Loopback ttyd host port (PAS-272). Optional third line; absent on older files.
+    public let codingAgentHostPort: Int?
 
-    public init(qemuPid: Int32, swtpmPid: Int32?) {
+    public init(qemuPid: Int32, swtpmPid: Int32?, codingAgentHostPort: Int? = nil) {
         self.qemuPid = qemuPid
         self.swtpmPid = swtpmPid
+        self.codingAgentHostPort = codingAgentHostPort
+    }
+
+    public func serialized() -> String {
+        var lines = ["\(qemuPid)", "\(swtpmPid ?? -1)"]
+        if let codingAgentHostPort {
+            lines.append("\(codingAgentHostPort)")
+        }
+        return lines.joined(separator: "\n") + "\n"
     }
 
     public static func parse(_ content: String) -> VMPidFile? {
@@ -62,7 +73,11 @@ public struct VMPidFile: Equatable, Sendable {
         if lines.count > 1, let second = Int32(lines[1]), second > 0 {
             swtpm = second
         }
-        return VMPidFile(qemuPid: qemu, swtpmPid: swtpm)
+        var codingPort: Int?
+        if lines.count > 2, let third = Int(lines[2]), (1 ... 65_535).contains(third) {
+            codingPort = third
+        }
+        return VMPidFile(qemuPid: qemu, swtpmPid: swtpm, codingAgentHostPort: codingPort)
     }
 }
 
@@ -131,8 +146,26 @@ public actor VMManager: VMStateQuerying {
     }
 
     /// Register a reconnected VM (called by VMProcessMonitor during reconnection).
-    public func registerReconnectedVM(vmID: String, running: RunningVM) {
+    public func registerReconnectedVM(
+        vmID: String,
+        running: RunningVM,
+        codingAgentHostPort: Int? = nil,
+    ) async {
         runningVMs[vmID] = running
+        let args = PlatformProcess.arguments(pid: running.pid)
+        if let port = CodingAgentSession.recoveredTerminalHostPort(
+            qemuArguments: args,
+            pidFilePort: codingAgentHostPort,
+        ) {
+            await CodingAgentSessionStore.shared.record(vmID: vmID, terminalHostPort: port)
+        } else if CodingAgentSession.wantsWebTerminal(
+            userData: CloudInitService.storedUserData(vmID: vmID),
+        ) {
+            Log.vm.warning(
+                "VM \(vmID): reconnect did not recover ttyd loopback host port",
+                vm: vmID,
+            )
+        }
     }
 
     // MARK: - Start
@@ -221,9 +254,13 @@ public actor VMManager: VMStateQuerying {
                 }
             }
 
-            // Write PID file (line 1: QEMU PID, line 2: swtpm PID)
-            let swtpmPid = swtpmProc?.processIdentifier ?? -1
-            try "\(pid)\n\(swtpmPid)".write(
+            // Write PID file (QEMU, swtpm, optional ttyd host port).
+            let pidFile = VMPidFile(
+                qemuPid: pid,
+                swtpmPid: swtpmProc?.processIdentifier,
+                codingAgentHostPort: loopbackHostfwds.first?.hostPort,
+            )
+            try pidFile.serialized().write(
                 to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8,
             )
 
@@ -264,6 +301,7 @@ public actor VMManager: VMStateQuerying {
 
             clearHealthError(for: vmID)
             try await updateState(vmID: vmID, state: "running")
+            await CodingAgentLifecycleService.onStart(vm: loaded.vm, db: dbPool)
 
             await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
             await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
@@ -303,10 +341,14 @@ public actor VMManager: VMStateQuerying {
     /// ACPI returns after QMP powerdown; a background task escalates to hard kill if needed.
     /// Force waits until the QEMU process is dead (or a short hard-kill timeout).
     public func stop(vmID: String, force: Bool, method: String = "acpi") async throws {
-        await CodingAgentSessionStore.shared.remove(vmID: vmID)
+        // Occupancy stays until handleTermination. ACPI/graceful stop leaves
+        // QEMU (and the loopback ttyd hostfwd) bound.
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
         }
+        await CodingAgentLifecycleService.onStop(
+            vmID: vmID, db: dbPool, reason: CodingAgentLifecycle.stopReason,
+        )
 
         try await updateState(vmID: vmID, state: "stopping")
 

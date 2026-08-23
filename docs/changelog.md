@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Coding session (PAS-273): Agent Workloads expire with a stop, not a destroy. Web and Console show a 15-minute warning, then a receipt (stopped at, last git push or **NO PUSH**). Resume, Reset to Library image, and Burn. Kill unloads the local-model grant when no other Agent session is running.
 - Coding Agent (PAS-272): Agent-class Workloads on the Coding Agent image talk through Chat or Terminal in the web UI and the native console. `OPENAI_BASE_URL` is the Home Ollama grant (`http://10.0.2.2:11434/v1`). ttyd stays loopback-only.
 - Chat (PAS-270): web and native console simple chat when the Home catalog has at least one Ollama model. Pick a model, POST `/v1/chat/completions` with `stream: true`, tokens append as they arrive. Hidden when Ollama is down or no model is pulled.
 - RBAC (PAS-286): two Home roles, admin and inference. First user is admin. Console sessions and API tokens inherit the user role. Admin can mint an inference-only token for an Agent Workload. Inference may list models that are already there and call chat completions through the BarkVisor proxy; pull, keys, USB attach, pairing, and Device changes return 403.

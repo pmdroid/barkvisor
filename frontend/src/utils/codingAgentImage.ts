@@ -89,6 +89,12 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+  - path: /etc/git-hooks/pre-push
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      install -d -m 1777 /var/lib/barkvisor
+      date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/barkvisor/last-git-push
   - path: /usr/local/bin/barkvisor-coding-agent-setup
     permissions: '0755'
     content: |
@@ -114,6 +120,8 @@ write_files:
         done
       fi
 runcmd:
+  - install -d -m 1777 /var/lib/barkvisor
+  - git config --system core.hooksPath /etc/git-hooks
   - systemctl enable --now qemu-guest-agent
   - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
   - systemctl enable --now ttyd

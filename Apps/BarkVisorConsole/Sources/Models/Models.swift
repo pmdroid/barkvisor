@@ -234,6 +234,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var createdAt: String
     var updatedAt: String
     var workloadClass: String?
+    var session: CodingAgentSessionInfo? = nil
     var status: WorkloadRuntimeStatus?
     var portForwards: [GuestPortForward]?
 
