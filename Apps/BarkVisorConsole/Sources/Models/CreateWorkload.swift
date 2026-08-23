@@ -113,11 +113,13 @@ enum CreateWorkload {
     enum DraftError: Error, Equatable, LocalizedError {
         case emptyName
         case imageNotReady
+        case invalidOpenAIBaseURL
 
         var errorDescription: String? {
             switch self {
             case .emptyName: "Name is required"
             case .imageNotReady: "Pick a ready Library image"
+            case .invalidOpenAIBaseURL: "OPENAI_BASE_URL must be an http(s) URL"
             }
         }
     }
@@ -133,6 +135,7 @@ enum CreateWorkload {
         var isoId: String?
         var cloudImageId: String?
         var workloadClass: String?
+        var cloudInit: CloudInitPayload?
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -145,34 +148,63 @@ enum CreateWorkload {
             try container.encodeIfPresent(isoId, forKey: .isoId)
             try container.encodeIfPresent(cloudImageId, forKey: .cloudImageId)
             try container.encodeIfPresent(workloadClass, forKey: .workloadClass)
+            try container.encodeIfPresent(cloudInit, forKey: .cloudInit)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId, workloadClass
+            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId, workloadClass,
+                 cloudInit
         }
+    }
+
+    struct CloudInitPayload: Equatable, Encodable {
+        var userData: String?
     }
 
     static func body(
         name: String,
         image: LibraryImage,
         hostCPUCount: Int?,
-        workloadClass: String = "house",
+        workloadClass: String? = nil,
+        openaiBaseURL: String? = nil,
     ) throws -> Body {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DraftError.emptyName }
         guard image.isReady else { throw DraftError.imageNotReady }
         let family = osFamily(for: image)
         let iso = isISO(image)
+        let coding = CodingAgentImage.matches(name: image.name)
+        let memory = coding ? max(memoryMB(osFamily: family), CodingAgentImage.defaultMemoryMB) : memoryMB(
+            osFamily: family,
+        )
+        let disk = coding ? max(diskSizeGB(osFamily: family), CodingAgentImage.defaultDiskGB) : diskSizeGB(
+            osFamily: family,
+        )
+        let klass: String? = if coding {
+            workloadClass == "house" ? "house" : "agent"
+        } else {
+            workloadClass == "agent" ? "agent" : nil
+        }
+        let cloudInit: CloudInitPayload? = if coding, !iso {
+            try CloudInitPayload(
+                userData: CodingAgentImage.userData(
+                    openaiBaseURL: CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL),
+                ),
+            )
+        } else {
+            nil
+        }
         return Body(
             name: trimmed,
             osFamily: family,
             vmType: guestType(osFamily: family, arch: image.arch),
             cpuCount: cpuCount(osFamily: family, hostCPUCount: hostCPUCount),
-            memoryMB: memoryMB(osFamily: family),
-            diskSizeGB: diskSizeGB(osFamily: family),
+            memoryMB: memory,
+            diskSizeGB: disk,
             isoId: iso ? image.id : nil,
             cloudImageId: iso ? nil : image.id,
-            workloadClass: workloadClass == "agent" ? "agent" : nil,
+            workloadClass: klass,
+            cloudInit: cloudInit,
         )
     }
 }

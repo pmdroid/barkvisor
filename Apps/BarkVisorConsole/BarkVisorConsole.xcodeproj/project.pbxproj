@@ -12,6 +12,7 @@
 		B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CCB06D0BEF46910846E84B /* Models.swift */; };
 		EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */; };
 		D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */; };
+		875A95A55EF63D129EFA0CF5 /* CodingAgentImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1434A82B342472B527529F12 /* CodingAgentImage.swift */; };
 		70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F479E78AC8E6DA04341B1D0A /* LoginURI.swift */; };
 		010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */; };
 		7D0D18E893DC0929EE2593FD /* PairingOffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB3EE4BDE5C46872FDFF37D2 /* PairingOffer.swift */; };
@@ -59,6 +60,7 @@
 		69CCB06D0BEF46910846E84B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalog.swift; sourceTree = "<group>"; };
 		4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkload.swift; sourceTree = "<group>"; };
+		1434A82B342472B527529F12 /* CodingAgentImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingAgentImage.swift; sourceTree = "<group>"; };
 		F479E78AC8E6DA04341B1D0A /* LoginURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginURI.swift; sourceTree = "<group>"; };
 		FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginOfferQR.swift; sourceTree = "<group>"; };
 		DB3EE4BDE5C46872FDFF37D2 /* PairingOffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOffer.swift; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 				69CCB06D0BEF46910846E84B /* Models.swift */,
 				9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */,
 				4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */,
+				1434A82B342472B527529F12 /* CodingAgentImage.swift */,
 				F479E78AC8E6DA04341B1D0A /* LoginURI.swift */,
 				FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */,
 				DB3EE4BDE5C46872FDFF37D2 /* PairingOffer.swift */,
@@ -344,6 +347,7 @@
 				B8C3AABE20B3B126FB3A7651 /* Models.swift in Sources */,
 				EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */,
 				D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */,
+				875A95A55EF63D129EFA0CF5 /* CodingAgentImage.swift in Sources */,
 				70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */,
 				010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */,
 				7D0D18E893DC0929EE2593FD /* PairingOffer.swift in Sources */,
