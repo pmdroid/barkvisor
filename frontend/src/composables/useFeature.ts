@@ -10,6 +10,7 @@ import { useCapabilitiesStore } from '../stores/capabilities'
  * | managedBridgeDaemon   | NetworkView Manage Bridges (macOS), SetupView skip            |
  * | hostBridgeManagement  | NetworkView Manage Bridges (Linux checklist)                  |
  * | usbPassthrough        | CreateVM network step, CreateVM summary, VMDetail attach USB  |
+ * | gpuPassthrough        | Device/Workload GPU copy. No QEMU vfio-pci attach (PAS-274).  |
  * | inAppUpdate           | SettingsView updates tab                                      |
  *
  * Prefer disable + server remediation over hide. Setup omits the macOS-only
@@ -20,6 +21,7 @@ export const FEATURE_CODES = [
   'managedBridgeDaemon',
   'hostBridgeManagement',
   'usbPassthrough',
+  'gpuPassthrough',
   'inAppUpdate',
 ] as const
 

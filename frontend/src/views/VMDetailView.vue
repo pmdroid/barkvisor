@@ -25,7 +25,9 @@ import type {
   Network,
   PortForwardRule,
   BridgeInfo,
+  HostGPUDevice,
   HostUSBDevice,
+  GPUPassthroughDevice,
   USBPassthroughDevice,
 } from '../api/types'
 import PortForwardEditor from '../components/PortForwardEditor.vue'
@@ -74,10 +76,12 @@ import {
   memberControlTabAllowed,
   memberNetworkForDetail,
   networksInventoryFetchPath,
+  gpuInventoryFetchPath,
   usbInventoryFetchPath,
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
+import { GUEST_OLLAMA_PATH, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import {
   consoleTabLabel,
@@ -233,6 +237,9 @@ const guestInfoLoaded = ref(false)
 const hostUSBDevices = ref<HostUSBDevice[]>([])
 const showAttachUSB = ref(false)
 const usbLoading = ref(false)
+const hostGPUDevices = ref<HostGPUDevice[]>([])
+const showAttachGPU = ref(false)
+const gpuLoading = ref(false)
 
 const memberDisks = ref<Disk[]>([])
 const memberDiskUsages = ref<Record<string, DiskUsage>>({})
@@ -259,6 +266,11 @@ const usbAvailable = computed(() => (
 const usbExplanation = computed(() => (
   isMemberDetail.value ? memberUsbExplanation.value : usb.explanation
 ))
+const gpuCaps = computed(() => (
+  isMemberDetail.value ? memberCaps.value : caps.currentHost
+))
+const gpuReady = computed(() => gpuPassthroughSupported(gpuCaps.value))
+const gpuExplanation = computed(() => gpuPassthroughExplanation(gpuCaps.value))
 const editCpuMax = computed(() => {
   if (isMemberDetail.value) {
     const n = memberCaps.value?.hostCpuCount
@@ -323,6 +335,7 @@ function resetMemberInventory() {
   memberImages.value = []
   memberCaps.value = null
   hostUSBDevices.value = []
+  hostGPUDevices.value = []
 }
 
 async function fetchMemberInventory() {
@@ -336,6 +349,7 @@ async function fetchMemberInventory() {
   const disksPath = disksInventoryFetchPath(device)
   const netsPath = networksInventoryFetchPath(device)
   const usbPath = usbInventoryFetchPath(device)
+  const gpuPath = gpuInventoryFetchPath(device)
   await Promise.all([
     disksPath
       ? api.get<Disk[]>(disksPath).then(({ data }) => {
@@ -356,6 +370,15 @@ async function fetchMemberInventory() {
         }).catch(() => {
           if (!stillThisDevice()) return
           hostUSBDevices.value = []
+        })
+      : Promise.resolve(),
+    gpuPath
+      ? api.get<HostGPUDevice[]>(gpuPath).then(({ data }) => {
+          if (!stillThisDevice()) return
+          hostGPUDevices.value = Array.isArray(data) ? data : []
+        }).catch(() => {
+          if (!stillThisDevice()) return
+          hostGPUDevices.value = []
         })
       : Promise.resolve(),
     api.get(deviceCapabilitiesPath(device)).then(({ data }) => {
@@ -707,6 +730,66 @@ async function usbDetach(dev: USBPassthroughDevice) {
     }
   } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally { usbLoading.value = false }
+}
+
+async function fetchGPUDevices() {
+  if (isMemberDetail.value) {
+    const path = gpuInventoryFetchPath(memberDevice.value)
+    if (!path) { hostGPUDevices.value = []; return }
+    try {
+      const { data } = await api.get<HostGPUDevice[]>(path)
+      hostGPUDevices.value = Array.isArray(data) ? data : []
+    } catch { hostGPUDevices.value = [] }
+    return
+  }
+  try {
+    const { data } = await api.get('/system/gpu-devices')
+    hostGPUDevices.value = data
+  } catch { hostGPUDevices.value = [] }
+}
+
+async function gpuAttach(dev: HostGPUDevice) {
+  gpuLoading.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.attachGPU(device, vmId.value, dev.pciAddress)
+    } else {
+      await store.attachGPU(vmId.value, dev.pciAddress)
+      await store.fetchOne(vmId.value)
+    }
+    await fetchGPUDevices()
+    showAttachGPU.value = false
+    const label = dev.name || dev.pciAddress
+    if (vm.value?.state === 'running') {
+      toast.show(`GPU "${label}" added — restart the VM to apply.`, { type: 'info' })
+    } else {
+      toast.success(`GPU "${label}" attached. Guest Ollama is ${GUEST_OLLAMA_PATH}.`)
+    }
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
+  finally { gpuLoading.value = false }
+}
+
+async function gpuDetach(dev: GPUPassthroughDevice) {
+  gpuLoading.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.detachGPU(device, vmId.value, dev.pciAddress)
+    } else {
+      await store.detachGPU(vmId.value, dev.pciAddress)
+      await store.fetchOne(vmId.value)
+    }
+    await fetchGPUDevices()
+    if (vm.value?.state === 'running') {
+      toast.show('GPU removed — restart the VM to apply.', { type: 'info' })
+    } else {
+      toast.success('GPU detached')
+    }
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
+  finally { gpuLoading.value = false }
 }
 
 let pollInterval: number | undefined
@@ -1547,6 +1630,41 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               </tr>
         </DataTable>
       </div>
+
+      <div style="margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h2 style="font-size:16px;font-weight:700">GPU passthrough</h2>
+          <AppButton
+            size="sm"
+            icon="plus"
+            :disabled="!gpuReady || (isMemberDetail && !memberReachable)"
+            :title="gpuReady ? undefined : gpuExplanation"
+            @click="showAttachGPU = true; fetchGPUDevices()"
+          >Attach GPU</AppButton>
+        </div>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px">
+          {{ gpuReady ? 'Attach like USB. Guest Ollama is ' + GUEST_OLLAMA_PATH + '. The same card cannot be host and guest.' : 'Not available on this Device.' }}
+        </p>
+        <UnsupportedHint v-if="!gpuReady" :text="gpuExplanation" />
+        <DataTable v-else :columns="[{ key: 'gpu', label: 'GPU' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
+          <tr v-for="dev in (vm.gpuDevices || [])" :key="dev.pciAddress">
+            <td>
+              <div style="font-weight:500">{{ dev.label || dev.pciAddress }}</div>
+              <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }}</div>
+            </td>
+            <td><span class="badge badge-gray">{{ dev.iommuGroup }}</span></td>
+            <td style="text-align:right">
+              <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
+              <AppButton v-else size="sm" variant="danger" :disabled="gpuLoading || (isMemberDetail && !memberReachable)" @click="gpuDetach(dev)">Detach</AppButton>
+            </td>
+          </tr>
+          <tr v-if="!(vm.gpuDevices || []).length">
+            <td colspan="3">
+              <EmptyState title="No GPU attached" subtitle="Pass through a PCI GPU. Guest Ollama uses the card at 127.0.0.1:11434." />
+            </td>
+          </tr>
+        </DataTable>
+      </div>
     </div>
 
     <ChatPanel
@@ -1609,6 +1727,39 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
         </DataTable>
         <div class="modal-actions">
           <AppButton @click="showAttachUSB = false">Close</AppButton>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="gpuReady && showAttachGPU" class="modal-overlay" @click.self="showAttachGPU = false">
+      <div class="modal">
+        <h2>Attach GPU</h2>
+        <EmptyState v-if="hostGPUDevices.length === 0" :title="isMemberDetail ? 'No GPUs in an IOMMU group on that Device.' : 'No GPUs in an IOMMU group on this Device.'" />
+        <DataTable v-else :columns="[{ key: 'gpu', label: 'GPU' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
+          <tr
+            v-for="dev in hostGPUDevices"
+            :key="dev.pciAddress"
+            :style="dev.claimedByVMId || dev.attachable === false ? 'opacity:0.5' : ''"
+          >
+            <td>
+              <div style="font-weight:500">{{ dev.name }}</div>
+              <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }}</div>
+              <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
+              <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">{{ gpuHostOccupancyLabel(true) }}</div>
+              <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
+            </td>
+            <td><span class="badge badge-gray">{{ dev.iommuGroup }}</span></td>
+            <td style="text-align:right">
+              <span v-if="dev.claimedByVMId" style="font-size:12px;color:var(--text-dim)">In use</span>
+              <span v-else-if="dev.attachable === false" style="font-size:12px;color:var(--text-dim)">Unavailable</span>
+              <span v-else-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to attach</span>
+              <AppButton v-else variant="primary" size="sm" :disabled="gpuLoading" @click="gpuAttach(dev)">Attach</AppButton>
+            </td>
+          </tr>
+        </DataTable>
+        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">GPU changes require a VM restart. Guest Ollama is {{ GUEST_OLLAMA_PATH }}.</p>
+        <div class="modal-actions">
+          <AppButton @click="showAttachGPU = false">Close</AppButton>
         </div>
       </div>
     </div>

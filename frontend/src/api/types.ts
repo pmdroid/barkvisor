@@ -162,6 +162,7 @@ export interface WorkloadSpecBody {
   networks?: WorkloadNetwork[]
   cloudInit?: WorkloadCloudInit | null
   usb?: WorkloadUSBDevice[]
+  gpu?: GPUPassthroughDevice[]
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
   health?: WorkloadHealthSpec | null
@@ -250,6 +251,7 @@ export interface VM {
   sharedPaths: string[] | null
   portForwards: PortForwardRule[] | null
   usbDevices: USBPassthroughDevice[] | null
+  gpuDevices?: GPUPassthroughDevice[] | null
   pendingChanges: boolean
   workloadClass?: 'house' | 'agent' | string | null
   session?: CodingAgentSession | null
@@ -316,6 +318,35 @@ export interface PortForwardRule {
   protocol: 'tcp' | 'udp'
   hostPort: number
   guestPort: number
+}
+
+export interface GPUPassthroughDevice {
+  pciAddress: string
+  iommuGroup: string
+  vendorId: string
+  deviceId: string
+  label?: string | null
+  groupAddresses?: string[]
+}
+
+export interface HostGPUDevice {
+  id: string
+  pciAddress: string
+  iommuGroup: string
+  vendorId: string
+  deviceId: string
+  name: string
+  driver?: string | null
+  vfioBound?: boolean
+  inUseByHost?: boolean
+  attachable?: boolean
+  excludedReason?: string | null
+  groupAddresses?: string[]
+  guestOllamaPath?: string
+  busy?: boolean
+  attachedToVmId?: string | null
+  claimedByVMId?: string | null
+  claimedByVMName?: string | null
 }
 
 export interface USBPassthroughDevice {
@@ -797,6 +828,10 @@ export interface SystemCapabilities {
   supportsHostBridgeManagement?: boolean
   supportsUSBPassthrough: boolean
   supportsInAppUpdate: boolean
+  /** Linux IOMMU + vfio-pci + KVM + a GPU. Not QEMU attach (PAS-274). */
+  supportsGPUPassthrough?: boolean
+  /** IOMMU groups and vfio-pci (or /dev/vfio/vfio). */
+  supportsVFIO?: boolean
   accelerator: 'hvf' | 'kvm' | string
   hostArch: 'arm64' | 'x86_64' | string
   /** Online logical CPUs on the host (max vCPUs per VM). */
@@ -863,6 +898,8 @@ export interface HomeDeviceFeatureSummary {
   kvmDevice: boolean
   bridgedNetworking: boolean
   usbPassthrough: boolean
+  gpuPassthrough?: boolean
+  vfio?: boolean
 }
 
 export interface HomeDeviceHealthSnapshot {

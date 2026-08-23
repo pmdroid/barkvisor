@@ -9,6 +9,8 @@ export const defaultCapabilities: CurrentHostCapabilities = {
   supportsHostBridgeManagement: false,
   supportsUSBPassthrough: false,
   supportsInAppUpdate: false,
+  supportsGPUPassthrough: false,
+  supportsVFIO: false,
   accelerator: '',
   hostArch: '',
   hostCpuCount: 1,
@@ -33,6 +35,8 @@ export function parseSystemCapabilities(data: Partial<SystemCapabilities> | null
     supportsHostBridgeManagement: !!doc.supportsHostBridgeManagement,
     supportsUSBPassthrough: !!doc.supportsUSBPassthrough,
     supportsInAppUpdate: !!doc.supportsInAppUpdate,
+    supportsGPUPassthrough: !!doc.supportsGPUPassthrough,
+    supportsVFIO: !!doc.supportsVFIO,
     accelerator: doc.accelerator ?? defaultCapabilities.accelerator,
     hostArch: doc.hostArch ?? defaultCapabilities.hostArch,
     hostCpuCount:
@@ -75,6 +79,10 @@ export function capabilitiesFeatureSupported(
       return caps.supportsUSBPassthrough
     case 'inAppUpdate':
       return caps.supportsInAppUpdate
+    case 'gpuPassthrough':
+      return caps.supportsGPUPassthrough === true
+    case 'vfio':
+      return caps.supportsVFIO === true
     default:
       return caps.details?.find((d) => d.code === code)?.supported === true
   }

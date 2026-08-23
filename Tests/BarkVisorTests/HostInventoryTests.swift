@@ -48,6 +48,17 @@ struct HostInventoryTests {
         #expect(
             inv.virtualization.features.inAppUpdate == PlatformCapabilities.supportsInAppUpdate,
         )
+        let vfioFacts = VFIOProbe.live()
+        #expect(
+            inv.virtualization.features.vfio
+                == VFIOProbe.vfioSupported(os: inv.platform.os, facts: vfioFacts),
+        )
+        #expect(
+            inv.virtualization.features.gpuPassthrough
+                == VFIOProbe.gpuPassthroughSupported(os: inv.platform.os, facts: vfioFacts),
+        )
+        #expect(inv.virtualization.vfioProbe.iommuGroupCount == vfioFacts.iommuGroupCount)
+        #expect(inv.virtualization.vfioProbe.gpuCount == vfioFacts.gpuCount)
     }
 
     @Test func `snapshot resources match platform host`() {

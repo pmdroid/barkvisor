@@ -158,7 +158,79 @@ struct CapabilityDetailTests {
             #expect(byCode[.managedBridgeDaemon]?.supported == true)
             #expect(byCode[.inAppUpdate]?.supported == true)
             #expect(byCode[.bridgedNetworking]?.supported == true)
+            #expect(byCode[.gpuPassthrough]?.supported == false)
+            #expect(byCode[.gpuPassthrough]?.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+            #expect(byCode[.vfio]?.supported == false)
+            #expect(byCode[.vfio]?.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+            #expect(caps.supportsGPUPassthrough == false)
+            #expect(caps.supportsVFIO == false)
         #endif
+        #expect(byCode[.gpuPassthrough]?.supported == caps.supportsGPUPassthrough)
+        #expect(byCode[.vfio]?.supported == caps.supportsVFIO)
+    }
+
+    @Test func `macos gpu passthrough is os_unsupported`() {
+        let inv = macOSHVFInventory()
+        let gpu = CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: inv)
+        #expect(!gpu.supported)
+        #expect(gpu.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+        #expect(gpu.remediation?.localizedCaseInsensitiveContains("macOS") == true)
+
+        let vfio = CapabilityDetailBuilder.detail(for: .vfio, inventory: inv)
+        #expect(!vfio.supported)
+        #expect(vfio.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
+    }
+
+    @Test func `linux gpu passthrough needs kvm even when vfio is ready`() {
+        let inv = linuxGPUInventory(
+            kvm: false,
+            gpuPassthrough: false,
+            vfio: false,
+            probe: VFIOInventoryFacts(iommuGroupCount: 2, vfioPci: true, vfioDevice: true, gpuCount: 1),
+        )
+        let gpu = CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: inv)
+        #expect(!gpu.supported)
+        #expect(gpu.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
+        #expect(CapabilityDetailBuilder.detail(for: .vfio, inventory: inv).supported)
+    }
+
+    @Test func `linux gpu passthrough reports iommu then vfio then gpu`() {
+        let noIommu = linuxGPUInventory(
+            probe: VFIOInventoryFacts(iommuGroupCount: 0, vfioPci: false, vfioDevice: false, gpuCount: 0),
+        )
+        let iommu = CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: noIommu)
+        #expect(!iommu.supported)
+        #expect(iommu.reasonCode == CapabilityReasonCode.iommuMissing.rawValue)
+        #expect(iommu.remediation?.contains("intel_iommu") == true)
+
+        let noVfio = linuxGPUInventory(
+            probe: VFIOInventoryFacts(iommuGroupCount: 3, vfioPci: false, vfioDevice: false, gpuCount: 1),
+        )
+        let vfioMissing = CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: noVfio)
+        #expect(!vfioMissing.supported)
+        #expect(vfioMissing.reasonCode == CapabilityReasonCode.vfioMissing.rawValue)
+
+        let noGpu = linuxGPUInventory(
+            vfio: true,
+            probe: VFIOInventoryFacts(iommuGroupCount: 4, vfioPci: true, vfioDevice: true, gpuCount: 0),
+        )
+        #expect(
+            CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: noGpu).reasonCode
+                == CapabilityReasonCode.gpuMissing.rawValue,
+        )
+        #expect(CapabilityDetailBuilder.detail(for: .vfio, inventory: noGpu).supported)
+    }
+
+    @Test func `linux gpu passthrough is supported when probe is complete`() {
+        let ready = linuxGPUInventory(
+            gpuPassthrough: true,
+            vfio: true,
+            probe: VFIOInventoryFacts(iommuGroupCount: 4, vfioPci: true, vfioDevice: true, gpuCount: 1),
+        )
+        let gpu = CapabilityDetailBuilder.detail(for: .gpuPassthrough, inventory: ready)
+        #expect(gpu.supported)
+        #expect(gpu.reasonCode == nil)
+        #expect(CapabilityDetailBuilder.detail(for: .vfio, inventory: ready).supported)
     }
 
     @Test func `network mode capability is json-codable`() throws {
@@ -200,6 +272,7 @@ struct CapabilityDetailTests {
         #expect(PlatformCapabilities.Feature.inAppUpdate.errorCode == "in_app_update")
         #expect(PlatformCapabilities.Feature.usbPassthrough.errorCode == "usb_passthrough")
         #expect(PlatformCapabilities.Feature.managedBridgeDaemon.errorCode == "managed_bridge_daemon")
+        #expect(PlatformCapabilities.Feature.gpuPassthrough.errorCode == "gpu_passthrough")
     }
 
     @Test func `requireBridgedNetworking matches capabilities product flag`() {
@@ -268,11 +341,36 @@ private func macOSHVFInventory() -> HostInventory {
     )
 }
 
+private func linuxGPUInventory(
+    kvm: Bool = true,
+    gpuPassthrough: Bool = false,
+    vfio: Bool = false,
+    probe: VFIOInventoryFacts,
+) -> HostInventory {
+    makeInventory(
+        os: "Linux",
+        arch: "x86_64",
+        accelerator: kvm ? "kvm" : "tcg",
+        features: VirtualizationFeatures(
+            bridgedNetworking: true,
+            managedBridgeDaemon: false,
+            usbPassthrough: true,
+            inAppUpdate: false,
+            kvmDevice: kvm,
+            qemuBridgeHelper: true,
+            gpuPassthrough: gpuPassthrough,
+            vfio: vfio,
+        ),
+        vfioProbe: probe,
+    )
+}
+
 private func makeInventory(
     os: String,
     arch: String,
     accelerator: String,
     features: VirtualizationFeatures,
+    vfioProbe: VFIOInventoryFacts = VFIOInventoryFacts(),
 ) -> HostInventory {
     HostInventory(
         schemaVersion: 1,
@@ -288,6 +386,7 @@ private func makeInventory(
             qemuCPUModel: accelerator == "tcg" ? "max" : "host",
             defaultGuestArch: arch == "arm64" ? "aarch64" : "x86_64",
             features: features,
+            vfioProbe: vfioProbe,
         ),
         guestTypes: [],
         collectedAt: "2026-08-12T00:00:00Z",

@@ -13,6 +13,8 @@ struct WorkloadDetailView: View {
     @State private var networkMode: String?
     @State private var libraryLoad: WorkloadISOLibraryLoad = .pending
     @State private var selectedISOID = ""
+    @State private var deviceCaps: SystemCapabilities?
+    @State private var hostGPUs: [HostGPUDevice] = []
 
     var body: some View {
         List {
@@ -128,6 +130,63 @@ struct WorkloadDetailView: View {
 
             isoSection
 
+            Section("GPU passthrough") {
+                if let caps = deviceCaps ?? model.capabilities {
+                    LabeledContent(
+                        "Status",
+                        value: caps.gpuPassthroughSupported ? "Host ready" : "Not available",
+                    )
+                    Text(caps.gpuPassthroughExplanation)
+                        .foregroundStyle(.secondary)
+                    if caps.gpuPassthroughSupported {
+                        LabeledContent("Guest Ollama", value: GPUPassthroughCopy.guestOllamaPath)
+                    }
+                } else {
+                    Text(GPUPassthroughCopy.iommuNotReady)
+                        .foregroundStyle(.secondary)
+                }
+                if let attached = workload.gpuDevices, !attached.isEmpty {
+                    ForEach(attached) { gpu in
+                        LabeledContent(gpu.displayName, value: "IOMMU \(gpu.iommuGroup)")
+                        if workload.canStart {
+                            Button("Detach \(gpu.pciAddress)", role: .destructive) {
+                                Task {
+                                    await model.detachGPU(gpu.pciAddress, from: workload, on: device)
+                                    await refreshGPUs()
+                                }
+                            }
+                            .disabled(busy)
+                        } else {
+                            Text("Stop the Workload to detach.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if (deviceCaps ?? model.capabilities)?.gpuPassthroughSupported == true {
+                    ForEach(hostGPUs.filter { gpu in
+                        !(workload.gpuDevices ?? []).contains(where: { $0.pciAddress == gpu.pciAddress })
+                    }) { gpu in
+                        LabeledContent(gpu.name, value: "IOMMU \(gpu.iommuGroup)")
+                        if let occupancy = gpu.occupancyCopy {
+                            Text(occupancy)
+                                .foregroundStyle(.secondary)
+                        }
+                        if workload.canStart {
+                            Button("Attach \(gpu.pciAddress)") {
+                                Task {
+                                    await model.attachGPU(gpu.pciAddress, to: workload, on: device)
+                                    await refreshGPUs()
+                                }
+                            }
+                            .disabled(busy || !gpu.canAttach)
+                        } else {
+                            Text("Stop the Workload to attach.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             if let url = model.connectedURL {
                 Section {
                     Link(
@@ -184,6 +243,15 @@ struct WorkloadDetailView: View {
             }
             .task(id: WorkloadISOMedia.libraryTaskID(deviceID: deviceID, reachable: device.isReachable)) {
                 await loadLibrary()
+            }
+            .task(id: deviceID) {
+                guard device.isReachable else {
+                    deviceCaps = nil
+                    hostGPUs = []
+                    return
+                }
+                deviceCaps = await model.capabilities(for: device)
+                await refreshGPUs()
             }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,
@@ -262,6 +330,10 @@ struct WorkloadDetailView: View {
     private var busy: Bool {
         let key = WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id)
         return model.actionIDs.contains(key) || model.actionIDs.contains(workload.id)
+    }
+
+    private func refreshGPUs() async {
+        hostGPUs = await model.gpuDevices(on: device)
     }
 
     private var deviceLibrary: [LibraryImage] {

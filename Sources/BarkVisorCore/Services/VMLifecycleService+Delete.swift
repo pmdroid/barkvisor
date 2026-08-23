@@ -40,6 +40,8 @@ extension VMLifecycleService {
             }
         }
 
+        GPUPassthroughService.releaseVFIO(vm.decodedGPUDevices)
+
         if vm.cloudInitPath != nil {
             let ciDir = Config.dataDir.appendingPathComponent("cloud-init/\(vm.id)")
             try? FileManager.default.removeItem(at: ciDir)
@@ -176,6 +178,14 @@ extension VMLifecycleService {
             let normalized = try persistableUSBDevices(usb)
             try await db.read { db in
                 try assertUSBUnclaimed(normalized ?? usb, db: db)
+            }
+        }
+
+        if let gpu = params.gpuDevices, !gpu.isEmpty {
+            try PlatformCapabilities.requireGPUPassthrough()
+            let normalized = try persistableGPUDevices(gpu)
+            try await db.read { db in
+                try assertGPUUnclaimed(normalized ?? gpu, db: db)
             }
         }
 

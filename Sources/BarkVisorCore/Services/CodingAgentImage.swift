@@ -15,6 +15,8 @@ public enum CodingAgentImage {
     public static let deviceOllamaBaseURL = "http://\(deviceOllamaHost):\(deviceOllamaPort)/v1"
     /// Home Ollama grant (PAS-272). Same slirp URL; the cage guestfwd is the grant.
     public static let homeOllamaGrantURL = deviceOllamaBaseURL
+    /// Guest-local Ollama when a GPU is attached (PAS-275). Host Ollama is not forwarded.
+    public static let guestOllamaBaseURL = GPUPassthroughService.guestOllamaPath
 
     public static let defaultCPUCount = 2
     public static let defaultMemoryMB = 2_048
@@ -65,13 +67,32 @@ public enum CodingAgentImage {
         return trimmed
     }
 
-    public static func userData(openaiBaseURL: String) -> String {
+    public static func userData(openaiBaseURL: String, installGuestOllama: Bool = false) -> String {
         let url = openaiBaseURL
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64
         let shaX64 = ttydSha256Amd64
         let ttydPort = webTerminalPort
-        return """
+        let guestOllamaFiles: String
+        let guestOllamaRun: String
+        if installGuestOllama {
+            guestOllamaFiles = """
+                  - path: /usr/local/bin/barkvisor-guest-ollama
+                    permissions: '0755'
+                    content: |
+                      #!/bin/bash
+                      set -euo pipefail
+                      if ! command -v ollama >/dev/null 2>&1; then
+                        curl -fsSL https://ollama.com/install.sh | sh
+                      fi
+                      systemctl enable --now ollama || true
+            """
+            guestOllamaRun = "          - [ bash, /usr/local/bin/barkvisor-guest-ollama ]\n"
+        } else {
+            guestOllamaFiles = ""
+            guestOllamaRun = ""
+        }
+        let yaml = """
         package_update: true
         packages:
           - git
@@ -138,13 +159,30 @@ public enum CodingAgentImage {
                   fi
                 done
               fi
-        runcmd:
+        \(guestOllamaFiles)runcmd:
           - install -d -m 1777 /var/lib/barkvisor
           - git config --system core.hooksPath /etc/git-hooks
           - systemctl enable --now qemu-guest-agent
           - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
           - systemctl enable --now ttyd
+
         """
+        return yaml + guestOllamaRun
+    }
+
+    public static func isManagedUserData(_ userData: String?) -> Bool {
+        (userData ?? "").contains("barkvisor-coding-agent-setup")
+    }
+
+    public static func userDataForGPU(gpuAttached: Bool) -> String {
+        userData(
+            openaiBaseURL: gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL,
+            installGuestOllama: gpuAttached,
+        )
+    }
+
+    public static func cloudInitInstanceID(vmID: String, gpuAttached: Bool) -> String {
+        gpuAttached ? "\(vmID)-gpu" : vmID
     }
 
     public static func applyingCreateDefaults(
@@ -155,8 +193,10 @@ public enum CodingAgentImage {
         guard matches(name: imageName, slug: imageSlug) else { return params }
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let gpuAttached = !(params.gpuDevices ?? []).isEmpty
+        let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL
         let userData = existing.isEmpty
-            ? Self.userData(openaiBaseURL: homeOllamaGrantURL)
+            ? Self.userData(openaiBaseURL: defaultURL, installGuestOllama: gpuAttached)
             : existing
         if existing.isEmpty {
             try CloudInitService.validateUserData(userData)
@@ -180,6 +220,7 @@ public enum CodingAgentImage {
             sharedPaths: params.sharedPaths,
             portForwards: params.portForwards,
             usbDevices: params.usbDevices,
+            gpuDevices: params.gpuDevices,
             description: params.description,
             bootOrder: params.bootOrder,
             displayResolution: params.displayResolution,

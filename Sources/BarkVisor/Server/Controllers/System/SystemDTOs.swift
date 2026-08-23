@@ -80,6 +80,10 @@ struct SystemCapabilitiesResponse: Content {
     let supportsHostBridgeManagement: Bool
     let supportsUSBPassthrough: Bool
     let supportsInAppUpdate: Bool
+    /// Linux IOMMU + vfio-pci + KVM + a GPU in a group. Not QEMU vfio-pci attach (PAS-274).
+    let supportsGPUPassthrough: Bool
+    /// IOMMU groups exist and vfio-pci (or `/dev/vfio/vfio`) is present.
+    let supportsVFIO: Bool
     let accelerator: String
     let hostArch: String
     /// Online logical CPU count on the host (max assignable vCPUs per VM).
@@ -103,6 +107,26 @@ extension NetworkModeCapability: Content {}
 extension HostBridgeReadiness: Content {}
 extension HostBridgeSnapshot: Content {}
 extension HostBridgeRemediation: Content {}
+
+struct HostGPUDeviceResponse: Content {
+    let id: String
+    let pciAddress: String
+    let iommuGroup: String
+    let vendorId: String
+    let deviceId: String
+    let name: String
+    let driver: String?
+    let vfioBound: Bool
+    let inUseByHost: Bool
+    let attachable: Bool
+    let excludedReason: String?
+    let groupAddresses: [String]
+    let guestOllamaPath: String
+    let busy: Bool
+    let attachedToVmId: String?
+    let claimedByVMId: String?
+    let claimedByVMName: String?
+}
 
 struct HostUSBDeviceResponse: Content {
     let id: String

@@ -70,8 +70,10 @@ public enum VMLifecycleService {
         id: String,
         params: UpdateVMParams,
         db: DatabasePool,
+        hostGPUDevices: [HostGPUDevice]? = nil,
     ) async throws -> VM {
         let usbDevices = try persistableUSBDevices(params.usbDevices)
+        let gpuDevices = try persistableGPUDevices(params.gpuDevices, hostDevices: hostGPUDevices)
         let normalized = UpdateVMParams(
             name: params.name,
             cpuCount: params.cpuCount,
@@ -79,6 +81,7 @@ public enum VMLifecycleService {
             networkId: params.networkId,
             portForwards: params.portForwards,
             usbDevices: usbDevices,
+            gpuDevices: gpuDevices,
             description: params.description,
             bootOrder: params.bootOrder,
             displayResolution: params.displayResolution,
@@ -92,13 +95,17 @@ public enum VMLifecycleService {
 
         let encodedFields = encodeUpdateFields(params: normalized)
 
-        return try await db.write { db -> VM in
+        let vm = try await db.write { db -> VM in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
 
             try validateUpdateReferences(params: normalized, vm: vm, db: db)
             try assertUSBUnclaimed(normalized.usbDevices, excludingVMId: id, db: db)
+            try assertGPUUnclaimed(
+                normalized.gpuDevices, excludingVMId: id, db: db,
+                hostDevices: hostGPUDevices ?? [],
+            )
 
             let isRunning = vm.state != "stopped" && vm.state != "error"
             let hardwareChanged = detectHardwareChanges(
@@ -114,6 +121,10 @@ public enum VMLifecycleService {
             try vm.update(db)
             return vm
         }
+        if params.gpuDevices != nil {
+            try syncCodingAgentCloudInitForGPU(vm: vm)
+        }
+        return vm
     }
 
     /// Replace VM columns from a WorkloadSpec (PAS-35). Refreshes stored `specJson`.
@@ -132,8 +143,14 @@ public enum VMLifecycleService {
             ) ?? []
             normalized.spec.usb = usbDevices.map { USBPassthroughService.workload(from: $0) }
         }
+        if !normalized.spec.gpu.isEmpty {
+            let gpuDevices = try persistableGPUDevices(
+                normalized.spec.gpu.map { GPUPassthroughService.passthrough(from: $0) },
+            ) ?? []
+            normalized.spec.gpu = gpuDevices.map { GPUPassthroughService.workload(from: $0) }
+        }
         let spec = normalized
-        return try await db.write { db -> VM in
+        let (vm, gpuChanged) = try await db.write { db -> (VM, Bool) in
             guard var vm = try VM.fetchOne(db, key: id) else {
                 throw BarkVisorError.notFound()
             }
@@ -142,14 +159,19 @@ public enum VMLifecycleService {
             try WorkloadSpecProjector.apply(spec, to: &vm)
             try validateAppliedVMSpec(spec: spec, vm: vm, db: db)
             try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: id, db: db)
+            try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: id, db: db)
             if isRunning, detectHardwareChanges(before: before, after: vm) {
                 vm.pendingChanges = true
             }
             vm.updatedAt = iso8601.string(from: Date())
             vm.syncSpecProjection(bumpGeneration: true)
             try vm.update(db)
-            return vm
+            return (vm, before.gpuDevices != vm.gpuDevices)
         }
+        if gpuChanged {
+            try syncCodingAgentCloudInitForGPU(vm: vm)
+        }
+        return vm
     }
 
     // MARK: - Delete VM
@@ -388,6 +410,9 @@ extension VMLifecycleService {
             usbDevices: JSONColumnCoding.encode(
                 (try? persistableUSBDevices(params.usbDevices)) ?? params.usbDevices,
             ),
+            gpuDevices: JSONColumnCoding.encode(
+                (try? persistableGPUDevices(params.gpuDevices)) ?? params.gpuDevices,
+            ),
             autoCreated: false,
             pendingChanges: false,
             workloadClass: (try? WorkloadClass.parse(params.workloadClass).rawValue)
@@ -421,6 +446,7 @@ extension VMLifecycleService {
         do {
             try await db.write { db in
                 try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
+                try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: vm.id, db: db)
                 if let d = disk {
                     try d.insert(db)
                 }
@@ -535,6 +561,7 @@ extension VMLifecycleService {
             vm.decodedPortForwards, excludingVM: vm.id, db: db,
         )
         try assertUSBUnclaimed(vm.decodedUSBDevices, excludingVMId: vm.id, db: db)
+        try assertGPUUnclaimed(vm.decodedGPUDevices, excludingVMId: vm.id, db: db)
         try AgentWorkloadPolicy.validate(spec: spec, network: appliedNetwork)
     }
 
@@ -550,6 +577,9 @@ extension VMLifecycleService {
         }
         if let usb = params.usbDevices, !usb.isEmpty {
             try PlatformCapabilities.requireUSBPassthrough()
+        }
+        if let gpu = params.gpuDevices, !gpu.isEmpty {
+            try PlatformCapabilities.requireGPUPassthrough()
         }
     }
 

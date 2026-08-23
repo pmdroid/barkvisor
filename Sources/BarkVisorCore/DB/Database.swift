@@ -107,6 +107,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M013_CodingAgentSession.identifier) { db in
             try M013_CodingAgentSession.migrate(db)
         }
+        migrator.registerMigration(M014_GPUPassthrough.identifier) { db in
+            try M014_GPUPassthrough.migrate(db)
+        }
     }
 }
 

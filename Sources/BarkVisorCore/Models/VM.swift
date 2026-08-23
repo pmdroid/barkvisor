@@ -1,6 +1,33 @@
 import Foundation
 import GRDB
 
+public struct GPUPassthroughDevice: Codable, Equatable, Sendable {
+    public let pciAddress: String
+    public let iommuGroup: String
+    public let vendorId: String
+    public let deviceId: String
+    public let label: String?
+    public let groupAddresses: [String]
+
+    public init(
+        pciAddress: String,
+        iommuGroup: String,
+        vendorId: String,
+        deviceId: String,
+        label: String? = nil,
+        groupAddresses: [String] = [],
+    ) {
+        let address = GPUPassthroughService.normalizePCIAddress(pciAddress)
+        self.pciAddress = address
+        self.iommuGroup = iommuGroup
+        self.vendorId = GPUPassthroughService.normalizeHexId(vendorId)
+        self.deviceId = GPUPassthroughService.normalizeHexId(deviceId)
+        self.label = label
+        let group = groupAddresses.map { GPUPassthroughService.normalizePCIAddress($0) }
+        self.groupAddresses = group.isEmpty ? [address] : group
+    }
+}
+
 public struct USBPassthroughDevice: Codable, Equatable, Sendable {
     public let vendorId: String
     public let productId: String
@@ -51,6 +78,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var sharedPaths: String? // JSON-encoded [String]
     public var portForwards: String? // JSON-encoded [PortForwardRule]
     public var usbDevices: String? // JSON-encoded [USBPassthroughDevice]
+    public var gpuDevices: String? // JSON-encoded [GPUPassthroughDevice]
     public var autoCreated: Bool
     public var pendingChanges: Bool
     /// Stored WorkloadSpec document. Columns remain source of truth; the
@@ -89,6 +117,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         sharedPaths: String?,
         portForwards: String?,
         usbDevices: String? = nil,
+        gpuDevices: String? = nil,
         autoCreated: Bool,
         pendingChanges: Bool,
         specJson: String? = nil,
@@ -120,6 +149,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.sharedPaths = sharedPaths
         self.portForwards = portForwards
         self.usbDevices = usbDevices
+        self.gpuDevices = gpuDevices
         self.autoCreated = autoCreated
         self.pendingChanges = pendingChanges
         self.specJson = specJson

@@ -61,6 +61,7 @@ struct CodingAgentImageTests {
         #expect(CodingAgentImage.isShellSafeOpenAIBaseURL(CodingAgentImage.homeOllamaGrantURL))
         #expect(CodingAgentImage.homeOllamaGrantURL == CodingAgentImage.deviceOllamaBaseURL)
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
+        #expect(CodingAgentImage.guestOllamaBaseURL == "http://127.0.0.1:11434/v1")
     }
 
     @Test func `default user-data is valid cloud-init and names the tools`() throws {

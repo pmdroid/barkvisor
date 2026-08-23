@@ -6,6 +6,7 @@ import type { UpdateVMRequest } from '../api/types'
 import {
   canFetchDeviceWorkloads,
   deviceDisksPath,
+  deviceGpuDevicesPath,
   deviceLogsPath,
   deviceNetworksPath,
   deviceUsbDevicesPath,
@@ -19,7 +20,10 @@ export {
   deviceDisksPath,
   deviceLogsPath,
   deviceNetworksPath,
+  deviceGpuDevicesPath,
   deviceUsbDevicesPath,
+  deviceVmGpuDevicePath,
+  deviceVmGpuPath,
   deviceVmMetricsPath,
   deviceVmUsbDevicePath,
   deviceVmUsbPath,
@@ -57,6 +61,13 @@ export function usbInventoryFetchPath(
 ): string | null {
   if (!device || !canEditMemberHardware(device)) return null
   return deviceUsbDevicesPath(device)
+}
+
+export function gpuInventoryFetchPath(
+  device: DeviceApiTarget | null | undefined,
+): string | null {
+  if (!device || !canEditMemberHardware(device)) return null
+  return deviceGpuDevicesPath(device)
 }
 
 export function disksInventoryFetchPath(

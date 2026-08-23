@@ -102,6 +102,11 @@ struct OllamaAuthPolicyTests {
             ),
         )
         #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "POST", path: "/api/vms/vm-1/gpu",
+            ),
+        )
+        #expect(
             OllamaAuthPolicy.allows(
                 principal: .inferenceKey, method: "GET", path: "/api/auth/me",
             ),

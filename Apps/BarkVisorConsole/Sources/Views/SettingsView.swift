@@ -65,6 +65,14 @@ struct SettingsView: View {
                     Text("Could not load /api/system/about.")
                         .foregroundStyle(.secondary)
                 }
+                if let caps = model.capabilities {
+                    LabeledContent(
+                        "GPU passthrough",
+                        value: caps.gpuPassthroughSupported ? "Host ready" : "Not available",
+                    )
+                    Text(caps.gpuPassthroughExplanation)
+                        .foregroundStyle(.secondary)
+                }
                 LabeledContent("Glossary", value: "Home / Device / Workload / Library")
             } header: {
                 Text("About")

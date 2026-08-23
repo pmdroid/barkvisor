@@ -66,6 +66,23 @@ struct CloudInitServiceTests {
         try CloudInitService.validateUserDataRef(generated, vmID: "vm-1")
     }
 
+    @Test func `sshAuthorizedKeys reads stored cloud-config`() {
+        let keys = CloudInitService.sshAuthorizedKeys(
+            from: """
+            #cloud-config
+            ssh_authorized_keys:
+              - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGk user@host
+              - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7 other@host
+            packages:
+              - vim
+            """,
+        )
+        #expect(keys.count == 2)
+        #expect(keys[0].hasPrefix("ssh-ed25519"))
+        #expect(CloudInitService.sshAuthorizedKeys(from: nil).isEmpty)
+        #expect(CloudInitService.sshAuthorizedKeys(from: "packages:\n  - vim\n").isEmpty)
+    }
+
     @Test func `userDataRef rejects host files and other VMs`() {
         let other = CloudInitService.generatedISOURL(vmID: "vm-2").path
         #expect(throws: BarkVisorError.self) {

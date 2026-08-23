@@ -1,7 +1,7 @@
+import Foundation
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
-import Foundation
 
 public struct OllamaHTTPResponse: Sendable {
     public var status: Int
@@ -223,12 +223,7 @@ public struct URLSessionOllamaTransport: OllamaHTTPTransport {
         headers: [String: String],
         body: Data?,
     ) async throws -> OllamaHTTPResponse {
-        var request = URLRequest(url: url, timeoutInterval: 30)
-        request.httpMethod = method
-        request.httpBody = body
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
+        let request = Self.request(method: method, url: url, headers: headers, body: body, timeout: 30)
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         return OllamaHTTPResponse(status: status, body: data)
@@ -243,55 +238,68 @@ public struct URLSessionOllamaTransport: OllamaHTTPTransport {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    var request = URLRequest(url: url, timeoutInterval: 3_600)
-                    request.httpMethod = method
-                    request.httpBody = body
-                    for (key, value) in headers {
-                        request.setValue(value, forHTTPHeaderField: key)
-                    }
-                    #if canImport(FoundationNetworking) && !canImport(Darwin)
-                        // Linux FoundationNetworking: no URLSession.AsyncBytes.
-                        let (data, response) = try await URLSession.shared.data(for: request)
-                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                        if !(200 ..< 300).contains(status) {
-                            let reason = String(data: data, encoding: .utf8) ?? "Ollama pull failed"
-                            throw BarkVisorError.badGateway("Ollama: \(reason)")
-                        }
-                        var start = data.startIndex
-                        while start < data.endIndex {
-                            var end = start
-                            while end < data.endIndex, data[end] != 0x0A {
-                                end += 1
-                            }
-                            if end < data.endIndex {
-                                end += 1
-                            }
-                            continuation.yield(Data(data[start ..< end]))
-                            start = end
-                        }
-                    #else
-                        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                        if !(200 ..< 300).contains(status) {
-                            var data = Data()
-                            for try await byte in bytes {
-                                data.append(byte)
-                            }
-                            let reason = String(data: data, encoding: .utf8) ?? "Ollama pull failed"
-                            throw BarkVisorError.badGateway("Ollama: \(reason)")
-                        }
-                        for try await line in bytes.lines {
-                            if let data = (line + "\n").data(using: .utf8) {
-                                continuation.yield(data)
-                            }
-                        }
-                    #endif
+                    let request = Self.request(
+                        method: method, url: url, headers: headers, body: body, timeout: 3_600,
+                    )
+                    try await Self.writeStream(request: request, into: continuation)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
         }
+    }
+
+    private static func request(
+        method: String,
+        url: URL,
+        headers: [String: String],
+        body: Data?,
+        timeout: TimeInterval,
+    ) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
+        request.httpMethod = method
+        request.httpBody = body
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        return request
+    }
+
+    private static func writeStream(
+        request: URLRequest,
+        into continuation: AsyncThrowingStream<Data, Error>.Continuation,
+    ) async throws {
+        #if canImport(FoundationNetworking) && !canImport(Darwin)
+            // Linux FoundationNetworking has no URLSession.AsyncBytes.
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try throwIfOllamaFailed(status: (response as? HTTPURLResponse)?.statusCode ?? 0, body: data)
+            if !data.isEmpty {
+                continuation.yield(data)
+            }
+        #else
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if !(200 ..< 300).contains(status) {
+                var data = Data()
+                for try await byte in bytes {
+                    data.append(byte)
+                }
+                try throwIfOllamaFailed(status: status, body: data)
+            }
+            for try await line in bytes.lines {
+                if let data = (line + "\n").data(using: .utf8) {
+                    continuation.yield(data)
+                }
+            }
+        #endif
+    }
+
+    private static func throwIfOllamaFailed(status: Int, body: Data) throws {
+        guard !(200 ..< 300).contains(status) else { return }
+        let reason = String(data: body, encoding: .utf8) ?? "Ollama pull failed"
+        throw BarkVisorError.badGateway("Ollama: \(reason)")
     }
 }
 
