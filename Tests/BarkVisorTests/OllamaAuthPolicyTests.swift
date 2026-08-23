@@ -23,6 +23,11 @@ struct OllamaAuthPolicyTests {
         )
         #expect(
             OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "GET", path: "/api/ollama/snapshot",
+            ),
+        )
+        #expect(
+            OllamaAuthPolicy.allows(
                 principal: .inferenceKey, method: "POST", path: "/v1/chat/completions",
             ),
         )
