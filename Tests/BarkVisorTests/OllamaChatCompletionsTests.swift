@@ -90,6 +90,16 @@ struct OllamaChatCompletionsTests {
         }
     }
 
+    @Test func `a finished proxy stream ends without throwing`() async throws {
+        let stream = CancellableProxyStream.make { continuation in
+            continuation.yield(Data([1]))
+            continuation.finish()
+        }
+        var iterator = stream.makeAsyncIterator()
+        #expect(try await iterator.next() == Data([1]))
+        #expect(try await iterator.next() == nil)
+    }
+
     @Test func `dropping a cancellable proxy stream stops the producer`() async throws {
         let producerCancelled = CancelFlag()
         try await consumeFirstAndDrop(producerCancelled)

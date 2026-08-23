@@ -118,7 +118,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
                 }
                 continuation.finish()
             } catch is CancellationError {
-                continuation.finish(throwing: CancellationError())
+                continuation.finish()
             } catch {
                 continuation.finish(throwing: error)
             }

@@ -132,7 +132,7 @@ struct ChatView: View {
         turns.append(assistant)
         let history = turns.dropLast().map { ChatWireMessage(role: $0.role, content: $0.content) }
         streaming = true
-        sendTask = Task {
+        sendTask = Task { @MainActor in
             defer {
                 if generation == streamGeneration {
                     streaming = false

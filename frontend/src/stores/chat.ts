@@ -83,9 +83,9 @@ export const useChatStore = defineStore('chat', () => {
         signal: abort.signal,
         onDelta: (delta) => {
           if (generation !== streamGeneration) return
-          messages.value = messages.value.map((turn) =>
-            turn.id === assistantId ? { ...turn, content: turn.content + delta } : turn,
-          )
+          const idx = messages.value.findIndex((turn) => turn.id === assistantId)
+          if (idx < 0) return
+          messages.value[idx].content += delta
         },
       })
     } catch (err) {
