@@ -57,6 +57,36 @@ public enum GuestAgentChannel {
         }
     }
 
+    /// Best-effort guest file read (coding-session git stamp). Nil on any failure.
+    public static func readTextFile(socketPath: String, path: String, maxBytes: Int = 256) -> String? {
+        let client: QMPClient
+        do {
+            client = try connect(socketPath: socketPath, connectTimeoutSeconds: 1, clientTimeoutSeconds: 2)
+        } catch {
+            return nil
+        }
+        defer { client.disconnect() }
+        guard let opened = try? client.executeWithArgs(
+            "guest-file-open",
+            args: ["path": path, "mode": "r"],
+        ),
+            let handle = jsonInt(opened["return"])
+        else { return nil }
+        defer {
+            _ = try? client.executeWithArgs("guest-file-close", args: ["handle": handle])
+        }
+        guard let read = try? client.executeWithArgs(
+            "guest-file-read",
+            args: ["handle": handle, "count": maxBytes],
+        ),
+            let body = read["return"] as? [String: Any],
+            let b64 = body["buf-b64"] as? String,
+            let data = Data(base64Encoded: b64),
+            data.count <= maxBytes
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     static func jsonInt(_ value: Any?) -> Int? {
         if let i = value as? Int { return i }
         if let i = value as? Int64 { return Int(i) }

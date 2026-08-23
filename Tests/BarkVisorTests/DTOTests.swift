@@ -79,6 +79,31 @@ struct DTOTests {
         #expect(response.isoId == nil)
         #expect(response.health == .stopped)
         #expect(response.startOnBoot == false)
+        #expect(response.session == nil)
+    }
+
+    @Test func `vm response includes coding session view`() throws {
+        var vm = VM(
+            id: "vm-agent", name: "coder", vmType: "linux-arm64", state: "running",
+            cpuCount: 2, memoryMb: 2_048, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+            uefi: true, tpmEnabled: false,
+            macAddress: nil, sharedPaths: nil, portForwards: nil,
+            autoCreated: false, pendingChanges: false,
+            workloadClass: "agent",
+            createdAt: "2026-08-23T12:00:00Z", updatedAt: "2026-08-23T12:00:00Z",
+        )
+        var session = CodingAgentLifecycle.seed(
+            ttlSeconds: 3_600, grant: "home-ollama", cloudImageId: "img-1", diskSizeGB: 20,
+        )
+        let started = try #require(iso8601.date(from: "2026-08-23T12:00:00Z"))
+        CodingAgentLifecycle.beginClock(&session, now: started)
+        vm.setSession(session)
+        let response = VMResponse(from: vm)
+        #expect(response.session?.expiryAction == "stop")
+        #expect(response.session?.actions == ["resume", "reset", "burn"])
+        #expect(response.session?.grant == "home-ollama")
+        #expect(response.session?.ttlSeconds == 3_600)
     }
 
     @Test func `vm response iso id backwards compat`() {

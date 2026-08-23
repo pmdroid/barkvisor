@@ -66,6 +66,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).not.toContain('claude.ai/install.sh')
     expect(yaml).not.toContain('opencode.ai/install')
     expect(yaml).not.toContain('| bash')
+    expect(yaml).toContain('/etc/git-hooks/pre-push')
+    expect(yaml).toContain('/var/lib/barkvisor/last-git-push')
     const spoof = codingAgentUserData('http://10.0.2.2:11434@evil.com/v1')
     expect(spoof).not.toContain(ALLOW_HOST_OLLAMA_YAML)
   })

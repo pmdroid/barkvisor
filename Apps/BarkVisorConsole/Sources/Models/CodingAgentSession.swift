@@ -29,4 +29,38 @@ enum CodingAgentSession {
     static func consoleTitle(isSession: Bool) -> String {
         isSession ? "Terminal" : "Console"
     }
+
+    static let noPushCopy = "NO PUSH"
+    static let expiryAction = "stop"
+    static let warningLeadSeconds = 15 * 60
+}
+
+struct CodingAgentReceipt: Decodable, Hashable {
+    var stoppedAt: String
+    var reason: String
+    var lastGitPushAt: String?
+    var noPush: Bool
+}
+
+struct CodingAgentSessionInfo: Decodable, Hashable {
+    var ttlSeconds: Int
+    var startedAt: String?
+    var expiresAt: String?
+    var remainingSeconds: Int?
+    var warning: Bool
+    var warningLeadSeconds: Int
+    var expiryAction: String
+    var grant: String
+    var receipt: CodingAgentReceipt?
+    var actions: [String]
+
+    var receiptLine: (stoppedAt: String, git: String, loud: Bool)? {
+        guard let receipt else { return nil }
+        let missing = receipt.noPush || (receipt.lastGitPushAt ?? "").isEmpty
+        return (
+            receipt.stoppedAt,
+            missing ? CodingAgentSession.noPushCopy : (receipt.lastGitPushAt ?? CodingAgentSession.noPushCopy),
+            missing,
+        )
+    }
 }

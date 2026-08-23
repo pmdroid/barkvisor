@@ -7,6 +7,8 @@ struct WorkloadDetailView: View {
     var fallbackWorkload: Workload
     var fallbackDevice: HomeDeviceHealthSnapshot
     @State private var pendingForceStop = false
+    @State private var pendingReset = false
+    @State private var pendingBurn = false
     @State private var guest: GuestInfo?
     @State private var networkMode: String?
     @State private var libraryLoad: WorkloadISOLibraryLoad = .pending
@@ -93,6 +95,35 @@ struct WorkloadDetailView: View {
                         fallbackDevice: device,
                     ),
                 )
+            }
+
+            if codingAgent, let session = workload.session {
+                Section("Session") {
+                    LabeledContent("TTL", value: session.expiryAction == "stop" ? "Stop (keep disk)" : session.expiryAction)
+                    if let expires = session.expiresAt {
+                        LabeledContent("Expires", value: expires)
+                    }
+                    if session.warning {
+                        Text("Expires in 15 minutes. TTL stop keeps the disk.")
+                            .foregroundStyle(.orange)
+                    }
+                    if let line = session.receiptLine {
+                        LabeledContent("Stopped at", value: line.stoppedAt)
+                        Text(line.git)
+                            .fontWeight(line.loud ? .bold : .regular)
+                            .foregroundStyle(line.loud ? .red : .primary)
+                    }
+                    if workload.canStart {
+                        Button("Resume") {
+                            Task { await model.resumeSession(workload, on: device) }
+                        }
+                        .disabled(busy)
+                    }
+                    Button("Reset to Library image") { pendingReset = true }
+                        .disabled(busy)
+                    Button("Burn", role: .destructive) { pendingBurn = true }
+                        .disabled(busy)
+                }
             }
 
             isoSection
@@ -193,6 +224,22 @@ struct WorkloadDetailView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("The guest will not shut down cleanly.")
+            }
+            .alert("Reset to Library image?", isPresented: $pendingReset) {
+                Button("Reset", role: .destructive) {
+                    Task { await model.resetSession(workload, on: device) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The boot disk is replaced. Files that were not pushed are lost.")
+            }
+            .alert("Burn \(workload.name)?", isPresented: $pendingBurn) {
+                Button("Burn", role: .destructive) {
+                    Task { await model.burnSession(workload, on: device) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Destroys the Workload and unloads the local-model grant.")
             }
     }
 
