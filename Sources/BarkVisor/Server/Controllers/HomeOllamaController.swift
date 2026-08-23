@@ -189,6 +189,17 @@ struct HomeOllamaController: RouteCollection {
         if picked.hostId == hostId {
             return try await localOllama.complete(body: data, db: req.db)
         }
+        if stream {
+            let memberStream = try await sendMemberStream(
+                hostId: picked.hostId,
+                method: "POST",
+                path: "/api/ollama/v1/chat/completions",
+                body: data,
+                user: user,
+                timeoutSeconds: OllamaChatProxy.streamTimeoutSeconds,
+            )
+            return try await OllamaChatProxy.stream(memberStream)
+        }
         let result = try await sendMember(
             hostId: picked.hostId,
             method: "POST",
@@ -200,7 +211,7 @@ struct HomeOllamaController: RouteCollection {
         return OllamaChatProxy.buffered(
             status: result.status,
             body: result.body,
-            stream: stream,
+            stream: false,
             memberHeaders: result.headers,
         )
     }
@@ -393,6 +404,63 @@ struct HomeOllamaController: RouteCollection {
         hopBearer: String,
         timeoutSeconds: Int64? = nil,
     ) async throws -> HomeDeviceProxyResponse {
+        let prepared = try prepareMemberHop(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
+        )
+        return try await prepared.client.send(prepared.request)
+    }
+
+    func sendMemberStream(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        user: AuthenticatedUser,
+        timeoutSeconds: Int64? = nil,
+    ) async throws -> AsyncThrowingStream<Data, Error> {
+        let hopBearer = try await memberHopBearer(for: user)
+        return try sendMemberStream(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
+        )
+    }
+
+    func sendMemberStream(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        hopBearer: String,
+        timeoutSeconds: Int64? = nil,
+    ) throws -> AsyncThrowingStream<Data, Error> {
+        let prepared = try prepareMemberHop(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
+        )
+        return prepared.client.stream(prepared.request)
+    }
+
+    private func prepareMemberHop(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        hopBearer: String,
+        timeoutSeconds: Int64?,
+    ) throws -> (client: any HomeDeviceProxyClient, request: HomeDeviceProxyRequest) {
         if hopBearer.hasPrefix("barkvisor_") {
             throw BarkVisorError.internalError("API keys cannot authenticate on member Devices")
         }
@@ -410,7 +478,8 @@ struct HomeOllamaController: RouteCollection {
         if body != nil {
             headers.append(("Content-Type", "application/json"))
         }
-        return try await client.send(
+        return (
+            client,
             HomeDeviceProxyRequest(method: method, url: url, headers: headers, body: body),
         )
     }

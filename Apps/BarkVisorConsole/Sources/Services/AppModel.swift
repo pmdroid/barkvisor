@@ -815,6 +815,8 @@ final class AppModel {
         guard let client else { return }
         if let catalog = await optional({ try await client.ollamaCatalog() }) {
             ollamaCatalog = catalog
+        } else {
+            ollamaCatalog = nil
         }
         if !showsChat {
             if route == .chat { route = .dashboard }

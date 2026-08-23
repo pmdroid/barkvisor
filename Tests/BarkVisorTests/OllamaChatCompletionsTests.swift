@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import BarkVisor
 @testable import BarkVisorCore
 
 @Suite("Ollama chat completions (PAS-270)")
@@ -78,6 +79,33 @@ struct OllamaChatCompletionsTests {
         #expect(transport.streamCalls == 0)
         #expect(response.status == 200)
         #expect(String(data: response.body, encoding: .utf8)?.contains("done") == true)
+    }
+
+    @Test func `sse proxy throws before HTTP 200 when the first chunk fails`() async {
+        let chunks = AsyncThrowingStream<Data, Error> { continuation in
+            continuation.finish(throwing: BarkVisorError.badGateway("Ollama: down"))
+        }
+        await #expect(throws: BarkVisorError.self) {
+            _ = try await OllamaChatProxy.stream(chunks)
+        }
+    }
+
+    @Test func `member stream default fails closed on a non-2xx hop`() async throws {
+        let client = StatusProxyClient(status: 502, body: Data(#"{"error":"down"}"#.utf8))
+        let url = try #require(URL(string: "https://10.0.0.8:7778/api/ollama/v1/chat/completions"))
+        let stream = client.stream(HomeDeviceProxyRequest(method: "POST", url: url, body: Data()))
+        await #expect(throws: BarkVisorError.self) {
+            for try await _ in stream {}
+        }
+    }
+}
+
+private struct StatusProxyClient: HomeDeviceProxyClient {
+    var status: Int
+    var body: Data
+
+    func send(_: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
+        HomeDeviceProxyResponse(status: status, body: body)
     }
 }
 
