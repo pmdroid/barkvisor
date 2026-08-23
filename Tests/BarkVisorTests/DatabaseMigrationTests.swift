@@ -58,6 +58,7 @@ struct DatabaseMigrationTests {
         #expect(fetched?.memoryMb == 1_024)
         #expect(fetched?.macAddress == "52:54:00:12:34:56")
         #expect(fetched?.workloadClass == "house")
+        #expect(fetched?.startOnBoot == false)
     }
 
     @Test func `workloadClass round trip agent`() throws {
@@ -193,6 +194,14 @@ struct DatabaseMigrationTests {
         try queue.read { db in
             let columns = try db.columns(in: "vms").map(\.name)
             #expect(columns.contains("healthJson"))
+        }
+    }
+
+    @Test func `m011 adds startOnBoot column default off`() throws {
+        let queue = try migratedQueue()
+        try queue.read { db in
+            let columns = try db.columns(in: "vms").map(\.name)
+            #expect(columns.contains("startOnBoot"))
         }
     }
 

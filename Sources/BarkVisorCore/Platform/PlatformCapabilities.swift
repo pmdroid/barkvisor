@@ -54,13 +54,9 @@ public enum PlatformCapabilities {
         #endif
     }
 
-    /// In-app signed PKG update flow (macOS helper).
+    /// In-app signed PKG update flow. Always off — upgrade via Homebrew or the distro package.
     public static var supportsInAppUpdate: Bool {
-        #if os(macOS)
-            true
-        #else
-            false
-        #endif
+        false
     }
 
     /// QEMU accelerator name for this host.
@@ -159,13 +155,6 @@ public enum PlatformCapabilities {
     public static func requireUSBPassthrough() throws {
         guard supportsUSBPassthrough else {
             throw BarkVisorError.unsupportedFeature(.usbPassthrough)
-        }
-    }
-
-    /// Throw when in-app updates are unavailable.
-    public static func requireInAppUpdate() throws {
-        guard supportsInAppUpdate else {
-            throw BarkVisorError.unsupportedFeature(.inAppUpdate)
         }
     }
 

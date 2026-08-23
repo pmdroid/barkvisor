@@ -78,6 +78,11 @@ import {
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
+import {
+  parseStartOnBoot,
+  startOnBootFooterFromWorkload,
+  startOnBootLabel,
+} from '../utils/workloadStartOnBoot'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -151,6 +156,8 @@ const vm = computed(() => {
 
 const agentCage = computed(() => isAgentWorkload(vm.value))
 const grantCopy = computed(() => workloadGrantCopy(parseWorkloadClass(vm.value?.workloadClass ?? vm.value?.spec?.spec?.workloadClass)))
+const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
+const startOnBootHint = computed(() => startOnBootFooterFromWorkload(vm.value))
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
@@ -580,6 +587,16 @@ async function stopWorkload(method: 'acpi' | 'force') {
     return
   }
   await store.stop(vmId.value, { method })
+}
+
+async function toggleStartOnBoot(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  try {
+    await patchWorkload({ startOnBoot: checked })
+  } catch (e: any) {
+    toast.error(apiErrorMessage(e))
+    await refreshWorkload()
+  }
 }
 
 async function patchWorkload(body: Parameters<typeof store.update>[1]) {
@@ -1160,6 +1177,21 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <div class="detail-row">
             <span class="detail-label">Description</span>
             <span style="color:var(--text-secondary)">{{ vm.description || '-' }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">{{ startOnBootLabel() }}</span>
+            <span>
+              <label class="pairing-hint" style="display:flex;gap:8px;align-items:flex-start;text-align:left;margin:0">
+                <input
+                  type="checkbox"
+                  :checked="startOnBootOn"
+                  :disabled="controlDisabled"
+                  style="width:16px;height:16px;cursor:pointer;margin-top:2px"
+                  @change="toggleStartOnBoot"
+                />
+                <span style="color:var(--text-secondary)">{{ startOnBootHint }}</span>
+              </label>
+            </span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Boot Order</span>

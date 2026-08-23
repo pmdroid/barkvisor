@@ -46,16 +46,6 @@ public let kHelperTeamID = "W363QN58YY"
     /// Return all bridge states as a JSON string.
     /// Each element: { interface, socketPath, plistExists, daemonRunning, status }
     func getAllBridgeStates(reply: @escaping (String) -> Void)
-
-    /// Install a software update from a signed PKG file.
-    /// Copies the PKG to a helper-owned path, then verifies signature, notarization,
-    /// team ID, and `expectedVersion` before running the installer.
-    /// The reply may never arrive if the postinstall script restarts this process.
-    func installUpdate(
-        packagePath: String,
-        expectedVersion: String,
-        reply: @escaping (Bool, String?) -> Void,
-    )
 }
 
 /// Canonical socket_vmnet locations the privileged helper may exec as root (PAS-287).

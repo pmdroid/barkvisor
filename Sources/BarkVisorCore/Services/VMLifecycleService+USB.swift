@@ -35,7 +35,15 @@ extension VMLifecycleService {
         guard let vm = try await db.read({ db in try VM.fetchOne(db, key: vmID) }) else {
             throw BarkVisorError.notFound()
         }
-        let remaining = USBPassthroughService.removing(vm.decodedUSBDevices, deviceId: deviceId)
+        let hosts = (try? USBDeviceService.listDevices()) ?? []
+        let remaining = USBPassthroughService.removing(
+            vm.decodedUSBDevices,
+            deviceId: deviceId,
+            hostDevices: hosts,
+        )
+        if remaining.count == vm.decodedUSBDevices.count {
+            throw BarkVisorError.notFound("USB device \(deviceId) is not attached")
+        }
         return try await updateVM(
             id: vmID,
             params: UpdateVMParams(usbDevices: remaining),

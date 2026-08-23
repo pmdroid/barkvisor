@@ -33,7 +33,7 @@ import Foundation
 /// | overrides | overridesJson |
 ///
 /// Host-only (status, not required on spec): state, pendingChanges, autoCreated,
-/// createdAt, updatedAt, specGeneration.
+/// createdAt, updatedAt, specGeneration, startOnBoot.
 public enum WorkloadSpecProjector {
     // MARK: - Read (columns → spec)
 
@@ -107,6 +107,7 @@ public enum WorkloadSpecProjector {
             health: health.health,
             healthError: health.lastError,
             backend: WorkloadBackendProjector.project(vm: vm),
+            startOnBoot: vm.startOnBoot,
         )
     }
 

@@ -92,50 +92,6 @@ extension HelperHandler {
         return SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
 
-    func stageUpdatePackage(from source: String, expectedVersion: String) -> (path: String?, error: String?) {
-        let stagingDir = kHelperUpdateStagingDir
-        let parent = (stagingDir as NSString).deletingLastPathComponent
-        if isSymlink(atPath: parent) || isSymlink(atPath: stagingDir) {
-            return (nil, "Refusing to stage update: staging path is a symlink")
-        }
-
-        do {
-            try FileManager.default.createDirectory(
-                atPath: stagingDir,
-                withIntermediateDirectories: true,
-            )
-        } catch {
-            return (nil, "Failed to create staging directory: \(error.localizedDescription)")
-        }
-        chmod(stagingDir, 0o700)
-        chown(stagingDir, 0, 0)
-
-        let dest = (stagingDir as NSString).appendingPathComponent(
-            "BarkVisor-\(helperNormalizedVersion(expectedVersion)).pkg",
-        )
-        if isSymlink(atPath: dest) {
-            return (nil, "Refusing to stage update: destination is a symlink")
-        }
-        try? FileManager.default.removeItem(atPath: dest)
-        do {
-            try FileManager.default.copyItem(atPath: source, toPath: dest)
-        } catch {
-            return (nil, "Failed to copy package to helper-owned path: \(error.localizedDescription)")
-        }
-        chmod(dest, 0o600)
-        chown(dest, 0, 0)
-        return (dest, nil)
-    }
-
-    func extractPackageVersion(fromPackagePath path: String) -> String? {
-        let parent = (path as NSString).deletingLastPathComponent
-        let expandDir = (parent as NSString).appendingPathComponent("expand-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(atPath: expandDir) }
-        let (ok, _) = runProcess("/usr/sbin/pkgutil", arguments: ["--expand", path, expandDir])
-        guard ok else { return nil }
-        return helperParsePackageVersion(fromExpandedRoot: expandDir)
-    }
-
     private func serviceAccountIDs() -> (uid: uid_t, gid: gid_t)? {
         guard let pw = getpwnam(kHelperServiceUser) else { return nil }
         return (pw.pointee.pw_uid, pw.pointee.pw_gid)

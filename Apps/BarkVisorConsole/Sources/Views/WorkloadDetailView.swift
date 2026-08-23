@@ -99,6 +99,20 @@ struct WorkloadDetailView: View {
                 }
             }
 
+            Section {
+                Toggle(isOn: Binding(
+                    get: { workload.startsOnDeviceBoot },
+                    set: { enabled in
+                        Task { await model.setStartOnBoot(workload, enabled: enabled, on: device) }
+                    },
+                )) {
+                    Text(WorkloadStartOnBoot.label)
+                }
+                .disabled(busy || !device.isReachable)
+            } footer: {
+                Text(workload.startOnBootFooter)
+            }
+
             if workload.canStart || workload.canStop || workload.canRestart {
                 Section {
                     if workload.canStart {

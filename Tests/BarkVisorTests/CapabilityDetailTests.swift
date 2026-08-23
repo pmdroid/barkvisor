@@ -65,9 +65,8 @@ struct CapabilityDetailTests {
         #expect(!tcg.supported)
 
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
-        #expect(update.supported)
-        #expect(update.reasonCode == nil)
-        #expect(update.remediation == nil)
+        #expect(!update.supported)
+        #expect(update.remediation?.localizedCaseInsensitiveContains("brew") == true)
 
         let usb = CapabilityDetailBuilder.detail(for: .usbPassthrough, inventory: inv)
         #expect(usb.supported)
@@ -156,7 +155,8 @@ struct CapabilityDetailTests {
             }
         #elseif os(macOS)
             #expect(byCode[.managedBridgeDaemon]?.supported == true)
-            #expect(byCode[.inAppUpdate]?.supported == true)
+            #expect(byCode[.inAppUpdate]?.supported == false)
+            #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains("brew") == true)
             #expect(byCode[.bridgedNetworking]?.supported == true)
         #endif
     }

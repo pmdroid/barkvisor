@@ -63,6 +63,8 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     /// PAS-268: `house` | `agent`. Nil on pre-M010 rows is house.
     public var workloadClass: String?
     public var specGeneration: Int
+    /// PAS-258: start after Device boot. Default off so House appliances stay stopped.
+    public var startOnBoot: Bool
     public var createdAt: String
     public var updatedAt: String
 
@@ -94,6 +96,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         healthJson: String? = nil,
         workloadClass: String? = WorkloadClass.house.rawValue,
         specGeneration: Int = 1,
+        startOnBoot: Bool = false,
         createdAt: String,
         updatedAt: String,
     ) {
@@ -124,6 +127,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.healthJson = healthJson
         self.workloadClass = workloadClass
         self.specGeneration = specGeneration
+        self.startOnBoot = startOnBoot
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
