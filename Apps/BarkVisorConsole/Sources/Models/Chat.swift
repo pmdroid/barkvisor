@@ -55,6 +55,23 @@ struct ChatWireMessage: Encodable, Equatable {
     var content: String
 }
 
+enum ChatStreamApply {
+    /// Bind a delta to the originating assistant turn and send generation.
+    /// Stop/Send bump `currentGeneration` so a cancelled stream cannot write
+    /// onto a newer placeholder.
+    static func append(
+        delta: String,
+        to turns: inout [ChatTurn],
+        assistantID: UUID,
+        generation: Int,
+        currentGeneration: Int,
+    ) {
+        guard generation == currentGeneration, !delta.isEmpty else { return }
+        guard let index = turns.firstIndex(where: { $0.id == assistantID }) else { return }
+        turns[index].content += delta
+    }
+}
+
 enum ChatAvailability {
     static func visible(anyReachable: Bool, modelCount: Int) -> Bool {
         anyReachable && modelCount > 0

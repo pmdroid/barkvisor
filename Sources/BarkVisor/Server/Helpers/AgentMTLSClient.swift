@@ -25,6 +25,23 @@ public struct LibraryDepotStreamResult: Sendable {
     }
 }
 
+/// AsyncThrowingStream whose producer Task is cancelled when the consumer
+/// drops the stream (client disconnect, `break`, or Task cancel).
+enum CancellableProxyStream {
+    static func make(
+        _ work: @escaping @Sendable (AsyncThrowingStream<Data, Error>.Continuation) async -> Void,
+    ) -> AsyncThrowingStream<Data, Error> {
+        let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        let task = Task {
+            await work(continuation)
+        }
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
+        }
+        return stream
+    }
+}
+
 /// mTLS HTTP client for member proxy (PAS-34).
 ///
 /// Uses NIO sockets (not Network.framework) so client certificates work
@@ -72,35 +89,38 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
     }
 
     public func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let client = try AgentMTLSRuntime.shared.client(
-                        for: material,
-                        presentationCertificatePEM: presentationCertificatePEM,
-                        trustCertificatePEMs: trustCertificatePEMs,
-                        timeoutSeconds: timeoutSeconds,
+        CancellableProxyStream.make { continuation in
+            do {
+                try Task.checkCancellation()
+                let client = try AgentMTLSRuntime.shared.client(
+                    for: material,
+                    presentationCertificatePEM: presentationCertificatePEM,
+                    trustCertificatePEMs: trustCertificatePEMs,
+                    timeoutSeconds: timeoutSeconds,
+                )
+                let response = try await executeHeaders(request, on: client)
+                try Task.checkCancellation()
+                let status = Int(response.status.code)
+                if !(200 ..< 300).contains(status) {
+                    let buffer = try await collectProxyBody(response.body, maxBytes: 65_536)
+                    let reason = String(buffer: buffer)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    continuation.finish(
+                        throwing: BarkVisorError.badGateway(
+                            reason.isEmpty ? "HTTP \(status)" : reason,
+                        ),
                     )
-                    let response = try await executeHeaders(request, on: client)
-                    let status = Int(response.status.code)
-                    if !(200 ..< 300).contains(status) {
-                        let buffer = try await collectProxyBody(response.body, maxBytes: 65_536)
-                        let reason = String(buffer: buffer)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        continuation.finish(
-                            throwing: BarkVisorError.badGateway(
-                                reason.isEmpty ? "HTTP \(status)" : reason,
-                            ),
-                        )
-                        return
-                    }
-                    for try await part in response.body {
-                        continuation.yield(Data(part.readableBytesView))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+                    return
                 }
+                for try await part in response.body {
+                    try Task.checkCancellation()
+                    continuation.yield(Data(part.readableBytesView))
+                }
+                continuation.finish()
+            } catch is CancellationError {
+                continuation.finish(throwing: CancellationError())
+            } catch {
+                continuation.finish(throwing: error)
             }
         }
     }

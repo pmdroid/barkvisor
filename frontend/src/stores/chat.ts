@@ -10,6 +10,7 @@ import {
 } from '../utils/chatCompletions'
 
 export interface ChatTurn {
+  id: number
   role: 'user' | 'assistant'
   content: string
 }
@@ -23,6 +24,8 @@ export const useChatStore = defineStore('chat', () => {
   const streaming = ref(false)
   const error = ref<string | null>(null)
   let abort: AbortController | null = null
+  let nextTurnId = 1
+  let streamGeneration = 0
 
   const visible = computed(() => chatIsVisible(ollama.anyReachable, ollama.models.length))
   const modelNames = computed(() => ollama.models.map((row) => row.name))
@@ -39,6 +42,7 @@ export const useChatStore = defineStore('chat', () => {
   )
 
   function stop() {
+    streamGeneration += 1
     abort?.abort()
     abort = null
     streaming.value = false
@@ -56,9 +60,16 @@ export const useChatStore = defineStore('chat', () => {
     const text = draft.value.trim()
     const picked = model.value.trim()
     if (!text || !picked || streaming.value) return
+    streamGeneration += 1
+    const generation = streamGeneration
+    const assistantId = nextTurnId + 1
     draft.value = ''
     error.value = null
-    messages.value = [...messages.value, { role: 'user', content: text }, { role: 'assistant', content: '' }]
+    messages.value = [
+      ...messages.value,
+      { id: nextTurnId++, role: 'user', content: text },
+      { id: nextTurnId++, role: 'assistant', content: '' },
+    ]
     streaming.value = true
     abort = new AbortController()
     const history: ChatMessage[] = messages.value
@@ -71,12 +82,10 @@ export const useChatStore = defineStore('chat', () => {
         messages: history,
         signal: abort.signal,
         onDelta: (delta) => {
-          const last = messages.value[messages.value.length - 1]
-          if (!last || last.role !== 'assistant') return
-          messages.value = [
-            ...messages.value.slice(0, -1),
-            { role: 'assistant', content: last.content + delta },
-          ]
+          if (generation !== streamGeneration) return
+          messages.value = messages.value.map((turn) =>
+            turn.id === assistantId ? { ...turn, content: turn.content + delta } : turn,
+          )
         },
       })
     } catch (err) {
@@ -88,8 +97,10 @@ export const useChatStore = defineStore('chat', () => {
         draft.value = text
       }
     } finally {
-      streaming.value = false
-      abort = null
+      if (generation === streamGeneration) {
+        streaming.value = false
+        abort = null
+      }
     }
   }
 

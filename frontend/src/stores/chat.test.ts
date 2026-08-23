@@ -86,7 +86,7 @@ describe('chat store (PAS-270)', () => {
       opts.onDelta('Hel')
       opts.onDelta('lo')
     })
-    expect(chat.messages).toEqual([
+    expect(chat.messages.map(({ role, content }) => ({ role, content }))).toEqual([
       { role: 'user', content: 'hello' },
       { role: 'assistant', content: 'Hello' },
     ])
@@ -108,6 +108,40 @@ describe('chat store (PAS-270)', () => {
     })
     expect(chat.streaming).toBe(false)
     expect(chat.messages).toHaveLength(2)
+  })
+
+  test('late deltas from a stopped send do not land on the next assistant turn', async () => {
+    api.get = mock(() => Promise.resolve({ data: reachable })) as typeof api.get
+    localStorage.setItem('token', 'jwt-1')
+    const auth = useAuthStore()
+    auth.token = 'jwt-1'
+    await useOllamaStore().fetchCatalog()
+    const chat = useChatStore()
+    chat.draft = 'first'
+    let stale: ((delta: string) => void) | undefined
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const first = chat.send(async (opts) => {
+      stale = opts.onDelta
+      await blocked
+    })
+    chat.stop()
+    chat.draft = 'second'
+    await chat.send(async (opts) => {
+      opts.onDelta('ok')
+    })
+    stale!('stale')
+    release()
+    await first
+    expect(chat.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: '' },
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'ok' },
+    ])
+    expect(chat.streaming).toBe(false)
   })
 
   test('a failed catalog fetch hides Chat', async () => {

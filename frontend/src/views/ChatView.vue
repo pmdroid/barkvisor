@@ -59,7 +59,7 @@ function onKey(event: KeyboardEvent) {
       />
       <div
         v-for="(turn, i) in chat.messages"
-        :key="i"
+        :key="turn.id"
         class="chat-turn"
         :class="turn.role === 'user' ? 'chat-user' : 'chat-assistant'"
       >

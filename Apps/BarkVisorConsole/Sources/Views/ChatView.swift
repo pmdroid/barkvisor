@@ -6,6 +6,7 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var turns: [ChatTurn] = []
     @State private var streaming = false
+    @State private var streamGeneration = 0
     @State private var error: String?
     @State private var sendTask: Task<Void, Never>?
 
@@ -90,7 +91,7 @@ struct ChatView: View {
                     .disabled(modelName.isEmpty)
                     .onSubmit { send() }
                 if streaming {
-                    Button("Stop") { sendTask?.cancel(); streaming = false }
+                    Button("Stop") { stopStreaming() }
                 } else {
                     Button("Send") { send() }
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || modelName.isEmpty)
@@ -107,6 +108,12 @@ struct ChatView: View {
         }
     }
 
+    private func stopStreaming() {
+        streamGeneration += 1
+        sendTask?.cancel()
+        streaming = false
+    }
+
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !modelName.isEmpty, !streaming else { return }
@@ -116,22 +123,34 @@ struct ChatView: View {
         }
         draft = ""
         error = nil
+        streamGeneration += 1
+        let generation = streamGeneration
         let user = ChatTurn(role: "user", content: text)
+        let assistant = ChatTurn(role: "assistant", content: "")
+        let assistantID = assistant.id
         turns.append(user)
-        turns.append(ChatTurn(role: "assistant", content: ""))
+        turns.append(assistant)
         let history = turns.dropLast().map { ChatWireMessage(role: $0.role, content: $0.content) }
         streaming = true
         sendTask = Task {
-            defer { streaming = false }
+            defer {
+                if generation == streamGeneration {
+                    streaming = false
+                }
+            }
             do {
                 try await client.streamChatCompletions(
                     model: modelName,
                     messages: Array(history),
                 ) { delta in
                     Task { @MainActor in
-                        if let last = turns.indices.last {
-                            turns[last].content += delta
-                        }
+                        ChatStreamApply.append(
+                            delta: delta,
+                            to: &turns,
+                            assistantID: assistantID,
+                            generation: generation,
+                            currentGeneration: streamGeneration,
+                        )
                     }
                 }
             } catch is CancellationError {

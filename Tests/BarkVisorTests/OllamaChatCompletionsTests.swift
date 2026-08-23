@@ -90,6 +90,34 @@ struct OllamaChatCompletionsTests {
         }
     }
 
+    @Test func `dropping a cancellable proxy stream stops the producer`() async throws {
+        let producerCancelled = CancelFlag()
+        try await consumeFirstAndDrop(producerCancelled)
+        for _ in 0 ..< 40 {
+            if producerCancelled.value { break }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        #expect(producerCancelled.value)
+    }
+
+    private func consumeFirstAndDrop(_ producerCancelled: CancelFlag) async throws {
+        let stream = CancellableProxyStream.make { continuation in
+            continuation.yield(Data([1]))
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            producerCancelled.set()
+            continuation.finish()
+        }
+        var chunks = 0
+        for try await chunk in stream {
+            chunks += 1
+            #expect(chunk == Data([1]))
+            break
+        }
+        #expect(chunks == 1)
+    }
+
     @Test func `member stream default fails closed on a non-2xx hop`() async throws {
         let client = StatusProxyClient(status: 502, body: Data(#"{"error":"down"}"#.utf8))
         let url = try #require(URL(string: "https://10.0.0.8:7778/api/ollama/v1/chat/completions"))
@@ -97,6 +125,23 @@ struct OllamaChatCompletionsTests {
         await #expect(throws: BarkVisorError.self) {
             for try await _ in stream {}
         }
+    }
+}
+
+private final class CancelFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = false
+
+    var value: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _value
+    }
+
+    func set() {
+        lock.lock()
+        _value = true
+        lock.unlock()
     }
 }
 

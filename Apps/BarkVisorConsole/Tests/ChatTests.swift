@@ -49,6 +49,44 @@ struct ChatTests {
         #expect(PhoneTab.chat.rawValue == "chat")
     }
 
+    @Test func `stale deltas stay on the originating assistant turn`() {
+        let first = ChatTurn(role: "assistant", content: "")
+        let second = ChatTurn(role: "assistant", content: "")
+        var turns = [
+            ChatTurn(role: "user", content: "one"),
+            first,
+            ChatTurn(role: "user", content: "two"),
+            second,
+        ]
+        ChatStreamApply.append(
+            delta: "stale",
+            to: &turns,
+            assistantID: first.id,
+            generation: 1,
+            currentGeneration: 2,
+        )
+        #expect(turns[1].content.isEmpty)
+        #expect(turns[3].content.isEmpty)
+        ChatStreamApply.append(
+            delta: "ok",
+            to: &turns,
+            assistantID: second.id,
+            generation: 2,
+            currentGeneration: 2,
+        )
+        #expect(turns[1].content.isEmpty)
+        #expect(turns[3].content == "ok")
+        ChatStreamApply.append(
+            delta: "late",
+            to: &turns,
+            assistantID: first.id,
+            generation: 1,
+            currentGeneration: 2,
+        )
+        #expect(turns[1].content.isEmpty)
+        #expect(turns[3].content == "ok")
+    }
+
     @Test func `sse drains open AI token lines`() {
         var buffer =
             "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n" +
