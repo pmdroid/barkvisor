@@ -6,7 +6,8 @@ connecting to it, and managing its lifecycle in BarkVisor.
 ## Prerequisites
 
 - BarkVisor is installed and the daemon is running:
-  - **macOS:** `sudo launchctl list | grep barkvisor`
+  - **macOS (Homebrew):** `sudo brew services info barkvisor` ([Installation (Homebrew)](getting-started-homebrew.md))
+  - **macOS (.pkg):** `sudo launchctl list | grep barkvisor`
   - **Linux:** `systemctl status barkvisor.service` (or `swift run BarkVisorApp` in dev)
 - The server is listening on port 7777 (default).
 - At least one OS image is available, or you are ready to download/upload one.

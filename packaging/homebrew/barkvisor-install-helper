@@ -1,0 +1,91 @@
+#!/bin/bash
+# Copy the keg-signed privileged helper for bridged networking (PAS-292).
+# NAT Workloads work without this. Does not load the helper via Homebrew services.
+set -euo pipefail
+
+LABEL="dev.barkvisor.helper"
+HELPER_NAME="dev.barkvisor.helper"
+DEST_ROOT="${DEST_ROOT:-}"
+SKIP_LAUNCHCTL="${SKIP_LAUNCHCTL:-}"
+
+script_dir() {
+    local src="${BASH_SOURCE[0]}"
+    while [ -L "$src" ]; do
+        local dir
+        dir="$(cd "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        [[ "$src" != /* ]] && src="$dir/$src"
+    done
+    cd "$(dirname "$src")" && pwd
+}
+
+SCRIPT_DIR="$(script_dir)"
+HELPER_SRC="${HELPER_SRC:-$SCRIPT_DIR/../libexec/$HELPER_NAME}"
+PLIST_SRC="${HELPER_PLIST:-$SCRIPT_DIR/../share/barkvisor/$HELPER_NAME.plist}"
+
+HELPER_DEST="${DEST_ROOT}/Library/PrivilegedHelperTools/$HELPER_NAME"
+PLIST_DEST="${DEST_ROOT}/Library/LaunchDaemons/$HELPER_NAME.plist"
+
+if [ -z "$DEST_ROOT" ] && [ "$(id -u)" -ne 0 ]; then
+    echo "barkvisor-install-helper must run as root (sudo)." >&2
+    echo "NAT Workloads work without the helper. Bridged networking needs it." >&2
+    exit 1
+fi
+
+if [ ! -f "$HELPER_SRC" ] || [ ! -x "$HELPER_SRC" ]; then
+    echo "Signed helper not found at $HELPER_SRC" >&2
+    echo "Install the barkvisor formula first, or set HELPER_SRC." >&2
+    exit 1
+fi
+
+if [ ! -f "$PLIST_SRC" ]; then
+    echo "Helper LaunchDaemon plist not found at $PLIST_SRC" >&2
+    echo "Set HELPER_PLIST to packaging/homebrew/dev.barkvisor.helper.plist." >&2
+    exit 1
+fi
+
+if ! command -v codesign >/dev/null 2>&1; then
+    echo "codesign is required to verify the helper before copy." >&2
+    exit 1
+fi
+
+if ! codesign --verify --strict "$HELPER_SRC"; then
+    echo "Refusing to install an unsigned helper: $HELPER_SRC" >&2
+    exit 1
+fi
+
+mkdir -p "$(dirname "$HELPER_DEST")" "$(dirname "$PLIST_DEST")"
+cp "$HELPER_SRC" "$HELPER_DEST"
+chmod 0544 "$HELPER_DEST"
+chown root:wheel "$HELPER_DEST" 2>/dev/null || true
+
+cp "$PLIST_SRC" "$PLIST_DEST"
+chmod 0644 "$PLIST_DEST"
+chown root:wheel "$PLIST_DEST" 2>/dev/null || true
+
+if ! grep -q "<key>MachServices</key>" "$PLIST_DEST"; then
+    echo "Helper plist is missing MachServices: $PLIST_DEST" >&2
+    exit 1
+fi
+if ! grep -q "<string>/Library/PrivilegedHelperTools/${HELPER_NAME}</string>" "$PLIST_DEST"; then
+    echo "Helper plist Program must be /Library/PrivilegedHelperTools/${HELPER_NAME}" >&2
+    exit 1
+fi
+
+if [ -z "$DEST_ROOT" ] && [ -z "$SKIP_LAUNCHCTL" ]; then
+    launchctl bootout "system/$LABEL" 2>/dev/null || true
+    for _ in $(seq 1 15); do
+        if ! launchctl print "system/$LABEL" &>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    launchctl bootstrap system "$PLIST_DEST"
+    echo "Loaded $LABEL (Mach service $LABEL)."
+else
+    echo "Copied helper to $HELPER_DEST"
+    echo "Wrote LaunchDaemon plist to $PLIST_DEST"
+    echo "Skipped launchctl (DEST_ROOT or SKIP_LAUNCHCTL is set)."
+fi
+
+echo "Bridged networking helper is installed. NAT Workloads do not need it."

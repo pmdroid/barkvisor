@@ -45,6 +45,7 @@ export default defineConfig({
             { label: 'Create a Workload', link: '/docs/guides/create-workload/' },
             { label: 'Changelog', link: '/docs/changelog/' },
             { label: 'Roadmap', link: '/docs/roadmap/' },
+            { label: 'Installation (Homebrew)', link: '/docs/getting-started/homebrew/' },
             { label: 'Installation (macOS)', link: '/docs/getting-started/installation/' },
             { label: 'Installation (Linux)', link: '/docs/linux/' },
           ],

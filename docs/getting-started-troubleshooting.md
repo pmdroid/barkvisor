@@ -188,7 +188,15 @@ sudo launchctl kickstart system/dev.barkvisor
 
 ### macOS: privileged helper and socket_vmnet
 
-On **macOS**, bridged networking uses a privileged XPC helper (`BarkVisorHelper`) plus `socket_vmnet`. The helper is a LaunchDaemon at `/Library/LaunchDaemons/dev.barkvisor.helper.plist` (binary `/Library/PrivilegedHelperTools/dev.barkvisor.helper`, Mach service `dev.barkvisor.helper`).
+On **macOS**, bridged networking uses a privileged XPC helper (`BarkVisorHelper`) plus `socket_vmnet`. The helper is a LaunchDaemon at `/Library/LaunchDaemons/dev.barkvisor.helper.plist` (binary `/Library/PrivilegedHelperTools/dev.barkvisor.helper`, Mach service `dev.barkvisor.helper`). NAT Workloads work without it.
+
+Homebrew does not load that LaunchDaemon from `brew services`. If you installed with Homebrew and bridges fail, copy the signed keg helper:
+
+```sh
+sudo barkvisor-install-helper
+```
+
+See [Installation (Homebrew)](getting-started-homebrew.md#bridged-networking-optional).
 
 If the helper is not running, managed bridge operations will fail:
 

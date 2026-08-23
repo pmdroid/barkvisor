@@ -4,7 +4,8 @@ This page covers **Linux** package install (`.deb` / `.rpm` / tarball) and the s
 
 | Platform | Guide |
 |----------|--------|
-| **macOS** | **[getting-started-installation.md](getting-started-installation.md)** — `.pkg` / standalone archive |
+| **macOS (Homebrew)** | **[getting-started-homebrew.md](getting-started-homebrew.md)** |
+| **macOS (.pkg)** | **[getting-started-installation.md](getting-started-installation.md)** — `.pkg` / standalone archive |
 | **Linux** | This page |
 
 After install, open `http://localhost:7777` (or the host IP) and complete the web setup wizard. Creating your first VM is the same on both platforms — see [Quickstart](getting-started-quickstart.md) and [First launch](getting-started-first-launch.md).

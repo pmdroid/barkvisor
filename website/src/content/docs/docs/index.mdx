@@ -18,6 +18,7 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
   <LinkCard title="Create a Workload" href="/docs/guides/create-workload/" description="Place a VM on this Device or another reachable Device." />
   <LinkCard title="Changelog" href="/docs/changelog/" description="What shipped for Home, pairing, Library, and Create VM." />
   <LinkCard title="Roadmap" href="/docs/roadmap/" description="What we want to build next: HA, quorum, Ceph, live migration, apps." />
+  <LinkCard title="Installation (Homebrew)" href="/docs/getting-started/homebrew/" description="macOS Device install with brew services. NAT works without the helper." />
   <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
   <LinkCard title="Installation (Linux)" href="/docs/linux/" description="System requirements, .deb/.rpm/tarball, systemd, data directory." />
   <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS or Linux." />
@@ -28,12 +29,12 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 
 | Platform | Packaging | Acceleration | Bridged networking |
 |----------|-----------|--------------|--------------------|
-| **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | socket_vmnet + privileged helper |
+| **macOS** (Apple Silicon) | Homebrew or `.pkg` / standalone | HVF | socket_vmnet + optional privileged helper |
 | **Linux** | `.deb` / `.rpm` / tarball | KVM (or TCG) | host bridge + `qemu-bridge-helper` |
 
 Same product on both: daemon + SPA, NAT, bridge, USB, images, cloud-init, console/VNC. Host differences (accel, packaging) are by design.
 
-Install guides: **[macOS](/docs/getting-started/installation/)** · **[Linux](/docs/linux/)**.
+Install guides: **[Homebrew](/docs/getting-started/homebrew/)** · **[macOS .pkg](/docs/getting-started/installation/)** · **[Linux](/docs/linux/)**.
 
 ## Concepts
 

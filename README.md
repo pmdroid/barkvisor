@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** **macOS** (`.pkg` / HVF) and **Linux** (packages + systemd / KVM). See [Linux install](docs/getting-started-linux.md).
+**Platforms:** **macOS** (Homebrew or `.pkg` / HVF) and **Linux** (packages + systemd / KVM). See [Homebrew](docs/getting-started-homebrew.md) and [Linux install](docs/getting-started-linux.md).
 
 In the UI, the machine running BarkVisor is a **Device** in your **Home** — not a node or a cluster. [Product terminology](docs/product-terminology.md).
 
@@ -125,7 +125,17 @@ bun run test:e2e    # Headless Cypress
 
 ### macOS
 
-Download the latest `.pkg` from the releases page and install:
+Homebrew is the Device install to use ([full steps](docs/getting-started-homebrew.md)):
+
+```bash
+brew install --formula ./packaging/homebrew/barkvisor.rb
+sudo "$(brew --prefix barkvisor)/share/barkvisor/postinstall"
+sudo brew services start barkvisor
+```
+
+NAT Workloads work after that. Bridged networking needs `sudo barkvisor-install-helper`.
+
+Alternatively, download the latest `.pkg` from the releases page:
 
 ```bash
 sudo installer -pkg BarkVisor-<version>.pkg -target /

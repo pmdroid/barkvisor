@@ -4,7 +4,7 @@
 
 When BarkVisor starts for the first time:
 
-1. The data directory is created (see [Installation (macOS)](getting-started-installation.md) or [Installation (Linux)](getting-started-linux.md) for paths).
+1. The data directory is created (see [Installation (Homebrew)](getting-started-homebrew.md), [Installation (macOS)](getting-started-installation.md), or [Installation (Linux)](getting-started-linux.md) for paths).
 2. The **SQLite database** is created and migrated to the latest schema.
 3. **Default records are seeded** into the database:
    - A **Default NAT** network, which provides internet access to VMs through the host network stack with no additional configuration (macOS and Linux).
@@ -82,7 +82,12 @@ NAT works out of the box on every host. Bridged networking uses the native path 
 
 ### macOS
 
-A **privileged helper** (`dev.barkvisor.helper`) plus **socket_vmnet** manage bridges via the vmnet stack. The helper is installed as a launchd service with the package. You can manage bridges from the Networks page; first-run setup may prompt to install or start the helper.
+A **privileged helper** (`dev.barkvisor.helper`) plus **socket_vmnet** manage bridges via the vmnet stack. NAT Workloads work without it.
+
+- **Homebrew:** the keg keeps a signed helper. Copy it with `sudo barkvisor-install-helper` (see [Installation (Homebrew)](getting-started-homebrew.md#bridged-networking-optional)). `brew services` does not load that LaunchDaemon.
+- **.pkg:** the helper is installed as a launchd service with the package.
+
+You can manage bridges from the Networks page; first-run setup may prompt to install or start the helper.
 
 ### Linux
 

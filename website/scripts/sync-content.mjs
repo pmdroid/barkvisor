@@ -14,6 +14,12 @@ const outDir = path.resolve(__dirname, '../src/content/docs/docs');
 
 /** @type {Record<string, { out: string, title: string, description: string }>} */
 const map = {
+  'getting-started-homebrew.md': {
+    out: 'getting-started/homebrew.md',
+    title: 'Installation (Homebrew)',
+    description:
+      'Install a BarkVisor Device with Homebrew. NAT Workloads work without the privileged helper.',
+  },
   'getting-started-installation.md': {
     out: 'getting-started/installation.md',
     title: 'Installation (macOS)',
@@ -90,6 +96,7 @@ function stripFirstH1(body) {
 function fixLinks(body) {
   return body
     .replace(/\]\(getting-started-linux\.md(#[^)]*)?\)/g, '](/docs/linux/$1)')
+    .replace(/\]\(getting-started-homebrew\.md(#[^)]*)?\)/g, '](/docs/getting-started/homebrew/$1)')
     .replace(/\]\(getting-started-installation\.md(#[^)]*)?\)/g, '](/docs/getting-started/installation/$1)')
     .replace(/\]\(getting-started-first-launch\.md(#[^)]*)?\)/g, '](/docs/getting-started/first-launch/$1)')
     .replace(/\]\(getting-started-quickstart\.md(#[^)]*)?\)/g, '](/docs/getting-started/quickstart/$1)')
@@ -105,6 +112,7 @@ function fixLinks(body) {
     .replace(/\]\(host-process-boundary\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md$1)')
     .replace(/\]\(\.\.\/\.github\/([^)]+)\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/.github/$1)')
     .replace(/\]\(\.\.\/packaging\/linux\/README\.md\)/g, '](https://github.com/pmdroid/barkvisor/tree/main/packaging/linux)')
+    .replace(/\]\(\.\.\/packaging\/homebrew\/README\.md\)/g, '](https://github.com/pmdroid/barkvisor/tree/main/packaging/homebrew)')
     .replace(/\/docs\/([^)#\s]+)\/(#[^)]*)\)/g, '/docs/$1$2)');
 }
 

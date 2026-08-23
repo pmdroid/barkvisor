@@ -1,10 +1,11 @@
 # Installation (macOS)
 
-This page covers **macOS** package install (Apple Silicon `.pkg` / standalone archive).
+This page covers **macOS** package install (Apple Silicon `.pkg` / standalone archive). Homebrew is the supported Device install going forward: **[getting-started-homebrew.md](getting-started-homebrew.md)**.
 
 | Platform | Guide |
 |----------|--------|
-| **macOS** | This page |
+| **macOS (Homebrew)** | **[getting-started-homebrew.md](getting-started-homebrew.md)** |
+| **macOS (.pkg)** | This page |
 | **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — `.deb` / `.rpm` / tarball + systemd |
 
 ## System Requirements

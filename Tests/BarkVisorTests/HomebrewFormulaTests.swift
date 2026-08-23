@@ -1,7 +1,8 @@
 import Foundation
 import Testing
 
-/// PAS-291: Homebrew formula + root brew services LaunchDaemon (no helper yet).
+/// PAS-291: Homebrew formula + root brew services LaunchDaemon.
+/// Helper LaunchDaemon install is PAS-292 (`HomebrewInstallHelperTests`).
 struct HomebrewFormulaTests {
     private var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
@@ -91,12 +92,14 @@ struct HomebrewFormulaTests {
         #expect(plist.contains("<string>/var/lib/barkvisor</string>"))
     }
 
-    @Test func `formula does not ship a helper LaunchDaemon`() throws {
+    @Test func `brew services does not load the helper LaunchDaemon`() throws {
         let formula = try read("packaging/homebrew/barkvisor.rb")
-        #expect(!formula.contains("dev.barkvisor.helper"))
-        #expect(!formula.contains("PrivilegedHelperTools"))
-        #expect(!formula.contains("MachServices"))
+        let service = try serviceBlock(formula)
+        #expect(!service.contains("helper"))
+        #expect(!service.contains("PrivilegedHelperTools"))
+        #expect(!service.contains("MachServices"))
         #expect(formula.contains("PAS-292"))
+        #expect(formula.contains("barkvisor-install-helper"))
     }
 
     private enum HomebrewFormulaTestError: Error {

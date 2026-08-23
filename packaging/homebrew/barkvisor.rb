@@ -1,6 +1,7 @@
 # Homebrew formula for the BarkVisor Device daemon (PAS-291).
 # Runtime QEMU/swtpm/socket_vmnet/cdrtools come from Homebrew, not this keg.
-# The privileged helper LaunchDaemon is PAS-292, not this formula.
+# PAS-292: keg ships a signed helper + barkvisor-install-helper. brew services
+# does not load that LaunchDaemon. NAT Workloads work without it.
 class Barkvisor < Formula
   desc "Headless QEMU manager for a BarkVisor Device"
   homepage "https://github.com/pmdroid/barkvisor"
@@ -28,12 +29,24 @@ class Barkvisor < Formula
 
     system "swift", "build", "--disable-sandbox", "-c", "release",
            "--product", "BarkVisorApp"
+    system "swift", "build", "--disable-sandbox", "-c", "release",
+           "--product", "BarkVisorHelper"
     binary = Dir["#{buildpath}/.build/**/release/BarkVisorApp"].find do |path|
       File.file?(path) && File.executable?(path)
     end
     odie "swift build did not produce BarkVisorApp" if binary.nil?
+    helper = Dir["#{buildpath}/.build/**/release/BarkVisorHelper"].find do |path|
+      File.file?(path) && File.executable?(path)
+    end
+    odie "swift build did not produce BarkVisorHelper" if helper.nil?
+
+    system "codesign", "--force", "--sign", "-", helper
+    system "codesign", "--verify", "--strict", helper
 
     bin.install binary => "barkvisor"
+    libexec.install helper => "dev.barkvisor.helper"
+    bin.install buildpath/"packaging/homebrew/barkvisor-install-helper"
+    chmod 0755, bin/"barkvisor-install-helper"
     (share/"barkvisor/frontend").install "frontend/dist"
     # Same path as scripts/build-release.sh: share/barkvisor/templates.json.
     # Seeder reads Config.shareDir; brew services cwd is /var/lib/barkvisor.
@@ -41,6 +54,8 @@ class Barkvisor < Formula
 
     (pkgshare/"postinstall").write (buildpath/"packaging/homebrew/postinstall.sh").read
     chmod 0755, pkgshare/"postinstall"
+    helper_plist = (buildpath/"packaging/homebrew/dev.barkvisor.helper.plist").read
+    (pkgshare/"dev.barkvisor.helper.plist").write helper_plist
 
     plist = (buildpath/"packaging/homebrew/homebrew.mxcl.barkvisor.plist").read
     plist = plist.gsub("@PROGRAM@", (opt_bin/"barkvisor").to_s)
@@ -80,14 +95,18 @@ class Barkvisor < Formula
         sudo #{opt_pkgshare}/postinstall
         sudo brew services start barkvisor
 
-      Bridged networking still needs the privileged helper (not this formula).
-      NAT Workloads work without it.
+      NAT Workloads work without the privileged helper.
+      Bridged networking copies the signed helper out of the keg:
+        sudo #{opt_bin}/barkvisor-install-helper
     EOS
   end
 
   test do
     assert_path_exists bin/"barkvisor"
+    assert_path_exists bin/"barkvisor-install-helper"
+    assert_path_exists libexec/"dev.barkvisor.helper"
     assert_path_exists share/"barkvisor/templates.json"
+    assert_path_exists share/"barkvisor/dev.barkvisor.helper.plist"
     plist = (prefix/"homebrew.mxcl.barkvisor.plist").read
     assert_match "AbandonProcessGroup", plist
     assert_match "_barkvisor", plist
@@ -96,5 +115,8 @@ class Barkvisor < Formula
     assert_match "BARKVISOR_SOCKET_DIR", plist
     assert_match "/var/run/barkvisor", plist
     refute_match "barkvisor.helper", plist
+    helper_plist = (share/"barkvisor/dev.barkvisor.helper.plist").read
+    assert_match "MachServices", helper_plist
+    assert_match "/Library/PrivilegedHelperTools/dev.barkvisor.helper", helper_plist
   end
 end
