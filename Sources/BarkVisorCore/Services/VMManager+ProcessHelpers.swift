@@ -181,6 +181,7 @@ extension VMManager {
 
     public func cleanup(vmID: String) {
         if let running = runningVMs[vmID] {
+            AgentNetworkCage.removeLinuxFilter(pid: running.pid, vmID: vmID)
             terminateSwtpm(running, vmID: vmID)
         }
         // Remove PID file

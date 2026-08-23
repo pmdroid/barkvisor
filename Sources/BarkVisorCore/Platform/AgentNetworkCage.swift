@@ -75,9 +75,64 @@ public enum AgentNetworkCage {
     """
 
     public static func linuxOwnerRejectCommands(pid: Int32) -> [[String]] {
+        linuxOwnerCommands(pid: pid, action: "-I")
+    }
+
+    public static func linuxOwnerDeleteCommands(pid: Int32) -> [[String]] {
+        linuxOwnerCommands(pid: pid, action: "-D")
+    }
+
+    public static let iptablesSearchPaths = [
+        "/usr/sbin/iptables",
+        "/sbin/iptables",
+        "/usr/bin/iptables",
+        "/usr/local/sbin/iptables",
+    ]
+
+    public static func resolveIptables() -> URL? {
+        iptablesSearchPaths
+            .map { URL(fileURLWithPath: $0) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    public static func applyLinuxFilter(pid: Int32, vmID: String) throws {
+        #if os(Linux)
+            guard let exe = resolveIptables() else {
+                throw BarkVisorError.forbidden(
+                    "Agent Workloads need iptables to block the house LAN",
+                )
+            }
+            try runIptables(exe: exe, commands: linuxOwnerRejectCommands(pid: pid), vmID: vmID)
+            Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
+        #else
+            _ = pid
+            _ = vmID
+        #endif
+    }
+
+    public static func removeLinuxFilter(pid: Int32, vmID: String) {
+        #if os(Linux)
+            guard let exe = resolveIptables() else { return }
+            for args in linuxOwnerDeleteCommands(pid: pid) {
+                let proc = Process()
+                proc.executableURL = exe
+                proc.arguments = Array(args.dropFirst())
+                proc.standardOutput = FileHandle.nullDevice
+                proc.standardError = FileHandle.nullDevice
+                try? proc.run()
+                proc.waitUntilExit()
+            }
+            Log.vm.info("Agent LAN filter removed for pid \(pid)", vm: vmID)
+        #else
+            _ = pid
+            _ = vmID
+        #endif
+    }
+
+    private static func linuxOwnerCommands(pid: Int32, action: String) -> [[String]] {
         blockedIPv4CIDRs.map { cidr in
             [
-                "iptables", "-I", "OUTPUT",
+                "iptables", action, "OUTPUT",
                 "-m", "owner", "--pid-owner", "\(pid)",
                 "-d", cidr,
                 "-j", "REJECT",
@@ -85,18 +140,9 @@ public enum AgentNetworkCage {
         }
     }
 
-    public static func applyLinuxFilter(pid: Int32, vmID: String) throws {
-        #if os(Linux)
-            let iptables = URL(fileURLWithPath: "/usr/sbin/iptables")
-            let exe = FileManager.default.isExecutableFile(atPath: iptables.path)
-                ? iptables
-                : URL(fileURLWithPath: "/sbin/iptables")
-            guard FileManager.default.isExecutableFile(atPath: exe.path) else {
-                throw BarkVisorError.forbidden(
-                    "Agent Workloads need iptables to block the house LAN",
-                )
-            }
-            for args in linuxOwnerRejectCommands(pid: pid) {
+    #if os(Linux)
+        private static func runIptables(exe: URL, commands: [[String]], vmID: String) throws {
+            for args in commands {
                 let proc = Process()
                 proc.executableURL = exe
                 proc.arguments = Array(args.dropFirst())
@@ -116,10 +162,7 @@ public enum AgentNetworkCage {
                     throw BarkVisorError.forbidden("Agent LAN filter failed: \(msg)")
                 }
             }
-            Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
-        #else
-            _ = pid
             _ = vmID
-        #endif
-    }
+        }
+    #endif
 }

@@ -23,6 +23,11 @@ struct AgentNetworkCageTests {
         let cmds = AgentNetworkCage.linuxOwnerRejectCommands(pid: 4_242)
         #expect(cmds.count == AgentNetworkCage.blockedIPv4CIDRs.count)
         #expect(cmds.allSatisfy { $0.contains("4242") && $0.contains("REJECT") })
+        let deletes = AgentNetworkCage.linuxOwnerDeleteCommands(pid: 4_242)
+        #expect(deletes.count == cmds.count)
+        #expect(deletes.allSatisfy { $0.contains("-D") && $0.contains("OUTPUT") })
+        #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/bin/iptables"))
+        #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/sbin/iptables"))
     }
 
     @Test func `house launch is not wrapped`() throws {
