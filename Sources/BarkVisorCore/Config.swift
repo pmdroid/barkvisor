@@ -133,7 +133,7 @@ public enum Config {
     }
 
     /// Whether running from installed daemon layout (vs. dev build).
-    /// Share frontend and/or `BARKVISOR_DATA_DIR`, not bundled libexec QEMU (PAS-293).
+    /// Share frontend, not bundled libexec QEMU or `BARKVISOR_DATA_DIR` (PAS-293).
     public static var isInstalled: Bool {
         let binDir = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
             .resolvingSymlinksInPath()
@@ -141,7 +141,6 @@ public enum Config {
         return PlatformPaths.isInstalled(
             prefix: prefix,
             binaryDirectoryIsBin: binDir.lastPathComponent == "bin",
-            dataDirOverride: ProcessInfo.processInfo.environment["BARKVISOR_DATA_DIR"],
         )
     }
 

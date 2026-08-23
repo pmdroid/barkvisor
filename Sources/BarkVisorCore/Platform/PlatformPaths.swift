@@ -94,17 +94,16 @@ public enum PlatformPaths {
 
     /// Installed daemon vs `swift run`. Does not require libexec QEMU (PAS-287).
     ///
-    /// True when `BARKVISOR_DATA_DIR` is set, or when the binary lives in `*/bin`
-    /// and `$prefix/share/barkvisor/frontend/dist/index.html` exists.
+    /// True when the binary lives in `*/bin` and
+    /// `$prefix/share/barkvisor/frontend/dist/index.html` exists.
+    /// `BARKVISOR_DATA_DIR` only relocates `dataDir`; it does not mark the layout
+    /// installed (unprivileged smoke/dev runs would otherwise bind QEMU sockets
+    /// under `/var/run/barkvisor`).
     public static func isInstalled(
         prefix: String,
         binaryDirectoryIsBin: Bool,
-        dataDirOverride: String?,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
     ) -> Bool {
-        if let override = dataDirOverride, !override.isEmpty {
-            return true
-        }
         guard binaryDirectoryIsBin else { return false }
         return fileExists(shareFrontendIndexPath(prefix: prefix))
     }
