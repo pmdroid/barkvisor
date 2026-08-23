@@ -151,7 +151,7 @@ Download `.deb` / `.rpm` / `.tar.gz` from the [releases page](https://github.com
 The release script builds the frontend and Swift daemon, assembles the install layout (daemon), and creates a `.pkg` installer. macOS QEMU, swtpm, and socket_vmnet come from Homebrew at runtime (`brew install qemu swtpm socket_vmnet`). Set `BUNDLE_HYPERVISOR_DEPS=true` only if you still want the old from-source tree.
 
 ```bash
-# Required: Apple Team ID for XPC code-signing verification
+# Optional: Apple Team ID for notarization
 export APPLE_TEAM_ID=YOUR_TEAM_ID
 
 # Optional: signing identity for distribution
