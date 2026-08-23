@@ -248,6 +248,10 @@ struct APIClient {
         try await get("/api/system/about")
     }
 
+    func capabilities(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemCapabilities {
+        try await get(scoped("/system/capabilities", on: device))
+    }
+
     func images(on device: HomeDeviceHealthSnapshot?) async throws -> [LibraryImage] {
         try await get(scoped("/images", on: device))
     }

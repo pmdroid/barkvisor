@@ -220,6 +220,15 @@ struct ControllerLogicTests {
         #expect(caps.supportsHostBridgeManagement == PlatformCapabilities.supportsHostBridgeManagement)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
         #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
+        let vfioFacts = VFIOProbe.live()
+        #expect(
+            caps.supportsVFIO
+                == VFIOProbe.vfioSupported(os: PlatformHost.platformName, facts: vfioFacts),
+        )
+        #expect(
+            caps.supportsGPUPassthrough
+                == VFIOProbe.gpuPassthroughSupported(os: PlatformHost.platformName, facts: vfioFacts),
+        )
         #expect(caps.details.count == CapabilityCode.allCases.count)
         #expect(caps.networkModes.map(\.mode) == ["nat", "bridged", "isolated"])
         #expect(caps.networkModes.first { $0.mode == "nat" }?.supported == true)

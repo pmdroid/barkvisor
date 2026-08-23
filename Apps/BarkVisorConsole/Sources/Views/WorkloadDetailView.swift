@@ -11,6 +11,7 @@ struct WorkloadDetailView: View {
     @State private var networkMode: String?
     @State private var libraryLoad: WorkloadISOLibraryLoad = .pending
     @State private var selectedISOID = ""
+    @State private var deviceCaps: SystemCapabilities?
 
     var body: some View {
         List {
@@ -97,6 +98,20 @@ struct WorkloadDetailView: View {
 
             isoSection
 
+            Section("GPU passthrough") {
+                if let caps = deviceCaps ?? model.capabilities {
+                    LabeledContent(
+                        "Status",
+                        value: caps.gpuPassthroughSupported ? "Host ready" : "Not available",
+                    )
+                    Text(caps.gpuPassthroughExplanation)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(GPUPassthroughCopy.attachUnavailable)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if let url = model.connectedURL {
                 Section {
                     Link(
@@ -153,6 +168,13 @@ struct WorkloadDetailView: View {
             }
             .task(id: WorkloadISOMedia.libraryTaskID(deviceID: deviceID, reachable: device.isReachable)) {
                 await loadLibrary()
+            }
+            .task(id: deviceID) {
+                guard device.isReachable else {
+                    deviceCaps = nil
+                    return
+                }
+                deviceCaps = await model.capabilities(for: device)
             }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,

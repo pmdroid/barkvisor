@@ -253,15 +253,7 @@ struct HomeDevicesController: RouteCollection {
                 memoryUsedMB: slice.resources.memoryUsedMB,
                 cpuLoadPercent: slice.resources.cpuLoadPercent,
             ),
-            features: HomeDeviceFeatureSummary(
-                kvmDevice: HostInventoryService.kvmDevicePresent(),
-                bridgedNetworking: HostInventoryService.bridgedNetworkingSupported(
-                    platformSupports: PlatformCapabilities.supportsBridgedNetworking,
-                    qemuBridgeHelper: HostInventoryService.qemuBridgeHelperPresent(),
-                    os: PlatformHost.platformName,
-                ),
-                usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
-            ),
+            features: HostInventoryService.featureSummary(),
             workloadCount: summary.map(\.items.count),
             healthCounts: summary?.counts,
         )

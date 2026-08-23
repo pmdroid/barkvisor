@@ -3,8 +3,8 @@ import Foundation
 /// Stable feature codes projected on `/api/system/capabilities` (PAS-37).
 ///
 /// Wave 0 covers flags that already exist on `VirtualizationFeatures` plus
-/// `tcgOnly` so Linux-without-KVM has an explicit reason. GPU/VFIO wait for
-/// PAS-88.
+/// `tcgOnly` so Linux-without-KVM has an explicit reason. GPU/VFIO is PAS-274
+/// (probe only; no QEMU vfio-pci attach).
 public enum CapabilityCode: String, Codable, Sendable, CaseIterable {
     case bridgedNetworking
     case managedBridgeDaemon
@@ -14,6 +14,8 @@ public enum CapabilityCode: String, Codable, Sendable, CaseIterable {
     case kvmDevice
     case qemuBridgeHelper
     case tcgOnly
+    case vfio
+    case gpuPassthrough
 }
 
 /// Stable reason tokens for unsupported / degraded capabilities (PAS-37 / PAS-94).
@@ -25,6 +27,9 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case aclDenied = "acl_denied"
     case linuxOsManaged = "linux_os_managed"
     case linuxPkgUpdate = "linux_pkg_update"
+    case iommuMissing = "iommu_missing"
+    case vfioMissing = "vfio_missing"
+    case gpuMissing = "gpu_missing"
 }
 
 /// Per-mode support + PAS-94 reason/remediation (PAS-57 / PAS-67).
@@ -148,6 +153,10 @@ public enum CapabilityDetailBuilder {
             return qemuBridgeHelper(os: os, supported: features.qemuBridgeHelper)
         case .tcgOnly:
             return tcgOnly(os: os, accelerator: accel, kvmPresent: features.kvmDevice)
+        case .vfio:
+            return vfio(os: os, features: features, probe: inventory.virtualization.vfioProbe)
+        case .gpuPassthrough:
+            return gpuPassthrough(os: os, features: features, probe: inventory.virtualization.vfioProbe)
         }
     }
 
@@ -329,6 +338,77 @@ public enum CapabilityDetailBuilder {
     private static let kvmMissingRemediation =
         "KVM is not available (/dev/kvm missing). Guests run under TCG (software emulation). "
             + "Install qemu-kvm, add the user to the kvm group, or enable nested virtualization."
+
+    private static func vfio(
+        os: String,
+        features: VirtualizationFeatures,
+        probe: VFIOInventoryFacts,
+    ) -> CapabilityDetail {
+        let facts = VFIOProbe.facts(from: probe, kvmDevice: features.kvmDevice)
+        if features.vfio || VFIOProbe.vfioSupported(os: os, facts: facts) {
+            return CapabilityDetail(code: .vfio, supported: true)
+        }
+        let reason = VFIOProbe.vfioReason(os: os, facts: facts) ?? .osUnsupported
+        return CapabilityDetail(
+            code: .vfio,
+            supported: false,
+            reason: reason,
+            remediation: vfioRemediation(reason: reason, probe: probe),
+        )
+    }
+
+    private static func gpuPassthrough(
+        os: String,
+        features: VirtualizationFeatures,
+        probe: VFIOInventoryFacts,
+    ) -> CapabilityDetail {
+        let facts = VFIOProbe.facts(from: probe, kvmDevice: features.kvmDevice)
+        if features.gpuPassthrough || VFIOProbe.gpuPassthroughSupported(os: os, facts: facts) {
+            return CapabilityDetail(code: .gpuPassthrough, supported: true)
+        }
+        let reason = VFIOProbe.gpuPassthroughReason(os: os, facts: facts) ?? .osUnsupported
+        return CapabilityDetail(
+            code: .gpuPassthrough,
+            supported: false,
+            reason: reason,
+            remediation: gpuPassthroughRemediation(reason: reason, probe: probe),
+        )
+    }
+
+    private static func vfioRemediation(reason: CapabilityReasonCode, probe: VFIOInventoryFacts) -> String {
+        switch reason {
+        case .osUnsupported:
+            return "vfio-pci is a Linux IOMMU interface. GPU passthrough is not available on macOS."
+        case .iommuMissing:
+            return "IOMMU is not active (\(probe.iommuGroupCount) IOMMU groups). "
+                + "Enable intel_iommu=on or amd_iommu=on on the kernel command line, then reboot."
+        case .vfioMissing:
+            return "vfio-pci is not available. Load the vfio-pci module and check that /dev/vfio/vfio exists."
+        default:
+            return "vfio-pci is not available on this Device."
+        }
+    }
+
+    private static func gpuPassthroughRemediation(
+        reason: CapabilityReasonCode,
+        probe: VFIOInventoryFacts,
+    ) -> String {
+        switch reason {
+        case .osUnsupported:
+            return "GPU passthrough is not available on macOS. Use a Linux Device with IOMMU, vfio-pci, and KVM."
+        case .kvmMissing:
+            return "GPU passthrough needs KVM (/dev/kvm). This Device is not using KVM."
+        case .iommuMissing:
+            return "IOMMU is not active (\(probe.iommuGroupCount) IOMMU groups). "
+                + "Enable intel_iommu=on or amd_iommu=on on the kernel command line, then reboot."
+        case .vfioMissing:
+            return "vfio-pci is not available. Load the vfio-pci module and check that /dev/vfio/vfio exists."
+        case .gpuMissing:
+            return "No GPU PCI device is in an IOMMU group on this Device."
+        default:
+            return "GPU passthrough is not available on this Device."
+        }
+    }
 
     private static func isLinux(_ os: String) -> Bool {
         os.caseInsensitiveCompare("Linux") == .orderedSame

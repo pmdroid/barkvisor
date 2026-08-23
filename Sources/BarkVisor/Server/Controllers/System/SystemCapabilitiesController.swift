@@ -24,6 +24,8 @@ enum SystemCapabilitiesController {
             supportsHostBridgeManagement: PlatformCapabilities.supportsHostBridgeManagement,
             supportsUSBPassthrough: inv.virtualization.features.usbPassthrough,
             supportsInAppUpdate: inv.virtualization.features.inAppUpdate,
+            supportsGPUPassthrough: inv.virtualization.features.gpuPassthrough,
+            supportsVFIO: inv.virtualization.features.vfio,
             accelerator: inv.virtualization.accelerator,
             hostArch: inv.platform.arch,
             hostCpuCount: inv.resources.cpuCount,

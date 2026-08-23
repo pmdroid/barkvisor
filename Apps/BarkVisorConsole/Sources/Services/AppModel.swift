@@ -90,6 +90,7 @@ final class AppModel {
     var workloads: [Workload] = []
     var stats: SystemStats?
     var about: SystemAbout?
+    var capabilities: SystemCapabilities?
     var images: [LibraryImage] = []
     var catalogRepos: [ImageRepository] = []
     var catalogImagesByRepo: [String: [CatalogImage]] = [:]
@@ -265,6 +266,7 @@ final class AppModel {
         pairing = nil
         loginOffer = nil
         about = nil
+        capabilities = nil
         logs = []
         ollamaCatalog = nil
         if route == .chat { route = .dashboard }
@@ -308,6 +310,7 @@ final class AppModel {
         pairing = nil
         loginOffer = nil
         about = nil
+        capabilities = nil
         logs = []
         ollamaCatalog = nil
         if route == .chat { route = .dashboard }
@@ -600,9 +603,10 @@ final class AppModel {
         try await refreshDevices()
         async let scoped: Void = refreshDeviceScoped()
         async let aboutLoad: Void = refreshAbout()
+        async let capsLoad: Void = refreshCapabilities()
         async let home: Void = refreshHomeUnion()
         async let ollama: Void = refreshOllamaCatalog()
-        _ = await (scoped, aboutLoad, home, ollama)
+        _ = await (scoped, aboutLoad, capsLoad, home, ollama)
     }
 
     private func restoreSession() async {
@@ -877,6 +881,14 @@ final class AppModel {
         about = await optional { try await requireClient().about() } ?? about
     }
 
+    private func refreshCapabilities() async {
+        capabilities = await optional { try await requireClient().capabilities() } ?? capabilities
+    }
+
+    func capabilities(for device: HomeDeviceHealthSnapshot) async -> SystemCapabilities? {
+        await optional { try await requireClient().capabilities(on: device) }
+    }
+
     private func refreshRoute() async {
         guard let client else { return }
         switch route {
@@ -886,6 +898,7 @@ final class AppModel {
             await loadPairing()
             await loadLoginOffer()
             await refreshAbout()
+            await refreshCapabilities()
         case .devices:
             _ = try? await refreshDevices()
         case .library:

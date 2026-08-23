@@ -226,6 +226,10 @@ public enum TemplateCompatibility {
             return features.kvmDevice
         case CapabilityCode.qemuBridgeHelper.rawValue:
             return features.qemuBridgeHelper
+        case CapabilityCode.vfio.rawValue:
+            return features.vfio
+        case CapabilityCode.gpuPassthrough.rawValue:
+            return features.gpuPassthrough
         default:
             return false
         }

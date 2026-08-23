@@ -80,6 +80,10 @@ struct SystemCapabilitiesResponse: Content {
     let supportsHostBridgeManagement: Bool
     let supportsUSBPassthrough: Bool
     let supportsInAppUpdate: Bool
+    /// Linux IOMMU + vfio-pci + KVM + a GPU in a group. Not QEMU vfio-pci attach (PAS-274).
+    let supportsGPUPassthrough: Bool
+    /// IOMMU groups exist and vfio-pci (or `/dev/vfio/vfio`) is present.
+    let supportsVFIO: Bool
     let accelerator: String
     let hostArch: String
     /// Online logical CPU count on the host (max assignable vCPUs per VM).

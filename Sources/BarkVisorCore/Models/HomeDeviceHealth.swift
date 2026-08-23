@@ -72,26 +72,48 @@ public struct HomeDeviceResourceSummary: Codable, Sendable, Equatable {
 /// Inventory feature flags kept on the health snapshot for placement (PAS-44).
 ///
 /// Wave 1 matches template `requiredFeatures` (`kvmDevice`, `bridgedNetworking`,
-/// `usbPassthrough`). Concrete USB/GPU peripherals are PAS-91.
+/// `usbPassthrough`). GPU passthrough is a host probe (PAS-274), not QEMU attach.
+/// Concrete USB/GPU peripherals are PAS-91.
 public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
     public var kvmDevice: Bool
     public var bridgedNetworking: Bool
     public var usbPassthrough: Bool
+    public var gpuPassthrough: Bool
+    public var vfio: Bool
 
     public init(
         kvmDevice: Bool = false,
         bridgedNetworking: Bool = false,
         usbPassthrough: Bool = false,
+        gpuPassthrough: Bool = false,
+        vfio: Bool = false,
     ) {
         self.kvmDevice = kvmDevice
         self.bridgedNetworking = bridgedNetworking
         self.usbPassthrough = usbPassthrough
+        self.gpuPassthrough = gpuPassthrough
+        self.vfio = vfio
     }
 
     public init(from features: VirtualizationFeatures) {
         self.kvmDevice = features.kvmDevice
         self.bridgedNetworking = features.bridgedNetworking
         self.usbPassthrough = features.usbPassthrough
+        self.gpuPassthrough = features.gpuPassthrough
+        self.vfio = features.vfio
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kvmDevice, bridgedNetworking, usbPassthrough, gpuPassthrough, vfio
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kvmDevice = try container.decodeIfPresent(Bool.self, forKey: .kvmDevice) ?? false
+        bridgedNetworking = try container.decodeIfPresent(Bool.self, forKey: .bridgedNetworking) ?? false
+        usbPassthrough = try container.decodeIfPresent(Bool.self, forKey: .usbPassthrough) ?? false
+        gpuPassthrough = try container.decodeIfPresent(Bool.self, forKey: .gpuPassthrough) ?? false
+        vfio = try container.decodeIfPresent(Bool.self, forKey: .vfio) ?? false
     }
 
     public func supports(_ feature: String) -> Bool {
@@ -99,16 +121,19 @@ public struct HomeDeviceFeatureSummary: Codable, Sendable, Equatable {
         case CapabilityCode.kvmDevice.rawValue: kvmDevice
         case CapabilityCode.bridgedNetworking.rawValue: bridgedNetworking
         case CapabilityCode.usbPassthrough.rawValue: usbPassthrough
+        case CapabilityCode.gpuPassthrough.rawValue: gpuPassthrough
+        case CapabilityCode.vfio.rawValue: vfio
         default: false
         }
     }
 
-    /// Map short aliases (`kvm` / `bridged` / `usb`) onto Wave 0 capability codes.
+    /// Map short aliases (`kvm` / `bridged` / `usb` / `gpu`) onto Wave 0 capability codes.
     public static func canonicalFeature(_ raw: String) -> String {
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "kvm": CapabilityCode.kvmDevice.rawValue
         case "bridged": CapabilityCode.bridgedNetworking.rawValue
         case "usb": CapabilityCode.usbPassthrough.rawValue
+        case "gpu": CapabilityCode.gpuPassthrough.rawValue
         default: raw
         }
     }

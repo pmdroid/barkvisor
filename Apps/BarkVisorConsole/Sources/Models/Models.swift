@@ -93,14 +93,18 @@ struct HomeDevice: Decodable, Identifiable, Hashable {
     var agentPort: Int
     var pairedAt: String?
 
-    var id: String { hostId }
+    var id: String {
+        hostId
+    }
 
     var title: String {
         let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? hostId : name
     }
 
-    var isSelf: Bool { role == "self" }
+    var isSelf: Bool {
+        role == "self"
+    }
 
     var asSnapshot: HomeDeviceHealthSnapshot {
         HomeDeviceHealthSnapshot(
@@ -117,7 +121,7 @@ struct HomeDevice: Decodable, Identifiable, Hashable {
             platform: nil,
             resources: nil,
             workloadCount: nil,
-            healthCounts: nil
+            healthCounts: nil,
         )
     }
 }
@@ -150,15 +154,21 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
     var workloadCount: Int?
     var healthCounts: [String: Int]?
 
-    var id: String { hostId }
+    var id: String {
+        hostId
+    }
 
     var title: String {
         let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? hostId : name
     }
 
-    var isSelf: Bool { role == "self" }
-    var isReachable: Bool { reachability == "ok" }
+    var isSelf: Bool {
+        role == "self"
+    }
+    var isReachable: Bool {
+        reachability == "ok"
+    }
 
     static var placeholderSelf: HomeDeviceHealthSnapshot {
         HomeDeviceHealthSnapshot(
@@ -175,7 +185,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
             platform: nil,
             resources: nil,
             workloadCount: nil,
-            healthCounts: nil
+            healthCounts: nil,
         )
     }
 
@@ -198,7 +208,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
 /// iOS Devices tab badge: count of paired Devices whose health is not reachable.
 enum DevicesTabBadge {
     static func count(in devices: [HomeDeviceHealthSnapshot]) -> Int {
-        devices.filter { !$0.isReachable }.count
+        devices.count(where: { !$0.isReachable })
     }
 }
 
@@ -243,11 +253,19 @@ struct Workload: Decodable, Identifiable, Hashable {
         return WorkloadHealth.derived(fromState: state)
     }
 
-    var isRunning: Bool { state == "running" }
-    var canStart: Bool { state == "stopped" || state == "error" }
-    var canStop: Bool { state == "running" || state == "starting" }
+    var isRunning: Bool {
+        state == "running"
+    }
+    var canStart: Bool {
+        state == "stopped" || state == "error"
+    }
+    var canStop: Bool {
+        state == "running" || state == "starting"
+    }
     /// Same as the web Workload detail Restart button: running only.
-    var canRestart: Bool { state == "running" }
+    var canRestart: Bool {
+        state == "running"
+    }
 
     /// `isoIds` when present, otherwise the legacy single `isoId`.
     var attachedISOIds: [String] {
@@ -260,7 +278,9 @@ struct Workload: Decodable, Identifiable, Hashable {
         vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
     }
 
-    var isAgentClass: Bool { workloadClass == "agent" }
+    var isAgentClass: Bool {
+        workloadClass == "agent"
+    }
 
     var grantCopy: String {
         isAgentClass ? "WAN yes, house no." : "House: LAN and USB allowed."
@@ -423,7 +443,7 @@ struct GuestInfo: Decodable, Hashable {
         osVersion: String? = nil,
         hostname: String? = nil,
         listeningPorts: [GuestListeningPort]? = nil,
-        portsCollectedAt: String? = nil
+        portsCollectedAt: String? = nil,
     ) {
         self.available = available
         self.ipAddresses = ipAddresses
@@ -508,6 +528,53 @@ struct SystemAbout: Decodable {
     var processUptimeSeconds: Int
 }
 
+struct CapabilityDetail: Decodable, Equatable {
+    var code: String
+    var supported: Bool
+    var reasonCode: String?
+    var remediation: String?
+}
+
+struct SystemCapabilities: Decodable, Equatable {
+    var platform: String
+    var supportsGPUPassthrough: Bool?
+    var supportsVFIO: Bool?
+    var details: [CapabilityDetail]?
+
+    func detail(code: String) -> CapabilityDetail? {
+        details?.first { $0.code == code }
+    }
+
+    var gpuPassthroughSupported: Bool {
+        if supportsGPUPassthrough == true { return true }
+        return detail(code: "gpuPassthrough")?.supported == true
+    }
+
+    var gpuPassthroughExplanation: String {
+        GPUPassthroughCopy.explanation(
+            supported: gpuPassthroughSupported,
+            remediation: detail(code: "gpuPassthrough")?.remediation,
+            platform: platform,
+        )
+    }
+}
+
+enum GPUPassthroughCopy {
+    static let attachUnavailable = "BarkVisor does not attach a GPU to a Workload yet."
+
+    static func explanation(supported: Bool, remediation: String?, platform: String) -> String {
+        if supported {
+            return "This Device has IOMMU, vfio-pci, and KVM. \(attachUnavailable)"
+        }
+        let trimmed = remediation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty { return trimmed }
+        if platform.caseInsensitiveCompare("macOS") == .orderedSame {
+            return "GPU passthrough is not available on macOS. Use a Linux Device with IOMMU, vfio-pci, and KVM."
+        }
+        return "GPU passthrough is not available on this Device. \(attachUnavailable)"
+    }
+}
+
 struct LibraryImage: Decodable, Identifiable, Hashable {
     var id: String
     var name: String
@@ -520,7 +587,9 @@ struct LibraryImage: Decodable, Identifiable, Hashable {
     var createdAt: String
     var updatedAt: String
 
-    var isReadyISO: Bool { imageType == "iso" && status == "ready" }
+    var isReadyISO: Bool {
+        imageType == "iso" && status == "ready"
+    }
 
     var isTransferring: Bool {
         status == "downloading" || status == "decompressing" || status == "uploading"
@@ -602,7 +671,9 @@ enum WorkloadISOAccess: Equatable {
         return .available
     }
 
-    var allowsChange: Bool { self == .available }
+    var allowsChange: Bool {
+        self == .available
+    }
 
     var reason: String? {
         switch self {
@@ -765,14 +836,18 @@ struct HomeWorkloadRow: Identifiable, Hashable {
     var workload: Workload
     var device: HomeDeviceHealthSnapshot
 
-    var id: String { WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id) }
+    var id: String {
+        WorkloadActionKey.id(hostID: device.hostId, workloadID: workload.id)
+    }
 }
 
 struct HomeDeviceLoadError: Identifiable, Hashable {
     var device: HomeDeviceHealthSnapshot
     var message: String
 
-    var id: String { device.hostId }
+    var id: String {
+        device.hostId
+    }
 }
 
 /// Cross-Device Workload list. Unreachable Devices never contribute invented rows.
@@ -790,7 +865,7 @@ enum HomeWorkloadUnion {
 
     static func build(
         devices: [HomeDeviceHealthSnapshot],
-        loads: [String: Load]
+        loads: [String: Load],
     ) -> Snapshot {
         var rows: [HomeWorkloadRow] = []
         var loadErrors: [HomeDeviceLoadError] = []
