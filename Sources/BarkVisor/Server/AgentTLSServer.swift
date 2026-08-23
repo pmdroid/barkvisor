@@ -260,7 +260,19 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(StructuredErrorMiddleware())
         app.middleware.use(APIVersionMiddleware(), at: .beginning)
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
-        try app.register(collection: AgentMTLSController(dataDir: dataDir, database: database))
+        let identityRateLimit = RateLimitMiddleware(
+            store: RateLimitStore(
+                maxAttempts: RateLimitPolicy.pairingMaxAttempts(
+                    configured: Config.rateLimitMaxAttempts,
+                ),
+                window: TimeInterval(Config.rateLimitWindow),
+            ),
+        )
+        try app.register(collection: AgentMTLSController(
+            dataDir: dataDir,
+            database: database,
+            identityRateLimit: identityRateLimit,
+        ))
         try app.register(collection: AgentLibraryController(db: database))
         let localProxy = AgentLocalProxyController(vmState: vmState, consoleBuffers: consoleBuffers)
         try app.register(collection: localProxy)

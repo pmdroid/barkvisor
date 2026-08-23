@@ -89,6 +89,7 @@ public enum PairingService {
         )
         do {
             try store.replace(offer)
+            try clearIdentityGrant(dataDir: input.dataDir)
         } catch let error as PairingError {
             throw error
         } catch {
@@ -175,6 +176,7 @@ public enum PairingService {
         let store = offers ?? PairingOfferStore(dataDir: dataDir)
         do {
             try store.clear()
+            try clearIdentityGrant(dataDir: dataDir)
         } catch let error as PairingError {
             throw error
         } catch {
@@ -272,6 +274,14 @@ public enum PairingService {
                 now: input.now,
                 devices: devices,
             )
+            if let offer = try store.load() {
+                try persistIdentityGrant(
+                    dataDir: input.dataDir,
+                    hostId: joinerHostId,
+                    fingerprint: replayed.issuedFingerprint,
+                    expiresAt: offer.expiresAt,
+                )
+            }
             return replayed
         }
         // New unused code: first pair or PAS-77 re-pair. issueAndPin
@@ -307,6 +317,12 @@ public enum PairingService {
             agentPort: req.agentPort ?? Config.agentPort,
             now: input.now,
             devices: devices,
+        )
+        try persistIdentityGrant(
+            dataDir: input.dataDir,
+            hostId: joinerHostId,
+            fingerprint: issued.fingerprint,
+            expiresAt: consumed.expiresAt,
         )
         return PairingRedeemResponse(
             hostId: input.issuerHostId,
@@ -400,8 +416,9 @@ public enum PairingService {
     }
 
     /// Shared login material for the joiner (PAS-81). Served on the agent
-    /// plane after redeem, never on cleartext HTTP (PAS-283). Reads
-    /// `dataDir/jwt-secret` when a secret is not passed; never generates one.
+    /// plane after redeem for the current grant only, never on cleartext
+    /// HTTP (PAS-283). Reads `dataDir/jwt-secret` when a secret is not
+    /// passed; never generates one.
     public static func sharedIdentity(
         dataDir: URL,
         jwtSecret: String? = nil,

@@ -73,13 +73,19 @@ struct AgentTLSServerTests {
         }
     }
 
-    @Test func `serves shared identity only on the mTLS listener`() async throws {
-        let dir = try isolatedDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let hostId = UUID().uuidString
-        try Config.persistJWTSecret("agent-plane-secret", to: dir)
-        let material = try HomeCAService.loadOrCreate(dataDir: dir, hostId: hostId)
-        let pool = try DatabasePool(path: dir.appendingPathComponent("test.sqlite").path)
+    @Test func `serves shared identity only after redeem on the mTLS listener`() async throws {
+        let issuerDir = try isolatedDir()
+        let joinerDir = try isolatedDir()
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        try Config.persistJWTSecret("agent-plane-secret", to: issuerDir)
+        let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let pool = try DatabasePool(path: issuerDir.appendingPathComponent("test.sqlite").path)
         try AppDatabase.makeMigrator().migrate(pool)
         try await pool.write { db in
             try User(
@@ -89,25 +95,67 @@ struct AgentTLSServerTests {
                 createdAt: "2026-01-01T00:00:00Z",
             ).insert(db)
         }
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
+            ),
+            offers: offers,
+        )
+        let pins = PeerPinStore(dataDir: issuerDir)
         let server = AgentTLSServer(
-            material: material,
-            pins: PeerPinStore(dataDir: dir),
+            material: issuer,
+            pins: pins,
             hostname: "127.0.0.1",
             port: 0,
-            dataDir: dir,
-            hostId: hostId,
+            dataDir: issuerDir,
+            hostId: issuerId,
             database: pool,
         )
         try await server.start()
         do {
             let port = try #require(server.boundPort)
-            let client = AgentMTLSClient(material: material)
             let url = try HomeDeviceProxy.memberURL(
                 host: "127.0.0.1",
                 port: port,
                 path: PairingService.identityPath,
             )
-            let response = try await client.send(HomeDeviceProxyRequest(method: "GET", url: url))
+            let issuerClient = AgentMTLSClient(material: issuer)
+            let standing = try await issuerClient.send(HomeDeviceProxyRequest(method: "GET", url: url))
+            #expect(standing.status == 401)
+
+            let remote = try PairingService.redeem(
+                PairingService.RedeemInput(
+                    dataDir: issuerDir,
+                    issuerHostId: issuerId,
+                    request: PairingRedeemRequest(
+                        code: issued.code,
+                        hostId: joinerId,
+                        csrPEM: HomeCAService.makeDeviceCSR(
+                            hostId: joinerId,
+                            keyPEM: joiner.deviceKeyPEM,
+                        ),
+                        deviceCertificatePEM: joiner.deviceCertificatePEM,
+                        caCertificatePEM: joiner.caCertificatePEM,
+                    ),
+                ),
+                offers: offers,
+                pins: pins,
+            )
+            let stillStanding = try await issuerClient.send(
+                HomeDeviceProxyRequest(method: "GET", url: url),
+            )
+            #expect(stillStanding.status == 401)
+
+            let joinerClient = AgentMTLSClient(
+                material: joiner,
+                presentationCertificatePEM: remote.issuedCertificatePEM,
+                trustCertificatePEMs: [remote.caCertificatePEM],
+            )
+            let response = try await joinerClient.send(HomeDeviceProxyRequest(method: "GET", url: url))
             #expect((200 ... 299).contains(response.status))
             let identity = try JSONDecoder().decode(PairingSharedIdentity.self, from: response.body)
             #expect(identity.jwtSecret == "agent-plane-secret")
@@ -120,9 +168,9 @@ struct AgentTLSServerTests {
                 PairingIdentityFetch(
                     host: "127.0.0.1",
                     agentPort: port,
-                    material: material,
-                    issuedCertificatePEM: material.deviceCertificatePEM,
-                    trustCertificatePEM: material.caCertificatePEM,
+                    material: joiner,
+                    issuedCertificatePEM: remote.issuedCertificatePEM,
+                    trustCertificatePEM: remote.caCertificatePEM,
                 ),
             )
             #expect(copied.jwtSecret == "agent-plane-secret")

@@ -107,6 +107,113 @@ struct PairingIdentityTests {
         #expect(identityJSON.contains("passwordHash"))
         #expect(!identityJSON.contains("home-password"))
         #expect(!identityJSON.contains("\"password\""))
+
+        try PairingService.authorizeIdentityRead(
+            dataDir: issuerDir,
+            hostId: joinerId,
+            fingerprint: remote.issuedFingerprint,
+        )
+        #expect(throws: PairingError.identityNotGranted) {
+            try PairingService.authorizeIdentityRead(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                fingerprint: remote.issuedFingerprint,
+            )
+        }
+        #expect(throws: PairingError.identityNotGranted) {
+            try PairingService.authorizeIdentityRead(
+                dataDir: issuerDir,
+                hostId: joinerId,
+                fingerprint: "deadbeef",
+            )
+        }
+    }
+
+    @Test func `identity grant is bound to redeem window and cleared on issue`() throws {
+        let issuerDir = try isolatedDir("iss-grant")
+        let joinerDir = try isolatedDir("join-grant")
+        defer {
+            try? FileManager.default.removeItem(at: issuerDir)
+            try? FileManager.default.removeItem(at: joinerDir)
+        }
+        let issuerId = UUID().uuidString
+        let joinerId = UUID().uuidString
+        _ = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
+        let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
+        let offers = PairingOfferStore(dataDir: issuerDir)
+        let issued = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
+            ),
+            offers: offers,
+        )
+        #expect(throws: PairingError.identityNotGranted) {
+            try PairingService.authorizeIdentityRead(
+                dataDir: issuerDir,
+                hostId: joinerId,
+                fingerprint: joiner.deviceFingerprint,
+            )
+        }
+        let remote = try PairingService.redeem(
+            PairingService.RedeemInput(
+                dataDir: issuerDir,
+                issuerHostId: issuerId,
+                request: PairingRedeemRequest(
+                    code: issued.code,
+                    hostId: joinerId,
+                    csrPEM: HomeCAService.makeDeviceCSR(hostId: joinerId, keyPEM: joiner.deviceKeyPEM),
+                    deviceCertificatePEM: joiner.deviceCertificatePEM,
+                    caCertificatePEM: joiner.caCertificatePEM,
+                ),
+            ),
+            offers: offers,
+        )
+        try PairingService.authorizeIdentityRead(
+            dataDir: issuerDir,
+            hostId: joinerId,
+            fingerprint: remote.issuedFingerprint,
+        )
+        #expect(throws: PairingError.identityNotGranted) {
+            try PairingService.authorizeIdentityRead(
+                dataDir: issuerDir,
+                hostId: joinerId,
+                fingerprint: remote.issuedFingerprint,
+                now: Date().addingTimeInterval(PairingService.defaultTTL + 1),
+            )
+        }
+        _ = try PairingService.issue(
+            PairingService.IssueInput(
+                dataDir: issuerDir,
+                hostId: issuerId,
+                advertisedHost: "192.168.0.8",
+                advertisedHosts: ["192.168.0.8"],
+            ),
+            offers: offers,
+        )
+        #expect(throws: PairingError.identityNotGranted) {
+            try PairingService.authorizeIdentityRead(
+                dataDir: issuerDir,
+                hostId: joinerId,
+                fingerprint: remote.issuedFingerprint,
+            )
+        }
+        try PairingService.persistIdentityGrant(
+            dataDir: issuerDir,
+            hostId: joinerId,
+            fingerprint: remote.issuedFingerprint,
+            expiresAt: iso8601.string(from: Date().addingTimeInterval(60)),
+        )
+        try PairingService.revoke(dataDir: issuerDir, offers: offers)
+        #expect(throws: PairingError.identityNotGranted) {
+            try PairingService.authorizeIdentityRead(
+                dataDir: issuerDir,
+                hostId: joinerId,
+                fingerprint: remote.issuedFingerprint,
+            )
+        }
     }
 
     @Test func `shared identity loads jwt secret from issuer data dir`() throws {

@@ -982,8 +982,12 @@ paths:
       summary: Shared Home login (agent port 7778 only)
       description: |
         Served only on the mTLS agent plane after device-trust redeem.
-        Returns the issuer jwt-secret and admin password hash so both
-        Devices share one login. Not on HTTP redeem and not the Home proxy.
+        The joining Device must present the just-issued client certificate
+        (hostId and fingerprint) while the pairing offer TTL is still open.
+        Rate-limited and audit-logged. Returns the issuer jwt-secret and
+        admin password hash so both Devices share one login. Not a standing
+        read for other Home-CA peers. Not on HTTP redeem and not the Home
+        proxy.
       security: []
       responses:
         "200":
@@ -992,6 +996,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PairingSharedIdentity"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
         default:
           $ref: "#/components/responses/Error"
 

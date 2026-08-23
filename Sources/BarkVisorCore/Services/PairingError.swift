@@ -13,11 +13,14 @@ public enum PairingError: Error, LocalizedError, Sendable, Equatable {
     case fingerprintMismatch
     case redeemFailed(status: Int, reason: String)
     case noActiveOffer
+    case identityNotGranted
 
     public var errorDescription: String? {
         switch self {
         case .invalidCode, .expiredOrUsed:
             return "Invalid or expired pairing code"
+        case .identityNotGranted:
+            return "Shared login is only available after a current pairing redeem"
         case let .invalidPayload(reason):
             return reason
         case let .incompatibleAPIVersion(got, expected):
@@ -41,7 +44,7 @@ public enum PairingError: Error, LocalizedError, Sendable, Equatable {
 
     public var barkVisorError: BarkVisorError {
         switch self {
-        case .invalidCode, .expiredOrUsed:
+        case .invalidCode, .expiredOrUsed, .identityNotGranted:
             return .unauthorized(errorDescription)
         case .invalidPayload, .invalidDeviceCertificate, .invalidCSR:
             return .badRequest(errorDescription ?? "Invalid pairing request")

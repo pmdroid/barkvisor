@@ -18,7 +18,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Pair another Device from **Settings → Home → Add a Device**. Pick a LAN IPv4, IPv6 unique-local, or DNS name for `host=` in the offer, then scan the QR or paste the full `barkvisor://pair/v1?…` in setup, or run `barkvisor join --code` on an API-only host. Changing the address re-issues the URI and the QR. A rejected address (localhost, public, metadata) returns 400 and drops the previous pairing code.
 - Join allow-list now includes CGNAT `100.64.0.0/10` (still blocks `100.100.100.200`, loopback, link-local, public, and metadata). An older joiner still rejects those offers — upgrade it or pick a LAN IP.
 - Optional `BARKVISOR_JOIN_CODE` on first boot. Join is always console-local on that Device.
-- Devices share one Home login. The dashboard lists every Device and health. Pairing redeem no longer puts jwt-secret or the admin hash on cleartext HTTP; that copy uses the agent plane after the QR fingerprint binds.
+- Devices share one Home login. The dashboard lists every Device and health. Pairing redeem no longer puts jwt-secret or the admin hash on cleartext HTTP; that copy uses the agent plane after the QR fingerprint binds, only for the Device that just redeemed and only while the pairing offer is still open.
 - Create, start, and stop Workloads on a picked Device through the Home proxy (`:7777`). The browser or phone does not open member IPs. Agent traffic uses mTLS on `:7778`.
 - Recommended Device is a suggestion. You can place a Workload on any reachable Device.
 - A Device still runs if peers are down. Local SQLite owns runtime.

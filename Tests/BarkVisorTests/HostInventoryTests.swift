@@ -86,9 +86,23 @@ struct HostInventoryTests {
         #expect(object?["hostId"] as? String == Self.testHostId)
         let networking = object?["networking"] as? [String: Any]
         #expect(networking != nil)
-        if inv.networking.tailnet != nil {
-            #expect(networking?["tailnet"] != nil)
-        }
+        #expect(networking?["interfaces"] != nil)
+    }
+
+    @Test func `inventory encodes tailnet independently of host detection`() throws {
+        let networking = NetworkingInfo(
+            interfaces: [
+                NetworkInterfaceInfo(name: "en0", displayName: "Ethernet", ipv4: ["10.0.0.2"]),
+            ],
+            tailnet: TailnetInfo(available: true, ip: "100.64.1.2", dnsName: "box.ts.net"),
+        )
+        let data = try JSONEncoder().encode(networking)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(object?["interfaces"] != nil)
+        let tailnet = try #require(object?["tailnet"] as? [String: Any])
+        #expect(tailnet["available"] as? Bool == true)
+        #expect(tailnet["ip"] as? String == "100.64.1.2")
+        #expect(tailnet["dnsName"] as? String == "box.ts.net")
     }
 
     @Test func `inventory decodes when tailnet is omitted`() throws {
