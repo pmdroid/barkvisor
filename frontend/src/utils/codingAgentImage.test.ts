@@ -28,6 +28,7 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(() => normalizeOpenAIBaseURL('https://x y')).toThrow()
     expect(() => normalizeOpenAIBaseURL('https://x$(reboot).example/v1')).toThrow()
     expect(() => normalizeOpenAIBaseURL('https://x`id`.example/v1')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x$HOME.example/v1')).toThrow()
   })
 
   test('user-data installs git, web terminal, coding-agent CLIs', () => {

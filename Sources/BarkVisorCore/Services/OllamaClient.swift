@@ -1,7 +1,7 @@
-import Foundation
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
+import Foundation
 
 public struct OllamaHTTPResponse: Sendable {
     public var status: Int
