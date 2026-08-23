@@ -86,8 +86,11 @@ struct HostInventoryTests {
         #expect(object?["hostId"] as? String == Self.testHostId)
         let networking = object?["networking"] as? [String: Any]
         #expect(networking != nil)
-        // Live Tailscale is optional on this Device; omitted-key decode is
-        // covered by `inventory decodes when tailnet is omitted`.
+        // Live Tailscale is optional. Keep encode coverage when the snapshot
+        // actually has a tailnet; omit-key decode is covered separately.
+        if inv.networking.tailnet != nil {
+            #expect(networking?["tailnet"] != nil)
+        }
     }
 
     @Test func `inventory decodes when tailnet is omitted`() throws {
