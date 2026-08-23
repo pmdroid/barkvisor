@@ -1,3 +1,18 @@
+/** Home RBAC (PAS-286). Tokens inherit this role. */
+export type UserRole = 'admin' | 'inference'
+
+export interface AuthMe {
+  id: string
+  username: string
+  role: UserRole | string
+}
+
+export interface LoginSession {
+  token: string
+  refreshToken: string
+  role?: UserRole | string
+}
+
 /** Guest / image CPU architecture (API: arm64 | x86_64). */
 export type ImageArch = 'arm64' | 'x86_64'
 

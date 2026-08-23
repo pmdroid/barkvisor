@@ -42,11 +42,13 @@ enum Seeder {
             // Ensure the user row exists (first launch — no server seed yet)
             let existing = try User.filter(User.Columns.username == username).fetchOne(database)
             if existing == nil {
+                let existingCount = try User.fetchCount(database)
                 let user = User(
                     id: UUID().uuidString,
                     username: username,
                     password: "",
                     createdAt: iso8601.string(from: Date()),
+                    role: UserRolePolicy.roleForNewUser(existingUserCount: existingCount).rawValue,
                 )
                 try user.insert(database)
             } else if let existing, !existing.password.isEmpty {

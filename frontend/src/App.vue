@@ -13,7 +13,10 @@ const ollama = useOllamaStore()
 const mobileMenuOpen = ref(false)
 
 onMounted(() => {
-  if (auth.isAuthenticated) void ollama.fetchCatalog()
+  if (auth.isAuthenticated) {
+    void auth.fetchMe()
+    void ollama.fetchCatalog()
+  }
 })
 watch(
   () => auth.isAuthenticated,
@@ -49,63 +52,63 @@ function isActive(path: string) {
         </button>
       </div>
       <nav class="sidebar-nav">
-        <router-link to="/dashboard" :class="{ active: route.path === '/dashboard' }">
+        <router-link v-if="auth.isAdmin" to="/dashboard" :class="{ active: route.path === '/dashboard' }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
           </svg>
           <span class="nav-label">Dashboard</span>
         </router-link>
-        <router-link to="/devices" :class="{ active: isActive('/devices') }">
+        <router-link v-if="auth.isAdmin" to="/devices" :class="{ active: isActive('/devices') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="9" height="7" rx="1"/><rect x="13" y="3" width="9" height="7" rx="1"/>
             <rect x="2" y="14" width="9" height="7" rx="1"/><rect x="13" y="14" width="9" height="7" rx="1"/>
           </svg>
           <span class="nav-label">Devices</span>
         </router-link>
-        <router-link to="/vms" :class="{ active: isActive('/vms') }">
+        <router-link v-if="auth.isAdmin" to="/vms" :class="{ active: isActive('/vms') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
           </svg>
           <span class="nav-label">Virtual Machines</span>
         </router-link>
-        <router-link v-if="ollama.anyReachable" to="/models" :class="{ active: isActive('/models') }">
+        <router-link v-if="auth.isInference || ollama.anyReachable" to="/models" :class="{ active: isActive('/models') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/>
           </svg>
           <span class="nav-label">Ollama</span>
         </router-link>
-        <router-link to="/images" :class="{ active: isActive('/images') }">
+        <router-link v-if="auth.isAdmin" to="/images" :class="{ active: isActive('/images') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/>
           </svg>
           <span class="nav-label">Images</span>
         </router-link>
-        <router-link to="/disks" :class="{ active: isActive('/disks') }">
+        <router-link v-if="auth.isAdmin" to="/disks" :class="{ active: isActive('/disks') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
           </svg>
           <span class="nav-label">Disks</span>
         </router-link>
-        <router-link to="/networks" :class="{ active: isActive('/networks') }">
+        <router-link v-if="auth.isAdmin" to="/networks" :class="{ active: isActive('/networks') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
           </svg>
           <span class="nav-label">Networks</span>
         </router-link>
-        <router-link to="/registry" :class="{ active: isActive('/registry') }">
+        <router-link v-if="auth.isAdmin" to="/registry" :class="{ active: isActive('/registry') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
             <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
           </svg>
           <span class="nav-label">Repositories</span>
         </router-link>
-        <router-link to="/logs" :class="{ active: isActive('/logs') }">
+        <router-link v-if="auth.isAdmin" to="/logs" :class="{ active: isActive('/logs') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
           </svg>
           <span class="nav-label">Logs</span>
         </router-link>
-        <router-link to="/settings" :class="{ active: isActive('/settings') }">
+        <router-link v-if="auth.isAdmin" to="/settings" :class="{ active: isActive('/settings') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>

@@ -1,6 +1,7 @@
 import BarkVisorCore
 import Foundation
 import GRDB
+import JWTKit
 import Vapor
 
 /// Home Ollama catalog, routing, and native HTTP aliases (PAS-269).
@@ -14,6 +15,7 @@ struct HomeOllamaController: RouteCollection {
     var localClient: any HomeDeviceProxyClient
     var store: OllamaCatalogStore
     var localOllama: OllamaController
+    var keys: JWTKeyCollection?
     var now: (@Sendable () -> Date)?
 
     init(
@@ -26,6 +28,7 @@ struct HomeOllamaController: RouteCollection {
         localClient: any HomeDeviceProxyClient = LocalHostProxyClient(),
         store: OllamaCatalogStore? = nil,
         localOllama: OllamaController,
+        keys: JWTKeyCollection? = nil,
         now: (@Sendable () -> Date)? = nil,
     ) {
         self.backgroundTasks = backgroundTasks
@@ -37,6 +40,7 @@ struct HomeOllamaController: RouteCollection {
         self.localClient = localClient
         self.store = store ?? OllamaCatalogStore(dataDir: dataDir)
         self.localOllama = localOllama
+        self.keys = keys
         self.now = now
     }
 
@@ -59,8 +63,8 @@ struct HomeOllamaController: RouteCollection {
 
     @Sendable
     func status(req: Vapor.Request) async throws -> OllamaHomeCatalog {
-        _ = try req.requireUser
-        return try await refresh(db: req.db, bearer: req.headers.bearerAuthorization?.token)
+        let user = try req.requireUser
+        return try await refresh(db: req.db, user: user)
     }
 
     @Sendable
@@ -70,14 +74,14 @@ struct HomeOllamaController: RouteCollection {
 
     @Sendable
     func pull(req: Vapor.Request) async throws -> OllamaTaskAccepted {
-        _ = try req.requireUser
+        let user = try req.requireUser
         let body = try req.content.decode(OllamaPullRequest.self)
         let target = try await targetHost(
             requested: body.hostId,
             model: nil,
             requirePulled: false,
             db: req.db,
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
         )
         if target == hostId {
             return try await localOllama.pull(req: req)
@@ -87,21 +91,21 @@ struct HomeOllamaController: RouteCollection {
             method: "POST",
             path: "/api/ollama/pull",
             body: JSONEncoder().encode(["name": body.name]),
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
             as: OllamaTaskAccepted.self,
         )
     }
 
     @Sendable
     func start(req: Vapor.Request) async throws -> HTTPStatus {
-        _ = try req.requireUser
+        let user = try req.requireUser
         let body = try req.content.decode(OllamaModelActionRequest.self)
         let target = try await targetHost(
             requested: body.hostId,
             model: body.name,
             requirePulled: true,
             db: req.db,
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
         )
         if target == hostId {
             return try await localOllama.start(req: req)
@@ -111,22 +115,22 @@ struct HomeOllamaController: RouteCollection {
             method: "POST",
             path: "/api/ollama/start",
             body: JSONEncoder().encode(["name": body.name]),
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
         )
-        _ = try await refresh(db: req.db, bearer: req.headers.bearerAuthorization?.token)
+        _ = try await refresh(db: req.db, user: user)
         return .noContent
     }
 
     @Sendable
     func stop(req: Vapor.Request) async throws -> HTTPStatus {
-        _ = try req.requireUser
+        let user = try req.requireUser
         let body = try req.content.decode(OllamaModelActionRequest.self)
         let target = try await targetHost(
             requested: body.hostId,
             model: body.name,
             requirePulled: true,
             db: req.db,
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
         )
         if target == hostId {
             return try await localOllama.stop(req: req)
@@ -136,9 +140,9 @@ struct HomeOllamaController: RouteCollection {
             method: "POST",
             path: "/api/ollama/stop",
             body: JSONEncoder().encode(["name": body.name]),
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
         )
-        _ = try await refresh(db: req.db, bearer: req.headers.bearerAuthorization?.token)
+        _ = try await refresh(db: req.db, user: user)
         return .noContent
     }
 
@@ -169,14 +173,14 @@ struct HomeOllamaController: RouteCollection {
 
     @Sendable
     func completions(req: Vapor.Request) async throws -> Response {
-        _ = try req.requireUser
+        let user = try req.requireUser
         let collected = try await req.body.collect(max: HomeDeviceProxy.maxBodyBytes).get()
         guard let buffer = collected else {
             throw BarkVisorError.badRequest("Missing chat completion body")
         }
         let data = Data(buffer.readableBytesView)
         let model = try OllamaLocalProbe.modelName(fromChatBody: data)
-        let catalog = try await refresh(db: req.db, bearer: req.headers.bearerAuthorization?.token)
+        let catalog = try await refresh(db: req.db, user: user)
         guard let picked = OllamaRouter.pick(model: model, catalog: catalog, now: now?() ?? Date())
         else {
             throw BarkVisorError.notFound("No Device has Ollama model \(model)")
@@ -189,7 +193,7 @@ struct HomeOllamaController: RouteCollection {
             method: "POST",
             path: "/api/ollama/v1/chat/completions",
             body: data,
-            bearer: req.headers.bearerAuthorization?.token,
+            user: user,
         )
         var headers = HTTPHeaders()
         headers.replaceOrAdd(name: .contentType, value: "application/json")
@@ -213,7 +217,7 @@ struct HomeOllamaController: RouteCollection {
         return Response(status: .ok, headers: headers, body: .init(data: data))
     }
 
-    func refresh(db: DatabasePool, bearer: String?) async throws -> OllamaHomeCatalog {
+    func refresh(db: DatabasePool, user: AuthenticatedUser? = nil) async throws -> OllamaHomeCatalog {
         let listed = HomeDeviceDirectory.list(
             dataDir: dataDir,
             hostId: hostId,
@@ -225,11 +229,12 @@ struct HomeOllamaController: RouteCollection {
         snapshots.append(local)
 
         let previous = (try? store.load())?.devices ?? []
-        if let bearer, !bearer.isEmpty {
+        if let user {
+            let hopBearer = try await memberHopBearer(for: user)
             await withTaskGroup(of: OllamaDeviceSnapshot?.self) { group in
                 for device in listed.devices where device.hostId != hostId {
                     group.addTask {
-                        await self.probeMember(device, bearer: bearer)
+                        await self.probeMember(device, hopBearer: hopBearer)
                     }
                 }
                 for await snap in group {
@@ -258,12 +263,12 @@ struct HomeOllamaController: RouteCollection {
         model: String?,
         requirePulled: Bool,
         db: DatabasePool,
-        bearer: String?,
+        user: AuthenticatedUser?,
     ) async throws -> String {
         if let requested, !requested.isEmpty {
             return requested
         }
-        let catalog = try await refresh(db: db, bearer: bearer)
+        let catalog = try await refresh(db: db, user: user)
         if let model, requirePulled {
             if let picked = OllamaRouter.pick(model: model, catalog: catalog, now: now?() ?? Date()) {
                 return picked.hostId
@@ -276,14 +281,14 @@ struct HomeOllamaController: RouteCollection {
         throw BarkVisorError.badGateway("Ollama is not reachable on any Device")
     }
 
-    private func probeMember(_ device: HomeDevice, bearer: String?) async -> OllamaDeviceSnapshot? {
+    func probeMember(_ device: HomeDevice, hopBearer: String) async -> OllamaDeviceSnapshot? {
         do {
             let result = try await sendMember(
                 hostId: device.hostId,
                 method: "GET",
                 path: "/api/ollama/snapshot",
                 body: nil,
-                bearer: bearer,
+                hopBearer: hopBearer,
             )
             guard (200 ..< 300).contains(result.status) else {
                 return OllamaDeviceSnapshot(
@@ -316,11 +321,11 @@ struct HomeOllamaController: RouteCollection {
         method: String,
         path: String,
         body: Data?,
-        bearer: String?,
+        user: AuthenticatedUser,
         as: T.Type,
     ) async throws -> T {
         let result = try await sendMember(
-            hostId: hostId, method: method, path: path, body: body, bearer: bearer,
+            hostId: hostId, method: method, path: path, body: body, user: user,
         )
         guard (200 ..< 300).contains(result.status) else {
             throw BarkVisorError.badGateway("Device Ollama request failed (\(result.status))")
@@ -333,23 +338,60 @@ struct HomeOllamaController: RouteCollection {
         method: String,
         path: String,
         body: Data?,
-        bearer: String?,
+        user: AuthenticatedUser,
     ) async throws {
         let result = try await sendMember(
-            hostId: hostId, method: method, path: path, body: body, bearer: bearer,
+            hostId: hostId, method: method, path: path, body: body, user: user,
         )
         guard (200 ..< 300).contains(result.status) else {
             throw BarkVisorError.badGateway("Device Ollama request failed (\(result.status))")
         }
     }
 
-    private func sendMember(
+    func memberHopBearer(for user: AuthenticatedUser) async throws -> String {
+        guard let keys else {
+            throw BarkVisorError.internalError("Home JWT keys are not configured")
+        }
+        return try await AuthService.signMemberHopToken(
+            userId: user.userId,
+            username: user.username,
+            role: AuthService.memberHopRole(
+                userRole: user.role,
+                authMethod: user.authMethod,
+                apiKeyKind: user.apiKeyKind,
+            ),
+            keys: keys,
+            now: now?() ?? Date(),
+        )
+    }
+
+    func sendMember(
         hostId: String,
         method: String,
         path: String,
         body: Data?,
-        bearer: String?,
+        user: AuthenticatedUser,
     ) async throws -> HomeDeviceProxyResponse {
+        let hopBearer = try await memberHopBearer(for: user)
+        return try await sendMember(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+        )
+    }
+
+    func sendMember(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        hopBearer: String,
+    ) async throws -> HomeDeviceProxyResponse {
+        if hopBearer.hasPrefix("barkvisor_") {
+            throw BarkVisorError.internalError("API keys cannot authenticate on member Devices")
+        }
         let store = devices ?? DeviceRegistry(dataDir: dataDir)
         guard let record = try store.record(forHostId: hostId) else {
             throw BarkVisorError.notFound("Device not found")
@@ -364,9 +406,7 @@ struct HomeOllamaController: RouteCollection {
             try HomeDevicesMTLS.client(dataDir: dataDir, hostId: self.hostId)
         }
         var headers: [(String, String)] = [(APIContract.versionHeaderName, String(APIContract.version))]
-        if let bearer {
-            headers.append(("Authorization", "Bearer \(bearer)"))
-        }
+        headers.append(("Authorization", "Bearer \(hopBearer)"))
         if body != nil {
             headers.append(("Content-Type", "application/json"))
         }

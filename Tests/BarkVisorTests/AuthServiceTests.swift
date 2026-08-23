@@ -54,6 +54,7 @@ struct AuthServiceTests {
         #expect(session.refreshToken.hasPrefix("bvrt_"))
         let payload = try await keys.verify(session.token, as: UserPayload.self)
         #expect(payload.username == "admin")
+        #expect(payload.role == UserRole.admin.rawValue)
         #expect(
             abs(payload.exp.value.timeIntervalSince1970 - now.addingTimeInterval(2 * 60 * 60).timeIntervalSince1970) < 1,
         )
@@ -241,5 +242,59 @@ struct AuthServiceTests {
         await #expect(throws: BarkVisorError.self) {
             try await AuthService.refresh(refreshToken: b.refreshToken, keys: keys, db: db, now: now)
         }
+    }
+
+    @Test func `member hop JWT is short-lived and carries the hop role`() async throws {
+        let keys = await makeKeys()
+        let now = Date()
+        let token = try await AuthService.signMemberHopToken(
+            userId: "reader-1",
+            username: "reader",
+            role: UserRole.inference.rawValue,
+            keys: keys,
+            now: now,
+        )
+        let payload = try await keys.verify(token, as: UserPayload.self)
+        #expect(payload.sub.value == "reader-1")
+        #expect(payload.username == "reader")
+        #expect(payload.role == UserRole.inference.rawValue)
+        #expect(
+            abs(
+                payload.exp.value.timeIntervalSince1970
+                    - now.addingTimeInterval(AuthService.memberHopTokenTTL).timeIntervalSince1970,
+            ) < 1,
+        )
+        #expect(AuthService.memberHopTokenTTL < AuthService.accessTokenTTL)
+    }
+
+    @Test func `member hop role keeps inference keys inference even for admin owners`() {
+        #expect(
+            AuthService.memberHopRole(
+                userRole: UserRole.admin.rawValue,
+                authMethod: "apikey",
+                apiKeyKind: APIKeyKind.inference.rawValue,
+            ) == UserRole.inference.rawValue,
+        )
+        #expect(
+            AuthService.memberHopRole(
+                userRole: UserRole.admin.rawValue,
+                authMethod: "apikey",
+                apiKeyKind: APIKeyKind.full.rawValue,
+            ) == UserRole.admin.rawValue,
+        )
+        #expect(
+            AuthService.memberHopRole(
+                userRole: UserRole.admin.rawValue,
+                authMethod: "jwt",
+                apiKeyKind: nil,
+            ) == UserRole.admin.rawValue,
+        )
+        #expect(
+            AuthService.memberHopRole(
+                userRole: UserRole.inference.rawValue,
+                authMethod: "jwt",
+                apiKeyKind: nil,
+            ) == UserRole.inference.rawValue,
+        )
     }
 }
