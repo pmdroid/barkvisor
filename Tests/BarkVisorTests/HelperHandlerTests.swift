@@ -124,71 +124,78 @@
 
     // MARK: - Vmnet Path Validation Tests
 
-    /// Tests the vmnet binary path validation logic mirroring HelperHandler.validateVmnetPath.
+    /// Production search order and resolved-path allowlist (HelperProtocol.SocketVmnetLayout).
     struct VmnetPathValidationTests {
-        /// Mirrors HelperHandler.validateVmnetPath for testing purposes.
-        private func validateVmnetPath(_ path: String) -> Bool {
-            let canonicalized = (path as NSString).resolvingSymlinksInPath
-            let allowed = ["/opt/homebrew/", "/usr/local/", "/opt/socket_vmnet/"]
-            return allowed.contains { canonicalized.hasPrefix($0) }
-        }
-
         @Test func `search order prefers Homebrew then leftover libexec`() {
-            let order = [
-                "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
-                "/opt/homebrew/bin/socket_vmnet",
-                "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
-                "/usr/local/bin/socket_vmnet",
-                "/usr/local/libexec/barkvisor/socket_vmnet",
-            ]
+            let order = SocketVmnetLayout.searchPaths
             #expect(order.first == "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet")
             #expect(order.last == "/usr/local/libexec/barkvisor/socket_vmnet")
+            #expect(!order.contains("/opt/homebrew/bin/socket_vmnet"))
+            #expect(!order.contains("/usr/local/bin/socket_vmnet"))
         }
 
-        @Test func `valid homebrew path`() {
-            #expect(validateVmnetPath("/opt/homebrew/bin/socket_vmnet"))
+        @Test func `valid homebrew opt path`() {
+            #expect(SocketVmnetLayout.allowedPrefix(
+                "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
+            ))
         }
 
-        @Test func `valid usr local path`() {
-            #expect(validateVmnetPath("/usr/local/bin/socket_vmnet"))
+        @Test func `valid homebrew cellar path`() {
+            #expect(SocketVmnetLayout.allowedPrefix(
+                "/opt/homebrew/Cellar/socket_vmnet/1.2.0/bin/socket_vmnet",
+            ))
         }
 
-        @Test func `valid opt socket vmnet path`() {
-            #expect(validateVmnetPath("/opt/socket_vmnet/bin/socket_vmnet"))
+        @Test func `valid usr local opt path`() {
+            #expect(SocketVmnetLayout.allowedPrefix(
+                "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
+            ))
+        }
+
+        @Test func `valid leftover libexec path`() {
+            #expect(SocketVmnetLayout.allowedPrefix(
+                "/usr/local/libexec/barkvisor/socket_vmnet",
+            ))
+        }
+
+        @Test func `invalid homebrew bin path`() {
+            #expect(!SocketVmnetLayout.allowedPrefix("/opt/homebrew/bin/socket_vmnet"))
+        }
+
+        @Test func `invalid usr local bin path`() {
+            #expect(!SocketVmnetLayout.allowedPrefix("/usr/local/bin/socket_vmnet"))
         }
 
         @Test func `invalid root path`() {
-            #expect(!validateVmnetPath("/bin/socket_vmnet"))
+            #expect(!SocketVmnetLayout.allowedPrefix("/bin/socket_vmnet"))
         }
 
         @Test func `invalid usr bin path`() {
-            #expect(!validateVmnetPath("/usr/bin/socket_vmnet"))
+            #expect(!SocketVmnetLayout.allowedPrefix("/usr/bin/socket_vmnet"))
         }
 
         @Test func `invalid etc path`() {
-            #expect(!validateVmnetPath("/etc/socket_vmnet"))
+            #expect(!SocketVmnetLayout.allowedPrefix("/etc/socket_vmnet"))
         }
 
         @Test func `invalid tmp path`() {
-            #expect(!validateVmnetPath("/tmp/socket_vmnet"))
+            #expect(!SocketVmnetLayout.allowedPrefix("/tmp/socket_vmnet"))
         }
 
         @Test func `empty path`() {
-            #expect(!validateVmnetPath(""))
+            #expect(!SocketVmnetLayout.allowedPrefix(""))
         }
 
         @Test func `relative path`() {
-            // Relative paths resolve against cwd, which won't match allowed prefixes
-            #expect(!validateVmnetPath("socket_vmnet"))
+            #expect(!SocketVmnetLayout.allowedPrefix("socket_vmnet"))
         }
 
         @Test func `path with trailing slash only`() {
-            #expect(!validateVmnetPath("/"))
+            #expect(!SocketVmnetLayout.allowedPrefix("/"))
         }
 
         @Test func `path prefix partial match`() {
-            // "/opt/homebrewfake" should NOT match "/opt/homebrew/"
-            #expect(!validateVmnetPath("/opt/homebrewfake/bin/socket_vmnet"))
+            #expect(!SocketVmnetLayout.allowedPrefix("/opt/homebrewfake/opt/socket_vmnet/bin/socket_vmnet"))
         }
     }
 

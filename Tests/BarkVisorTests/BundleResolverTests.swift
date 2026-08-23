@@ -9,6 +9,7 @@ struct BundleResolverTests {
             #expect(qemu.contains("/usr/local/bin/qemu-system-aarch64"))
             #expect(qemu.last?.hasSuffix("/libexec/barkvisor/qemu-system-aarch64") == true)
         #else
+            #expect(qemu.first?.hasSuffix("/libexec/barkvisor/qemu-system-aarch64") == true)
             #expect(qemu.contains("/usr/bin/qemu-system-aarch64"))
         #endif
     }

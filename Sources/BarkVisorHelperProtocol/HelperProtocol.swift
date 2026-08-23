@@ -56,3 +56,25 @@ public let kHelperTeamID = "W363QN58YY"
         reply: @escaping (Bool, String?) -> Void,
     )
 }
+
+/// Canonical socket_vmnet locations the privileged helper may exec as root (PAS-287).
+/// Opt-prefix only (not `/opt/homebrew/bin` / `/usr/local/bin`). Homebrew `opt/`
+/// entries are usually Cellar symlinks; callers must resolve and re-check prefix.
+public enum SocketVmnetLayout {
+    public static let searchPaths = [
+        "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
+        "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
+        "/usr/local/libexec/barkvisor/socket_vmnet",
+    ]
+
+    public static func allowedPrefix(_ resolved: String) -> Bool {
+        let prefixes = [
+            "/opt/homebrew/opt/socket_vmnet/",
+            "/opt/homebrew/Cellar/socket_vmnet/",
+            "/usr/local/opt/socket_vmnet/",
+            "/usr/local/Cellar/socket_vmnet/",
+            "/usr/local/libexec/barkvisor/",
+        ]
+        return prefixes.contains { resolved.hasPrefix($0) }
+    }
+}

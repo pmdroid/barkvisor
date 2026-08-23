@@ -4,7 +4,7 @@ import Foundation
 ///
 /// macOS (PAS-287): Homebrew first (`brew install qemu` / `socket_vmnet` / `swtpm`),
 /// then a leftover `{prefix}/libexec/barkvisor/` copy if one exists.
-/// Linux: distro FHS, then libexec.
+/// Linux: leftover libexec, then distro FHS.
 public enum BundleResolver {
     // MARK: - Helpers (executables)
 

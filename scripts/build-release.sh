@@ -133,7 +133,8 @@ MISSING_DEPS=()
 if [ "$BUNDLE_HYPERVISOR_DEPS" = true ]; then
     PREREQ_CMDS=(meson ninja pkg-config dylibbundler autoconf automake glibtoolize gawk mkisofs)
 else
-    PREREQ_CMDS=(dylibbundler)
+    # xz + mkisofs still ship in the pkg (cloud-init ISO + image decompress).
+    PREREQ_CMDS=(dylibbundler xz mkisofs)
 fi
 for cmd in "${PREREQ_CMDS[@]}"; do
     if ! command -v "$cmd" &>/dev/null; then
@@ -160,7 +161,7 @@ fi
 mkdir -p "$DEPS_SRC" "$DEPS_PREFIX"/{bin,lib,share,include}
 
 if [ "$BUNDLE_HYPERVISOR_DEPS" != true ]; then
-    log "PAS-287: not building QEMU/swtpm/socket_vmnet/xz (runtime: brew install qemu swtpm socket_vmnet)"
+    log "PAS-287: not building QEMU/swtpm/socket_vmnet (runtime: brew install qemu swtpm socket_vmnet)"
 else
 # =============================================================================
 # Step 1: Build QEMU from source
@@ -458,6 +459,20 @@ cat > "$STAGE_LAUNCHD/dev.barkvisor.helper.plist" <<PLIST
 </plist>
 PLIST
 
+stage_host_tool() {
+    local name="$1"
+    local brew_pkg="${2:-$1}"
+    local src
+    src="$(command -v "$name" 2>/dev/null || true)"
+    if [ -z "$src" ] || [ ! -f "$src" ]; then
+        echo "ERROR: $name not found — install via: brew install $brew_pkg"
+        exit 1
+    fi
+    cp "$src" "$STAGE_LIBEXEC/$name"
+    chmod u+w "$STAGE_LIBEXEC/$name"
+    log_sub "  $name (from $src)"
+}
+
 # Helper binaries (only when bundling hypervisor deps)
 if [ "$BUNDLE_HYPERVISOR_DEPS" = true ]; then
     log_sub "Copying helper binaries..."
@@ -485,6 +500,8 @@ if [ "$BUNDLE_HYPERVISOR_DEPS" = true ]; then
 else
     log_sub "Not copying QEMU/socket_vmnet/swtpm (Homebrew at runtime)"
     QEMU_SHARE=""
+    stage_host_tool xz xz
+    stage_host_tool mkisofs cdrtools
 fi
 
 if [ -n "$QEMU_SHARE" ]; then
@@ -793,7 +810,7 @@ fi
 echo ""
 log "Install layout:"
 log_sub "/usr/local/bin/barkvisor                          (server daemon)"
-log_sub "/usr/local/libexec/barkvisor/                     (optional leftovers; QEMU from Homebrew)"
+log_sub "/usr/local/libexec/barkvisor/                     (xz, mkisofs; QEMU from Homebrew)"
 log_sub "/usr/local/lib/barkvisor/                         (shared libraries)"
 log_sub "/usr/local/share/barkvisor/                       (frontend, firmware)"
 log_sub "/Library/PrivilegedHelperTools/dev.barkvisor.helper"

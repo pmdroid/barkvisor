@@ -89,7 +89,7 @@ Creates the staged install layout under `build/stage/`:
 usr/local/
   bin/
     barkvisor                   (main server daemon)
-  libexec/barkvisor/            (empty unless BUNDLE_HYPERVISOR_DEPS=true)
+  libexec/barkvisor/            (xz + mkisofs; QEMU only if BUNDLE_HYPERVISOR_DEPS=true)
   lib/barkvisor/                (daemon dylibs, populated in step 9)
   share/barkvisor/
     templates.json
