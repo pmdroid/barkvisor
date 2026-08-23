@@ -85,7 +85,12 @@ struct HostInventoryTests {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(object?["hostId"] as? String == Self.testHostId)
         let networking = object?["networking"] as? [String: Any]
-        #expect(networking?["tailnet"] != nil)
+        #expect(networking != nil)
+        // Live Tailscale is optional. Keep encode coverage when the snapshot
+        // actually has a tailnet; omit-key decode is covered separately.
+        if inv.networking.tailnet != nil {
+            #expect(networking?["tailnet"] != nil)
+        }
     }
 
     @Test func `inventory decodes when tailnet is omitted`() throws {
