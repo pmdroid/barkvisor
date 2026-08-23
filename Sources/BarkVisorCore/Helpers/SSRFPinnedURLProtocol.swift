@@ -84,7 +84,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
                     }
                     continue
                 }
-                client?.urlProtocolDidFinishLoading(self)
+                notifyFinish()
                 await hopClient.shutdown()
                 return
             }
@@ -153,15 +153,26 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         else {
             throw URLError(.badServerResponse)
         }
-        client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
+        let protoClient = client
+        protoClient?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
+        var delivered = 0
         for try await buffer in body {
             try Task.checkCancellation()
             let data = Data(buffer.readableBytesView)
+            delivered += data.count
             if !data.isEmpty {
-                client?.urlProtocol(self, didLoad: data)
+                protoClient?.urlProtocol(self, didLoad: data)
             }
         }
+        if let expected = Int(head.headers.first(name: "content-length") ?? ""),
+           expected > 0, delivered == 0 {
+            throw URLError(.cannotParseResponse)
+        }
         return nil
+    }
+
+    private func notifyFinish() {
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     private func fail(_ error: Error) {

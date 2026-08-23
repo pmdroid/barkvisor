@@ -271,6 +271,34 @@ struct SSRFProtectionTests {
         }
     }
 
+    @Test func `pinned 200 body is delivered`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/ok") {
+                return (200, [:], "pinned-ok")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+
+        let host = "ssrf-body.test"
+        pinLoopback(host: host)
+        let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
+        let session = SSRFGuard.urlSession(resourceTimeout: 5)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 200)
+        #expect(String(data: data, encoding: .utf8) == "pinned-ok")
+        #expect(server.hitCount() == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+    }
+
     @Test func `one HTTPClient across hops and shutdown once`() async throws {
         SSRFPinnedURLProtocol.resetTestHooks()
         defer { SSRFPinnedURLProtocol.resetTestHooks() }

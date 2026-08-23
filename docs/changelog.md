@@ -28,6 +28,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ### Library
 
 - Images are no longer filtered to this Device’s arch only. Download ARM64 or x86_64 as needed.
+- Library fetch keeps the HTTP body when headers and bytes arrive together (Linux hop client).
 - Configurable Library directory (new downloads; existing files are not migrated).
 - Optional depot Device: on a local miss, fetch image bytes over the agent plane, verify checksum, then store locally. Depot down falls back to the internet.
 - Catalog pins use dated Ubuntu snapshot URLs so checksums stay stable.
