@@ -40,3 +40,8 @@ export function gpuPassthroughSupported(
 export function gpuHostOccupancyLabel(inUseByHost: boolean | undefined): string | null {
   return inUseByHost ? 'In use by host' : null
 }
+
+/** vfio-pci is bound at start. Detach is only safe when the Workload is stopped. */
+export function gpuDetachAllowed(state: string | undefined): boolean {
+  return state === 'stopped' || state === 'error'
+}

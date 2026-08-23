@@ -81,7 +81,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, gpuDetachAllowed, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
@@ -1686,7 +1686,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             </td>
             <td><span class="badge badge-gray">{{ dev.iommuGroup }}</span></td>
             <td style="text-align:right">
-              <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
+              <span v-if="!gpuDetachAllowed(vm?.state)" style="font-size:12px;color:var(--text-dim)">Stop the Workload to detach</span>
               <AppButton v-else size="sm" variant="danger" :disabled="gpuLoading || (isMemberDetail && !memberReachable)" @click="gpuDetach(dev)">Detach</AppButton>
             </td>
           </tr>

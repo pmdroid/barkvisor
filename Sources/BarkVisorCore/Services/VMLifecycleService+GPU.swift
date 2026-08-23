@@ -34,6 +34,7 @@ extension VMLifecycleService {
         guard let vm = try await db.read({ db in try VM.fetchOne(db, key: vmID) }) else {
             throw BarkVisorError.notFound()
         }
+        try GPUPassthroughService.assertCanDetach(state: vm.state)
         let remaining = GPUPassthroughService.removing(vm.decodedGPUDevices, deviceId: deviceId)
         let removed = vm.decodedGPUDevices.filter { device in
             !remaining.contains { $0.pciAddress == device.pciAddress }
@@ -43,10 +44,7 @@ extension VMLifecycleService {
             params: UpdateVMParams(gpuDevices: remaining),
             db: db,
         )
-        let stopped = vm.state == "stopped" || vm.state == "error"
-        if stopped {
-            GPUPassthroughService.releaseVFIO(removed)
-        }
+        GPUPassthroughService.releaseVFIO(removed)
         return updated
     }
 

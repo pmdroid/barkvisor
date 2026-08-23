@@ -19,6 +19,19 @@ public enum GPUPassthroughService {
         return hostGPUDrivers.contains(driver)
     }
 
+    /// vfio-pci is bound at QEMU start, not hot-plugged. Detach is only safe when stopped.
+    public static func canDetach(state: String) -> Bool {
+        state == "stopped" || state == "error"
+    }
+
+    public static func assertCanDetach(state: String) throws {
+        guard canDetach(state: state) else {
+            throw BarkVisorError.conflict(
+                "GPU passthrough cannot be detached while the Workload is running",
+            )
+        }
+    }
+
     public static func normalizePCIAddress(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }

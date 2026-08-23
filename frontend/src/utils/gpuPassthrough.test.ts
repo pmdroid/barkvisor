@@ -3,6 +3,7 @@ import { defaultCapabilities } from './capabilitiesParse'
 import {
   GUEST_OLLAMA_PATH,
   GPU_IOMMU_NOT_READY,
+  gpuDetachAllowed,
   gpuHostOccupancyLabel,
   gpuPassthroughExplanation,
   gpuPassthroughSupported,
@@ -83,5 +84,14 @@ describe('gpuPassthrough copy (PAS-275)', () => {
     expect(gpuHostOccupancyLabel(true)).toBe('In use by host')
     expect(gpuHostOccupancyLabel(false)).toBeNull()
     expect(gpuHostOccupancyLabel(undefined)).toBeNull()
+  })
+
+  test('detach is only allowed when the Workload is stopped', () => {
+    expect(gpuDetachAllowed('stopped')).toBe(true)
+    expect(gpuDetachAllowed('error')).toBe(true)
+    expect(gpuDetachAllowed('running')).toBe(false)
+    expect(gpuDetachAllowed('starting')).toBe(false)
+    expect(gpuDetachAllowed('stopping')).toBe(false)
+    expect(gpuDetachAllowed(undefined)).toBe(false)
   })
 })

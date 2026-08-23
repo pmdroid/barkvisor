@@ -66,12 +66,24 @@ public enum VFIOBinder {
     ) throws {
         _ = fileManager
         let io = sysfs ?? .posix(devicesRoot: paths.devicesRoot)
-        for raw in addresses {
-            let address = GPUPassthroughService.normalizePCIAddress(raw)
-            guard GPUPassthroughService.isPCIAddress(address) else {
-                throw BarkVisorError.badRequest("Invalid GPU PCI address \(raw)")
+        var boundThisCall: [String] = []
+        do {
+            for raw in addresses {
+                let address = GPUPassthroughService.normalizePCIAddress(raw)
+                guard GPUPassthroughService.isPCIAddress(address) else {
+                    throw BarkVisorError.badRequest("Invalid GPU PCI address \(raw)")
+                }
+                let alreadyBound = io.currentDriver(address) == "vfio-pci"
+                try bindOne(address: address, paths: paths, sysfs: io)
+                if !alreadyBound {
+                    boundThisCall.append(address)
+                }
             }
-            try bindOne(address: address, paths: paths, sysfs: io)
+        } catch {
+            if !boundThisCall.isEmpty {
+                try? unbind(addresses: boundThisCall, paths: paths, sysfs: io)
+            }
+            throw error
         }
     }
 

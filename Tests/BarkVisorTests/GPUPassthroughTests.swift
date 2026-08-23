@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
@@ -262,6 +263,124 @@ struct GPUPassthroughTests {
         #expect(!fake.readBindNode)
     }
 
+    @Test func `detach gpu is refused unless the workload is stopped`() {
+        #expect(GPUPassthroughService.canDetach(state: "stopped"))
+        #expect(GPUPassthroughService.canDetach(state: "error"))
+        #expect(!GPUPassthroughService.canDetach(state: "running"))
+        #expect(!GPUPassthroughService.canDetach(state: "starting"))
+        #expect(!GPUPassthroughService.canDetach(state: "stopping"))
+        let err = #expect(throws: BarkVisorError.self) {
+            try GPUPassthroughService.assertCanDetach(state: "running")
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("Workload"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
+        }
+    }
+
+    @Test func `detach gpu while running leaves the attachment in the db`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "gpu-detach-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+
+        let stored = GPUPassthroughDevice(
+            pciAddress: "0000:01:00.0",
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+            groupAddresses: ["0000:01:00.0", "0000:01:00.1"],
+        )
+        let vm = makeVM(gpu: [stored], state: "running")
+        try await pool.write { db in
+            try Disk(
+                id: vm.bootDiskId,
+                name: "boot",
+                path: tmp.appendingPathComponent("boot.qcow2").path,
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: vm.id,
+                autoCreated: false,
+                status: "ready",
+                createdAt: vm.createdAt,
+            ).insert(db)
+            try vm.insert(db)
+        }
+
+        let err = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.detachGPU(
+                vmID: vm.id, deviceId: stored.pciAddress, db: pool,
+            )
+        }
+        if case let .conflict(message) = err {
+            #expect(message.contains("Workload"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: err))")
+        }
+
+        let still = try await pool.read { db in try VM.fetchOne(db, key: vm.id) }
+        #expect(still?.decodedGPUDevices.map(\.pciAddress) == [stored.pciAddress])
+    }
+
+    @Test func `partial iommu group bind unbinds members already taken`() throws {
+        let fake = FakeVFIOSysfs()
+        let gpu = "0000:01:00.0"
+        let audio = "0000:01:00.1"
+        fake.exists.insert("/sys/bus/pci/devices/\(gpu)")
+        fake.exists.insert("/sys/bus/pci/devices/\(audio)")
+        fake.driver[gpu] = "nvidia"
+        fake.driver[audio] = "snd_hda_intel"
+        fake.skipBind.insert(audio)
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        #expect(throws: BarkVisorError.self) {
+            try VFIOBinder.bind(addresses: [gpu, audio], paths: paths, sysfs: fake.sysfs)
+        }
+        #expect(fake.driver[gpu] != "vfio-pci")
+        #expect(fake.driver[audio] != "vfio-pci")
+    }
+
+    @Test func `start failure after vfio bind unbinds the group`() throws {
+        let fake = FakeVFIOSysfs()
+        let gpu = "0000:01:00.0"
+        let audio = "0000:01:00.1"
+        fake.exists.insert("/sys/bus/pci/devices/\(gpu)")
+        fake.exists.insert("/sys/bus/pci/devices/\(audio)")
+        fake.driver[gpu] = "nvidia"
+        fake.driver[audio] = "snd_hda_intel"
+        let stored = GPUPassthroughDevice(
+            pciAddress: gpu,
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+            groupAddresses: [gpu, audio],
+        )
+        let paths = VFIOBindPaths(
+            devicesRoot: "/sys/bus/pci/devices",
+            vfioPciDriver: "/sys/bus/pci/drivers/vfio-pci",
+            driversProbe: "/sys/bus/pci/drivers_probe",
+        )
+        _ = try QEMUBuilder.vfioPCIArgs(
+            gpu: [GPUPassthroughService.workload(from: stored)],
+            bind: true,
+            bindPaths: paths,
+            sysfs: fake.sysfs,
+        )
+        #expect(fake.driver[gpu] == "vfio-pci")
+        #expect(fake.driver[audio] == "vfio-pci")
+
+        GPUPassthroughService.releaseVFIO([stored], paths: paths, sysfs: fake.sysfs)
+        #expect(fake.driver[gpu] != "vfio-pci")
+        #expect(fake.driver[audio] != "vfio-pci")
+    }
+
     @Test func `host ollama grant is skipped when a gpu is attached`() {
         #expect(
             AgentNetworkCage.allowHostOllama(
@@ -277,13 +396,13 @@ struct GPUPassthroughTests {
         #expect(!gpu.pciAddress.isEmpty)
     }
 
-    private func makeVM(gpu: [GPUPassthroughDevice]) -> VM {
+    private func makeVM(gpu: [GPUPassthroughDevice], state: String = "stopped") -> VM {
         let cpu = min(2, max(1, PlatformHost.cpuCount))
         return VM(
             id: "vm-gpu-1",
             name: "gpu-vm",
             vmType: "linux-arm64",
-            state: "stopped",
+            state: state,
             cpuCount: cpu,
             memoryMb: 1_024,
             bootDiskId: "disk-1",
@@ -312,6 +431,7 @@ struct GPUPassthroughTests {
         var driver: [String: String] = [:]
         var writes: [(path: String, text: String)] = []
         var readBindNode = false
+        var skipBind: Set<String> = []
 
         var sysfs: VFIOSysfs {
             VFIOSysfs(
@@ -322,6 +442,7 @@ struct GPUPassthroughTests {
                     self.writes.append((path, text))
                     let addr = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if path.hasSuffix("/bind"), path.contains("vfio-pci") {
+                        if self.skipBind.contains(addr) { return }
                         self.driver[addr] = "vfio-pci"
                     }
                     if path.hasSuffix("/unbind"), path.contains("vfio-pci") {

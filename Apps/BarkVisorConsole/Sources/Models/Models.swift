@@ -262,6 +262,10 @@ struct Workload: Decodable, Identifiable, Hashable {
     var canStart: Bool {
         state == "stopped" || state == "error"
     }
+    /// vfio-pci is bound at start, not hot-plugged.
+    var canDetachGPU: Bool {
+        canStart
+    }
     var canStop: Bool {
         state == "running" || state == "starting"
     }

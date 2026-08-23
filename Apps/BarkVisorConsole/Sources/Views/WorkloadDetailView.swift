@@ -148,7 +148,7 @@ struct WorkloadDetailView: View {
                 if let attached = workload.gpuDevices, !attached.isEmpty {
                     ForEach(attached) { gpu in
                         LabeledContent(gpu.displayName, value: "IOMMU \(gpu.iommuGroup)")
-                        if workload.canStart {
+                        if workload.canDetachGPU {
                             Button("Detach \(gpu.pciAddress)", role: .destructive) {
                                 Task {
                                     await model.detachGPU(gpu.pciAddress, from: workload, on: device)

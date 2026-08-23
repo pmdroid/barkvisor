@@ -344,6 +344,13 @@ struct APIDecodingTests {
         #expect(busy.occupancyCopy == "In use by host")
     }
 
+    @Test func `gpu detach is only allowed when the workload is stopped`() {
+        #expect(!workload(id: "vm-1", name: "gpu").canDetachGPU)
+        #expect(!workload(id: "vm-1", name: "gpu", state: "starting").canDetachGPU)
+        #expect(workload(id: "vm-1", name: "gpu", state: "stopped").canDetachGPU)
+        #expect(workload(id: "vm-1", name: "gpu", state: "error").canDetachGPU)
+    }
+
     @Test func `gpu passthrough copy prefers server remediation`() {
         let text = GPUPassthroughCopy.explanation(
             supported: false,
@@ -396,12 +403,12 @@ struct APIDecodingTests {
         )
     }
 
-    private func workload(id: String, name: String) -> Workload {
+    private func workload(id: String, name: String, state: String = "running") -> Workload {
         Workload(
             id: id,
             name: name,
             vmType: "linux-arm64",
-            state: "running",
+            state: state,
             health: "running",
             cpuCount: 2,
             memoryMB: 1_024,
