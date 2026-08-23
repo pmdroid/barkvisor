@@ -71,6 +71,40 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         }
     }
 
+    public func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let client = try AgentMTLSRuntime.shared.client(
+                        for: material,
+                        presentationCertificatePEM: presentationCertificatePEM,
+                        trustCertificatePEMs: trustCertificatePEMs,
+                        timeoutSeconds: timeoutSeconds,
+                    )
+                    let response = try await executeHeaders(request, on: client)
+                    let status = Int(response.status.code)
+                    if !(200 ..< 300).contains(status) {
+                        let buffer = try await collectProxyBody(response.body, maxBytes: 65_536)
+                        let reason = String(buffer: buffer)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        continuation.finish(
+                            throwing: BarkVisorError.badGateway(
+                                reason.isEmpty ? "HTTP \(status)" : reason,
+                            ),
+                        )
+                        return
+                    }
+                    for try await part in response.body {
+                        continuation.yield(Data(part.readableBytesView))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Stream a GET onto disk. Used only for Library depot bytes (PAS-176).
     /// Does not collect the body into the 10 MiB proxy buffer.
     public func streamGet(
@@ -172,6 +206,20 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         _ request: HomeDeviceProxyRequest,
         on client: HTTPClient,
     ) async throws -> HomeDeviceProxyResponse {
+        let response = try await executeHeaders(request, on: client)
+        let buffer = try await collectProxyBody(response.body, maxBytes: HomeDeviceProxy.maxBodyBytes)
+        let headers = response.headers.map { ($0.name, $0.value) }
+        return HomeDeviceProxyResponse(
+            status: Int(response.status.code),
+            headers: headers,
+            body: Data(buffer.readableBytesView),
+        )
+    }
+
+    private func executeHeaders(
+        _ request: HomeDeviceProxyRequest,
+        on client: HTTPClient,
+    ) async throws -> HTTPClientResponse {
         var outbound = HTTPClientRequest(url: request.url.absoluteString)
         outbound.method = HTTPMethod(rawValue: request.method.uppercased())
         for (name, value) in request.headers {
@@ -180,19 +228,11 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         if let body = request.body {
             outbound.body = .bytes(body)
         }
-        let response: HTTPClientResponse
         do {
-            response = try await client.execute(outbound, timeout: .seconds(timeoutSeconds))
+            return try await client.execute(outbound, timeout: .seconds(timeoutSeconds))
         } catch {
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)
         }
-        let buffer = try await collectProxyBody(response.body, maxBytes: HomeDeviceProxy.maxBodyBytes)
-        let headers = response.headers.map { ($0.name, $0.value) }
-        return HomeDeviceProxyResponse(
-            status: Int(response.status.code),
-            headers: headers,
-            body: Data(buffer.readableBytesView),
-        )
     }
 }
 

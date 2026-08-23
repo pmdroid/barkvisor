@@ -244,6 +244,38 @@ public struct HomeDeviceProxyResponse: Sendable {
 
 public protocol HomeDeviceProxyClient: Sendable {
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse
+    func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error>
+}
+
+extension HomeDeviceProxyClient {
+    /// Default: buffer `send`, then yield one chunk. Used by test doubles.
+    /// Non-2xx becomes `BarkVisorError.badGateway` so SSE proxies fail closed
+    /// before writing HTTP 200.
+    public func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let response = try await send(request)
+                    if !(200 ..< 300).contains(response.status) {
+                        let reason = String(data: response.body, encoding: .utf8)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        continuation.finish(
+                            throwing: BarkVisorError.badGateway(
+                                reason.isEmpty ? "HTTP \(response.status)" : reason,
+                            ),
+                        )
+                        return
+                    }
+                    if !response.body.isEmpty {
+                        continuation.yield(response.body)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
 }
 
 public enum HomeDeviceProxyError: Error, LocalizedError, Sendable, Equatable {
