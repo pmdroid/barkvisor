@@ -479,7 +479,7 @@ private final class SSRFHopHTTPServer: @unchecked Sendable {
     }
 
     func stop() {
-        shutdown(fd, SHUT_RDWR)
+        shutdown(fd, Int32(SHUT_RDWR))
         close(fd)
     }
 
