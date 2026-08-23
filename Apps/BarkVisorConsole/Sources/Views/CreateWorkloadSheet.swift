@@ -16,6 +16,7 @@ struct CreateWorkloadSheet: View {
     @State private var imageLoadID = 0
     @State private var creating = false
     @State private var localError: String?
+    @State private var workloadClass = "house"
 
     var body: some View {
         Form {
@@ -55,8 +56,17 @@ struct CreateWorkloadSheet: View {
                         }
                     }
                 }
+
+                Picker("Class", selection: $workloadClass) {
+                    Text("House").tag("house")
+                    Text("Agent").tag("agent")
+                }
             } footer: {
-                Text("Default disk and implicit NAT. \(CreateWorkload.webEditCopy)")
+                Text(
+                    workloadClass == "agent"
+                        ? "\(CreateWorkload.agentGrantCopy) NAT out only; no USB. \(CreateWorkload.webEditCopy)"
+                        : "Default disk and implicit NAT. \(CreateWorkload.webEditCopy)",
+                )
             }
 
             if let localError {
@@ -166,6 +176,7 @@ struct CreateWorkloadSheet: View {
             name: name,
             image: selectedImage,
             on: device,
+            workloadClass: workloadClass,
         ) else {
             localError = model.banner ?? "Could not create the Workload"
             return

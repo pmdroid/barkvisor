@@ -67,6 +67,8 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
     public var sharedPaths: [String]?
     /// Optional HTTP/TCP guest probes (PAS-65). Omitted = process-state health only.
     public var health: WorkloadHealthSpec?
+    /// `house` | `agent`. Omitted = house (PAS-268).
+    public var workloadClass: String?
 
     public init(
         resources: WorkloadResources,
@@ -83,6 +85,7 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
         display: WorkloadDisplay? = nil,
         sharedPaths: [String]? = nil,
         health: WorkloadHealthSpec? = nil,
+        workloadClass: String? = nil,
     ) {
         self.resources = resources
         self.arch = arch
@@ -98,6 +101,7 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
         self.display = display
         self.sharedPaths = sharedPaths
         self.health = health
+        self.workloadClass = workloadClass
     }
 }
 

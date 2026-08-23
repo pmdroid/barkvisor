@@ -114,6 +114,15 @@ struct CreateWorkloadTests {
         #expect(linuxBody.diskSizeGB == 10)
         #expect(linuxBody.cloudImageId == "img-l")
         #expect(linuxBody.isoId == nil)
+        #expect(linuxBody.workloadClass == nil)
+
+        let agentBody = try CreateWorkload.body(
+            name: "cage",
+            image: linux,
+            hostCPUCount: 8,
+            workloadClass: "agent",
+        )
+        #expect(agentBody.workloadClass == "agent")
 
         let clamped = try CreateWorkload.body(name: "tiny", image: linux, hostCPUCount: 1)
         #expect(clamped.cpuCount == 1)

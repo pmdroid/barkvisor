@@ -233,6 +233,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var pendingChanges: Bool?
     var createdAt: String
     var updatedAt: String
+    var workloadClass: String?
     var status: WorkloadRuntimeStatus?
     var portForwards: [GuestPortForward]?
 
@@ -257,6 +258,12 @@ struct Workload: Decodable, Identifiable, Hashable {
 
     var guestOSFamily: String {
         vmType.localizedCaseInsensitiveContains("windows") ? "Windows" : "Linux"
+    }
+
+    var isAgentClass: Bool { workloadClass == "agent" }
+
+    var grantCopy: String {
+        isAgentClass ? "WAN yes, house no." : "House: LAN and USB allowed."
     }
 }
 

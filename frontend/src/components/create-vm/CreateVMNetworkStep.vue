@@ -21,6 +21,7 @@ defineProps<{
   showUSBPicker: boolean
   hostUSBDevices: HostUSBDevice[]
   isUSBSelected: (dev: HostUSBDevice) => boolean
+  isAgent?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -51,10 +52,16 @@ const emit = defineEmits<{
         </option>
       </AppSelect>
       <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:block">
-        NAT: internet via this device (also used when no network is selected).
-        Bridged (Home Network): LAN IP.
-        Isolated (Private): no host, LAN, or internet.
-        Publish a service with NAT plus port forwards — not a separate mode.
+        <template v-if="isAgent">
+          Agent cage: NAT out to the WAN only (WAN yes, house no). Isolated is opt-in.
+          Bridged, USB, and host ports are off.
+        </template>
+        <template v-else>
+          NAT: internet via this device (also used when no network is selected).
+          Bridged (Home Network): LAN IP.
+          Isolated (Private): no host, LAN, or internet.
+          Publish a service with NAT plus port forwards — not a separate mode.
+        </template>
         Manage networks under <router-link to="/networks"><strong>Networks</strong></router-link>.
       </span>
       <UnsupportedHint v-if="!bridged.available" :text="bridged.explanation" />
@@ -63,8 +70,8 @@ const emit = defineEmits<{
       <div style="margin-bottom:4px;font-weight:500">{{ selectedNetwork.name }} &mdash; {{ selectedNetwork.mode }}</div>
     </div>
 
-    <!-- Port Forwarding (NAT only) -->
-    <div v-if="isNAT" style="margin-top:16px">
+    <!-- Port Forwarding (NAT only; Agent class forbids hostfwd) -->
+    <div v-if="isNAT && !isAgent" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <label style="margin:0">Port Forwarding</label>
       </div>
@@ -128,8 +135,8 @@ const emit = defineEmits<{
       </span>
     </div>
 
-    <!-- USB Passthrough -->
-    <CapabilityGate feature="usbPassthrough" v-slot="{ available }" style="margin-top:16px">
+    <!-- USB Passthrough (Agent class forbids USB) -->
+    <CapabilityGate v-if="!isAgent" feature="usbPassthrough" v-slot="{ available }" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <label style="margin:0">USB Passthrough</label>
         <button class="btn-ghost btn-sm" :disabled="!available" @click="emit('openUSBPicker')">

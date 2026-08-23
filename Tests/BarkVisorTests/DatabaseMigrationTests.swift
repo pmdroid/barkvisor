@@ -57,6 +57,30 @@ struct DatabaseMigrationTests {
         #expect(fetched?.cpuCount == 2)
         #expect(fetched?.memoryMb == 1_024)
         #expect(fetched?.macAddress == "52:54:00:12:34:56")
+        #expect(fetched?.workloadClass == "house")
+    }
+
+    @Test func `workloadClass round trip agent`() throws {
+        let queue = try migratedQueue()
+        let disk = Disk(
+            id: "disk-cls", name: "boot", path: "/data/boot.qcow2",
+            sizeBytes: 21_474_836_480, format: "qcow2", vmId: nil,
+            autoCreated: false, status: "ready", createdAt: "2025-01-01T00:00:00Z",
+        )
+        try queue.write { db in try disk.insert(db) }
+        let vm = VM(
+            id: "vm-agent", name: "cage", vmType: "linux-arm64", state: "stopped",
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-cls", networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: "cd", displayResolution: "1280x800",
+            additionalDiskIds: nil, uefi: true, tpmEnabled: false,
+            macAddress: nil, sharedPaths: nil,
+            portForwards: nil, autoCreated: false, pendingChanges: false,
+            workloadClass: "agent",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
+        try queue.write { db in try vm.insert(db) }
+        let fetched = try queue.read { db in try VM.fetchOne(db, key: "vm-agent") }
+        #expect(fetched?.workloadClass == "agent")
     }
 
     // MARK: - Disk Round Trip

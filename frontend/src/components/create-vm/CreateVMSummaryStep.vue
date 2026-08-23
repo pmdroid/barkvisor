@@ -27,6 +27,7 @@ defineProps<{
   deviceLabel?: string
   placementWarning?: string | null
   placementBlocking?: boolean
+  workloadClass?: 'house' | 'agent'
 }>()
 </script>
 
@@ -45,6 +46,10 @@ defineProps<{
       <div class="summary-row">
         <span class="summary-label">Name</span>
         <span>{{ name }}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Class</span>
+        <span>{{ workloadClass === 'agent' ? 'Agent — WAN yes, house no.' : 'House — LAN and USB allowed.' }}</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">OS</span>

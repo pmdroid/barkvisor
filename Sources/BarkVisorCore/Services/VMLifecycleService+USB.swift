@@ -13,6 +13,7 @@ extension VMLifecycleService {
         guard let vm = try await db.read({ db in try VM.fetchOne(db, key: vmID) }) else {
             throw BarkVisorError.notFound()
         }
+        try AgentWorkloadPolicy.assertUSBAllowed(vm.workloadClass)
         var devices = vm.decodedUSBDevices
         if USBPassthroughService.contains(devices, host: host) {
             return vm

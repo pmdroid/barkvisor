@@ -14,6 +14,9 @@ enum CreateWorkload {
 
     static let webEditCopy = "Edit hardware, disks, networks, USB in the web UI."
 
+    static let agentGrantCopy = "WAN yes, house no."
+    static let houseGrantCopy = "House: LAN and USB allowed."
+
     static func ready(_ images: [LibraryImage]) -> [LibraryImage] {
         images.filter(\.isReady).sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -129,6 +132,7 @@ enum CreateWorkload {
         var diskSizeGB: Int
         var isoId: String?
         var cloudImageId: String?
+        var workloadClass: String?
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -140,14 +144,20 @@ enum CreateWorkload {
             try container.encode(diskSizeGB, forKey: .diskSizeGB)
             try container.encodeIfPresent(isoId, forKey: .isoId)
             try container.encodeIfPresent(cloudImageId, forKey: .cloudImageId)
+            try container.encodeIfPresent(workloadClass, forKey: .workloadClass)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId
+            case name, osFamily, vmType, cpuCount, memoryMB, diskSizeGB, isoId, cloudImageId, workloadClass
         }
     }
 
-    static func body(name: String, image: LibraryImage, hostCPUCount: Int?) throws -> Body {
+    static func body(
+        name: String,
+        image: LibraryImage,
+        hostCPUCount: Int?,
+        workloadClass: String = "house",
+    ) throws -> Body {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DraftError.emptyName }
         guard image.isReady else { throw DraftError.imageNotReady }
@@ -162,6 +172,7 @@ enum CreateWorkload {
             diskSizeGB: diskSizeGB(osFamily: family),
             isoId: iso ? image.id : nil,
             cloudImageId: iso ? nil : image.id,
+            workloadClass: workloadClass == "agent" ? "agent" : nil,
         )
     }
 }
