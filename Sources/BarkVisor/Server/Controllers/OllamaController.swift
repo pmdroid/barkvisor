@@ -189,7 +189,7 @@ struct OllamaController: RouteCollection {
     }
 
     func complete(body: Data, db: DatabasePool) async throws -> Response {
-        _ = try OllamaChatProxy.parseBufferedRequest(body)
+        _ = try OllamaLocalProbe.modelName(fromChatBody: body)
         let client = try await resolvedClient(db: db)
         if OllamaLocalProbe.wantsStream(fromChatBody: body) {
             return try await OllamaChatProxy.stream(client.chatCompletionsStream(body: body))
