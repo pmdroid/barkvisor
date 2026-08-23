@@ -5,13 +5,13 @@ import Testing
 struct LibraryCatalogTests {
     private let decoder = JSONDecoder()
 
-    @Test func emptyLibraryCopyTellsYouToDownloadHere() {
+    @Test func `empty library copy tells you to download here`() {
         #expect(Copy.emptyLibrary == "Download an image from the catalog below.")
         #expect(LibraryCatalog.emptyLibraryCopy == Copy.emptyLibrary)
         #expect(PhoneTab.library.rawValue == "library")
     }
 
-    @Test func iOSLibraryPrefersThisDeviceEvenWhenAMemberIsSelected() {
+    @Test func `IOS library prefers this device even when A member is selected`() {
         let selfDevice = snapshot(hostId: "self", role: "self", title: "Studio")
         let member = snapshot(hostId: "peer", role: "member", title: "Living Room")
         let ios = LibraryCatalog.targetDevice(
@@ -28,38 +28,38 @@ struct LibraryCatalogTests {
         #expect(mac?.hostId == "peer")
     }
 
-    @Test func libraryTargetFallsBackToSelfThenFirst() {
+    @Test func `library target falls back to self then first`() {
         let selfDevice = snapshot(hostId: "self", role: "self", title: "Studio")
         let member = snapshot(hostId: "peer", role: "member", title: "Living Room")
         #expect(
             LibraryCatalog.targetDevice(devices: [selfDevice, member], selectedID: "missing", preferSelf: false)?
-                .hostId == "self"
+                .hostId == "self",
         )
         #expect(
-            LibraryCatalog.targetDevice(devices: [member], selectedID: nil, preferSelf: true)?.hostId == "peer"
+            LibraryCatalog.targetDevice(devices: [member], selectedID: nil, preferSelf: true)?.hostId == "peer",
         )
     }
 
-    @Test func catalogDownloadPathsStayOnThePickedDevice() throws {
-        let client = APIClient(baseURL: try DeviceURL.normalize("http://192.168.30.1:7777"), token: "t")
+    @Test func `catalog download paths stay on the picked device`() throws {
+        let client = try APIClient(baseURL: DeviceURL.normalize("http://192.168.30.1:7777"), token: "t")
         let selfDevice = snapshot(hostId: "self", role: "self")
         let member = snapshot(hostId: "peer", role: "member")
         #expect(client.scoped("/repositories", on: selfDevice) == "/api/repositories")
         #expect(
             client.scoped("/repositories/images/img-1/download", on: selfDevice)
-                == "/api/repositories/images/img-1/download"
+                == "/api/repositories/images/img-1/download",
         )
         #expect(
             client.scoped("/repositories/images/img-1/download", on: member)
-                == "/api/home/devices/peer/v1/repositories/images/img-1/download"
+                == "/api/home/devices/peer/v1/repositories/images/img-1/download",
         )
         #expect(
             client.scoped("/repositories/repo-1/images", on: member)
-                == "/api/home/devices/peer/v1/repositories/repo-1/images"
+                == "/api/home/devices/peer/v1/repositories/repo-1/images",
         )
     }
 
-    @Test func repositoriesAndCatalogImagesDecodeWithoutHostArch() throws {
+    @Test func `repositories and catalog images decode without host arch`() throws {
         let reposJSON = """
         [
           {
@@ -130,7 +130,43 @@ struct LibraryCatalogTests {
         #expect(LibraryCatalog.groups(repos: repos, imagesByRepo: [:]).isEmpty)
     }
 
-    @Test func catalogMatchesLibraryByDownloadUrlAndTracksProgress() {
+    @Test func `coding agent catalog row decodes for both arches`() throws {
+        let catalogJSON = """
+        [
+          {
+            "id": "ca-arm",
+            "repositoryId": "repo-images",
+            "slug": "coding-agent-arm64",
+            "name": "Coding Agent",
+            "description": "Linux with git, web terminal, and coding-agent CLIs.",
+            "imageType": "cloud-image",
+            "arch": "arm64",
+            "version": "24.04",
+            "downloadUrl": "https://example.test/coding-agent-arm64.img",
+            "sizeBytes": 618370560
+          },
+          {
+            "id": "ca-x86",
+            "repositoryId": "repo-images",
+            "slug": "coding-agent-x86_64",
+            "name": "Coding Agent",
+            "description": "Linux with git, web terminal, and coding-agent CLIs.",
+            "imageType": "cloud-image",
+            "arch": "x86_64",
+            "version": "24.04",
+            "downloadUrl": "https://example.test/coding-agent-x86_64.img",
+            "sizeBytes": 624447488
+          }
+        ]
+        """.data(using: .utf8)!
+        let catalog = try decoder.decode([CatalogImage].self, from: catalogJSON)
+        #expect(catalog.map(\.slug) == ["coding-agent-arm64", "coding-agent-x86_64"])
+        #expect(Set(catalog.map(\.arch)) == ["arm64", "x86_64"])
+        #expect(catalog.allSatisfy { $0.name == "Coding Agent" })
+        #expect(CodingAgentImage.slugs == Set(catalog.map(\.slug)))
+    }
+
+    @Test func `catalog matches library by download url and tracks progress`() {
         let catalog = CatalogImage(
             id: "cat-1",
             repositoryId: "repo-images",
@@ -165,7 +201,7 @@ struct LibraryCatalogTests {
         #expect(CatalogDownloadState.starting.buttonTitle == "Starting")
     }
 
-    @Test func catalogMergeKeepsPreviousImagesWhenAFetchFails() {
+    @Test func `catalog merge keeps previous images when A fetch fails`() {
         let kept = catalogImage(id: "cat-keep", name: "HAOS")
         let next = catalogImage(id: "cat-next", name: "Ubuntu")
         let previous = ["repo-keep": [kept], "repo-gone": [kept]]
@@ -191,7 +227,7 @@ struct LibraryCatalogTests {
         #expect(allFailed.imagesByRepo["repo-keep"]?.map(\.id) == ["cat-keep"])
         #expect(allFailed.fetchFailed)
         #expect(
-            LibraryCatalog.mergeCatalogImages(previous: [:], loads: ["repo-keep": .failed]).fetchFailed
+            LibraryCatalog.mergeCatalogImages(previous: [:], loads: ["repo-keep": .failed]).fetchFailed,
         )
         #expect(LibraryCatalog.emptyCatalogMessage(fetchFailed: true) == LibraryCatalog.failedCatalogCopy)
         #expect(LibraryCatalog.emptyCatalogMessage(fetchFailed: false) == LibraryCatalog.emptyCatalogCopy)
@@ -209,7 +245,7 @@ struct LibraryCatalogTests {
             displayName: title ?? hostId,
             fingerprint: nil,
             agentHost: nil,
-            agentPort: 7777,
+            agentPort: 7_777,
             pairedAt: nil,
             reachability: reachable ? "ok" : "unreachable",
             reachabilityError: reachable ? nil : "Device is unreachable",

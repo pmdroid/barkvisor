@@ -11,6 +11,9 @@ import Foundation
 public enum AgentNetworkCage {
     public static let slirpGateway = "10.0.2.2"
 
+    /// Device-local Ollama (PAS-271). Guest reaches it at 10.0.2.2:11434.
+    public static let ollamaPort = 11_434
+
     public static let blockedIPv4CIDRs = [
         "10.0.0.0/8",
         "172.16.0.0/12",
@@ -32,6 +35,7 @@ public enum AgentNetworkCage {
         for port in hostServicePorts {
             extra += ",guestfwd=tcp:\(slirpGateway):\(port)-cmd:true"
         }
+        extra += ",guestfwd=tcp:\(slirpGateway):\(ollamaPort)-tcp:127.0.0.1:\(ollamaPort)"
         return extra
     }
 
@@ -72,6 +76,7 @@ public enum AgentNetworkCage {
     (deny network-outbound (remote ip "127.0.0.0/8"))
     (deny network-outbound (remote ip "100.64.0.0/10"))
     (deny network-outbound (remote ip "224.0.0.0/4"))
+    (allow network-outbound (remote tcp "127.0.0.1:11434"))
     """
 
     public static func linuxOwnerRejectCommands(pid: Int32) -> [[String]] {
@@ -103,6 +108,7 @@ public enum AgentNetworkCage {
                 )
             }
             try runIptables(exe: exe, commands: linuxOwnerRejectCommands(pid: pid), vmID: vmID)
+            try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(pid: pid), vmID: vmID)
             Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
         #else
             _ = pid
@@ -113,7 +119,7 @@ public enum AgentNetworkCage {
     public static func removeLinuxFilter(pid: Int32, vmID: String) {
         #if os(Linux)
             guard let exe = resolveIptables() else { return }
-            for args in linuxOwnerDeleteCommands(pid: pid) {
+            for args in linuxOllamaDeleteCommands(pid: pid) + linuxOwnerDeleteCommands(pid: pid) {
                 let proc = Process()
                 proc.executableURL = exe
                 proc.arguments = Array(args.dropFirst())
@@ -138,6 +144,25 @@ public enum AgentNetworkCage {
                 "-j", "REJECT",
             ]
         }
+    }
+
+    public static func linuxOllamaAcceptCommands(pid: Int32) -> [[String]] {
+        linuxOllamaCommands(pid: pid, action: "-I")
+    }
+
+    public static func linuxOllamaDeleteCommands(pid: Int32) -> [[String]] {
+        linuxOllamaCommands(pid: pid, action: "-D")
+    }
+
+    private static func linuxOllamaCommands(pid: Int32, action: String) -> [[String]] {
+        [[
+            "iptables", action, "OUTPUT",
+            "-m", "owner", "--pid-owner", "\(pid)",
+            "-p", "tcp",
+            "-d", "127.0.0.1",
+            "--dport", "\(ollamaPort)",
+            "-j", "ACCEPT",
+        ]]
     }
 
     #if os(Linux)

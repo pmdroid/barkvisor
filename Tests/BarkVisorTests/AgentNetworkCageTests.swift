@@ -8,6 +8,11 @@ struct AgentNetworkCageTests {
         #expect(extra.contains("ipv6=off"))
         #expect(extra.contains("guestfwd=tcp:10.0.2.2:\(Config.port)-cmd:true"))
         #expect(extra.contains("guestfwd=tcp:10.0.2.2:\(Config.agentPort)-cmd:true"))
+        #expect(
+            extra.contains(
+                "guestfwd=tcp:10.0.2.2:\(AgentNetworkCage.ollamaPort)-tcp:127.0.0.1:\(AgentNetworkCage.ollamaPort)",
+            ),
+        )
         #expect(AgentNetworkCage.slirpExtras(mode: .isolated).isEmpty)
     }
 
@@ -17,6 +22,7 @@ struct AgentNetworkCageTests {
             #expect(profile.contains(cidr))
         }
         #expect(profile.contains("(remote udp \"*:53\")"))
+        #expect(profile.contains("127.0.0.1:11434"))
     }
 
     @Test func `linux owner commands cover blocked CIDRs`() {
@@ -28,6 +34,11 @@ struct AgentNetworkCageTests {
         #expect(deletes.allSatisfy { $0.contains("-D") && $0.contains("OUTPUT") })
         #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/bin/iptables"))
         #expect(AgentNetworkCage.iptablesSearchPaths.contains("/usr/sbin/iptables"))
+        let accept = AgentNetworkCage.linuxOllamaAcceptCommands(pid: 4_242)
+        #expect(accept.count == 1)
+        #expect(accept[0].contains("11434"))
+        #expect(accept[0].contains("ACCEPT"))
+        #expect(accept[0].contains("127.0.0.1"))
     }
 
     @Test func `house launch is not wrapped`() throws {

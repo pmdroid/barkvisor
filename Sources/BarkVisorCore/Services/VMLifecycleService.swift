@@ -11,6 +11,14 @@ public enum VMLifecycleService {
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> CreateVMResult {
+        var params = params
+        if let imageId = params.cloudImageId {
+            let image = try await db.read { db in try VMImage.fetchOne(db, key: imageId) }
+            params = try CodingAgentImage.applyingCreateDefaults(
+                params: params,
+                imageName: image?.name,
+            )
+        }
         try await validateCreateVMInputs(params: params, db: db)
 
         let now = iso8601.string(from: Date())

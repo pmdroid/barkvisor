@@ -2,6 +2,8 @@
 import AppSelect from '../ui/AppSelect.vue'
 import CloudInitEditor from '../CloudInitEditor.vue'
 import type { Image, SSHKey } from '../../api/types'
+import type { OpenAIPreset } from '../../utils/codingAgentImage'
+import { DEVICE_OLLAMA_BASE_URL } from '../../utils/codingAgentImage'
 
 defineProps<{
   osType: 'linux' | 'windows'
@@ -13,6 +15,9 @@ defineProps<{
   filteredImages: Array<Image & { libraryKey?: string }>
   sshKeys: SSHKey[]
   formatBytes: (b: number) => string
+  isCodingAgentSelected?: boolean
+  openaiPreset?: OpenAIPreset
+  byoOpenAIURL?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +26,8 @@ const emit = defineEmits<{
   'update:selectedSSHKeyId': [value: string]
   'update:showCloudInit': [value: boolean]
   'update:cloudUserData': [value: string]
+  'update:openaiPreset': [value: OpenAIPreset]
+  'update:byoOpenAIURL': [value: string]
 }>()
 
 function setMode(m: 'iso' | 'cloud') {
@@ -82,6 +89,39 @@ function setMode(m: 'iso' | 'cloud') {
         No SSH keys on Home yet. Add keys in Settings first.
       </div>
     </div>
+    <div v-if="mode === 'cloud' && isCodingAgentSelected" class="form-group">
+      <label>OPENAI_BASE_URL</label>
+      <div class="os-grid">
+        <button
+          type="button"
+          class="preset-card"
+          :class="{ selected: openaiPreset === 'device-ollama' }"
+          @click="emit('update:openaiPreset', 'device-ollama')"
+        >
+          Device Ollama
+          <span class="preset-hint">{{ DEVICE_OLLAMA_BASE_URL }}</span>
+        </button>
+        <button
+          type="button"
+          class="preset-card"
+          :class="{ selected: openaiPreset === 'byo' }"
+          @click="emit('update:openaiPreset', 'byo')"
+        >
+          Bring your own
+          <span class="preset-hint">HTTPS endpoint</span>
+        </button>
+      </div>
+      <input
+        v-if="openaiPreset === 'byo'"
+        :value="byoOpenAIURL"
+        placeholder="https://api.example/v1"
+        style="margin-top:8px"
+        @input="emit('update:byoOpenAIURL', ($event.target as HTMLInputElement).value)"
+      />
+      <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">
+        Agent class: WAN yes, house no. Presets share this Library image.
+      </div>
+    </div>
     <div v-if="mode === 'cloud'">
       <button
         class="btn-ghost btn-sm"
@@ -106,5 +146,34 @@ function setMode(m: 'iso' | 'cloud') {
   font-weight: 600;
   margin-bottom: 16px;
   color: var(--text);
+}
+.os-grid {
+  display: flex;
+  gap: 8px;
+}
+.preset-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.preset-card.selected {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
+}
+.preset-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
 }
 </style>

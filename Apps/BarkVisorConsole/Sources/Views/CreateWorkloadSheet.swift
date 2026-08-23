@@ -17,6 +17,8 @@ struct CreateWorkloadSheet: View {
     @State private var creating = false
     @State private var localError: String?
     @State private var workloadClass = "house"
+    @State private var openaiPreset = "device-ollama"
+    @State private var byoOpenAIURL = CodingAgentImage.deviceOllamaBaseURL
 
     var body: some View {
         Form {
@@ -61,12 +63,23 @@ struct CreateWorkloadSheet: View {
                     Text("House").tag("house")
                     Text("Agent").tag("agent")
                 }
+
+                if isCodingAgent {
+                    Picker("OPENAI_BASE_URL", selection: $openaiPreset) {
+                        Text("Device Ollama").tag("device-ollama")
+                        Text("Bring your own").tag("byo")
+                    }
+                    if openaiPreset == "byo" {
+                        TextField("https://api.example/v1", text: $byoOpenAIURL)
+                        #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                        #endif
+                    }
+                }
             } footer: {
-                Text(
-                    workloadClass == "agent"
-                        ? "\(CreateWorkload.agentGrantCopy) NAT out only; no USB. \(CreateWorkload.webEditCopy)"
-                        : "Default disk and implicit NAT. \(CreateWorkload.webEditCopy)",
-                )
+                Text(footerCopy)
             }
 
             if let localError {
@@ -99,6 +112,7 @@ struct CreateWorkloadSheet: View {
             .disabled(creating)
             .task { await bootstrap() }
             .task(id: deviceID) { await loadImages() }
+            .onChange(of: imageID) { _, _ in applyCodingAgentDefaults() }
         #if os(iOS)
             .presentationDetents([.medium, .large])
         #endif
@@ -122,6 +136,20 @@ struct CreateWorkloadSheet: View {
 
     private var selectedImage: LibraryImage? {
         readyImages.first { $0.id == imageID }
+    }
+
+    private var isCodingAgent: Bool {
+        CodingAgentImage.matches(name: selectedImage?.name)
+    }
+
+    private var footerCopy: String {
+        if isCodingAgent {
+            let url = openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.deviceOllamaBaseURL
+            return "Agent cage. OPENAI_BASE_URL \(url). Presets share this Library image. \(CreateWorkload.webEditCopy)"
+        }
+        return workloadClass == "agent"
+            ? "\(CreateWorkload.agentGrantCopy) NAT out only; no USB. \(CreateWorkload.webEditCopy)"
+            : "Default disk and implicit NAT. \(CreateWorkload.webEditCopy)"
     }
 
     private var canSubmit: Bool {
@@ -163,8 +191,16 @@ struct CreateWorkloadSheet: View {
             currentID: imageLoadID,
             cancelled: Task.isCancelled,
         ) else { return }
+        guard let loaded else { return }
         images = loaded
         imageID = CreateWorkload.ready(loaded).first?.id ?? ""
+        applyCodingAgentDefaults()
+    }
+
+    private func applyCodingAgentDefaults() {
+        if CodingAgentImage.matches(name: selectedImage?.name) {
+            workloadClass = "agent"
+        }
     }
 
     private func submit() async {
@@ -172,11 +208,15 @@ struct CreateWorkloadSheet: View {
         creating = true
         localError = nil
         defer { creating = false }
+        let openaiURL = isCodingAgent
+            ? (openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.deviceOllamaBaseURL)
+            : nil
         guard let created = await model.createWorkload(
             name: name,
             image: selectedImage,
             on: device,
             workloadClass: workloadClass,
+            openaiBaseURL: openaiURL,
         ) else {
             localError = model.banner ?? "Could not create the Workload"
             return
