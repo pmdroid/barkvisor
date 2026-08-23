@@ -1695,7 +1695,7 @@ paths:
       summary: OpenAI chat completions routed by model name
       responses:
         "200":
-          description: Completion
+          description: JSON completion, or text/event-stream when stream is true
         default:
           $ref: "#/components/responses/Error"
 
@@ -1719,7 +1719,7 @@ paths:
       summary: OpenAI chat completions (Ollama-compatible base URL)
       responses:
         "200":
-          description: Completion
+          description: JSON completion, or text/event-stream when stream is true
         default:
           $ref: "#/components/responses/Error"
 

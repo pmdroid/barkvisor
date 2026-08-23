@@ -21,6 +21,8 @@ enum APIError: LocalizedError, Equatable {
 }
 
 struct APIClient {
+    static let chatCompletionsPath = "/v1/chat/completions"
+
     var baseURL: URL
     var token: String?
     /// Called once on 401. Only `.unauthorized` may drop the session; `.unavailable` must not.
@@ -309,6 +311,48 @@ struct APIClient {
 
     func cancelOllamaTask(_ task: OllamaTaskAccepted, selfHostId: String?) async throws {
         try await delete(OllamaTaskPath.rest(taskID: task.taskID, hostId: task.hostId, selfHostId: selfHostId))
+    }
+
+    func streamChatCompletions(
+        model: String,
+        messages: [ChatWireMessage],
+        onDelta: @escaping (String) -> Void,
+    ) async throws {
+        var request = try makeRequest(method: "POST", path: Self.chatCompletionsPath, query: [])
+        request.timeoutInterval = 3_600
+        request.httpBody = try Self.encoder.encode(
+            ChatCompletionBody(model: model, stream: true, messages: messages),
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("Invalid response")
+        }
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        if http.statusCode == 503 { throw APIError.setupRequired }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw APIError.http(
+                status: http.statusCode,
+                reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            )
+        }
+        var buffer = ""
+        for try await line in bytes.lines {
+            buffer.append(line)
+            buffer.append("\n")
+            let deltas = ChatSSE.drain(buffer: &buffer)
+            for delta in deltas {
+                onDelta(delta)
+            }
+        }
+        if !buffer.isEmpty {
+            buffer.append("\n")
+            for delta in ChatSSE.drain(buffer: &buffer) {
+                onDelta(delta)
+            }
+        }
+>>>>>>> 2bd993a (feat(pas-270): native console simple chat)
     }
 
     func pairingCode() async throws -> PairingIssue? {

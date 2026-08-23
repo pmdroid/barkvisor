@@ -185,6 +185,7 @@ struct HomeOllamaController: RouteCollection {
         else {
             throw BarkVisorError.notFound("No Device has Ollama model \(model)")
         }
+        let stream = OllamaLocalProbe.wantsStream(fromChatBody: data)
         if picked.hostId == hostId {
             return try await localOllama.complete(body: data, db: req.db)
         }
@@ -194,11 +195,13 @@ struct HomeOllamaController: RouteCollection {
             path: "/api/ollama/v1/chat/completions",
             body: data,
             user: user,
+            timeoutSeconds: OllamaChatProxy.streamTimeoutSeconds,
         )
-        return OllamaChatHTTP.response(
+        return OllamaChatProxy.buffered(
             status: result.status,
-            headers: result.headers,
             body: result.body,
+            stream: stream,
+            memberHeaders: result.headers,
         )
     }
 
@@ -382,6 +385,7 @@ struct HomeOllamaController: RouteCollection {
         path: String,
         body: Data?,
         user: AuthenticatedUser,
+        timeoutSeconds: Int64? = nil,
     ) async throws -> HomeDeviceProxyResponse {
         let hopBearer = try await memberHopBearer(for: user)
         return try await sendMember(
@@ -390,6 +394,7 @@ struct HomeOllamaController: RouteCollection {
             path: path,
             body: body,
             hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
         )
     }
 
@@ -399,6 +404,7 @@ struct HomeOllamaController: RouteCollection {
         path: String,
         body: Data?,
         hopBearer: String,
+        timeoutSeconds: Int64? = nil,
     ) async throws -> HomeDeviceProxyResponse {
         if hopBearer.hasPrefix("barkvisor_") {
             throw BarkVisorError.internalError("API keys cannot authenticate on member Devices")
@@ -411,11 +417,7 @@ struct HomeOllamaController: RouteCollection {
             throw BarkVisorError.badGateway("Device has no reachable address")
         }
         let url = try HomeDeviceProxy.memberURL(host: agentHost, port: record.agentPort, path: path)
-        let client: any HomeDeviceProxyClient = if let mtlsClient {
-            mtlsClient
-        } else {
-            try HomeDevicesMTLS.client(dataDir: dataDir, hostId: self.hostId)
-        }
+        let client = try memberClient(timeoutSeconds: timeoutSeconds)
         var headers: [(String, String)] = [(APIContract.versionHeaderName, String(APIContract.version))]
         headers.append(("Authorization", "Bearer \(hopBearer)"))
         if body != nil {
@@ -423,6 +425,27 @@ struct HomeOllamaController: RouteCollection {
         }
         return try await client.send(
             HomeDeviceProxyRequest(method: method, url: url, headers: headers, body: body),
+        )
+    }
+
+    private func memberClient(timeoutSeconds: Int64?) throws -> any HomeDeviceProxyClient {
+        if let mtlsClient { return mtlsClient }
+        guard let timeoutSeconds else {
+            return try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
+        }
+        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
+        let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
+        return AgentMTLSClient(
+            material: material,
+            presentationCertificatePEM: AgentPlaneCertificates.presentationCertificatePEM(
+                material: material,
+                receipt: receipt,
+            ),
+            trustCertificatePEMs: AgentPlaneCertificates.trustCertificatePEMs(
+                material: material,
+                receipt: receipt,
+            ),
+            timeoutSeconds: timeoutSeconds,
         )
     }
 }

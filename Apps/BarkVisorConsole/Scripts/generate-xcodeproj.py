@@ -21,6 +21,7 @@ APP_SOURCES = [
     "Sources/Models/PairingOffer.swift",
     "Sources/Models/StreamSupport.swift",
     "Sources/Models/OllamaModels.swift",
+    "Sources/Models/Chat.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
     "Sources/Services/AppModel.swift",
@@ -31,6 +32,7 @@ APP_SOURCES = [
     "Sources/Views/AppShell.swift",
     "Sources/Views/SidebarView.swift",
     "Sources/Views/DashboardView.swift",
+    "Sources/Views/ChatView.swift",
     "Sources/Views/HomeView.swift",
     "Sources/Views/DevicesView.swift",
     "Sources/Views/WorkloadsView.swift",
@@ -52,6 +54,7 @@ TEST_SOURCES = [
     "Tests/SessionTests.swift",
     "Tests/PairingOfferTests.swift",
     "Tests/OllamaModelsTests.swift",
+    "Tests/ChatTests.swift",
 ]
 
 
@@ -294,6 +297,7 @@ def main() -> None:
                 child_file("Sources/Models/PairingOffer.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
                 child_file("Sources/Models/OllamaModels.swift"),
+                child_file("Sources/Models/Chat.swift"),
             ],
             "Models",
         )
@@ -320,6 +324,7 @@ def main() -> None:
                 child_file("Sources/Views/AppShell.swift"),
                 child_file("Sources/Views/SidebarView.swift"),
                 child_file("Sources/Views/DashboardView.swift"),
+                child_file("Sources/Views/ChatView.swift"),
                 child_file("Sources/Views/HomeView.swift"),
                 child_file("Sources/Views/DevicesView.swift"),
                 child_file("Sources/Views/WorkloadsView.swift"),
@@ -360,6 +365,7 @@ def main() -> None:
                 child_file("Tests/SessionTests.swift"),
                 child_file("Tests/PairingOfferTests.swift"),
                 child_file("Tests/OllamaModelsTests.swift"),
+                child_file("Tests/ChatTests.swift"),
             ],
             "Tests",
         )
