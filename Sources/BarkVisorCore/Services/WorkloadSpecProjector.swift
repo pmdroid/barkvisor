@@ -197,8 +197,8 @@ public enum WorkloadSpecProjector {
         guard (128 ... 1_048_576).contains(resolved.spec.resources.memoryMb) else {
             throw BarkVisorError.badRequest("spec.resources.memoryMb must be 128...1048576")
         }
-        _ = try resolveGuestType(resolved)
-        try validateMachineAndNetworks(spec)
+        let guestType = try resolveGuestType(resolved)
+        try validateMachineAndNetworks(resolved, guestType: guestType)
         for disk in spec.spec.disks {
             guard ["boot", "data", "cdrom"].contains(disk.role) else {
                 throw BarkVisorError.badRequest("Unknown disk role '\(disk.role)'")
@@ -236,13 +236,16 @@ public enum WorkloadSpecProjector {
     }
 
     /// PAS-284: `-machine` is a comma-sensitive QEMU arg; builder only attaches networks[0].
-    private static func validateMachineAndNetworks(_ spec: WorkloadSpec) throws {
+    private static func validateMachineAndNetworks(
+        _ spec: WorkloadSpec,
+        guestType: String,
+    ) throws {
         if let machine = spec.spec.machine {
-            do {
-                _ = try QEMUBuilder.validateMachine(machine, label: "spec.machine")
-            } catch let error as BarkVisorError {
-                throw BarkVisorError.badRequest(error.localizedDescription)
-            }
+            _ = try QEMUBuilder.validateMachine(
+                machine,
+                label: "spec.machine",
+                guestType: guestType,
+            )
         }
         if spec.spec.networks.count > 1 {
             throw BarkVisorError.badRequest(

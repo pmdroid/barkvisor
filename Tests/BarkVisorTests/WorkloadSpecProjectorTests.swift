@@ -177,15 +177,41 @@ struct WorkloadSpecProjectorTests {
     }
 
     @Test func `validate accepts a single network`() throws {
+        let native = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let machine = try GuestProfiles.require(native).machine
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(name: "n"),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
-                machine: "virt",
+                guestType: native,
+                machine: machine,
                 networks: [WorkloadNetwork(mode: "nat")],
             ),
         )
         try WorkloadSpecProjector.validate(spec)
+    }
+
+    @Test func `validate rejects machine that does not match guestType`() throws {
+        let native = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let nativeMachine = try GuestProfiles.require(native).machine
+        let foreignMachine = nativeMachine == "virt" ? "q35" : "virt"
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "n"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(cpu: fixtureCPUCount, memoryMb: 512),
+                guestType: native,
+                machine: foreignMachine,
+            ),
+        )
+        let err = #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
+        #expect(err?.httpStatus == 400)
+        #expect(err?.code == "invalid_argument")
+        let text = err?.localizedDescription ?? ""
+        #expect(text.contains("spec.machine"))
+        #expect(text.contains(nativeMachine))
+        #expect(text.contains(native))
     }
 
     @Test func `guestType and arch mismatch is rejected`() {
