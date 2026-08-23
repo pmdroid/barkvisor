@@ -368,7 +368,7 @@ public final class VaporServer: @unchecked Sendable {
         }
         let ollama = OllamaController(backgroundTasks: backgroundTasks)
         let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
-        _ = try? await home.refresh(db: pool, bearer: nil)
+        _ = try? await home.refresh(db: pool)
     }
 
     private func schedulePeriodicTasks(
@@ -411,7 +411,7 @@ public final class VaporServer: @unchecked Sendable {
         await backgroundTasks.schedulePeriodicTask(id: "ollama-map", interval: ollamaRefreshNs) {
             let ollama = OllamaController(backgroundTasks: backgroundTasks)
             let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
-            _ = try? await home.refresh(db: pool, bearer: nil)
+            _ = try? await home.refresh(db: pool)
         }
         await backgroundTasks.schedulePeriodicTask(
             id: "api-key-expiry", interval: 60 * 60 * 1_000_000_000,

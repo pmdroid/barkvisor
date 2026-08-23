@@ -10,6 +10,8 @@ import JWTKit
 public enum AuthService {
     public static let accessTokenTTL: TimeInterval = 2 * 60 * 60
     public static let refreshTokenTTL: TimeInterval = 30 * 24 * 60 * 60
+    /// Home→Device mTLS hop. Verified on arrival, so this only covers RTT.
+    public static let memberHopTokenTTL: TimeInterval = 2 * 60
 
     /// Authenticate a user with username/password. Returns a signed JWT token.
     public static func login(
@@ -82,6 +84,40 @@ public enum AuthService {
             username: user.username,
             exp: .init(value: now.addingTimeInterval(accessTokenTTL)),
             role: user.userRole.rawValue,
+        )
+        return try await keys.sign(payload)
+    }
+
+    /// Inference API keys belong to an admin User but must stay inference on members.
+    public static func memberHopRole(
+        userRole: String,
+        authMethod: String,
+        apiKeyKind: String?,
+    ) -> String {
+        if OllamaAuthPolicy.principal(
+            userRole: userRole,
+            authMethod: authMethod,
+            apiKeyKind: apiKeyKind,
+        ) == .inferenceKey {
+            return UserRole.inference.rawValue
+        }
+        return UserRolePolicy.parseStored(userRole).rawValue
+    }
+
+    /// Short-lived Home JWT for a member Device hop. API keys are Home-local.
+    public static func signMemberHopToken(
+        userId: String,
+        username: String,
+        role: String,
+        keys: JWTKeyCollection,
+        now: Date = Date(),
+        ttl: TimeInterval = memberHopTokenTTL,
+    ) async throws -> String {
+        let payload = UserPayload(
+            sub: .init(value: userId),
+            username: username,
+            exp: .init(value: now.addingTimeInterval(ttl)),
+            role: role,
         )
         return try await keys.sign(payload)
     }
