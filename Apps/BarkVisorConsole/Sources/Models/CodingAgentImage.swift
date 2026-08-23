@@ -46,8 +46,10 @@ enum CodingAgentImage {
         }) {
             throw CreateWorkload.DraftError.invalidOpenAIBaseURL
         }
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https", url.host != nil
+        guard let comps = URLComponents(string: trimmed),
+              comps.user == nil, comps.password == nil,
+              let scheme = comps.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", comps.host != nil
         else {
             throw CreateWorkload.DraftError.invalidOpenAIBaseURL
         }
@@ -59,7 +61,12 @@ enum CodingAgentImage {
     }
 
     static func usesDeviceOllama(_ url: String) -> Bool {
-        url == deviceOllamaBaseURL || url.hasPrefix("http://10.0.2.2:11434")
+        guard let comps = URLComponents(string: url),
+              comps.user == nil, comps.password == nil,
+              comps.scheme?.lowercased() == "http",
+              comps.host == "10.0.2.2"
+        else { return false }
+        return (comps.port ?? 80) == 11_434
     }
 
     static func userData(openaiBaseURL: String) -> String {

@@ -10,6 +10,7 @@ import {
   isCodingAgentImage,
   mergeCodingAgentUserData,
   normalizeOpenAIBaseURL,
+  usesDeviceOllama,
 } from './codingAgentImage'
 
 describe('codingAgentImage (PAS-271)', () => {
@@ -31,6 +32,9 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(() => normalizeOpenAIBaseURL('https://x y')).toThrow()
     expect(() => normalizeOpenAIBaseURL('https://x.test/$(id)')).toThrow()
     expect(() => normalizeOpenAIBaseURL('https://x.test/`id`')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('http://10.0.2.2:11434@evil.com/v1')).toThrow()
+    expect(usesDeviceOllama(DEVICE_OLLAMA_BASE_URL)).toBe(true)
+    expect(usesDeviceOllama('http://10.0.2.2:11434@evil.com/v1')).toBe(false)
   })
 
   test('user-data installs git, web terminal, coding-agent CLIs', () => {
@@ -52,6 +56,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).not.toContain('claude.ai/install.sh')
     expect(yaml).not.toContain('opencode.ai/install')
     expect(yaml).not.toContain('| bash')
+    const spoof = codingAgentUserData('http://10.0.2.2:11434@evil.com/v1')
+    expect(spoof).not.toContain(ALLOW_HOST_OLLAMA_YAML)
   })
 
   test('merge keeps typed cloud-init and fills Device Ollama otherwise', () => {

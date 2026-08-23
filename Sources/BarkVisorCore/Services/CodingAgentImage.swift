@@ -61,8 +61,10 @@ public enum CodingAgentImage {
         }) {
             throw BarkVisorError.badRequest("OPENAI_BASE_URL is invalid")
         }
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https", url.host != nil
+        guard let comps = URLComponents(string: trimmed),
+              comps.user == nil, comps.password == nil,
+              let scheme = comps.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", comps.host != nil
         else {
             throw BarkVisorError.badRequest("OPENAI_BASE_URL must be an http(s) URL")
         }
@@ -74,8 +76,13 @@ public enum CodingAgentImage {
     }
 
     public static func usesDeviceOllama(_ url: String) -> Bool {
-        url == deviceOllamaBaseURL
-            || url.hasPrefix("http://\(deviceOllamaHost):\(deviceOllamaPort)")
+        guard let comps = URLComponents(string: url),
+              comps.user == nil, comps.password == nil,
+              comps.scheme?.lowercased() == "http",
+              comps.host == deviceOllamaHost
+        else { return false }
+        let port = comps.port ?? 80
+        return port == deviceOllamaPort
     }
 
     public static func userData(openaiBaseURL: String) -> String {

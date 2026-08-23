@@ -59,6 +59,11 @@ struct CodingAgentImageTests {
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIBaseURL(#"https://x.test/a\b"#)
         }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("http://10.0.2.2:11434@evil.com/v1")
+        }
+        #expect(CodingAgentImage.usesDeviceOllama(CodingAgentImage.deviceOllamaBaseURL))
+        #expect(!CodingAgentImage.usesDeviceOllama("http://10.0.2.2:11434@evil.com/v1"))
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
         #expect(CodingAgentImage.posixSingleQuoted("http://10.0.2.2:11434/v1") == "'http://10.0.2.2:11434/v1'")
     }
@@ -93,6 +98,9 @@ struct CodingAgentImageTests {
         #expect(byo.contains("https://api.openai.com/v1"))
         #expect(!byo.contains(AgentNetworkCage.allowHostOllamaYAML))
         #expect(!AgentNetworkCage.allowHostOllama(userData: byo))
+        let spoof = CodingAgentImage.userData(openaiBaseURL: "http://10.0.2.2:11434@evil.com/v1")
+        #expect(!spoof.contains(AgentNetworkCage.allowHostOllamaYAML))
+        #expect(!AgentNetworkCage.allowHostOllama(userData: spoof))
         guard let node = try Yams.compose(yaml: "#cloud-config\n" + yaml) else {
             Issue.record("Yams dropped Coding Agent user-data")
             return

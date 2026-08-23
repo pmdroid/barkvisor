@@ -45,6 +45,9 @@ export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   } catch {
     throw new Error('OPENAI_BASE_URL must be an http(s) URL')
   }
+  if (url.username || url.password) {
+    throw new Error('OPENAI_BASE_URL is invalid')
+  }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('OPENAI_BASE_URL must be an http(s) URL')
   }
@@ -56,7 +59,17 @@ export function posixSingleQuoted(value: string): string {
 }
 
 export function usesDeviceOllama(url: string): boolean {
-  return url === DEVICE_OLLAMA_BASE_URL || url.startsWith('http://10.0.2.2:11434')
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.username || parsed.password) return false
+  if (parsed.protocol !== 'http:') return false
+  if (parsed.hostname !== '10.0.2.2') return false
+  const port = parsed.port ? Number(parsed.port) : 80
+  return port === 11434
 }
 
 export function codingAgentUserData(openaiBaseURL: string): string {

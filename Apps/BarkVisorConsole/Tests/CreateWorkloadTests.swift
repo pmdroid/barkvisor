@@ -240,6 +240,19 @@ struct CreateWorkloadTests {
                 openaiBaseURL: "https://x.test/$(id)",
             )
         }
+        #expect(throws: CreateWorkload.DraftError.invalidOpenAIBaseURL) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: coding,
+                hostCPUCount: 8,
+                openaiBaseURL: "http://10.0.2.2:11434@evil.com/v1",
+            )
+        }
+        #expect(!CodingAgentImage.usesDeviceOllama("http://10.0.2.2:11434@evil.com/v1"))
+        #expect(
+            !CodingAgentImage.userData(openaiBaseURL: "http://10.0.2.2:11434@evil.com/v1")
+                .contains(CodingAgentImage.allowHostOllamaYAML),
+        )
     }
 
     @Test func `body rejects empty name and unread image`() {
