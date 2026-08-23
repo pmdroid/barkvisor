@@ -43,10 +43,18 @@ public enum CodingAgentImage {
         return trimmed
     }
 
+    /// Letters, digits, and `:/._%-` only so the value is safe in `/etc/profile.d`
+    /// (single-quoted) and in a systemd `EnvironmentFile` (no shell).
+    public static func isShellSafeOpenAIBaseURL(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || ":/._%-".contains(ch))
+        }
+    }
+
     public static func normalizeOpenAIBaseURL(_ raw: String?) throws -> String {
         let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty { return deviceOllamaBaseURL }
-        if trimmed.contains(where: { $0.isNewline || $0 == "\"" || $0.isWhitespace }) {
+        guard isShellSafeOpenAIBaseURL(trimmed) else {
             throw BarkVisorError.badRequest("OPENAI_BASE_URL is invalid")
         }
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
@@ -73,10 +81,15 @@ public enum CodingAgentImage {
           - jq
           - ca-certificates
         write_files:
+          - path: /etc/default/barkvisor-openai
+            permissions: '0644'
+            content: |
+              OPENAI_BASE_URL=\(url)
+              OPENAI_API_KEY=ollama
           - path: /etc/profile.d/barkvisor-openai.sh
             permissions: '0644'
             content: |
-              export OPENAI_BASE_URL="\(url)"
+              export OPENAI_BASE_URL='\(url)'
               export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
@@ -89,6 +102,7 @@ public enum CodingAgentImage {
               [Service]
               Type=simple
               User=ubuntu
+              EnvironmentFile=-/etc/default/barkvisor-openai
               ExecStart=/usr/local/bin/ttyd --writable --port \(ttydPort) tmux new -A -s main
               Restart=on-failure
 

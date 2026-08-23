@@ -26,6 +26,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(normalizeOpenAIBaseURL('https://api.openai.com/v1')).toBe('https://api.openai.com/v1')
     expect(() => normalizeOpenAIBaseURL('ftp://x')).toThrow()
     expect(() => normalizeOpenAIBaseURL('https://x y')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x$(reboot).example/v1')).toThrow()
+    expect(() => normalizeOpenAIBaseURL('https://x`id`.example/v1')).toThrow()
   })
 
   test('user-data installs git, web terminal, coding-agent CLIs', () => {
@@ -38,7 +40,10 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).toContain('/usr/local/bin')
     expect(yaml).toContain('claude.ai/install.sh')
     expect(yaml).toContain('opencode.ai/install')
-    expect(yaml).toContain('OPENAI_BASE_URL="http://10.0.2.2:11434/v1"')
+    expect(yaml).toContain("OPENAI_BASE_URL='http://10.0.2.2:11434/v1'")
+    expect(yaml).toContain('/etc/default/barkvisor-openai')
+    expect(yaml).toContain('EnvironmentFile=-/etc/default/barkvisor-openai')
+    expect(yaml).not.toContain('OPENAI_BASE_URL="http://')
   })
 
   test('merge keeps typed cloud-init and fills Device Ollama otherwise', () => {
