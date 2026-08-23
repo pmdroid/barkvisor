@@ -511,6 +511,7 @@ struct WorkloadDetailTests {
             updatedAt: "2026-01-02T00:00:00Z",
             status: nil,
             portForwards: nil,
+            gpuDevices: nil,
         )
     }
 

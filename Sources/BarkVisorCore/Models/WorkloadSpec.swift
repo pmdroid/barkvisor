@@ -48,7 +48,7 @@ public struct WorkloadMetadata: Codable, Equatable, Sendable {
     }
 }
 
-public struct WorkloadSpecBody: Codable, Equatable, Sendable {
+public struct WorkloadSpecBody: Equatable, Sendable {
     public var resources: WorkloadResources
     /// QEMU guest arch (`aarch64` / `x86_64`). Optional on apply — defaulted from host.
     public var arch: String?
@@ -62,6 +62,7 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
     public var networks: [WorkloadNetwork]
     public var cloudInit: WorkloadCloudInit?
     public var usb: [WorkloadUSBDevice]
+    public var gpu: [WorkloadGPUDevice]
     public var display: WorkloadDisplay?
     /// Host bind-mounts (virtio-9p). Portable in the native spec; host paths stay host-local.
     public var sharedPaths: [String]?
@@ -82,6 +83,7 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
         networks: [WorkloadNetwork] = [],
         cloudInit: WorkloadCloudInit? = nil,
         usb: [WorkloadUSBDevice] = [],
+        gpu: [WorkloadGPUDevice] = [],
         display: WorkloadDisplay? = nil,
         sharedPaths: [String]? = nil,
         health: WorkloadHealthSpec? = nil,
@@ -98,10 +100,58 @@ public struct WorkloadSpecBody: Codable, Equatable, Sendable {
         self.networks = networks
         self.cloudInit = cloudInit
         self.usb = usb
+        self.gpu = gpu
         self.display = display
         self.sharedPaths = sharedPaths
         self.health = health
         self.workloadClass = workloadClass
+    }
+}
+
+extension WorkloadSpecBody: Codable {
+    enum CodingKeys: String, CodingKey {
+        case resources, arch, guestType, osFamily, machine, firmware, bootOrder
+        case disks, networks, cloudInit, usb, gpu, display, sharedPaths, health, workloadClass
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        resources = try c.decode(WorkloadResources.self, forKey: .resources)
+        arch = try c.decodeIfPresent(String.self, forKey: .arch)
+        guestType = try c.decodeIfPresent(String.self, forKey: .guestType)
+        osFamily = try c.decodeIfPresent(String.self, forKey: .osFamily)
+        machine = try c.decodeIfPresent(String.self, forKey: .machine)
+        firmware = try c.decodeIfPresent(WorkloadFirmware.self, forKey: .firmware)
+        bootOrder = try c.decodeIfPresent(String.self, forKey: .bootOrder)
+        disks = try c.decodeIfPresent([WorkloadDisk].self, forKey: .disks) ?? []
+        networks = try c.decodeIfPresent([WorkloadNetwork].self, forKey: .networks) ?? []
+        cloudInit = try c.decodeIfPresent(WorkloadCloudInit.self, forKey: .cloudInit)
+        usb = try c.decodeIfPresent([WorkloadUSBDevice].self, forKey: .usb) ?? []
+        gpu = try c.decodeIfPresent([WorkloadGPUDevice].self, forKey: .gpu) ?? []
+        display = try c.decodeIfPresent(WorkloadDisplay.self, forKey: .display)
+        sharedPaths = try c.decodeIfPresent([String].self, forKey: .sharedPaths)
+        health = try c.decodeIfPresent(WorkloadHealthSpec.self, forKey: .health)
+        workloadClass = try c.decodeIfPresent(String.self, forKey: .workloadClass)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(resources, forKey: .resources)
+        try c.encodeIfPresent(arch, forKey: .arch)
+        try c.encodeIfPresent(guestType, forKey: .guestType)
+        try c.encodeIfPresent(osFamily, forKey: .osFamily)
+        try c.encodeIfPresent(machine, forKey: .machine)
+        try c.encodeIfPresent(firmware, forKey: .firmware)
+        try c.encodeIfPresent(bootOrder, forKey: .bootOrder)
+        try c.encode(disks, forKey: .disks)
+        try c.encode(networks, forKey: .networks)
+        try c.encodeIfPresent(cloudInit, forKey: .cloudInit)
+        try c.encode(usb, forKey: .usb)
+        try c.encode(gpu, forKey: .gpu)
+        try c.encodeIfPresent(display, forKey: .display)
+        try c.encodeIfPresent(sharedPaths, forKey: .sharedPaths)
+        try c.encodeIfPresent(health, forKey: .health)
+        try c.encodeIfPresent(workloadClass, forKey: .workloadClass)
     }
 }
 
@@ -208,6 +258,71 @@ public struct WorkloadUSBDevice: Codable, Equatable, Sendable {
     }
 }
 
+public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
+    public var pciAddress: String
+    public var iommuGroup: String
+    public var vendorId: String
+    public var deviceId: String
+    public var label: String?
+    public var groupAddresses: [String]
+
+    public init(
+        pciAddress: String,
+        iommuGroup: String,
+        vendorId: String,
+        deviceId: String,
+        label: String? = nil,
+        groupAddresses: [String] = [],
+    ) {
+        let stored = GPUPassthroughDevice(
+            pciAddress: pciAddress,
+            iommuGroup: iommuGroup,
+            vendorId: vendorId,
+            deviceId: deviceId,
+            label: label,
+            groupAddresses: groupAddresses,
+        )
+        self.pciAddress = stored.pciAddress
+        self.iommuGroup = stored.iommuGroup
+        self.vendorId = stored.vendorId
+        self.deviceId = stored.deviceId
+        self.label = stored.label
+        self.groupAddresses = stored.groupAddresses
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case pciAddress, iommuGroup, vendorId, deviceId, label, groupAddresses
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let stored = try GPUPassthroughDevice(
+            pciAddress: c.decode(String.self, forKey: .pciAddress),
+            iommuGroup: c.decode(String.self, forKey: .iommuGroup),
+            vendorId: c.decode(String.self, forKey: .vendorId),
+            deviceId: c.decode(String.self, forKey: .deviceId),
+            label: c.decodeIfPresent(String.self, forKey: .label),
+            groupAddresses: c.decodeIfPresent([String].self, forKey: .groupAddresses) ?? [],
+        )
+        pciAddress = stored.pciAddress
+        iommuGroup = stored.iommuGroup
+        vendorId = stored.vendorId
+        deviceId = stored.deviceId
+        label = stored.label
+        groupAddresses = stored.groupAddresses
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(pciAddress, forKey: .pciAddress)
+        try c.encode(iommuGroup, forKey: .iommuGroup)
+        try c.encode(vendorId, forKey: .vendorId)
+        try c.encode(deviceId, forKey: .deviceId)
+        try c.encodeIfPresent(label, forKey: .label)
+        try c.encode(groupAddresses, forKey: .groupAddresses)
+    }
+}
+
 public struct WorkloadDisplay: Codable, Equatable, Sendable {
     public var resolution: String?
 
@@ -292,7 +407,7 @@ extension WorkloadSpecOverlay: Codable {
 
     /// Attachment fields stay on the portable spec in v1 (no host-local apply).
     public static let deferredKeys: Set<String> = [
-        "disks", "networks", "usb", "sharedPaths", "cloudInit",
+        "disks", "networks", "usb", "gpu", "sharedPaths", "cloudInit",
     ]
 
     public static let forbiddenKeys: Set<String> = argvKeys.union(deferredKeys)

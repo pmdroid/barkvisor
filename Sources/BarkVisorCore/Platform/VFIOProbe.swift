@@ -31,6 +31,32 @@ public struct VFIOProbePaths: Sendable, Equatable {
     )
 }
 
+/// One display-class PCI function and the rest of its IOMMU group (PAS-275).
+public struct VFIODisplayDevice: Sendable, Equatable {
+    public var pciAddress: String
+    public var iommuGroup: String
+    public var vendorId: String
+    public var deviceId: String
+    public var driver: String?
+    public var groupAddresses: [String]
+
+    public init(
+        pciAddress: String,
+        iommuGroup: String,
+        vendorId: String,
+        deviceId: String,
+        driver: String?,
+        groupAddresses: [String],
+    ) {
+        self.pciAddress = pciAddress
+        self.iommuGroup = iommuGroup
+        self.vendorId = vendorId
+        self.deviceId = deviceId
+        self.driver = driver
+        self.groupAddresses = groupAddresses
+    }
+}
+
 /// Host facts for IOMMU groups, vfio-pci, and display-class PCI devices.
 public struct VFIOHostFacts: Sendable, Equatable {
     public var iommuGroupCount: Int
@@ -162,6 +188,39 @@ public enum VFIOProbe {
         return .gpuMissing
     }
 
+    public static func listDisplayDevices(
+        from paths: VFIOProbePaths,
+        fileManager: FileManager = .default,
+    ) -> [VFIODisplayDevice] {
+        let groups = iommuGroups(at: paths.iommuGroups, fileManager: fileManager)
+        var result: [VFIODisplayDevice] = []
+        for group in groups {
+            let addresses = group.deviceDirs.map(\.lastPathComponent).filter {
+                GPUPassthroughService.isPCIAddress($0)
+            }.sorted()
+            for device in group.deviceDirs {
+                let classURL = device.appendingPathComponent("class")
+                guard let classRaw = try? String(contentsOf: classURL, encoding: .utf8),
+                      isDisplayClass(classRaw)
+                else { continue }
+                let vendor = readHex(device.appendingPathComponent("vendor"))
+                let product = readHex(device.appendingPathComponent("device"))
+                let driver = readDriver(at: device, fileManager: fileManager)
+                result.append(
+                    VFIODisplayDevice(
+                        pciAddress: GPUPassthroughService.normalizePCIAddress(device.lastPathComponent),
+                        iommuGroup: group.id,
+                        vendorId: vendor,
+                        deviceId: product,
+                        driver: driver,
+                        groupAddresses: addresses.map { GPUPassthroughService.normalizePCIAddress($0) },
+                    ),
+                )
+            }
+        }
+        return result.sorted { $0.pciAddress < $1.pciAddress }
+    }
+
     public static func facts(
         from inventory: VFIOInventoryFacts,
         kvmDevice: Bool,
@@ -218,6 +277,20 @@ public enum VFIOProbe {
         let hex = trimmed.hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
         guard hex.count >= 2 else { return false }
         return hex.prefix(2) == "03"
+    }
+
+    private static func readHex(_ url: URL) -> String {
+        let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        return GPUPassthroughService.normalizeHexId(raw)
+    }
+
+    private static func readDriver(at device: URL, fileManager: FileManager) -> String? {
+        let link = device.appendingPathComponent("driver")
+        guard let dest = try? fileManager.destinationOfSymbolicLink(atPath: link.path) else {
+            return nil
+        }
+        let name = URL(fileURLWithPath: dest).lastPathComponent
+        return name.isEmpty ? nil : name
     }
 
     private static func isLinux(_ os: String) -> Bool {

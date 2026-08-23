@@ -97,6 +97,18 @@ export const useVMStore = defineStore('vms', () => {
     return data
   }
 
+  async function attachGPU(id: string, deviceId: string) {
+    const { data } = await api.post(`/vms/${id}/gpu`, { deviceId })
+    applyLocal(data)
+    return data
+  }
+
+  async function detachGPU(id: string, deviceId: string) {
+    const { data } = await api.delete(`/vms/${id}/gpu/${encodeURIComponent(deviceId)}`)
+    applyLocal(data)
+    return data
+  }
+
   async function remove(id: string, keepDisk = false): Promise<string | undefined> {
     const res = await api.delete(`/vms/${id}`, { params: { keepDisk } })
     if (res.status === 202) {
@@ -127,6 +139,6 @@ export const useVMStore = defineStore('vms', () => {
 
   return {
     vms, loading, error, fetchAll, fetchOne, create, start, stop, restart,
-    detachISO, attachISO, attachUSB, detachUSB, remove, update, fetchSpec, putSpec,
+    detachISO, attachISO, attachUSB, detachUSB, attachGPU, detachGPU, remove, update, fetchSpec, putSpec,
   }
 })

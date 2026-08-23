@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { defaultCapabilities } from './capabilitiesParse'
 import {
-  GPU_ATTACH_UNAVAILABLE,
+  GUEST_OLLAMA_PATH,
+  GPU_IOMMU_NOT_READY,
   gpuPassthroughExplanation,
   gpuPassthroughSupported,
 } from './gpuPassthrough'
 
-describe('gpuPassthrough copy (PAS-274)', () => {
+describe('gpuPassthrough copy (PAS-275)', () => {
   test('macos uses os remediation and is unsupported', () => {
     const caps = {
       ...defaultCapabilities,
@@ -26,7 +27,7 @@ describe('gpuPassthrough copy (PAS-274)', () => {
     expect(gpuPassthroughExplanation(caps)).not.toMatch(/node|cluster/i)
   })
 
-  test('ready host still explains that attach is not offered', () => {
+  test('ready host explains attach and guest Ollama', () => {
     const caps = {
       ...defaultCapabilities,
       platform: 'Linux',
@@ -35,7 +36,9 @@ describe('gpuPassthrough copy (PAS-274)', () => {
       details: [{ code: 'gpuPassthrough', supported: true }],
     }
     expect(gpuPassthroughSupported(caps)).toBe(true)
-    expect(gpuPassthroughExplanation(caps)).toContain(GPU_ATTACH_UNAVAILABLE)
+    expect(gpuPassthroughExplanation(caps)).toContain(GUEST_OLLAMA_PATH)
+    expect(gpuPassthroughExplanation(caps)).toContain('same card cannot be host and guest')
+    expect(gpuPassthroughExplanation(caps)).not.toContain('not attach')
   })
 
   test('linux missing iommu uses server remediation', () => {

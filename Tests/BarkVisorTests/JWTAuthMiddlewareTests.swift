@@ -313,6 +313,7 @@ struct JWTAuthMiddlewareTests {
         try deny("/api/ollama/pull", method: .POST)
         try deny("/api/auth/keys", method: .POST)
         try deny("/api/vms/vm-1/usb", method: .POST)
+        try deny("/api/vms/vm-1/gpu", method: .POST)
         try deny("/api/home/devices", method: .GET)
 
         let me = request(app, path: "/api/auth/me")

@@ -31,6 +31,7 @@ struct VMResponse: Content {
     let sharedPaths: [String]?
     let portForwards: [PortForwardRule]?
     let usbDevices: [USBPassthroughDevice]?
+    let gpuDevices: [GPUPassthroughDevice]?
     let pendingChanges: Bool
     let workloadClass: String
     let createdAt: String
@@ -71,6 +72,8 @@ struct VMResponse: Content {
         self.portForwards = pfs.isEmpty ? nil : pfs
         let usb = vm.decodedUSBDevices
         self.usbDevices = usb.isEmpty ? nil : usb
+        let gpu = vm.decodedGPUDevices
+        self.gpuDevices = gpu.isEmpty ? nil : gpu
         self.workloadClass = (try? WorkloadClass.parse(vm.workloadClass).rawValue)
             ?? WorkloadClass.house.rawValue
     }
@@ -92,6 +95,7 @@ struct CreateVMRequest: Content, Validatable {
     let sharedPaths: [String]?
     let portForwards: [PortForwardRule]?
     let usbDevices: [USBPassthroughDevice]?
+    let gpuDevices: [GPUPassthroughDevice]?
     let description: String?
     let bootOrder: String?
     let displayResolution: String?
@@ -130,6 +134,7 @@ struct UpdateVMRequest: Content, Validatable {
     let networkId: String?
     let portForwards: [PortForwardRule]?
     let usbDevices: [USBPassthroughDevice]?
+    let gpuDevices: [GPUPassthroughDevice]?
     let description: String?
     let bootOrder: String?
     let displayResolution: String?
@@ -225,6 +230,8 @@ struct VMController: RouteCollection {
         vms.post(":id", "attach-iso", use: attachISO)
         vms.post(":id", "usb", use: attachUSB)
         vms.delete(":id", "usb", ":deviceId", use: detachUSB)
+        vms.post(":id", "gpu", use: attachGPU)
+        vms.delete(":id", "gpu", ":deviceId", use: detachGPU)
         vms.get(":id", "state", use: stateStream)
         vms.get(":id", "guest-info", use: getGuestInfo)
         vms.get(":id", "health", use: getHealth)
@@ -298,6 +305,7 @@ struct VMController: RouteCollection {
                 name: body.name, cpuCount: body.cpuCount, memoryMB: body.memoryMB,
                 networkId: body.networkId, portForwards: body.portForwards,
                 usbDevices: body.usbDevices,
+                gpuDevices: body.gpuDevices,
                 description: body.description, bootOrder: body.bootOrder,
                 displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
                 sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
@@ -427,6 +435,35 @@ struct VMController: RouteCollection {
         return try await respond(vm, db: req.db)
     }
 
+    struct AttachGPURequest: Content {
+        let deviceId: String
+    }
+
+    @Sendable
+    func attachGPU(req: Vapor.Request) async throws -> VMResponse {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        let body = try req.content.decode(AttachGPURequest.self)
+        let vm = try await VMLifecycleService.attachGPU(vmID: id, deviceId: body.deviceId, db: req.db)
+        AuditService.log(
+            action: "vm.gpu.attach", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
+            req: req,
+        )
+        return try await respond(vm, db: req.db)
+    }
+
+    @Sendable
+    func detachGPU(req: Vapor.Request) async throws -> VMResponse {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let deviceId = req.parameters.get("deviceId") else { throw Abort(.badRequest) }
+        let decoded = deviceId.removingPercentEncoding ?? deviceId
+        let vm = try await VMLifecycleService.detachGPU(vmID: id, deviceId: decoded, db: req.db)
+        AuditService.log(
+            action: "vm.gpu.detach", resourceType: "vm", resourceId: vm.id, resourceName: vm.name,
+            req: req,
+        )
+        return try await respond(vm, db: req.db)
+    }
+
     // MARK: - WorkloadSpec
 
     @Sendable
@@ -470,6 +507,7 @@ struct VMController: RouteCollection {
             sharedPaths: body.sharedPaths,
             portForwards: body.portForwards,
             usbDevices: body.usbDevices,
+            gpuDevices: body.gpuDevices,
             description: body.description,
             bootOrder: body.bootOrder,
             displayResolution: body.displayResolution,
@@ -506,6 +544,7 @@ struct VMController: RouteCollection {
             sharedPaths: body.sharedPaths,
             portForwards: body.portForwards,
             usbDevices: body.usbDevices,
+            gpuDevices: body.gpuDevices,
             workloadClass: body.workloadClass,
         )
         return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)

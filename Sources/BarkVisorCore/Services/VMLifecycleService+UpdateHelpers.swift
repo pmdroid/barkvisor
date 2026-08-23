@@ -6,6 +6,7 @@ extension VMLifecycleService {
         let diskIdsJSON: String?
         let portForwardsJSON: String?
         let usbDevicesJSON: String?
+        let gpuDevicesJSON: String?
     }
 
     static func encodeUpdateFields(params: UpdateVMParams) -> EncodedUpdateFields {
@@ -25,9 +26,14 @@ extension VMLifecycleService {
             if let usb = params.usbDevices {
                 usb.isEmpty ? nil : JSONColumnCoding.encode(usb)
             } else { nil as String? }
+        let gpuDevicesJSON: String? =
+            if let gpu = params.gpuDevices {
+                gpu.isEmpty ? nil : JSONColumnCoding.encode(gpu)
+            } else { nil as String? }
         return EncodedUpdateFields(
             sharedPathsJSON: sharedPathsJSON, diskIdsJSON: diskIdsJSON,
             portForwardsJSON: portForwardsJSON, usbDevicesJSON: usbDevicesJSON,
+            gpuDevicesJSON: gpuDevicesJSON,
         )
     }
 
@@ -48,6 +54,7 @@ extension VMLifecycleService {
         if params.sharedPaths != nil { return true }
         if params.additionalDiskIds != nil { return true }
         if params.usbDevices != nil { return true }
+        if params.gpuDevices != nil { return true }
         if params.portForwards != nil, encoded.portForwardsJSON != vm.portForwards { return true }
         if params.workloadClass != nil, params.workloadClass != vm.workloadClass { return true }
         return false
@@ -69,6 +76,7 @@ extension VMLifecycleService {
         if before.decodedSharedPaths != after.decodedSharedPaths { return true }
         if before.decodedAdditionalDiskIds != after.decodedAdditionalDiskIds { return true }
         if before.decodedUSBDevices != after.decodedUSBDevices { return true }
+        if before.decodedGPUDevices != after.decodedGPUDevices { return true }
         if before.decodedPortForwards != after.decodedPortForwards { return true }
         if before.vmType != after.vmType { return true }
         if before.decodedISOIds != after.decodedISOIds { return true }
@@ -96,6 +104,7 @@ extension VMLifecycleService {
         if params.sharedPaths != nil { vm.sharedPaths = encoded.sharedPathsJSON }
         if params.additionalDiskIds != nil { vm.additionalDiskIds = encoded.diskIdsJSON }
         if params.usbDevices != nil { vm.usbDevices = encoded.usbDevicesJSON }
+        if params.gpuDevices != nil { vm.gpuDevices = encoded.gpuDevicesJSON }
         if params.portForwards != nil { vm.portForwards = encoded.portForwardsJSON }
         if let klass = params.workloadClass {
             vm.workloadClass = (try? WorkloadClass.parse(klass).rawValue) ?? vm.workloadClass

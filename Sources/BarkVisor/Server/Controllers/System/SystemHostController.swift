@@ -11,6 +11,8 @@ struct SystemHostController: RouteCollection {
         system.get("browse", use: browseDirectory)
         system.get("usb-devices", use: listUSBDevices)
         system.get("usb", use: listUSBDevices)
+        system.get("gpu-devices", use: listGPUDevices)
+        system.get("gpu", use: listGPUDevices)
     }
 
     @Sendable
@@ -111,6 +113,43 @@ struct SystemHostController: RouteCollection {
                 attachable: dev.attachable,
                 excludedReason: dev.excludedReason,
                 busy: claim != nil,
+                attachedToVmId: claim?.id,
+                claimedByVMId: claim?.id,
+                claimedByVMName: claim?.name,
+            )
+        }
+    }
+
+    // MARK: - GPU Devices
+
+    @Sendable
+    func listGPUDevices(req: Vapor.Request) async throws -> [HostGPUDeviceResponse] {
+        let hostOllama = GPUPassthroughService.liveHostOllamaReachable()
+        let hostDevices = GPUDeviceService.listDevices(hostOllamaReachable: hostOllama)
+        let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
+        return hostDevices.map { dev in
+            let claim = GPUPassthroughService.claimedBy(host: dev, vms: allVMs)
+            var attachable = dev.attachable && claim == nil
+            var reason = dev.excludedReason
+            if claim != nil {
+                attachable = false
+                reason = reason ?? "GPU is attached to \(claim?.name ?? "another Workload")"
+            }
+            return HostGPUDeviceResponse(
+                id: dev.id,
+                pciAddress: dev.pciAddress,
+                iommuGroup: dev.iommuGroup,
+                vendorId: dev.vendorId,
+                deviceId: dev.deviceId,
+                name: dev.name,
+                driver: dev.driver,
+                vfioBound: dev.vfioBound,
+                inUseByHost: dev.inUseByHost,
+                attachable: attachable,
+                excludedReason: reason,
+                groupAddresses: dev.groupAddresses,
+                guestOllamaPath: dev.guestOllamaPath,
+                busy: claim != nil || dev.inUseByHost,
                 attachedToVmId: claim?.id,
                 claimedByVMId: claim?.id,
                 claimedByVMName: claim?.name,

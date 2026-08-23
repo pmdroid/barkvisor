@@ -108,6 +108,26 @@ extension HostBridgeReadiness: Content {}
 extension HostBridgeSnapshot: Content {}
 extension HostBridgeRemediation: Content {}
 
+struct HostGPUDeviceResponse: Content {
+    let id: String
+    let pciAddress: String
+    let iommuGroup: String
+    let vendorId: String
+    let deviceId: String
+    let name: String
+    let driver: String?
+    let vfioBound: Bool
+    let inUseByHost: Bool
+    let attachable: Bool
+    let excludedReason: String?
+    let groupAddresses: [String]
+    let guestOllamaPath: String
+    let busy: Bool
+    let attachedToVmId: String?
+    let claimedByVMId: String?
+    let claimedByVMName: String?
+}
+
 struct HostUSBDeviceResponse: Content {
     let id: String
     let vendorId: String

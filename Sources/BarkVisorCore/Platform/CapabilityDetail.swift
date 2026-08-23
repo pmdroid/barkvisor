@@ -171,6 +171,8 @@ public enum CapabilityDetailBuilder {
             return usbPassthrough(os: os, supported: false).remediation ?? ""
         case .inAppUpdate:
             return inAppUpdate(os: os, supported: false).remediation ?? ""
+        case .gpuPassthrough:
+            return GPUPassthroughService.iommuNotReadyMessage
         }
     }
 

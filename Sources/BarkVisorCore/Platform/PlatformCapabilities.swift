@@ -116,6 +116,7 @@ public enum PlatformCapabilities {
         case managedBridgeDaemon
         case usbPassthrough
         case inAppUpdate
+        case gpuPassthrough
 
         /// Snake_case API error `code` (ErrorMiddleware envelope).
         public var errorCode: String {
@@ -124,6 +125,7 @@ public enum PlatformCapabilities {
             case .managedBridgeDaemon: return "managed_bridge_daemon"
             case .usbPassthrough: return "usb_passthrough"
             case .inAppUpdate: return "in_app_update"
+            case .gpuPassthrough: return "gpu_passthrough"
             }
         }
     }
@@ -159,6 +161,14 @@ public enum PlatformCapabilities {
     public static func requireUSBPassthrough() throws {
         guard supportsUSBPassthrough else {
             throw BarkVisorError.unsupportedFeature(.usbPassthrough)
+        }
+    }
+
+    /// Throw when IOMMU/vfio/KVM GPU passthrough is not ready (PAS-275).
+    public static func requireGPUPassthrough() throws {
+        let facts = VFIOProbe.live()
+        guard VFIOProbe.gpuPassthroughSupported(os: PlatformHost.platformName, facts: facts) else {
+            throw BarkVisorError.unsupportedFeature(.gpuPassthrough)
         }
     }
 

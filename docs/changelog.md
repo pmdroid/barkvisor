@@ -6,7 +6,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
-- GPU passthrough (PAS-274): Linux Devices probe IOMMU groups, vfio-pci, and KVM and report `gpuPassthrough` / `vfio` on capabilities. BarkVisor does not attach a GPU to a Workload. macOS always explains that GPU passthrough is unavailable. Vue and the native console hide attach and show the reason.
+- GPU attach (PAS-275): Linux Devices list GPUs with their IOMMU group and attach/detach them like USB (`GET /api/system/gpu-devices`, `POST/DELETE /api/vms/{id}/gpu`). Fail closed if IOMMU/vfio/KVM is not ready. The same card cannot be host Ollama and a guest. Guest Ollama is `http://127.0.0.1:11434/v1`. Vue and the native console offer attach when the Device is ready.
+- GPU passthrough (PAS-274): Linux Devices probe IOMMU groups, vfio-pci, and KVM and report `gpuPassthrough` / `vfio` on capabilities. macOS always explains that GPU passthrough is unavailable.
 - Coding Agent (PAS-272): Agent-class Workloads on the Coding Agent image talk through Chat or Terminal in the web UI and the native console. `OPENAI_BASE_URL` is the Home Ollama grant (`http://10.0.2.2:11434/v1`). ttyd stays loopback-only.
 - Chat (PAS-270): web and native console simple chat when the Home catalog has at least one Ollama model. Pick a model, POST `/v1/chat/completions` with `stream: true`, tokens append as they arrive. Hidden when Ollama is down or no model is pulled.
 - RBAC (PAS-286): two Home roles, admin and inference. First user is admin. Console sessions and API tokens inherit the user role. Admin can mint an inference-only token for an Agent Workload. Inference may list models that are already there and call chat completions through the BarkVisor proxy; pull, keys, USB attach, pairing, and Device changes return 403.

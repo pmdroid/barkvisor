@@ -367,6 +367,28 @@ final class AppModel {
         }
     }
 
+    func gpuDevices(on device: HomeDeviceHealthSnapshot) async -> [HostGPUDevice] {
+        guard device.isReachable else { return [] }
+        do {
+            return try await requireClient().gpuDevices(on: device)
+        } catch {
+            handle(error)
+            return []
+        }
+    }
+
+    func attachGPU(_ pciAddress: String, to workload: Workload, on device: HomeDeviceHealthSnapshot) async {
+        await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
+            _ = try await client.attachGPU(workload.id, pciAddress: pciAddress, on: resolved)
+        }
+    }
+
+    func detachGPU(_ pciAddress: String, from workload: Workload, on device: HomeDeviceHealthSnapshot) async {
+        await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
+            _ = try await client.detachGPU(workload.id, pciAddress: pciAddress, on: resolved)
+        }
+    }
+
     func libraryImages(on device: HomeDeviceHealthSnapshot) async -> [LibraryImage]? {
         guard device.isReachable else { return nil }
         do {

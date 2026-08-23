@@ -38,6 +38,12 @@ extension VM {
         )
     }
 
+    public var decodedGPUDevices: [GPUPassthroughDevice] {
+        JSONColumnCoding.decodeArrayOrEmpty(
+            GPUPassthroughDevice.self, from: gpuDevices, column: "gpuDevices",
+        )
+    }
+
     public var decodedOverrides: WorkloadOverrides? {
         let decoded = JSONColumnCoding.decode(WorkloadOverrides.self, from: overridesJson)
         guard let decoded, !decoded.isEmpty else { return nil }
@@ -68,6 +74,10 @@ extension VM {
 
     public mutating func setUSBDevices(_ devices: [USBPassthroughDevice]?) {
         usbDevices = JSONColumnCoding.encodeArrayOrNil(devices)
+    }
+
+    public mutating func setGPUDevices(_ devices: [GPUPassthroughDevice]?) {
+        gpuDevices = JSONColumnCoding.encodeArrayOrNil(devices)
     }
 
     public mutating func setOverrides(_ overrides: WorkloadOverrides?) {

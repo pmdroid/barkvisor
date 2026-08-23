@@ -300,7 +300,32 @@ struct APIDecodingTests {
         """.data(using: .utf8)!
         let ready = try decoder.decode(SystemCapabilities.self, from: linux)
         #expect(ready.gpuPassthroughSupported)
-        #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.attachUnavailable))
+        #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
+        #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
+    }
+
+    @Test func `host gpu device decodes iommu group and guest ollama path`() throws {
+        let json = """
+        {
+          "id": "0000:01:00.0",
+          "pciAddress": "0000:01:00.0",
+          "iommuGroup": "14",
+          "vendorId": "10de",
+          "deviceId": "2684",
+          "name": "NVIDIA 2684 (nvidia)",
+          "attachable": true,
+          "inUseByHost": false,
+          "guestOllamaPath": "http://127.0.0.1:11434/v1",
+          "claimedByVMId": null,
+          "claimedByVMName": null
+        }
+        """.data(using: .utf8)!
+        let gpu = try decoder.decode(HostGPUDevice.self, from: json)
+        #expect(gpu.pciAddress == "0000:01:00.0")
+        #expect(gpu.iommuGroup == "14")
+        #expect(gpu.canAttach)
+        #expect(gpu.guestOllamaPath == GPUPassthroughCopy.guestOllamaPath)
+        #expect(gpu.occupancyCopy == nil)
     }
 
     @Test func `gpu passthrough copy prefers server remediation`() {
@@ -365,6 +390,7 @@ struct APIDecodingTests {
             updatedAt: "2026-01-02T00:00:00Z",
             status: nil,
             portForwards: nil,
+            gpuDevices: nil,
         )
     }
 }
