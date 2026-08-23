@@ -266,14 +266,6 @@
             func getAllBridgeStates(reply: @escaping (String) -> Void) {
                 reply("[]")
             }
-
-            func installUpdate(
-                packagePath: String,
-                expectedVersion: String,
-                reply: @escaping (Bool, String?) -> Void,
-            ) {
-                reply(false, "Not supported in test")
-            }
         }
 
         private class StrictListenerDelegate: NSObject, NSXPCListenerDelegate {

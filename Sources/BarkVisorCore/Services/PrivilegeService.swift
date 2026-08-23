@@ -2,16 +2,15 @@ import Foundation
 
 // MARK: - Protocol
 
-/// Abstracts privileged host operations (bridge daemons, in-app updates).
+/// Abstracts privileged host operations (bridge daemons).
 ///
-/// - **macOS:** XPC helper (`HelperXPCClient`) for socket_vmnet lifecycle and PKG updates.
-/// - **Linux:** host-bridge validation only (no XPC); in-app updates are unsupported
-///   (`PlatformCapabilities.supportsInAppUpdate` is false — use the package manager).
+/// - **macOS:** XPC helper (`HelperXPCClient`) for socket_vmnet lifecycle.
+/// - **Linux:** host-bridge validation only (no XPC).
 ///
 /// Controllers and other call sites must use `PrivilegeService.shared` only —
 /// never call `HelperXPCClient` directly (enforced by PrivilegeBoundaryTests).
 public protocol PrivilegeServicing: Sendable {
-    /// Whether this platform can perform privileged bridge / update ops.
+    /// Whether this platform can perform privileged bridge ops.
     var isAvailable: Bool { get }
 
     func installBridge(interface: String) async throws
@@ -20,7 +19,6 @@ public protocol PrivilegeServicing: Sendable {
     func stopBridge(interface: String) async throws
     func bridgeStatus(interface: String) async throws -> String
     func getAllBridgeStates() async throws -> [BridgeStateDTO]
-    func installUpdate(packagePath: String, expectedVersion: String) async throws
 }
 
 // MARK: - Factory
@@ -43,7 +41,7 @@ public enum PrivilegeService {
 // MARK: - macOS implementation
 
 #if os(macOS)
-    /// Wraps the privileged XPC helper for bridge and update operations.
+    /// Wraps the privileged XPC helper for bridge operations.
     public struct MacOSPrivilegeService: PrivilegeServicing {
         public var isAvailable: Bool {
             true
@@ -74,13 +72,6 @@ public enum PrivilegeService {
         public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
             try await HelperXPCClient.shared.getAllBridgeStates()
         }
-
-        public func installUpdate(packagePath: String, expectedVersion: String) async throws {
-            try await HelperXPCClient.shared.installUpdate(
-                packagePath: packagePath,
-                expectedVersion: expectedVersion,
-            )
-        }
     }
 #endif
 
@@ -88,7 +79,6 @@ public enum PrivilegeService {
 
 /// Linux privilege backend.
 /// Bridging uses host Linux bridges + QEMU `bridge` netdev (no XPC helper).
-/// Updates remain package-manager only.
 public struct LinuxPrivilegeService: PrivilegeServicing {
     /// Bridge registration does not need a privileged helper process.
     public var isAvailable: Bool {
@@ -128,10 +118,6 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
     public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
         // Discovery is HostBridgeFacts (sysfs). Do not mint macOS plist/daemon rows.
         []
-    }
-
-    public func installUpdate(packagePath: String, expectedVersion: String) async throws {
-        try PlatformCapabilities.requireInAppUpdate()
     }
 }
 

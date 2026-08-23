@@ -26,7 +26,6 @@ public enum BarkVisorError: Error, LocalizedError {
     case bridgeHelperDenied(String)
     /// Bridge / iface name failed IFNAMSIZ or charset checks. HTTP 400 + `invalid_bridge`.
     case invalidBridgeName(String)
-    case updateFailed(String)
     case invalidArgument(String)
     case timeout(String)
     /// Capability block: HTTP 422 + feature `errorCode` (PAS-94).
@@ -76,7 +75,6 @@ public enum BarkVisorError: Error, LocalizedError {
             return "Host bridge '\(name)' is not allowed by the qemu-bridge-helper ACL (bridge.conf). "
                 + "Add `allow \(name)` (or `allow all`) and retry, or use NAT."
         case let .invalidBridgeName(msg): return msg
-        case let .updateFailed(msg): return msg
         case let .invalidArgument(msg): return msg
         case let .timeout(msg): return msg
         case let .unsupportedFeature(feature):
@@ -115,7 +113,6 @@ public enum BarkVisorError: Error, LocalizedError {
         case .interfaceMissing: return "interface_missing"
         case .bridgeHelperDenied: return "bridge_acl"
         case .invalidBridgeName: return "invalid_bridge"
-        case .updateFailed: return "update_failed"
         case .invalidArgument: return "invalid_argument"
         case .timeout: return "timeout"
         case let .unsupportedFeature(feature): return feature.errorCode

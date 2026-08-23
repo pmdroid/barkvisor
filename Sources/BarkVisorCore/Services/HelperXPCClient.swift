@@ -177,14 +177,6 @@ import Foundation
             try await callBridge { $0.stopBridge(interface: interface, reply: $1) }
         }
 
-        // MARK: - Software Update
-
-        public func installUpdate(packagePath: String, expectedVersion: String) async throws {
-            try await callBridge(timeout: 300_000_000_000) { // 5 min timeout
-                $0.installUpdate(packagePath: packagePath, expectedVersion: expectedVersion, reply: $1)
-            }
-        }
-
         // MARK: - All Bridge States
 
         public func getAllBridgeStates() async throws -> [BridgeStateDTO] {
@@ -240,10 +232,6 @@ import Foundation
 
         public func stopBridge(interface: String) async throws {
             throw unsupported("Bridged networking")
-        }
-
-        public func installUpdate(packagePath: String, expectedVersion: String) async throws {
-            throw unsupported("In-app update")
         }
 
         public func getAllBridgeStates() async throws -> [BridgeStateDTO] {

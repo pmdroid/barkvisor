@@ -17,7 +17,6 @@ struct RouteDependencies {
     let loginRateLimit: RateLimitMiddleware
     let pairingRateLimit: RateLimitMiddleware
     let setupMiddleware: SetupMiddleware
-    let updateService: UpdateService
     let healthProbes: HealthProbeService
     let pairingOffers: PairingOfferStore
     let jwt: JWTAuthMiddleware
@@ -104,12 +103,6 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try protected.register(collection: SystemHostController())
     try protected.register(collection: SystemBridgeController())
     try protected.register(collection: SystemVirtioWinController(imageDownloader: deps.imageDownloader))
-
-    try protected.register(
-        collection: UpdateController(
-            updateService: deps.updateService, backgroundTasks: deps.backgroundTasks,
-        ),
-    )
     try protected.register(collection: LibrarySettingsController())
     try protected.register(collection: RemoteAccessController())
 

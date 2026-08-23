@@ -359,7 +359,7 @@ export interface ImageRepository {
   updatedAt: string
 }
 
-export type TaskKind = 'vmProvision' | 'vmDelete' | 'diagnosticBundle' | 'repoSync' | 'systemUpdate'
+export type TaskKind = 'vmProvision' | 'vmDelete' | 'diagnosticBundle' | 'repoSync' | 'systemUpdate' // systemUpdate kept for old events
 
 export interface TaskEvent {
   taskID: string
@@ -624,27 +624,6 @@ export interface AuditEntry {
 export interface AuditLogResponse {
   entries: AuditEntry[]
   total: number
-}
-
-export interface UpdateInfo {
-  version: string
-  pkgURL: string
-  checksumURL: string | null
-  changelog: string
-  publishedAt: string
-  isPrerelease: boolean
-}
-
-export interface UpdateCheckResponse {
-  currentVersion: string
-  update: UpdateInfo | null
-}
-
-export interface UpdateSettings {
-  channel: 'stable' | 'beta'
-  autoCheck: boolean
-  isDevBuild: boolean
-  updateURL?: string | null
 }
 
 /** GET /api/system/remote-access (PAS-89) */
