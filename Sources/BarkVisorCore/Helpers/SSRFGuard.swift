@@ -42,7 +42,8 @@ public enum SSRFGuard {
         // Check first hex group for private ranges
         let firstGroup = lower.split(separator: ":").first.map(String.init) ?? ""
         if firstGroup.hasPrefix("fc") || firstGroup.hasPrefix("fd") { return true } // ULA (fc00::/7)
-        if firstGroup == "fe80" { return true } // Link-local (fe80::/10)
+        // Link-local fe80::/10 — first 10 bits 1111111010 (fe80–febf).
+        if let group = UInt16(firstGroup, radix: 16), group & 0xFFC0 == 0xFE80 { return true }
 
         return false
     }
@@ -117,8 +118,8 @@ public enum SSRFGuard {
         guard let host = url.host, !host.isEmpty else {
             throw SSRFPinError.rejected("URL has no host")
         }
-        if isPrivateHost(host.lowercased()) {
-            throw SSRFPinError.rejected("URL targets a private/internal host: \(host.lowercased())")
+        if let reason = validate(url: url) {
+            throw SSRFPinError.rejected(reason)
         }
         let ips = resolvedIPs ?? resolvedIPStrings(host)
         if ips.isEmpty {
@@ -163,6 +164,10 @@ public enum SSRFGuard {
     public static func urlSession(resourceTimeout: TimeInterval = 60) -> URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForResource = resourceTimeout
+        config.timeoutIntervalForRequest = resourceTimeout
+        config.httpAdditionalHeaders = [
+            SSRFPinnedURLProtocol.timeoutHeader: String(Int(resourceTimeout.rounded(.up))),
+        ]
         config.protocolClasses = [SSRFPinnedURLProtocol.self]
         return URLSession(
             configuration: config,

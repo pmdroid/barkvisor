@@ -98,6 +98,9 @@ struct SSRFProtectionTests {
 
     @Test func `ipv 6 link local blocked`() {
         #expect(SSRFGuard.isPrivateHost("fe80::1"))
+        #expect(SSRFGuard.isPrivateHost("fe90::1"))
+        #expect(SSRFGuard.isPrivateHost("febf::1"))
+        #expect(!SSRFGuard.isPrivateHost("fec0::1"))
     }
 
     @Test func `ipv 6 bracket stripped`() {

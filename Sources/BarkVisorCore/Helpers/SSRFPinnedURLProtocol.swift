@@ -11,6 +11,7 @@ import NIOPosix
 /// TCP uses the approved IP while Host and TLS SNI stay on the original hostname.
 /// Each 3xx Location is re-pinned with ``SSRFGuard.pinEndpoint`` before connect.
 class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
+    static let timeoutHeader = "X-BarkVisor-SSRF-Timeout"
     private static let maxRedirects = 16
     private var work: Task<Void, Never>?
 
@@ -67,14 +68,19 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             if let next = try await performHop(
                 request: currentRequest, url: currentURL, pin: currentPin,
             ) {
-                guard seen.insert(next.absoluteString).inserted else {
+                guard seen.insert(next.url.absoluteString).inserted else {
                     throw URLError(.httpTooManyRedirects)
                 }
-                currentPin = try SSRFGuard.pinEndpoint(url: next)
-                currentURL = next
-                currentRequest.url = next
-                currentRequest.httpMethod = "GET"
-                currentRequest.httpBody = nil
+                currentPin = try SSRFGuard.pinEndpoint(url: next.url)
+                currentURL = next.url
+                currentRequest.url = next.url
+                switch next.status {
+                case 301, 302, 303:
+                    currentRequest.httpMethod = "GET"
+                    currentRequest.httpBody = nil
+                default:
+                    break
+                }
                 continue
             }
             return
@@ -82,15 +88,20 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         throw URLError(.httpTooManyRedirects)
     }
 
-    /// Returns the next URL when following a 3xx hop; nil after delivering the final response.
+    private struct RedirectHop {
+        let url: URL
+        let status: Int
+    }
+
+    /// Returns the next hop when following a 3xx; nil after delivering the final response.
     private func performHop(
         request: URLRequest, url: URL, pin: PinnedEndpoint,
-    ) async throws -> URL? {
+    ) async throws -> RedirectHop? {
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
         config.dnsOverride = [pin.originalHost: pin.connectIP]
         config.httpVersion = .http1Only
-        let timeout = request.timeoutInterval > 0 ? request.timeoutInterval : 3_600
+        let timeout = resourceTimeout(from: request)
         config.timeout = .init(
             connect: .seconds(15),
             read: .seconds(Int64(timeout.rounded(.up))),
@@ -113,12 +124,20 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 
+    private func resourceTimeout(from request: URLRequest) -> TimeInterval {
+        if let raw = request.value(forHTTPHeaderField: Self.timeoutHeader),
+           let seconds = TimeInterval(raw), seconds > 0 {
+            return seconds
+        }
+        return request.timeoutInterval > 0 ? request.timeoutInterval : 60
+    }
+
     private func sendHop(
         http: HTTPClient,
         request: URLRequest,
         url: URL,
         timeout: TimeInterval,
-    ) async throws -> URL? {
+    ) async throws -> RedirectHop? {
         var outbound = HTTPClientRequest(url: url.absoluteString)
         outbound.method = HTTPMethod(rawValue: request.httpMethod ?? "GET")
         if let body = request.httpBody {
@@ -126,6 +145,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         }
         for (name, value) in request.allHTTPHeaderFields ?? [:] {
             if name.caseInsensitiveCompare("Host") == .orderedSame { continue }
+            if name.caseInsensitiveCompare(Self.timeoutHeader) == .orderedSame { continue }
             outbound.headers.replaceOrAdd(name: name, value: value)
         }
 
@@ -141,7 +161,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             for try await _ in response.body {
                 try Task.checkCancellation()
             }
-            return nextURL
+            return RedirectHop(url: nextURL, status: status)
         }
 
         var headerFields: [String: String] = [:]
