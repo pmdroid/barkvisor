@@ -20,6 +20,8 @@ public struct HostBridgeFactInputs: Sendable, Equatable {
     public var aclAllowsSuggested: Bool?
     public var bridges: [HostBridgeSnapshot]
     public var defaultRouteInterface: String?
+    /// Homebrew `socket_vmnet` (no qemu-bridge-helper / ACL).
+    public var macSocketVmnet: Bool
 
     public init(
         helperPath: String? = nil,
@@ -27,12 +29,14 @@ public struct HostBridgeFactInputs: Sendable, Equatable {
         aclAllowsSuggested: Bool? = nil,
         bridges: [HostBridgeSnapshot] = [],
         defaultRouteInterface: String? = nil,
+        macSocketVmnet: Bool = false,
     ) {
         self.helperPath = helperPath
         self.helperSetuid = helperSetuid
         self.aclAllowsSuggested = aclAllowsSuggested
         self.bridges = bridges
         self.defaultRouteInterface = defaultRouteInterface
+        self.macSocketVmnet = macSocketVmnet
     }
 
     public static let empty = HostBridgeFactInputs()
@@ -67,7 +71,11 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
                 defaultRouteInterface: LinuxHostNetwork.defaultRouteInterface(),
             )
         #else
-            return .empty
+            let sockets = SocketVmnetDiscovery.existingSockets()
+            return HostBridgeFactInputs(
+                bridges: sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) },
+                macSocketVmnet: true,
+            )
         #endif
     }
 }
@@ -141,7 +149,11 @@ public enum HostBridgeFactsService {
         } else {
             false
         }
-        let ready = hasBridge && inputs.helperSetuid && inputs.aclAllowsSuggested == true
+        let ready = if inputs.macSocketVmnet {
+            hasBridge
+        } else {
+            hasBridge && inputs.helperSetuid && inputs.aclAllowsSuggested == true
+        }
         return HostBridgeFacts(
             helperPath: inputs.helperPath,
             helperSetuid: inputs.helperSetuid,
@@ -157,6 +169,21 @@ public enum HostBridgeFactsService {
     }
 
     public static func remediations(from inputs: HostBridgeFactInputs) -> [HostBridgeRemediation] {
+        if inputs.macSocketVmnet {
+            if inputs.bridges.isEmpty {
+                return [
+                    HostBridgeRemediation(
+                        id: "homebrew-socket-vmnet",
+                        label: "Install and start socket_vmnet",
+                        commands: SocketVmnetDiscovery.installHint.replacingOccurrences(
+                            of: " && ",
+                            with: "\n",
+                        ),
+                    ),
+                ]
+            }
+            return []
+        }
         let br = suggestedBridgeName
         let helper = inputs.helperPath ?? qemuBridgeHelperCandidates[0]
         var groups: [HostBridgeRemediation] = []
@@ -232,8 +259,8 @@ public enum HostBridgeFactsService {
             guard let name = records.first(where: { $0.status == "active" })?.interface else {
                 throw BarkVisorError.preconditionFailed(
                     """
-                    This template requires bridged networking, but no bridge is active. \
-                    Install the BarkVisor Helper and enable a bridge in Settings > Network.
+                    This template requires bridged networking, but no socket_vmnet socket is active. \
+                    \(SocketVmnetDiscovery.installHint).
                     """,
                 )
             }
@@ -243,12 +270,21 @@ public enum HostBridgeFactsService {
         let preferred = facts.bridges.first(where: { $0.name == suggestedBridgeName })
             ?? facts.bridges.first
         guard let name = preferred?.name else {
-            throw BarkVisorError.preconditionFailed(
-                """
-                This template requires bridged networking, but no host bridge is present. \
-                Create a Linux bridge (for example \(suggestedBridgeName)) in Manage Bridges, then retry.
-                """,
-            )
+            #if os(macOS)
+                throw BarkVisorError.preconditionFailed(
+                    """
+                    This template requires bridged networking, but socket_vmnet is not running. \
+                    \(SocketVmnetDiscovery.installHint).
+                    """,
+                )
+            #else
+                throw BarkVisorError.preconditionFailed(
+                    """
+                    This template requires bridged networking, but no host bridge is present. \
+                    Create a Linux bridge (for example \(suggestedBridgeName)) in Manage Bridges, then retry.
+                    """,
+                )
+            #endif
         }
         return name
     }

@@ -36,12 +36,22 @@ struct HostBridgeReadinessTests {
         #expect(!LinuxHostNetwork.bridgeACLAllows("br0", fileContents: "allow br1\n"))
     }
 
-    @Test func `probe never reports ready on macOS`() {
-        #if os(macOS)
-            let ready = HostBridgeReadinessService.probe()
-            #expect(!ready.ready)
-            #expect(ready.bridges.isEmpty)
-        #endif
+    @Test func `mac socket_vmnet missing is not ready and shows brew commands`() {
+        let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(macSocketVmnet: true))
+        #expect(!facts.ready)
+        #expect(facts.bridges.isEmpty)
+        #expect(facts.remediations.map(\.id) == ["homebrew-socket-vmnet"])
+        #expect(facts.remediations[0].commands.contains("brew install socket_vmnet"))
+        #expect(facts.remediations[0].commands.contains("brew services start socket_vmnet"))
+    }
+
+    @Test func `mac socket_vmnet present is ready without linux remediations`() {
+        let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+            bridges: [HostBridgeSnapshot(name: "vmnet", enslaved: [])],
+            macSocketVmnet: true,
+        ))
+        #expect(facts.ready)
+        #expect(facts.remediations.isEmpty)
     }
 
     @Test func `facts seam is ready only with helper ACL and a bridge`() {
@@ -173,31 +183,17 @@ struct HostBridgeReadinessTests {
             HostBridgeSnapshot(name: "br0", enslaved: ["eth1"]),
         ]
 
-        #if os(Linux)
-            let iface = try HostBridgeFactsService.activeBridgedInterface(
-                records: [ghost], source: stub,
-            )
-            #expect(iface == "br0")
+        let iface = try HostBridgeFactsService.activeBridgedInterface(
+            records: [ghost], source: stub,
+        )
+        #expect(iface == "br0")
 
-            let missing = #expect(throws: BarkVisorError.self) {
-                try HostBridgeFactsService.activeBridgedInterface(
-                    records: [ghost], source: StubHostBridgeFacts(),
-                )
-            }
-            #expect(missing?.httpStatus == 412)
-            #expect(missing?.errorDescription?.contains("Helper") != true)
-        #elseif os(macOS)
-            let iface = try HostBridgeFactsService.activeBridgedInterface(
-                records: [ghost], source: stub,
+        let missing = #expect(throws: BarkVisorError.self) {
+            try HostBridgeFactsService.activeBridgedInterface(
+                records: [ghost], source: StubHostBridgeFacts(),
             )
-            #expect(iface == "ghost0")
-
-            let missing = #expect(throws: BarkVisorError.self) {
-                try HostBridgeFactsService.activeBridgedInterface(
-                    records: [], source: stub,
-                )
-            }
-            #expect(missing?.httpStatus == 412)
-        #endif
+        }
+        #expect(missing?.httpStatus == 412)
+        #expect(missing?.errorDescription?.contains("Helper") != true)
     }
 }

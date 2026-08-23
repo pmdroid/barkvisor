@@ -186,28 +186,23 @@ sudo launchctl kickstart system/dev.barkvisor
 
 ## Helper and networking
 
-### macOS: privileged helper and socket_vmnet
+### macOS: Homebrew socket_vmnet
 
-On **macOS**, bridged networking uses a privileged XPC helper (`BarkVisorHelper`) plus `socket_vmnet`. The helper is a LaunchDaemon at `/Library/LaunchDaemons/dev.barkvisor.helper.plist` (binary `/Library/PrivilegedHelperTools/dev.barkvisor.helper`, Mach service `dev.barkvisor.helper`).
-
-If the helper is not running, managed bridge operations will fail:
-
-```sh
-sudo launchctl print system/dev.barkvisor.helper
-```
-
-`socket_vmnet` comes from Homebrew (`brew install socket_vmnet`). The helper prefers `/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet`, then `/usr/local/opt/…`, then a leftover libexec copy. Every candidate is signature-checked.
+On **macOS**, bridged/vmnet networking uses Homebrew `socket_vmnet`. BarkVisor does not install or start it and does not ship a privileged helper.
 
 ```sh
 brew install socket_vmnet
+sudo brew services start socket_vmnet
+sudo brew services info socket_vmnet
 ```
 
-Each bridge has a unix socket from the `socket_vmnet` daemon. If a VM cannot connect:
+The default service socket is `/opt/homebrew/var/run/socket_vmnet` (Intel Homebrew: `/usr/local/var/run/socket_vmnet`). If a Workload cannot attach:
 
-- Verify the LaunchDaemon plist exists and the daemon is running
-- Check that the socket file is present at the expected path
+- Confirm the service is started
+- Confirm the socket file exists
+- NAT Workloads do not need this service
 
-Bridge state is synced periodically by `BridgeSyncService`. XPC errors (`XPC connection interrupted` / `invalidated`) usually mean a team ID mismatch, missing plist, or helper not approved in System Settings. Timeouts: 5 s general, 15 s for bridge install/remove/start/stop.
+A leftover `dev.barkvisor.helper` from older installs is unused. Boot it out and delete the plist/binary if present.
 
 ### Linux: host bridge
 

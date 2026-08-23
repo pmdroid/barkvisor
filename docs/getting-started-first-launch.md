@@ -82,7 +82,14 @@ NAT works out of the box on every host. Bridged networking uses the native path 
 
 ### macOS
 
-A **privileged helper** (`dev.barkvisor.helper`) plus **socket_vmnet** manage bridges via the vmnet stack. The helper is installed as a launchd service with the package. You can manage bridges from the Networks page; first-run setup may prompt to install or start the helper.
+Install **socket_vmnet** with Homebrew and start its service. BarkVisor only attaches QEMU to that socket; it does not bless a privileged helper or configure bridges:
+
+```sh
+brew install socket_vmnet
+sudo brew services start socket_vmnet
+```
+
+NAT Workloads work without this. First-run setup does not install a helper.
 
 ### Linux
 

@@ -66,20 +66,22 @@ for bin in /usr/local/libexec/barkvisor/*; do
     install_name_tool -add_rpath /usr/local/lib/barkvisor "$bin" 2>/dev/null || true
 done
 
+# --- Drop leftover privileged helper from older pkgs (PAS-294) ---
+launchctl bootout system/dev.barkvisor.helper 2>/dev/null || true
+rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
+rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
+
 # --- (Re)load LaunchDaemons ---
 launchctl bootout system/dev.barkvisor 2>/dev/null || true
-launchctl bootout system/dev.barkvisor.helper 2>/dev/null || true
 
-# Wait for services to fully unload before re-bootstrapping
+# Wait for the daemon to fully unload before re-bootstrapping
 for i in $(seq 1 30); do
-    if ! launchctl print system/dev.barkvisor &>/dev/null && \
-       ! launchctl print system/dev.barkvisor.helper &>/dev/null; then
+    if ! launchctl print system/dev.barkvisor &>/dev/null; then
         break
     fi
     sleep 1
 done
 
-launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.helper.plist
 launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist
 
 echo ""

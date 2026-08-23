@@ -1,9 +1,7 @@
 import Foundation
 import Testing
 
-/// Tests BridgeState encoding/decoding. BridgeState is defined in BridgeMonitor.swift
-/// which is in the BarkVisorHelper target. Since we can't import it directly, we
-/// replicate the struct to test the Codable contract.
+/// Tests BridgeState encoding/decoding against the API DTO shape.
 struct BridgeStateCodableTests {
     /// Mirror of BridgeState from BridgeMonitor.swift for Codable testing.
     private struct BridgeState: Codable, Equatable {

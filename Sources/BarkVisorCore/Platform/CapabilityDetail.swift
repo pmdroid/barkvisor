@@ -25,6 +25,7 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case aclDenied = "acl_denied"
     case linuxOsManaged = "linux_os_managed"
     case linuxPkgUpdate = "linux_pkg_update"
+    case homebrewService = "homebrew_service"
 }
 
 /// Per-mode support + PAS-94 reason/remediation (PAS-57 / PAS-67).
@@ -202,6 +203,15 @@ public enum CapabilityDetailBuilder {
                     + "via a Bridged network record.",
             )
         }
+        if isMac(os) {
+            return CapabilityDetail(
+                code: .managedBridgeDaemon,
+                supported: false,
+                reason: .homebrewService,
+                remediation: "BarkVisor does not install or start socket_vmnet. "
+                    + SocketVmnetDiscovery.installHint + ".",
+            )
+        }
         return CapabilityDetail(
             code: .managedBridgeDaemon,
             supported: false,
@@ -219,7 +229,8 @@ public enum CapabilityDetailBuilder {
             supported: false,
             reason: .osUnsupported,
             remediation: "Host bridge setup guidance is for Linux Devices. "
-                + "On macOS use Manage Bridges to install socket_vmnet.",
+                + "On macOS install socket_vmnet with Homebrew: "
+                + SocketVmnetDiscovery.installHint + ".",
         )
     }
 
@@ -330,5 +341,10 @@ public enum CapabilityDetailBuilder {
 
     private static func isLinux(_ os: String) -> Bool {
         os.caseInsensitiveCompare("Linux") == .orderedSame
+    }
+
+    private static func isMac(_ os: String) -> Bool {
+        os.caseInsensitiveCompare("macOS") == .orderedSame
+            || os.caseInsensitiveCompare("Darwin") == .orderedSame
     }
 }

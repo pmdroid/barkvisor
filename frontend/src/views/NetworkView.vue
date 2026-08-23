@@ -819,7 +819,7 @@ async function setupBridgeInline() {
         </option>
       </AppSelect>
       <!-- Linux host bridges: allow typing a name not in the dropdown (e.g. no-IP br*). -->
-      <template v-if="!formManagedBridge">
+      <template v-if="formCaps.supportsHostBridgeManagement">
         <input
           v-model="newBridge"
           class="bridge-custom"
