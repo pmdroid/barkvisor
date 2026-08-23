@@ -68,7 +68,7 @@ struct SettingsView: View {
                 if let caps = model.capabilities {
                     LabeledContent(
                         "GPU passthrough",
-                        value: caps.gpuPassthroughSupported ? "Host ready (not attached)" : "Not available",
+                        value: caps.gpuPassthroughSupported ? "Host ready" : "Not available",
                     )
                     Text(caps.gpuPassthroughExplanation)
                         .foregroundStyle(.secondary)

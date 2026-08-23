@@ -297,6 +297,7 @@ struct CapabilityDetailTests {
         #expect(PlatformCapabilities.Feature.inAppUpdate.errorCode == "in_app_update")
         #expect(PlatformCapabilities.Feature.usbPassthrough.errorCode == "usb_passthrough")
         #expect(PlatformCapabilities.Feature.managedBridgeDaemon.errorCode == "managed_bridge_daemon")
+        #expect(PlatformCapabilities.Feature.gpuPassthrough.errorCode == "gpu_passthrough")
     }
 
     @Test func `requireBridgedNetworking matches capabilities product flag`() {

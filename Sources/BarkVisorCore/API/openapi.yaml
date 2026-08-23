@@ -502,6 +502,52 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/vms/{id}/gpu:
+    post:
+      tags: [vms]
+      operationId: attachGPU
+      x-barkvisor-stability: stable
+      summary: Attach a host GPU by PCI address
+      parameters:
+        - $ref: "#/components/parameters/id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachGPURequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/gpu/{deviceId}:
+    delete:
+      tags: [vms]
+      operationId: detachGPU
+      x-barkvisor-stability: stable
+      summary: Detach a GPU by PCI address
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: PCI address (`0000:01:00.0`)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms/{id}/usb/{deviceId}:
     delete:
       tags: [vms]
@@ -898,6 +944,40 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/HostUSBDevice"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/gpu-devices:
+    get:
+      tags: [evolving]
+      operationId: listGPUDevices
+      x-barkvisor-stability: evolving
+      summary: Host GPUs with IOMMU group and occupancy
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostGPUDevice"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/gpu:
+    get:
+      tags: [evolving]
+      operationId: listGPUDevicesAlias
+      x-barkvisor-stability: evolving
+      summary: Alias of /api/system/gpu-devices
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostGPUDevice"
         default:
           $ref: "#/components/responses/Error"
 
@@ -2154,6 +2234,11 @@ components:
           nullable: true
           items:
             $ref: "#/components/schemas/USBDevice"
+        gpuDevices:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/GPUDevice"
         pendingChanges:
           type: boolean
         startOnBoot:
@@ -2533,6 +2618,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/USBDevice"
+        gpu:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUDevice"
         display:
           type: object
           nullable: true
@@ -2866,6 +2955,80 @@ components:
           type: string
           nullable: true
           description: Stable id. Prefer vendorId:productId:serial when serial is present.
+
+    GPUDevice:
+      type: object
+      required: [pciAddress, iommuGroup, vendorId, deviceId]
+      properties:
+        pciAddress:
+          type: string
+        iommuGroup:
+          type: string
+        vendorId:
+          type: string
+        deviceId:
+          type: string
+        label:
+          type: string
+          nullable: true
+        groupAddresses:
+          type: array
+          items:
+            type: string
+
+    AttachGPURequest:
+      type: object
+      required: [deviceId]
+      properties:
+        deviceId:
+          type: string
+          description: PCI address (`0000:01:00.0`)
+
+    HostGPUDevice:
+      type: object
+      required: [id, pciAddress, iommuGroup, vendorId, deviceId, name]
+      properties:
+        id:
+          type: string
+        pciAddress:
+          type: string
+        iommuGroup:
+          type: string
+        vendorId:
+          type: string
+        deviceId:
+          type: string
+        name:
+          type: string
+        driver:
+          type: string
+          nullable: true
+        vfioBound:
+          type: boolean
+        inUseByHost:
+          type: boolean
+        attachable:
+          type: boolean
+        excludedReason:
+          type: string
+          nullable: true
+        groupAddresses:
+          type: array
+          items:
+            type: string
+        guestOllamaPath:
+          type: string
+        busy:
+          type: boolean
+        attachedToVmId:
+          type: string
+          nullable: true
+        claimedByVMId:
+          type: string
+          nullable: true
+        claimedByVMName:
+          type: string
+          nullable: true
 
     AttachUSBRequest:
       type: object

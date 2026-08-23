@@ -162,6 +162,7 @@ export interface WorkloadSpecBody {
   networks?: WorkloadNetwork[]
   cloudInit?: WorkloadCloudInit | null
   usb?: WorkloadUSBDevice[]
+  gpu?: GPUPassthroughDevice[]
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
   health?: WorkloadHealthSpec | null
@@ -252,6 +253,7 @@ export interface VM {
   sharedPaths: string[] | null
   portForwards: PortForwardRule[] | null
   usbDevices: USBPassthroughDevice[] | null
+  gpuDevices?: GPUPassthroughDevice[] | null
   pendingChanges: boolean
   workloadClass?: 'house' | 'agent' | string | null
   /** PAS-258. Omitted / false: do not start after Device boot. */
@@ -320,6 +322,35 @@ export interface PortForwardRule {
   protocol: 'tcp' | 'udp'
   hostPort: number
   guestPort: number
+}
+
+export interface GPUPassthroughDevice {
+  pciAddress: string
+  iommuGroup: string
+  vendorId: string
+  deviceId: string
+  label?: string | null
+  groupAddresses?: string[]
+}
+
+export interface HostGPUDevice {
+  id: string
+  pciAddress: string
+  iommuGroup: string
+  vendorId: string
+  deviceId: string
+  name: string
+  driver?: string | null
+  vfioBound?: boolean
+  inUseByHost?: boolean
+  attachable?: boolean
+  excludedReason?: string | null
+  groupAddresses?: string[]
+  guestOllamaPath?: string
+  busy?: boolean
+  attachedToVmId?: string | null
+  claimedByVMId?: string | null
+  claimedByVMName?: string | null
 }
 
 export interface USBPassthroughDevice {

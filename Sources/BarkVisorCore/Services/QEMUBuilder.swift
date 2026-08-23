@@ -276,9 +276,11 @@ public enum QEMUBuilder {
         args += tpm.args
         args += try additionalDiskArgs(ctx.additionalDisks)
         let klass = try WorkloadClass.parse(spec.spec.workloadClass)
-        let allowHostOllama = klass == .agent && AgentNetworkCage.allowHostOllama(
-            userData: CloudInitService.storedUserData(vmID: vmID),
-        )
+        let allowHostOllama = klass == .agent
+            && spec.spec.gpu.isEmpty
+            && AgentNetworkCage.allowHostOllama(
+                userData: CloudInitService.storedUserData(vmID: vmID),
+            )
         let (netArgs, needsSocketVmnetWrap) = try networkArgs(
             spec: spec,
             network: ctx.network,
@@ -292,6 +294,7 @@ public enum QEMUBuilder {
         )
         args += displayAndInputArgs(spec: spec)
         args += try usbPassthroughArgs(spec: spec)
+        args += try gpuPassthroughArgs(spec: spec)
         args += try miscArgs(spec: spec, vmID: vmID)
 
         // socket_vmnet wrap is macOS-only (not the same as "bridged networking is in use").
@@ -556,6 +559,32 @@ public enum QEMUBuilder {
             args += ["-device", "virtio-gpu-pci"]
         }
         return args + ["-device", "usb-kbd", "-device", "usb-tablet"]
+    }
+
+    private static func gpuPassthroughArgs(spec: WorkloadSpec) throws -> [String] {
+        guard !spec.spec.gpu.isEmpty else { return [] }
+        try PlatformCapabilities.requireGPUPassthrough()
+        return try vfioPCIArgs(gpu: spec.spec.gpu, bind: true)
+    }
+
+    /// `-device vfio-pci,host=BDF` for the GPU and the rest of its IOMMU group.
+    public static func vfioPCIArgs(
+        gpu: [WorkloadGPUDevice],
+        bind: Bool,
+        bindPaths: VFIOBindPaths = .linuxHost,
+        fileManager: FileManager = .default,
+    ) throws -> [String] {
+        guard !gpu.isEmpty else { return [] }
+        let stored = gpu.map { GPUPassthroughService.passthrough(from: $0) }
+        let addresses = try GPUPassthroughService.qemuHostAddresses(from: stored)
+        if bind {
+            try VFIOBinder.bind(addresses: addresses, paths: bindPaths, fileManager: fileManager)
+        }
+        var args: [String] = []
+        for (i, address) in addresses.enumerated() {
+            args += ["-device", "vfio-pci,host=\(address),id=vfio-pt-\(i)"]
+        }
+        return args
     }
 
     private static func usbPassthroughArgs(spec: WorkloadSpec) throws -> [String] {

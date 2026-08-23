@@ -150,6 +150,22 @@ export function deviceVmUsbDevicePath(
   return `${deviceVmUsbPath(device, vmId)}/${encodeURIComponent(usbId)}`
 }
 
+export function deviceGpuDevicesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/gpu-devices')
+}
+
+export function deviceVmGpuPath(device: DeviceApiTarget, vmId: string): string {
+  return `${deviceVmPath(device, vmId)}/gpu`
+}
+
+export function deviceVmGpuDevicePath(
+  device: DeviceApiTarget,
+  vmId: string,
+  gpuId: string,
+): string {
+  return `${deviceVmGpuPath(device, vmId)}/${encodeURIComponent(gpuId)}`
+}
+
 export function deviceDisksPath(device: DeviceApiTarget): string {
   return devicePath(device, '/disks')
 }
