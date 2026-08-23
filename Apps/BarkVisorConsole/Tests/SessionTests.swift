@@ -76,6 +76,10 @@ struct SessionTests {
         } else {
             Issue.record("transport refresh must stay unavailable")
         }
+        #expect(APIClient.retryAfter401(.rotated("jwt-2")) == .retry("jwt-2"))
+        #expect(APIClient.retryAfter401(.unauthorized) == .fail(.unauthorized))
+        #expect(APIClient.retryAfter401(.unavailable("offline")) == .fail(.transport("offline")))
+        #expect(APIClient.retryAfter401(.unavailable("down")) != .fail(.unauthorized))
     }
 
     @Test func `qr scanner maps camera failures to a banner`() {

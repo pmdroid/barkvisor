@@ -63,11 +63,6 @@ enum SessionRefreshResult: Equatable {
             return .unavailable(api.localizedDescription)
         }
     }
-
-    var accessToken: String? {
-        if case let .rotated(token) = self { return token }
-        return nil
-    }
 }
 
 @Observable
@@ -121,7 +116,8 @@ final class AppModel {
         guard let sessionURL, let token else { return nil }
         var api = APIClient(baseURL: sessionURL, token: token)
         api.refreshOnce = { [weak self] in
-            await (self?.refreshAccessToken())?.accessToken
+            guard let self else { return .unavailable("Sign in required") }
+            return await self.refreshAccessToken()
         }
         return api
     }
