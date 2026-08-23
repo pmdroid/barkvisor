@@ -1,9 +1,10 @@
 import Foundation
 
-/// Stable USB identity used for list/attach/QEMU mapping (PAS-84).
+/// Stable USB identity used for list/attach/QEMU mapping (PAS-84 / PAS-288).
 ///
-/// Prefer `vendorId:productId:serial` when a serial is present. Fall back to
-/// `bus:BBB.AAA` (unstable across replug) when the host exposes no serial.
+/// Selection and persist require `vendorId:productId:serial` (or another durable
+/// id). `bus:BBB.AAA` is live topology for QEMU `hostbus`/`hostaddr` after a
+/// stable match — it is not a selection id and changes across replug.
 public enum USBDeviceIdentity {
     public static let massStorageExclusionReason =
         "USB mass storage is excluded from passthrough. The host keeps storage-class "
@@ -79,6 +80,10 @@ public enum USBDeviceIdentity {
 
     public static func busAddressId(bus: Int, address: Int) -> String {
         String(format: "bus:%03d.%03d", bus, address)
+    }
+
+    public static func isBusAddressId(_ raw: String) -> Bool {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("bus:")
     }
 
     public static func parse(_ raw: String) -> Ref? {
