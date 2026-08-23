@@ -107,6 +107,13 @@ public struct OllamaClient: Sendable {
         try await send(method: "POST", path: "/v1/chat/completions", body: body)
     }
 
+    public func chatCompletionsStream(body: Data) -> AsyncThrowingStream<Data, Error> {
+        guard let url = URL(string: "/v1/chat/completions", relativeTo: baseURL) else {
+            return AsyncThrowingStream { $0.finish(throwing: BarkVisorError.badRequest("Invalid Ollama path")) }
+        }
+        return transport.stream(method: "POST", url: url, headers: headers(json: true), body: body)
+    }
+
     public func versionReachable() async -> Bool {
         do {
             let response = try await send(method: "GET", path: "/api/version", body: nil)

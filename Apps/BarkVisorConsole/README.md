@@ -46,6 +46,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Connect | Device URL |
 | Sign in | `POST /api/auth/login` or scan `barkvisor://login/v1` (`POST /api/auth/login-offers/redeem`) |
 | Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail. Swipe and context menu Start / ACPI Stop use the same Device or Home-proxy APIs as detail. Force Stop stays on detail. Library is its own tab. |
+| Chat | Hidden unless the Home Ollama catalog has a model. Pick a model, stream `/v1/chat/completions`. Same on iOS (tab) and Mac (sidebar). |
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List for the selected Device; a row pushes Workload detail. Same Start / ACPI Stop swipe and context menu as Home. |
@@ -68,3 +69,5 @@ Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safa
 `WorkloadDetailTests` covers guest-info OS/IP decode, vmType fallback, and Console/Display opening on a reachable member the same as This Device.
 
 `LocalStreamTests` covers live-state gating, member-stream lockout, reconnect backoff (≤10), VNC control scripts, and ticket-only WebSocket URLs (JWT never in the URL).
+
+`ChatTests` covers Home catalog decode, hiding Chat with no Ollama models, OpenAI SSE token drain, and `stream: true` on `/v1/chat/completions`.
