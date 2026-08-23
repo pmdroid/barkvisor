@@ -60,4 +60,109 @@ struct ConfigTests {
         #expect(process >= 0)
         #expect(process <= host + 0.5)
     }
+
+    @Test func `persist jwt secret does not touch api key hmac secret`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("api-keep", to: dir)
+        try Config.persistJWTSecret("jwt-new", to: dir)
+        #expect(Config.loadJWTSecret(from: dir) == "jwt-new")
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == "api-keep")
+        #expect(Config.apiKeyHmacSecretFileName != Config.jwtSecretFileName)
+    }
+
+    @Test func `ensure api key hmac secret reports first generation then reuse`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let first = Config.ensureAPIKeyHmacSecret(in: dir)
+        #expect(first.generated)
+        #expect(!first.secret.isEmpty)
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == first.secret)
+
+        let again = Config.ensureAPIKeyHmacSecret(in: dir)
+        #expect(!again.generated)
+        #expect(again.secret == first.secret)
+
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: other) }
+        try Config.persistAPIKeyHmacSecret("pre-existing", to: other)
+        let loaded = Config.ensureAPIKeyHmacSecret(in: other)
+        #expect(!loaded.generated)
+        #expect(loaded.secret == "pre-existing")
+    }
+
+    @Test func `ensure api key hmac secret persist failure is not generated`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // `dataDir` is a file, so persist cannot create `api-key-hmac-secret`.
+        let blocked = dir.appendingPathComponent("blocked")
+        try Data("x".utf8).write(to: blocked)
+
+        let result = Config.ensureAPIKeyHmacSecret(in: blocked)
+        #expect(!result.generated)
+        #expect(!result.secret.isEmpty)
+        #expect(Config.loadAPIKeyHmacSecret(from: blocked) == nil)
+    }
+
+    @Test func `rotate api key hmac secret replaces file with 0600`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("before", to: dir)
+        try Config.persistJWTSecret("jwt-stays", to: dir)
+        let rotated = try Config.rotateAPIKeyHmacSecret(in: dir)
+        #expect(rotated != "before")
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == rotated)
+        #expect(Config.loadJWTSecret(from: dir) == "jwt-stays")
+
+        let attrs = try FileManager.default.attributesOfItem(
+            atPath: Config.apiKeyHmacSecretFile(in: dir).path,
+        )
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        #expect(perms & 0o777 == 0o600)
+    }
+
+    @Test func `persist hmac and jwt secrets are 0600`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("hmac", to: dir)
+        try Config.persistJWTSecret("jwt", to: dir)
+
+        for path in [
+            Config.apiKeyHmacSecretFile(in: dir).path,
+            Config.jwtSecretFile(in: dir).path,
+        ] {
+            let attrs = try FileManager.default.attributesOfItem(atPath: path)
+            let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+            #expect(perms & 0o777 == 0o600)
+        }
+    }
+
+    @Test func `ensure api key hmac secret concurrent callers share one secret`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let lock = NSLock()
+        var secrets: [String] = []
+        DispatchQueue.concurrentPerform(iterations: 32) { _ in
+            let result = Config.ensureAPIKeyHmacSecret(in: dir)
+            lock.lock()
+            secrets.append(result.secret)
+            lock.unlock()
+        }
+        #expect(Set(secrets).count == 1)
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == secrets[0])
+        #expect(!secrets[0].isEmpty)
+    }
 }
