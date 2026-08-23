@@ -193,6 +193,14 @@ public enum Config {
         try persistPrivateFile("1", at: apiKeyHmacMigrationMarkerFile(in: dataDir), directory: dataDir)
     }
 
+    /// Birth/mtime of `api-key-hmac-secret`. HMAC rows created after this are
+    /// keyed with the dedicated secret and must survive a retry of the leftover sweep.
+    static func apiKeyHmacSecretFileDate(in dataDir: URL) -> Date? {
+        let path = apiKeyHmacSecretFile(in: dataDir).path
+        let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+        return attrs?[.creationDate] as? Date ?? attrs?[.modificationDate] as? Date
+    }
+
     /// Create the dest file at 0600 via a temp file chmod'd before rename.
     /// Avoids a umask-default window after `.atomic` write + later `setAttributes`.
     static func persistPrivateFile(_ contents: String, at file: URL, directory dataDir: URL) throws {

@@ -227,6 +227,23 @@ final class APIKeyServiceTests {
         #expect(Config.apiKeyHmacMigrationCompleted(in: tmpDir))
     }
 
+    @Test func `marker miss keeps hmac keys created after the secret file`() async throws {
+        try Config.persistAPIKeyHmacSecret("already-there", to: tmpDir)
+        try await insertKey(id: "legacy-jwt", name: "Old", hash: "abc123notbcrypt")
+        let now = ISO8601DateFormatter().string(from: Date().addingTimeInterval(2))
+        try await insertKey(
+            id: "live-hmac", name: "Live", hash: "deadbeefcafebabe", createdAt: now,
+        )
+
+        let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+            db: dbPool, dataDir: tmpDir,
+        )
+        #expect(removed == 1)
+        let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
+        #expect(Set(remaining.map(\.id)) == ["live-hmac"])
+        #expect(Config.apiKeyHmacMigrationCompleted(in: tmpDir))
+    }
+
     @Test func `migration marker leaves stored keys listed`() async throws {
         try Config.persistAPIKeyHmacSecret("already-there", to: tmpDir)
         try Config.persistAPIKeyHmacMigrationMarker(to: tmpDir)
@@ -288,10 +305,12 @@ final class APIKeyServiceTests {
         #expect(Config.loadAPIKeyHmacSecret(from: blocked) == nil)
     }
 
-    private func insertKey(id: String, name: String, hash: String) async throws {
+    private func insertKey(
+        id: String, name: String, hash: String, createdAt: String = "2025-01-01T00:00:00Z",
+    ) async throws {
         let key = APIKey(
             id: id, name: name, keyHash: hash, keyPrefix: "barkvisor_abcde",
-            userId: "user-1", expiresAt: nil, lastUsedAt: nil, createdAt: "2025-01-01T00:00:00Z",
+            userId: "user-1", expiresAt: nil, lastUsedAt: nil, createdAt: createdAt,
         )
         try await dbPool.write { db in
             try key.insert(db)

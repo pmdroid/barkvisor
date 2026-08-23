@@ -116,11 +116,19 @@ public enum APIKeyService {
     /// `api-key-hmac-secret` is generated. Plaintext is not stored, so they
     /// cannot be rehashed. Bcrypt `$2` hashes still upgrade on next use.
     @discardableResult
-    public static func revokeUnverifiableHmacKeys(db: DatabasePool) async throws -> Int {
+    public static func revokeUnverifiableHmacKeys(
+        db: DatabasePool,
+        keepCreatedOnOrAfter cutoff: Date? = nil,
+    ) async throws -> Int {
         try await db.write { db in
             let keys = try APIKey.fetchAll(db)
             var removed = 0
             for key in keys where !isBcryptHash(key.keyHash) {
+                if let cutoff,
+                   let created = iso8601.date(from: key.createdAt),
+                   created >= cutoff {
+                    continue
+                }
                 try key.delete(db)
                 removed += 1
             }
@@ -141,7 +149,10 @@ public enum APIKeyService {
             _ = Config.ensureAPIKeyHmacSecret(in: dataDir)
             guard Config.loadAPIKeyHmacSecret(from: dataDir) != nil else { return 0 }
             if Config.apiKeyHmacMigrationCompleted(in: dataDir) { return 0 }
-            let removed = try await revokeUnverifiableHmacKeys(db: db)
+            let cutoff = Config.apiKeyHmacSecretFileDate(in: dataDir)
+            let removed = try await revokeUnverifiableHmacKeys(
+                db: db, keepCreatedOnOrAfter: cutoff,
+            )
             try Config.persistAPIKeyHmacMigrationMarker(to: dataDir)
             if removed > 0 {
                 Log.auth.critical(
