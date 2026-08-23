@@ -68,6 +68,19 @@ final class APIKeyServiceTests {
         #expect(result.apiKey.expiresAt != nil)
     }
 
+    @Test func `create inference API key`() async throws {
+        let result = try await APIKeyService.create(
+            name: "Cursor chat",
+            expiresIn: nil,
+            userId: "user-1",
+            db: dbPool,
+            kind: .inference,
+        )
+        #expect(result.apiKey.kind == APIKeyKind.inference.rawValue)
+        #expect(result.apiKey.apiKeyKind == .inference)
+        #expect(result.plaintext.hasPrefix("barkvisor_"))
+    }
+
     @Test func `create API key empty name rejected`() async {
         let error = await #expect(throws: BarkVisorError.self) {
             _ = try await APIKeyService.create(name: "   ", expiresIn: nil, userId: "user-1", db: dbPool)

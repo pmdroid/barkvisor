@@ -24,6 +24,22 @@ struct AuthTests {
         )
         #expect(user.authMethod == "apikey")
         #expect(user.apiKeyId == "key-1")
+        #expect(user.apiKeyKind == nil)
+    }
+
+    @Test func `authenticated user inference key`() {
+        let user = AuthenticatedUser(
+            userId: "user-1",
+            username: "admin",
+            authMethod: "apikey",
+            apiKeyId: "key-1",
+            apiKeyKind: APIKeyKind.inference.rawValue,
+        )
+        #expect(user.apiKeyKind == "inference")
+        #expect(
+            OllamaAuthPolicy.principal(authMethod: user.authMethod, apiKeyKind: user.apiKeyKind)
+                == .inferenceKey,
+        )
     }
 
     @Test func `authenticated user ticket`() {

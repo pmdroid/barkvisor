@@ -101,6 +101,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M011_StartOnBoot.identifier) { db in
             try M011_StartOnBoot.migrate(db)
         }
+        migrator.registerMigration(M011_OllamaAPIKeys.identifier) { db in
+            try M011_OllamaAPIKeys.migrate(db)
+        }
     }
 }
 

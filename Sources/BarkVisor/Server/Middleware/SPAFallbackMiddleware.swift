@@ -14,6 +14,7 @@ struct SPAFallbackMiddleware: Middleware {
         // serve index.html directly without going through the rest of the chain
         if request.method == .GET,
            !request.url.path.hasPrefix("/api/"),
+           !request.url.path.hasPrefix("/v1/"),
            !request.url.path.contains("."),
            request.url.path != "/" {
             do {

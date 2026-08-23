@@ -40,6 +40,8 @@ public enum BarkVisorError: Error, LocalizedError {
     /// Config-vs-config or bind-probe host port collision (PAS-64). HTTP 409 + `port_in_use`.
     case portInUse(String)
     case preconditionFailed(String)
+    /// Upstream Ollama (or another Device) did not answer.
+    case badGateway(String)
     case internalError(String)
 
     /// Full description including paths — for logging only, never send to clients.
@@ -86,6 +88,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .conflict(msg): return msg
         case let .portInUse(msg): return msg
         case let .preconditionFailed(msg): return msg
+        case let .badGateway(msg): return msg
         case let .internalError(msg): return msg
         }
     }
@@ -123,6 +126,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .conflict: return "conflict"
         case .portInUse: return "port_in_use"
         case .preconditionFailed: return "precondition_failed"
+        case .badGateway: return "bad_gateway"
         case .internalError: return "internal_error"
         }
     }
@@ -144,6 +148,8 @@ public enum BarkVisorError: Error, LocalizedError {
             return 412
         case .unsupportedFeature, .interfaceMissing, .bridgeHelperDenied, .bridgeNotReady:
             return 422
+        case .badGateway:
+            return 502
         case .insufficientDiskSpace:
             return 507
         default:

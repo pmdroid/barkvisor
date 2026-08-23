@@ -1,14 +1,26 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { useOllamaStore } from './stores/ollama'
 import { useThemeStore } from './stores/theme'
 import ToastContainer from './components/ToastContainer.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
+const ollama = useOllamaStore()
 const mobileMenuOpen = ref(false)
+
+onMounted(() => {
+  if (auth.isAuthenticated) void ollama.fetchCatalog()
+})
+watch(
+  () => auth.isAuthenticated,
+  (ok) => {
+    if (ok) void ollama.fetchCatalog()
+  },
+)
 
 // Close mobile menu on navigation
 watch(() => route.path, () => { mobileMenuOpen.value = false })
@@ -55,6 +67,12 @@ function isActive(path: string) {
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
           </svg>
           <span class="nav-label">Virtual Machines</span>
+        </router-link>
+        <router-link v-if="ollama.anyReachable" to="/models" :class="{ active: isActive('/models') }">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/>
+          </svg>
+          <span class="nav-label">Ollama</span>
         </router-link>
         <router-link to="/images" :class="{ active: isActive('/images') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
