@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  ALLOW_HOST_OLLAMA_MARKER,
+  ALLOW_HOST_OLLAMA_YAML,
   CLAUDE_SHA256_AARCH64,
   CODING_AGENT_SLUGS,
   DEVICE_OLLAMA_BASE_URL,
@@ -43,7 +43,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).toContain('/usr/local/bin')
     expect(yaml).not.toContain('export OPENAI_BASE_URL="')
     expect(yaml).toContain("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'")
-    expect(yaml).toContain(ALLOW_HOST_OLLAMA_MARKER)
+    expect(yaml).toContain(ALLOW_HOST_OLLAMA_YAML)
+    expect(yaml).not.toContain('# barkvisor:allow-host-ollama')
     expect(yaml).toContain(CLAUDE_SHA256_AARCH64)
     expect(yaml).toContain(OPENCODE_SHA256_AARCH64)
     expect(yaml).toContain('anthropics/claude-code/releases')

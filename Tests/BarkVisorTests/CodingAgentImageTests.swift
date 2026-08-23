@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Yams
 @testable import BarkVisorCore
 
 struct CodingAgentImageTests {
@@ -75,7 +76,8 @@ struct CodingAgentImageTests {
         #expect(yaml.contains("/usr/local/bin"))
         #expect(!yaml.contains("export OPENAI_BASE_URL=\""))
         #expect(yaml.contains("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'"))
-        #expect(yaml.contains(AgentNetworkCage.allowHostOllamaMarker))
+        #expect(yaml.contains(AgentNetworkCage.allowHostOllamaYAML))
+        #expect(!yaml.contains("# barkvisor:allow-host-ollama"))
         #expect(yaml.contains(CodingAgentImage.claudeSha256Aarch64))
         #expect(yaml.contains(CodingAgentImage.claudeSha256Amd64))
         #expect(yaml.contains(CodingAgentImage.opencodeSha256Aarch64))
@@ -89,8 +91,16 @@ struct CodingAgentImageTests {
         let byo = CodingAgentImage.userData(openaiBaseURL: "https://api.openai.com/v1")
         try CloudInitService.validateUserData(byo)
         #expect(byo.contains("https://api.openai.com/v1"))
-        #expect(!byo.contains(AgentNetworkCage.allowHostOllamaMarker))
+        #expect(!byo.contains(AgentNetworkCage.allowHostOllamaYAML))
         #expect(!AgentNetworkCage.allowHostOllama(userData: byo))
+        guard let node = try Yams.compose(yaml: "#cloud-config\n" + yaml) else {
+            Issue.record("Yams dropped Coding Agent user-data")
+            return
+        }
+        let persisted = try Yams.serialize(node: node)
+        #expect(!persisted.contains("# barkvisor:allow-host-ollama"))
+        #expect(persisted.contains(AgentNetworkCage.allowHostOllamaKey))
+        #expect(AgentNetworkCage.allowHostOllama(userData: persisted))
     }
 
     @Test func `create defaults inject agent class and ollama user-data`() throws {

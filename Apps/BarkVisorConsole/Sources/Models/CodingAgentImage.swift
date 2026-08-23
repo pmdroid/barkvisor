@@ -23,7 +23,7 @@ enum CodingAgentImage {
         "d30d2cba74617f4e7b96e25563c9572ffe453f9eae70fc0df16286813537ee72"
     static let opencodeSha256Amd64 =
         "d910c3ed7613bb5791a328904615d41cc25b7d3a6b470e3199ab0426a995b38a"
-    static let allowHostOllamaMarker = "# barkvisor:allow-host-ollama"
+    static let allowHostOllamaYAML = "barkvisor_allow_host_ollama: true"
 
     static func matches(name: String?, slug: String? = nil) -> Bool {
         if let slug {
@@ -64,7 +64,7 @@ enum CodingAgentImage {
 
     static func userData(openaiBaseURL: String) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
-        let marker = usesDeviceOllama(openaiBaseURL) ? "\(allowHostOllamaMarker)\n" : ""
+        let marker = usesDeviceOllama(openaiBaseURL) ? "\(allowHostOllamaYAML)\n" : ""
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64
         let shaX64 = ttydSha256Amd64

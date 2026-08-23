@@ -189,7 +189,7 @@ struct CreateWorkloadTests {
         #expect(body.cloudInit?.userData?.contains("sha256sum -c") == true)
         #expect(body.cloudInit?.userData?.contains("anthropics/claude-code/releases") == true)
         #expect(body.cloudInit?.userData?.contains("claude.ai/install.sh") != true)
-        #expect(body.cloudInit?.userData?.contains(CodingAgentImage.allowHostOllamaMarker) == true)
+        #expect(body.cloudInit?.userData?.contains(CodingAgentImage.allowHostOllamaYAML) == true)
 
         let ubuntu = image(id: "img-u", name: "Ubuntu 24.04 LTS", imageType: "cloud-image", arch: "arm64")
         let afterSwitch = try CreateWorkload.body(

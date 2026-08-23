@@ -81,7 +81,7 @@ public enum CodingAgentImage {
     public static func userData(openaiBaseURL: String) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
         let marker = usesDeviceOllama(openaiBaseURL)
-            ? "\(AgentNetworkCage.allowHostOllamaMarker)\n"
+            ? "\(AgentNetworkCage.allowHostOllamaYAML)\n"
             : ""
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64

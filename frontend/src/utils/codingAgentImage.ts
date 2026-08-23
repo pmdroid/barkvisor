@@ -17,7 +17,7 @@ export const OPENCODE_SHA256_AARCH64 =
 export const OPENCODE_SHA256_X86_64 =
   'd910c3ed7613bb5791a328904615d41cc25b7d3a6b470e3199ab0426a995b38a'
 export const WEB_TERMINAL_PORT = 7681
-export const ALLOW_HOST_OLLAMA_MARKER = '# barkvisor:allow-host-ollama'
+export const ALLOW_HOST_OLLAMA_YAML = 'barkvisor_allow_host_ollama: true'
 
 export type OpenAIPreset = 'device-ollama' | 'byo'
 
@@ -61,7 +61,7 @@ export function usesDeviceOllama(url: string): boolean {
 
 export function codingAgentUserData(openaiBaseURL: string): string {
   const quotedURL = posixSingleQuoted(openaiBaseURL)
-  const marker = usesDeviceOllama(openaiBaseURL) ? `${ALLOW_HOST_OLLAMA_MARKER}\n` : ''
+  const marker = usesDeviceOllama(openaiBaseURL) ? `${ALLOW_HOST_OLLAMA_YAML}\n` : ''
   return `${marker}package_update: true
 packages:
   - git

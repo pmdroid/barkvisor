@@ -28,18 +28,23 @@ public enum AgentNetworkCage {
         [Config.port, Config.agentPort]
     }
 
-    /// Full-line marker emitted in Coding Agent Device-Ollama user-data.
-    public static let allowHostOllamaMarker = "# barkvisor:allow-host-ollama"
+    /// YAML key emitted in Coding Agent Device-Ollama user-data. Must be a real
+    /// mapping entry (not a comment): generateISO round-trips via Yams and
+    /// drops comments.
+    public static let allowHostOllamaKey = "barkvisor_allow_host_ollama"
+    public static let allowHostOllamaYAML = "\(allowHostOllamaKey): true"
 
     /// Device Ollama guestfwd/seatbelt/iptables exception. Opt-in via the
-    /// marker line or an `OPENAI_BASE_URL` assignment to the Device Ollama
+    /// YAML key or an `OPENAI_BASE_URL` assignment to the Device Ollama
     /// endpoint (not a raw substring). Other Agent-class NAT Workloads keep
     /// the loopback black-hole.
     public static func allowHostOllama(userData: String?) -> Bool {
         guard let userData, !userData.isEmpty else { return false }
-        let hasMarker = userData.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-            .contains { $0.trimmingCharacters(in: .whitespaces) == allowHostOllamaMarker }
-        if hasMarker { return true }
+        let key = NSRegularExpression.escapedPattern(for: allowHostOllamaKey)
+        let keyPattern = #"(?m)^[ \t]*\#(key):[ \t]*true\b"#
+        if userData.range(of: keyPattern, options: .regularExpression) != nil {
+            return true
+        }
         let host = NSRegularExpression.escapedPattern(for: slirpGateway)
         let pattern =
             #"(?m)^[ \t]*(?:export[ \t]+)?OPENAI_BASE_URL=['"]http://\#(host):\#(ollamaPort)(?:/v1)?/?['"]"#
