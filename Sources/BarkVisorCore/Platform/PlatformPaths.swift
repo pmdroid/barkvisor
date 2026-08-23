@@ -59,12 +59,34 @@ public enum PlatformPaths {
             socketDirOverride: env["BARKVISOR_SOCKET_DIR"],
             temporaryDirectory: tmp,
         )
-        try? FileManager.default.createDirectory(
-            at: dir,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700],
-        )
+        // /var/run/barkvisor is created by packaging (Homebrew postinstall,
+        // pkg, systemd). Swallowing mkdir here hides brew services failures.
+        if !socketDirIsPackagingOwned(dir) {
+            try? FileManager.default.createDirectory(
+                at: dir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700],
+            )
+        }
         return dir
+    }
+
+    /// True when packaging, not the daemon, must create the socket directory.
+    public static func socketDirIsPackagingOwned(_ dir: URL) -> Bool {
+        packagingOwnedSocketDirPaths.contains(normalizePath(dir.path))
+    }
+
+    /// False when the directory is missing or not writable by this process.
+    public static func isWritableDirectory(
+        _ dir: URL,
+        fileManager: FileManager = .default,
+    ) -> Bool {
+        var isDir: ObjCBool = false
+        let path = dir.path
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+            return false
+        }
+        return fileManager.isWritableFile(atPath: path)
     }
 
     /// Pure socket-dir choice (no mkdir). `/var/lib/barkvisor` is the systemd
@@ -85,6 +107,16 @@ public enum PlatformPaths {
         }
         return URL(fileURLWithPath: temporaryDirectory, isDirectory: true)
             .appendingPathComponent("barkvisor", isDirectory: true)
+    }
+
+    private static let packagingOwnedSocketDirPaths: Set<String> = [
+        "/var/run/barkvisor",
+        "/private/var/run/barkvisor",
+        "/run/barkvisor",
+    ].reduce(into: Set()) { $0.insert(normalizePath($1)) }
+
+    private static func normalizePath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
     /// Packaged SPA path used to detect an installed layout (PAS-293).

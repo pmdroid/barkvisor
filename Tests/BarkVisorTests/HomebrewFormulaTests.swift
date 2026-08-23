@@ -30,6 +30,8 @@ struct HomebrewFormulaTests {
 
     @Test func `formula depends on qemu swtpm socket_vmnet cdrtools`() throws {
         let formula = try read("packaging/homebrew/barkvisor.rb")
+        #expect(formula.contains("depends_on :macos"))
+        #expect(formula.contains("depends_on arch: :arm64"))
         for dep in ["qemu", "swtpm", "socket_vmnet", "cdrtools"] {
             #expect(formula.contains("depends_on \"\(dep)\""), "missing depends_on \(dep)")
         }
@@ -50,8 +52,8 @@ struct HomebrewFormulaTests {
         #expect(plist.contains("<key>AbandonProcessGroup</key>"))
         #expect(plist.contains("<key>UserName</key>"))
         #expect(plist.contains("<string>_barkvisor</string>"))
-        #expect(plist.contains("<key>GroupName</key>"))
-        #expect(plist.contains("<string>/var/lib/barkvisor</string>"))
+        #expect(plist.contains("<key>GroupName</key>\n    <string>_barkvisor</string>"))
+        #expect(plist.contains("<key>WorkingDirectory</key>\n    <string>/var/lib/barkvisor</string>"))
         #expect(plist.contains("<key>BARKVISOR_DATA_DIR</key>"))
         #expect(plist.contains("<key>BARKVISOR_SOCKET_DIR</key>"))
         #expect(plist.contains("<string>/var/run/barkvisor</string>"))

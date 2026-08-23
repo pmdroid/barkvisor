@@ -22,6 +22,8 @@
     <true/>
     <key>WorkingDirectory</key>
     <string>/var/lib/barkvisor</string>
+    <!-- Created by packaging/homebrew/postinstall.sh as _barkvisor. The
+         daemon cannot mkdir /var/log or /var/run. Keep AbandonProcessGroup. -->
     <key>StandardOutPath</key>
     <string>/var/log/barkvisor/server.log</string>
     <key>StandardErrorPath</key>

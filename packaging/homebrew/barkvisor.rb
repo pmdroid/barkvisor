@@ -8,6 +8,7 @@ class Barkvisor < Formula
   head "https://github.com/pmdroid/barkvisor.git", branch: "main"
 
   depends_on :macos
+  depends_on arch: :arm64
   depends_on xcode: :build
   depends_on "bun" => :build
   depends_on "qemu"

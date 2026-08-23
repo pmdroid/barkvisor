@@ -34,6 +34,13 @@ struct DaemonRestartIsolationTests {
         #expect(dir.path == "/var/run/barkvisor")
     }
 
+    @Test func `var run socket dir is packaging owned`() {
+        #expect(PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/var/run/barkvisor")))
+        #expect(PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/private/var/run/barkvisor")))
+        #expect(!PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/tmp/barkvisor")))
+        #expect(!PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/run/custom-socks")))
+    }
+
     @Test func `dev layout stays under tmp`() {
         let dir = PlatformPaths.resolveSocketDir(
             isInstalled: false,

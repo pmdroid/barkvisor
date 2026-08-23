@@ -46,6 +46,8 @@ if ! dscl . -read "/Users/$BARKVISOR_USER" &>/dev/null; then
     echo "Created user $BARKVISOR_USER with UID $UID_VAL"
 fi
 
+# brew services runs as _barkvisor and cannot mkdir these. The daemon
+# exits if /var/run/barkvisor is missing rather than swallowing mkdir.
 mkdir -p \
     "$DATA_DIR/backups" \
     "$DATA_DIR/firmware" \
