@@ -3,11 +3,9 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/client'
-import type { APIKeyResponse, AuditEntry, LibrarySettings, RemoteAccessStatus, SSHKey, UpdateCheckResponse, UpdateSettings, UpdateInfo } from '../api/types'
+import type { APIKeyResponse, AuditEntry, LibrarySettings, RemoteAccessStatus, SSHKey } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
-import { useTaskPoller } from '../composables/useTaskPoller'
-import { useFeature } from '../composables/useFeature'
 import {
   advertisedHostForOffer,
   CUSTOM_ADVERTISED_HOST,
@@ -42,13 +40,11 @@ import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import PairingQr from '../components/PairingQr.vue'
-import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 
 const route = useRoute()
 const toast = useToastStore()
 const sshKeyStore = useSSHKeyStore()
-const inAppUpdate = useFeature('inAppUpdate')
-const tab = ref<'home' | 'library' | 'apikeys' | 'sshkeys' | 'audit' | 'updates'>('apikeys')
+const tab = ref<'home' | 'library' | 'apikeys' | 'sshkeys' | 'audit'>('apikeys')
 
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
@@ -303,14 +299,6 @@ async function rejoinThisDevice() {
     toast.error(apiErrorMessage(e, `Could not re-pair this ${DEVICE_LABEL}`))
   } finally {
     rejoinLoading.value = false
-  }
-}
-
-function openUpdatesTab() {
-  tab.value = 'updates'
-  if (inAppUpdate.available) {
-    fetchUpdateSettings()
-    checkForUpdates()
   }
 }
 
@@ -631,142 +619,13 @@ function actionBadgeClass(action: string) {
   return actionColors[verb] || 'badge-gray'
 }
 
-
-// Updates
-const currentVersion = ref('')
-const availableUpdate = ref<UpdateInfo | null>(null)
-const updateSettings = ref<UpdateSettings>({ channel: 'stable', autoCheck: false, isDevBuild: false, updateURL: null })
-const checkingUpdate = ref(false)
-const installConfirm = ref(false)
-const updatePhase = ref<'idle' | 'installing' | 'restarting' | 'success' | 'error'>('idle')
-const updateError = ref('')
-const { task: updateTask, poll: pollTask, stop: stopPoll } = useTaskPoller()
-let healthPollTimer: ReturnType<typeof setTimeout> | null = null
-
-async function fetchUpdateSettings() {
-  try {
-    const { data } = await api.get('/system/updates/settings')
-    updateSettings.value = data
-  } catch {}
-}
-
-async function saveUpdateSettings() {
-  try {
-    const { data } = await api.put('/system/updates/settings', updateSettings.value)
-    updateSettings.value = data
-    toast.success('Update settings saved')
-  } catch (e: any) {
-    toast.error(apiErrorMessage(e))
-  }
-}
-
-async function checkForUpdates() {
-  checkingUpdate.value = true
-  try {
-    const { data } = await api.get<UpdateCheckResponse>('/system/updates/check')
-    currentVersion.value = data.currentVersion
-    availableUpdate.value = data.update
-    if (!data.update) {
-      toast.success('You are running the latest version')
-    }
-  } catch (e: any) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    checkingUpdate.value = false
-  }
-}
-
-async function doInstallUpdate() {
-  installConfirm.value = false
-  const update = availableUpdate.value
-  if (!update) return
-
-  updatePhase.value = 'installing'
-  updateError.value = ''
-
-  try {
-    const { data } = await api.post('/system/updates/install', {
-      version: update.version,
-    })
-
-    await pollTask(data.taskID, {
-      interval: 1500,
-      onComplete: () => startHealthPoll(update.version),
-      onFailed: (event) => {
-        updatePhase.value = 'error'
-        updateError.value = event.error || 'Update failed'
-      },
-    })
-  } catch {
-    // Connection likely dropped because the server is restarting
-    startHealthPoll(update.version)
-  }
-}
-
-function startHealthPoll(_expectedVersion: string) {
-  updatePhase.value = 'restarting'
-  let elapsed = 0
-  let serverSeen = false
-  const interval = 2000
-  const timeout = 120000
-  // After the server responds with the same version, wait a bit in case
-  // it's the old process still shutting down, then accept the update.
-  const sameVersionGrace = 10000
-
-  const check = async () => {
-    elapsed += interval
-    if (elapsed > timeout) {
-      updatePhase.value = 'error'
-      updateError.value = 'Timed out waiting for server to restart. The update may still be in progress — try refreshing the page in a minute.'
-      return
-    }
-    try {
-      const { data } = await api.get('/system/about')
-      if (data.version && data.version !== currentVersion.value) {
-        // Version changed — update definitely succeeded
-        currentVersion.value = data.version
-        availableUpdate.value = null
-        updatePhase.value = 'success'
-        return
-      }
-      if (!serverSeen) {
-        // Server is back but version unchanged — start grace timer
-        serverSeen = true
-        healthPollTimer = setTimeout(() => {
-          // Server survived restart with same version string — accept it
-          currentVersion.value = data.version ?? currentVersion.value
-          availableUpdate.value = null
-          updatePhase.value = 'success'
-        }, sameVersionGrace)
-        return
-      }
-    } catch {
-      // Server not back yet — reset grace if it was a transient blip
-      serverSeen = false
-    }
-    healthPollTimer = setTimeout(check, interval)
-  }
-  healthPollTimer = setTimeout(check, interval)
-}
-
-function reloadPage() {
-  window.location.reload()
-}
-
-function resetUpdateState() {
-  updatePhase.value = 'idle'
-  updateError.value = ''
-}
-
 onMounted(() => {
   fetchKeys()
   if (route.query.tab === 'home') openHomeTab()
 })
 
 onUnmounted(() => {
-  stopPoll()
   stopPairingTick()
-  if (healthPollTimer) clearTimeout(healthPollTimer)
 })
 </script>
 
@@ -781,10 +640,6 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
-    <button
-      :class="{ active: tab === 'updates' }"
-      @click="openUpdatesTab"
-    >Updates</button>
   </div>
 
   <!-- Home / Add a Device (PAS-51) — existing /api/pairing/codes, not a second wizard -->
@@ -1236,115 +1091,6 @@ onUnmounted(() => {
     />
   </div>
 
-  <!-- Updates Tab -->
-  <div v-if="tab === 'updates' && !inAppUpdate.available" class="update-status-card">
-    <div style="font-size:20px;margin-bottom:8px">In-app updates unavailable</div>
-    <UnsupportedHint :text="inAppUpdate.explanation" />
-  </div>
-  <div v-else-if="inAppUpdate.available && tab === 'updates'">
-    <!-- Success state -->
-    <div v-if="updatePhase === 'success'" class="update-status-card update-success">
-      <div style="font-size:20px;margin-bottom:8px">Updated successfully</div>
-      <p style="color:var(--text-secondary);margin-bottom:16px">BarkVisor has been updated to v{{ currentVersion }}.</p>
-      <AppButton variant="primary" @click="reloadPage">Reload Page</AppButton>
-    </div>
-
-    <!-- Restarting state -->
-    <div v-else-if="updatePhase === 'restarting'" class="update-status-card">
-      <div style="font-size:20px;margin-bottom:8px">Restarting server...</div>
-      <p style="color:var(--text-secondary)">The update has been installed. Waiting for the server to come back online...</p>
-      <div class="progress-bar" style="margin-top:16px">
-        <div class="progress-bar-fill progress-bar-indeterminate"></div>
-      </div>
-    </div>
-
-    <!-- Installing state -->
-    <div v-else-if="updatePhase === 'installing'" class="update-status-card">
-      <div style="font-size:20px;margin-bottom:8px">Installing update...</div>
-      <p style="color:var(--text-secondary);margin-bottom:12px">Downloading and verifying v{{ availableUpdate?.version }}. Do not close this page.</p>
-      <div class="progress-bar">
-        <div class="progress-bar-fill" :style="{ width: ((updateTask?.progress ?? 0) * 100) + '%' }"></div>
-      </div>
-      <p v-if="updateTask?.progress" style="color:var(--text-secondary);font-size:12px;margin-top:8px;text-align:center">
-        {{ Math.round((updateTask.progress ?? 0) * 100) }}%
-      </p>
-    </div>
-
-    <!-- Error state -->
-    <div v-else-if="updatePhase === 'error'" class="update-status-card update-error">
-      <div style="font-size:20px;margin-bottom:8px">Update failed</div>
-      <p style="color:var(--text-secondary);margin-bottom:16px">{{ updateError }}</p>
-      <AppButton @click="resetUpdateState">Dismiss</AppButton>
-    </div>
-
-    <!-- Normal state -->
-    <template v-else>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-        <div>
-          <p style="color:var(--text-secondary);font-size:13px;margin:0">
-            Current version: <strong style="color:var(--text)">v{{ currentVersion || '...' }}</strong>
-          </p>
-        </div>
-        <AppButton variant="primary" :loading="checkingUpdate" loadingText="Checking..." @click="checkForUpdates">Check for Updates</AppButton>
-      </div>
-
-      <!-- Update available -->
-      <div v-if="availableUpdate" class="update-card">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-          <div>
-            <h3 style="margin:0 0 4px 0">v{{ availableUpdate.version }} available</h3>
-            <span style="color:var(--text-secondary);font-size:12px">
-              Released {{ new Date(availableUpdate.publishedAt).toLocaleDateString() }}
-            </span>
-            <span v-if="availableUpdate.isPrerelease" class="badge badge-yellow" style="margin-left:8px">Pre-release</span>
-          </div>
-          <AppButton variant="primary" @click="installConfirm = true">Install Update</AppButton>
-        </div>
-        <div v-if="availableUpdate.changelog" class="changelog">
-          <p style="font-size:12px;color:var(--text-secondary);margin:0 0 6px 0;font-weight:500">Changelog</p>
-          <pre style="white-space:pre-wrap;font-size:12px;color:var(--text-secondary);margin:0;max-height:200px;overflow-y:auto">{{ availableUpdate.changelog }}</pre>
-        </div>
-      </div>
-
-      <!-- Settings -->
-      <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
-        <h3 style="margin:0 0 12px 0;font-size:14px">Update Preferences</h3>
-        <div style="display:flex;gap:16px;align-items:center">
-          <div class="form-group" style="margin:0">
-            <label style="font-size:12px;margin-bottom:4px">Channel</label>
-            <AppSelect :modelValue="updateSettings.channel" @update:modelValue="updateSettings.channel = $event as 'stable' | 'beta'; saveUpdateSettings()">
-              <option value="stable">Stable</option>
-              <option value="beta">Beta (includes pre-releases)</option>
-            </AppSelect>
-          </div>
-        </div>
-        <div style="margin-top:12px">
-          <div class="form-group" style="margin:0">
-            <label style="font-size:12px;margin-bottom:4px">Test Update URL <span style="color:var(--text-tertiary)">(dev only)</span></label>
-            <input
-              :value="updateSettings.updateURL ?? ''"
-              @change="updateSettings.updateURL = ($event.target as HTMLInputElement).value || null; saveUpdateSettings()"
-              placeholder="https://api.github.com/repos/owner/repo/releases"
-              style="width:100%;max-width:500px"
-            />
-          </div>
-        </div>
-      </div>
-    </template>
-  </div>
-
-  <!-- Install Update Confirm -->
-  <ConfirmDialog
-    v-if="installConfirm"
-    title="Install Update"
-    :message="`Install BarkVisor v${availableUpdate?.version}? The server will restart and all connections will drop briefly.`"
-    confirm-label="Install"
-    :danger="false"
-    :loading="false"
-    @confirm="doInstallUpdate"
-    @cancel="installConfirm = false"
-  />
-
   <!-- Create Key Modal -->
   <div v-if="showCreate" class="modal-overlay" @click.self="closeCreatedKey">
     <div class="modal">
@@ -1422,7 +1168,6 @@ onUnmounted(() => {
 }
 .badge-yellow { background: var(--yellow-muted, rgba(234,179,8,0.15)); color: var(--yellow, #eab308); }
 
-.update-card,
 .pairing-card {
   background: var(--bg-raised, var(--bg));
   border: 1px solid var(--border);
@@ -1515,44 +1260,5 @@ onUnmounted(() => {
   font-family: var(--font-mono, ui-monospace, monospace);
   resize: vertical;
   line-height: 1.4;
-}
-.changelog {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs, 6px);
-  padding: 12px;
-}
-.update-status-card {
-  background: var(--bg-raised, var(--bg));
-  border: 1px solid var(--border);
-  border-radius: var(--radius, 8px);
-  padding: 32px;
-  text-align: center;
-}
-.update-success {
-  border-color: var(--green, #22c55e);
-}
-.update-error {
-  border-color: var(--red, #ef4444);
-}
-.progress-bar {
-  height: 6px;
-  background: var(--bg);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.progress-bar-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-.progress-bar-indeterminate {
-  width: 30%;
-  animation: indeterminate 1.5s ease-in-out infinite;
-}
-@keyframes indeterminate {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
 }
 </style>

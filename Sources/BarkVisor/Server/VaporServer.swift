@@ -95,7 +95,6 @@ public final class VaporServer: @unchecked Sendable {
             ),
             pruneTaskID: "pairing-rate-limit-prune",
         )
-        let updateService = UpdateService()
         let pairingOffers = PairingOfferStore(dataDir: Config.dataDir)
 
         try registerRoutes(
@@ -114,7 +113,6 @@ public final class VaporServer: @unchecked Sendable {
                 loginRateLimit: loginRateLimit,
                 pairingRateLimit: pairingRateLimit,
                 setupMiddleware: setup,
-                updateService: updateService,
                 healthProbes: services.healthProbes,
                 pairingOffers: pairingOffers,
                 jwt: JWTAuthMiddleware(keys: keys),

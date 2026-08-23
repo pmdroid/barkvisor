@@ -243,16 +243,13 @@ public enum CapabilityDetailBuilder {
         )
     }
 
-    private static func inAppUpdate(os: String, supported: Bool) -> CapabilityDetail {
-        guard !supported else {
-            return CapabilityDetail(code: .inAppUpdate, supported: true)
-        }
+    private static func inAppUpdate(os: String, supported _: Bool) -> CapabilityDetail {
         if isLinux(os) {
             return CapabilityDetail(
                 code: .inAppUpdate,
                 supported: false,
                 reason: .linuxPkgUpdate,
-                remediation: "In-app software updates are not supported on Linux yet. "
+                remediation: "In-app software updates are not supported. "
                     + "Update BarkVisor using your package manager or release artifacts.",
             )
         }
@@ -260,7 +257,8 @@ public enum CapabilityDetailBuilder {
             code: .inAppUpdate,
             supported: false,
             reason: .osUnsupported,
-            remediation: "In-app software updates are not supported on this platform.",
+            remediation: "In-app software updates are not supported. "
+                + "Update with Homebrew: brew upgrade barkvisor.",
         )
     }
 

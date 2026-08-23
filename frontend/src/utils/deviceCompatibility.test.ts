@@ -25,7 +25,7 @@ const armCaps: CurrentHostCapabilities = {
   supportsBridgedNetworking: true,
   supportsManagedBridgeDaemon: true,
   supportsUSBPassthrough: true,
-  supportsInAppUpdate: true,
+  supportsInAppUpdate: false,
   accelerator: 'hvf',
   hostArch: 'arm64',
   hostCpuCount: 8,

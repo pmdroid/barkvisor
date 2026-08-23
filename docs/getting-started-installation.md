@@ -130,6 +130,15 @@ Additionally, short-lived unix sockets for QMP communication are stored in a sho
 
 ## Upgrading
 
+Preferred on macOS with Homebrew:
+
+```sh
+brew upgrade barkvisor
+sudo brew services restart barkvisor
+```
+
+From a `.pkg` or standalone archive:
+
 1. Stop the daemon: `sudo launchctl bootout system/dev.barkvisor`
 2. Install the new version using the `.pkg` installer or by extracting the standalone archive.
 3. Start the daemon: `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist`
