@@ -25,6 +25,7 @@ public enum StreamTicketPolicy {
         /// Owner Device spends `ticket` / `token` (one-use, Workload-scoped).
         case ownerDevice
         /// Owner Device SSE without a Workload id (logs, image progress, tasks).
+        /// File downloads such as `/api/diagnostics/bundle/{id}/download` are `.other`.
         case ownerDeviceSSE
         /// Home tunnel: spend Home `session`; pass Device ticket through unspent.
         case homeTunnel
@@ -76,6 +77,7 @@ public enum StreamTicketPolicy {
     }
 
     /// `/api/logs/stream`, `/api/images/{id}/progress`, `/api/tasks/{id}/stream`.
+    /// Not `/api/diagnostics/bundle` (POST) or `.../bundle/{id}/download` (Bearer).
     public static func isOwnerDeviceSSE(_ path: String) -> Bool {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         if parts == ["api", "logs", "stream"] { return true }

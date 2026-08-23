@@ -49,6 +49,24 @@ struct StreamTicketPolicyTests {
         #expect(!StreamTicketPolicy.spendsDeviceTicket(path: "/api/vms/vm-1/metrics"))
         #expect(StreamTicketPolicy.spendsDeviceTicket(path: "/api/vms/vm-1/metrics/stream"))
         #expect(!StreamTicketPolicy.isOwnerDeviceStream("/api/home/devices/peer-1/v1/vms/vm-1/vnc"))
+        #expect(StreamTicketPolicy.site(path: "/api/diagnostics/bundle") == .other)
+        #expect(
+            StreamTicketPolicy.site(path: "/api/diagnostics/bundle/task-1/download") == .other,
+        )
+        #expect(
+            StreamTicketPolicy.site(
+                path: "/api/diagnostics/bundle/diagnostic-bundle:deadbeef/download",
+            ) == .other,
+        )
+        #expect(!StreamTicketPolicy.spendsDeviceTicket(path: "/api/diagnostics/bundle"))
+        #expect(
+            !StreamTicketPolicy.spendsDeviceTicket(
+                path: "/api/diagnostics/bundle/task-1/download",
+            ),
+        )
+        #expect(
+            !StreamTicketPolicy.isOwnerDeviceSSE("/api/diagnostics/bundle/task-1/download"),
+        )
     }
 
     @Test func `device ticket accepts noVNC token rewrite`() {

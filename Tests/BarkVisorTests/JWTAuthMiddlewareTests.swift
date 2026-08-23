@@ -153,6 +153,60 @@ struct JWTAuthMiddlewareTests {
         }
     }
 
+    @Test func `diagnostics bundle download does not spend a Device ticket`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        let ticket = await mintTicket(vmID: nil)
+        do {
+            let req = request(
+                app,
+                path: "/api/diagnostics/bundle/task-1/download?ticket=\(ticket)",
+            )
+            do {
+                _ = try await jwt.respond(to: req, chainingTo: OKResponder())
+                Issue.record("expected unauthorized without Bearer")
+            } catch let error as AbortError {
+                #expect(error.status == .unauthorized)
+            }
+            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket)
+            #expect(leftover?.userID == "user-1", "diagnostics download must not spend ?ticket=")
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
+    @Test func `stray ticket on diagnostics download still allows Bearer JWT`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        let ticket = await mintTicket(vmID: nil)
+        let payload = UserPayload(
+            sub: .init(value: "user-1"),
+            username: "admin",
+            exp: .init(value: Date().addingTimeInterval(3_600)),
+        )
+        let token = try await keys.sign(payload)
+        do {
+            let req = request(
+                app,
+                path: "/api/diagnostics/bundle/task-1/download?ticket=\(ticket)",
+            )
+            req.headers.add(name: .authorization, value: "Bearer \(token)")
+            let response = try await jwt.respond(to: req, chainingTo: OKResponder())
+            #expect(response.status == .ok)
+            #expect(req.authenticatedUser?.authMethod == "jwt")
+            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket)
+            #expect(leftover != nil)
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
     @Test func `home tunnel does not spend Device ticket`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()
