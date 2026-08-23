@@ -136,6 +136,28 @@ struct JWTAuthMiddlewareTests {
         }
     }
 
+    @Test func `logs SSE rejects a Workload scoped ticket`() async throws {
+        let app = try await makeApp()
+        let keys = await makeKeys()
+        let jwt = JWTAuthMiddleware(keys: keys)
+        let ticket = await mintTicket(vmID: "vm-1")
+        do {
+            let req = request(app, path: "/api/logs/stream?ticket=\(ticket)")
+            do {
+                _ = try await jwt.respond(to: req, chainingTo: OKResponder())
+                Issue.record("expected unauthorized for a VM-scoped ticket on logs SSE")
+            } catch let error as AbortError {
+                #expect(error.status == .unauthorized)
+            }
+            let leftover = await WebSocketTicketStore.shared.validateTicket(ticket, forVMID: "vm-1")
+            #expect(leftover == nil, "unscoped spend still consumes a VM-scoped ticket")
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
     @Test func `logs SSE spends unscoped ticket`() async throws {
         let app = try await makeApp()
         let keys = await makeKeys()

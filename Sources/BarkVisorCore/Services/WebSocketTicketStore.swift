@@ -73,12 +73,13 @@ public actor WebSocketTicketStore {
 
     /// Validate and consume a ticket (non-VM-scoped SSE: logs, image progress, tasks).
     /// Diagnostic bundle download is Bearer/API-key, not a Device ticket.
-    /// The ticket is always removed (single-use), even if expired.
+    /// The ticket is always removed (single-use), even if expired or VM-scoped.
     public func validateTicket(_ ticket: String) -> (userID: String, username: String)? {
         guard let entry = tickets.removeValue(forKey: ticket) else {
             return nil
         }
         guard entry.expiresAt > Date() else { return nil }
+        guard entry.targetVMID == nil else { return nil }
         return (userID: entry.userID, username: entry.username)
     }
 
