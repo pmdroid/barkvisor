@@ -172,12 +172,14 @@ public actor RepositorySyncService {
         // SSRF protection: validate URL does not target private/internal hosts.
         // This check runs at sync time (not just repo creation) to defend against
         // DNS rebinding where a hostname's resolution changes after initial validation.
-        if let ssrfError = SSRFGuard.validate(url: url) {
+        if let ssrfError = SSRFGuard.fetchRejection(for: url) {
             throw BarkVisorError.repositorySyncFailed(ssrfError)
         }
 
         let maxCatalogSize = 10 * 1_024 * 1_024
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Do not use URLSession.shared: it follows redirects without
+        // re-running SSRFGuard.validate / pinEndpoint.
+        let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ... 299).contains(httpResponse.statusCode)
         else {

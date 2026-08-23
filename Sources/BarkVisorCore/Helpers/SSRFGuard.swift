@@ -1,3 +1,6 @@
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import Foundation
 
 /// SSRF protection utilities for validating URLs against private/internal hosts.
@@ -39,7 +42,8 @@ public enum SSRFGuard {
         // Check first hex group for private ranges
         let firstGroup = lower.split(separator: ":").first.map(String.init) ?? ""
         if firstGroup.hasPrefix("fc") || firstGroup.hasPrefix("fd") { return true } // ULA (fc00::/7)
-        if firstGroup == "fe80" { return true } // Link-local (fe80::/10)
+        // Link-local fe80::/10 — first 10 bits 1111111010 (fe80–febf).
+        if let group = UInt16(firstGroup, radix: 16), group & 0xFFC0 == 0xFE80 { return true }
 
         return false
     }
@@ -79,7 +83,7 @@ public enum SSRFGuard {
     /// Validate a URL, checking both the hostname string and resolved IPs.
     /// Returns a descriptive error string if the URL targets a private host, or nil if safe.
     public static func validate(url: URL) -> String? {
-        guard let host = url.host?.lowercased() else {
+        guard let host = url.host?.lowercased(), !host.isEmpty else {
             return "URL has no host"
         }
 
@@ -95,6 +99,85 @@ public enum SSRFGuard {
 
         return nil
     }
+
+    /// Scheme allowlist plus ``validate(url:)``. Catalog/remote input must never
+    /// claim the local `file://` download path.
+    public static func fetchRejection(for url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), Config.allowedURLSchemes.contains(scheme) else {
+            return "Invalid URL. Only http:// and https:// URLs are allowed."
+        }
+        return validate(url: url)
+    }
+
+    /// Resolve once and pick a single public IP for the TCP connect.
+    /// TLS SNI and the HTTP Host header stay on `originalHost`.
+    public static func pinEndpoint(url: URL, resolvedIPs: [String]? = nil) throws -> PinnedEndpoint {
+        guard let scheme = url.scheme?.lowercased(), Config.allowedURLSchemes.contains(scheme) else {
+            throw SSRFPinError.rejected("Invalid URL. Only http:// and https:// URLs are allowed.")
+        }
+        guard let host = url.host, !host.isEmpty else {
+            throw SSRFPinError.rejected("URL has no host")
+        }
+        if let reason = validate(url: url) {
+            throw SSRFPinError.rejected(reason)
+        }
+        let ips = resolvedIPs ?? resolvedIPStrings(host)
+        if ips.isEmpty {
+            throw SSRFPinError.rejected("URL hostname '\(host)' could not be resolved")
+        }
+        if ips.contains(where: { isPrivateHost($0) }) {
+            throw SSRFPinError.rejected(
+                "URL hostname '\(host)' resolves to a private/internal IP address",
+            )
+        }
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        return PinnedEndpoint(
+            originalHost: host, connectIP: ips[0], port: port, usesTLS: scheme == "https",
+        )
+    }
+
+    /// Absolute URL for an HTTP redirect hop, or nil when the status is not a hop.
+    public static func redirectTarget(
+        statusCode: Int,
+        location: String?,
+        from requestURL: URL,
+    ) -> URL? {
+        switch statusCode {
+        case 301, 302, 303, 307, 308:
+            break
+        default:
+            return nil
+        }
+        guard let location, !location.isEmpty else { return nil }
+        return URL(string: location, relativeTo: requestURL)?.absoluteURL
+    }
+
+    /// Whether a redirect hop may be fetched. Default URLSession follows blindly;
+    /// Library downloads must re-run ``validate(url:)`` (scheme + DNS) on Location.
+    public static func shouldFollowRedirect(to url: URL) -> Bool {
+        fetchRejection(for: url) == nil
+    }
+
+    /// URLSession that only follows hops ``shouldFollowRedirect(to:)`` allows.
+    /// HTTP(S) is handled by ``SSRFPinnedURLProtocol``, which connects to the
+    /// address ``pinEndpoint`` approved and keeps Host / TLS SNI on the original name.
+    public static func urlSession(resourceTimeout: TimeInterval = 60) -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForResource = resourceTimeout
+        config.timeoutIntervalForRequest = resourceTimeout
+        config.httpAdditionalHeaders = [
+            SSRFPinnedURLProtocol.timeoutHeader: String(Int(resourceTimeout.rounded(.up))),
+        ]
+        config.protocolClasses = [SSRFPinnedURLProtocol.self]
+        return URLSession(
+            configuration: config,
+            delegate: SSRFRedirectGate.shared,
+            delegateQueue: nil,
+        )
+    }
+
+    /// Shared catalog/default fetch session (do not use URLSession.shared).
+    public static let defaultSession: URLSession = urlSession()
 
     // MARK: - Private helpers
 
@@ -119,5 +202,42 @@ public enum SSRFGuard {
         default:
             return nil
         }
+    }
+}
+
+/// Connect to `connectIP` while HTTP Host and TLS SNI stay `originalHost`.
+public struct PinnedEndpoint: Equatable, Sendable {
+    public let originalHost: String
+    public let connectIP: String
+    public let port: Int
+    public let usesTLS: Bool
+}
+
+public enum SSRFPinError: Error, Equatable, LocalizedError {
+    case rejected(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .rejected(message): message
+        }
+    }
+}
+
+/// Refuses redirect hops that fail ``SSRFGuard.validate(url:)`` (private DNS, bad scheme).
+final class SSRFRedirectGate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = SSRFRedirectGate()
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void,
+    ) {
+        guard let url = request.url, SSRFGuard.shouldFollowRedirect(to: url) else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 }

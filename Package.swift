@@ -15,6 +15,7 @@ var coreDependencies: [Target.Dependency] = [
     .product(name: "SwiftSentry", package: "swift-sentry"),
     .product(name: "Crypto", package: "swift-crypto"),
     .product(name: "X509", package: "swift-certificates"),
+    .product(name: "AsyncHTTPClient", package: "async-http-client"),
 ]
 
 var testDependencies: [Target.Dependency] = [

@@ -98,14 +98,8 @@ struct RepositoryController: RouteCollection {
             throw Abort(.badRequest, reason: "Invalid URL. Only http:// and https:// URLs are allowed.")
         }
 
-        // Block requests to private/internal IP ranges (SSRF protection)
-        guard let host = url.host?.lowercased() else {
-            throw Abort(.badRequest, reason: "URL must contain a valid host")
-        }
-        if SSRFGuard.isPrivateHost(host) {
-            throw Abort(
-                .badRequest, reason: "URLs pointing to private or internal addresses are not allowed",
-            )
+        if let ssrfError = SSRFGuard.validate(url: url) {
+            throw Abort(.badRequest, reason: ssrfError)
         }
 
         guard body.repoType == "images" || body.repoType == "templates" else {
@@ -115,8 +109,9 @@ struct RepositoryController: RouteCollection {
         let now = iso8601.string(from: Date())
         let id = UUID().uuidString
 
-        // Fetch the catalog to get the name
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Fetch the catalog to get the name. Do not use URLSession.shared:
+        // it follows redirects without re-running SSRFGuard.validate.
+        let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse,
               (200 ... 299).contains(httpResponse.statusCode)
         else {
@@ -269,10 +264,8 @@ struct RepositoryController: RouteCollection {
         else {
             throw Abort(.badRequest, reason: "Invalid download URL")
         }
-        if let host = sourceURL.host?.lowercased(), SSRFGuard.isPrivateHost(host) {
-            throw Abort(
-                .badRequest, reason: "Download URLs pointing to private addresses are not allowed",
-            )
+        if let ssrfError = SSRFGuard.validate(url: sourceURL) {
+            throw Abort(.badRequest, reason: ssrfError)
         }
 
         let checksum = ExpectedChecksum.catalog(from: repoImage)
