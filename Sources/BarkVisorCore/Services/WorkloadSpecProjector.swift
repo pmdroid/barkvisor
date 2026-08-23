@@ -29,6 +29,7 @@ import Foundation
 /// | spec.usb | usbDevices |
 /// | spec.sharedPaths | sharedPaths |
 /// | spec.health | healthJson |
+/// | spec.workloadClass | workloadClass |
 /// | overrides | overridesJson |
 ///
 /// Host-only (status, not required on spec): state, pendingChanges, autoCreated,
@@ -81,6 +82,8 @@ public enum WorkloadSpecProjector {
                 display: WorkloadDisplay(resolution: vm.displayResolution),
                 sharedPaths: shared.isEmpty ? nil : shared,
                 health: vm.decodedHealth,
+                workloadClass: (try? WorkloadClass.parse(vm.workloadClass).rawValue)
+                    ?? WorkloadClass.house.rawValue,
             ),
             overrides: vm.decodedOverrides,
         )
@@ -167,6 +170,7 @@ public enum WorkloadSpecProjector {
             try WorkloadHealthSpec.validate(health)
         }
         vm.setHealth(spec.spec.health)
+        vm.workloadClass = try WorkloadClass.parse(spec.spec.workloadClass).rawValue
     }
 
     public static func validate(_ spec: WorkloadSpec, existingID: String? = nil) throws {
@@ -226,6 +230,8 @@ public enum WorkloadSpecProjector {
         if let health = spec.spec.health {
             try WorkloadHealthSpec.validate(health)
         }
+        _ = try WorkloadClass.parse(spec.spec.workloadClass)
+        try AgentWorkloadPolicy.validate(spec: spec, network: nil)
     }
 
     /// Resolve guest profile id from spec, defaulting arch from the host when omitted.

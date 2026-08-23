@@ -262,10 +262,12 @@ public enum QEMUBuilder {
             #endif
         }
 
-        return QEMULaunchConfig(
+        let launch = QEMULaunchConfig(
             executable: qemuBinary, arguments: args,
             swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
         )
+        let klass = try WorkloadClass.parse(spec.spec.workloadClass)
+        return try AgentNetworkCage.wrapLaunch(launch, workloadClass: klass)
     }
 
     // MARK: - Argument Builders
@@ -428,6 +430,10 @@ public enum QEMUBuilder {
             }
         case .nat:
             netdevArgs = "user,id=net0"
+            let klass = try WorkloadClass.parse(spec.spec.workloadClass)
+            if klass == .agent {
+                netdevArgs += AgentNetworkCage.slirpExtras(mode: .nat)
+            }
             if let dns = network?.dnsServer, !dns.isEmpty {
                 try validateIPv4(dns)
                 netdevArgs += ",dns=\(dns)"
@@ -482,6 +488,7 @@ public enum QEMUBuilder {
 
     private static func usbPassthroughArgs(spec: WorkloadSpec) throws -> [String] {
         guard !spec.spec.usb.isEmpty else { return [] }
+        try AgentWorkloadPolicy.assertUSBAllowed(spec.spec.workloadClass)
         let hostDevices = try USBDeviceService.listDevices()
         return try usbHostArgs(usb: spec.spec.usb, hostDevices: hostDevices)
     }

@@ -364,6 +364,7 @@ final class AppModel {
         name: String,
         image: LibraryImage,
         on device: HomeDeviceHealthSnapshot,
+        workloadClass: String = "house",
     ) async -> Workload? {
         let key = "create/\(device.hostId)"
         actionIDs.insert(key)
@@ -373,6 +374,7 @@ final class AppModel {
                 name: name,
                 image: image,
                 hostCPUCount: device.resources?.cpuCount,
+                workloadClass: workloadClass,
             )
             let created = try await requireClient().createWorkload(body, on: device)
             await refreshDeviceScoped()

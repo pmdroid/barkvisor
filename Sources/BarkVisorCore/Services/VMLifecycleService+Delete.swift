@@ -178,5 +178,14 @@ extension VMLifecycleService {
                 try assertUSBUnclaimed(normalized ?? usb, db: db)
             }
         }
+
+        let klass = try WorkloadClass.parse(params.workloadClass)
+        try AgentWorkloadPolicy.validate(
+            workloadClass: klass,
+            usbCount: params.usbDevices?.count ?? 0,
+            sharedPathCount: params.sharedPaths?.count ?? 0,
+            portForwardCount: params.portForwards?.count ?? 0,
+            networkMode: NetworkCapability.effectiveMode(of: network),
+        )
     }
 }

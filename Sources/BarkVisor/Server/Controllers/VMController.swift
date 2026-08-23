@@ -32,6 +32,7 @@ struct VMResponse: Content {
     let portForwards: [PortForwardRule]?
     let usbDevices: [USBPassthroughDevice]?
     let pendingChanges: Bool
+    let workloadClass: String
     let createdAt: String
     let updatedAt: String
 
@@ -70,6 +71,8 @@ struct VMResponse: Content {
         self.portForwards = pfs.isEmpty ? nil : pfs
         let usb = vm.decodedUSBDevices
         self.usbDevices = usb.isEmpty ? nil : usb
+        self.workloadClass = (try? WorkloadClass.parse(vm.workloadClass).rawValue)
+            ?? WorkloadClass.house.rawValue
     }
 }
 
@@ -96,6 +99,8 @@ struct CreateVMRequest: Content, Validatable {
     let tpmEnabled: Bool?
     /// Optional WorkloadSpec. When present, it is the source for identity/resources.
     let spec: WorkloadSpec?
+    /// `house` | `agent`. Omitted = house (PAS-268).
+    var workloadClass: String?
 
     static func validations(_ validations: inout Validations) {
         validations.add("name", as: String.self, is: .count(1 ... 128), required: false)
@@ -133,6 +138,7 @@ struct UpdateVMRequest: Content, Validatable {
     let uefi: Bool?
     let tpmEnabled: Bool?
     let spec: WorkloadSpec?
+    var workloadClass: String?
 
     static func validations(_ validations: inout Validations) {
         validations.add(
@@ -282,7 +288,10 @@ struct VMController: RouteCollection {
         let body = try req.content.decode(UpdateVMRequest.self)
 
         let vm: VM
-        if let spec = body.spec {
+        if var spec = body.spec {
+            if spec.spec.workloadClass == nil {
+                spec.spec.workloadClass = body.workloadClass
+            }
             vm = try await VMLifecycleService.updateVMSpec(id: id, spec: spec, db: req.db)
         } else {
             let updateParams = UpdateVMParams(
@@ -292,6 +301,7 @@ struct VMController: RouteCollection {
                 description: body.description, bootOrder: body.bootOrder,
                 displayResolution: body.displayResolution, additionalDiskIds: body.additionalDiskIds,
                 sharedPaths: body.sharedPaths, uefi: body.uefi, tpmEnabled: body.tpmEnabled,
+                workloadClass: body.workloadClass,
             )
             vm = try await VMLifecycleService.updateVM(
                 id: id, params: updateParams, db: req.db,
@@ -466,7 +476,10 @@ struct VMController: RouteCollection {
             uefi: body.uefi,
             tpmEnabled: body.tpmEnabled,
         )
-        if let spec = body.spec {
+        if var spec = body.spec {
+            if spec.spec.workloadClass == nil {
+                spec.spec.workloadClass = body.workloadClass
+            }
             return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)
         }
         guard let name = body.name,
@@ -493,6 +506,7 @@ struct VMController: RouteCollection {
             sharedPaths: body.sharedPaths,
             portForwards: body.portForwards,
             usbDevices: body.usbDevices,
+            workloadClass: body.workloadClass,
         )
         return try EffectiveWorkloadPipeline.createParams(from: spec, extras: extras)
     }

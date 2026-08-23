@@ -77,6 +77,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
+import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDiskStore } from '../stores/disks'
 import { useNetworkStore } from '../stores/networks'
@@ -147,6 +148,9 @@ const vm = computed(() => {
   if (source === 'member') return homeWorkloads.vmFor(hostId.value, vmId.value)
   return store.vms.find(v => v.id === vmId.value)
 })
+
+const agentCage = computed(() => isAgentWorkload(vm.value))
+const grantCopy = computed(() => workloadGrantCopy(parseWorkloadClass(vm.value?.workloadClass ?? vm.value?.spec?.spec?.workloadClass)))
 
 function memberTabPermitted(value: string): boolean {
   if (!isMemberControlTab(value)) return false
@@ -1048,6 +1052,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <AppIcon name="chevron-left" :size="18" />
         </button>
         <h1>{{ vm.name }}</h1>
+        <span class="badge badge-gray" :title="grantCopy">{{ grantCopy }}</span>
         <WorkloadDeviceChip
           v-if="isMemberDetail && memberDevice"
           :label="devicesStore.deviceLabel(memberDevice)"
@@ -1412,7 +1417,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- Shared Folders Section -->
-      <div v-if="!isMemberDetail" style="margin-top:20px">
+      <div v-if="!isMemberDetail && !agentCage" style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">Shared Folders</h2>
           <AppButton size="sm" icon="plus" @click="showFolderPicker = true">Add Shared Folder</AppButton>
@@ -1434,7 +1439,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
 
       <!-- USB Devices Section -->
-      <div style="margin-top:20px">
+      <div v-if="!agentCage" style="margin-top:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
           <AppButton

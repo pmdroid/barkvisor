@@ -150,6 +150,8 @@ export interface WorkloadSpecBody {
   display?: WorkloadDisplay | null
   sharedPaths?: string[] | null
   health?: WorkloadHealthSpec | null
+  /** `house` | `agent`. Omitted = house (PAS-268). */
+  workloadClass?: 'house' | 'agent' | string | null
 }
 
 export interface WorkloadResourcesOverlay {
@@ -234,6 +236,7 @@ export interface VM {
   portForwards: PortForwardRule[] | null
   usbDevices: USBPassthroughDevice[] | null
   pendingChanges: boolean
+  workloadClass?: 'house' | 'agent' | string | null
   createdAt: string
   updatedAt: string
 }
@@ -332,6 +335,8 @@ export interface CreateVMRequest {
   uefi?: boolean
   tpmEnabled?: boolean
   spec?: WorkloadSpec
+  /** `house` | `agent`. Omitted = house (PAS-268). */
+  workloadClass?: 'house' | 'agent' | string
 }
 
 export interface DownloadImageRequest {

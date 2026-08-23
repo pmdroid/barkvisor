@@ -21,6 +21,8 @@ const {
   prev,
   name,
   osType,
+  workloadClass,
+  isAgent,
   selectOS,
   cpuCount,
   hostCpuCount,
@@ -117,7 +119,9 @@ function openUSBPicker() {
         v-if="currentStepLabel === 'Basics'"
         :name="name"
         :osType="osType"
+        :workloadClass="workloadClass"
         @update:name="name = $event"
+        @update:workloadClass="workloadClass = $event"
         @selectOS="selectOS"
         @next="next"
       />
@@ -190,6 +194,7 @@ function openUSBPicker() {
         :sharedPaths="sharedPaths"
         :showFolderPicker="showFolderPicker"
         :formatBytes="formatBytes"
+        :isAgent="isAgent"
         @update:diskSource="diskSource = $event"
         @update:diskSizeGB="diskSizeGB = $event"
         @update:existingDiskId="existingDiskId = $event"
@@ -211,6 +216,7 @@ function openUSBPicker() {
         :showUSBPicker="showUSBPicker"
         :hostUSBDevices="hostUSBDevices"
         :isUSBSelected="isUSBSelected"
+        :isAgent="isAgent"
         @update:selectedNetworkId="selectedNetworkId = $event"
         @update:newPFProto="newPFProto = $event"
         @update:newPFHostPort="newPFHostPort = $event"
@@ -247,6 +253,7 @@ function openUSBPicker() {
         :deviceLabel="selectedDevice ? (selectedDevice.displayName || selectedDevice.hostId) : ''"
         :placementWarning="selectedDeviceIncompatibility()"
         :placementBlocking="selectedDeviceBlocksPlacement()"
+        :workloadClass="workloadClass"
       />
 
       <p

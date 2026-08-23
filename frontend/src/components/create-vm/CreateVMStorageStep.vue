@@ -11,6 +11,7 @@ defineProps<{
   sharedPaths: string[]
   showFolderPicker: boolean
   formatBytes: (b: number) => string
+  isAgent?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -81,7 +82,7 @@ function removeSharedPath(i: number, current: string[]) {
       </div>
     </div>
 
-    <div style="margin-top:16px">
+    <div v-if="!isAgent" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <label style="margin:0">Shared Folders (optional)</label>
         <button class="btn-ghost btn-sm" @click="emit('update:showFolderPicker', true)">

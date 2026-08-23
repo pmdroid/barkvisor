@@ -113,8 +113,14 @@ export function useCreateVMWizard(
       pickedCaps.value.details?.find((d) => d.code === 'bridgedNetworking' && !d.supported)?.remediation
       || undefined,
   }))
+  const workloadClass = ref<'house' | 'agent'>('house')
+  const isAgent = computed(() => workloadClass.value === 'agent')
   const allNetworks = computed(() => deviceNetworks.value)
-  const networks = computed(() => networksUsableOnHost(allNetworks.value, bridged.value.available))
+  const networks = computed(() => {
+    const usable = networksUsableOnHost(allNetworks.value, bridged.value.available)
+    if (!isAgent.value) return usable
+    return usable.filter((n) => n.mode !== 'bridged')
+  })
   const availableDisks = computed(() => deviceDisks.value.filter((d) => !d.vmId))
 
   // Wizard step
@@ -416,6 +422,22 @@ export function useCreateVMWizard(
     if (!nat) portForwards.value = []
   })
 
+  watch(isAgent, (agent) => {
+    if (!agent) return
+    selectedUSBDevices.value = []
+    portForwards.value = []
+    sharedPaths.value = []
+    const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
+    if (current?.mode === 'bridged') {
+      const fallback =
+        allNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
+        ?? allNetworks.value.find((n) => n.mode === 'nat')
+        ?? allNetworks.value.find((n) => n.mode === 'isolated')
+        ?? null
+      selectedNetworkId.value = fallback?.id ?? ''
+    }
+  })
+
   watch([() => bridged.value.available, allNetworks], () => {
     const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
     if (current && current.mode === 'bridged' && !bridged.value.available) {
@@ -715,6 +737,7 @@ export function useCreateVMWizard(
         sharedPaths: sharedPaths.value,
         usbAvailable: usb.value.available,
         usbDevices: selectedUSBDevices.value,
+        workloadClass: workloadClass.value,
       })
 
       const target = selectedDevice.value
@@ -774,6 +797,8 @@ export function useCreateVMWizard(
     // OS
     name,
     osType,
+    workloadClass,
+    isAgent,
     vmType,
     supportsWindows,
     selectOS,
