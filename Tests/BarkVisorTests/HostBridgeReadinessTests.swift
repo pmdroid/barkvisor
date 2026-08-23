@@ -105,33 +105,18 @@ struct HostBridgeReadinessTests {
     }
 
     @Test func `status map on Linux uses facts not fabricated records`() {
-        #if os(Linux)
-            let fromDB = HostBridgeFactsService.statusByInterface(records: [
-                BridgeRecord(
-                    id: nil,
-                    interface: "ghost0",
-                    socketPath: nil,
-                    plistExists: true,
-                    daemonRunning: true,
-                    status: "active",
-                    updatedAt: "now",
-                ),
-            ])
-            #expect(fromDB["ghost0"] == nil)
-        #elseif os(macOS)
-            let fromDB = HostBridgeFactsService.statusByInterface(records: [
-                BridgeRecord(
-                    id: nil,
-                    interface: "en0",
-                    socketPath: nil,
-                    plistExists: true,
-                    daemonRunning: true,
-                    status: "active",
-                    updatedAt: "now",
-                ),
-            ])
-            #expect(fromDB["en0"] == "active")
-        #endif
+        let fromDB = HostBridgeFactsService.statusByInterface(records: [
+            BridgeRecord(
+                id: nil,
+                interface: "ghost0",
+                socketPath: nil,
+                plistExists: true,
+                daemonRunning: true,
+                status: "active",
+                updatedAt: "now",
+            ),
+        ])
+        #expect(fromDB["ghost0"] == nil)
     }
 
     @Test func `unused bridged interface uniqueness lives in facts`() {

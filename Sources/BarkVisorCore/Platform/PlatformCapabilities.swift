@@ -50,7 +50,8 @@ public enum PlatformCapabilities {
         #endif
     }
 
-    /// In-app signed PKG update flow. Always off — upgrade via Homebrew or the distro package.
+    /// In-app signed PKG update flow. Always false: the privileged helper is gone;
+    /// upgrade with Homebrew / the distro package.
     public static var supportsInAppUpdate: Bool {
         false
     }

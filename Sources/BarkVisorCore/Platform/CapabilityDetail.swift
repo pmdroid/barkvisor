@@ -264,6 +264,14 @@ public enum CapabilityDetailBuilder {
                     + "Update BarkVisor using your package manager or release artifacts.",
             )
         }
+        if isMac(os) {
+            return CapabilityDetail(
+                code: .inAppUpdate,
+                supported: false,
+                reason: .homebrewService,
+                remediation: "In-app updates are not supported. Upgrade with Homebrew: brew upgrade barkvisor.",
+            )
+        }
         return CapabilityDetail(
             code: .inAppUpdate,
             supported: false,

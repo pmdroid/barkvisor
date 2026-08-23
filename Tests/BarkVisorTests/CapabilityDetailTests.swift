@@ -177,6 +177,7 @@ struct CapabilityDetailTests {
             #expect(byCode[.managedBridgeDaemon]?.supported == false)
             #expect(byCode[.managedBridgeDaemon]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
             #expect(byCode[.inAppUpdate]?.supported == false)
+            #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
             #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains("brew") == true)
             #expect(byCode[.bridgedNetworking]?.supported == true)
         #endif
