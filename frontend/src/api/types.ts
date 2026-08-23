@@ -208,6 +208,8 @@ export interface VMRuntimeStatus {
   health: WorkloadHealth
   healthError?: string | null
   backend?: VMRuntimeBackend | null
+  /** PAS-258: start after Device boot. Host-only. */
+  startOnBoot?: boolean | null
 }
 
 export interface VM {
@@ -237,6 +239,8 @@ export interface VM {
   usbDevices: USBPassthroughDevice[] | null
   pendingChanges: boolean
   workloadClass?: 'house' | 'agent' | string | null
+  /** PAS-258. Omitted / false: do not start after Device boot. */
+  startOnBoot?: boolean | null
   createdAt: string
   updatedAt: string
 }
@@ -373,7 +377,8 @@ export interface TaskEvent {
 export type UpdateVMRequest = Partial<Pick<VM,
   'name' | 'cpuCount' | 'memoryMB' | 'networkId' | 'description' |
   'bootOrder' | 'displayResolution' | 'uefi' | 'tpmEnabled' |
-  'sharedPaths' | 'additionalDiskIds' | 'portForwards' | 'usbDevices'
+  'sharedPaths' | 'additionalDiskIds' | 'portForwards' | 'usbDevices' |
+  'startOnBoot'
 >> & { spec?: WorkloadSpec }
 
 export interface TaskAcceptedResponse {

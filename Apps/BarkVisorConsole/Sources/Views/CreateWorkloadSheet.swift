@@ -163,8 +163,8 @@ struct CreateWorkloadSheet: View {
             currentID: imageLoadID,
             cancelled: Task.isCancelled,
         ) else { return }
-        images = loaded
-        imageID = CreateWorkload.ready(loaded).first?.id ?? ""
+        images = loaded ?? []
+        imageID = CreateWorkload.ready(loaded ?? []).first?.id ?? ""
     }
 
     private func submit() async {

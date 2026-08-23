@@ -91,6 +91,7 @@ public struct UpdateVMParams: Sendable {
     public let uefi: Bool?
     public let tpmEnabled: Bool?
     public let workloadClass: String?
+    public let startOnBoot: Bool?
 
     public init(
         name: String? = nil,
@@ -107,6 +108,7 @@ public struct UpdateVMParams: Sendable {
         uefi: Bool? = nil,
         tpmEnabled: Bool? = nil,
         workloadClass: String? = nil,
+        startOnBoot: Bool? = nil,
     ) {
         self.name = name
         self.cpuCount = cpuCount
@@ -122,6 +124,7 @@ public struct UpdateVMParams: Sendable {
         self.uefi = uefi
         self.tpmEnabled = tpmEnabled
         self.workloadClass = workloadClass
+        self.startOnBoot = startOnBoot
     }
 }
 

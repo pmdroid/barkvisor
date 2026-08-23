@@ -236,6 +236,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var workloadClass: String?
     var status: WorkloadRuntimeStatus?
     var portForwards: [GuestPortForward]?
+    var startOnBoot: Bool? = nil
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -264,6 +265,22 @@ struct Workload: Decodable, Identifiable, Hashable {
 
     var grantCopy: String {
         isAgentClass ? "WAN yes, house no." : "House: LAN and USB allowed."
+    }
+
+    /// Missing JSON is off so House appliances are not surprised.
+    var startsOnDeviceBoot: Bool { startOnBoot == true || status?.startOnBoot == true }
+
+    var startOnBootFooter: String { WorkloadStartOnBoot.footer(isAgent: isAgentClass) }
+}
+
+enum WorkloadStartOnBoot {
+    static let label = "Start when this Device boots"
+
+    static func footer(isAgent: Bool) -> String {
+        if isAgent {
+            return "Starts after a Device reboot. The Agent cage stays on. A BarkVisor restart does not start it."
+        }
+        return "Off unless you turn it on. House appliances stay stopped after a Device reboot until you start them."
     }
 }
 
@@ -465,6 +482,7 @@ struct WorkloadRuntimeStatus: Decodable, Hashable {
     var state: String?
     var health: String?
     var healthError: String?
+    var startOnBoot: Bool?
 }
 
 enum WorkloadHealth {
@@ -736,6 +754,10 @@ enum WorkloadWebLink {
 struct WorkloadStopBody: Encodable {
     var force: Bool
     var method: String
+}
+
+struct WorkloadStartOnBootBody: Encodable, Equatable {
+    var startOnBoot: Bool
 }
 
 struct ISOMediaBody: Encodable {

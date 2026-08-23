@@ -51,6 +51,7 @@ struct ModelCodingTests {
         #expect(decoded.macAddress == vm.macAddress)
         #expect(decoded.autoCreated == vm.autoCreated)
         #expect(decoded.pendingChanges == vm.pendingChanges)
+        #expect(decoded.startOnBoot == false)
     }
 
     // MARK: - Disk Codable
