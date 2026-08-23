@@ -1,3 +1,8 @@
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
@@ -8,6 +13,7 @@ import Testing
 
 /// Tests for the SSRF (Server-Side Request Forgery) protection logic
 /// in SSRFGuard (hostname, DNS, Library download URL classifier).
+@Suite(.serialized)
 struct SSRFProtectionTests {
     // MARK: - Private Hostnames
 
@@ -262,6 +268,249 @@ struct SSRFProtectionTests {
         let fileURL = try #require(URL(string: "file://cloud-images.example/etc/passwd"))
         #expect(throws: SSRFPinError.self) {
             _ = try SSRFGuard.pinEndpoint(url: fileURL, resolvedIPs: ["93.184.216.34"])
+        }
+    }
+
+    @Test func `one HTTPClient across hops and shutdown once`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/a") {
+                return (302, ["Location": "/b"], "")
+            }
+            if path.hasPrefix("/b") {
+                return (200, [:], "pinned-ok")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+
+        let host = "ssrf-hop.test"
+        pinLoopback(host: host)
+        let start = try #require(URL(string: "http://\(host):\(server.port)/a"))
+        let session = SSRFGuard.urlSession(resourceTimeout: 5)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 200)
+        #expect(String(data: data, encoding: .utf8) == "pinned-ok")
+        #expect(server.hitCount() == 2)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+        #expect(SSRFPinnedURLProtocol.dnsOverrides == [[host: "127.0.0.1"], [host: "127.0.0.1"]])
+        #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/a") })
+        #expect(SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("/b") })
+    }
+
+    @Test func `one hop client reused when redirect host changes`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let portBox = HopPortBox()
+        let hostA = "example.com"
+        let hostB = "example.net"
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/a") {
+                return (302, ["Location": "http://\(hostB):\(portBox.port)/b"], "")
+            }
+            if path.hasPrefix("/b") {
+                return (200, [:], "cross-host-ok")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+        portBox.port = server.port
+        SSRFPinnedURLProtocol.pinEndpointOverride = { url in
+            guard let requestHost = url.host, requestHost == hostA || requestHost == hostB else {
+                throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+            }
+            return PinnedEndpoint(
+                originalHost: requestHost,
+                connectIP: "127.0.0.1",
+                port: url.port ?? server.port,
+                usesTLS: false,
+            )
+        }
+        let start = try #require(URL(string: "http://\(hostA):\(server.port)/a"))
+        let session = SSRFGuard.urlSession(resourceTimeout: 5)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 200)
+        #expect(String(data: data, encoding: .utf8) == "cross-host-ok")
+        #expect(server.hitCount() == 2)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+        #expect(SSRFPinnedURLProtocol.dnsOverrides == [
+            [hostA: "127.0.0.1"],
+            [hostB: "127.0.0.1"],
+        ])
+    }
+
+    @Test func `private Location is not followed`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/public") {
+                return (302, ["Location": "http://127.0.0.1/secret"], "")
+            }
+            if path.hasPrefix("/secret") {
+                return (200, [:], "leaked")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+
+        let host = "ssrf-hop.test"
+        pinLoopback(host: host)
+        let start = try #require(URL(string: "http://\(host):\(server.port)/public"))
+        let session = SSRFGuard.urlSession(resourceTimeout: 5)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(from: start)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 302)
+        #expect(String(data: data, encoding: .utf8) != "leaked")
+        #expect(server.hitCount() == 1)
+        #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("127.0.0.1") })
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+    }
+
+    @Test func `failed HTTPClient shutdown is not counted`() {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+        SSRFPinnedURLProtocol.finishShutdown(succeeded: true)
+        SSRFPinnedURLProtocol.finishShutdown(succeeded: false)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 0)
+    }
+}
+
+private final class HopPortBox: @unchecked Sendable {
+    var port = 0
+}
+
+private func waitForHopShutdown() async {
+    for _ in 0 ..< 100 {
+        if SSRFPinnedURLProtocol.httpClientsShutdown >= 1 { return }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+}
+
+private func pinLoopback(host: String) {
+    SSRFPinnedURLProtocol.pinEndpointOverride = { url in
+        guard let requestHost = url.host, requestHost == host else {
+            throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+        }
+        return PinnedEndpoint(
+            originalHost: requestHost,
+            connectIP: "127.0.0.1",
+            port: url.port ?? 80,
+            usesTLS: url.scheme?.lowercased() == "https",
+        )
+    }
+}
+
+/// Tiny HTTP/1.1 responder for pinned-redirect tests.
+private final class SSRFHopHTTPServer: @unchecked Sendable {
+    let port: Int
+    private let fd: Int32
+    private let lock = NSLock()
+    private var hits = 0
+    private let handler: @Sendable (String) -> (Int, [String: String], String)
+
+    init(_ handler: @escaping @Sendable (String) -> (Int, [String: String], String)) throws {
+        self.handler = handler
+        let sock = socket(AF_INET, PlatformSocket.stream, 0)
+        guard sock >= 0 else { throw BarkVisorError.badRequest("socket") }
+        var yes: Int32 = 1
+        _ = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        addr.sin_port = 0
+        let bindRC = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindRC == 0, listen(sock, 8) == 0 else {
+            close(sock)
+            throw BarkVisorError.badRequest("bind")
+        }
+        var got = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let nameRC = withUnsafeMutablePointer(to: &got) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(sock, $0, &len)
+            }
+        }
+        guard nameRC == 0 else {
+            close(sock)
+            throw BarkVisorError.badRequest("getsockname")
+        }
+        self.fd = sock
+        self.port = Int(UInt16(bigEndian: got.sin_port))
+        let listenFD = sock
+        let ready = DispatchSemaphore(value: 0)
+        Thread.detachNewThread { [weak self] in
+            ready.signal()
+            while let server = self {
+                let client = accept(listenFD, nil, nil)
+                if client < 0 { break }
+                server.handle(client: client)
+            }
+        }
+        ready.wait()
+    }
+
+    func hitCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return hits
+    }
+
+    func stop() {
+        shutdown(fd, Int32(SHUT_RDWR))
+        close(fd)
+    }
+
+    private func handle(client: Int32) {
+        defer { close(client) }
+        var buf = [UInt8](repeating: 0, count: 1_024)
+        let n = recv(client, &buf, buf.count, 0)
+        guard n > 0, let text = String(bytes: buf.prefix(Int(n)), encoding: .utf8) else { return }
+        let path = text.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+        lock.lock()
+        hits += 1
+        lock.unlock()
+        let (status, headers, body) = handler(path)
+        var response = "HTTP/1.1 \(status) X\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n"
+        for (key, value) in headers {
+            response += "\(key): \(value)\r\n"
+        }
+        response += "\r\n\(body)"
+        sendAll(client, Array(response.utf8))
+    }
+}
+
+private func sendAll(_ fd: Int32, _ bytes: [UInt8]) {
+    bytes.withUnsafeBytes { raw in
+        guard let base = raw.baseAddress else { return }
+        var sent = 0
+        let total = raw.count
+        while sent < total {
+            let n = send(fd, base.advanced(by: sent), total - sent, 0)
+            if n <= 0 { return }
+            sent += n
         }
     }
 }
