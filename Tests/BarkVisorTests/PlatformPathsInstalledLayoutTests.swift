@@ -156,7 +156,7 @@ struct PlatformPathsInstalledLayoutTests {
             argument: "barkvisor",
             pathEnvironment: path,
             currentDirectory: "/var/lib/barkvisor",
-            fileExists: { $0 == "/opt/homebrew/bin/barkvisor" },
+            isExecutable: { $0 == "/opt/homebrew/bin/barkvisor" },
         )
         #expect(exe == "/opt/homebrew/bin/barkvisor")
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
@@ -167,7 +167,7 @@ struct PlatformPathsInstalledLayoutTests {
             argument: "/opt/homebrew/bin/barkvisor",
             pathEnvironment: "/usr/bin",
             currentDirectory: "/var/lib/barkvisor",
-            fileExists: { _ in false },
+            isExecutable: { _ in false },
         )
         #expect(exe == "/opt/homebrew/bin/barkvisor")
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
@@ -178,7 +178,7 @@ struct PlatformPathsInstalledLayoutTests {
             argument: "barkvisor",
             pathEnvironment: "/usr/bin:/bin",
             currentDirectory: "/var/lib/barkvisor",
-            fileExists: { _ in false },
+            isExecutable: { _ in false },
         )
         #expect(exe == "barkvisor")
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/usr/local")
@@ -189,9 +189,21 @@ struct PlatformPathsInstalledLayoutTests {
             argument: "barkvisor",
             pathEnvironment: ":/usr/bin",
             currentDirectory: "/opt/homebrew/bin",
-            fileExists: { $0 == "/opt/homebrew/bin/barkvisor" },
+            isExecutable: { $0 == "/opt/homebrew/bin/barkvisor" },
         )
         #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `non executable cwd PATH hit is skipped`() {
+        let brew = "/opt/homebrew/bin/barkvisor"
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: ":/opt/homebrew/bin",
+            currentDirectory: "/tmp/not-bin",
+            isExecutable: { $0 == brew },
+        )
+        #expect(exe == brew)
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
     }
 
@@ -200,7 +212,7 @@ struct PlatformPathsInstalledLayoutTests {
             argument: "./bin/barkvisor",
             pathEnvironment: "/usr/bin",
             currentDirectory: "/opt/homebrew",
-            fileExists: { _ in false },
+            isExecutable: { _ in false },
         )
         #expect(exe.hasSuffix("/opt/homebrew/bin/barkvisor"))
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")

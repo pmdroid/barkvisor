@@ -125,7 +125,7 @@ public enum PlatformPaths {
         argument: String,
         pathEnvironment: String?,
         currentDirectory: String,
-        fileExists: (String) -> Bool,
+        isExecutable: (String) -> Bool,
     ) -> String {
         if argument.hasPrefix("/") {
             return argument
@@ -142,7 +142,7 @@ public enum PlatformPaths {
             let candidate = URL(fileURLWithPath: dirPath, isDirectory: true)
                 .appendingPathComponent(argument)
                 .path
-            if fileExists(candidate) {
+            if isExecutable(candidate) {
                 return candidate
             }
         }

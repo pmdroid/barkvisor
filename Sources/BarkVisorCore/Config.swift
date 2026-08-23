@@ -112,7 +112,7 @@ public enum Config {
             argument: ProcessInfo.processInfo.arguments[0],
             pathEnvironment: ProcessInfo.processInfo.environment["PATH"],
             currentDirectory: FileManager.default.currentDirectoryPath,
-            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) },
         )
     }
 
