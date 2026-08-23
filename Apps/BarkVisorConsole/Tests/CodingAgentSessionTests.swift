@@ -50,7 +50,9 @@ struct CodingAgentSessionTests {
         """.data(using: .utf8)!
         let session = try JSONDecoder().decode(CodingAgentSessionInfo.self, from: json)
         #expect(session.expiryAction == CodingAgentSession.expiryAction)
-        #expect(session.receiptLine?.loud == true)
-        #expect(session.receiptLine?.git == CodingAgentSession.noPushCopy)
+        #expect(session.receiptLine(vmState: "stopped")?.loud == true)
+        #expect(session.receiptLine(vmState: "stopped")?.git == CodingAgentSession.noPushCopy)
+        #expect(session.receiptLine(vmState: "running") == nil)
+        #expect(session.receiptLine(vmState: "stopping") == nil)
     }
 }

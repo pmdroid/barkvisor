@@ -101,6 +101,13 @@ struct DTOTests {
         #expect(response.session?.actions == ["resume", "reset", "burn"])
         #expect(response.session?.grant == "home-ollama")
         #expect(response.session?.ttlSeconds == 3_600)
+        session.receipt = CodingAgentLifecycle.makeReceipt(
+            now: started, reason: "stop", lastGitPushAt: nil,
+        )
+        vm.setSession(session)
+        #expect(VMResponse(from: vm).session?.receipt == nil)
+        vm.state = "stopped"
+        #expect(VMResponse(from: vm).session?.receipt != nil)
     }
 
     @Test func `vm response iso id backwards compat`() {

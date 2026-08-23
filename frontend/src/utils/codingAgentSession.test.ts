@@ -62,5 +62,20 @@ describe('codingAgentSession (PAS-272)', () => {
       lastGitPushAt: '2026-08-23T11:00:00Z',
       noPush: false,
     })?.loud).toBe(false)
+    expect(sessionReceiptCopy({
+      stoppedAt: '2026-08-23T12:00:00Z',
+      lastGitPushAt: null,
+      noPush: true,
+    }, 'running')).toBeNull()
+    expect(sessionReceiptCopy({
+      stoppedAt: '2026-08-23T12:00:00Z',
+      lastGitPushAt: null,
+      noPush: true,
+    }, 'stopping')).toBeNull()
+    expect(sessionReceiptCopy({
+      stoppedAt: '2026-08-23T12:00:00Z',
+      lastGitPushAt: null,
+      noPush: true,
+    }, 'stopped')?.loud).toBe(true)
   })
 })

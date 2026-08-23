@@ -43,11 +43,22 @@ public enum CodingAgentLifecycleService {
         try? await persist(session, vmID: vm.id, db: db)
     }
 
-    public static func setReceiptReason(vmID: String, reason: String, db: DatabasePool) async {
+    /// Snapshot git stamp and stop reason while the guest is still up. Does not
+    /// write `session.receipt` — that waits for `onTerminated`.
+    public static func markStopIntent(vmID: String, reason: String, db: DatabasePool) async {
         guard let vm = try? await db.read({ db in try VM.fetchOne(db, key: vmID) }) else { return }
-        guard var session = vm.decodedSession, var receipt = session.receipt else { return }
-        receipt.reason = reason
-        session.receipt = receipt
+        guard (try? WorkloadClass.parse(vm.workloadClass)) == .agent else { return }
+        guard var session = vm.decodedSession else { return }
+        if session.pendingStopReason == nil {
+            session.pendingStopReason = reason
+        }
+        if session.pendingGitStamp == nil {
+            let stamp = GuestAgentChannel.readTextFile(
+                socketPath: VMSockets(vmID: vmID).guestAgent.path,
+                path: CodingAgentLifecycle.gitStampPath,
+            )
+            session.pendingGitStamp = CodingAgentLifecycle.parseGitStamp(stamp)
+        }
         try? await persist(session, vmID: vmID, db: db)
     }
 
@@ -55,17 +66,36 @@ public enum CodingAgentLifecycleService {
         guard let vm = try? await db.read({ db in try VM.fetchOne(db, key: vmID) }) else { return }
         guard (try? WorkloadClass.parse(vm.workloadClass)) == .agent else { return }
         guard var session = vm.decodedSession else { return }
-        let stamp = GuestAgentChannel.readTextFile(
-            socketPath: VMSockets(vmID: vmID).guestAgent.path,
-            path: CodingAgentLifecycle.gitStampPath,
-        )
+        let resolved = session.pendingStopReason ?? reason
+        let stamp = session.pendingGitStamp
         session.receipt = CodingAgentLifecycle.makeReceipt(
-            now: now, reason: reason, lastGitPushAt: stamp,
+            now: now, reason: resolved, lastGitPushAt: stamp,
         )
+        session.pendingStopReason = nil
+        session.pendingGitStamp = nil
         try? await persist(session, vmID: vmID, db: db)
     }
 
-    public static func tick(now: Date, vmManager: VMManager, db: DatabasePool) async {
+    /// Receipt + optional grant unload after the guest process is gone.
+    public static func onTerminated(
+        vmID: String,
+        db: DatabasePool,
+        now: Date = Date(),
+        unloader: (any CodingAgentModelUnloading)? = nil,
+    ) async {
+        await onStop(vmID: vmID, db: db, reason: CodingAgentLifecycle.stopReason, now: now)
+        guard let vm = try? await db.read({ db in try VM.fetchOne(db, key: vmID) }) else { return }
+        let reason = vm.decodedSession?.receipt?.reason ?? CodingAgentLifecycle.stopReason
+        guard CodingAgentLifecycle.shouldUnloadGrantAfterStop(reason: reason) else { return }
+        await unloadGrantIfLast(stopped: vm, db: db, unloader: unloader)
+    }
+
+    public static func tick(
+        now: Date,
+        vmManager: some CodingAgentControlling,
+        db: DatabasePool,
+        unloader: (any CodingAgentModelUnloading)? = nil,
+    ) async {
         let vms: [VM]
         do {
             vms = try await db.read { db in try VM.fetchAll(db) }
@@ -81,9 +111,17 @@ public enum CodingAgentLifecycleService {
                 session.warnedAt = iso8601.string(from: now)
                 try? await persist(session, vmID: vm.id, db: db)
             }
+            if session.pendingStopReason != nil {
+                if await vmManager.isActiveOrStarting(vm.id) {
+                    continue
+                }
+                await onTerminated(vmID: vm.id, db: db, now: now, unloader: unloader)
+                continue
+            }
             guard CodingAgentLifecycle.shouldExpire(
                 expiresAt: session.expiresAt, vmState: vm.state, now: now,
             ) else { continue }
+            await markStopIntent(vmID: vm.id, reason: CodingAgentLifecycle.ttlReason, db: db)
             do {
                 try await vmManager.stop(vmID: vm.id, force: false, method: "acpi")
             } catch {
@@ -91,14 +129,15 @@ public enum CodingAgentLifecycleService {
                     "Coding session TTL stop failed: \(error.localizedDescription)",
                     vm: vm.id,
                 )
+            }
+            if await vmManager.isActiveOrStarting(vm.id) {
                 continue
             }
-            await setReceiptReason(vmID: vm.id, reason: CodingAgentLifecycle.ttlReason, db: db)
-            await unloadGrantIfLast(stopped: vm, db: db)
+            await onTerminated(vmID: vm.id, db: db, now: now, unloader: unloader)
         }
     }
 
-    public static func resume(vmID: String, vmManager: VMManager, db: DatabasePool) async throws {
+    public static func resume(vmID: String, vmManager: some CodingAgentControlling, db: DatabasePool) async throws {
         let (vm, _) = try await load(vmID: vmID, db: db)
         _ = try requireAgentSession(vm: vm)
         if vm.state == "running" || vm.state == "starting" {
@@ -107,12 +146,12 @@ public enum CodingAgentLifecycleService {
         try await vmManager.start(vmID: vmID)
     }
 
-    public static func reset(vmID: String, vmManager: VMManager, db: DatabasePool) async throws {
+    public static func reset(vmID: String, vmManager: some CodingAgentControlling, db: DatabasePool) async throws {
         var (vm, _) = try await load(vmID: vmID, db: db)
         var session = try requireAgentSession(vm: vm)
         if vm.state == "running" || vm.state == "starting" || vm.state == "stopping" {
+            await markStopIntent(vmID: vmID, reason: CodingAgentLifecycle.resetReason, db: db)
             try? await vmManager.stop(vmID: vmID, force: true, method: "force")
-            await onStop(vmID: vmID, db: db, reason: CodingAgentLifecycle.resetReason)
             (vm, _) = try await load(vmID: vmID, db: db)
             session = try requireAgentSession(vm: vm)
         }
@@ -161,24 +200,30 @@ public enum CodingAgentLifecycleService {
         vmManager: VMManager,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
+        unloader: (any CodingAgentModelUnloading)? = nil,
     ) async throws -> (taskID: String, vmName: String) {
         let (vm, _) = try await load(vmID: vmID, db: db)
         _ = try requireAgentSession(vm: vm)
         if vm.state == "running" || vm.state == "starting" || vm.state == "stopping" {
+            await markStopIntent(vmID: vmID, reason: CodingAgentLifecycle.burnReason, db: db)
             try? await vmManager.stop(vmID: vmID, force: true, method: "force")
         }
         for _ in 0 ..< 20 {
             if await !vmManager.isActiveOrStarting(vmID) { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        await unloadGrantIfLast(stopped: vm, db: db)
+        await unloadGrantIfLast(stopped: vm, db: db, unloader: unloader)
         return try await VMLifecycleService.deleteVM(
             id: vmID, keepDisk: false, vmManager: vmManager,
             backgroundTasks: backgroundTasks, db: db,
         )
     }
 
-    public static func unloadGrantIfLast(stopped: VM, db: DatabasePool) async {
+    public static func unloadGrantIfLast(
+        stopped: VM,
+        db: DatabasePool,
+        unloader: (any CodingAgentModelUnloading)? = nil,
+    ) async {
         let session = stopped.decodedSession
         let usesGrant = CodingAgentLifecycle.usesHomeOllamaGrant(session?.grant ?? "")
             || CodingAgentSession.usesHomeOllamaGrant(
@@ -201,6 +246,10 @@ public enum CodingAgentLifecycleService {
             usesHomeOllama: usesGrant, otherRunningAgentSessions: others,
         ) else { return }
         do {
+            if let unloader {
+                try await unloader.unloadRunningModels()
+                return
+            }
             let settings = try await db.read { db in try OllamaSettings.load(from: db) }
             let client = OllamaClient(baseURL: settings.endpoint, apiKey: settings.apiKey)
             let running = try await client.ps()
@@ -215,3 +264,5 @@ public enum CodingAgentLifecycleService {
         }
     }
 }
+
+extension VMManager: CodingAgentControlling {}

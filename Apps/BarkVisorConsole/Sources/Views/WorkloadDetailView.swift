@@ -107,7 +107,7 @@ struct WorkloadDetailView: View {
                         Text("Expires in 15 minutes. TTL stop keeps the disk.")
                             .foregroundStyle(.orange)
                     }
-                    if let line = session.receiptLine {
+                    if let line = session.receiptLine(vmState: workload.state) {
                         LabeledContent("Stopped at", value: line.stoppedAt)
                         Text(line.git)
                             .fontWeight(line.loud ? .bold : .regular)

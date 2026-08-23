@@ -54,7 +54,8 @@ struct CodingAgentSessionInfo: Decodable, Hashable {
     var receipt: CodingAgentReceipt?
     var actions: [String]
 
-    var receiptLine: (stoppedAt: String, git: String, loud: Bool)? {
+    func receiptLine(vmState: String) -> (stoppedAt: String, git: String, loud: Bool)? {
+        guard vmState == "stopped" || vmState == "error" else { return nil }
         guard let receipt else { return nil }
         let missing = receipt.noPush || (receipt.lastGitPushAt ?? "").isEmpty
         return (

@@ -166,7 +166,7 @@ const codingAgent = computed(() => isCodingAgentSession(vm.value))
 const showAgentChat = computed(() => codingAgent.value && chatIsVisible(ollamaStore.anyReachable, ollamaStore.models.length))
 const consoleLabel = computed(() => consoleTabLabel(vm.value))
 const session = computed(() => vm.value?.session ?? null)
-const sessionReceipt = computed(() => sessionReceiptCopy(session.value?.receipt))
+const sessionReceipt = computed(() => sessionReceiptCopy(session.value?.receipt, vm.value?.state))
 const showResetDialog = ref(false)
 const showBurnDialog = ref(false)
 
