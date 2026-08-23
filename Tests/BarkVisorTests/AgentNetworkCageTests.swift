@@ -8,12 +8,23 @@ struct AgentNetworkCageTests {
         #expect(extra.contains("ipv6=off"))
         #expect(extra.contains("guestfwd=tcp:10.0.2.2:\(Config.port)-cmd:true"))
         #expect(extra.contains("guestfwd=tcp:10.0.2.2:\(Config.agentPort)-cmd:true"))
+        #expect(!extra.contains("11434"))
+        #expect(AgentNetworkCage.slirpExtras(mode: .isolated).isEmpty)
+    }
+
+    @Test func `host ollama guestfwd is opt-in`() {
+        let extra = AgentNetworkCage.slirpExtras(mode: .nat, allowHostOllama: true)
         #expect(
             extra.contains(
                 "guestfwd=tcp:10.0.2.2:\(AgentNetworkCage.ollamaPort)-tcp:127.0.0.1:\(AgentNetworkCage.ollamaPort)",
             ),
         )
-        #expect(AgentNetworkCage.slirpExtras(mode: .isolated).isEmpty)
+        #expect(!AgentNetworkCage.allowHostOllama(userData: nil))
+        #expect(!AgentNetworkCage.allowHostOllama(userData: "packages:\n  - git\n"))
+        #expect(AgentNetworkCage.allowHostOllama(userData: "OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\""))
+        let open = AgentNetworkCage.seatbeltProfile(allowHostOllama: true)
+        #expect(open.contains("127.0.0.1:11434"))
+        #expect(!AgentNetworkCage.seatbeltProfile.contains("127.0.0.1:11434"))
     }
 
     @Test func `seatbelt denies RFC1918 and loopback`() {
@@ -22,7 +33,7 @@ struct AgentNetworkCageTests {
             #expect(profile.contains(cidr))
         }
         #expect(profile.contains("(remote udp \"*:53\")"))
-        #expect(profile.contains("127.0.0.1:11434"))
+        #expect(!profile.contains("127.0.0.1:11434"))
     }
 
     @Test func `linux owner commands cover blocked CIDRs`() {
@@ -68,6 +79,13 @@ struct AgentNetworkCageTests {
         let netdev = args.first { $0.hasPrefix("user,id=net0") }
         #expect(netdev?.contains("ipv6=off") == true)
         #expect(netdev?.contains("guestfwd=tcp:10.0.2.2") == true)
+        #expect(netdev?.contains("11434") != true)
         #expect(netdev?.contains("restrict=on") != true)
+
+        let (ollamaArgs, _) = try QEMUBuilder.networkArgs(
+            spec: spec, network: nil, allowHostOllama: true,
+        )
+        let ollamaNet = ollamaArgs.first { $0.hasPrefix("user,id=net0") }
+        #expect(ollamaNet?.contains("11434") == true)
     }
 }

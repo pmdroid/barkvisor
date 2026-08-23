@@ -25,8 +25,10 @@ struct CodingAgentImageTests {
 
     @Test func `matches name and slug not generic ubuntu`() {
         #expect(CodingAgentImage.matches(name: "Coding Agent", slug: nil))
-        #expect(CodingAgentImage.matches(name: "coding agent linux", slug: nil))
+        #expect(CodingAgentImage.matches(name: "coding agent", slug: nil))
+        #expect(!CodingAgentImage.matches(name: "my coding agent lab", slug: nil))
         #expect(CodingAgentImage.matches(name: "Ubuntu", slug: "coding-agent-arm64"))
+        #expect(!CodingAgentImage.matches(name: "Coding Agent", slug: "ubuntu-24.04-arm64"))
         #expect(!CodingAgentImage.matches(name: "Ubuntu 24.04 LTS", slug: "ubuntu-24.04-arm64"))
         #expect(!CodingAgentImage.matches(name: nil, slug: nil))
     }
@@ -55,6 +57,13 @@ struct CodingAgentImageTests {
         try CloudInitService.validateUserData(yaml)
         #expect(yaml.contains("git"))
         #expect(yaml.contains("ttyd"))
+        #expect(yaml.contains("ttyd.service"))
+        #expect(yaml.contains("systemctl enable --now ttyd"))
+        #expect(yaml.contains("sha256sum -c"))
+        #expect(yaml.contains(CodingAgentImage.ttydSha256Aarch64))
+        #expect(yaml.contains(CodingAgentImage.ttydSha256Amd64))
+        #expect(yaml.contains("/usr/local/bin"))
+        #expect(yaml.contains("su -s /bin/bash"))
         #expect(yaml.contains("claude.ai/install.sh"))
         #expect(yaml.contains("opencode.ai/install"))
         #expect(yaml.contains("OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\""))
@@ -86,6 +95,28 @@ struct CodingAgentImageTests {
         )
         #expect(ubuntu.workloadClass == nil)
         #expect(ubuntu.cloudInit == nil)
+
+        let substring = try CodingAgentImage.applyingCreateDefaults(
+            params: params,
+            imageName: "my coding agent lab",
+        )
+        #expect(substring.workloadClass == nil)
+        #expect(substring.cloudInit == nil)
+
+        let bySlug = try CodingAgentImage.applyingCreateDefaults(
+            params: params,
+            imageName: "Ubuntu 24.04 LTS",
+            imageSlug: "coding-agent-arm64",
+        )
+        #expect(bySlug.workloadClass == "agent")
+
+        let slugWins = try CodingAgentImage.applyingCreateDefaults(
+            params: params,
+            imageName: "Coding Agent",
+            imageSlug: "ubuntu-24.04-arm64",
+        )
+        #expect(slugWins.workloadClass == nil)
+        #expect(slugWins.cloudInit == nil)
 
         let house = CreateVMParams(
             name: "coder",

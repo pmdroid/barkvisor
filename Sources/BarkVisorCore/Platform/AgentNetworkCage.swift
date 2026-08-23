@@ -28,20 +28,31 @@ public enum AgentNetworkCage {
         [Config.port, Config.agentPort]
     }
 
+    /// Device Ollama guestfwd/seatbelt/iptables exception. Opt-in via cloud-init
+    /// that names `10.0.2.2:11434` (Coding Agent Device-Ollama preset). Other
+    /// Agent-class NAT Workloads keep the loopback black-hole.
+    public static func allowHostOllama(userData: String?) -> Bool {
+        guard let userData, !userData.isEmpty else { return false }
+        return userData.contains("\(slirpGateway):\(ollamaPort)")
+    }
+
     /// Extra `-netdev user` suffixes for Agent NAT (not isolated).
-    public static func slirpExtras(mode: NetworkMode) -> String {
+    public static func slirpExtras(mode: NetworkMode, allowHostOllama: Bool = false) -> String {
         guard mode == .nat else { return "" }
         var extra = ",ipv6=off"
         for port in hostServicePorts {
             extra += ",guestfwd=tcp:\(slirpGateway):\(port)-cmd:true"
         }
-        extra += ",guestfwd=tcp:\(slirpGateway):\(ollamaPort)-tcp:127.0.0.1:\(ollamaPort)"
+        if allowHostOllama {
+            extra += ",guestfwd=tcp:\(slirpGateway):\(ollamaPort)-tcp:127.0.0.1:\(ollamaPort)"
+        }
         return extra
     }
 
     public static func wrapLaunch(
         _ launch: QEMULaunchConfig,
         workloadClass: WorkloadClass,
+        allowHostOllama: Bool = false,
     ) throws -> QEMULaunchConfig {
         guard workloadClass == .agent else { return launch }
         #if os(macOS)
@@ -53,31 +64,44 @@ public enum AgentNetworkCage {
             }
             return QEMULaunchConfig(
                 executable: sandbox,
-                arguments: ["-p", seatbeltProfile, launch.executable.path] + launch.arguments,
+                arguments: [
+                    "-p", seatbeltProfile(allowHostOllama: allowHostOllama),
+                    launch.executable.path,
+                ] + launch.arguments,
                 swtpmExecutable: launch.swtpmExecutable,
                 swtpmArguments: launch.swtpmArguments,
                 swtpmStateDir: launch.swtpmStateDir,
             )
         #else
+            _ = allowHostOllama
             return launch
         #endif
     }
 
     /// Seatbelt: allow everything, then deny private/loopback outbound except DNS.
-    public static let seatbeltProfile = """
-    (version 1)
-    (allow default)
-    (allow network-outbound (remote udp "*:53"))
-    (allow network-outbound (remote tcp "*:53"))
-    (deny network-outbound (remote ip "10.0.0.0/8"))
-    (deny network-outbound (remote ip "172.16.0.0/12"))
-    (deny network-outbound (remote ip "192.168.0.0/16"))
-    (deny network-outbound (remote ip "169.254.0.0/16"))
-    (deny network-outbound (remote ip "127.0.0.0/8"))
-    (deny network-outbound (remote ip "100.64.0.0/10"))
-    (deny network-outbound (remote ip "224.0.0.0/4"))
-    (allow network-outbound (remote tcp "127.0.0.1:11434"))
-    """
+    public static var seatbeltProfile: String {
+        seatbeltProfile(allowHostOllama: false)
+    }
+
+    public static func seatbeltProfile(allowHostOllama: Bool) -> String {
+        var profile = """
+        (version 1)
+        (allow default)
+        (allow network-outbound (remote udp "*:53"))
+        (allow network-outbound (remote tcp "*:53"))
+        (deny network-outbound (remote ip "10.0.0.0/8"))
+        (deny network-outbound (remote ip "172.16.0.0/12"))
+        (deny network-outbound (remote ip "192.168.0.0/16"))
+        (deny network-outbound (remote ip "169.254.0.0/16"))
+        (deny network-outbound (remote ip "127.0.0.0/8"))
+        (deny network-outbound (remote ip "100.64.0.0/10"))
+        (deny network-outbound (remote ip "224.0.0.0/4"))
+        """
+        if allowHostOllama {
+            profile += "(allow network-outbound (remote tcp \"127.0.0.1:11434\"))\n"
+        }
+        return profile
+    }
 
     public static func linuxOwnerRejectCommands(pid: Int32) -> [[String]] {
         linuxOwnerCommands(pid: pid, action: "-I")
@@ -108,7 +132,9 @@ public enum AgentNetworkCage {
                 )
             }
             try runIptables(exe: exe, commands: linuxOwnerRejectCommands(pid: pid), vmID: vmID)
-            try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(pid: pid), vmID: vmID)
+            if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
+                try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(pid: pid), vmID: vmID)
+            }
             Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
         #else
             _ = pid

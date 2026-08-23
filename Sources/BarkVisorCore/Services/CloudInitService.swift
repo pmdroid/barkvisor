@@ -143,6 +143,14 @@ public enum CloudInitService {
         Config.dataDir.appendingPathComponent("cloud-init/\(vmID)/cidata.iso")
     }
 
+    /// user-data written next to the generated ISO, if present.
+    public static func storedUserData(vmID: String) -> String? {
+        let url = generatedISOURL(vmID: vmID)
+            .deletingLastPathComponent()
+            .appendingPathComponent("user-data")
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
     /// Accept the VM's current path (no change) or the service-generated ISO only.
     public static func validateUserDataRef(
         _ ref: String,

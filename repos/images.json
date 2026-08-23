@@ -49,7 +49,7 @@
     {
       "slug": "coding-agent-arm64",
       "name": "Coding Agent",
-      "description": "Linux with git, web terminal, and coding-agent CLIs. One image; Device Ollama or BYO OPENAI_BASE_URL at create. Agent class.",
+      "description": "Linux with git, ttyd web terminal (guest :7681), and coding-agent CLIs. One image; Device Ollama or BYO OPENAI_BASE_URL at create. Agent class.",
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "24.04",
@@ -60,7 +60,7 @@
     {
       "slug": "coding-agent-x86_64",
       "name": "Coding Agent",
-      "description": "Linux with git, web terminal, and coding-agent CLIs. One image; Device Ollama or BYO OPENAI_BASE_URL at create. Agent class.",
+      "description": "Linux with git, ttyd web terminal (guest :7681), and coding-agent CLIs. One image; Device Ollama or BYO OPENAI_BASE_URL at create. Agent class.",
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "24.04",

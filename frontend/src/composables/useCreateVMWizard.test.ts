@@ -1378,4 +1378,52 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(sshGets.length).toBeGreaterThan(0)
     expect(sshGets.every((url) => url === '/ssh-keys')).toBe(true)
   })
+
+  test('coding-agent defaults reset when switching to Ubuntu', async () => {
+    const store = useHomeLibraryStore()
+    const coding = readyImage({
+      id: 'img-ca',
+      name: 'Coding Agent',
+      imageType: 'cloud-image',
+      arch: 'arm64',
+    })
+    const ubuntu = readyImage({
+      id: 'img-u',
+      name: 'Ubuntu 24.04 LTS',
+      imageType: 'cloud-image',
+      arch: 'arm64',
+    })
+    store.images = [
+      {
+        ...coding,
+        libraryKey: homeImageKey(coding),
+        sourceHostIds: ['desk'],
+        copies: [{ hostId: 'desk', imageId: coding.id, status: 'ready' }],
+      },
+      {
+        ...ubuntu,
+        libraryKey: homeImageKey(ubuntu),
+        sourceHostIds: ['desk'],
+        copies: [{ hostId: 'desk', imageId: ubuntu.id, status: 'ready' }],
+      },
+    ]
+
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    expect(wizard.workloadClass.value).toBe('house')
+    expect(wizard.memoryMB.value).toBe(1024)
+    expect(wizard.diskSizeGB.value).toBe(10)
+
+    wizard.selectedImageId.value = homeImageKey(coding)
+    await nextTick()
+    expect(wizard.workloadClass.value).toBe('agent')
+    expect(wizard.memoryMB.value).toBe(2048)
+    expect(wizard.diskSizeGB.value).toBe(20)
+    expect(wizard.mode.value).toBe('cloud')
+
+    wizard.selectedImageId.value = homeImageKey(ubuntu)
+    await nextTick()
+    expect(wizard.workloadClass.value).toBe('house')
+    expect(wizard.memoryMB.value).toBe(1024)
+    expect(wizard.diskSizeGB.value).toBe(10)
+  })
 })

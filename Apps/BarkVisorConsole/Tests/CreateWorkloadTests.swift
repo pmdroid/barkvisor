@@ -167,12 +167,16 @@ struct CreateWorkloadTests {
     }
 
     @Test func `coding agent image defaults to agent class and device ollama`() throws {
-        let image = image(id: "img-ca", name: "Coding Agent", imageType: "cloud-image", arch: "arm64")
-        #expect(CodingAgentImage.matches(name: image.name))
+        let coding = image(id: "img-ca", name: "Coding Agent", imageType: "cloud-image", arch: "arm64")
+        #expect(CodingAgentImage.matches(name: coding.name))
         #expect(CodingAgentImage.matches(name: "Ubuntu", slug: "coding-agent-x86_64"))
         #expect(!CodingAgentImage.matches(name: "Ubuntu 24.04 LTS", slug: "ubuntu-24.04-arm64"))
+        #expect(!CodingAgentImage.matches(name: "my coding agent lab"))
+        #expect(!CodingAgentImage.matches(name: "Coding Agent", slug: "ubuntu-24.04-arm64"))
+        #expect(CodingAgentImage.defaultClass(forName: coding.name) == "agent")
+        #expect(CodingAgentImage.defaultClass(forName: "Ubuntu 24.04 LTS") == "house")
 
-        let body = try CreateWorkload.body(name: "coder", image: image, hostCPUCount: 8)
+        let body = try CreateWorkload.body(name: "coder", image: coding, hostCPUCount: 8)
         #expect(body.workloadClass == "agent")
         #expect(body.memoryMB == 2_048)
         #expect(body.diskSizeGB == 20)
@@ -180,7 +184,21 @@ struct CreateWorkloadTests {
         #expect(body.cloudInit?.userData?.contains("OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\"") == true)
         #expect(body.cloudInit?.userData?.contains("git") == true)
         #expect(body.cloudInit?.userData?.contains("ttyd") == true)
+        #expect(body.cloudInit?.userData?.contains("ttyd.service") == true)
+        #expect(body.cloudInit?.userData?.contains("sha256sum -c") == true)
         #expect(body.cloudInit?.userData?.contains("claude.ai/install.sh") == true)
+
+        let ubuntu = image(id: "img-u", name: "Ubuntu 24.04 LTS", imageType: "cloud-image", arch: "arm64")
+        let afterSwitch = try CreateWorkload.body(
+            name: "coder",
+            image: ubuntu,
+            hostCPUCount: 8,
+            workloadClass: CodingAgentImage.defaultClass(forName: ubuntu.name),
+        )
+        #expect(afterSwitch.workloadClass == nil)
+        #expect(afterSwitch.memoryMB == 1_024)
+        #expect(afterSwitch.diskSizeGB == 10)
+        #expect(afterSwitch.cloudInit == nil)
 
         let encoded = try json(body)
         #expect(encoded["workloadClass"] as? String == "agent")
@@ -189,7 +207,7 @@ struct CreateWorkloadTests {
 
         let byo = try CreateWorkload.body(
             name: "coder",
-            image: image,
+            image: coding,
             hostCPUCount: 8,
             openaiBaseURL: "https://api.example/v1",
         )
@@ -197,7 +215,7 @@ struct CreateWorkloadTests {
 
         let house = try CreateWorkload.body(
             name: "coder",
-            image: image,
+            image: coding,
             hostCPUCount: 8,
             workloadClass: "house",
         )
@@ -206,7 +224,7 @@ struct CreateWorkloadTests {
         #expect(throws: CreateWorkload.DraftError.invalidOpenAIBaseURL) {
             try CreateWorkload.body(
                 name: "coder",
-                image: image,
+                image: coding,
                 hostCPUCount: 8,
                 openaiBaseURL: "not a url",
             )
