@@ -150,6 +150,51 @@ struct PlatformPathsInstalledLayoutTests {
         #expect(dir.path == "/var/run/barkvisor")
     }
 
+    @Test func `path argv0 resolves homebrew prefix not usr local`() {
+        let path = "/opt/homebrew/bin:/usr/bin:/bin"
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: path,
+            currentDirectory: "/var/lib/barkvisor",
+            fileExists: { $0 == "/opt/homebrew/bin/barkvisor" },
+        )
+        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `absolute argv0 keeps homebrew prefix`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "/opt/homebrew/bin/barkvisor",
+            pathEnvironment: "/usr/bin",
+            currentDirectory: "/var/lib/barkvisor",
+            fileExists: { _ in false },
+        )
+        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `bare argv0 without path match falls back to usr local prefix`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: "/usr/bin:/bin",
+            currentDirectory: "/var/lib/barkvisor",
+            fileExists: { _ in false },
+        )
+        #expect(exe == "barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/usr/local")
+    }
+
+    @Test func `relative argv0 is resolved from cwd`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "./bin/barkvisor",
+            pathEnvironment: "/usr/bin",
+            currentDirectory: "/opt/homebrew",
+            fileExists: { _ in false },
+        )
+        #expect(exe.hasSuffix("/opt/homebrew/bin/barkvisor"))
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
     @Test func `var lib data dir keeps var run sockets without isInstalled`() {
         let dir = PlatformPaths.resolveSocketDir(
             isInstalled: false,

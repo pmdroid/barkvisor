@@ -30,11 +30,26 @@ struct HomebrewFormulaTests {
 
     @Test func `formula depends on qemu swtpm socket_vmnet cdrtools`() throws {
         let formula = try read("packaging/homebrew/barkvisor.rb")
+        #expect(formula.contains("homepage \"https://barkvisor.dev\""))
+        #expect(formula.contains("license \"MIT\""))
         #expect(formula.contains("depends_on :macos"))
         #expect(formula.contains("depends_on arch: :arm64"))
         for dep in ["qemu", "swtpm", "socket_vmnet", "cdrtools"] {
             #expect(formula.contains("depends_on \"\(dep)\""), "missing depends_on \(dep)")
         }
+    }
+
+    @Test func `formula caveats cover services commands ui url and source fallback`() throws {
+        let formula = try read("packaging/homebrew/barkvisor.rb")
+        #expect(formula.contains("http://localhost:7777"))
+        #expect(formula.contains("sudo brew services start barkvisor"))
+        #expect(formula.contains("sudo brew services restart barkvisor"))
+        #expect(formula.contains("sudo brew services stop barkvisor"))
+        #expect(formula.contains("brew services info barkvisor"))
+        #expect(formula.contains("builds from source"))
+        #expect(formula.contains("Xcode and bun"))
+        #expect(formula.contains("(libexec/\"barkvisor\").mkpath"))
+        #expect(formula.contains("assert_path_exists libexec/\"barkvisor\""))
     }
 
     @Test func `brew services is a root LaunchDaemon without regenerating the plist`() throws {

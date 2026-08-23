@@ -102,15 +102,19 @@ public enum Config {
     /// Install prefix derived from binary location.
     /// `/usr/local/bin/barkvisor` → prefix = `/usr/local`
     /// Falls back to `/usr/local` for dev builds.
-    public static let prefix: String = {
-        let bin = ProcessInfo.processInfo.arguments[0]
-        let resolved = URL(fileURLWithPath: bin).resolvingSymlinksInPath()
-        let binDir = resolved.deletingLastPathComponent()
-        if binDir.lastPathComponent == "bin" {
-            return binDir.deletingLastPathComponent().path
-        }
-        return "/usr/local"
-    }()
+    /// Bare argv0 (`barkvisor` on PATH) is resolved so Homebrew shareDir is found.
+    public static let prefix: String = PlatformPaths.installPrefix(
+        executablePath: resolvedExecutablePath,
+    )
+
+    private static var resolvedExecutablePath: String {
+        PlatformPaths.resolvedExecutablePath(
+            argument: ProcessInfo.processInfo.arguments[0],
+            pathEnvironment: ProcessInfo.processInfo.environment["PATH"],
+            currentDirectory: FileManager.default.currentDirectoryPath,
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+        )
+    }
 
     /// Installed helper binaries (QEMU, swtpm, socket_vmnet, etc.)
     public static var libexecDir: String {
@@ -135,7 +139,7 @@ public enum Config {
     /// Whether running from installed daemon layout (vs. dev build).
     /// Share frontend, not bundled libexec QEMU or `BARKVISOR_DATA_DIR` (PAS-293).
     public static var isInstalled: Bool {
-        let binDir = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+        let binDir = URL(fileURLWithPath: resolvedExecutablePath)
             .resolvingSymlinksInPath()
             .deletingLastPathComponent()
         return PlatformPaths.isInstalled(

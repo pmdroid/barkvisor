@@ -3,8 +3,11 @@
 # The privileged helper LaunchDaemon is PAS-292, not this formula.
 class Barkvisor < Formula
   desc "Headless QEMU manager for a BarkVisor Device"
-  homepage "https://github.com/pmdroid/barkvisor"
+  homepage "https://barkvisor.dev"
   license "MIT"
+  # GitHub releases currently ship pkg/standalone archives, not a Homebrew keg
+  # layout. Prefer a prebuilt keg tarball when CI publishes one; until then
+  # install from head (source: Xcode + bun).
   head "https://github.com/pmdroid/barkvisor.git", branch: "main"
 
   depends_on :macos
@@ -38,6 +41,8 @@ class Barkvisor < Formula
     # Same path as scripts/build-release.sh: share/barkvisor/templates.json.
     # Seeder reads Config.shareDir; brew services cwd is /var/lib/barkvisor.
     (share/"barkvisor").install "repos/templates.json"
+    # Reserved for the privileged helper (PAS-292). Empty until that formula.
+    (libexec/"barkvisor").mkpath
 
     (pkgshare/"postinstall").write (buildpath/"packaging/homebrew/postinstall.sh").read
     chmod 0755, pkgshare/"postinstall"
@@ -75,10 +80,19 @@ class Barkvisor < Formula
       BarkVisor is a root LaunchDaemon running as _barkvisor.
       Data: /var/lib/barkvisor
       Sockets: /var/run/barkvisor
+      UI: http://localhost:7777
+
+      This formula currently builds from source (head). Prebuilt GitHub
+      release artifacts use the pkg/standalone layout, not this keg; when a
+      matching keg archive exists, the formula will prefer it. Source build
+      needs Xcode and bun.
 
       Create the user and directories, then start the service:
         sudo #{opt_pkgshare}/postinstall
         sudo brew services start barkvisor
+        sudo brew services restart barkvisor
+        sudo brew services stop barkvisor
+        brew services info barkvisor
 
       Bridged networking still needs the privileged helper (not this formula).
       NAT Workloads work without it.
@@ -88,6 +102,7 @@ class Barkvisor < Formula
   test do
     assert_path_exists bin/"barkvisor"
     assert_path_exists share/"barkvisor/templates.json"
+    assert_path_exists libexec/"barkvisor"
     plist = (prefix/"homebrew.mxcl.barkvisor.plist").read
     assert_match "AbandonProcessGroup", plist
     assert_match "_barkvisor", plist

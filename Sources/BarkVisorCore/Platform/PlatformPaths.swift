@@ -119,6 +119,42 @@ public enum PlatformPaths {
         URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
+    /// Absolute executable path from argv0. Bare names (e.g. `barkvisor` from PATH)
+    /// are resolved against `PATH`; slash-relative names against `currentDirectory`.
+    public static func resolvedExecutablePath(
+        argument: String,
+        pathEnvironment: String?,
+        currentDirectory: String,
+        fileExists: (String) -> Bool,
+    ) -> String {
+        if argument.hasPrefix("/") {
+            return argument
+        }
+        if argument.contains("/") {
+            return URL(fileURLWithPath: currentDirectory, isDirectory: true)
+                .appendingPathComponent(argument)
+                .standardizedFileURL.path
+        }
+        let dirs = (pathEnvironment ?? "").split(separator: ":", omittingEmptySubsequences: true)
+        for dir in dirs {
+            let candidate = URL(fileURLWithPath: String(dir), isDirectory: true)
+                .appendingPathComponent(argument)
+                .path
+            if fileExists(candidate) {
+                return candidate
+            }
+        }
+        return argument
+    }
+
+    /// `/opt/homebrew/bin/barkvisor` → `/opt/homebrew`. Otherwise `/usr/local`.
+    public static func installPrefix(executablePath: String) -> String {
+        let resolved = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
+        let binDir = resolved.deletingLastPathComponent()
+        guard binDir.lastPathComponent == "bin" else { return "/usr/local" }
+        return binDir.deletingLastPathComponent().path
+    }
+
     /// Packaged SPA path used to detect an installed layout (PAS-293).
     public static func shareFrontendIndexPath(prefix: String) -> String {
         "\(prefix)/share/barkvisor/frontend/dist/index.html"

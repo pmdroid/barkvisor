@@ -41,6 +41,20 @@ struct DaemonRestartIsolationTests {
         #expect(!PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/run/custom-socks")))
     }
 
+    @Test func `isWritableDirectory is false when missing`() {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("barkvisor-missing-\(UUID().uuidString)", isDirectory: true)
+        #expect(!PlatformPaths.isWritableDirectory(missing))
+    }
+
+    @Test func `isWritableDirectory is true for a created temp dir`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("barkvisor-writable-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(PlatformPaths.isWritableDirectory(dir))
+    }
+
     @Test func `dev layout stays under tmp`() {
         let dir = PlatformPaths.resolveSocketDir(
             isInstalled: false,
