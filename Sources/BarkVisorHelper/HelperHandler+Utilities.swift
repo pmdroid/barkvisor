@@ -1,3 +1,4 @@
+import BarkVisorHelperProtocol
 import Foundation
 import Security
 
@@ -19,27 +20,34 @@ extension HelperHandler {
         chmod(path, 0o777)
     }
 
+    /// Homebrew opt-prefix first (PAS-287). Leftover libexec last.
+    static let socketVmnetSearchPaths = SocketVmnetLayout.searchPaths
+
     func resolveSocketVmnet() -> (path: String?, candidates: [String]) {
-        let trustedPath = "/usr/local/libexec/barkvisor/socket_vmnet"
-        if FileManager.default.isExecutableFile(atPath: trustedPath) {
-            return (trustedPath, [trustedPath])
-        }
-        let fallbackCandidates = [
-            "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
-            "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
-        ]
-        for candidate in fallbackCandidates {
+        let candidates = Self.socketVmnetSearchPaths
+        for candidate in candidates {
             guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
-            let url = URL(fileURLWithPath: candidate)
+            let resolved = (candidate as NSString).resolvingSymlinksInPath
+            guard SocketVmnetLayout.allowedPrefix(resolved),
+                  !isGroupOrWorldWritable(atPath: resolved)
+            else { continue }
+            let url = URL(fileURLWithPath: resolved)
             var code: SecStaticCode?
             guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
                   let code
             else { continue }
             if SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess {
-                return (candidate, [trustedPath] + fallbackCandidates)
+                return (resolved, candidates)
             }
         }
-        return (nil, [trustedPath] + fallbackCandidates)
+        return (nil, candidates)
+    }
+
+    func isGroupOrWorldWritable(atPath path: String) -> Bool {
+        var st = stat()
+        guard lstat(path, &st) == 0 else { return true }
+        if (st.st_mode & S_IFMT) == S_IFLNK { return true }
+        return (st.st_mode & 0o022) != 0
     }
 
     @discardableResult

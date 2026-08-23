@@ -11,6 +11,7 @@ struct VirtUIErrorTests {
             .firmwareNotFound("missing"),
             .unknownVMType("bad-type"),
             .diskCreateFailed("failed"),
+            .insufficientDiskSpace(freeBytes: 100, neededBytes: 1_073_741_824),
             .cloudInitFailed("failed"),
             .monitorError("error"),
             .vmNotRunning("vm-1"),
@@ -102,6 +103,8 @@ struct VirtUIErrorTests {
         // Domain errors default to 500
         #expect(BarkVisorError.qemuNotFound("").httpStatus == 500)
         #expect(BarkVisorError.diskCreateFailed("").httpStatus == 500)
+        #expect(BarkVisorError.insufficientDiskSpace(freeBytes: 1, neededBytes: 2).httpStatus == 507)
+        #expect(BarkVisorError.insufficientDiskSpace(freeBytes: 1, neededBytes: 2).code == "insufficient_disk_space")
         #expect(BarkVisorError.monitorError("").httpStatus == 500)
         #expect(BarkVisorError.internalError("").httpStatus == 500)
     }

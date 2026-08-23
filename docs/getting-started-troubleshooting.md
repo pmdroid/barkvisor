@@ -126,11 +126,12 @@ https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templa
 
 ### QEMU binary not found
 
-**macOS** release installs look for `qemu-system-aarch64` and `qemu-img` in `/usr/local/libexec/barkvisor/`. During development (`swift run`), fallback order is:
+**macOS** looks for `qemu-system-aarch64` and `qemu-img` in Homebrew first, then a leftover `/usr/local/libexec/barkvisor/` copy:
 
 1. `/opt/homebrew/bin/`
 2. `/usr/local/bin/`
-3. PATH lookup via `which`
+3. leftover libexec
+4. PATH via `which`
 
 ```sh
 brew install qemu
@@ -142,8 +143,8 @@ brew install qemu
 
 BarkVisor resolves QEMU firmware (EFI images, VGA BIOS) from:
 
-1. `/usr/local/share/barkvisor/qemu/` (macOS installed daemon)
-2. `/opt/homebrew/share/qemu/` / `/usr/local/share/qemu/` (macOS Homebrew)
+1. `/opt/homebrew/share/qemu/` / `/usr/local/share/qemu/` (macOS Homebrew)
+2. leftover `/usr/local/share/barkvisor/qemu/` if present
 3. Distro OVMF / AAVMF paths on Linux (edk2 packages)
 
 If VMs fail to boot with firmware errors, verify the firmware files exist at one of these paths.
@@ -195,7 +196,7 @@ If the helper is not running, managed bridge operations will fail:
 sudo launchctl print system/dev.barkvisor.helper
 ```
 
-`socket_vmnet` is bundled at `/usr/local/libexec/barkvisor/socket_vmnet` in release installs, or under Homebrew opt prefixes in development:
+`socket_vmnet` comes from Homebrew (`brew install socket_vmnet`). The helper prefers `/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet`, then `/usr/local/opt/…`, then a leftover libexec copy. Every candidate is signature-checked.
 
 ```sh
 brew install socket_vmnet

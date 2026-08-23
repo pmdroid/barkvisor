@@ -89,25 +89,11 @@ Creates the staged install layout under `build/stage/`:
 usr/local/
   bin/
     barkvisor                   (main server daemon)
-  libexec/barkvisor/
-    qemu-system-aarch64
-    qemu-img
-    swtpm
-    socket_vmnet
-    socket_vmnet_client
-    xz
-    mkisofs
-  lib/barkvisor/                (bundled dylibs, populated in step 9)
+  libexec/barkvisor/            (xz + mkisofs; QEMU only if BUNDLE_HYPERVISOR_DEPS=true)
+  lib/barkvisor/                (daemon dylibs, populated in step 9)
   share/barkvisor/
     templates.json
     frontend/dist/              (web UI)
-    qemu/
-      edk2-aarch64-code.fd
-      AAVMF_CODE.secboot.fd
-      vgabios-ramfb.bin
-      vgabios-virtio.bin
-      efi-virtio.rom
-      keymaps/
 Library/
   LaunchDaemons/
     dev.barkvisor.plist

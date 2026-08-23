@@ -41,26 +41,26 @@ brew install qemu swtpm socket_vmnet
 
 ### How BundleResolver Finds Binaries
 
-In a release install, binaries live in `/usr/local/libexec/barkvisor/` and
-QEMU resources in `/usr/local/share/barkvisor/qemu/`. During development these
-do not exist, so `BundleResolver` falls back through the following search order:
+macOS (PAS-287): Homebrew first. The pkg does not bundle QEMU or `socket_vmnet`.
 
-1. Installed prefix: `{prefix}/libexec/barkvisor/<name>`
-2. `/opt/homebrew/bin/<name>` (Apple Silicon Homebrew)
-3. `/usr/local/bin/<name>` (Intel Homebrew)
-4. `$PATH` lookup via `which`
+1. `/opt/homebrew/bin/<name>` (Apple Silicon Homebrew)
+2. `/usr/local/bin/<name>` (Intel Homebrew)
+3. Leftover `{prefix}/libexec/barkvisor/<name>` if an old pkg left one
+4. `$PATH` via `which`
 
 For Homebrew opt-prefix packages (e.g. `socket_vmnet`):
 
-1. Installed prefix: `{prefix}/libexec/barkvisor/<name>`
-2. `/opt/homebrew/opt/<package>/bin/<name>`
-3. `/usr/local/opt/<package>/bin/<name>`
+1. `/opt/homebrew/opt/<package>/bin/<name>`
+2. `/usr/local/opt/<package>/bin/<name>`
+3. Leftover `{prefix}/libexec/barkvisor/<name>`
 
-QEMU resources (`-L` data dir, firmware, keymaps) follow a similar pattern:
+QEMU resources (`-L` data dir, firmware, keymaps):
 
-1. Installed prefix: `{prefix}/share/barkvisor/qemu/<name>`
-2. `/opt/homebrew/share/qemu/<name>`
-3. `/usr/local/share/qemu/<name>`
+1. `/opt/homebrew/share/qemu/<name>`
+2. `/usr/local/share/qemu/<name>`
+3. Leftover `{prefix}/share/barkvisor/qemu/<name>`
+
+The privileged XPC helper is still installed by the pkg. Linux still uses distro QEMU.
 
 ## Project Structure
 

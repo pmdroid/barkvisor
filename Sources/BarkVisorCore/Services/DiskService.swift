@@ -44,11 +44,37 @@ public struct DiskResizeRequest: Sendable {
 public enum DiskService {
     public static let supportedFormats: Set<String> = ["qcow2", "raw"]
 
+    /// Fail closed when the data volume cannot hold `neededBytes` plus 512 MiB headroom.
+    public static func requireVolumeSpace(neededBytes: Int64, at path: String) throws {
+        let attrs = try FileManager.default.attributesOfFileSystem(forPath: path)
+        let free = (attrs[.systemFreeSize] as? Int64) ?? 0
+        let headroom: Int64 = 512 * 1_048_576
+        let need = neededBytes + headroom
+        if free < need {
+            throw BarkVisorError.insufficientDiskSpace(freeBytes: free, neededBytes: need)
+        }
+    }
+
+    /// qcow2 is sparse; raw needs the full size on disk.
+    public static func spaceNeededToCreate(sizeGB: Int, format: String) -> Int64 {
+        let gib = Int64(sizeGB) * 1_073_741_824
+        if format == "raw" { return gib }
+        return min(gib, 1_073_741_824)
+    }
+
+    public static func looksLikeNoSpace(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return t.contains("no space left") || t.contains("enospc")
+    }
+
     /// Create a blank disk image in the given format
     public static func createBlank(path: URL, sizeGB: Int, format: String = "qcow2") throws {
         guard supportedFormats.contains(format) else {
             throw BarkVisorError.diskCreateFailed("Unsupported format: \(format)")
         }
+        let dir = path.deletingLastPathComponent().path
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try requireVolumeSpace(neededBytes: spaceNeededToCreate(sizeGB: sizeGB, format: format), at: dir)
         let qemuImg = try resolveQEMUImg()
         let result = try PlatformProcess.run(
             executable: qemuImg,
@@ -56,12 +82,20 @@ public enum DiskService {
             timeout: 300,
         )
         guard result.succeeded else {
+            if looksLikeNoSpace(result.stderrString) {
+                let free = ((try? FileManager.default.attributesOfFileSystem(forPath: dir))?[.systemFreeSize] as? Int64) ?? 0
+                throw BarkVisorError.insufficientDiskSpace(freeBytes: free, neededBytes: spaceNeededToCreate(sizeGB: sizeGB, format: format))
+            }
             throw BarkVisorError.diskCreateFailed("qemu-img create failed: \(result.stderrString)")
         }
     }
 
     /// Clone a cloud image and optionally resize
     public static func cloneAndResize(sourcePath: String, destPath: URL, sizeGB: Int?) throws {
+        let dir = destPath.deletingLastPathComponent().path
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let needed = spaceNeededToCreate(sizeGB: sizeGB ?? 1, format: "qcow2")
+        try requireVolumeSpace(neededBytes: needed, at: dir)
         let qemuImg = try resolveQEMUImg()
 
         // Convert to qcow2
@@ -78,6 +112,10 @@ public enum DiskService {
                 timeout: 300,
             )
             guard convert2.succeeded else {
+                if looksLikeNoSpace(convert.stderrString + convert2.stderrString) {
+                    let free = ((try? FileManager.default.attributesOfFileSystem(forPath: dir))?[.systemFreeSize] as? Int64) ?? 0
+                    throw BarkVisorError.insufficientDiskSpace(freeBytes: free, neededBytes: needed)
+                }
                 throw BarkVisorError.diskCreateFailed(
                     "qemu-img convert failed: \(convert2.stderrString)",
                 )

@@ -11,8 +11,7 @@ connecting to it, and managing its lifecycle in BarkVisor.
 - The server is listening on port 7777 (default).
 - At least one OS image is available, or you are ready to download/upload one.
 - QEMU is available:
-  - **macOS release:** bundled under `/usr/local/libexec/barkvisor/`
-  - **macOS dev:** `brew install qemu` (Homebrew / `$PATH`)
+  - **macOS:** `brew install qemu swtpm socket_vmnet`
   - **Linux:** distro QEMU/firmware packages (see [Installation (Linux)](getting-started-linux.md#system-requirements))
 
 ## Getting an OS Image

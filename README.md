@@ -148,7 +148,7 @@ Download `.deb` / `.rpm` / `.tar.gz` from the [releases page](https://github.com
 
 ## Release Build
 
-The release script compiles QEMU, swtpm, socket_vmnet, and xz-utils from source, builds the frontend, compiles the Swift app, assembles the daemon install layout, and creates a `.pkg` installer.
+The release script builds the frontend and Swift daemon, assembles the install layout (daemon + XPC helper), and creates a `.pkg` installer. macOS QEMU, swtpm, and socket_vmnet come from Homebrew at runtime (`brew install qemu swtpm socket_vmnet`). Set `BUNDLE_HYPERVISOR_DEPS=true` only if you still want the old from-source tree.
 
 ```bash
 # Required: Apple Team ID for XPC code-signing verification
