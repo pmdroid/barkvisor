@@ -23,6 +23,11 @@ struct OllamaAuthPolicyTests {
         )
         #expect(
             OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "GET", path: "/api/ollama/snapshot",
+            ),
+        )
+        #expect(
+            OllamaAuthPolicy.allows(
                 principal: .inferenceKey, method: "POST", path: "/v1/chat/completions",
             ),
         )
@@ -55,5 +60,51 @@ struct OllamaAuthPolicyTests {
         )
         #expect(OllamaAuthPolicy.principal(authMethod: "apikey", apiKeyKind: "full") == .fullKey)
         #expect(OllamaAuthPolicy.principal(authMethod: "jwt", apiKeyKind: nil) == .session)
+    }
+
+    @Test func `inference user role is inference even with a full key or JWT`() {
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: "inference", authMethod: "jwt", apiKeyKind: nil,
+            ) == .inferenceKey,
+        )
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: "inference", authMethod: "apikey", apiKeyKind: "full",
+            ) == .inferenceKey,
+        )
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: "admin", authMethod: "apikey", apiKeyKind: "inference",
+            ) == .inferenceKey,
+        )
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: "admin", authMethod: "jwt", apiKeyKind: nil,
+            ) == .session,
+        )
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: "nope", authMethod: "jwt", apiKeyKind: nil,
+            ) == .inferenceKey,
+        )
+    }
+
+    @Test func `inference cannot pull keys or attach USB`() {
+        #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "POST", path: "/api/auth/keys",
+            ),
+        )
+        #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "POST", path: "/api/vms/vm-1/usb",
+            ),
+        )
+        #expect(
+            OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "GET", path: "/api/auth/me",
+            ),
+        )
     }
 }

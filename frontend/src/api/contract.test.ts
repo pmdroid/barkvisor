@@ -43,6 +43,7 @@ describe('API contract (PAS-78)', () => {
       '/api/auth/login',
       '/api/auth/refresh',
       '/api/auth/logout',
+      '/api/auth/me',
       '/api/auth/login-offers',
       '/api/auth/login-offers/redeem',
       '/api/vms',

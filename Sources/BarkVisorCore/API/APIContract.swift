@@ -51,6 +51,7 @@ public enum APIContract {
         Route(method: "POST", path: "/api/auth/login", stability: .stable),
         Route(method: "POST", path: "/api/auth/refresh", stability: .stable),
         Route(method: "POST", path: "/api/auth/logout", stability: .stable),
+        Route(method: "GET", path: "/api/auth/me", stability: .stable),
         Route(method: "POST", path: "/api/auth/login-offers", stability: .evolving),
         Route(method: "GET", path: "/api/auth/login-offers", stability: .evolving),
         Route(method: "DELETE", path: "/api/auth/login-offers", stability: .evolving),

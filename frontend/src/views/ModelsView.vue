@@ -6,12 +6,14 @@ import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { useTaskPoller } from '../composables/useTaskPoller'
+import { useAuthStore } from '../stores/auth'
 import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
+const auth = useAuthStore()
 const store = useOllamaStore()
 const devices = useDevicesStore()
 const toast = useToastStore()
@@ -34,8 +36,10 @@ const hostOptions = computed(() =>
 let pollTimer: number
 onMounted(() => {
   void store.fetchCatalog()
-  void store.fetchSettings()
-  void devices.fetchHealth()
+  if (auth.isAdmin) {
+    void store.fetchSettings()
+    void devices.fetchHealth()
+  }
   pollTimer = window.setInterval(() => { void store.fetchCatalog() }, 10_000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -129,7 +133,7 @@ async function saveKey() {
   />
 
   <template v-else>
-    <div class="card" style="margin-bottom:16px">
+    <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
         <label>Pull a model</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -159,7 +163,7 @@ async function saveKey() {
         { key: 'size', label: 'Size' },
         { key: 'where', label: DEVICE_LABEL },
         { key: 'state', label: 'State' },
-        { key: 'actions', label: '', align: 'right' },
+        ...(auth.isAdmin ? [{ key: 'actions', label: '', align: 'right' as const }] : []),
       ]"
     >
       <tr v-for="model in store.models" :key="model.name">
@@ -171,14 +175,14 @@ async function saveKey() {
             {{ model.running ? 'Running' : 'Pulled' }}
           </span>
         </td>
-        <td style="text-align:right;white-space:nowrap">
+        <td v-if="auth.isAdmin" style="text-align:right;white-space:nowrap">
           <AppButton v-if="!model.running" size="sm" @click="startModel(model)">Start</AppButton>
           <AppButton v-else size="sm" @click="stopModel(model)">Stop</AppButton>
         </td>
       </tr>
     </DataTable>
 
-    <div class="card" style="margin-top:24px">
+    <div v-if="auth.isAdmin" class="card" style="margin-top:24px">
       <h2 style="margin-top:0">Ollama API key</h2>
       <p style="color:var(--text-secondary);font-size:13px">
         Home holds the upstream Ollama key. Clients authenticate with a BarkVisor user or inference token.
