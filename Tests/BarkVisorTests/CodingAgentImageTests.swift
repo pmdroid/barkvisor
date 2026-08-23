@@ -212,7 +212,7 @@ struct CodingAgentImageTests {
             #expect(source.contains("/etc/git-hooks/pre-push"))
             #expect(source.contains("/var/lib/barkvisor/last-git-push"))
             #expect(source.contains("posixSingleQuoted"))
-            #expect(!source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+            #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
             #expect(!source.contains("claude.ai/install.sh"))
         }
         #expect(console.contains("isShellSafeOpenAIBaseURL"))
