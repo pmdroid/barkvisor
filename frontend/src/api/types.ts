@@ -359,7 +359,7 @@ export interface ImageRepository {
   updatedAt: string
 }
 
-export type TaskKind = 'vmProvision' | 'vmDelete' | 'diagnosticBundle' | 'repoSync' | 'systemUpdate'
+export type TaskKind = 'vmProvision' | 'vmDelete' | 'diagnosticBundle' | 'repoSync' | 'systemUpdate' | 'ollamaPull'
 
 export interface TaskEvent {
   taskID: string
@@ -586,6 +586,7 @@ export interface APIKeyResponse {
   expiresAt: string | null
   lastUsedAt: string | null
   createdAt: string
+  kind?: 'full' | 'inference' | string
 }
 
 export interface APIKeyCreateResponse {
@@ -595,6 +596,53 @@ export interface APIKeyCreateResponse {
   keyPrefix: string
   expiresAt: string | null
   createdAt: string
+  kind?: 'full' | 'inference' | string
+}
+
+export interface OllamaModelLocation {
+  hostId: string
+  displayName?: string | null
+  running: boolean
+  reachable: boolean
+  probedAt: string
+  size?: number | null
+}
+
+export interface OllamaCatalogModel {
+  name: string
+  digest?: string | null
+  size?: number | null
+  running: boolean
+  locations: OllamaModelLocation[]
+}
+
+export interface OllamaDeviceStatus {
+  hostId: string
+  displayName?: string | null
+  installed: boolean
+  reachable: boolean
+  stale: boolean
+  binaryPath?: string | null
+  installHint: string
+  probedAt?: string | null
+}
+
+export interface OllamaHomeCatalog {
+  anyReachable: boolean
+  anyInstalled: boolean
+  refreshedAt?: string | null
+  models: OllamaCatalogModel[]
+  devices: OllamaDeviceStatus[]
+}
+
+export interface OllamaSettingsSnapshot {
+  endpoint: string
+  hasApiKey: boolean
+}
+
+export interface OllamaTaskAccepted {
+  taskID: string
+  hostId: string
 }
 
 export interface SSHKey {

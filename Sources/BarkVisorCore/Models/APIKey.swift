@@ -12,6 +12,7 @@ public struct APIKey: Codable, Sendable, FetchableRecord, PersistableRecord, Tab
     public var expiresAt: String?
     public var lastUsedAt: String?
     public var createdAt: String
+    public var kind: String
 
     public enum Columns {
         public static let id = Column(CodingKeys.id)
@@ -20,6 +21,7 @@ public struct APIKey: Codable, Sendable, FetchableRecord, PersistableRecord, Tab
         public static let userId = Column(CodingKeys.userId)
         public static let expiresAt = Column(CodingKeys.expiresAt)
         public static let lastUsedAt = Column(CodingKeys.lastUsedAt)
+        public static let kind = Column(CodingKeys.kind)
     }
 
     public var isExpired: Bool {
@@ -42,6 +44,7 @@ public struct APIKey: Codable, Sendable, FetchableRecord, PersistableRecord, Tab
         expiresAt: String?,
         lastUsedAt: String?,
         createdAt: String,
+        kind: String = APIKeyKind.full.rawValue,
     ) {
         self.id = id
         self.name = name
@@ -51,6 +54,11 @@ public struct APIKey: Codable, Sendable, FetchableRecord, PersistableRecord, Tab
         self.expiresAt = expiresAt
         self.lastUsedAt = lastUsedAt
         self.createdAt = createdAt
+        self.kind = kind
+    }
+
+    public var apiKeyKind: APIKeyKind {
+        APIKeyKind(rawValue: kind) ?? .full
     }
 }
 
@@ -61,6 +69,7 @@ public struct APIKeyResponse: Codable, Sendable {
     public let expiresAt: String?
     public let lastUsedAt: String?
     public let createdAt: String
+    public let kind: String
 
     public init(
         id: String,
@@ -69,6 +78,7 @@ public struct APIKeyResponse: Codable, Sendable {
         expiresAt: String?,
         lastUsedAt: String?,
         createdAt: String,
+        kind: String = APIKeyKind.full.rawValue,
     ) {
         self.id = id
         self.name = name
@@ -76,6 +86,7 @@ public struct APIKeyResponse: Codable, Sendable {
         self.expiresAt = expiresAt
         self.lastUsedAt = lastUsedAt
         self.createdAt = createdAt
+        self.kind = kind
     }
 }
 
@@ -86,6 +97,7 @@ public struct APIKeyCreateResponse: Codable, Sendable {
     public let keyPrefix: String
     public let expiresAt: String?
     public let createdAt: String
+    public let kind: String
 
     public init(
         id: String,
@@ -94,6 +106,7 @@ public struct APIKeyCreateResponse: Codable, Sendable {
         keyPrefix: String,
         expiresAt: String?,
         createdAt: String,
+        kind: String = APIKeyKind.full.rawValue,
     ) {
         self.id = id
         self.name = name
@@ -101,5 +114,6 @@ public struct APIKeyCreateResponse: Codable, Sendable {
         self.keyPrefix = keyPrefix
         self.expiresAt = expiresAt
         self.createdAt = createdAt
+        self.kind = kind
     }
 }

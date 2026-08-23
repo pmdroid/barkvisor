@@ -6,6 +6,7 @@ import Vapor
 struct CreateAPIKeyRequest: Content, Validatable {
     let name: String
     let expiresIn: String?
+    let kind: String?
 
     static func validations(_ validations: inout Validations) {
         validations.add("name", as: String.self, is: !.empty)
@@ -26,9 +27,10 @@ struct APIKeyController: RouteCollection {
 
         try CreateAPIKeyRequest.validate(content: req)
         let body = try req.content.decode(CreateAPIKeyRequest.self)
+        let kind = try Self.parseKind(body.kind)
         let result = try await APIKeyService.create(
             name: body.name, expiresIn: body.expiresIn,
-            userId: authUser.userId, db: req.db,
+            userId: authUser.userId, db: req.db, kind: kind,
         )
 
         AuditService.log(
@@ -42,7 +44,18 @@ struct APIKeyController: RouteCollection {
             keyPrefix: result.apiKey.keyPrefix,
             expiresAt: result.apiKey.expiresAt,
             createdAt: result.apiKey.createdAt,
+            kind: result.apiKey.kind,
         )
+    }
+
+    static func parseKind(_ raw: String?) throws -> APIKeyKind {
+        let value = (raw ?? APIKeyKind.full.rawValue).trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if value.isEmpty { return .full }
+        guard let kind = APIKeyKind(rawValue: value) else {
+            throw BarkVisorError.badRequest("kind must be full or inference")
+        }
+        return kind
     }
 
     @Sendable
@@ -57,6 +70,7 @@ struct APIKeyController: RouteCollection {
                 expiresAt: key.expiresAt,
                 lastUsedAt: key.lastUsedAt,
                 createdAt: key.createdAt,
+                kind: key.kind,
             )
         }
     }

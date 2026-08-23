@@ -13,6 +13,21 @@ struct AuthenticatedUser {
     let username: String
     let authMethod: String // "jwt", "apikey", or "ticket"
     let apiKeyId: String? // set when authMethod == "apikey"
+    let apiKeyKind: String?
+
+    init(
+        userId: String,
+        username: String,
+        authMethod: String,
+        apiKeyId: String?,
+        apiKeyKind: String? = nil,
+    ) {
+        self.userId = userId
+        self.username = username
+        self.authMethod = authMethod
+        self.apiKeyId = apiKeyId
+        self.apiKeyKind = apiKeyKind
+    }
 }
 
 struct AuthenticatedUserKey: StorageKey {
@@ -73,6 +88,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         // API key auth: tokens starting with "barkvisor_"
         if token.hasPrefix("barkvisor_") {
             request.authenticatedUser = try await authenticateAPIKey(token: token, request: request)
+            try Self.enforceInferenceACL(request)
             return try await next.respond(to: request)
         }
 
@@ -80,6 +96,20 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         request.authenticatedUser = try await authenticateJWT(token: token)
 
         return try await next.respond(to: request)
+    }
+
+    static func enforceInferenceACL(_ request: Vapor.Request) throws {
+        guard let user = request.authenticatedUser else { return }
+        let principal = OllamaAuthPolicy.principal(authMethod: user.authMethod, apiKeyKind: user.apiKeyKind)
+        guard !OllamaAuthPolicy.allows(
+            principal: principal,
+            method: request.method.rawValue,
+            path: request.url.path,
+        ) else { return }
+        throw Abort(
+            .forbidden,
+            reason: "This inference token can list models and call chat completions only",
+        )
     }
 
     private func authenticateAPIKey(token: String, request: Vapor.Request) async throws
@@ -138,6 +168,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             username: user.username,
             authMethod: "apikey",
             apiKeyId: apiKey.id,
+            apiKeyKind: apiKey.kind,
         )
     }
 
@@ -236,6 +267,7 @@ struct JWTAuthMiddleware: AsyncMiddleware {
                     token: auth.token,
                     request: request,
                 )
+                try Self.enforceInferenceACL(request)
             } else {
                 request.authenticatedUser = try await authenticateJWT(token: auth.token)
             }
