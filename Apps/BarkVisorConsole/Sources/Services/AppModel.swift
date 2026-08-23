@@ -3,6 +3,7 @@ import Observation
 
 enum AppRoute: String, CaseIterable, Identifiable, Hashable {
     case dashboard
+    case chat
     case devices
     case workloads
     case library
@@ -18,6 +19,7 @@ enum AppRoute: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .dashboard: "Dashboard"
+        case .chat: "Chat"
         case .devices: Copy.devices
         case .workloads: Copy.workloads
         case .library: Copy.library
@@ -39,6 +41,7 @@ enum SessionPhase: Equatable {
 
 enum PhoneTab: String, Hashable {
     case home
+    case chat
     case library
     case devices
     case settings
@@ -103,6 +106,11 @@ final class AppModel {
     var homeLoadErrors: [HomeDeviceLoadError] = []
     var homeUnreachable: [HomeDeviceHealthSnapshot] = []
     var homeLoaded = false
+    var ollamaCatalog: OllamaHomeCatalog?
+
+    var showsChat: Bool {
+        ChatAvailability.visible(catalog: ollamaCatalog)
+    }
 
     private var token: String?
     private var refreshToken: String?
@@ -258,6 +266,9 @@ final class AppModel {
         loginOffer = nil
         about = nil
         logs = []
+        ollamaCatalog = nil
+        if route == .chat { route = .dashboard }
+        if phoneTab == .chat { phoneTab = .home }
         phase = url == nil ? .connect : .login
         banner = nil
         if let url, presented != nil || access != nil {
@@ -298,6 +309,9 @@ final class AppModel {
         loginOffer = nil
         about = nil
         logs = []
+        ollamaCatalog = nil
+        if route == .chat { route = .dashboard }
+        if phoneTab == .chat { phoneTab = .home }
         phase = .connect
         banner = "Device URL changed. Sign in again."
     }
@@ -481,6 +495,8 @@ final class AppModel {
         switch tab {
         case .home:
             await refreshHome()
+        case .chat:
+            await refreshOllamaCatalog()
         case .library:
             await refreshLibrary()
         case .devices:
@@ -583,7 +599,8 @@ final class AppModel {
         async let scoped: Void = refreshDeviceScoped()
         async let aboutLoad: Void = refreshAbout()
         async let home: Void = refreshHomeUnion()
-        _ = await (scoped, aboutLoad, home)
+        async let ollama: Void = refreshOllamaCatalog()
+        _ = await (scoped, aboutLoad, home, ollama)
     }
 
     private func restoreSession() async {
@@ -791,6 +808,18 @@ final class AppModel {
         homeLoadErrors = []
         homeUnreachable = []
         homeLoaded = false
+        ollamaCatalog = nil
+    }
+
+    func refreshOllamaCatalog() async {
+        guard let client else { return }
+        if let catalog = await optional({ try await client.ollamaCatalog() }) {
+            ollamaCatalog = catalog
+        }
+        if !showsChat {
+            if route == .chat { route = .dashboard }
+            if phoneTab == .chat { phoneTab = .home }
+        }
     }
 
     private func refreshHomeUnion() async {
@@ -857,6 +886,8 @@ final class AppModel {
             _ = try? await refreshDevices()
         case .library:
             await refreshLibrary()
+        case .chat:
+            await refreshOllamaCatalog()
         default:
             await refreshDeviceScoped()
         }
@@ -877,6 +908,7 @@ final class AppModel {
                 do {
                     try await self.refreshDevices()
                     await self.refreshDeviceScoped()
+                    await self.refreshOllamaCatalog()
                     await self.refreshHomeUnion()
                 } catch APIError.unauthorized {
                     self.logout()

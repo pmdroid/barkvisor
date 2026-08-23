@@ -191,6 +191,9 @@ struct OllamaController: RouteCollection {
     func complete(body: Data, db: DatabasePool) async throws -> Response {
         _ = try OllamaLocalProbe.modelName(fromChatBody: body)
         let client = try await resolvedClient(db: db)
+        if OllamaLocalProbe.wantsStream(fromChatBody: body) {
+            return OllamaChatProxy.stream(client.chatCompletionsStream(body: body))
+        }
         let upstream = try await client.chatCompletions(body: body)
         var headers = HTTPHeaders()
         headers.replaceOrAdd(name: .contentType, value: "application/json")

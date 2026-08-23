@@ -21,6 +21,8 @@ enum APIError: LocalizedError, Equatable {
 }
 
 struct APIClient {
+    static let chatCompletionsPath = "/v1/chat/completions"
+
     var baseURL: URL
     var token: String?
     /// Called once on 401. Return a new access JWT to retry, or nil to fail.
@@ -276,6 +278,51 @@ struct APIClient {
 
     func logs(limit: Int = 200) async throws -> [ServerLogEntry] {
         try await get("/api/logs", query: [URLQueryItem(name: "limit", value: String(limit))])
+    }
+
+    func ollamaCatalog() async throws -> OllamaHomeCatalog {
+        try await get("/api/home/ollama/models")
+    }
+
+    func streamChatCompletions(
+        model: String,
+        messages: [ChatWireMessage],
+        onDelta: @escaping (String) -> Void,
+    ) async throws {
+        var request = try makeRequest(method: "POST", path: Self.chatCompletionsPath, query: [])
+        request.timeoutInterval = 3_600
+        request.httpBody = try Self.encoder.encode(
+            ChatCompletionBody(model: model, stream: true, messages: messages),
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("Invalid response")
+        }
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        if http.statusCode == 503 { throw APIError.setupRequired }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw APIError.http(
+                status: http.statusCode,
+                reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            )
+        }
+        var buffer = ""
+        for try await line in bytes.lines {
+            buffer.append(line)
+            buffer.append("\n")
+            let deltas = ChatSSE.drain(buffer: &buffer)
+            for delta in deltas {
+                onDelta(delta)
+            }
+        }
+        if !buffer.isEmpty {
+            buffer.append("\n")
+            for delta in ChatSSE.drain(buffer: &buffer) {
+                onDelta(delta)
+            }
+        }
     }
 
     func pairingCode() async throws -> PairingIssue? {
