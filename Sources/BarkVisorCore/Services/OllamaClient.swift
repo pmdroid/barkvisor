@@ -1,3 +1,6 @@
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import Foundation
 
 public struct OllamaHTTPResponse: Sendable {
@@ -246,21 +249,43 @@ public struct URLSessionOllamaTransport: OllamaHTTPTransport {
                     for (key, value) in headers {
                         request.setValue(value, forHTTPHeaderField: key)
                     }
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    if !(200 ..< 300).contains(status) {
-                        var data = Data()
-                        for try await byte in bytes {
-                            data.append(byte)
+                    #if canImport(FoundationNetworking) && !canImport(Darwin)
+                        // Linux FoundationNetworking: no URLSession.AsyncBytes.
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        if !(200 ..< 300).contains(status) {
+                            let reason = String(data: data, encoding: .utf8) ?? "Ollama pull failed"
+                            throw BarkVisorError.badGateway("Ollama: \(reason)")
                         }
-                        let reason = String(data: data, encoding: .utf8) ?? "Ollama pull failed"
-                        throw BarkVisorError.badGateway("Ollama: \(reason)")
-                    }
-                    for try await line in bytes.lines {
-                        if let data = (line + "\n").data(using: .utf8) {
-                            continuation.yield(data)
+                        var start = data.startIndex
+                        while start < data.endIndex {
+                            var end = start
+                            while end < data.endIndex, data[end] != 0x0A {
+                                end += 1
+                            }
+                            if end < data.endIndex {
+                                end += 1
+                            }
+                            continuation.yield(Data(data[start ..< end]))
+                            start = end
                         }
-                    }
+                    #else
+                        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        if !(200 ..< 300).contains(status) {
+                            var data = Data()
+                            for try await byte in bytes {
+                                data.append(byte)
+                            }
+                            let reason = String(data: data, encoding: .utf8) ?? "Ollama pull failed"
+                            throw BarkVisorError.badGateway("Ollama: \(reason)")
+                        }
+                        for try await line in bytes.lines {
+                            if let data = (line + "\n").data(using: .utf8) {
+                                continuation.yield(data)
+                            }
+                        }
+                    #endif
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
