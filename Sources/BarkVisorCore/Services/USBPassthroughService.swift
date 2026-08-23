@@ -51,6 +51,20 @@ public enum USBPassthroughService {
            USBDeviceIdentity.normalizeHexId(device.productId) == host.productId {
             return true
         }
+        // Legacy records stored bus:BBB.AAA as deviceId. That is not a
+        // selection id, but it still occupies the live device at that address
+        // until persist rewrites it to serial or a unique vendor/product pair.
+        if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId),
+           let parsed = USBDeviceIdentity.parse(deviceId),
+           let bus = parsed.bus, let address = parsed.address,
+           host.bus == bus, host.address == address {
+            let vid = USBDeviceIdentity.normalizeHexId(device.vendorId)
+            let pid = USBDeviceIdentity.normalizeHexId(device.productId)
+            if vid.isEmpty || vid == host.vendorId,
+               pid.isEmpty || pid == host.productId {
+                return true
+            }
+        }
         return false
     }
 
@@ -185,12 +199,24 @@ public enum USBPassthroughService {
     public static func removing(
         _ devices: [USBPassthroughDevice],
         deviceId: String,
+        hostDevices: [HostUSBDevice] = [],
     ) -> [USBPassthroughDevice] {
-        guard let parsed = USBDeviceIdentity.parse(deviceId) else {
-            return devices.filter { $0.deviceId != deviceId }
+        let trimmed = deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = USBDeviceIdentity.parse(trimmed) else {
+            return devices.filter { $0.deviceId != trimmed }
         }
+        let resolvedHost = hostDevices.isEmpty
+            ? nil
+            : (try? resolve(deviceId: trimmed, hostDevices: hostDevices))
+        let persistedId = resolvedHost.flatMap { passthrough(from: $0).deviceId }
         return devices.filter { device in
-            if let existing = device.deviceId, existing == parsed.id { return false }
+            if let existing = device.deviceId {
+                if existing == parsed.id { return false }
+                if let persistedId, existing == persistedId { return false }
+            }
+            if let resolvedHost, contains([device], host: resolvedHost) {
+                return false
+            }
             if matches(device, host: syntheticHost(from: parsed, fallback: device)) {
                 return false
             }
@@ -226,7 +252,19 @@ public enum USBPassthroughService {
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            throw busAddressIdentityError(deviceId)
+            do {
+                let host = try resolve(deviceId: deviceId, hostDevices: hostDevices)
+                guard host.attachable else {
+                    throw BarkVisorError.badRequest(
+                        host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
+                    )
+                }
+                return persistUniquePair(device, host: host)
+            } catch let error as BarkVisorError {
+                guard case .notFound = error else { throw error }
+                // Device moved or unplugged. Drop the bus id and keep
+                // serial / vendor/product from the stored record.
+            }
         }
 
         if let deviceId = device.deviceId, let parsed = USBDeviceIdentity.parse(deviceId),

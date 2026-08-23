@@ -207,7 +207,7 @@ struct USBPassthroughTests {
         }
     }
 
-    @Test func `stored bus identity is rejected at persist and qemu`() {
+    @Test func `legacy stored bus identity converts to unique pair on persist and qemu`() throws {
         let host = HostUSBDevice(
             vendorId: "0x1234", productId: "0x5678", name: "Probe",
             manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
@@ -216,15 +216,10 @@ struct USBPassthroughTests {
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
             deviceId: "bus:003.002",
         )
-        let persistErr = #expect(throws: BarkVisorError.self) {
-            _ = try USBPassthroughService.normalizeOne(stored, hostDevices: [host])
-        }
-        if case let .conflict(message) = persistErr {
-            #expect(message.contains("bus address"))
-            #expect(message.contains("vendor/product"))
-        } else {
-            Issue.record("expected conflict, got \(String(describing: persistErr))")
-        }
+        let normalized = try USBPassthroughService.normalizeOne(stored, hostDevices: [host])
+        #expect(normalized.deviceId == "0x1234:0x5678")
+        #expect(normalized.serialNumber == nil)
+        #expect(USBPassthroughService.contains([normalized], host: host))
 
         let usb = [
             WorkloadUSBDevice(
@@ -232,16 +227,19 @@ struct USBPassthroughTests {
                 deviceId: "bus:003.002",
             ),
         ]
-        let qemuErr = #expect(throws: BarkVisorError.self) {
-            _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [host])
-        }
-        if case let .conflict(message) = qemuErr {
-            #expect(message.contains("bus address"))
-            #expect(!message.contains("vendorid="))
-            #expect(!message.contains("hostbus="))
-        } else {
-            Issue.record("expected conflict, got \(String(describing: qemuErr))")
-        }
+        let args = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [host])
+        #expect(args.contains { $0.contains("usb-host,hostbus=3,hostaddr=2") })
+        #expect(!args.contains { $0.contains("vendorid=") })
+    }
+
+    @Test func `legacy stored bus identity converts when the live bus is gone`() throws {
+        let stored = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            deviceId: "bus:003.002",
+        )
+        let normalized = try USBPassthroughService.normalizeOne(stored, hostDevices: [])
+        #expect(normalized.deviceId == "0x1234:0x5678")
+        #expect(normalized.serialNumber == nil)
     }
 
     @Test func `qemu args fail closed for stale bus address without host`() {
@@ -254,10 +252,10 @@ struct USBPassthroughTests {
         let err = #expect(throws: BarkVisorError.self) {
             _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [])
         }
-        if case let .conflict(message) = err {
-            #expect(message.contains("bus address"))
+        if case let .notFound(message) = err {
+            #expect(message?.contains("not connected") == true)
         } else {
-            Issue.record("expected conflict, got \(String(describing: err))")
+            Issue.record("expected notFound, got \(String(describing: err))")
         }
     }
 
@@ -276,15 +274,15 @@ struct USBPassthroughTests {
         let err = #expect(throws: BarkVisorError.self) {
             _ = try QEMUBuilder.usbHostArgs(usb: usb, hostDevices: [disk])
         }
-        if case let .conflict(message) = err {
-            #expect(message.contains("bus address"))
+        if case let .badRequest(message) = err {
+            #expect(message.contains("mass storage"))
             #expect(!message.contains("vendorid="))
         } else {
-            Issue.record("expected conflict, got \(String(describing: err))")
+            Issue.record("expected badRequest, got \(String(describing: err))")
         }
     }
 
-    @Test func `stored bus identity does not occupy a live host`() {
+    @Test func `legacy stored bus identity occupies the live host at that address`() {
         let stored = USBPassthroughDevice(
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
             deviceId: "bus:003.002",
@@ -296,8 +294,40 @@ struct USBPassthroughTests {
             manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
         )
         #expect(live.id == "bus:003.002")
-        #expect(!USBPassthroughService.matches(stored, host: live))
-        #expect(USBPassthroughService.claimedBy(host: live, vms: [vm]) == nil)
+        #expect(USBPassthroughService.matches(stored, host: live))
+        #expect(USBPassthroughService.claimedBy(host: live, vms: [vm])?.id == vm.id)
+        #expect(USBPassthroughService.claimedBy(host: live, vms: [vm])?.name == "htpc")
+    }
+
+    @Test func `detach by listed bus id removes stored unique pair`() {
+        let host = HostUSBDevice(
+            vendorId: "0x1234", productId: "0x5678", name: "Probe",
+            manufacturer: nil, serialNumber: nil, bus: 3, address: 2,
+        )
+        let stored = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            deviceId: "0x1234:0x5678",
+        )
+        let remaining = USBPassthroughService.removing(
+            [stored],
+            deviceId: "bus:003.002",
+            hostDevices: [host],
+        )
+        #expect(remaining.isEmpty)
+    }
+
+    @Test func `detach by listed bus id is a no-op without a matching host`() {
+        let stored = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            deviceId: "0x1234:0x5678",
+        )
+        let remaining = USBPassthroughService.removing(
+            [stored],
+            deviceId: "bus:003.002",
+            hostDevices: [],
+        )
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.deviceId == "0x1234:0x5678")
     }
 
     @Test func `two same vid pid without serial do not attach`() {
@@ -352,7 +382,7 @@ struct USBPassthroughTests {
             )
         }
         if case let .conflict(message) = qemuErr {
-            #expect(message.contains("bus address"))
+            #expect(message.contains("Multiple USB devices") || message.contains("bus address"))
             #expect(!message.contains("vendorid="))
         } else {
             Issue.record("expected conflict, got \(String(describing: qemuErr))")
@@ -656,6 +686,40 @@ final class USBClaimWriteTests {
         }
         #expect(error?.code == "conflict")
         #expect(error?.errorDescription?.contains("htpc") == true)
+    }
+
+    @Test func `updateVM converts legacy bus identity to unique pair`() async throws {
+        let legacy = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            deviceId: "bus:003.002",
+        )
+        try await insertVM(id: "vm-legacy-bus", name: "legacy-bus", usb: [legacy])
+        let updated = try await VMLifecycleService.updateVM(
+            id: "vm-legacy-bus",
+            params: UpdateVMParams(usbDevices: [legacy], description: "migrated"),
+            db: dbPool,
+        )
+        #expect(updated.description == "migrated")
+        #expect(updated.decodedUSBDevices.first?.deviceId == "0x1234:0x5678")
+        #expect(updated.decodedUSBDevices.first?.serialNumber == nil)
+    }
+
+    @Test func `detachUSB fails loudly when listed bus id is not attached`() async throws {
+        let stored = USBPassthroughDevice(
+            vendorId: "0x1234", productId: "0x5678", label: "Probe",
+            deviceId: "0x1234:0x5678",
+        )
+        try await insertVM(id: "vm-usb-detach", name: "usb-detach", usb: [stored])
+        let error = await #expect(throws: BarkVisorError.self) {
+            _ = try await VMLifecycleService.detachUSB(
+                vmID: "vm-usb-detach",
+                deviceId: "bus:009.009",
+                db: self.dbPool,
+            )
+        }
+        #expect(error?.code == "not_found" || error?.httpStatus == 404)
+        let still = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-usb-detach") }
+        #expect(still?.decodedUSBDevices.first?.deviceId == "0x1234:0x5678")
     }
 
     @Test func `updateVMSpec persists unique serial-less pair not bus id`() async throws {
