@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import JWTKit
 import Testing
 import Vapor
@@ -265,6 +266,7 @@ struct JWTAuthMiddlewareTests {
             authMethod: "apikey",
             apiKeyId: "key-1",
             apiKeyKind: APIKeyKind.inference.rawValue,
+            role: UserRole.admin.rawValue,
         )
         do {
             try JWTAuthMiddleware.enforceInferenceACL(denied)
@@ -281,6 +283,7 @@ struct JWTAuthMiddlewareTests {
             authMethod: "apikey",
             apiKeyId: "key-1",
             apiKeyKind: APIKeyKind.inference.rawValue,
+            role: UserRole.admin.rawValue,
         )
         try JWTAuthMiddleware.enforceInferenceACL(allowed)
     }
@@ -347,5 +350,95 @@ struct JWTAuthMiddlewareTests {
             role: UserRole.admin.rawValue,
         )
         try JWTAuthMiddleware.enforceInferenceACL(req)
+    }
+
+    @Test func `home-forwarded inference JWT authenticates on a member Device without a local user row`()
+        async throws {
+        let app = try await makeApp()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "pas-286-member-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        do {
+            let database = try AppDatabase(path: dir.appendingPathComponent("test.sqlite").path)
+            try database.migrate()
+            try await database.pool.write { db in
+                try User(
+                    id: "admin-1",
+                    username: "admin",
+                    password: "hashed:unused-password",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    role: UserRole.admin.rawValue,
+                ).insert(db)
+            }
+            app.database = database
+
+            let keys = await makeKeys()
+            let jwt = JWTAuthMiddleware(keys: keys)
+            let payload = UserPayload(
+                sub: .init(value: "reader-1"),
+                username: "reader",
+                exp: .init(value: Date().addingTimeInterval(3_600)),
+                role: UserRole.inference.rawValue,
+            )
+            let token = try await keys.sign(payload)
+
+            let completions = request(app, path: "/v1/chat/completions")
+            completions.method = .POST
+            completions.headers.add(name: .authorization, value: "Bearer \(token)")
+            let response = try await jwt.respond(to: completions, chainingTo: OKResponder())
+            #expect(response.status == .ok)
+            #expect(completions.authenticatedUser?.userId == "reader-1")
+            #expect(completions.authenticatedUser?.role == UserRole.inference.rawValue)
+
+            let pull = request(app, path: "/api/ollama/pull")
+            pull.method = .POST
+            pull.headers.add(name: .authorization, value: "Bearer \(token)")
+            do {
+                _ = try await jwt.respond(to: pull, chainingTo: OKResponder())
+                Issue.record("expected forbidden for inference pull on a member Device")
+            } catch let error as AbortError {
+                #expect(error.status == .forbidden)
+            }
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
+    @Test func `resolveRole prefers the local User row over the JWT claim`() async throws {
+        let app = try await makeApp()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "pas-286-stored-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        do {
+            let database = try AppDatabase(path: dir.appendingPathComponent("test.sqlite").path)
+            try database.migrate()
+            try await database.pool.write { db in
+                try User(
+                    id: "user-1",
+                    username: "admin",
+                    password: "hashed:unused-password",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    role: UserRole.admin.rawValue,
+                ).insert(db)
+            }
+            app.database = database
+            let req = request(app, path: "/v1/chat/completions")
+            let role = try await JWTAuthMiddleware.resolveRole(
+                userId: "user-1",
+                sessionFallback: UserRole.inference.rawValue,
+                request: req,
+            )
+            #expect(role == UserRole.admin.rawValue)
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
     }
 }

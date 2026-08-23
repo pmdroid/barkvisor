@@ -10,7 +10,11 @@ struct AuthTests {
 
     @Test func `authenticated user JWT`() {
         let user = AuthenticatedUser(
-            userId: "user-1", username: "admin", authMethod: "jwt", apiKeyId: nil,
+            userId: "user-1",
+            username: "admin",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
         )
         #expect(user.userId == "user-1")
         #expect(user.username == "admin")
@@ -20,7 +24,11 @@ struct AuthTests {
 
     @Test func `authenticated user API key`() {
         let user = AuthenticatedUser(
-            userId: "user-1", username: "admin", authMethod: "apikey", apiKeyId: "key-1",
+            userId: "user-1",
+            username: "admin",
+            authMethod: "apikey",
+            apiKeyId: "key-1",
+            role: UserRole.admin.rawValue,
         )
         #expect(user.authMethod == "apikey")
         #expect(user.apiKeyId == "key-1")
@@ -34,6 +42,7 @@ struct AuthTests {
             authMethod: "apikey",
             apiKeyId: "key-1",
             apiKeyKind: APIKeyKind.inference.rawValue,
+            role: UserRole.admin.rawValue,
         )
         #expect(user.apiKeyKind == "inference")
         #expect(user.role == UserRole.admin.rawValue)
@@ -62,7 +71,11 @@ struct AuthTests {
 
     @Test func `authenticated user ticket`() {
         let user = AuthenticatedUser(
-            userId: "user-1", username: "admin", authMethod: "ticket", apiKeyId: nil,
+            userId: "user-1",
+            username: "admin",
+            authMethod: "ticket",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
         )
         #expect(user.authMethod == "ticket")
     }
