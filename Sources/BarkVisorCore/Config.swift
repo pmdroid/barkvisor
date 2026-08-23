@@ -231,8 +231,10 @@ public enum Config {
         ensureAPIKeyHmacSecret(in: dataDir).secret
     }
 
-    /// Load or create `api-key-hmac-secret`. `generated` is true when the file
-    /// did not exist (upgrade from jwtSecret-keyed hashes).
+    /// Load or create `api-key-hmac-secret`. `generated` is true only when a
+    /// new secret was persisted (upgrade from jwtSecret-keyed hashes). Persist
+    /// failure returns `generated: false` so callers must not treat the file
+    /// as newly written.
     public static func ensureAPIKeyHmacSecret(in dataDir: URL) -> (
         secret: String, generated: Bool,
     ) {
@@ -244,6 +246,7 @@ public enum Config {
         do {
             try persistAPIKeyHmacSecret(secret, to: dataDir)
             Log.server.info("Generated and stored API key HMAC secret on disk")
+            return (secret, true)
         } catch {
             Log.server.critical(
                 """
@@ -251,8 +254,8 @@ public enum Config {
                 A new secret will be generated on every restart, invalidating stored API keys.
                 """,
             )
+            return (secret, false)
         }
-        return (secret, true)
     }
 
     /// Allowed URL schemes for repository URLs

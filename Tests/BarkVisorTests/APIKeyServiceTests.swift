@@ -86,6 +86,36 @@ final class APIKeyServiceTests {
         #expect(apiHash.count == 64)
     }
 
+    /// `Config.apiKeyHmacSecret` / `Config.jwtSecret` mint a new ephemeral
+    /// value on every read when `Config.dataDir` is not writable (installed
+    /// `/var/lib/barkvisor`). Pin the default argument expressions instead.
+    @Test func `hmacHash and create default to apiKeyHmacSecret not jwtSecret`() async throws {
+        let src = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/BarkVisorCore/Services/APIKeyService.swift")
+        let text = try String(contentsOf: src, encoding: .utf8)
+        #expect(text.contains("secret: String = Config.apiKeyHmacSecret"))
+        #expect(text.contains("hmacSecret: String = Config.apiKeyHmacSecret"))
+        #expect(!text.contains("secret: String = Config.jwtSecret"))
+        #expect(!text.contains("hmacSecret: String = Config.jwtSecret"))
+
+        let plaintext = "barkvisor_" + String(repeating: "cd", count: 32)
+        let defaultHash = APIKeyService.hmacHash(plaintext)
+        #expect(defaultHash.count == 64)
+
+        let bytes = [UInt8](repeating: 0x22, count: 32)
+        let result = try await APIKeyService.create(
+            name: "Default secret",
+            expiresIn: nil,
+            userId: "user-1",
+            db: dbPool,
+            bytes: bytes,
+        )
+        #expect(result.apiKey.keyHash.count == 64)
+    }
+
     @Test func `create hashes with api key hmac secret not jwt secret`() async throws {
         let hmac = "api-hmac-test-secret"
         let jwt = "jwt-test-secret"
@@ -199,6 +229,22 @@ final class APIKeyServiceTests {
         )
         #expect(removed == 0)
         #expect(try await APIKeyService.list(userId: "user-1", db: dbPool).isEmpty)
+    }
+
+    @Test func `hmac persist failure does not drop stored keys`() async throws {
+        try await insertKey(id: "hmac-keep", name: "Keep", hash: "abc123notbcrypt")
+        try await insertKey(id: "bcrypt-keep", name: "Legacy bcrypt", hash: "$2b$10$legacyhash")
+
+        let blocked = tmpDir.appendingPathComponent("blocked")
+        try Data("x".utf8).write(to: blocked)
+
+        let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+            db: dbPool, dataDir: blocked,
+        )
+        #expect(removed == 0)
+        let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
+        #expect(Set(remaining.map(\.id)) == ["hmac-keep", "bcrypt-keep"])
+        #expect(Config.loadAPIKeyHmacSecret(from: blocked) == nil)
     }
 
     private func insertKey(id: String, name: String, hash: String) async throws {

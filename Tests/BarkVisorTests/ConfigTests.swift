@@ -96,6 +96,21 @@ struct ConfigTests {
         #expect(loaded.secret == "pre-existing")
     }
 
+    @Test func `ensure api key hmac secret persist failure is not generated`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // `dataDir` is a file, so persist cannot create `api-key-hmac-secret`.
+        let blocked = dir.appendingPathComponent("blocked")
+        try Data("x".utf8).write(to: blocked)
+
+        let result = Config.ensureAPIKeyHmacSecret(in: blocked)
+        #expect(!result.generated)
+        #expect(!result.secret.isEmpty)
+        #expect(Config.loadAPIKeyHmacSecret(from: blocked) == nil)
+    }
+
     @Test func `rotate api key hmac secret replaces file with 0600`() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
