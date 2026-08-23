@@ -347,9 +347,10 @@ public actor VMManager: VMStateQuerying {
         guard let running = runningVMs[vmID] else {
             throw BarkVisorError.vmNotRunning(vmID)
         }
-        await CodingAgentLifecycleService.onStop(
-            vmID: vmID, db: dbPool, reason: CodingAgentLifecycle.stopReason,
-        )
+        let intent = (force || method == "force")
+            ? CodingAgentLifecycle.forceReason
+            : CodingAgentLifecycle.stopReason
+        await CodingAgentLifecycleService.markStopIntent(vmID: vmID, reason: intent, db: dbPool)
 
         try await updateState(vmID: vmID, state: "stopping")
 

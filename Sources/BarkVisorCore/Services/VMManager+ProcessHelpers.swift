@@ -48,6 +48,8 @@ extension VMManager {
             Log.vm.error("Failed to update DB state for terminated VM \(vmID): \(error)", vm: vmID)
         }
 
+        await CodingAgentLifecycleService.onTerminated(vmID: vmID, db: dbPool)
+
         // Notify SSE listeners
         let event = VMStateEvent(id: vmID, state: newState, error: errorMsg)
         await stateStreamService?.broadcast(event: event)

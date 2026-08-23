@@ -24,6 +24,11 @@ public struct CodingAgentSessionState: Codable, Equatable, Sendable {
     public var cloudImageId: String?
     public var diskSizeGB: Int?
     public var receipt: CodingAgentReceipt?
+    /// Stop reason captured while the guest is still up. Promoted to `receipt` in
+    /// `handleTermination`. Not part of the API view.
+    public var pendingStopReason: String?
+    /// Git stamp snapshotted at stop request, before the guest-agent socket dies.
+    public var pendingGitStamp: String?
 
     public init(
         ttlSeconds: Int,
@@ -34,6 +39,8 @@ public struct CodingAgentSessionState: Codable, Equatable, Sendable {
         cloudImageId: String? = nil,
         diskSizeGB: Int? = nil,
         receipt: CodingAgentReceipt? = nil,
+        pendingStopReason: String? = nil,
+        pendingGitStamp: String? = nil,
     ) {
         self.ttlSeconds = ttlSeconds
         self.startedAt = startedAt
@@ -43,6 +50,8 @@ public struct CodingAgentSessionState: Codable, Equatable, Sendable {
         self.cloudImageId = cloudImageId
         self.diskSizeGB = diskSizeGB
         self.receipt = receipt
+        self.pendingStopReason = pendingStopReason
+        self.pendingGitStamp = pendingGitStamp
     }
 }
 
@@ -93,8 +102,25 @@ public enum CodingAgentLifecycle {
     public static let noPushCopy = "NO PUSH"
     public static let ttlReason = "ttl"
     public static let stopReason = "stop"
+    public static let forceReason = "force"
     public static let resetReason = "reset"
     public static let burnReason = "burn"
+
+    public static func isSessionLive(_ vmState: String) -> Bool {
+        vmState == "running" || vmState == "starting" || vmState == "stopping"
+    }
+
+    public static func visibleReceipt(
+        _ receipt: CodingAgentReceipt?,
+        vmState: String,
+    ) -> CodingAgentReceipt? {
+        isSessionLive(vmState) ? nil : receipt
+    }
+
+    /// Kill and TTL unload models. Graceful ACPI stop keeps them for Resume.
+    public static func shouldUnloadGrantAfterStop(reason: String) -> Bool {
+        reason == ttlReason || reason == forceReason || reason == burnReason
+    }
 
     public static func normalizeTTL(_ raw: Int?) -> Int {
         let value = raw ?? defaultTTLSeconds
@@ -145,13 +171,15 @@ public enum CodingAgentLifecycle {
     }
 
     public static func beginClock(_ state: inout CodingAgentSessionState, now: Date) {
+        state.receipt = nil
+        state.pendingStopReason = nil
+        state.pendingGitStamp = nil
         if let remaining = remainingSeconds(expiresAt: state.expiresAt, now: now), remaining > 0 {
             return
         }
         state.startedAt = iso8601.string(from: now)
         state.expiresAt = iso8601.string(from: now.addingTimeInterval(TimeInterval(state.ttlSeconds)))
         state.warnedAt = nil
-        state.receipt = nil
     }
 
     public static func parseGitStamp(_ raw: String?) -> String? {
@@ -189,7 +217,7 @@ public enum CodingAgentLifecycle {
             warningLeadSeconds: warningLeadSeconds,
             expiryAction: expiryAction,
             grant: state.grant,
-            receipt: state.receipt,
+            receipt: visibleReceipt(state.receipt, vmState: vmState),
             actions: actions,
         )
     }
@@ -201,4 +229,16 @@ public enum CodingAgentLifecycle {
     public static func shouldUnloadGrant(usesHomeOllama: Bool, otherRunningAgentSessions: Int) -> Bool {
         usesHomeOllama && otherRunningAgentSessions <= 0
     }
+}
+
+/// Start/stop/occupancy used by coding-session TTL. Tests pass a fake.
+public protocol CodingAgentControlling: Sendable {
+    func stop(vmID: String, force: Bool, method: String) async throws
+    func start(vmID: String) async throws
+    func isActiveOrStarting(_ vmID: String) async -> Bool
+}
+
+/// Unload Home Ollama models. Tests pass a recorder instead of a live client.
+public protocol CodingAgentModelUnloading: Sendable {
+    func unloadRunningModels() async throws
 }
