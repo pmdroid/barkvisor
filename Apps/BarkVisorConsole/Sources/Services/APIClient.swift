@@ -325,34 +325,7 @@ struct APIClient {
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.transport("Invalid response")
-        }
-        if http.statusCode == 401 { throw APIError.unauthorized }
-        if http.statusCode == 503 { throw APIError.setupRequired }
-        guard (200 ..< 300).contains(http.statusCode) else {
-            throw APIError.http(
-                status: http.statusCode,
-                reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
-            )
-        }
-        var buffer = ""
-        for try await line in bytes.lines {
-            buffer.append(line)
-            buffer.append("\n")
-            let deltas = ChatSSE.drain(buffer: &buffer)
-            for delta in deltas {
-                onDelta(delta)
-            }
-        }
-        if !buffer.isEmpty {
-            buffer.append("\n")
-            for delta in ChatSSE.drain(buffer: &buffer) {
-                onDelta(delta)
-            }
-        }
->>>>>>> 2bd993a (feat(pas-270): native console simple chat)
+        try await streamChatBytes(request, allowRefresh: true, onDelta: onDelta)
     }
 
     func pairingCode() async throws -> PairingIssue? {
@@ -407,18 +380,8 @@ struct APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("Invalid response")
         }
-        if http.statusCode == 401 {
-            if allowRefresh, let refreshOnce {
-                switch await Self.retryAfter401(refreshOnce()) {
-                case let .retry(newToken):
-                    var retry = request
-                    retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-                    return try await perform(retry, allowRefresh: false)
-                case let .fail(error):
-                    throw error
-                }
-            }
-            throw APIError.unauthorized
+        if let retry = try await retryAfter401(request, status: http.statusCode, allowRefresh: allowRefresh) {
+            return try await perform(retry, allowRefresh: false)
         }
         if http.statusCode == 503, reason(from: data) == "setup_required" {
             throw APIError.setupRequired
@@ -430,6 +393,62 @@ struct APIClient {
             )
         }
         return (data, http)
+    }
+
+    /// Chat streaming bypasses `perform`; still retry once on 401.
+    func retryAfter401(
+        _ request: URLRequest,
+        status: Int,
+        allowRefresh: Bool,
+    ) async throws -> URLRequest? {
+        guard status == 401 else { return nil }
+        if allowRefresh, let refreshOnce {
+            switch await Self.retryAfter401(refreshOnce()) {
+            case let .retry(newToken):
+                var retry = request
+                retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                return retry
+            case let .fail(error):
+                throw error
+            }
+        }
+        throw APIError.unauthorized
+    }
+
+    private func streamChatBytes(
+        _ request: URLRequest,
+        allowRefresh: Bool,
+        onDelta: @escaping (String) -> Void,
+    ) async throws {
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("Invalid response")
+        }
+        if let retry = try await retryAfter401(request, status: http.statusCode, allowRefresh: allowRefresh) {
+            return try await streamChatBytes(retry, allowRefresh: false, onDelta: onDelta)
+        }
+        if http.statusCode == 503 { throw APIError.setupRequired }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw APIError.http(
+                status: http.statusCode,
+                reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            )
+        }
+        var buffer = ""
+        for try await line in bytes.lines {
+            buffer.append(line)
+            buffer.append("\n")
+            let deltas = ChatSSE.drain(buffer: &buffer)
+            for delta in deltas {
+                onDelta(delta)
+            }
+        }
+        if !buffer.isEmpty {
+            buffer.append("\n")
+            for delta in ChatSSE.drain(buffer: &buffer) {
+                onDelta(delta)
+            }
+        }
     }
 
     private func reason(from data: Data) -> String? {

@@ -70,4 +70,4 @@ Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safa
 
 `LocalStreamTests` covers live-state gating, member-stream lockout, reconnect backoff (≤10), VNC control scripts, and ticket-only WebSocket URLs (JWT never in the URL).
 
-`ChatTests` covers Home catalog decode, hiding Chat with no Ollama models, OpenAI SSE token drain, and `stream: true` on `/v1/chat/completions`.
+`ChatTests` covers Home catalog decode, hiding Chat with no Ollama models, OpenAI SSE token drain, `stream: true` on `/v1/chat/completions`, and a one-shot 401 retry on the chat stream.

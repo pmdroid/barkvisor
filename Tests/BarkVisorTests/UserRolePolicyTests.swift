@@ -33,4 +33,11 @@ struct UserRolePolicyTests {
         )
         #expect(UserRolePolicy.inheritKeyKind(userRole: .admin, requested: .full) == .full)
     }
+
+    @Test func `moreRestrictive never elevates inference to admin`() {
+        #expect(UserRolePolicy.moreRestrictive(.admin, .admin) == .admin)
+        #expect(UserRolePolicy.moreRestrictive(.admin, .inference) == .inference)
+        #expect(UserRolePolicy.moreRestrictive(.inference, .admin) == .inference)
+        #expect(UserRolePolicy.moreRestrictive(.inference, .inference) == .inference)
+    }
 }
