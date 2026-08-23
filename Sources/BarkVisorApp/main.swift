@@ -94,7 +94,8 @@ func runDaemon() async {
        !PlatformPaths.isWritableDirectory(sockets) {
         let message = """
         Socket directory \(sockets.path) is missing or not writable. \
-        The daemon cannot create /var/run/barkvisor. \
+        Packaging must create this directory (Homebrew postinstall, pkg, or systemd); \
+        the Device daemon cannot mkdir /var/run or /run. \
         Homebrew: sudo "$(brew --prefix barkvisor)/share/barkvisor/postinstall" \
         && sudo brew services restart barkvisor
         """

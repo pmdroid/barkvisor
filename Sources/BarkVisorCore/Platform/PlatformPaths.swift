@@ -135,9 +135,11 @@ public enum PlatformPaths {
                 .appendingPathComponent(argument)
                 .standardizedFileURL.path
         }
-        let dirs = (pathEnvironment ?? "").split(separator: ":", omittingEmptySubsequences: true)
+        // Empty PATH segments are cwd (POSIX). Do not drop them.
+        let dirs = (pathEnvironment ?? "").split(separator: ":", omittingEmptySubsequences: false)
         for dir in dirs {
-            let candidate = URL(fileURLWithPath: String(dir), isDirectory: true)
+            let dirPath = dir.isEmpty ? currentDirectory : String(dir)
+            let candidate = URL(fileURLWithPath: dirPath, isDirectory: true)
                 .appendingPathComponent(argument)
                 .path
             if fileExists(candidate) {

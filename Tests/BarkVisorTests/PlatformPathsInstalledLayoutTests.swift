@@ -184,6 +184,17 @@ struct PlatformPathsInstalledLayoutTests {
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/usr/local")
     }
 
+    @Test func `empty PATH segment is cwd per POSIX`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: ":/usr/bin",
+            currentDirectory: "/opt/homebrew/bin",
+            fileExists: { $0 == "/opt/homebrew/bin/barkvisor" },
+        )
+        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
     @Test func `relative argv0 is resolved from cwd`() {
         let exe = PlatformPaths.resolvedExecutablePath(
             argument: "./bin/barkvisor",

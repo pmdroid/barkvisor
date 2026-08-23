@@ -34,6 +34,13 @@ struct DaemonRestartIsolationTests {
         #expect(dir.path == "/var/run/barkvisor")
     }
 
+    @Test func `daemon fatal names the actual socket path and packaging owners`() throws {
+        let text = try Self.readRepoFile("Sources/BarkVisorApp/main.swift")
+        #expect(text.contains("Socket directory \\(sockets.path)"))
+        #expect(text.contains("Homebrew postinstall, pkg, or systemd"))
+        #expect(!text.contains("The daemon cannot create /var/run/barkvisor."))
+    }
+
     @Test func `var run socket dir is packaging owned`() {
         #expect(PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/var/run/barkvisor")))
         #expect(PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/private/var/run/barkvisor")))
