@@ -396,7 +396,7 @@ class HelperHandler: NSObject, HelperProtocol {
         // The postinstall script runs `launchctl bootout` on the helper daemon,
         // so any code after a synchronous installer call would never execute.
         reply(true, nil)
-        launchInstaller(stagedPath: stagedPath, originalPath: packagePath)
+        launchInstaller(stagedPath: stagedPath)
     }
 
     private func verifyStagedPackage(_ stagedPath: String, expectedVersion: String) -> String? {
@@ -436,7 +436,7 @@ class HelperHandler: NSObject, HelperProtocol {
         return nil
     }
 
-    private func launchInstaller(stagedPath: String, originalPath: String) {
+    private func launchInstaller(stagedPath: String) {
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/sbin/installer")
@@ -447,15 +447,14 @@ class HelperHandler: NSObject, HelperProtocol {
             do {
                 try proc.run()
                 proc.waitUntilExit()
-                try? FileManager.default.removeItem(atPath: stagedPath)
-                try? FileManager.default.removeItem(atPath: originalPath)
-                if proc.terminationStatus != 0 {
+                if proc.terminationStatus == 0 {
+                    try? FileManager.default.removeItem(atPath: stagedPath)
+                } else {
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     let output = String(data: data, encoding: .utf8) ?? ""
                     NSLog("BarkVisor: installer failed after reply: \(output)")
                 }
             } catch {
-                try? FileManager.default.removeItem(atPath: stagedPath)
                 NSLog("BarkVisor: failed to launch installer: \(error)")
             }
         }

@@ -117,6 +117,8 @@
             #expect(utilities.contains("chown"))
             #expect(utilities.contains("hasTrustedSocketVmnetSignature"))
             #expect(utilities.contains("helperCodeRequirement"))
+            #expect(!utilities.contains("SecStaticCodeCheckValidity(code, [], nil)"))
+            #expect(utilities.contains("0o600"))
         }
 
         @Test func `installUpdate stages pkg and enforces expectedVersion`() throws {
@@ -125,6 +127,7 @@
             #expect(handler.contains("helperVersionsMatch"))
             #expect(handler.contains("helperIsSafeExpectedVersion"))
             #expect(handler.contains("stagedPath"))
+            #expect(!handler.contains("removeItem(atPath: originalPath)"))
         }
 
         private static func helperUtilitiesURL() -> URL {
