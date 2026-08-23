@@ -156,6 +156,14 @@ struct PairingIdentityTests {
         let joinerDB = try makeDB(joinerDir)
         _ = try insertAdmin(joinerDB, id: "local-admin", username: "local", password: "oldpass1234")
         try Config.persistJWTSecret("joiner-old-secret", to: joinerDir)
+        try Config.persistAPIKeyHmacSecret("joiner-api-hmac", to: joinerDir)
+        _ = try await APIKeyService.create(
+            name: "Pre-pair",
+            expiresIn: nil,
+            userId: "local-admin",
+            db: joinerDB,
+            hmacSecret: "joiner-api-hmac",
+        )
 
         let keys = JWTKeyCollection()
         await keys.add(hmac: .init(from: "joiner-old-secret"), digestAlgorithm: .sha256)
@@ -201,6 +209,12 @@ struct PairingIdentityTests {
         )
         let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
         #expect(perms & 0o777 == 0o600)
+
+        let rotatedHmac = Config.loadAPIKeyHmacSecret(from: joinerDir)
+        #expect(rotatedHmac != nil)
+        #expect(rotatedHmac != "joiner-api-hmac")
+        let remainingKeys = try await joinerDB.read { db in try APIKey.fetchAll(db) }
+        #expect(remainingKeys.isEmpty)
 
         let users = try await joinerDB.read { db in try User.fetchAll(db) }
         #expect(users.contains { $0.username == "pascal" && $0.password == "hashed:sharedpass1" })
@@ -287,6 +301,7 @@ struct PairingIdentityTests {
         let issuer = try HomeCAService.loadOrCreate(dataDir: issuerDir, hostId: issuerId)
         let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         try Config.persistJWTSecret("keep-local", to: joinerDir)
+        try Config.persistAPIKeyHmacSecret("keep-api-hmac", to: joinerDir)
         var remote = try honestRedeemResponse(
             issuer: issuer,
             issuerId: issuerId,
@@ -314,6 +329,7 @@ struct PairingIdentityTests {
             )
         }
         #expect(Config.loadJWTSecret(from: joinerDir) == "keep-local")
+        #expect(Config.loadAPIKeyHmacSecret(from: joinerDir) == "keep-api-hmac")
         #expect(try PairingService.loadReceipt(dataDir: joinerDir)?.peerHostId == issuerId)
         #expect(try PeerPinStore(dataDir: joinerDir).contains(fingerprint: issuer.deviceFingerprint))
         #expect(try DeviceRegistry(dataDir: joinerDir).record(forHostId: issuerId) == nil)
@@ -385,6 +401,14 @@ struct PairingIdentityTests {
         let joiner = try HomeCAService.loadOrCreate(dataDir: joinerDir, hostId: joinerId)
         let joinerDB = try makeDB(joinerDir)
         _ = try insertAdmin(joinerDB, id: "local-admin", username: "local", password: "oldpass1234")
+        try Config.persistAPIKeyHmacSecret("keep-api-hmac", to: joinerDir)
+        _ = try await APIKeyService.create(
+            name: "Keep",
+            expiresIn: nil,
+            userId: "local-admin",
+            db: joinerDB,
+            hmacSecret: "keep-api-hmac",
+        )
 
         var remote = try honestRedeemResponse(
             issuer: issuer,
@@ -418,6 +442,9 @@ struct PairingIdentityTests {
             )
         }
         #expect(Config.loadJWTSecret(from: joinerDir) == nil)
+        #expect(Config.loadAPIKeyHmacSecret(from: joinerDir) == "keep-api-hmac")
+        let leftoverKeys = try await joinerDB.read { db in try APIKey.fetchAll(db) }
+        #expect(leftoverKeys.count == 1)
         let users = try await joinerDB.read { db in try User.fetchAll(db) }
         #expect(users.count == 1)
         #expect(users[0].id == "local-admin")

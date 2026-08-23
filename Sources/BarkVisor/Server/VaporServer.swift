@@ -357,6 +357,15 @@ public final class VaporServer: @unchecked Sendable {
         }
         await BridgeSyncService.syncOnce(db: pool)
         _ = try? await APIKeyService.deleteExpired(db: pool)
+        do {
+            _ = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+                db: pool, dataDir: Config.dataDir,
+            )
+        } catch {
+            Log.auth.error(
+                "Failed to drop unverifiable API keys after HMAC secret split: \(error.localizedDescription)",
+            )
+        }
     }
 
     private func schedulePeriodicTasks(

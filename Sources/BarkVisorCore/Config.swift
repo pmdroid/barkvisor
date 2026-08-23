@@ -138,9 +138,15 @@ public enum Config {
     }
 
     public static let jwtSecretFileName = "jwt-secret"
+    /// HMAC key for API-key hashes. Independent of `jwt-secret` (PAS-277).
+    public static let apiKeyHmacSecretFileName = "api-key-hmac-secret"
 
     public static func jwtSecretFile(in dataDir: URL) -> URL {
         dataDir.appendingPathComponent(jwtSecretFileName)
+    }
+
+    public static func apiKeyHmacSecretFile(in dataDir: URL) -> URL {
+        dataDir.appendingPathComponent(apiKeyHmacSecretFileName)
     }
 
     /// Load a previously persisted HMAC secret. Does not create one.
@@ -157,14 +163,102 @@ public enum Config {
         return existing
     }
 
+    /// Load a previously persisted API-key HMAC secret. Does not create one.
+    public static func loadAPIKeyHmacSecret(from dataDir: URL) -> String? {
+        let file = apiKeyHmacSecretFile(in: dataDir)
+        guard let data = try? Data(contentsOf: file),
+              let existing = String(data: data, encoding: .utf8)?.trimmingCharacters(
+                  in: .whitespacesAndNewlines,
+              ),
+              !existing.isEmpty
+        else {
+            return nil
+        }
+        return existing
+    }
+
+    /// HMAC jwtSecret-split migration finished for this data dir.
+    /// Absent means leftover jwtSecret-keyed HMAC rows may still need a sweep.
+    public static let apiKeyHmacMigrationMarkerFileName = "api-key-hmac-migrated"
+
+    public static func apiKeyHmacMigrationMarkerFile(in dataDir: URL) -> URL {
+        dataDir.appendingPathComponent(apiKeyHmacMigrationMarkerFileName)
+    }
+
+    static func apiKeyHmacMigrationCompleted(in dataDir: URL) -> Bool {
+        FileManager.default.fileExists(atPath: apiKeyHmacMigrationMarkerFile(in: dataDir).path)
+    }
+
+    static func persistAPIKeyHmacMigrationMarker(to dataDir: URL) throws {
+        try persistPrivateFile("1", at: apiKeyHmacMigrationMarkerFile(in: dataDir), directory: dataDir)
+    }
+
+    /// Birth/mtime of `api-key-hmac-secret`. HMAC rows created after this are
+    /// keyed with the dedicated secret and must survive a retry of the leftover sweep.
+    static func apiKeyHmacSecretFileDate(in dataDir: URL) -> Date? {
+        let path = apiKeyHmacSecretFile(in: dataDir).path
+        let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+        return attrs?[.creationDate] as? Date ?? attrs?[.modificationDate] as? Date
+    }
+
+    /// Create the dest file at 0600 via a temp file chmod'd before rename.
+    /// Avoids a umask-default window after `.atomic` write + later `setAttributes`.
+    static func persistPrivateFile(_ contents: String, at file: URL, directory dataDir: URL) throws {
+        try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        let temp = dataDir.appendingPathComponent(".\(file.lastPathComponent).\(UUID().uuidString).tmp")
+        let created = FileManager.default.createFile(
+            atPath: temp.path,
+            contents: Data(contents.utf8),
+            attributes: [.posixPermissions: 0o600],
+        )
+        guard created else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        do {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: temp.path,
+            )
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory)
+            if exists, isDirectory.boolValue {
+                throw CocoaError(.fileWriteInvalidFileName)
+            }
+            if exists {
+                _ = try FileManager.default.replaceItemAt(file, withItemAt: temp)
+            } else {
+                try FileManager.default.moveItem(at: temp, to: file)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: temp)
+            throw error
+        }
+    }
+
     /// Atomic write + 0600. Replaces any existing secret at `dataDir/jwt-secret`.
     public static func persistJWTSecret(_ secret: String, to dataDir: URL) throws {
-        let file = jwtSecretFile(in: dataDir)
-        try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
-        try Data(secret.utf8).write(to: file, options: [.atomic])
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: file.path,
-        )
+        try persistPrivateFile(secret, at: jwtSecretFile(in: dataDir), directory: dataDir)
+    }
+
+    /// Atomic write + 0600. Replaces any existing secret at `dataDir/api-key-hmac-secret`.
+    public static func persistAPIKeyHmacSecret(_ secret: String, to dataDir: URL) throws {
+        try persistPrivateFile(secret, at: apiKeyHmacSecretFile(in: dataDir), directory: dataDir)
+    }
+
+    /// Replace the API-key HMAC secret. Existing key hashes will not verify.
+    @discardableResult
+    public static func rotateAPIKeyHmacSecret(in dataDir: URL) throws -> String {
+        apiKeyHmacSecretFileLock.lock()
+        defer { apiKeyHmacSecretFileLock.unlock() }
+        let secret = PlatformRandom.secureBase64(byteCount: 32)
+        try persistAPIKeyHmacSecret(secret, to: dataDir)
+        return secret
+    }
+
+    /// Serializes API-key HMAC file mutation with `create` / pairing revoke+rotate.
+    static func withAPIKeyHmacSecretLock<T>(
+        _ body: () async throws -> T,
+    ) async rethrows -> T {
+        try await apiKeyHmacSecretGate.withLock(body)
     }
 
     public static var jwtSecret: String {
@@ -185,6 +279,42 @@ public enum Config {
             )
         }
         return secret
+    }
+
+    /// HMAC key for API keys. Never `jwtSecret`; pairing overwrites of jwt-secret
+    /// must not silently invalidate stored API-key hashes (PAS-277).
+    public static var apiKeyHmacSecret: String {
+        ensureAPIKeyHmacSecret(in: dataDir).secret
+    }
+
+    /// Load or create `api-key-hmac-secret`. `generated` is true only when a
+    /// new secret was persisted (upgrade from jwtSecret-keyed hashes). Persist
+    /// failure returns `generated: false` so callers must not treat the file
+    /// as newly written. Serialized so two racing first starts cannot persist
+    /// different secrets.
+    public static func ensureAPIKeyHmacSecret(in dataDir: URL) -> (
+        secret: String, generated: Bool,
+    ) {
+        apiKeyHmacSecretFileLock.lock()
+        defer { apiKeyHmacSecretFileLock.unlock() }
+        if let existing = loadAPIKeyHmacSecret(from: dataDir) {
+            return (existing, false)
+        }
+
+        let secret = PlatformRandom.secureBase64(byteCount: 32)
+        do {
+            try persistAPIKeyHmacSecret(secret, to: dataDir)
+            Log.server.info("Generated and stored API key HMAC secret on disk")
+            return (secret, true)
+        } catch {
+            Log.server.critical(
+                """
+                Failed to write API key HMAC secret to disk: \(error.localizedDescription). \
+                A new secret will be generated on every restart, invalidating stored API keys.
+                """,
+            )
+            return (secret, false)
+        }
     }
 
     /// Allowed URL schemes for repository URLs
@@ -284,6 +414,49 @@ public enum Config {
         }
         for dir in dirs where !fm.fileExists(atPath: dir.path) {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+
+    private static let apiKeyHmacSecretFileLock = NSLock()
+    private static let apiKeyHmacSecretGate = APIKeyHmacSecretGate()
+}
+
+/// Non-reentrant async mutex. Actor isolation is reentrant at `await`, so pairing
+/// `revokeAll` plus `rotate` cannot use an actor as the exclusive section.
+private final class APIKeyHmacSecretGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func withLock<T>(_ body: () async throws -> T) async rethrows -> T {
+        await acquire()
+        defer { release() }
+        return try await body()
+    }
+
+    private func acquire() async {
+        await withCheckedContinuation { cont in
+            lock.lock()
+            if busy {
+                waiters.append(cont)
+                lock.unlock()
+            } else {
+                busy = true
+                lock.unlock()
+                cont.resume()
+            }
+        }
+    }
+
+    private func release() {
+        lock.lock()
+        if waiters.isEmpty {
+            busy = false
+            lock.unlock()
+        } else {
+            let next = waiters.removeFirst()
+            lock.unlock()
+            next.resume()
         }
     }
 }
