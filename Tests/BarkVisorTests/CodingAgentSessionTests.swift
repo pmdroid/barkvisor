@@ -114,4 +114,14 @@ struct CodingAgentSessionTests {
         #expect(netdev?.contains("11434") == true)
         #expect(spec.spec.networks.first?.portForwards.isEmpty == true)
     }
+
+    @Test func `session store drops the ttyd host port on remove`() async {
+        let store = CodingAgentSessionStore()
+        await store.record(vmID: "vm-coder", terminalHostPort: 17_681)
+        #expect(await store.port(for: "vm-coder") == 17_681)
+        #expect(await store.occupiedHostPorts() == [17_681])
+        await store.remove(vmID: "vm-coder")
+        #expect(await store.port(for: "vm-coder") == nil)
+        #expect(await store.occupiedHostPorts().isEmpty)
+    }
 }
