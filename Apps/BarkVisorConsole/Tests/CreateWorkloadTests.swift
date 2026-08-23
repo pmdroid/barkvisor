@@ -181,7 +181,7 @@ struct CreateWorkloadTests {
         #expect(body.memoryMB == 2_048)
         #expect(body.diskSizeGB == 20)
         #expect(body.cloudImageId == "img-ca")
-        #expect(body.cloudInit?.userData?.contains("OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\"") == true)
+        #expect(body.cloudInit?.userData?.contains("OPENAI_BASE_URL='http://10.0.2.2:11434/v1'") == true)
         #expect(body.cloudInit?.userData?.contains("git") == true)
         #expect(body.cloudInit?.userData?.contains("ttyd") == true)
         #expect(body.cloudInit?.userData?.contains("ttyd.service") == true)
@@ -227,6 +227,14 @@ struct CreateWorkloadTests {
                 image: coding,
                 hostCPUCount: 8,
                 openaiBaseURL: "not a url",
+            )
+        }
+        #expect(throws: CreateWorkload.DraftError.invalidOpenAIBaseURL) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: coding,
+                hostCPUCount: 8,
+                openaiBaseURL: "https://x$(reboot).example/v1",
             )
         }
     }

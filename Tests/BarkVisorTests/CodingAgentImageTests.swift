@@ -49,6 +49,16 @@ struct CodingAgentImageTests {
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIBaseURL("https://evil\n.com")
         }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("https://x$(reboot).example/v1")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("https://x`id`.example/v1")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("https://x$HOME.example/v1")
+        }
+        #expect(CodingAgentImage.isShellSafeOpenAIBaseURL(CodingAgentImage.homeOllamaGrantURL))
         #expect(CodingAgentImage.homeOllamaGrantURL == CodingAgentImage.deviceOllamaBaseURL)
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
     }
@@ -67,7 +77,10 @@ struct CodingAgentImageTests {
         #expect(yaml.contains("su -s /bin/bash"))
         #expect(yaml.contains("claude.ai/install.sh"))
         #expect(yaml.contains("opencode.ai/install"))
-        #expect(yaml.contains("OPENAI_BASE_URL=\"http://10.0.2.2:11434/v1\""))
+        #expect(yaml.contains("OPENAI_BASE_URL='http://10.0.2.2:11434/v1'"))
+        #expect(yaml.contains("/etc/default/barkvisor-openai"))
+        #expect(yaml.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+        #expect(!yaml.contains("OPENAI_BASE_URL=\"http://"))
         let byo = CodingAgentImage.userData(openaiBaseURL: "https://api.openai.com/v1")
         try CloudInitService.validateUserData(byo)
         #expect(byo.contains("https://api.openai.com/v1"))

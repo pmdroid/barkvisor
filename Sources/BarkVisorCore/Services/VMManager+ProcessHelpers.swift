@@ -27,6 +27,7 @@ extension VMManager {
             Log.vm.error("VM terminated unexpectedly (exit status \(status))", vm: vmID)
         }
 
+        await CodingAgentSessionStore.shared.remove(vmID: vmID)
         cleanup(vmID: vmID)
         runningVMs.removeValue(forKey: vmID)
 

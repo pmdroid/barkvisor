@@ -29,10 +29,16 @@ export function defaultWorkloadClassForImage(img: { name?: string | null; slug?:
   return isCodingAgentImage(img) ? 'agent' : 'house'
 }
 
+const OPENAI_BASE_URL_SAFE = /^[A-Za-z0-9:/._%-]+$/
+
+export function isShellSafeOpenAIBaseURL(value: string): boolean {
+  return OPENAI_BASE_URL_SAFE.test(value)
+}
+
 export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   const trimmed = (raw ?? '').trim()
   if (!trimmed) return HOME_OLLAMA_GRANT_URL
-  if (/[\s"]/.test(trimmed)) throw new Error('OPENAI_BASE_URL is invalid')
+  if (!isShellSafeOpenAIBaseURL(trimmed)) throw new Error('OPENAI_BASE_URL is invalid')
   let url: URL
   try {
     url = new URL(trimmed)
@@ -56,10 +62,15 @@ packages:
   - jq
   - ca-certificates
 write_files:
+  - path: /etc/default/barkvisor-openai
+    permissions: '0644'
+    content: |
+      OPENAI_BASE_URL=${url}
+      OPENAI_API_KEY=ollama
   - path: /etc/profile.d/barkvisor-openai.sh
     permissions: '0644'
     content: |
-      export OPENAI_BASE_URL="${url}"
+      export OPENAI_BASE_URL='${url}'
       export OPENAI_API_KEY="\${OPENAI_API_KEY:-ollama}"
   - path: /etc/systemd/system/ttyd.service
     permissions: '0644'
@@ -72,6 +83,7 @@ write_files:
       [Service]
       Type=simple
       User=ubuntu
+      EnvironmentFile=-/etc/default/barkvisor-openai
       ExecStart=/usr/local/bin/ttyd --writable --port ${WEB_TERMINAL_PORT} tmux new -A -s main
       Restart=on-failure
 
