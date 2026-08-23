@@ -98,6 +98,8 @@ struct CodingAgentImageTests {
         #expect(!yaml.contains("| bash"))
         #expect(AgentNetworkCage.allowHostOllama(userData: yaml))
         #expect(yaml.contains("export OPENAI_API_KEY='ollama'"))
+        #expect(yaml.contains("permissions: '0600'"))
+        #expect(yaml.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
         let byo = CodingAgentImage.userData(
             openaiBaseURL: "https://api.openai.com/v1",
             openaiAPIKey: "sk-test",
@@ -213,6 +215,10 @@ struct CodingAgentImageTests {
         #expect(frontend.contains("OPENAI_BASE_URL_SAFE"))
         #expect(frontend.contains("OPENAI_API_KEY_SAFE"))
         #expect(frontend.contains("url.hostname"))
+        for source in [console, frontend] {
+            #expect(source.contains("permissions: '0600'"))
+            #expect(source.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
+        }
     }
 }
 

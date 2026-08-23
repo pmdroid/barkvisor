@@ -116,12 +116,12 @@ packages:
   - ca-certificates
 write_files:
   - path: /etc/default/barkvisor-openai
-    permissions: '0644'
+    permissions: '0600'
     content: |
       OPENAI_BASE_URL=${openaiBaseURL}
       OPENAI_API_KEY=${openaiAPIKey}
   - path: /etc/profile.d/barkvisor-openai.sh
-    permissions: '0644'
+    permissions: '0600'
     content: |
       export OPENAI_BASE_URL=${quotedURL}
       export OPENAI_API_KEY=${quotedKey}
@@ -184,6 +184,7 @@ write_files:
       install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v${CLAUDE_VERSION}/\${claude_tar}" "$claude_sha" claude
       install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/\${oc_tar}" "$oc_sha" opencode
 runcmd:
+  - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
   - systemctl enable --now qemu-guest-agent
   - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
   - systemctl enable --now ttyd

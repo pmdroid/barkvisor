@@ -52,6 +52,8 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(yaml).not.toContain('export OPENAI_BASE_URL="')
     expect(yaml).toContain("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'")
     expect(yaml).toContain("export OPENAI_API_KEY='ollama'")
+    expect(yaml).toContain("permissions: '0600'")
+    expect(yaml).toContain('chown ubuntu:ubuntu /etc/default/barkvisor-openai')
     const byoKey = codingAgentUserData('https://api.example/v1', 'sk-test')
     expect(byoKey).toContain("export OPENAI_API_KEY='sk-test'")
     expect(byoKey).toContain('OPENAI_API_KEY=sk-test')
