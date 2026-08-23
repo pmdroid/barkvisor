@@ -10,6 +10,8 @@ import NIOPosix
 /// Resolves once, validates, then fetches via AsyncHTTPClient `dnsOverride` so
 /// TCP uses the approved IP while Host and TLS SNI stay on the original hostname.
 /// Each 3xx Location is re-pinned with ``SSRFGuard.pinEndpoint`` before connect.
+/// One `HTTPClient` is reused for the fetch; a new pin (new host or IP) replaces
+/// it because `dnsOverride` is fixed at client init. Shutdown runs once at the end.
 class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     static let timeoutHeader = "X-BarkVisor-SSRF-Timeout"
     private static let maxRedirects = 16
@@ -47,7 +49,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         do {
-            let pin = try SSRFGuard.pinEndpoint(url: url)
+            let pin = try Self.pinEndpoint(url: url)
             try Task.checkCancellation()
             try await fetch(request: request, url: url, pin: pin)
         } catch is CancellationError {
@@ -62,30 +64,38 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         var currentURL = url
         var currentPin = pin
         var seen: Set<String> = [url.absoluteString]
+        let hopClient = SSRFPinnedHopClient(timeout: resourceTimeout(from: request))
 
-        for _ in 0 ... Self.maxRedirects {
-            try Task.checkCancellation()
-            if let next = try await performHop(
-                request: currentRequest, url: currentURL, pin: currentPin,
-            ) {
-                guard seen.insert(next.url.absoluteString).inserted else {
-                    throw URLError(.httpTooManyRedirects)
+        do {
+            for _ in 0 ... Self.maxRedirects {
+                try Task.checkCancellation()
+                if let next = try await performHop(
+                    request: currentRequest, url: currentURL, pin: currentPin, hopClient: hopClient,
+                ) {
+                    guard seen.insert(next.url.absoluteString).inserted else {
+                        throw URLError(.httpTooManyRedirects)
+                    }
+                    currentPin = try Self.pinEndpoint(url: next.url)
+                    currentURL = next.url
+                    currentRequest.url = next.url
+                    switch next.status {
+                    case 301, 302, 303:
+                        currentRequest.httpMethod = "GET"
+                        currentRequest.httpBody = nil
+                    default:
+                        break
+                    }
+                    continue
                 }
-                currentPin = try SSRFGuard.pinEndpoint(url: next.url)
-                currentURL = next.url
-                currentRequest.url = next.url
-                switch next.status {
-                case 301, 302, 303:
-                    currentRequest.httpMethod = "GET"
-                    currentRequest.httpBody = nil
-                default:
-                    break
-                }
-                continue
+                await hopClient.shutdown()
+                client?.urlProtocolDidFinishLoading(self)
+                return
             }
-            return
+            throw URLError(.httpTooManyRedirects)
+        } catch {
+            await hopClient.shutdown()
+            throw error
         }
-        throw URLError(.httpTooManyRedirects)
     }
 
     private struct RedirectHop {
@@ -95,33 +105,12 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
 
     /// Returns the next hop when following a 3xx; nil after delivering the final response.
     private func performHop(
-        request: URLRequest, url: URL, pin: PinnedEndpoint,
+        request: URLRequest, url: URL, pin: PinnedEndpoint, hopClient: SSRFPinnedHopClient,
     ) async throws -> RedirectHop? {
-        var config = HTTPClient.Configuration()
-        config.redirectConfiguration = .disallow
-        config.dnsOverride = [pin.originalHost: pin.connectIP]
-        config.httpVersion = .http1Only
-        let timeout = resourceTimeout(from: request)
-        config.timeout = .init(
-            connect: .seconds(15),
-            read: .seconds(Int64(timeout.rounded(.up))),
+        let http = try await hopClient.client(for: pin)
+        return try await sendHop(
+            http: http, request: request, url: url, timeout: hopClient.timeout,
         )
-        // POSIX sockets: connect() the IP literal. Network.framework is not used
-        // so it cannot re-resolve the original hostname at TLS time.
-        let http = HTTPClient(
-            eventLoopGroup: MultiThreadedEventLoopGroup.singleton,
-            configuration: config,
-        )
-        do {
-            let next = try await sendHop(
-                http: http, request: request, url: url, timeout: timeout,
-            )
-            try await http.shutdown()
-            return next
-        } catch {
-            try? await http.shutdown()
-            throw error
-        }
     }
 
     private func resourceTimeout(from request: URLRequest) -> TimeInterval {
@@ -157,7 +146,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             statusCode: status, location: location, from: url,
         )
         if let nextURL, SSRFGuard.shouldFollowRedirect(to: nextURL),
-           (try? SSRFGuard.pinEndpoint(url: nextURL)) != nil {
+           (try? Self.pinEndpoint(url: nextURL)) != nil {
             for try await _ in response.body {
                 try Task.checkCancellation()
             }
@@ -185,12 +174,155 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
                 client?.urlProtocol(self, didLoad: data)
             }
         }
-        client?.urlProtocolDidFinishLoading(self)
         return nil
     }
 
     private func fail(_ error: Error) {
         client?.urlProtocol(self, didFailWithError: error)
+    }
+}
+
+/// One AsyncHTTPClient for a Library fetch. `HTTPClient.Configuration.dnsOverride`
+/// cannot change after init, so a pin that adds a host or changes an IP replaces
+/// the client. Hops that keep the same mapping reuse it.
+private final class SSRFPinnedHopClient: @unchecked Sendable {
+    let timeout: TimeInterval
+    private var http: HTTPClient?
+    private var dnsOverride: [String: String] = [:]
+    private var didShutdown = false
+
+    init(timeout: TimeInterval) {
+        self.timeout = timeout
+    }
+
+    func client(for pin: PinnedEndpoint) async throws -> HTTPClient {
+        if didShutdown {
+            throw URLError(.cancelled)
+        }
+        let next = dnsOverride.merging(
+            [pin.originalHost: pin.connectIP],
+            uniquingKeysWith: { _, new in new },
+        )
+        if let http, dnsOverride == next {
+            return http
+        }
+        if let http {
+            try? await http.shutdown()
+            SSRFPinnedURLProtocol.recordShutdown()
+        }
+        dnsOverride = next
+        let created = SSRFPinnedURLProtocol.makeHTTPClient(
+            dnsOverride: next, timeout: timeout,
+        )
+        http = created
+        return created
+    }
+
+    func shutdown() async {
+        guard !didShutdown else { return }
+        didShutdown = true
+        guard let http else { return }
+        self.http = nil
+        try? await http.shutdown()
+        SSRFPinnedURLProtocol.recordShutdown()
+    }
+}
+
+private final class SSRFPinnedURLProtocolHooks: @unchecked Sendable {
+    let lock = NSLock()
+    var httpClientsCreated = 0
+    var httpClientsShutdown = 0
+    var dnsOverrides: [[String: String]] = []
+    var pinnedURLs: [String] = []
+    var pinEndpointOverride: (@Sendable (URL) throws -> PinnedEndpoint)?
+}
+
+extension SSRFPinnedURLProtocol {
+    private static let hooks = SSRFPinnedURLProtocolHooks()
+
+    static var httpClientsCreated: Int {
+        hooks.lock.lock()
+        defer { hooks.lock.unlock() }
+        return hooks.httpClientsCreated
+    }
+
+    static var httpClientsShutdown: Int {
+        hooks.lock.lock()
+        defer { hooks.lock.unlock() }
+        return hooks.httpClientsShutdown
+    }
+
+    static var dnsOverrides: [[String: String]] {
+        hooks.lock.lock()
+        defer { hooks.lock.unlock() }
+        return hooks.dnsOverrides
+    }
+
+    static var pinnedURLs: [String] {
+        hooks.lock.lock()
+        defer { hooks.lock.unlock() }
+        return hooks.pinnedURLs
+    }
+
+    static var pinEndpointOverride: (@Sendable (URL) throws -> PinnedEndpoint)? {
+        get {
+            hooks.lock.lock()
+            defer { hooks.lock.unlock() }
+            return hooks.pinEndpointOverride
+        }
+        set {
+            hooks.lock.lock()
+            defer { hooks.lock.unlock() }
+            hooks.pinEndpointOverride = newValue
+        }
+    }
+
+    static func resetTestHooks() {
+        hooks.lock.lock()
+        defer { hooks.lock.unlock() }
+        hooks.httpClientsCreated = 0
+        hooks.httpClientsShutdown = 0
+        hooks.dnsOverrides = []
+        hooks.pinnedURLs = []
+        hooks.pinEndpointOverride = nil
+    }
+
+    static func pinEndpoint(url: URL) throws -> PinnedEndpoint {
+        hooks.lock.lock()
+        let override = hooks.pinEndpointOverride
+        hooks.lock.unlock()
+        let pin = try override?(url) ?? SSRFGuard.pinEndpoint(url: url)
+        hooks.lock.lock()
+        hooks.pinnedURLs.append(url.absoluteString)
+        hooks.lock.unlock()
+        return pin
+    }
+
+    fileprivate static func makeHTTPClient(dnsOverride: [String: String], timeout: TimeInterval) -> HTTPClient {
+        var config = HTTPClient.Configuration()
+        config.redirectConfiguration = .disallow
+        config.dnsOverride = dnsOverride
+        config.httpVersion = .http1Only
+        config.timeout = .init(
+            connect: .seconds(15),
+            read: .seconds(Int64(timeout.rounded(.up))),
+        )
+        hooks.lock.lock()
+        hooks.httpClientsCreated += 1
+        hooks.dnsOverrides.append(dnsOverride)
+        hooks.lock.unlock()
+        // POSIX sockets: connect() the IP literal. Network.framework is not used
+        // so it cannot re-resolve the original hostname at TLS time.
+        return HTTPClient(
+            eventLoopGroup: MultiThreadedEventLoopGroup.singleton,
+            configuration: config,
+        )
+    }
+
+    fileprivate static func recordShutdown() {
+        hooks.lock.lock()
+        defer { hooks.lock.unlock() }
+        hooks.httpClientsShutdown += 1
     }
 }
 
