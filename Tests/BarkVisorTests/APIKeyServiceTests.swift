@@ -88,7 +88,7 @@ final class APIKeyServiceTests {
 
     /// `Config.apiKeyHmacSecret` / `Config.jwtSecret` mint a new ephemeral
     /// value on every read when `Config.dataDir` is not writable (installed
-    /// `/var/lib/barkvisor`). Pin the default argument expressions instead.
+    /// `/var/lib/barkvisor`). Pin hmacHash's default and create's fallback.
     @Test func `hmacHash and create default to apiKeyHmacSecret not jwtSecret`() async throws {
         let src = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -97,9 +97,10 @@ final class APIKeyServiceTests {
             .appendingPathComponent("Sources/BarkVisorCore/Services/APIKeyService.swift")
         let text = try String(contentsOf: src, encoding: .utf8)
         #expect(text.contains("secret: String = Config.apiKeyHmacSecret"))
-        #expect(text.contains("hmacSecret: String = Config.apiKeyHmacSecret"))
+        #expect(text.contains("hmacSecret ?? Config.apiKeyHmacSecret"))
         #expect(!text.contains("secret: String = Config.jwtSecret"))
         #expect(!text.contains("hmacSecret: String = Config.jwtSecret"))
+        #expect(!text.contains("hmacSecret ?? Config.jwtSecret"))
 
         let plaintext = "barkvisor_" + String(repeating: "cd", count: 32)
         let defaultHash = APIKeyService.hmacHash(plaintext)
@@ -209,10 +210,26 @@ final class APIKeyServiceTests {
         let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
         #expect(Set(remaining.map(\.id)) == ["bcrypt-keep"])
         #expect(Config.loadAPIKeyHmacSecret(from: tmpDir) != nil)
+        #expect(Config.apiKeyHmacMigrationCompleted(in: tmpDir))
     }
 
-    @Test func `existing hmac secret leaves stored keys listed`() async throws {
+    @Test func `hmac secret without migration marker retries leftover hmac sweep`() async throws {
         try Config.persistAPIKeyHmacSecret("already-there", to: tmpDir)
+        try await insertKey(id: "hmac-dead", name: "Dead HMAC", hash: "abc123notbcrypt")
+        try await insertKey(id: "bcrypt-keep", name: "Legacy bcrypt", hash: "$2b$10$legacyhash")
+
+        let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
+            db: dbPool, dataDir: tmpDir,
+        )
+        #expect(removed == 1)
+        let remaining = try await APIKeyService.list(userId: "user-1", db: dbPool)
+        #expect(Set(remaining.map(\.id)) == ["bcrypt-keep"])
+        #expect(Config.apiKeyHmacMigrationCompleted(in: tmpDir))
+    }
+
+    @Test func `migration marker leaves stored keys listed`() async throws {
+        try Config.persistAPIKeyHmacSecret("already-there", to: tmpDir)
+        try Config.persistAPIKeyHmacMigrationMarker(to: tmpDir)
         try await insertKey(id: "live-hmac", name: "Live", hash: "deadbeefcafebabe")
 
         let removed = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(
@@ -229,6 +246,30 @@ final class APIKeyServiceTests {
         )
         #expect(removed == 0)
         #expect(try await APIKeyService.list(userId: "user-1", db: dbPool).isEmpty)
+        #expect(Config.apiKeyHmacMigrationCompleted(in: tmpDir))
+    }
+
+    @Test func `create waits on hmac secret lock held by pairing rotate path`() async throws {
+        let hold = Task {
+            await withCheckedContinuation { (acquired: CheckedContinuation<Void, Never>) in
+                Task {
+                    await Config.withAPIKeyHmacSecretLock {
+                        acquired.resume()
+                        try? await Task.sleep(for: .milliseconds(200))
+                    }
+                }
+            }
+        }
+        await hold.value
+        let started = ContinuousClock.now
+        _ = try await APIKeyService.create(
+            name: "Locked",
+            expiresIn: nil,
+            userId: "user-1",
+            db: dbPool,
+            hmacSecret: "test-hmac",
+        )
+        #expect(started.duration(to: .now) >= .milliseconds(150))
     }
 
     @Test func `hmac persist failure does not drop stored keys`() async throws {

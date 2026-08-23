@@ -41,7 +41,7 @@ public enum APIKeyService {
         userId: String,
         db: DatabasePool,
         bytes: [UInt8] = PlatformRandom.secureBytes(count: 32),
-        hmacSecret: String = Config.apiKeyHmacSecret,
+        hmacSecret: String? = nil,
     ) async throws -> APIKeyCreateResult {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -55,24 +55,27 @@ public enum APIKeyService {
 
         let expiresAt = try parseExpiry(expiresIn)
         let now = iso8601.string(from: Date())
-        let hash = hmacHash(plaintext, secret: hmacSecret)
 
-        let apiKey = APIKey(
-            id: UUID().uuidString,
-            name: trimmedName,
-            keyHash: hash,
-            keyPrefix: prefix,
-            userId: userId,
-            expiresAt: expiresAt,
-            lastUsedAt: nil,
-            createdAt: now,
-        )
-
-        try await db.write { db in
-            try apiKey.insert(db)
+        // Hash and insert under the HMAC lock so pairing revokeAll+rotate cannot
+        // land between reading the secret and persisting the row.
+        return try await Config.withAPIKeyHmacSecretLock {
+            let secret = hmacSecret ?? Config.apiKeyHmacSecret
+            let hash = hmacHash(plaintext, secret: secret)
+            let apiKey = APIKey(
+                id: UUID().uuidString,
+                name: trimmedName,
+                keyHash: hash,
+                keyPrefix: prefix,
+                userId: userId,
+                expiresAt: expiresAt,
+                lastUsedAt: nil,
+                createdAt: now,
+            )
+            try await db.write { db in
+                try apiKey.insert(db)
+            }
+            return APIKeyCreateResult(apiKey: apiKey, plaintext: plaintext)
         }
-
-        return APIKeyCreateResult(apiKey: apiKey, plaintext: plaintext)
     }
 
     /// List all API keys for a user.
@@ -125,25 +128,31 @@ public enum APIKeyService {
         }
     }
 
-    /// On first generation of `api-key-hmac-secret`, drop leftover HMAC rows so
-    /// `list()` does not show keys that can never authenticate.
+    /// Drop leftover jwtSecret-keyed HMAC rows until a durable marker exists.
+    /// Gating on `ensureAPIKeyHmacSecret().generated` skipped the sweep forever
+    /// if the first persist succeeded but this call threw, or if chmod after
+    /// the atomic write failed so `generated` stayed false.
     @discardableResult
     public static func revokeUnverifiableKeysIfHmacSecretGenerated(
         db: DatabasePool,
         dataDir: URL,
     ) async throws -> Int {
-        let generated = Config.ensureAPIKeyHmacSecret(in: dataDir).generated
-        guard generated else { return 0 }
-        let removed = try await revokeUnverifiableHmacKeys(db: db)
-        if removed > 0 {
-            Log.auth.critical(
-                """
-                Dropped \(removed) API key(s) hashed with jwtSecret. \
-                Reissue them; plaintext is not stored so they cannot be rehashed.
-                """,
-            )
+        try await Config.withAPIKeyHmacSecretLock {
+            _ = Config.ensureAPIKeyHmacSecret(in: dataDir)
+            guard Config.loadAPIKeyHmacSecret(from: dataDir) != nil else { return 0 }
+            if Config.apiKeyHmacMigrationCompleted(in: dataDir) { return 0 }
+            let removed = try await revokeUnverifiableHmacKeys(db: db)
+            try Config.persistAPIKeyHmacMigrationMarker(to: dataDir)
+            if removed > 0 {
+                Log.auth.critical(
+                    """
+                    Dropped \(removed) API key(s) hashed with jwtSecret. \
+                    Reissue them; plaintext is not stored so they cannot be rehashed.
+                    """,
+                )
+            }
+            return removed
         }
-        return removed
     }
 
     /// Delete all expired API keys and return how many were removed.

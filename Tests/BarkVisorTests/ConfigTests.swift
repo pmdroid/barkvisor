@@ -129,4 +129,40 @@ struct ConfigTests {
         let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
         #expect(perms & 0o777 == 0o600)
     }
+
+    @Test func `persist hmac and jwt secrets are 0600`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try Config.persistAPIKeyHmacSecret("hmac", to: dir)
+        try Config.persistJWTSecret("jwt", to: dir)
+
+        for path in [
+            Config.apiKeyHmacSecretFile(in: dir).path,
+            Config.jwtSecretFile(in: dir).path,
+        ] {
+            let attrs = try FileManager.default.attributesOfItem(atPath: path)
+            let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+            #expect(perms & 0o777 == 0o600)
+        }
+    }
+
+    @Test func `ensure api key hmac secret concurrent callers share one secret`() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let lock = NSLock()
+        var secrets: [String] = []
+        DispatchQueue.concurrentPerform(iterations: 32) { _ in
+            let result = Config.ensureAPIKeyHmacSecret(in: dir)
+            lock.lock()
+            secrets.append(result.secret)
+            lock.unlock()
+        }
+        #expect(Set(secrets).count == 1)
+        #expect(Config.loadAPIKeyHmacSecret(from: dir) == secrets[0])
+        #expect(!secrets[0].isEmpty)
+    }
 }

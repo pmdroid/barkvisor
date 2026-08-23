@@ -461,17 +461,29 @@ extension PairingService {
             // jwt-secret is session HMAC, not the API-key hash key. Revoke
             // local keys and rotate the API-key secret so pre-pair hashes
             // cannot keep authenticating after this Device joins a Home.
-            if let db {
-                do {
-                    _ = try await APIKeyService.revokeAll(db: db)
-                } catch {
-                    throw PairingError.unavailable(
-                        "Unable to revoke API keys: \(error.localizedDescription)",
-                    )
-                }
-            }
+            // Hold the HMAC lock across both so a concurrent create cannot
+            // insert a row hashed under the old secret after revokeAll.
             do {
-                try Config.rotateAPIKeyHmacSecret(in: dataDir)
+                try await Config.withAPIKeyHmacSecretLock {
+                    if let db {
+                        do {
+                            _ = try await APIKeyService.revokeAll(db: db)
+                        } catch {
+                            throw PairingError.unavailable(
+                                "Unable to revoke API keys: \(error.localizedDescription)",
+                            )
+                        }
+                    }
+                    do {
+                        try Config.rotateAPIKeyHmacSecret(in: dataDir)
+                    } catch {
+                        throw PairingError.unavailable(
+                            "Unable to rotate API key HMAC secret: \(error.localizedDescription)",
+                        )
+                    }
+                }
+            } catch let error as PairingError {
+                throw error
             } catch {
                 throw PairingError.unavailable(
                     "Unable to rotate API key HMAC secret: \(error.localizedDescription)",
