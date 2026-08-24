@@ -261,7 +261,13 @@ public enum QEMUBuilder {
         let tpm = try tpmArgs(spec: spec, vmID: vmID, guestType: guestType)
         args += tpm.args
         args += try additionalDiskArgs(ctx.additionalDisks)
-        let (netArgs, needsSocketVmnetWrap) = try networkArgs(spec: spec, network: ctx.network)
+        let klass = try WorkloadClass.parse(spec.spec.workloadClass)
+        let allowHostOllama = klass == .agent && AgentNetworkCage.allowHostOllama(
+            userData: CloudInitService.storedUserData(vmID: vmID),
+        )
+        let (netArgs, needsSocketVmnetWrap) = try networkArgs(
+            spec: spec, network: ctx.network, allowHostOllama: allowHostOllama,
+        )
         args += netArgs
         args += socketArgs(
             ctx.sockets,
@@ -294,8 +300,9 @@ public enum QEMUBuilder {
             executable: qemuBinary, arguments: args,
             swtpmExecutable: tpm.exe, swtpmArguments: tpm.swtpmArgs, swtpmStateDir: tpm.dir,
         )
-        let klass = try WorkloadClass.parse(spec.spec.workloadClass)
-        return try AgentNetworkCage.wrapLaunch(launch, workloadClass: klass)
+        return try AgentNetworkCage.wrapLaunch(
+            launch, workloadClass: klass, allowHostOllama: allowHostOllama,
+        )
     }
 
     // MARK: - Argument Builders
@@ -408,8 +415,11 @@ public enum QEMUBuilder {
     }
 
     /// Internal for tests (PAS-67). Missing `network` is implicit NAT.
-    static func networkArgs(spec: WorkloadSpec, network: Network?) throws
-        -> (args: [String], needsSocketVmnetWrap: Bool) {
+    static func networkArgs(
+        spec: WorkloadSpec,
+        network: Network?,
+        allowHostOllama: Bool = false,
+    ) throws -> (args: [String], needsSocketVmnetWrap: Bool) {
         guard spec.spec.networks.count <= 1 else {
             throw BarkVisorError.badRequest(
                 "spec.networks supports at most 1 network until multi-NIC is available",
@@ -465,7 +475,9 @@ public enum QEMUBuilder {
             netdevArgs = "user,id=net0"
             let klass = try WorkloadClass.parse(spec.spec.workloadClass)
             if klass == .agent {
-                netdevArgs += AgentNetworkCage.slirpExtras(mode: .nat)
+                netdevArgs += AgentNetworkCage.slirpExtras(
+                    mode: .nat, allowHostOllama: allowHostOllama,
+                )
             }
             if let dns = network?.dnsServer, !dns.isEmpty {
                 try validateIPv4(dns)
