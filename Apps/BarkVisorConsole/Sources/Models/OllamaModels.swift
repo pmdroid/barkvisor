@@ -1,6 +1,6 @@
 import Foundation
 
-struct OllamaHomeCatalog: Decodable, Equatable {
+struct OllamaHomeCatalog: Decodable, Equatable, Hashable {
     var anyReachable: Bool
     var anyInstalled: Bool
     var models: [OllamaCatalogModel]

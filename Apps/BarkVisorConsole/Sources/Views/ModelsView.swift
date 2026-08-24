@@ -13,19 +13,13 @@ struct ModelsView: View {
         Group {
             if !model.ollamaLoaded {
                 ProgressView("Loading Ollama…")
-            } else if !model.ollamaCatalog.anyReachable {
-                ContentUnavailableView(
-                    "Ollama is not reachable",
-                    systemImage: "cube",
-                    description: Text(model.ollamaCatalog.devices.first?.installHint ?? "Install Ollama on a Device."),
-                )
-            } else {
+            } else if let catalog = model.ollamaCatalog, catalog.anyReachable {
                 List {
                     Section("Pull a model") {
                         TextField("llama3", text: $pullName)
                         Picker(Copy.device, selection: $pullHostId) {
                             Text("Any reachable \(Copy.device)").tag("")
-                            ForEach(model.ollamaCatalog.devices.filter(\.reachable)) { device in
+                            ForEach(catalog.devices.filter(\.reachable)) { device in
                                 Text(device.title).tag(device.hostId)
                             }
                         }
@@ -47,11 +41,11 @@ struct ModelsView: View {
                         }
                     }
                     Section("Models") {
-                        if model.ollamaCatalog.models.isEmpty {
+                        if catalog.models.isEmpty {
                             Text("Pull a model to use chat completions through BarkVisor.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            ForEach(model.ollamaCatalog.models) { row in
+                            ForEach(catalog.models) { row in
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(row.name).fontWeight(.medium)
@@ -80,6 +74,12 @@ struct ModelsView: View {
                     }
                 }
                 .platformListStyle()
+            } else {
+                ContentUnavailableView(
+                    "Ollama is not reachable",
+                    systemImage: "cube",
+                    description: Text(model.ollamaCatalog?.devices.first?.installHint ?? "Install Ollama on a Device."),
+                )
             }
         }
         .refreshable { await model.refreshOllama() }
