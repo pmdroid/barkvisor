@@ -204,7 +204,8 @@ async function refreshHistory(row: HomeDeviceHealthSnapshot | null = device.valu
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
   await workloads.fetchFor(row)
-  await Promise.all([refreshCapabilities(row), refreshHistory(row)])
+  await refreshCapabilities(row)
+  await refreshHistory(row)
 }
 
 let refreshSeq = 0
