@@ -3,7 +3,7 @@ import AppSelect from '../ui/AppSelect.vue'
 import CloudInitEditor from '../CloudInitEditor.vue'
 import type { Image, SSHKey } from '../../api/types'
 import type { OpenAIPreset } from '../../utils/codingAgentImage'
-import { DEVICE_OLLAMA_BASE_URL } from '../../utils/codingAgentImage'
+import { HOME_OLLAMA_GRANT_URL } from '../../utils/codingAgentImage'
 
 defineProps<{
   osType: 'linux' | 'windows'
@@ -18,6 +18,7 @@ defineProps<{
   isCodingAgentSelected?: boolean
   openaiPreset?: OpenAIPreset
   byoOpenAIURL?: string
+  byoOpenAIAPIKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   'update:cloudUserData': [value: string]
   'update:openaiPreset': [value: OpenAIPreset]
   'update:byoOpenAIURL': [value: string]
+  'update:byoOpenAIAPIKey': [value: string]
 }>()
 
 function setMode(m: 'iso' | 'cloud') {
@@ -95,11 +97,11 @@ function setMode(m: 'iso' | 'cloud') {
         <button
           type="button"
           class="preset-card"
-          :class="{ selected: openaiPreset === 'device-ollama' }"
-          @click="emit('update:openaiPreset', 'device-ollama')"
+          :class="{ selected: openaiPreset === 'home-ollama' || openaiPreset === 'device-ollama' }"
+          @click="emit('update:openaiPreset', 'home-ollama')"
         >
-          Device Ollama
-          <span class="preset-hint">{{ DEVICE_OLLAMA_BASE_URL }}</span>
+          Home Ollama grant
+          <span class="preset-hint">{{ HOME_OLLAMA_GRANT_URL }}</span>
         </button>
         <button
           type="button"
@@ -111,13 +113,22 @@ function setMode(m: 'iso' | 'cloud') {
           <span class="preset-hint">HTTPS endpoint</span>
         </button>
       </div>
-      <input
-        v-if="openaiPreset === 'byo'"
-        :value="byoOpenAIURL"
-        placeholder="https://api.example/v1"
-        style="margin-top:8px"
-        @input="emit('update:byoOpenAIURL', ($event.target as HTMLInputElement).value)"
-      />
+      <template v-if="openaiPreset === 'byo'">
+        <input
+          :value="byoOpenAIURL"
+          placeholder="https://api.example/v1"
+          style="margin-top:8px"
+          @input="emit('update:byoOpenAIURL', ($event.target as HTMLInputElement).value)"
+        />
+        <input
+          :value="byoOpenAIAPIKey"
+          type="password"
+          autocomplete="off"
+          placeholder="OPENAI_API_KEY"
+          style="margin-top:8px"
+          @input="emit('update:byoOpenAIAPIKey', ($event.target as HTMLInputElement).value)"
+        />
+      </template>
       <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">
         Agent class: WAN yes, house no. Presets share this Library image.
       </div>

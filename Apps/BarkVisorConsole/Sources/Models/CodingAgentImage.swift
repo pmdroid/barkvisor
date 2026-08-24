@@ -5,6 +5,7 @@ enum CodingAgentImage {
     static let name = "Coding Agent"
     static let slugs: Set<String> = ["coding-agent-arm64", "coding-agent-x86_64"]
     static let deviceOllamaBaseURL = "http://10.0.2.2:11434/v1"
+    static let homeOllamaGrantURL = deviceOllamaBaseURL
     static let defaultMemoryMB = 2_048
     static let defaultDiskGB = 20
     static let webTerminalPort = 7_681
@@ -40,7 +41,7 @@ enum CodingAgentImage {
 
     static func normalizeOpenAIBaseURL(_ raw: String?) throws -> String {
         let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmed.isEmpty { return deviceOllamaBaseURL }
+        if trimmed.isEmpty { return homeOllamaGrantURL }
         if trimmed.contains(where: { ch in
             ch.isNewline || ch.isWhitespace || "\"'`$\\".contains(ch)
         }) {
@@ -56,8 +57,34 @@ enum CodingAgentImage {
         return trimmed
     }
 
+    static let defaultOpenAIAPIKey = "ollama"
+
+    static func isShellSafeOpenAIAPIKey(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || "._+=-".contains(ch))
+        }
+    }
+
+    static func normalizeOpenAIAPIKey(_ raw: String?, required: Bool = false) throws -> String {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            if required { throw CreateWorkload.DraftError.missingOpenAIAPIKey }
+            return defaultOpenAIAPIKey
+        }
+        guard isShellSafeOpenAIAPIKey(trimmed) else {
+            throw CreateWorkload.DraftError.invalidOpenAIAPIKey
+        }
+        return trimmed
+    }
+
     static func posixSingleQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    static func isShellSafeOpenAIBaseURL(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || ":/._%-".contains(ch))
+        }
     }
 
     static func usesDeviceOllama(_ url: String) -> Bool {
@@ -69,8 +96,12 @@ enum CodingAgentImage {
         return (comps.port ?? 80) == 11_434
     }
 
-    static func userData(openaiBaseURL: String) -> String {
+    static func userData(
+        openaiBaseURL: String,
+        openaiAPIKey: String = defaultOpenAIAPIKey,
+    ) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
+        let quotedKey = posixSingleQuoted(openaiAPIKey)
         let marker = usesDeviceOllama(openaiBaseURL) ? "\(allowHostOllamaYAML)\n" : ""
         let ttydVer = ttydVersion
         let shaArm = ttydSha256Aarch64
@@ -92,11 +123,16 @@ enum CodingAgentImage {
           - jq
           - ca-certificates
         write_files:
+          - path: /etc/default/barkvisor-openai
+            permissions: '0600'
+            content: |
+              OPENAI_BASE_URL=\(openaiBaseURL)
+              OPENAI_API_KEY=\(openaiAPIKey)
           - path: /etc/profile.d/barkvisor-openai.sh
-            permissions: '0644'
+            permissions: '0600'
             content: |
               export OPENAI_BASE_URL=\(quotedURL)
-              export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
+              export OPENAI_API_KEY=\(quotedKey)
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
             content: |
@@ -108,6 +144,7 @@ enum CodingAgentImage {
               [Service]
               Type=simple
               User=ubuntu
+              EnvironmentFile=-/etc/default/barkvisor-openai
               ExecStart=/usr/local/bin/ttyd --writable --port \(ttydPort) tmux new -A -s main
               Restart=on-failure
 
@@ -155,6 +192,7 @@ enum CodingAgentImage {
               install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v\(claudeVer)/${claude_tar}" "$claude_sha" claude
               install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v\(ocVer)/${oc_tar}" "$oc_sha" opencode
         runcmd:
+          - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
           - systemctl enable --now qemu-guest-agent
           - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
           - systemctl enable --now ttyd

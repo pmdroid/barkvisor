@@ -60,8 +60,19 @@ struct WorkloadDetailView: View {
             }
 
             Section {
+                if codingAgent, model.showsChat {
+                    NavigationLink {
+                        ChatView()
+                    } label: {
+                        streamLabel(
+                            title: "Chat",
+                            subtitle: "Home Ollama grant",
+                            systemImage: "bubble.left.and.bubble.right",
+                        )
+                    }
+                }
                 streamRow(
-                    title: "Console",
+                    title: CodingAgentSession.consoleTitle(isSession: codingAgent),
                     subtitle: "Serial",
                     systemImage: "apple.terminal",
                     destination: SerialConsoleView(
@@ -201,6 +212,10 @@ struct WorkloadDetailView: View {
 
     private var access: WorkloadStreamAccess {
         WorkloadStreamAccess.resolve(device: device, state: workload.state)
+    }
+
+    private var codingAgent: Bool {
+        CodingAgentSession.isSession(workloadClass: workload.workloadClass)
     }
 
     private var listeningAccess: GuestListeningPortAccess {

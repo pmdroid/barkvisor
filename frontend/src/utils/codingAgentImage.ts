@@ -1,6 +1,7 @@
 export const CODING_AGENT_NAME = 'Coding Agent'
 export const CODING_AGENT_SLUGS = ['coding-agent-arm64', 'coding-agent-x86_64'] as const
 export const DEVICE_OLLAMA_BASE_URL = 'http://10.0.2.2:11434/v1'
+export const HOME_OLLAMA_GRANT_URL = DEVICE_OLLAMA_BASE_URL
 export const TTYD_VERSION = '1.7.7'
 export const TTYD_SHA256_AARCH64 =
   'b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165'
@@ -19,7 +20,11 @@ export const OPENCODE_SHA256_X86_64 =
 export const WEB_TERMINAL_PORT = 7681
 export const ALLOW_HOST_OLLAMA_YAML = 'barkvisor_allow_host_ollama: true'
 
-export type OpenAIPreset = 'device-ollama' | 'byo'
+export type OpenAIPreset = 'home-ollama' | 'device-ollama' | 'byo'
+
+export function isHomeOllamaGrant(preset: OpenAIPreset): boolean {
+  return preset === 'home-ollama' || preset === 'device-ollama'
+}
 
 export function isCodingAgentImage(img: {
   name?: string | null
@@ -35,10 +40,18 @@ export function defaultWorkloadClassForImage(img: { name?: string | null; slug?:
   return isCodingAgentImage(img) ? 'agent' : 'house'
 }
 
+const OPENAI_BASE_URL_SAFE = /^[A-Za-z0-9:\/._%-]+$/
+const OPENAI_API_KEY_SAFE = /^[A-Za-z0-9._+=-]+$/
+export const DEFAULT_OPENAI_API_KEY = 'ollama'
+
+export function isShellSafeOpenAIAPIKey(value: string): boolean {
+  return OPENAI_API_KEY_SAFE.test(value)
+}
+
 export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   const trimmed = (raw ?? '').trim()
-  if (!trimmed) return DEVICE_OLLAMA_BASE_URL
-  if (/[\s"'`$\\]/.test(trimmed)) throw new Error('OPENAI_BASE_URL is invalid')
+  if (!trimmed) return HOME_OLLAMA_GRANT_URL
+  if (!OPENAI_BASE_URL_SAFE.test(trimmed)) throw new Error('OPENAI_BASE_URL is invalid')
   let url: URL
   try {
     url = new URL(trimmed)
@@ -48,9 +61,23 @@ export function normalizeOpenAIBaseURL(raw: string | null | undefined): string {
   if (url.username || url.password) {
     throw new Error('OPENAI_BASE_URL is invalid')
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    !url.hostname ||
+    !/^https?:\/\//i.test(trimmed)
+  ) {
     throw new Error('OPENAI_BASE_URL must be an http(s) URL')
   }
+  return trimmed
+}
+
+export function normalizeOpenAIAPIKey(raw: string | null | undefined, required = false): string {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) {
+    if (required) throw new Error('OPENAI_API_KEY is required')
+    return DEFAULT_OPENAI_API_KEY
+  }
+  if (!isShellSafeOpenAIAPIKey(trimmed)) throw new Error('OPENAI_API_KEY is invalid')
   return trimmed
 }
 
@@ -72,8 +99,12 @@ export function usesDeviceOllama(url: string): boolean {
   return port === 11434
 }
 
-export function codingAgentUserData(openaiBaseURL: string): string {
+export function codingAgentUserData(
+  openaiBaseURL: string,
+  openaiAPIKey = DEFAULT_OPENAI_API_KEY,
+): string {
   const quotedURL = posixSingleQuoted(openaiBaseURL)
+  const quotedKey = posixSingleQuoted(openaiAPIKey)
   const marker = usesDeviceOllama(openaiBaseURL) ? `${ALLOW_HOST_OLLAMA_YAML}\n` : ''
   return `${marker}package_update: true
 packages:
@@ -84,11 +115,16 @@ packages:
   - jq
   - ca-certificates
 write_files:
+  - path: /etc/default/barkvisor-openai
+    permissions: '0600'
+    content: |
+      OPENAI_BASE_URL=${openaiBaseURL}
+      OPENAI_API_KEY=${openaiAPIKey}
   - path: /etc/profile.d/barkvisor-openai.sh
-    permissions: '0644'
+    permissions: '0600'
     content: |
       export OPENAI_BASE_URL=${quotedURL}
-      export OPENAI_API_KEY="\${OPENAI_API_KEY:-ollama}"
+      export OPENAI_API_KEY=${quotedKey}
   - path: /etc/systemd/system/ttyd.service
     permissions: '0644'
     content: |
@@ -100,6 +136,7 @@ write_files:
       [Service]
       Type=simple
       User=ubuntu
+      EnvironmentFile=-/etc/default/barkvisor-openai
       ExecStart=/usr/local/bin/ttyd --writable --port ${WEB_TERMINAL_PORT} tmux new -A -s main
       Restart=on-failure
 
@@ -147,6 +184,7 @@ write_files:
       install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v${CLAUDE_VERSION}/\${claude_tar}" "$claude_sha" claude
       install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/\${oc_tar}" "$oc_sha" opencode
 runcmd:
+  - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
   - systemctl enable --now qemu-guest-agent
   - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
   - systemctl enable --now ttyd
@@ -158,10 +196,14 @@ export function mergeCodingAgentUserData(
   img: { name?: string | null; slug?: string | null } | null | undefined,
   preset: OpenAIPreset,
   byoURL: string,
+  byoAPIKey = '',
 ): string {
   const trimmed = existing.trim()
   if (trimmed) return trimmed
   if (!isCodingAgentImage(img)) return existing
-  const url = preset === 'byo' ? normalizeOpenAIBaseURL(byoURL) : DEVICE_OLLAMA_BASE_URL
-  return codingAgentUserData(url)
+  const url = isHomeOllamaGrant(preset) ? HOME_OLLAMA_GRANT_URL : normalizeOpenAIBaseURL(byoURL)
+  const key = isHomeOllamaGrant(preset)
+    ? DEFAULT_OPENAI_API_KEY
+    : normalizeOpenAIAPIKey(byoAPIKey, true)
+  return codingAgentUserData(url, key)
 }

@@ -22,6 +22,7 @@ struct ChatView: View {
                 chatBody
             }
         }
+        .navigationTitle("Chat")
         .task(id: model.showsChat) {
             await model.refreshOllamaCatalog()
             pickDefaultModel()
