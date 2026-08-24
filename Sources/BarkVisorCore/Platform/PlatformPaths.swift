@@ -59,12 +59,34 @@ public enum PlatformPaths {
             socketDirOverride: env["BARKVISOR_SOCKET_DIR"],
             temporaryDirectory: tmp,
         )
-        try? FileManager.default.createDirectory(
-            at: dir,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700],
-        )
+        // /var/run/barkvisor is created by packaging (Homebrew postinstall,
+        // pkg, systemd). Swallowing mkdir here hides brew services failures.
+        if !socketDirIsPackagingOwned(dir) {
+            try? FileManager.default.createDirectory(
+                at: dir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700],
+            )
+        }
         return dir
+    }
+
+    /// True when packaging, not the daemon, must create the socket directory.
+    public static func socketDirIsPackagingOwned(_ dir: URL) -> Bool {
+        packagingOwnedSocketDirPaths.contains(normalizePath(dir.path))
+    }
+
+    /// False when the directory is missing or not writable by this process.
+    public static func isWritableDirectory(
+        _ dir: URL,
+        fileManager: FileManager = .default,
+    ) -> Bool {
+        var isDir: ObjCBool = false
+        let path = dir.path
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+            return false
+        }
+        return fileManager.isWritableFile(atPath: path)
     }
 
     /// Pure socket-dir choice (no mkdir). `/var/lib/barkvisor` is the systemd
@@ -87,6 +109,54 @@ public enum PlatformPaths {
             .appendingPathComponent("barkvisor", isDirectory: true)
     }
 
+    private static let packagingOwnedSocketDirPaths: Set<String> = [
+        "/var/run/barkvisor",
+        "/private/var/run/barkvisor",
+        "/run/barkvisor",
+    ].reduce(into: Set()) { $0.insert(normalizePath($1)) }
+
+    private static func normalizePath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    /// Absolute executable path from argv0. Bare names (e.g. `barkvisor` from PATH)
+    /// are resolved against `PATH`; slash-relative names against `currentDirectory`.
+    public static func resolvedExecutablePath(
+        argument: String,
+        pathEnvironment: String?,
+        currentDirectory: String,
+        isExecutable: (String) -> Bool,
+    ) -> String {
+        if argument.hasPrefix("/") {
+            return argument
+        }
+        if argument.contains("/") {
+            return URL(fileURLWithPath: currentDirectory, isDirectory: true)
+                .appendingPathComponent(argument)
+                .standardizedFileURL.path
+        }
+        // Empty PATH segments are cwd (POSIX). Do not drop them.
+        let dirs = (pathEnvironment ?? "").split(separator: ":", omittingEmptySubsequences: false)
+        for dir in dirs {
+            let dirPath = dir.isEmpty ? currentDirectory : String(dir)
+            let candidate = URL(fileURLWithPath: dirPath, isDirectory: true)
+                .appendingPathComponent(argument)
+                .path
+            if isExecutable(candidate) {
+                return candidate
+            }
+        }
+        return argument
+    }
+
+    /// `/opt/homebrew/bin/barkvisor` → `/opt/homebrew`. Otherwise `/usr/local`.
+    public static func installPrefix(executablePath: String) -> String {
+        let resolved = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
+        let binDir = resolved.deletingLastPathComponent()
+        guard binDir.lastPathComponent == "bin" else { return "/usr/local" }
+        return binDir.deletingLastPathComponent().path
+    }
+
     /// Packaged SPA path used to detect an installed layout (PAS-293).
     public static func shareFrontendIndexPath(prefix: String) -> String {
         "\(prefix)/share/barkvisor/frontend/dist/index.html"
@@ -94,17 +164,16 @@ public enum PlatformPaths {
 
     /// Installed daemon vs `swift run`. Does not require libexec QEMU (PAS-287).
     ///
-    /// True when `BARKVISOR_DATA_DIR` is set, or when the binary lives in `*/bin`
-    /// and `$prefix/share/barkvisor/frontend/dist/index.html` exists.
+    /// True when the binary lives in `*/bin` and
+    /// `$prefix/share/barkvisor/frontend/dist/index.html` exists.
+    /// `BARKVISOR_DATA_DIR` only relocates `dataDir`; it does not mark the layout
+    /// installed (unprivileged smoke/dev runs would otherwise bind QEMU sockets
+    /// under `/var/run/barkvisor`).
     public static func isInstalled(
         prefix: String,
         binaryDirectoryIsBin: Bool,
-        dataDirOverride: String?,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
     ) -> Bool {
-        if let override = dataDirOverride, !override.isEmpty {
-            return true
-        }
         guard binaryDirectoryIsBin else { return false }
         return fileExists(shareFrontendIndexPath(prefix: prefix))
     }

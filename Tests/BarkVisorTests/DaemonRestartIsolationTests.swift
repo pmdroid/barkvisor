@@ -34,6 +34,34 @@ struct DaemonRestartIsolationTests {
         #expect(dir.path == "/var/run/barkvisor")
     }
 
+    @Test func `daemon fatal names the actual socket path and packaging owners`() throws {
+        let text = try Self.readRepoFile("Sources/BarkVisorApp/main.swift")
+        #expect(text.contains("Socket directory \\(sockets.path)"))
+        #expect(text.contains("Homebrew postinstall, pkg, or systemd"))
+        #expect(!text.contains("The daemon cannot create /var/run/barkvisor."))
+    }
+
+    @Test func `var run socket dir is packaging owned`() {
+        #expect(PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/var/run/barkvisor")))
+        #expect(PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/private/var/run/barkvisor")))
+        #expect(!PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/tmp/barkvisor")))
+        #expect(!PlatformPaths.socketDirIsPackagingOwned(URL(fileURLWithPath: "/run/custom-socks")))
+    }
+
+    @Test func `isWritableDirectory is false when missing`() {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("barkvisor-missing-\(UUID().uuidString)", isDirectory: true)
+        #expect(!PlatformPaths.isWritableDirectory(missing))
+    }
+
+    @Test func `isWritableDirectory is true for a created temp dir`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("barkvisor-writable-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(PlatformPaths.isWritableDirectory(dir))
+    }
+
     @Test func `dev layout stays under tmp`() {
         let dir = PlatformPaths.resolveSocketDir(
             isInstalled: false,
@@ -89,6 +117,9 @@ struct DaemonRestartIsolationTests {
         let text = try Self.readRepoFile("Resources/dev.barkvisor.plist")
         #expect(text.contains("AbandonProcessGroup"))
         #expect(text.contains("<true/>"))
+        let homebrew = try Self.readRepoFile("packaging/homebrew/homebrew.mxcl.barkvisor.plist")
+        #expect(homebrew.contains("AbandonProcessGroup"))
+        #expect(homebrew.contains("<true/>"))
     }
 
     private static func readRepoFile(_ relative: String) throws -> String {
