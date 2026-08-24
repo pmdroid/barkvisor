@@ -15,7 +15,7 @@ import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
-import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaStartBody } from '../utils/ollamaTask'
+import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const auth = useAuthStore()
@@ -160,12 +160,19 @@ async function startModel() {
 }
 
 async function stopModel() {
-  const model = stopTarget.value
-  if (!model) return
+  const name = stopTarget.value?.name
+  if (!name) return
+  const live = store.models.find((row) => row.name === name)
+  const hostId = ollamaRunningHostId(live)
+  if (!hostId) {
+    stopTarget.value = null
+    toast.error(`Ollama is not running ${name}`)
+    return
+  }
   stopping.value = true
   try {
-    await store.stop(model.name, model.locations.find((loc) => loc.running)?.hostId)
-    toast.success(`Ollama unloaded ${model.name}`)
+    await store.stop(name, hostId)
+    toast.success(`Ollama unloaded ${name}`)
     stopTarget.value = null
     await store.fetchCatalog()
   } catch (e: unknown) {

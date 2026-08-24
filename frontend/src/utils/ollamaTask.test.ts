@@ -3,6 +3,7 @@ import {
   ollamaModelMatchesName,
   ollamaPullPercent,
   ollamaPullTaskPath,
+  ollamaRunningHostId,
   ollamaStartBody,
 } from './ollamaTask'
 
@@ -34,6 +35,19 @@ describe('ollama pull/start helpers (PAS-269)', () => {
     expect(ollamaModelMatchesName('llama3:latest', '  ')).toBe(true)
     expect(ollamaModelMatchesName('llama3:latest', 'LLAMA')).toBe(true)
     expect(ollamaModelMatchesName('llama3:latest', 'mistral')).toBe(false)
+  })
+
+  test('Stop uses the live running host, not a stale snapshot', () => {
+    const live = {
+      running: true,
+      locations: [
+        { hostId: 'old', running: false },
+        { hostId: 'desk', running: true },
+      ],
+    }
+    expect(ollamaRunningHostId(live)).toBe('desk')
+    expect(ollamaRunningHostId({ running: false, locations: live.locations })).toBeUndefined()
+    expect(ollamaRunningHostId(undefined)).toBeUndefined()
   })
 
   test('pull progress is a percent', () => {

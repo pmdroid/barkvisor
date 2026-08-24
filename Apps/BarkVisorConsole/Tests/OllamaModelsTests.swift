@@ -20,6 +20,41 @@ struct OllamaModelsTests {
         #expect(object["hostId"] == "desk")
     }
 
+    @Test func stopUsesLiveRunningHostNotSnapshot() {
+        let stale = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: true,
+            locations: [
+                OllamaModelLocation(hostId: "old", displayName: nil, running: true, reachable: true),
+            ],
+        )
+        let live = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: true,
+            locations: [
+                OllamaModelLocation(hostId: "old", displayName: nil, running: false, reachable: true),
+                OllamaModelLocation(hostId: "desk", displayName: nil, running: true, reachable: true),
+            ],
+        )
+        #expect(stale.runningHostId == "old")
+        #expect(OllamaCatalogModel.runningHostId(name: stale.name, in: [live]) == "desk")
+        let stopped = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [
+                OllamaModelLocation(hostId: "desk", displayName: nil, running: false, reachable: true),
+            ],
+        )
+        #expect(OllamaCatalogModel.runningHostId(name: "llama3:latest", in: [stopped]) == nil)
+        #expect(OllamaCatalogModel.runningHostId(name: "missing", in: [live]) == nil)
+    }
+
     @Test func nameFilterIsCaseInsensitiveAndIgnoresBlankQuery() {
         let row = OllamaCatalogModel(
             name: "llama3:latest",

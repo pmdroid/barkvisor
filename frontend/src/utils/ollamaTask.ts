@@ -23,6 +23,15 @@ export function ollamaModelMatchesName(name: string, query: string): boolean {
   return name.toLowerCase().includes(q)
 }
 
+/** Running Device for Stop. Uses the live catalog row, not a dialog snapshot. */
+export function ollamaRunningHostId(model?: {
+  running: boolean
+  locations: { hostId: string; running: boolean }[]
+} | null): string | undefined {
+  if (!model?.running) return undefined
+  return model.locations.find((loc) => loc.running)?.hostId
+}
+
 /** Task progress is 0...1 from the backend. */
 export function ollamaPullPercent(progress: number | null | undefined): number | undefined {
   if (progress == null || Number.isNaN(progress)) return undefined

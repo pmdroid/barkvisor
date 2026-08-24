@@ -79,7 +79,7 @@ struct ModelsView: View {
             presenting: stopCandidate,
         ) { row in
             Button("Stop", role: .destructive) {
-                Task { await model.stopOllama(row.name, hostId: row.locations.first(where: \.running)?.hostId) }
+                Task { await stopLive(row.name) }
                 stopCandidate = nil
             }
             Button("Cancel", role: .cancel) { stopCandidate = nil }
@@ -152,6 +152,14 @@ struct ModelsView: View {
     private func beginStart(_ row: OllamaCatalogModel) {
         startHostId = ""
         startCandidate = row
+    }
+
+    private func stopLive(_ name: String) async {
+        guard let hostId = OllamaCatalogModel.runningHostId(name: name, in: catalog.models) else {
+            model.banner = "Ollama is not running \(name)"
+            return
+        }
+        await model.stopOllama(name, hostId: hostId)
     }
 
     private func startSheet(_ row: OllamaCatalogModel) -> some View {

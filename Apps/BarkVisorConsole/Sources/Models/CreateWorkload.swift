@@ -185,10 +185,11 @@ enum CreateWorkload {
         let disk = coding ? max(diskSizeGB(osFamily: family), CodingAgentImage.defaultDiskGB) : diskSizeGB(
             osFamily: family,
         )
-        let klass: String? = if coding {
-            workloadClass == "house" ? "house" : "agent"
+        let klass: String?
+        if coding {
+            klass = workloadClass == "house" ? "house" : "agent"
         } else {
-            workloadClass == "agent" ? "agent" : nil
+            klass = workloadClass == "agent" ? "agent" : nil
         }
         let cloudInit: CloudInitPayload?
         if coding, !iso {

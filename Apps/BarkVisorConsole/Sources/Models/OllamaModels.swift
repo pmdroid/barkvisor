@@ -30,6 +30,16 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
         }
         .joined(separator: ", ")
     }
+
+    /// Running Device for Stop. Nil when the live catalog row is not running.
+    var runningHostId: String? {
+        guard running else { return nil }
+        return locations.first(where: \.running)?.hostId
+    }
+
+    static func runningHostId(name: String, in models: [OllamaCatalogModel]) -> String? {
+        models.first { $0.name == name }?.runningHostId
+    }
 }
 
 struct OllamaModelLocation: Decodable, Equatable, Hashable {
