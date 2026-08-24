@@ -8,9 +8,7 @@ public enum OllamaSettings {
     public static let apiKeyKey = "ollama.api_key"
 
     public static func maskedAPIKey(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        if raw.count <= 4 { return "••••" }
-        return "••••" + String(raw.suffix(4))
+        nonempty(raw) == nil ? nil : "••••"
     }
 
     public static func load(from db: Database) throws -> (endpoint: URL, apiKey: String?) {
