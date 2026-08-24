@@ -1,6 +1,20 @@
 import SwiftUI
+#if os(iOS)
+    import WebKit
+#endif
 
 struct ChatView: View {
+    var body: some View {
+        #if os(iOS)
+            ChatWebView()
+        #else
+            ChatNativeView()
+        #endif
+    }
+}
+
+/// Mac Chat stays the SwiftUI `/v1/chat/completions` streamer (GitHub #228).
+struct ChatNativeView: View {
     @Environment(AppModel.self) private var model
     @State private var modelName = ""
     @State private var draft = ""
@@ -172,3 +186,114 @@ struct ChatView: View {
         }
     }
 }
+
+#if os(iOS)
+    /// iOS Chat tab: Home origin `/chat` in WKWebView. No third Swift streamer.
+    struct ChatWebView: View {
+        @Environment(AppModel.self) private var model
+
+        var body: some View {
+            Group {
+                if !model.showsChat {
+                    ContentUnavailableView(
+                        "Chat is hidden",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text(
+                            "Install Ollama and pull a model on a Device. Completions use /v1/chat/completions.",
+                        ),
+                    )
+                } else if let client = model.client, let token = client.token, !token.isEmpty {
+                    ChatHomeWebView(origin: client.baseURL, token: token)
+                        .id(client.baseURL.absoluteString + "\u{1e}" + token)
+                } else {
+                    ContentUnavailableView(
+                        "Sign in required",
+                        systemImage: "person.crop.circle.badge.exclamationmark",
+                        description: Text("Chat uses the same session as this Console."),
+                    )
+                }
+            }
+            .navigationTitle("Chat")
+            .task(id: model.showsChat) {
+                await model.refreshOllamaCatalog()
+            }
+        }
+    }
+
+    struct ChatHomeWebView: UIViewRepresentable {
+        var origin: URL
+        var token: String
+
+        func makeCoordinator() -> ChatHomeWebCoordinator {
+            ChatHomeWebCoordinator(origin: origin, token: token)
+        }
+
+        func makeUIView(context: Context) -> WKWebView {
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = .nonPersistent()
+            config.defaultWebpagePreferences.allowsContentJavaScript = true
+            config.userContentController.addUserScript(
+                WKUserScript(
+                    source: ChatWebSession.userScriptSource(token: token),
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: false,
+                ),
+            )
+            let view = WKWebView(frame: .zero, configuration: config)
+            view.navigationDelegate = context.coordinator
+            view.isOpaque = false
+            view.backgroundColor = .systemBackground
+            view.scrollView.keyboardDismissMode = .interactive
+            context.coordinator.load(view)
+            return view
+        }
+
+        func updateUIView(_: WKWebView, context _: Context) {}
+    }
+
+    final class ChatHomeWebCoordinator: NSObject, WKNavigationDelegate {
+        private let homeOrigin: URL
+        private let token: String
+        private var loaded = false
+
+        init(origin: URL, token: String) {
+            homeOrigin = origin
+            self.token = token
+        }
+
+        func load(_ view: WKWebView) {
+            guard !loaded else { return }
+            guard let request = try? ChatWebSession.pageRequest(home: homeOrigin, token: token) else { return }
+            loaded = true
+            if let cookie = ChatWebSession.cookie(home: homeOrigin, token: token) {
+                view.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) {
+                    Task { @MainActor in
+                        view.load(request)
+                    }
+                }
+            } else {
+                view.load(request)
+            }
+        }
+
+        nonisolated func webView(
+            _: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void,
+        ) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+            if url.scheme?.lowercased() == "about" {
+                decisionHandler(.allow)
+                return
+            }
+            if ChatWebSession.isHomeOrigin(url, home: homeOrigin) {
+                decisionHandler(.allow)
+                return
+            }
+            decisionHandler(.cancel)
+        }
+    }
+#endif
