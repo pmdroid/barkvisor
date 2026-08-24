@@ -14,7 +14,7 @@ import Foundation
 /// privileged operations (XPC / host bridge registration), not capability checks.
 public enum PlatformCapabilities {
     /// Product capability: attach VMs to a host bridge / bridged network.
-    /// - macOS: socket_vmnet (requires managed daemon lifecycle below)
+    /// - macOS: operator-managed Homebrew `socket_vmnet` (no BarkVisor helper)
     /// - Linux: QEMU `-netdev bridge` against an existing host bridge (e.g. br0)
     public static var supportsBridgedNetworking: Bool {
         #if os(macOS) || os(Linux)
@@ -25,13 +25,9 @@ public enum PlatformCapabilities {
     }
 
     /// Whether BarkVisor can install/start/stop a privileged bridge helper daemon.
-    /// macOS only (socket_vmnet via XPC helper). Linux host bridges are OS-managed.
+    /// Always false: macOS uses Homebrew `socket_vmnet`; Linux host bridges are OS-managed.
     public static var supportsManagedBridgeDaemon: Bool {
-        #if os(macOS)
-            true
-        #else
-            false
-        #endif
+        false
     }
 
     /// Linux Manage Bridges shows host-bridge setup guidance (no mutation).
@@ -54,7 +50,8 @@ public enum PlatformCapabilities {
         #endif
     }
 
-    /// In-app signed PKG update flow. Always off — upgrade via Homebrew or the distro package.
+    /// In-app signed PKG update flow. Always false: the privileged helper is gone;
+    /// upgrade with Homebrew / the distro package.
     public static var supportsInAppUpdate: Bool {
         false
     }

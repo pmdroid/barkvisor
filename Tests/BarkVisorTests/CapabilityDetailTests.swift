@@ -55,6 +55,26 @@ struct CapabilityDetailTests {
         #expect(helper.reasonCode == CapabilityReasonCode.helperMissing.rawValue)
     }
 
+    @Test func `macos managed bridge daemon is homebrew_service`() {
+        let inv = makeInventory(
+            os: "macOS",
+            arch: "arm64",
+            accelerator: "hvf",
+            features: VirtualizationFeatures(
+                bridgedNetworking: true,
+                managedBridgeDaemon: false,
+                usbPassthrough: true,
+                inAppUpdate: true,
+                kvmDevice: false,
+                qemuBridgeHelper: false,
+            ),
+        )
+        let managed = CapabilityDetailBuilder.detail(for: .managedBridgeDaemon, inventory: inv)
+        #expect(!managed.supported)
+        #expect(managed.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
+        #expect(managed.remediation?.contains("brew install socket_vmnet") == true)
+    }
+
     @Test func `macos hvf host marks kvm as os_unsupported`() {
         let inv = macOSHVFInventory()
         let kvm = CapabilityDetailBuilder.detail(for: .kvmDevice, inventory: inv)
@@ -154,8 +174,10 @@ struct CapabilityDetailTests {
                 #expect(byCode[.bridgedNetworking]?.remediation?.contains("qemu-bridge-helper") == true)
             }
         #elseif os(macOS)
-            #expect(byCode[.managedBridgeDaemon]?.supported == true)
+            #expect(byCode[.managedBridgeDaemon]?.supported == false)
+            #expect(byCode[.managedBridgeDaemon]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
             #expect(byCode[.inAppUpdate]?.supported == false)
+            #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
             #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains("brew") == true)
             #expect(byCode[.bridgedNetworking]?.supported == true)
         #endif

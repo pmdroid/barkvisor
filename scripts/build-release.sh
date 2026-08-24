@@ -61,7 +61,6 @@ STAGE_LIB="$STAGE_DIR/usr/local/lib/barkvisor"
 STAGE_SHARE="$STAGE_DIR/usr/local/share/barkvisor"
 STAGE_QEMU="$STAGE_SHARE/qemu"
 STAGE_FRONTEND="$STAGE_SHARE/frontend/dist"
-STAGE_HELPER="$STAGE_DIR/Library/PrivilegedHelperTools"
 STAGE_LAUNCHD="$STAGE_DIR/Library/LaunchDaemons"
 
 # Legacy variables kept for dep build steps that reference them
@@ -390,19 +389,6 @@ cp -r "$PROJECT_DIR/frontend/dist" "$PROJECT_DIR/Sources/BarkVisor/Resources/fro
 # =============================================================================
 log "Building Swift app (release)..."
 
-# Inject the real Apple Team ID into the helper protocol for release builds.
-HELPER_PROTO="$PROJECT_DIR/Sources/BarkVisorHelperProtocol/HelperProtocol.swift"
-if [ -z "${APPLE_TEAM_ID:-}" ]; then
-    echo "ERROR: APPLE_TEAM_ID must be set for release builds (XPC code-signing verification)"
-    exit 1
-fi
-log_sub "Injecting APPLE_TEAM_ID into HelperProtocol.swift"
-cp "$HELPER_PROTO" "$HELPER_PROTO.bak"
-# Replace the DEVELOPMENT placeholder with the real team ID
-sed -i '' \
-    -e 's/kHelperTeamID = "DEVELOPMENT"/kHelperTeamID = "'"$APPLE_TEAM_ID"'"/' \
-    "$HELPER_PROTO"
-
 # Inject the release version into Config.swift (any current string → $VERSION)
 CONFIG_SWIFT="$PROJECT_DIR/Sources/BarkVisorCore/Config.swift"
 log_sub "Injecting VERSION ($VERSION) into Config.swift"
@@ -414,10 +400,8 @@ ROOT="$PROJECT_DIR" barkvisor_inject_config_version "$VERSION" "$CONFIG_SWIFT"
 swift build -c release --package-path "$PROJECT_DIR"
 
 # Restore source files so the working tree stays clean
-mv "$HELPER_PROTO.bak" "$HELPER_PROTO"
 mv "$CONFIG_SWIFT.bak" "$CONFIG_SWIFT"
 EXECUTABLE="$PROJECT_DIR/.build/release/BarkVisorApp"
-HELPER_EXECUTABLE="$PROJECT_DIR/.build/release/BarkVisorHelper"
 
 # =============================================================================
 # Step 8: Assemble daemon install layout
@@ -426,38 +410,13 @@ log "Assembling daemon install layout..."
 
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_BIN" "$STAGE_LIBEXEC" "$STAGE_LIB" "$STAGE_QEMU" "$STAGE_FRONTEND" \
-         "$STAGE_HELPER" "$STAGE_LAUNCHD"
+         "$STAGE_LAUNCHD"
 
 # Main server daemon binary
 cp "$EXECUTABLE" "$STAGE_BIN/barkvisor"
 
-# Privileged XPC helper
-log_sub "Copying BarkVisorHelper..."
-cp "$HELPER_EXECUTABLE" "$STAGE_HELPER/dev.barkvisor.helper"
-
-# LaunchDaemon plists
+# LaunchDaemon plist (daemon only — no privileged helper)
 cp "$PROJECT_DIR/Resources/dev.barkvisor.plist" "$STAGE_LAUNCHD/dev.barkvisor.plist"
-
-# Generate helper plist with absolute path (installed location)
-cat > "$STAGE_LAUNCHD/dev.barkvisor.helper.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>dev.barkvisor.helper</string>
-    <key>Program</key>
-    <string>/Library/PrivilegedHelperTools/dev.barkvisor.helper</string>
-    <key>MachServices</key>
-    <dict>
-        <key>dev.barkvisor.helper</key>
-        <true/>
-    </dict>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>
-PLIST
 
 stage_host_tool() {
     local name="$1"
@@ -548,9 +507,8 @@ for bin in "$STAGE_LIBEXEC"/*; do
         DYLIB_ARGS+=(-x "$bin")
     fi
 done
-# Also process the main daemon binary and XPC helper
+# Also process the main daemon binary
 DYLIB_ARGS+=(-x "$STAGE_BIN/barkvisor")
-DYLIB_ARGS+=(-x "$STAGE_HELPER/dev.barkvisor.helper")
 
 # dylibbundler rewrites load commands to use the rpath prefix
 # At runtime, binaries will find dylibs via /usr/local/lib/barkvisor/
@@ -565,7 +523,7 @@ xattr -cr "$STAGE_DIR"
 
 # Set rpaths on all Mach-O binaries to find dylibs at /usr/local/lib/barkvisor/
 log_sub "Setting rpaths..."
-for bin in "$STAGE_BIN/barkvisor" "$STAGE_HELPER/dev.barkvisor.helper" "$STAGE_LIBEXEC"/*; do
+for bin in "$STAGE_BIN/barkvisor" "$STAGE_LIBEXEC"/*; do
     [ -x "$bin" ] && file "$bin" | grep -q "Mach-O" || continue
     # Remove all existing rpaths
     otool -l "$bin" 2>/dev/null | awk '/LC_RPATH/{found=1} found && /path /{print $2; found=0}' | while IFS= read -r rp; do
@@ -656,17 +614,12 @@ if [ "$NO_SIGN" = false ]; then
         sign_binary "$bin" "$BUILD_DIR/helper.entitlements" "$ident"
     done
 
-    # 3. Sign XPC helper
-    log_sub "Signing BarkVisorHelper..."
-    sign_binary "$STAGE_HELPER/dev.barkvisor.helper" "$BUILD_DIR/helper.entitlements"
-
-    # 4. Sign main server daemon
+    # 3. Sign main server daemon
     log_sub "Signing barkvisor daemon..."
     sign_binary "$STAGE_BIN/barkvisor" "$BUILD_DIR/server.entitlements" "dev.barkvisor.app"
 
     log_sub "Verifying signatures..."
     codesign --verify --strict "$STAGE_BIN/barkvisor"
-    codesign --verify --strict "$STAGE_HELPER/dev.barkvisor.helper"
 else
     log "Code signing SKIPPED (--no-sign)"
 fi
@@ -743,7 +696,6 @@ DIST
 <p>This installer will:</p>
 <ul>
 <li>Install the BarkVisor server daemon</li>
-<li>Install the BarkVisor daemon and privileged helper</li>
 <li>Requires Homebrew: <code>brew install qemu swtpm socket_vmnet</code></li>
 <li>Create the <code>_barkvisor</code> system user</li>
 <li>Start the server as a LaunchDaemon</li>
@@ -817,9 +769,7 @@ log_sub "/usr/local/bin/barkvisor                          (server daemon)"
 log_sub "/usr/local/libexec/barkvisor/                     (xz, mkisofs; QEMU from Homebrew)"
 log_sub "/usr/local/lib/barkvisor/                         (shared libraries)"
 log_sub "/usr/local/share/barkvisor/                       (frontend, firmware)"
-log_sub "/Library/PrivilegedHelperTools/dev.barkvisor.helper"
 log_sub "/Library/LaunchDaemons/dev.barkvisor.plist"
-log_sub "/Library/LaunchDaemons/dev.barkvisor.helper.plist"
 echo ""
 log "Dependency versions:"
 log_sub "QEMU:          ${QEMU_VERSION}"

@@ -89,17 +89,14 @@ extension VMManager {
             // QEMU `-netdev bridge` only needs a live host bridge + qemu-bridge-helper ACL.
             return nil
         #else
-            let bridge = try await dbPool.read { db in
-                try BridgeRecord.filter(Column("interface") == iface).fetchOne(db)
-            }
-            if bridge?.status != "active" {
-                let detail = bridge.map { "status: \($0.status)" } ?? "no bridge record"
+            do {
+                return try QEMUBuilder.resolveSocketVmnetSocketPath(bridgeInterface: iface)
+            } catch {
                 throw BarkVisorError.bridgeNotReady(
-                    "Bridge for \(iface) is not active (\(detail)). "
-                        + "Set up the bridge in Network settings.",
+                    "socket_vmnet is not running for \(iface). "
+                        + SocketVmnetDiscovery.installHint + ".",
                 )
             }
-            return bridge?.socketPath
         #endif
     }
 

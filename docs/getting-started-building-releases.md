@@ -26,7 +26,7 @@ The frontend is built with `bun`. Ensure `bun` is installed before running the s
 
 ### Required environment variable
 
-- `APPLE_TEAM_ID` -- Your Apple Developer Team ID. This is injected into `Sources/BarkVisorHelperProtocol/HelperProtocol.swift` at build time so the XPC privileged helper can verify the code signature of the main app. The script will abort if this is not set.
+- `APPLE_TEAM_ID` -- Your Apple Developer Team ID. Required for notarizing a signed pkg. There is no privileged helper to inject a team ID into.
 
 ## Build steps
 
@@ -72,14 +72,13 @@ Runs `bun install` and `bun run build` in the `frontend/` directory to produce t
 
 ### Step 7: Build Swift app (release)
 
-Injects the real `APPLE_TEAM_ID` into `HelperProtocol.swift` (replacing the `DEVELOPMENT` placeholder) and the release version into `Config.version` via `scripts/lib/inject-version.sh` (replacing the in-tree `0.0.0-dev` default, derived from the git tag / `BARKVISOR_VERSION`). Then runs `swift build -c release`. Both source files are restored afterward so the working tree stays clean.
+Injects the release version into `Config.version` via `scripts/lib/inject-version.sh` (replacing the in-tree `0.0.0-dev` default, derived from the git tag / `BARKVISOR_VERSION`). Then runs `swift build -c release`. The source file is restored afterward so the working tree stays clean.
 
 **Linux packages:** the same inject runs before `swift build` in `.github/workflows/linux-packages.yml` and in Docker builds (`BARKVISOR_VERSION` / `VERSION`). Package metadata version alone does not change the binary; inject must happen at compile time.
 
-This produces two executables:
+This produces:
 
 - `.build/release/BarkVisorApp` -- the main application
-- `.build/release/BarkVisorHelper` -- the privileged XPC helper daemon
 
 ### Step 8: Assemble daemon install layout
 
@@ -97,14 +96,11 @@ usr/local/
 Library/
   LaunchDaemons/
     dev.barkvisor.plist
-    dev.barkvisor.helper.plist
-  PrivilegedHelperTools/
-    dev.barkvisor.helper        (XPC helper)
 ```
 
 ### Step 9: Bundle dylibs with dylibbundler
 
-Runs `dylibbundler` against all Mach-O binaries in the staged layout (main executable, helper, and all helper binaries). This copies required dynamic libraries into `lib/barkvisor/` and rewrites load paths. Extended attributes are stripped before and after this step, and duplicate `LC_RPATH` entries are deduplicated.
+Runs `dylibbundler` against all Mach-O binaries in the staged layout (main executable and libexec tools). This copies required dynamic libraries into `lib/barkvisor/` and rewrites load paths. Extended attributes are stripped before and after this step, and duplicate `LC_RPATH` entries are deduplicated.
 
 ### Step 10: Code sign with entitlements
 
@@ -116,7 +112,7 @@ The entitlements applied to both the main app and helper binaries are:
 - `com.apple.security.network.server` -- required for the Vapor HTTP server
 - `com.apple.security.network.client` -- required for outbound connections (image downloads, repository sync)
 
-Signing order: shared libraries in `lib/barkvisor/` first, then helper binaries in `libexec/barkvisor/`, then the XPC helper, then the main executable.
+Signing order: shared libraries in `lib/barkvisor/` first, then helper binaries in `libexec/barkvisor/`, then the main executable.
 
 ### Step 11: Create standalone archive
 

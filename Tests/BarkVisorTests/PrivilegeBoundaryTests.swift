@@ -1,23 +1,17 @@
 import Foundation
 import Testing
 
-/// Ensures privileged XPC access stays behind `PrivilegeService`.
-/// Controllers and other production code must not reference `HelperXPCClient` directly.
+/// PAS-294: privileged XPC helper is gone. Fail if it is reintroduced.
 struct PrivilegeBoundaryTests {
-    private static let allowedRelativePaths: Set<String> = [
-        "BarkVisorCore/Services/PrivilegeService.swift",
-        "BarkVisorCore/Services/HelperXPCClient.swift",
-    ]
-
-    @Test func `helperXPCClient is only used from PrivilegeService and its own file`() throws {
+    @Test func `helper XPC types are not referenced in Sources`() throws {
         let sourcesRoot = try Self.packageSourcesRoot()
-        let violations = try Self.scanForHelperXPCClient(in: sourcesRoot)
+        let violations = try Self.scan(in: sourcesRoot, needles: ["HelperXPCClient", "BarkVisorHelper"])
 
         #expect(
             violations.isEmpty,
             """
-            HelperXPCClient must only appear in PrivilegeService.swift and HelperXPCClient.swift. \
-            Controllers and other modules must go through PrivilegeService.shared.
+            Privileged helper / XPC client must stay removed (PAS-294). \
+            Attach to Homebrew socket_vmnet instead.
             Violations:
             \(violations.joined(separator: "\n"))
             """,
@@ -42,7 +36,7 @@ struct PrivilegeBoundaryTests {
         return sources
     }
 
-    private static func scanForHelperXPCClient(in sourcesRoot: URL) throws -> [String] {
+    private static func scan(in sourcesRoot: URL, needles: [String]) throws -> [String] {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: sourcesRoot,
@@ -57,11 +51,9 @@ struct PrivilegeBoundaryTests {
             guard fileURL.pathExtension == "swift" else { continue }
 
             let relative = relativePath(of: fileURL, under: sourcesRoot)
-            if allowedRelativePaths.contains(relative) { continue }
-
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            if contents.contains("HelperXPCClient") {
-                violations.append(relative)
+            for needle in needles where contents.contains(needle) {
+                violations.append("\(relative): \(needle)")
             }
         }
         return violations.sorted()

@@ -662,34 +662,30 @@ public enum QEMUBuilder {
 
     // MARK: - socket_vmnet resolution
 
-    /// Homebrew/lima shared sockets (not per-iface). Must not be used as a fallback.
     static func isSharedSocketVmnetPath(_ path: String) -> Bool {
-        path == "/var/run/socket_vmnet" || path == "/opt/homebrew/var/run/socket_vmnet"
+        SocketVmnetDiscovery.isSharedSocketPath(path)
     }
 
-    /// Per-iface sockets only. Shared `/var/run/socket_vmnet` is not a fallback (PAS-278).
+    /// Per-iface (operator lima plist) then Homebrew shared `brew services` socket.
     public static func socketVmnetSocketCandidates(bridgeInterface: String) -> [String] {
-        [
-            "/opt/homebrew/var/run/socket_vmnet.bridged.\(bridgeInterface)",
-            "/var/run/socket_vmnet.bridged.\(bridgeInterface)",
-        ]
+        SocketVmnetDiscovery.candidates(bridgeInterface: bridgeInterface)
     }
 
-    /// Resolve the daemon socket for `bridgeInterface`. Missing per-iface socket is an error.
+    /// Resolve an existing `socket_vmnet` socket. BarkVisor does not start the daemon.
     static func resolveSocketVmnetSocketPath(
         bridgeInterface: String?,
         dbSocketPath: String? = nil,
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
     ) throws -> String {
-        if let dbPath = dbSocketPath, !isSharedSocketVmnetPath(dbPath), fileExists(dbPath) {
+        if let dbPath = dbSocketPath, fileExists(dbPath), !isSharedSocketVmnetPath(dbPath) {
             return dbPath
         }
         let iface = bridgeInterface ?? "en0"
         guard let socketPath = socketVmnetSocketCandidates(bridgeInterface: iface).first(where: fileExists)
         else {
             throw BarkVisorError.processSpawnFailed(
-                "socket_vmnet daemon socket not found for \(iface). "
-                    + "Install a managed bridge for that interface, then retry.",
+                "socket_vmnet daemon socket not found. "
+                    + SocketVmnetDiscovery.installHint,
             )
         }
         return socketPath

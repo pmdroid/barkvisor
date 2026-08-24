@@ -62,6 +62,17 @@ struct NetworkCapabilityTests {
         #expect(err?.errorDescription?.contains("does not exist") == true)
     }
 
+    @Test func `requireBridgedInterface rejects fake vmnet name`() {
+        #expect(!HostInfoService.interfaceExists("vmnet"))
+        let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
+        guard advertised else { return }
+        let err = #expect(throws: BarkVisorError.self) {
+            try NetworkCapability.requireBridgedInterface("vmnet")
+        }
+        #expect(err?.code == "interface_missing")
+        #expect(err?.httpStatus == 422)
+    }
+
     @Test func `requireBridgedInterface invalid name is invalid_bridge`() {
         let advertised = HostInventoryService.snapshot().virtualization.features.bridgedNetworking
         guard advertised else { return }
