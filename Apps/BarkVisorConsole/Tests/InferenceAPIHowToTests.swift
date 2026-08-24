@@ -94,4 +94,69 @@ struct InferenceAPIHowToTests {
         #expect(howTo.lanBaseURL == "http://[2001:db8::1]:7777/v1")
         #expect(howTo.cageBaseURL == "http://10.0.2.2:11434/v1")
     }
+
+    @Test func `host precedence is saved advertise then tailnet then LAN`() {
+        #expect(InferenceAPIHowTo.advertiseHostName("https://box.ts.net:443") == "box.ts.net")
+        #expect(InferenceAPIHowTo.advertiseHostName("http://box.ts.net:7777/ignored") == "box.ts.net")
+        #expect(InferenceAPIHowTo.advertiseHostName("100.64.1.2") == "100.64.1.2")
+        #expect(
+            InferenceAPIHowTo.tailnetListenHost(
+                RemoteAccessTailnet(available: true, ip: "100.64.1.2", dnsName: "box.tailnet.ts.net"),
+            ) == "box.tailnet.ts.net",
+        )
+        #expect(
+            InferenceAPIHowTo.tailnetListenHost(
+                RemoteAccessTailnet(available: true, ip: "100.64.1.2", dnsName: nil),
+            ) == "100.64.1.2",
+        )
+        #expect(
+            InferenceAPIHowTo.tailnetListenHost(
+                RemoteAccessTailnet(available: false, ip: "100.64.1.2", dnsName: "stale.ts.net"),
+            ) == "",
+        )
+
+        let advertised = InferenceAPIHowTo.snippets(
+            role: .thisDevice,
+            originHost: "192.168.30.1",
+            originPort: 8_443,
+            originScheme: "https",
+            memberHost: nil,
+            grantPlaintext: nil,
+            advertiseHost: "https://box.ts.net:443",
+            tailnetHost: "box.tailnet.ts.net",
+        )
+        #expect(advertised.lanBaseURL == "http://box.ts.net:7777/v1")
+        #expect(!advertised.lanBaseURL.contains("https://"))
+        #expect(!advertised.lanCompletionsURL.contains(":443"))
+        #expect(advertised.cageBaseURL == "http://10.0.2.2:11434/v1")
+        #expect(
+            InferenceAPIHowTo.lanListenPort(
+                role: .thisDevice,
+                originPort: 443,
+                memberHost: nil,
+                advertiseHost: "https://box.ts.net:443",
+                tailnetHost: nil,
+            ) == DeviceURL.defaultPort,
+        )
+
+        let tailnet = InferenceAPIHowTo.snippets(
+            role: .thisDevice,
+            originHost: "192.168.30.1",
+            originPort: 7_777,
+            originScheme: "http",
+            memberHost: nil,
+            grantPlaintext: nil,
+            advertiseHost: "  ",
+            tailnetHost: "100.64.1.2",
+        )
+        #expect(tailnet.lanBaseURL == "http://100.64.1.2:7777/v1")
+
+        let lan = InferenceAPIHowTo.snippets(
+            role: .thisDevice,
+            origin: URL(string: "http://192.168.30.1:7777"),
+            memberHost: nil,
+        )
+        #expect(lan.lanBaseURL == "http://192.168.30.1:7777/v1")
+        #expect(lan.cageBaseURL == CodingAgentImage.homeOllamaGrantURL)
+    }
 }

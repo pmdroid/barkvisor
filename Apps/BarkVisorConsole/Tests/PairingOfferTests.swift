@@ -97,6 +97,35 @@ struct PairingOfferTests {
         #expect(PairingAdvertisedHost.applyCustomHost("box.home.example", currentIssued: "box.home.example") == .skip)
         #expect(PairingAdvertisedHost.applyCustomHost("  nas  ", currentIssued: "192.168.0.8") == .issue("nas"))
         #expect(PairingAdvertisedHost.applyCustomHost("8.8.8.8", currentIssued: nil) == .rejectedHost)
+        let hosts = ["studio.local", "192.168.0.8", "100.64.0.8", "box.tailnet.ts.net"]
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(advertiseUrl: "192.168.0.8", listedHosts: hosts)
+                == .init(selectedHost: "192.168.0.8", customHost: ""),
+        )
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(
+                advertiseUrl: "box.tailnet.ts.net", listedHosts: hosts,
+            ) == .init(selectedHost: "box.tailnet.ts.net", customHost: ""),
+        )
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(advertiseUrl: "home.ts.net", listedHosts: hosts)
+                == .init(selectedHost: PairingAdvertisedHost.customSentinel, customHost: "home.ts.net"),
+        )
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(advertiseUrl: nil, listedHosts: hosts)
+                == .init(selectedHost: PairingAdvertisedHost.customSentinel, customHost: ""),
+        )
+        #expect(PairingAdvertisedHost.hostForOffer(selectedHost: "100.64.0.8", customHost: "") == "100.64.0.8")
+        #expect(
+            PairingAdvertisedHost.hostForOffer(
+                selectedHost: PairingAdvertisedHost.customSentinel, customHost: "  nas.home  ",
+            ) == "nas.home",
+        )
+        #expect(
+            PairingAdvertisedHost.hostForOffer(
+                selectedHost: PairingAdvertisedHost.customSentinel, customHost: "",
+            ) == nil,
+        )
         #expect(LoginURI.isAllowedHost("10.0.0.4"))
         #expect(LoginURI.isAllowedHost("172.16.1.2"))
         #expect(LoginURI.isAllowedHost("100.64.0.8"))

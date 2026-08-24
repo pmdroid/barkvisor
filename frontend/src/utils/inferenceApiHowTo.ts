@@ -16,7 +16,17 @@ export type InferenceHowToInput = {
   originPort?: number | null
   originScheme?: string | null
   memberHost?: string | null
+  /** Saved advertise URL/host. Hostname only — never scheme or port. */
+  advertiseHost?: string | null
+  /** Tailscale MagicDNS or tailnet IP when no advertise host is set. */
+  tailnetHost?: string | null
   grantPlaintext?: string | null
+}
+
+export type TailnetListenInfo = {
+  available?: boolean
+  ip?: string | null
+  dnsName?: string | null
 }
 
 export type InferenceHowTo = {
@@ -39,7 +49,55 @@ export function formatListenHost(host: string): string {
   return h.includes(':') ? `[${h}]` : h
 }
 
+/** Hostname only from a saved advertise URL (`https://box.ts.net:443` → `box.ts.net`). */
+export function advertiseHostName(raw?: string | null): string {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return ''
+  if (trimmed.includes('://')) {
+    try {
+      const url = new URL(trimmed)
+      return stripListenHost(url.hostname || '')
+    } catch {
+      return ''
+    }
+  }
+  if (trimmed.startsWith('[')) {
+    const close = trimmed.indexOf(']')
+    if (close > 1) {
+      const rest = trimmed.slice(close + 1)
+      if (!rest || rest.startsWith(':')) {
+        return stripListenHost(trimmed.slice(1, close))
+      }
+    }
+  }
+  const colon = trimmed.lastIndexOf(':')
+  if (colon > 0 && trimmed.indexOf(':') === colon) {
+    const after = trimmed.slice(colon + 1)
+    if (after && /^\d+$/.test(after)) {
+      return stripListenHost(trimmed.slice(0, colon))
+    }
+  }
+  return stripListenHost(trimmed)
+}
+
+/** MagicDNS, then tailnet IP. Empty when Tailscale is down. */
+export function tailnetListenHost(tailscale?: TailnetListenInfo | null): string {
+  if (!tailscale?.available) return ''
+  return stripListenHost(tailscale.dnsName ?? '') || stripListenHost(tailscale.ip ?? '')
+}
+
+/** saved advertise host > tailnet > (member / origin). */
+export function preferredListenHost(input: InferenceHowToInput): string {
+  const advertised = advertiseHostName(input.advertiseHost)
+  if (advertised) return advertised
+  const tailnet = stripListenHost(input.tailnetHost ?? '')
+  if (tailnet) return tailnet
+  return ''
+}
+
 export function lanListenHost(input: InferenceHowToInput): string {
+  const preferred = preferredListenHost(input)
+  if (preferred) return preferred
   if (input.role === 'member') {
     const member = stripListenHost(input.memberHost ?? '')
     if (member) return member
@@ -48,6 +106,7 @@ export function lanListenHost(input: InferenceHowToInput): string {
 }
 
 export function lanListenPort(input: InferenceHowToInput): number {
+  if (preferredListenHost(input)) return HOME_LISTEN_PORT
   if (input.role === 'member' && stripListenHost(input.memberHost ?? '')) {
     return HOME_LISTEN_PORT
   }
@@ -57,6 +116,10 @@ export function lanListenPort(input: InferenceHowToInput): number {
 }
 
 export function lanOrigin(input: InferenceHowToInput): string {
+  if (preferredListenHost(input)) {
+    const host = formatListenHost(lanListenHost(input) || '127.0.0.1')
+    return `http://${host}:${HOME_LISTEN_PORT}`
+  }
   const memberDirect = Boolean(stripListenHost(input.memberHost ?? '')) && input.role === 'member'
   const rawScheme = memberDirect
     ? 'http'
@@ -115,6 +178,8 @@ export function inferenceHowToFromOrigin(
   extra: {
     role?: InferenceHostRole
     memberHost?: string | null
+    advertiseHost?: string | null
+    tailnetHost?: string | null
     grantPlaintext?: string | null
   } = {},
 ): InferenceHowTo {
@@ -135,6 +200,8 @@ export function inferenceHowToFromOrigin(
     originPort: port,
     originScheme: scheme,
     memberHost: extra.memberHost,
+    advertiseHost: extra.advertiseHost,
+    tailnetHost: extra.tailnetHost,
     grantPlaintext: extra.grantPlaintext,
   })
 }

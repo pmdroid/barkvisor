@@ -3330,7 +3330,7 @@ components:
     RemoteAccessStatus:
       type: object
       additionalProperties: false
-      required: [tailscale, wireguard, advertiseUrl, requireTailnetForRemote]
+      required: [tailscale, wireguard, advertiseUrl, requireTailnetForRemote, advertisedHosts]
       properties:
         tailscale:
           $ref: "#/components/schemas/TailnetInfo"
@@ -3342,6 +3342,11 @@ components:
           description: Host stamped on pairing/login QR when the operator does not pick another
         requireTailnetForRemote:
           type: boolean
+        advertisedHosts:
+          type: array
+          items:
+            type: string
+          description: Same picker list as pairing/login offers — hostname, LAN, Tailscale IP/MagicDNS
 
     RemoteAccessUpdateRequest:
       type: object

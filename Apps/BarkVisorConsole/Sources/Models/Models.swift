@@ -966,6 +966,42 @@ struct PairingIssue: Decodable, Hashable {
     var apiVersion: Int
 }
 
+struct RemoteAccessTailnet: Decodable, Hashable {
+    var available: Bool
+    var ip: String?
+    var dnsName: String?
+}
+
+struct RemoteAccessWireGuard: Decodable, Hashable {
+    var configured: Bool
+}
+
+struct RemoteAccessStatus: Decodable, Hashable {
+    var tailscale: RemoteAccessTailnet
+    var wireguard: RemoteAccessWireGuard
+    var advertiseUrl: String?
+    var requireTailnetForRemote: Bool
+    var advertisedHosts: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case tailscale, wireguard, advertiseUrl, requireTailnetForRemote, advertisedHosts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tailscale = try container.decode(RemoteAccessTailnet.self, forKey: .tailscale)
+        wireguard = try container.decode(RemoteAccessWireGuard.self, forKey: .wireguard)
+        advertiseUrl = try container.decodeIfPresent(String.self, forKey: .advertiseUrl)
+        requireTailnetForRemote = try container.decode(Bool.self, forKey: .requireTailnetForRemote)
+        advertisedHosts = try container.decodeIfPresent([String].self, forKey: .advertisedHosts) ?? []
+    }
+}
+
+struct RemoteAccessUpdate: Encodable, Equatable {
+    var requireTailnetForRemote: Bool
+    var advertiseUrl: String
+}
+
 enum PairingExpiry {
     /// Remaining TTL from the offer's absolute `expiresAt`, not the issued `ttlSeconds` snapshot.
     static func remainingSeconds(expiresAt: String, now: Date = Date()) -> Int {

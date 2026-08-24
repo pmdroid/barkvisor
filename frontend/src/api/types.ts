@@ -781,6 +781,7 @@ export interface RemoteAccessStatus {
   wireguard: { configured: boolean }
   advertiseUrl: string | null
   requireTailnetForRemote: boolean
+  advertisedHosts: string[]
 }
 
 /** GET/PUT /api/system/library/settings */
