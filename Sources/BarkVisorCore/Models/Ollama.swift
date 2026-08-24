@@ -264,13 +264,43 @@ public struct OllamaFitResult: Sendable, Equatable {
     }
 }
 
-public struct OllamaSettingsSnapshot: Codable, Sendable, Equatable {
+public struct OllamaHostSettings: Codable, Sendable, Equatable {
+    public var hostId: String
     public var endpoint: String
     public var hasApiKey: Bool
+    public var apiKeyMasked: String?
 
-    public init(endpoint: String, hasApiKey: Bool) {
+    public init(hostId: String, endpoint: String, hasApiKey: Bool, apiKeyMasked: String? = nil) {
+        self.hostId = hostId
         self.endpoint = endpoint
         self.hasApiKey = hasApiKey
+        self.apiKeyMasked = apiKeyMasked
+    }
+}
+
+/// Masked Home settings. `apiKey` is never present on read.
+public struct OllamaSettingsSnapshot: Codable, Sendable, Equatable {
+    public var hosts: [OllamaHostSettings]
+
+    public init(hosts: [OllamaHostSettings] = []) {
+        self.hosts = hosts
+    }
+
+    public func host(_ hostId: String) -> OllamaHostSettings? {
+        hosts.first { $0.hostId == hostId }
+    }
+}
+
+/// PUT body `{ hostId, endpoint?, apiKey? }`. Omit `apiKey` to leave the stored key; send `""` to clear.
+public struct OllamaSettingsUpdate: Codable, Sendable, Equatable {
+    public var hostId: String
+    public var endpoint: String?
+    public var apiKey: String?
+
+    public init(hostId: String, endpoint: String? = nil, apiKey: String? = nil) {
+        self.hostId = hostId
+        self.endpoint = endpoint
+        self.apiKey = apiKey
     }
 }
 

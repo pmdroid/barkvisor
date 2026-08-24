@@ -51,6 +51,11 @@ struct HomeOllamaController: RouteCollection {
         home.post("pull", use: pull)
         home.post("start", use: start)
         home.post("stop", use: stop)
+        home.get("settings", use: getSettings)
+        home.put("settings", use: putSettings)
+
+        routes.get("api", "ollama", "settings", use: getSettings)
+        routes.put("api", "ollama", "settings", use: putSettings)
 
         routes.get("api", "tags", use: nativeTags)
         routes.get("api", "ps", use: nativePS)
@@ -144,6 +149,76 @@ struct HomeOllamaController: RouteCollection {
         )
         _ = try await refresh(db: req.db, user: user)
         return .noContent
+    }
+
+    @Sendable
+    func getSettings(req: Vapor.Request) async throws -> OllamaSettingsSnapshot {
+        _ = try Self.requireAdmin(req)
+        return try await listSettings(db: req.db)
+    }
+
+    @Sendable
+    func putSettings(req: Vapor.Request) async throws -> OllamaSettingsSnapshot {
+        let user = try Self.requireAdmin(req)
+        let body = try req.content.decode(OllamaSettingsUpdate.self)
+        return try await putSettings(body: body, db: req.db, user: user)
+    }
+
+    func putSettings(
+        body: OllamaSettingsUpdate,
+        db: DatabasePool,
+        user: AuthenticatedUser,
+    ) async throws -> OllamaSettingsSnapshot {
+        let target = body.hostId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !target.isEmpty, target != hostId, body.endpoint != nil || body.apiKey != nil {
+            try await proxyEmpty(
+                hostId: target,
+                method: "PUT",
+                path: "/api/ollama/settings",
+                body: JSONEncoder().encode(
+                    OllamaSettingsUpdate(
+                        hostId: target,
+                        endpoint: body.endpoint,
+                        apiKey: body.apiKey,
+                    ),
+                ),
+                user: user,
+            )
+        }
+        return try await db.write { db in
+            try OllamaSettings.save(
+                hostId: body.hostId,
+                endpoint: body.endpoint,
+                apiKey: body.apiKey,
+                updateApiKey: body.apiKey != nil,
+                selfHostId: hostId,
+                db: db,
+            )
+        }
+    }
+
+    func listSettings(db: DatabasePool) async throws -> OllamaSettingsSnapshot {
+        let listed = HomeDeviceDirectory.list(
+            dataDir: dataDir,
+            hostId: hostId,
+            displayName: ProcessInfo.processInfo.hostName,
+            devices: devices,
+        )
+        return try await db.write { db in
+            try OllamaSettings.list(
+                knownHostIds: listed.devices.map(\.hostId),
+                selfHostId: hostId,
+                from: db,
+            )
+        }
+    }
+
+    static func requireAdmin(_ req: Vapor.Request) throws -> AuthenticatedUser {
+        let user = try req.requireUser
+        guard user.userRole == .admin else {
+            throw BarkVisorError.forbidden("Admin only")
+        }
+        return user
     }
 
     @Sendable

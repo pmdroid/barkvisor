@@ -707,9 +707,21 @@ export interface OllamaHomeCatalog {
   devices: OllamaDeviceStatus[]
 }
 
-export interface OllamaSettingsSnapshot {
+export interface OllamaHostSettings {
+  hostId: string
   endpoint: string
   hasApiKey: boolean
+  apiKeyMasked?: string | null
+}
+
+export interface OllamaSettingsSnapshot {
+  hosts: OllamaHostSettings[]
+}
+
+export interface OllamaSettingsUpdate {
+  hostId: string
+  endpoint?: string
+  apiKey?: string
 }
 
 export interface OllamaTaskAccepted {
