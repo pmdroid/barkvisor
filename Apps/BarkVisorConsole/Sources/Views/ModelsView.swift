@@ -10,22 +10,29 @@ struct ModelsView: View {
     @State private var pullEvent: OllamaTaskEvent?
 
     var body: some View {
-        Group {
-            if !model.ollamaLoaded {
-                ProgressView("Loading Ollama…")
-            } else if !model.ollamaCatalog.anyReachable {
+        content
+            .refreshable { await model.refreshOllama() }
+            .task { await model.refreshOllama() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !model.ollamaLoaded {
+            ProgressView("Loading Ollama…")
+        } else if model.ollamaCatalog?.anyReachable != true {
                 ContentUnavailableView(
                     "Ollama is not reachable",
                     systemImage: "cube",
-                    description: Text(model.ollamaCatalog.devices.first?.installHint ?? "Install Ollama on a Device."),
+                    description: Text(model.ollamaCatalog?.devices.first?.installHint ?? "Install Ollama on a Device."),
                 )
             } else {
-                List {
+                VStack(alignment: .leading, spacing: 0) {
+                Form {
                     Section("Pull a model") {
                         TextField("llama3", text: $pullName)
                         Picker(Copy.device, selection: $pullHostId) {
                             Text("Any reachable \(Copy.device)").tag("")
-                            ForEach(model.ollamaCatalog.devices.filter(\.reachable)) { device in
+                            ForEach(reachableOllamaDevices, id: \.hostId) { device in
                                 Text(device.title).tag(device.hostId)
                             }
                         }
@@ -46,44 +53,28 @@ struct ModelsView: View {
                             .disabled(pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
-                    Section("Models") {
-                        if model.ollamaCatalog.models.isEmpty {
-                            Text("Pull a model to use chat completions through BarkVisor.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(model.ollamaCatalog.models) { row in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(row.name).fontWeight(.medium)
-                                        Text(row.locationLine)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text(row.running ? "Running" : "Pulled")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    if row.running {
-                                        Button("Stop") {
-                                            Task { await model.stopOllama(row.name, hostId: row.locations.first(where: \.running)?.hostId) }
-                                        }
-                                        .disabled(model.actionIDs.contains("ollama/\(row.name)"))
-                                    } else {
-                                        Button("Start") {
-                                            Task { await model.startOllama(row.name) }
-                                        }
-                                        .disabled(model.actionIDs.contains("ollama/\(row.name)"))
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
-                .platformListStyle()
+                OllamaCatalogRows(
+                    models: catalogModels,
+                    actionIDs: model.actionIDs,
+                    onStart: { name in
+                        Task { await model.startOllama(name) }
+                    },
+                    onStop: { name, hostId in
+                        Task { await model.stopOllama(name, hostId: hostId) }
+                    },
+                )
+                Spacer(minLength: 0)
+                }
             }
-        }
-        .refreshable { await model.refreshOllama() }
-        .task { await model.refreshOllama() }
+    }
+
+    private var catalogModels: [OllamaCatalogModel] {
+        model.ollamaCatalog?.models ?? []
+    }
+
+    private var reachableOllamaDevices: [OllamaDeviceStatus] {
+        (model.ollamaCatalog?.devices ?? []).filter(\.reachable)
     }
 
     private var pullFraction: Double? {
@@ -139,6 +130,55 @@ struct ModelsView: View {
             model.banner = "Ollama pull cancelled"
         } catch {
             model.present(error)
+        }
+    }
+}
+
+private struct OllamaCatalogRows: View {
+    let models: [OllamaCatalogModel]
+    var actionIDs: Set<String>
+    var onStart: (String) -> Void
+    var onStop: (String, String?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+        Text("Models")
+            .font(.headline)
+            .padding(.horizontal)
+            .padding(.top, 12)
+        if models.isEmpty {
+            Text("Pull a model to use chat completions through BarkVisor.")
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+        } else {
+            ForEach(models, id: \.name) { row in
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.name).fontWeight(.medium)
+                        Text(row.locationLine)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(row.running ? "Running" : "Pulled")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if row.running {
+                        Button("Stop") {
+                            onStop(row.name, row.locations.first(where: \.running)?.hostId)
+                        }
+                        .disabled(actionIDs.contains("ollama/\(row.name)"))
+                    } else {
+                        Button("Start") {
+                            onStart(row.name)
+                        }
+                        .disabled(actionIDs.contains("ollama/\(row.name)"))
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+            }
+        }
         }
     }
 }
