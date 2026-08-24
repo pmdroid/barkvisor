@@ -127,7 +127,8 @@ struct OllamaModelsTests {
             .appendingPathComponent("Sources/Views/ModelsView.swift")
         let source = try String(contentsOf: url, encoding: .utf8)
         #expect(source.contains("Home holds upstream keys per"))
-        #expect(source.contains("OllamaSettingsUpdate(hostId:"))
+        #expect(source.contains("OllamaSettingsUpdate.saveKey(hostId:"))
+        #expect(!source.contains("apiKey: keyDraft"))
         #expect(!source.contains("saved on this Device"))
         #expect(source.contains("ShareLink("))
         #expect(source.contains("OllamaPsShareFile(models: catalog.models)"))
@@ -173,6 +174,19 @@ struct OllamaModelsTests {
         #expect(object["hostId"] == "desk")
         #expect(object["apiKey"] == "secret")
         #expect(object["endpoint"] == nil)
+        #expect(OllamaSettingsUpdate.saveKey(hostId: "desk", draft: "") == nil)
+        #expect(OllamaSettingsUpdate.saveKey(hostId: "desk", draft: "   ") == nil)
+        #expect(OllamaSettingsUpdate.saveKey(hostId: "", draft: "secret") == nil)
+        #expect(
+            OllamaSettingsUpdate.saveKey(hostId: " desk ", draft: " secret ")
+                == OllamaSettingsUpdate(hostId: "desk", apiKey: "secret"),
+        )
+        let omitted = try encoder.encode(OllamaSettingsUpdate(hostId: "desk"))
+        let omittedObject = try decoder.decode([String: String].self, from: omitted)
+        #expect(omittedObject["apiKey"] == nil)
+        let cleared = try encoder.encode(OllamaSettingsUpdate(hostId: "desk", apiKey: ""))
+        let clearedObject = try decoder.decode([String: String].self, from: cleared)
+        #expect(clearedObject["apiKey"] == "")
     }
 
     @Test func catalogDecodesAndTaskPercentIs0to100() throws {
