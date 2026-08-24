@@ -31,6 +31,17 @@ public struct CommandResult: Sendable {
 }
 
 public enum PlatformProcess {
+    /// Best-effort argv for a live process, or nil.
+    public static func arguments(pid: Int32) -> [String]? {
+        #if os(macOS)
+            return darwinArguments(pid: pid)
+        #elseif os(Linux)
+            return linuxArguments(pid: pid)
+        #else
+            return nil
+        #endif
+    }
+
     /// Best-effort absolute path for a process executable, or nil.
     public static func executablePath(pid: Int32) -> String? {
         #if os(macOS)
@@ -140,6 +151,55 @@ public enum PlatformProcess {
     }
 
     // MARK: - Helpers
+
+    #if os(macOS)
+        private static func darwinArguments(pid: Int32) -> [String]? {
+            var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+            var size = 0
+            guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
+                return nil
+            }
+            var buf = [CChar](repeating: 0, count: size)
+            guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return nil }
+            var argc: Int32 = 0
+            memcpy(&argc, buf, MemoryLayout<Int32>.size)
+            guard argc > 0 else { return nil }
+            var index = MemoryLayout<Int32>.size
+            while index < size, buf[index] != 0 {
+                index += 1
+            }
+            while index < size, buf[index] == 0 {
+                index += 1
+            }
+            var args: [String] = []
+            args.reserveCapacity(Int(argc))
+            for _ in 0 ..< argc {
+                guard index < size else { break }
+                let start = index
+                while index < size, buf[index] != 0 {
+                    index += 1
+                }
+                let arg = buf.withUnsafeBufferPointer { ptr -> String in
+                    guard let base = ptr.baseAddress else { return "" }
+                    return String(cString: base + start)
+                }
+                args.append(arg)
+                index += 1
+            }
+            return args.isEmpty ? nil : args
+        }
+    #endif
+
+    #if os(Linux)
+        private static func linuxArguments(pid: Int32) -> [String]? {
+            let url = URL(fileURLWithPath: "/proc/\(pid)/cmdline")
+            guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+            let args = data.split(separator: 0).compactMap { chunk -> String? in
+                String(data: Data(chunk), encoding: .utf8)
+            }
+            return args.isEmpty ? nil : args
+        }
+    #endif
 
     private final class DataBox: @unchecked Sendable {
         private let lock = NSLock()

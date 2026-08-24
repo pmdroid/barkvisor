@@ -61,7 +61,7 @@ import { useVirtioDownload } from './useVirtioDownload'
 import { useUSBPicker } from './useUSBPicker'
 import { useCreateVMPayload } from './useCreateVMPayload'
 import {
-  DEVICE_OLLAMA_BASE_URL,
+  HOME_OLLAMA_GRANT_URL,
   isCodingAgentImage,
   mergeCodingAgentUserData,
   type OpenAIPreset,
@@ -369,8 +369,9 @@ export function useCreateVMWizard(
   const selectedSSHKeyId = ref('')
   const showCloudInit = ref(false)
   const cloudUserData = ref('')
-  const openaiPreset = ref<OpenAIPreset>('device-ollama')
-  const byoOpenAIURL = ref(DEVICE_OLLAMA_BASE_URL)
+  const openaiPreset = ref<OpenAIPreset>('home-ollama')
+  const byoOpenAIURL = ref(HOME_OLLAMA_GRANT_URL)
+  const byoOpenAIAPIKey = ref('')
 
   watch(selectedImage, (img, prev) => {
     const now = isCodingAgentImage(img)
@@ -378,7 +379,7 @@ export function useCreateVMWizard(
     if (now && !was) {
       workloadClass.value = 'agent'
       mode.value = 'cloud'
-      openaiPreset.value = 'device-ollama'
+      openaiPreset.value = 'home-ollama'
       if (memoryMB.value < 2048) memoryMB.value = 2048
       if (diskSizeGB.value < 20) diskSizeGB.value = 20
       return
@@ -764,6 +765,7 @@ export function useCreateVMWizard(
           selectedImage.value,
           openaiPreset.value,
           byoOpenAIURL.value,
+          byoOpenAIAPIKey.value,
         ),
         displayResolution: displayResolution.value,
         selectedNetworkId: selectedNetworkId.value,
@@ -861,6 +863,7 @@ export function useCreateVMWizard(
     cloudUserData,
     openaiPreset,
     byoOpenAIURL,
+    byoOpenAIAPIKey,
     isCodingAgentSelected: computed(() => isCodingAgentImage(selectedImage.value)),
     filteredImages,
     foreignArchImageCount,

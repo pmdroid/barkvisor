@@ -90,9 +90,19 @@ struct DaemonRestartIsolationTests {
         let both = VMPidFile.parse("1234\n5678\n")
         #expect(both?.qemuPid == 1_234)
         #expect(both?.swtpmPid == 5_678)
+        #expect(both?.codingAgentHostPort == nil)
         let qemuOnly = VMPidFile.parse("90\n-1\n")
         #expect(qemuOnly?.qemuPid == 90)
         #expect(qemuOnly?.swtpmPid == nil)
+        #expect(qemuOnly?.codingAgentHostPort == nil)
+        let withTtyd = VMPidFile.parse("90\n-1\n17681\n")
+        #expect(withTtyd?.qemuPid == 90)
+        #expect(withTtyd?.swtpmPid == nil)
+        #expect(withTtyd?.codingAgentHostPort == 17_681)
+        #expect(
+            VMPidFile(qemuPid: 90, swtpmPid: nil, codingAgentHostPort: 17_681).serialized()
+                == "90\n-1\n17681\n",
+        )
         #expect(VMPidFile.parse("not-a-pid") == nil)
         #expect(VMPidFile.parse("") == nil)
     }

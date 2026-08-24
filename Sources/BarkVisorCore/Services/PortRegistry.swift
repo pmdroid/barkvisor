@@ -154,7 +154,8 @@ public enum PortRegistry {
         }
     }
 
-    /// Bind test on 0.0.0.0 without `SO_REUSEADDR` (matches QEMU `hostfwd`).
+    /// Bind test on 0.0.0.0 and 127.0.0.1 without `SO_REUSEADDR`.
+    /// QEMU NAT `hostfwd` uses INADDR_ANY; Coding Agent ttyd uses loopback (PAS-272).
     /// UDP is not probed in Wave 0 (returns `true`).
     public static func probeListen(port: Int, proto: String) -> Bool {
         guard normalizedProtocol(proto) == "tcp" else { return true }
@@ -169,8 +170,13 @@ public enum PortRegistry {
         "\(port)/\(proto)"
     }
 
-    /// Returns true if nothing is listening on 0.0.0.0:`port` for TCP.
+    /// Free only if both INADDR_ANY and 127.0.0.1 can bind `port`.
     private static func isTCPPortFree(_ port: Int) -> Bool {
+        isTCPBindFree(port, saddr: INADDR_ANY)
+            && isTCPBindFree(port, saddr: in_addr_t(INADDR_LOOPBACK).bigEndian)
+    }
+
+    private static func isTCPBindFree(_ port: Int, saddr: in_addr_t) -> Bool {
         #if os(Linux)
             let sockType = Int32(SOCK_STREAM.rawValue)
         #else
@@ -182,7 +188,7 @@ public enum PortRegistry {
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = in_port_t(UInt16(port).bigEndian)
-        addr.sin_addr = in_addr(s_addr: INADDR_ANY)
+        addr.sin_addr = in_addr(s_addr: saddr)
         let bindResult = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
                 bind(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))

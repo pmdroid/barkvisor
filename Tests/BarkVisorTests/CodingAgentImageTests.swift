@@ -62,8 +62,12 @@ struct CodingAgentImageTests {
         #expect(throws: BarkVisorError.self) {
             try CodingAgentImage.normalizeOpenAIBaseURL("http://10.0.2.2:11434@evil.com/v1")
         }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIBaseURL("http:example.com/v1")
+        }
         #expect(CodingAgentImage.usesDeviceOllama(CodingAgentImage.deviceOllamaBaseURL))
         #expect(!CodingAgentImage.usesDeviceOllama("http://10.0.2.2:11434@evil.com/v1"))
+        #expect(CodingAgentImage.homeOllamaGrantURL == CodingAgentImage.deviceOllamaBaseURL)
         #expect(CodingAgentImage.deviceOllamaBaseURL.contains("10.0.2.2:11434"))
         #expect(CodingAgentImage.posixSingleQuoted("http://10.0.2.2:11434/v1") == "'http://10.0.2.2:11434/v1'")
     }
@@ -93,9 +97,23 @@ struct CodingAgentImageTests {
         #expect(!yaml.contains("opencode.ai/install"))
         #expect(!yaml.contains("| bash"))
         #expect(AgentNetworkCage.allowHostOllama(userData: yaml))
-        let byo = CodingAgentImage.userData(openaiBaseURL: "https://api.openai.com/v1")
+        #expect(yaml.contains("export OPENAI_API_KEY='ollama'"))
+        #expect(yaml.contains("permissions: '0600'"))
+        #expect(yaml.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
+        let byo = CodingAgentImage.userData(
+            openaiBaseURL: "https://api.openai.com/v1",
+            openaiAPIKey: "sk-test",
+        )
         try CloudInitService.validateUserData(byo)
         #expect(byo.contains("https://api.openai.com/v1"))
+        #expect(byo.contains("export OPENAI_API_KEY='sk-test'"))
+        #expect(try CodingAgentImage.normalizeOpenAIAPIKey(nil) == "ollama")
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIAPIKey("", required: true)
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.normalizeOpenAIAPIKey("sk-$(id)")
+        }
         #expect(!byo.contains(AgentNetworkCage.allowHostOllamaYAML))
         #expect(!AgentNetworkCage.allowHostOllama(userData: byo))
         let spoof = CodingAgentImage.userData(openaiBaseURL: "http://10.0.2.2:11434@evil.com/v1")
@@ -174,6 +192,33 @@ struct CodingAgentImageTests {
         #expect(kept.workloadClass == "house")
         #expect(kept.cloudInit?.userData?.contains("vim") == true)
         #expect(kept.cloudInit?.userData?.contains("ttyd") != true)
+    }
+
+    @Test func `console and frontend user-data keep ttyd EnvironmentFile`() throws {
+        let root = repoRoot()
+        let console = try String(
+            contentsOf: root.appendingPathComponent(
+                "Apps/BarkVisorConsole/Sources/Models/CodingAgentImage.swift",
+            ),
+            encoding: .utf8,
+        )
+        let frontend = try String(
+            contentsOf: root.appendingPathComponent("frontend/src/utils/codingAgentImage.ts"),
+            encoding: .utf8,
+        )
+        for source in [console, frontend] {
+            #expect(source.contains("/etc/default/barkvisor-openai"))
+            #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+        }
+        #expect(console.contains("isShellSafeOpenAIBaseURL"))
+        #expect(console.contains("isShellSafeOpenAIAPIKey"))
+        #expect(frontend.contains("OPENAI_BASE_URL_SAFE"))
+        #expect(frontend.contains("OPENAI_API_KEY_SAFE"))
+        #expect(frontend.contains("url.hostname"))
+        for source in [console, frontend] {
+            #expect(source.contains("permissions: '0600'"))
+            #expect(source.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
+        }
     }
 }
 

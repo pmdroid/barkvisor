@@ -126,7 +126,11 @@ public actor VMProcessMonitor {
             reconnected: true,
             swtpmPid: swtpmPid,
         )
-        await vmManager?.registerReconnectedVM(vmID: vmID, running: running)
+        await vmManager?.registerReconnectedVM(
+            vmID: vmID,
+            running: running,
+            codingAgentHostPort: pids.codingAgentHostPort,
+        )
 
         await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
         await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)

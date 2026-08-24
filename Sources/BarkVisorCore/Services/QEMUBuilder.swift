@@ -23,6 +23,16 @@ public struct QEMULaunchConfig {
     }
 }
 
+public struct QEMULoopbackForward: Equatable, Sendable {
+    public let hostPort: Int
+    public let guestPort: Int
+
+    public init(hostPort: Int, guestPort: Int) {
+        self.hostPort = hostPort
+        self.guestPort = guestPort
+    }
+}
+
 public struct QEMUBuildContext {
     public let vm: VM
     /// Canonical launch input. QEMUBuilder reads hardware only from this spec.
@@ -33,6 +43,8 @@ public struct QEMUBuildContext {
     public let additionalDisks: [Disk]
     public let sockets: VMSockets
     public let bridgeSocketPath: String?
+    /// Coding Agent ttyd (PAS-272). Loopback-only; not spec.portForwards.
+    public let loopbackHostfwds: [QEMULoopbackForward]
 
     public var vncSock: URL {
         sockets.vnc
@@ -53,6 +65,7 @@ public struct QEMUBuildContext {
         sockets: VMSockets,
         bridgeSocketPath: String?,
         spec: WorkloadSpec? = nil,
+        loopbackHostfwds: [QEMULoopbackForward] = [],
     ) {
         self.vm = vm
         self.spec = spec ?? WorkloadSpecProjector.fromVM(vm)
@@ -62,6 +75,7 @@ public struct QEMUBuildContext {
         self.additionalDisks = additionalDisks
         self.sockets = sockets
         self.bridgeSocketPath = bridgeSocketPath
+        self.loopbackHostfwds = loopbackHostfwds
     }
 }
 
@@ -266,7 +280,10 @@ public enum QEMUBuilder {
             userData: CloudInitService.storedUserData(vmID: vmID),
         )
         let (netArgs, needsSocketVmnetWrap) = try networkArgs(
-            spec: spec, network: ctx.network, allowHostOllama: allowHostOllama,
+            spec: spec,
+            network: ctx.network,
+            allowHostOllama: allowHostOllama,
+            loopbackHostfwds: ctx.loopbackHostfwds,
         )
         args += netArgs
         args += socketArgs(
@@ -419,6 +436,7 @@ public enum QEMUBuilder {
         spec: WorkloadSpec,
         network: Network?,
         allowHostOllama: Bool = false,
+        loopbackHostfwds: [QEMULoopbackForward] = [],
     ) throws -> (args: [String], needsSocketVmnetWrap: Bool) {
         guard spec.spec.networks.count <= 1 else {
             throw BarkVisorError.badRequest(
@@ -488,6 +506,15 @@ public enum QEMUBuilder {
                 try validatePort(rule.hostPort)
                 try validatePort(rule.guestPort)
                 netdevArgs += ",hostfwd=\(rule.proto)::\(rule.hostPort)-:\(rule.guestPort)"
+            }
+            for fwd in loopbackHostfwds {
+                try validatePort(fwd.hostPort)
+                try validatePort(fwd.guestPort)
+                let fwdArg = CodingAgentSession.loopbackHostfwd(
+                    hostPort: fwd.hostPort,
+                    guestPort: fwd.guestPort,
+                )
+                netdevArgs += ",\(fwdArg)"
             }
         }
 

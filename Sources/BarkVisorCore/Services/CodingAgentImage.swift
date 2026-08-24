@@ -1,7 +1,7 @@
 import Foundation
 
 /// One Linux Library image (arm64 + x86_64) with git, a web terminal, and
-/// coding-agent CLIs (PAS-271). Presets are Device Ollama vs BYO
+/// coding-agent CLIs (PAS-271). Presets are Home Ollama grant vs BYO
 /// `OPENAI_BASE_URL`, not a second disk image.
 public enum CodingAgentImage {
     public static let name = "Coding Agent"
@@ -13,6 +13,8 @@ public enum CodingAgentImage {
     public static let deviceOllamaHost = AgentNetworkCage.slirpGateway
     public static let deviceOllamaPort = AgentNetworkCage.ollamaPort
     public static let deviceOllamaBaseURL = "http://\(deviceOllamaHost):\(deviceOllamaPort)/v1"
+    /// Home Ollama grant (PAS-272). Same slirp URL; the cage guestfwd is the grant.
+    public static let homeOllamaGrantURL = deviceOllamaBaseURL
 
     public static let defaultCPUCount = 2
     public static let defaultMemoryMB = 2_048
@@ -71,6 +73,26 @@ public enum CodingAgentImage {
         return trimmed
     }
 
+    public static let defaultOpenAIAPIKey = "ollama"
+
+    public static func isShellSafeOpenAIAPIKey(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { ch in
+            ch.isASCII && (ch.isLetter || ch.isNumber || "._+=-".contains(ch))
+        }
+    }
+
+    public static func normalizeOpenAIAPIKey(_ raw: String?, required: Bool = false) throws -> String {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            if required { throw BarkVisorError.badRequest("OPENAI_API_KEY is required") }
+            return defaultOpenAIAPIKey
+        }
+        guard isShellSafeOpenAIAPIKey(trimmed) else {
+            throw BarkVisorError.badRequest("OPENAI_API_KEY is invalid")
+        }
+        return trimmed
+    }
+
     public static func posixSingleQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
@@ -85,8 +107,12 @@ public enum CodingAgentImage {
         return port == deviceOllamaPort
     }
 
-    public static func userData(openaiBaseURL: String) -> String {
+    public static func userData(
+        openaiBaseURL: String,
+        openaiAPIKey: String = defaultOpenAIAPIKey,
+    ) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
+        let quotedKey = posixSingleQuoted(openaiAPIKey)
         let marker = usesDeviceOllama(openaiBaseURL)
             ? "\(AgentNetworkCage.allowHostOllamaYAML)\n"
             : ""
@@ -110,11 +136,16 @@ public enum CodingAgentImage {
           - jq
           - ca-certificates
         write_files:
+          - path: /etc/default/barkvisor-openai
+            permissions: '0600'
+            content: |
+              OPENAI_BASE_URL=\(openaiBaseURL)
+              OPENAI_API_KEY=\(openaiAPIKey)
           - path: /etc/profile.d/barkvisor-openai.sh
-            permissions: '0644'
+            permissions: '0600'
             content: |
               export OPENAI_BASE_URL=\(quotedURL)
-              export OPENAI_API_KEY="${OPENAI_API_KEY:-ollama}"
+              export OPENAI_API_KEY=\(quotedKey)
           - path: /etc/systemd/system/ttyd.service
             permissions: '0644'
             content: |
@@ -126,6 +157,7 @@ public enum CodingAgentImage {
               [Service]
               Type=simple
               User=ubuntu
+              EnvironmentFile=-/etc/default/barkvisor-openai
               ExecStart=/usr/local/bin/ttyd --writable --port \(ttydPort) tmux new -A -s main
               Restart=on-failure
 
@@ -173,6 +205,7 @@ public enum CodingAgentImage {
               install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v\(claudeVer)/${claude_tar}" "$claude_sha" claude
               install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v\(ocVer)/${oc_tar}" "$oc_sha" opencode
         runcmd:
+          - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
           - systemctl enable --now qemu-guest-agent
           - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
           - systemctl enable --now ttyd
@@ -188,7 +221,7 @@ public enum CodingAgentImage {
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let userData = existing.isEmpty
-            ? Self.userData(openaiBaseURL: deviceOllamaBaseURL)
+            ? Self.userData(openaiBaseURL: homeOllamaGrantURL)
             : existing
         if existing.isEmpty {
             try CloudInitService.validateUserData(userData)

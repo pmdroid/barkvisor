@@ -114,12 +114,16 @@ enum CreateWorkload {
         case emptyName
         case imageNotReady
         case invalidOpenAIBaseURL
+        case missingOpenAIAPIKey
+        case invalidOpenAIAPIKey
 
         var errorDescription: String? {
             switch self {
             case .emptyName: "Name is required"
             case .imageNotReady: "Pick a ready Library image"
             case .invalidOpenAIBaseURL: "OPENAI_BASE_URL must be an http(s) URL"
+            case .missingOpenAIAPIKey: "OPENAI_API_KEY is required"
+            case .invalidOpenAIAPIKey: "OPENAI_API_KEY is invalid"
             }
         }
     }
@@ -167,6 +171,7 @@ enum CreateWorkload {
         hostCPUCount: Int?,
         workloadClass: String? = nil,
         openaiBaseURL: String? = nil,
+        openaiAPIKey: String? = nil,
     ) throws -> Body {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DraftError.emptyName }
@@ -186,9 +191,13 @@ enum CreateWorkload {
             workloadClass == "agent" ? "agent" : nil
         }
         let cloudInit: CloudInitPayload? = if coding, !iso {
+            let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
+            let byo = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                && url != CodingAgentImage.homeOllamaGrantURL
             try CloudInitPayload(
                 userData: CodingAgentImage.userData(
-                    openaiBaseURL: CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL),
+                    openaiBaseURL: url,
+                    openaiAPIKey: CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo),
                 ),
             )
         } else {

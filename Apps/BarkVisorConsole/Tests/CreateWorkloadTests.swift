@@ -183,6 +183,8 @@ struct CreateWorkloadTests {
         #expect(body.cloudImageId == "img-ca")
         #expect(body.cloudInit?.userData?.contains("OPENAI_BASE_URL='http://10.0.2.2:11434/v1'") == true)
         #expect(body.cloudInit?.userData?.contains("export OPENAI_BASE_URL=\"") != true)
+        #expect(body.cloudInit?.userData?.contains("/etc/default/barkvisor-openai") == true)
+        #expect(body.cloudInit?.userData?.contains("EnvironmentFile=-/etc/default/barkvisor-openai") == true)
         #expect(body.cloudInit?.userData?.contains("git") == true)
         #expect(body.cloudInit?.userData?.contains("ttyd") == true)
         #expect(body.cloudInit?.userData?.contains("ttyd.service") == true)
@@ -208,13 +210,23 @@ struct CreateWorkloadTests {
         let cloudInit = encoded["cloudInit"] as? [String: Any]
         #expect((cloudInit?["userData"] as? String)?.contains("10.0.2.2:11434") == true)
 
+        #expect(throws: CreateWorkload.DraftError.missingOpenAIAPIKey) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: coding,
+                hostCPUCount: 8,
+                openaiBaseURL: "https://api.example/v1",
+            )
+        }
         let byo = try CreateWorkload.body(
             name: "coder",
             image: coding,
             hostCPUCount: 8,
             openaiBaseURL: "https://api.example/v1",
+            openaiAPIKey: "sk-test",
         )
         #expect(byo.cloudInit?.userData?.contains("https://api.example/v1") == true)
+        #expect(byo.cloudInit?.userData?.contains("OPENAI_API_KEY='sk-test'") == true)
 
         let house = try CreateWorkload.body(
             name: "coder",
@@ -253,6 +265,22 @@ struct CreateWorkloadTests {
             !CodingAgentImage.userData(openaiBaseURL: "http://10.0.2.2:11434@evil.com/v1")
                 .contains(CodingAgentImage.allowHostOllamaYAML),
         )
+        #expect(throws: CreateWorkload.DraftError.invalidOpenAIBaseURL) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: coding,
+                hostCPUCount: 8,
+                openaiBaseURL: "https://x`id`.example/v1",
+            )
+        }
+        #expect(throws: CreateWorkload.DraftError.invalidOpenAIBaseURL) {
+            try CreateWorkload.body(
+                name: "coder",
+                image: coding,
+                hostCPUCount: 8,
+                openaiBaseURL: "https://x$HOME.example/v1",
+            )
+        }
     }
 
     @Test func `body rejects empty name and unread image`() {
