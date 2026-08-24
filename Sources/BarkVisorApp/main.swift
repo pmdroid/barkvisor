@@ -89,6 +89,21 @@ func configureLogging() {
 func runDaemon() async {
     configureLogging()
 
+    let sockets = Config.socketDir
+    if PlatformPaths.socketDirIsPackagingOwned(sockets),
+       !PlatformPaths.isWritableDirectory(sockets) {
+        let message = """
+        Socket directory \(sockets.path) is missing or not writable. \
+        Packaging must create this directory (Homebrew postinstall, pkg, or systemd); \
+        the Device daemon cannot mkdir /var/run or /run. \
+        Homebrew: sudo "$(brew --prefix barkvisor)/share/barkvisor/postinstall" \
+        && sudo brew services restart barkvisor
+        """
+        Log.server.critical("\(message)")
+        FileHandle.standardError.write(Data("\(message)\n".utf8))
+        exit(1)
+    }
+
     pipe(&signalPipeFDs)
     signal(SIGTERM) { _ in
         var b: UInt8 = 1

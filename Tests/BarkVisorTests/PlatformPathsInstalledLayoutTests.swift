@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import BarkVisorCore
 
-/// PAS-293: installed layout is share frontend / data-dir override, not libexec QEMU.
+/// PAS-293: installed layout is share frontend, not libexec QEMU or data-dir override.
 struct PlatformPathsInstalledLayoutTests {
     private let homebrewPrefix = "/opt/homebrew"
     private let usrLocalPrefix = "/usr/local"
@@ -23,7 +23,6 @@ struct PlatformPathsInstalledLayoutTests {
             PlatformPaths.isInstalled(
                 prefix: homebrewPrefix,
                 binaryDirectoryIsBin: true,
-                dataDirOverride: nil,
                 fileExists: { $0 == PlatformPaths.shareFrontendIndexPath(prefix: homebrewPrefix) },
             ),
         )
@@ -34,7 +33,6 @@ struct PlatformPathsInstalledLayoutTests {
             PlatformPaths.isInstalled(
                 prefix: usrLocalPrefix,
                 binaryDirectoryIsBin: true,
-                dataDirOverride: nil,
                 fileExists: { $0 == PlatformPaths.shareFrontendIndexPath(prefix: usrLocalPrefix) },
             ),
         )
@@ -51,7 +49,6 @@ struct PlatformPathsInstalledLayoutTests {
             !PlatformPaths.isInstalled(
                 prefix: usrLocalPrefix,
                 binaryDirectoryIsBin: true,
-                dataDirOverride: nil,
                 fileExists: { leftoverQEMU.contains($0) },
             ),
         )
@@ -59,7 +56,6 @@ struct PlatformPathsInstalledLayoutTests {
             !PlatformPaths.isInstalled(
                 prefix: homebrewPrefix,
                 binaryDirectoryIsBin: true,
-                dataDirOverride: nil,
                 fileExists: { leftoverQEMU.contains($0) },
             ),
         )
@@ -70,7 +66,6 @@ struct PlatformPathsInstalledLayoutTests {
             !PlatformPaths.isInstalled(
                 prefix: usrLocalPrefix,
                 binaryDirectoryIsBin: false,
-                dataDirOverride: nil,
                 fileExists: { _ in false },
             ),
         )
@@ -81,32 +76,47 @@ struct PlatformPathsInstalledLayoutTests {
             !PlatformPaths.isInstalled(
                 prefix: usrLocalPrefix,
                 binaryDirectoryIsBin: false,
-                dataDirOverride: nil,
                 fileExists: { $0 == PlatformPaths.shareFrontendIndexPath(prefix: usrLocalPrefix) },
             ),
         )
     }
 
-    @Test func `data dir override marks installed without frontend`() {
+    @Test func `data dir override does not mark installed without frontend`() {
         #expect(
-            PlatformPaths.isInstalled(
+            !PlatformPaths.isInstalled(
                 prefix: homebrewPrefix,
                 binaryDirectoryIsBin: false,
-                dataDirOverride: "/var/lib/barkvisor",
+                fileExists: { _ in false },
+            ),
+        )
+        #expect(
+            !PlatformPaths.isInstalled(
+                prefix: usrLocalPrefix,
+                binaryDirectoryIsBin: true,
                 fileExists: { _ in false },
             ),
         )
     }
 
-    @Test func `empty data dir override does not mark installed`() {
-        #expect(
-            !PlatformPaths.isInstalled(
-                prefix: usrLocalPrefix,
-                binaryDirectoryIsBin: true,
-                dataDirOverride: "",
-                fileExists: { _ in false },
-            ),
+    @Test func `temp data dir override keeps sockets under tmp not var run`() {
+        let installed = PlatformPaths.isInstalled(
+            prefix: homebrewPrefix,
+            binaryDirectoryIsBin: false,
+            fileExists: { _ in false },
         )
+        #expect(!installed)
+        let data = PlatformPaths.dataDir(
+            isInstalled: installed,
+            dataDirOverride: "/tmp/barkvisor-smoke-data",
+        )
+        #expect(data.path == "/tmp/barkvisor-smoke-data")
+        let sockets = PlatformPaths.resolveSocketDir(
+            isInstalled: installed,
+            dataDir: data,
+            socketDirOverride: nil,
+            temporaryDirectory: "/tmp",
+        )
+        #expect(sockets.path == "/tmp/barkvisor")
     }
 
     @Test func `installed data dir is var lib not homebrew prefix var`() {
@@ -138,6 +148,74 @@ struct PlatformPathsInstalledLayoutTests {
             temporaryDirectory: "/tmp",
         )
         #expect(dir.path == "/var/run/barkvisor")
+    }
+
+    @Test func `path argv0 resolves homebrew prefix not usr local`() {
+        let path = "/opt/homebrew/bin:/usr/bin:/bin"
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: path,
+            currentDirectory: "/var/lib/barkvisor",
+            isExecutable: { $0 == "/opt/homebrew/bin/barkvisor" },
+        )
+        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `absolute argv0 keeps homebrew prefix`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "/opt/homebrew/bin/barkvisor",
+            pathEnvironment: "/usr/bin",
+            currentDirectory: "/var/lib/barkvisor",
+            isExecutable: { _ in false },
+        )
+        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `bare argv0 without path match falls back to usr local prefix`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: "/usr/bin:/bin",
+            currentDirectory: "/var/lib/barkvisor",
+            isExecutable: { _ in false },
+        )
+        #expect(exe == "barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/usr/local")
+    }
+
+    @Test func `empty PATH segment is cwd per POSIX`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: ":/usr/bin",
+            currentDirectory: "/opt/homebrew/bin",
+            isExecutable: { $0 == "/opt/homebrew/bin/barkvisor" },
+        )
+        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `non executable cwd PATH hit is skipped`() {
+        let brew = "/opt/homebrew/bin/barkvisor"
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "barkvisor",
+            pathEnvironment: ":/opt/homebrew/bin",
+            currentDirectory: "/tmp/not-bin",
+            isExecutable: { $0 == brew },
+        )
+        #expect(exe == brew)
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
+    }
+
+    @Test func `relative argv0 is resolved from cwd`() {
+        let exe = PlatformPaths.resolvedExecutablePath(
+            argument: "./bin/barkvisor",
+            pathEnvironment: "/usr/bin",
+            currentDirectory: "/opt/homebrew",
+            isExecutable: { _ in false },
+        )
+        #expect(exe.hasSuffix("/opt/homebrew/bin/barkvisor"))
+        #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
     }
 
     @Test func `var lib data dir keeps var run sockets without isInstalled`() {
