@@ -38,7 +38,9 @@ struct DeviceDetailTests {
     @Test func `unreachable skips fetch and has no series`() {
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
         let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: false)
         #expect(DeviceStatsHistory.shouldFetch(living))
+        #expect(DeviceStatsHistory.shouldFetch(studio))
         #expect(!DeviceStatsHistory.shouldFetch(garage))
         #expect(DeviceStatsHistory.points(from: []).isEmpty)
         #expect(DeviceStatsHistory.unreachableCopy.contains("did not answer"))
@@ -74,6 +76,14 @@ struct DeviceDetailTests {
         #expect(studio.resourcesLine?.localizedCaseInsensitiveContains("gpu") == false)
         #expect(studio.workloadLine == "2 workloads")
         #expect(studio.platformLabel == "macOS · arm64")
+
+        studio.resources = HomeDeviceResourceSummary(
+            cpuCount: 1,
+            memoryTotalMB: 0,
+            memoryUsedMB: 0,
+            cpuLoadPercent: 0,
+        )
+        #expect(studio.resourcesLine == "CPU 0% · 0.0 / 0 GB")
 
         let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
         #expect(garage.resourcesLine == nil)

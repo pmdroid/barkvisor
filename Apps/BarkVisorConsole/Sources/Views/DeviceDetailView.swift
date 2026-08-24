@@ -20,7 +20,7 @@ struct DeviceDetailView: View {
                 }
             }
 
-            if !device.isReachable {
+            if !DeviceStatsHistory.shouldFetch(device) {
                 Section {
                     Text(DeviceStatsHistory.unreachableCopy)
                         .foregroundStyle(.secondary)
@@ -77,7 +77,7 @@ struct DeviceDetailView: View {
         }
         .platformListStyle()
         .navigationTitle(device.title)
-        .task(id: deviceID) {
+        .task(id: "\(deviceID)-\(device.role)-\(device.reachability)") {
             await model.select(device)
             await loadHistory()
         }

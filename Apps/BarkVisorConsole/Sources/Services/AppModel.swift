@@ -466,6 +466,7 @@ final class AppModel {
         do {
             return try await requireClient().statsHistory(on: device)
         } catch {
+            handle(error)
             return []
         }
     }

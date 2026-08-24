@@ -585,7 +585,7 @@ enum DeviceStatsHistory {
     }
 
     static func shouldFetch(_ device: HomeDeviceHealthSnapshot) -> Bool {
-        device.isReachable
+        device.isSelf || device.isReachable
     }
 
     static func points(from samples: [SystemStatsSample], max: Int = maxPoints) -> [DeviceStatsChartPoint] {

@@ -22,6 +22,25 @@ describe('deviceResourcesLine', () => {
     expect(deviceResourcesLine({ reachability: 'unreachable', resources: { cpuLoadPercent: 90 } })).toBeNull()
     expect(deviceResourcesLine({ reachability: 'ok' })).toBeNull()
   })
+
+  test('zero memory total is present, not treated as missing', () => {
+    expect(
+      deviceResourcesLine({
+        reachability: 'ok',
+        resources: {
+          cpuLoadPercent: 0,
+          memoryUsedMB: 0,
+          memoryTotalMB: 0,
+        },
+      }),
+    ).toBe('CPU 0% · 0.0 / 0 GB')
+    expect(
+      deviceResourcesLine({
+        reachability: 'ok',
+        resources: { memoryUsedMB: 512, memoryTotalMB: undefined },
+      }),
+    ).toBeNull()
+  })
 })
 
 describe('deviceWorkloadLine', () => {
