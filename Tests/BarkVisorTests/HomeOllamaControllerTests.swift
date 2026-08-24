@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import JWTKit
 import Testing
 @testable import BarkVisor
@@ -253,6 +254,50 @@ struct HomeOllamaControllerTests {
             )
         }
         #expect(client.calls.isEmpty)
+    }
+
+    @Test func `put settings stores on Home and pushes the key to the Device`() async throws {
+        let dir = try isolatedDir("settings-fanout")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let selfId = UUID().uuidString
+        let peerId = "peer-desk"
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: peerId, fingerprint: "ff", agentHost: "10.0.0.8", agentPort: 7_778)
+        let client = RecordingOllamaProxyClient()
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/ollama/settings",
+            status: 200,
+            body: JSONEncoder().encode(OllamaSettingsSnapshot(hosts: [])),
+        )
+        let keys = await makeKeys()
+        let ctl = controller(
+            dir: dir, hostId: selfId, devices: store, client: client, keys: keys, now: Date(),
+        )
+        let user = AuthenticatedUser(
+            userId: "admin-1",
+            username: "admin",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
+        )
+        let snapshot = try await ctl.putSettings(
+            body: OllamaSettingsUpdate(hostId: peerId, apiKey: "peer-secret"),
+            db: pool,
+            user: user,
+        )
+        #expect(snapshot.host(peerId)?.hasApiKey == true)
+        let encoded = try JSONEncoder().encode(snapshot)
+        let text = String(data: encoded, encoding: .utf8) ?? ""
+        #expect(!text.contains("peer-secret"))
+        #expect(client.calls.contains { $0.method == "PUT" })
+        let stored = try await pool.read { db in
+            try OllamaSettings.load(hostId: peerId, from: db).apiKey
+        }
+        #expect(stored == "peer-secret")
     }
 
     @Test func `local pull start stop pass decoded body instead of the consumed request`() throws {

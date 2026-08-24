@@ -131,7 +131,9 @@ public enum APIContract {
         // Body { name, hostId? }. Omit hostId so Home picks. Do not add fields.
         Route(method: "POST", path: "/api/ollama/start", stability: .evolving),
         Route(method: "POST", path: "/api/ollama/stop", stability: .evolving),
+        // GET { hosts: [{ hostId, endpoint, hasApiKey }] }. Never the raw key.
         Route(method: "GET", path: "/api/ollama/settings", stability: .evolving),
+        // PUT { hostId, endpoint?, apiKey? }. Home stores per Device. Admin only.
         Route(method: "PUT", path: "/api/ollama/settings", stability: .evolving),
         Route(method: "POST", path: "/api/ollama/v1/chat/completions", stability: .evolving),
         Route(method: "GET", path: "/api/home/ollama/status", stability: .evolving),
@@ -140,6 +142,8 @@ public enum APIContract {
         // Body { name, hostId? }. Same shape as /api/ollama/start. Do not add fields.
         Route(method: "POST", path: "/api/home/ollama/start", stability: .evolving),
         Route(method: "POST", path: "/api/home/ollama/stop", stability: .evolving),
+        Route(method: "GET", path: "/api/home/ollama/settings", stability: .evolving),
+        Route(method: "PUT", path: "/api/home/ollama/settings", stability: .evolving),
         Route(method: "GET", path: "/api/tags", stability: .evolving),
         Route(method: "POST", path: "/api/pull", stability: .evolving),
         Route(method: "GET", path: "/api/ps", stability: .evolving),

@@ -1678,20 +1678,46 @@ paths:
       tags: [evolving]
       operationId: getOllamaSettings
       x-barkvisor-stability: evolving
-      summary: Upstream Ollama endpoint (loopback) and whether Home holds an API key
+      summary: Per-Device upstream Ollama URLs. Home holds the keys; the raw key is never returned.
       responses:
         "200":
-          description: Settings without the raw key
+          description: Masked settings for known Devices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaSettingsSnapshot"
+        "403":
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
     put:
       tags: [evolving]
       operationId: putOllamaSettings
       x-barkvisor-stability: evolving
-      summary: Set loopback Ollama URL and upstream API key
+      summary: Set one Device's loopback Ollama URL and/or upstream API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaSettingsUpdate"
       responses:
         "200":
-          description: Saved settings
+          description: Masked settings after save
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaSettingsSnapshot"
+        "403":
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
 
@@ -1752,6 +1778,28 @@ paths:
       responses:
         "204":
           description: Loaded
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/ollama/settings:
+    get:
+      tags: [evolving]
+      operationId: getHomeOllamaSettings
+      x-barkvisor-stability: evolving
+      summary: Per-Device upstream Ollama keys stored on Home
+      responses:
+        "200":
+          description: Settings without the raw key
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: putHomeOllamaSettings
+      x-barkvisor-stability: evolving
+      summary: Set a Device's upstream Ollama URL and API key on Home
+      responses:
+        "200":
+          description: Saved settings
         default:
           $ref: "#/components/responses/Error"
 
@@ -1915,6 +1963,46 @@ components:
         status:
           type: integer
           description: HTTP status repeated in the body
+
+    OllamaHostSettings:
+      type: object
+      additionalProperties: false
+      required: [hostId, endpoint, hasApiKey]
+      properties:
+        hostId:
+          type: string
+        endpoint:
+          type: string
+        hasApiKey:
+          type: boolean
+          description: True when Home stores an upstream key for this Device. The key itself is never returned.
+        apiKeyMasked:
+          type: string
+          description: Last four characters of the stored key, prefixed with bullets. Never the raw key.
+
+    OllamaSettingsSnapshot:
+      type: object
+      additionalProperties: false
+      required: [hosts]
+      properties:
+        hosts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OllamaHostSettings"
+
+    OllamaSettingsUpdate:
+      type: object
+      additionalProperties: false
+      required: [hostId]
+      properties:
+        hostId:
+          type: string
+        endpoint:
+          type: string
+          description: Loopback Ollama URL. Omit to leave the stored URL alone.
+        apiKey:
+          type: string
+          description: Upstream Ollama API key. Omit to leave it; empty string clears it.
 
     APIContractSummary:
       type: object

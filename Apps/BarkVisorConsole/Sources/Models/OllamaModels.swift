@@ -70,6 +70,46 @@ struct OllamaTaskAccepted: Decodable, Equatable {
     var hostId: String
 }
 
+struct OllamaHostSettings: Decodable, Equatable, Identifiable {
+    var hostId: String
+    var endpoint: String
+    var hasApiKey: Bool
+    var apiKeyMasked: String?
+
+    var id: String { hostId }
+}
+
+struct OllamaSettingsSnapshot: Decodable, Equatable {
+    var hosts: [OllamaHostSettings]
+
+    func host(_ hostId: String) -> OllamaHostSettings? {
+        hosts.first { $0.hostId == hostId }
+    }
+}
+
+struct OllamaSettingsUpdate: Encodable, Equatable {
+    var hostId: String
+    var endpoint: String?
+    var apiKey: String?
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(hostId, forKey: .hostId)
+        if let endpoint, !endpoint.isEmpty {
+            try container.encode(endpoint, forKey: .endpoint)
+        }
+        if let apiKey {
+            try container.encode(apiKey, forKey: .apiKey)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case hostId
+        case endpoint
+        case apiKey
+    }
+}
+
 struct OllamaPullBody: Encodable, Equatable {
     var name: String
     var hostId: String?

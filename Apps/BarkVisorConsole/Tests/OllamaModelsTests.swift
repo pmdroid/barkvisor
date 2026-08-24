@@ -73,11 +73,44 @@ struct OllamaModelsTests {
         #expect(OllamaTaskPath.rest(taskID: "t1", hostId: "self", selfHostId: "self") == "/api/tasks/t1")
     }
 
+    @Test func modelsViewHoldsKeysPerDevice() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let url = tests.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/Views/ModelsView.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        #expect(source.contains("Home holds upstream keys per"))
+        #expect(source.contains("OllamaSettingsUpdate(hostId:"))
+        #expect(!source.contains("saved on this Device"))
+    }
+
     @Test func memberPullUsesHomeProxyTaskPath() {
         #expect(
             OllamaTaskPath.rest(taskID: "t1", hostId: "peer", selfHostId: "self")
                 == "/api/home/devices/peer/v1/tasks/t1",
         )
+    }
+
+    @Test func settingsSnapshotDecodesHostsAndOmitsRawKey() throws {
+        let json = """
+        {
+          "hosts": [
+            {
+              "hostId": "desk",
+              "endpoint": "http://127.0.0.1:11434",
+              "hasApiKey": true
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let snapshot = try decoder.decode(OllamaSettingsSnapshot.self, from: json)
+        #expect(snapshot.host("desk")?.hasApiKey == true)
+        let encoded = try encoder.encode(
+            OllamaSettingsUpdate(hostId: "desk", apiKey: "secret"),
+        )
+        let object = try decoder.decode([String: String].self, from: encoded)
+        #expect(object["hostId"] == "desk")
+        #expect(object["apiKey"] == "secret")
+        #expect(object["endpoint"] == nil)
     }
 
     @Test func catalogDecodesAndTaskPercentIs0to100() throws {

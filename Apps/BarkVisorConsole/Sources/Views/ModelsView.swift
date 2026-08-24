@@ -12,6 +12,10 @@ struct ModelsView: View {
     @State private var startCandidate: OllamaCatalogModel?
     @State private var startHostId = ""
     @State private var stopCandidate: OllamaCatalogModel?
+    @State private var keySheet = false
+    @State private var keyHostId = ""
+    @State private var keyDraft = ""
+    @State private var keySaving = false
 
     var body: some View {
         Group {
@@ -71,6 +75,9 @@ struct ModelsView: View {
                             }
                         }
                     }
+                    if model.ollamaSettings != nil {
+                        keySection
+                    }
                 }
                 .platformListStyle()
                 .searchable(text: $nameQuery, prompt: "Search models")
@@ -81,6 +88,9 @@ struct ModelsView: View {
         .task { await model.refreshOllama() }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
             startSheet(row)
+        }
+        .sheet(isPresented: $keySheet, onDismiss: { keyDraft = "" }) {
+            keyEditor
         }
         .confirmationDialog(
             "Stop model",
@@ -189,6 +199,73 @@ struct ModelsView: View {
         }
     }
 
+    private var keySection: some View {
+        Section {
+            Button("Set API key") {
+                keyHostId = reachableDevices.first?.hostId ?? ""
+                keyDraft = ""
+                keySheet = true
+            }
+            .disabled(reachableDevices.isEmpty)
+            Text(keyStatusLine)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("Ollama API key")
+        } footer: {
+            Text("Home holds upstream keys per \(Copy.device).")
+        }
+    }
+
+    private var keyStatusLine: String {
+        let hostId = keyHostId.isEmpty ? reachableDevices.first?.hostId : keyHostId
+        if let hostId, model.ollamaSettings?.host(hostId)?.hasApiKey == true {
+            return "A key is stored for this \(Copy.device)."
+        }
+        return "No upstream key stored for this \(Copy.device)."
+    }
+
+    private var keyEditor: some View {
+        NavigationStack {
+            Form {
+                OllamaReachableDevicePicker(
+                    hostId: $keyHostId,
+                    devices: reachableDevices,
+                    allowAny: false,
+                )
+                SecureField("OLLAMA_API_KEY", text: $keyDraft)
+                Text("Home holds upstream keys per \(Copy.device).")
+                    .foregroundStyle(.secondary)
+            }
+            .navigationTitle("Ollama API key")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { keySheet = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task { await saveKey() }
+                    }
+                    .disabled(keyHostId.isEmpty || keySaving)
+                }
+            }
+        }
+        #if os(iOS)
+        .presentationDetents([.medium])
+        #endif
+    }
+
+    private func saveKey() async {
+        let hostId = keyHostId
+        guard !hostId.isEmpty else { return }
+        keySaving = true
+        defer { keySaving = false }
+        await model.saveOllamaSettings(OllamaSettingsUpdate(hostId: hostId, apiKey: keyDraft))
+        if model.banner == nil {
+            keyDraft = ""
+            keySheet = false
+        }
+    }
+
     private func beginStart(_ row: OllamaCatalogModel) {
         startHostId = ""
         startCandidate = row
@@ -288,10 +365,13 @@ struct ModelsView: View {
 private struct OllamaReachableDevicePicker: View {
     @Binding var hostId: String
     var devices: [OllamaDeviceStatus]
+    var allowAny: Bool = true
 
     var body: some View {
         Picker(Copy.device, selection: $hostId) {
-            Text("Any reachable \(Copy.device)").tag("")
+            if allowAny {
+                Text("Any reachable \(Copy.device)").tag("")
+            }
             ForEach(devices) { device in
                 Text(device.title).tag(device.hostId)
             }

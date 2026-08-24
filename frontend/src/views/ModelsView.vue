@@ -31,6 +31,7 @@ const cancelling = ref(false)
 const pullTask = ref<OllamaTaskAccepted | null>(null)
 const cancelledByUser = ref(false)
 const apiKeyDraft = ref('')
+const keyHost = ref('')
 const keySaving = ref(false)
 const nameQuery = ref('')
 const startTarget = ref<OllamaCatalogModel | null>(null)
@@ -67,6 +68,11 @@ const hostOptions = computed(() =>
 
 const filteredModels = computed(() =>
   store.models.filter((row) => ollamaModelMatchesName(row.name, nameQuery.value)),
+)
+
+const selectedKeyHost = computed(() => keyHost.value || hostOptions.value[0]?.value || '')
+const selectedHostSettings = computed(() =>
+  selectedKeyHost.value ? store.hostSettings(selectedKeyHost.value) : null,
 )
 
 const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
@@ -200,12 +206,19 @@ async function stopModel() {
   }
 }
 
+function onKeyHost(event: Event) {
+  const target = event.target as HTMLSelectElement
+  keyHost.value = target.value
+}
+
 async function saveKey() {
+  const hostId = selectedKeyHost.value
+  if (!hostId) return
   keySaving.value = true
   try {
-    await store.saveSettings({ apiKey: apiKeyDraft.value })
+    await store.saveSettings({ hostId, apiKey: apiKeyDraft.value })
     apiKeyDraft.value = ''
-    toast.success('Ollama API key saved on this Device')
+    toast.success('Ollama API key saved')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -342,13 +355,28 @@ async function saveKey() {
     <div v-if="auth.isAdmin" class="card" style="margin-top:24px">
       <h2 style="margin-top:0">Ollama API key</h2>
       <p style="color:var(--text-secondary);font-size:13px">
-        Home holds the upstream Ollama key. Clients authenticate with a BarkVisor user or inference token.
-        {{ store.settings?.hasApiKey ? 'A key is stored on this Device.' : 'No upstream key stored.' }}
+        Home holds upstream keys per {{ DEVICE_LABEL }}. Clients authenticate with a BarkVisor user or inference token.
+        {{
+          selectedHostSettings?.hasApiKey
+            ? `A key is stored for this ${DEVICE_LABEL}.`
+            : `No upstream key stored for this ${DEVICE_LABEL}.`
+        }}
       </p>
       <div class="form-group">
-        <input v-model="apiKeyDraft" type="password" placeholder="OLLAMA_API_KEY" />
+        <label>{{ DEVICE_LABEL }}</label>
+        <select
+          :value="selectedKeyHost"
+          style="min-width:160px"
+          :disabled="hostOptions.length === 0"
+          @change="onKeyHost"
+        >
+          <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
       </div>
-      <AppButton variant="primary" :loading="keySaving" loading-text="Saving..." @click="saveKey">
+      <div class="form-group">
+        <input v-model="apiKeyDraft" type="password" placeholder="OLLAMA_API_KEY" :disabled="!selectedKeyHost" />
+      </div>
+      <AppButton variant="primary" :disabled="!selectedKeyHost" :loading="keySaving" loading-text="Saving..." @click="saveKey">
         Save Ollama key
       </AppButton>
     </div>
