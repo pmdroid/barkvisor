@@ -96,5 +96,6 @@ struct OllamaCatalogTests {
         #expect(decoded.models[0].running)
         #expect(decoded.models[0].host == "desk")
         #expect(json.contains("\"sizeVRAM\" : 80") || json.contains("\"sizeVRAM\": 80"))
+        #expect(json.hasSuffix("\n"))
     }
 }

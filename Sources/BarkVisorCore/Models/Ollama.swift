@@ -262,7 +262,8 @@ public enum OllamaPSExport {
 
     public static func jsonString(from models: [OllamaCatalogModel]) throws -> String {
         let data = try jsonData(from: models)
-        return String(decoding: data, as: UTF8.self)
+        let text = String(decoding: data, as: UTF8.self)
+        return text.hasSuffix("\n") ? text : text + "\n"
     }
 }
 

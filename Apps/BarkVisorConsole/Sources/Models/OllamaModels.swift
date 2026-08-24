@@ -1,4 +1,6 @@
+import CoreTransferable
 import Foundation
+import UniformTypeIdentifiers
 
 struct OllamaHomeCatalog: Decodable, Equatable {
     var anyReachable: Bool
@@ -75,6 +77,8 @@ struct OllamaPsStat: Codable, Equatable {
 }
 
 struct OllamaPsExport: Codable, Equatable {
+    static let filename = "ollama-ps.json"
+
     var models: [OllamaPsStat]
 
     static func serialize(_ models: [OllamaCatalogModel]) -> OllamaPsExport {
@@ -102,6 +106,30 @@ struct OllamaPsExport: Codable, Equatable {
             return text
         }
         return text + "\n"
+    }
+
+    /// Unique temp file named `ollama-ps.json` for ShareLink / Files.
+    func writeJSONFile() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "ollama-ps-\(UUID().uuidString)",
+            isDirectory: true,
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(Self.filename)
+        try Data(jsonString().utf8).write(to: url, options: .atomic)
+        return url
+    }
+}
+
+/// ShareLink payload: JSON file `ollama-ps.json`, encoded only when the user shares.
+struct OllamaPsShareFile: Transferable {
+    var models: [OllamaCatalogModel]
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .json) { file in
+            SentTransferredFile(try OllamaPsExport.serialize(file.models).writeJSONFile())
+        }
+        .suggestedFileName(OllamaPsExport.filename)
     }
 }
 

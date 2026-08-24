@@ -46,6 +46,7 @@ describe('ollama /api/ps export', () => {
     expect(decoded.models[1]?.sizeVRAM).toBeNull()
     expect(decoded.models[1]?.host).toBe('lab')
     expect(json).toContain('"sizeVRAM": null')
+    expect(json.endsWith('\n')).toBe(true)
     expect(OLLAMA_PS_EXPORT_FILENAME).toBe('ollama-ps.json')
   })
 

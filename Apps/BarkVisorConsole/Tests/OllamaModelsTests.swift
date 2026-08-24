@@ -112,6 +112,13 @@ struct OllamaModelsTests {
         let decoded = try decoder.decode(OllamaPsExport.self, from: Data(json.utf8))
         #expect(decoded == export)
         #expect(json.contains("\"sizeVRAM\" : null") || json.contains("\"sizeVRAM\": null"))
+        #expect(json.hasSuffix("\n"))
+        let fileURL = try export.writeJSONFile()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        #expect(fileURL.lastPathComponent == OllamaPsExport.filename)
+        #expect(fileURL.lastPathComponent == "ollama-ps.json")
+        let fileText = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(fileText == json)
     }
 
     @Test func modelsViewSharesExportJSON() throws {
@@ -122,8 +129,20 @@ struct OllamaModelsTests {
         #expect(source.contains("Home holds upstream keys per"))
         #expect(source.contains("OllamaSettingsUpdate(hostId:"))
         #expect(!source.contains("saved on this Device"))
-        #expect(source.contains("ShareLink(item: exportJSON)"))
+        #expect(source.contains("ShareLink("))
+        #expect(source.contains("OllamaPsShareFile(models: catalog.models)"))
+        #expect(source.contains("SharePreview(OllamaPsExport.filename)"))
+        #expect(!source.contains("ShareLink(item: exportJSON)"))
+        #expect(!source.contains("private var exportJSON"))
         #expect(source.contains("Export JSON"))
+        let modelsSource = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Models/OllamaModels.swift"),
+            encoding: .utf8,
+        )
+        #expect(modelsSource.contains("FileRepresentation(exportedContentType: .json)"))
+        #expect(modelsSource.contains("suggestedFileName(OllamaPsExport.filename)"))
+        #expect(modelsSource.contains("static let filename = \"ollama-ps.json\""))
     }
 
     @Test func memberPullUsesHomeProxyTaskPath() {

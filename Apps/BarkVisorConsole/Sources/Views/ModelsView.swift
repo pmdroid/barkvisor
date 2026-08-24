@@ -86,7 +86,10 @@ struct ModelsView: View {
         .navigationTitle("Ollama")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                ShareLink(item: exportJSON) {
+                ShareLink(
+                    item: OllamaPsShareFile(models: catalog.models),
+                    preview: SharePreview(OllamaPsExport.filename),
+                ) {
                     Label("Export JSON", systemImage: "square.and.arrow.up")
                 }
                 .disabled(catalog.models.isEmpty)
@@ -162,10 +165,6 @@ struct ModelsView: View {
 
     private var visibleModels: [OllamaCatalogModel] {
         catalog.models.filter { $0.matchesName(nameQuery) }
-    }
-
-    private var exportJSON: String {
-        (try? OllamaPsExport.serialize(catalog.models).jsonString()) ?? "{\"models\":[]}\n"
     }
 
     private func modelRow(_ row: OllamaCatalogModel) -> some View {
