@@ -6,21 +6,21 @@ struct OllamaModelsTests {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    @Test func startBodyOmitsHostIdSoHomePicks() throws {
+    @Test func `start body omits host id so home picks`() throws {
         let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest", hostId: nil))
         let object = try decoder.decode([String: String].self, from: data)
         #expect(object["name"] == "llama3:latest")
         #expect(object["hostId"] == nil)
     }
 
-    @Test func startBodyIncludesHostIdWhenPicked() throws {
+    @Test func `start body includes host id when picked`() throws {
         let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest", hostId: "desk"))
         let object = try decoder.decode([String: String].self, from: data)
         #expect(object["name"] == "llama3:latest")
         #expect(object["hostId"] == "desk")
     }
 
-    @Test func stopUsesLiveRunningHostNotSnapshot() {
+    @Test func `stop uses live running host not snapshot`() {
         let stale = OllamaCatalogModel(
             name: "llama3:latest",
             digest: nil,
@@ -55,7 +55,7 @@ struct OllamaModelsTests {
         #expect(OllamaCatalogModel.runningHostId(name: "missing", in: [live]) == nil)
     }
 
-    @Test func nameFilterIsCaseInsensitiveAndIgnoresBlankQuery() {
+    @Test func `name filter is case insensitive and ignores blank query`() {
         let row = OllamaCatalogModel(
             name: "llama3:latest",
             digest: nil,
@@ -69,11 +69,11 @@ struct OllamaModelsTests {
         #expect(!row.matchesName("mistral"))
     }
 
-    @Test func localPullUsesDeviceTaskPath() {
+    @Test func `local pull uses device task path`() {
         #expect(OllamaTaskPath.rest(taskID: "t1", hostId: "self", selfHostId: "self") == "/api/tasks/t1")
     }
 
-    @Test func psExportRoundTripKeepsNullSizeVRAM() throws {
+    @Test func `ps export round trip keeps null size VRAM`() throws {
         let llama = OllamaCatalogModel(
             name: "llama3:latest",
             digest: nil,
@@ -121,7 +121,7 @@ struct OllamaModelsTests {
         #expect(fileText == json)
     }
 
-    @Test func modelsViewSharesExportJSON() throws {
+    @Test func `models view shares export JSON`() throws {
         let tests = URL(fileURLWithPath: #filePath)
         let url = tests.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/Views/ModelsView.swift")
@@ -136,6 +136,13 @@ struct OllamaModelsTests {
         #expect(!source.contains("ShareLink(item: exportJSON)"))
         #expect(!source.contains("private var exportJSON"))
         #expect(source.contains("Export JSON"))
+        #expect(source.contains("Menu {"))
+        #expect(source.contains("ellipsis.circle"))
+        #expect(source.contains("DeviceStatsHistory.points"))
+        #expect(source.contains("OllamaDeviceStats.gpuEmptyCopy"))
+        #expect(source.contains("LineMark("))
+        #expect(source.contains("AreaMark("))
+        #expect(source.contains("statsHistory(on:"))
         let modelsSource = try String(
             contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
                 .appendingPathComponent("Sources/Models/OllamaModels.swift"),
@@ -146,14 +153,14 @@ struct OllamaModelsTests {
         #expect(modelsSource.contains("static let filename = \"ollama-ps.json\""))
     }
 
-    @Test func memberPullUsesHomeProxyTaskPath() {
+    @Test func `member pull uses home proxy task path`() {
         #expect(
             OllamaTaskPath.rest(taskID: "t1", hostId: "peer", selfHostId: "self")
                 == "/api/home/devices/peer/v1/tasks/t1",
         )
     }
 
-    @Test func settingsSnapshotDecodesHostsAndOmitsRawKey() throws {
+    @Test func `settings snapshot decodes hosts and omits raw key`() throws {
         let json = """
         {
           "hosts": [
@@ -189,7 +196,109 @@ struct OllamaModelsTests {
         #expect(clearedObject["apiKey"] == "")
     }
 
-    @Test func catalogDecodesAndTaskPercentIs0to100() throws {
+    @Test func `live stats defaults to running device and skips unreachable`() {
+        let llama = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: true,
+            locations: [
+                OllamaModelLocation(hostId: "lab", displayName: nil, running: false, reachable: true),
+                OllamaModelLocation(hostId: "desk", displayName: nil, running: true, reachable: true),
+            ],
+        )
+        let desk = OllamaDeviceStatus(
+            hostId: "desk",
+            displayName: "Desk",
+            installed: true,
+            reachable: true,
+            stale: false,
+            installHint: "",
+        )
+        let down = OllamaDeviceStatus(
+            hostId: "down",
+            displayName: "Garage",
+            installed: true,
+            reachable: false,
+            stale: false,
+            installHint: "",
+        )
+        #expect(OllamaDeviceStats.defaultHostId(models: [llama], devices: [down, desk]) == "desk")
+        #expect(OllamaDeviceStats.defaultHostId(models: [], devices: [down, desk]) == "desk")
+        #expect(!OllamaDeviceStats.shouldFetch(catalogDevice: down, health: nil))
+        #expect(OllamaDeviceStats.shouldFetch(catalogDevice: desk, health: nil))
+        let memberDown = HomeDeviceHealthSnapshot(
+            hostId: "desk",
+            role: "member",
+            displayName: "Desk",
+            fingerprint: nil,
+            agentHost: nil,
+            agentPort: 7_777,
+            pairedAt: nil,
+            reachability: "unreachable",
+            reachabilityError: "Device is unreachable",
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil,
+        )
+        #expect(!OllamaDeviceStats.shouldFetch(catalogDevice: desk, health: memberDown))
+        #expect(OllamaDeviceStats.unreachableCopy.contains("unknown"))
+        #expect(OllamaDeviceStats.unreachableCopy.contains(Copy.device.lowercased()))
+        #expect(!OllamaDeviceStats.unreachableCopy.localizedCaseInsensitiveContains("node"))
+    }
+
+    @Test func `gpu devices decode occupancy and empty copy`() throws {
+        let json = """
+        [
+          {
+            "id": "0000:01:00.0",
+            "pciAddress": "0000:01:00.0",
+            "iommuGroup": "14",
+            "vendorId": "10de",
+            "deviceId": "2684",
+            "name": "NVIDIA",
+            "driver": "nvidia",
+            "vfioBound": false,
+            "inUseByHost": true,
+            "attachable": true,
+            "groupAddresses": ["0000:01:00.0", "0000:01:00.1"]
+          }
+        ]
+        """.data(using: .utf8)!
+        let gpus = try decoder.decode([HostGPUDevice].self, from: json)
+        #expect(gpus.count == 1)
+        let lines = OllamaDeviceStats.occupancyLines(gpus[0])
+        #expect(lines.contains("NVIDIA"))
+        #expect(lines.contains("nvidia"))
+        #expect(lines.contains("In use by host"))
+        #expect(lines.contains("Group mates: 0000:01:00.1"))
+        #expect(!lines.joined(separator: " ").contains("%"))
+        #expect(OllamaDeviceStats.gpuEmptyCopy.contains("no GPU"))
+        #expect(!OllamaDeviceStats.gpuEmptyCopy.localizedCaseInsensitiveContains("util"))
+        let samples = try decoder.decode(
+            [SystemStatsSample].self,
+            from: Data(
+                """
+                [
+                  {
+                    "timestamp": "2026-08-23T12:00:00Z",
+                    "hostCpuPercent": 12.4,
+                    "hostMemoryUsedMB": 8192,
+                    "hostMemoryTotalMB": 32768
+                  }
+                ]
+                """.utf8,
+            ),
+        )
+        let points = DeviceStatsHistory.points(from: samples)
+        #expect(points.count == 1)
+        #expect(points[0].cpuPercent == 12.4)
+        #expect(points[0].memoryUsedGB == 8)
+    }
+
+    @Test func `catalog decodes and task percent is 0 to 100`() throws {
         let json = """
         {
           "anyReachable": true,

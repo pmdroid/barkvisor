@@ -17,7 +17,9 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
     var running: Bool
     var locations: [OllamaModelLocation]
 
-    var id: String { name }
+    var id: String {
+        name
+    }
 
     func matchesName(_ query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -127,7 +129,7 @@ struct OllamaPsShareFile: Transferable {
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .json) { file in
-            SentTransferredFile(try OllamaPsExport.serialize(file.models).writeJSONFile())
+            try SentTransferredFile(OllamaPsExport.serialize(file.models).writeJSONFile())
         }
         .suggestedFileName(OllamaPsExport.filename)
     }
@@ -141,11 +143,76 @@ struct OllamaDeviceStatus: Decodable, Identifiable, Equatable, Hashable {
     var stale: Bool
     var installHint: String
 
-    var id: String { hostId }
+    var id: String {
+        hostId
+    }
 
     var title: String {
         let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? hostId : name
+    }
+}
+
+enum OllamaDeviceStats {
+    static let gpuEmptyCopy = "This Device has no GPU."
+
+    static var unreachableCopy: String {
+        "This \(Copy.device.lowercased()) did not answer. CPU, memory, and GPU are unknown."
+    }
+
+    static func defaultHostId(models: [OllamaCatalogModel], devices: [OllamaDeviceStatus]) -> String {
+        let locations = models.flatMap(\.locations)
+        if let row = locations.first(where: { $0.running && $0.reachable }) {
+            return row.hostId
+        }
+        if let row = locations.first(where: \.running) {
+            return row.hostId
+        }
+        return devices.first(where: \.reachable)?.hostId ?? devices.first?.hostId ?? ""
+    }
+
+    static func shouldFetch(catalogDevice: OllamaDeviceStatus?, health: HomeDeviceHealthSnapshot?) -> Bool {
+        guard let catalogDevice, catalogDevice.reachable else { return false }
+        if let health { return DeviceStatsHistory.shouldFetch(health) }
+        return true
+    }
+
+    static func healthTarget(
+        hostId: String,
+        catalog: [OllamaDeviceStatus],
+        devices: [HomeDeviceHealthSnapshot],
+    ) -> HomeDeviceHealthSnapshot? {
+        if hostId.isEmpty { return nil }
+        if let row = devices.first(where: { $0.hostId == hostId }) { return row }
+        guard let catalogDevice = catalog.first(where: { $0.hostId == hostId }) else { return nil }
+        let isSelf = devices.contains { $0.isSelf && $0.hostId == hostId }
+        return HomeDeviceHealthSnapshot(
+            hostId: hostId,
+            role: isSelf ? "self" : "member",
+            displayName: catalogDevice.displayName,
+            fingerprint: nil,
+            agentHost: nil,
+            agentPort: DeviceURL.defaultPort,
+            pairedAt: nil,
+            reachability: catalogDevice.reachable ? "ok" : "unreachable",
+            reachabilityError: catalogDevice.reachable ? nil : "Device is unreachable",
+            collectedAt: nil,
+            platform: nil,
+            resources: nil,
+            workloadCount: nil,
+            healthCounts: nil,
+        )
+    }
+
+    static func occupancyLines(_ gpu: HostGPUDevice) -> [String] {
+        var lines = [gpu.name]
+        if let driver = gpu.driver, !driver.isEmpty { lines.append(driver) }
+        if gpu.vfioBound == true { lines.append("vfio-pci") }
+        if let occupancy = gpu.occupancyCopy { lines.append(occupancy) }
+        lines.append(
+            "Group mates: \(GPUPassthroughCopy.groupMatesLabel(pciAddress: gpu.pciAddress, groupAddresses: gpu.groupAddresses))",
+        )
+        return lines
     }
 }
 
@@ -160,7 +227,9 @@ struct OllamaHostSettings: Decodable, Equatable, Identifiable {
     var hasApiKey: Bool
     var apiKeyMasked: String?
 
-    var id: String { hostId }
+    var id: String {
+        hostId
+    }
 }
 
 struct OllamaSettingsSnapshot: Decodable, Equatable {
