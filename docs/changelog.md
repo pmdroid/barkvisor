@@ -9,6 +9,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - In-app software updates are removed. Upgrade with Homebrew (`brew upgrade barkvisor`) on macOS, or your distro package on Linux. The Settings Updates tab, `/api/system/updates`, and the helper PKG installer are gone.
 - macOS no longer ships a privileged XPC helper. Bridged/vmnet attaches to Homebrew `socket_vmnet` (`brew install socket_vmnet && sudo brew services start socket_vmnet`). BarkVisor does not install, start, or stop that daemon.
 - Bridged start on Linux denies when `/etc/qemu/bridge.conf` is missing or unreadable (same as the Networks UI).
+- RBAC (PAS-286): two Home roles, admin and inference. First user is admin. Console sessions and API tokens inherit the user role. Admin can mint an inference-only token for an Agent Workload. Inference may list models that are already there and call chat completions through the BarkVisor proxy; pull, keys, USB attach, pairing, and Device changes return 403.
+- Ollama (PAS-269): if Ollama is reachable on a Device, Home shows **Ollama** for pull/start/stop and a merged catalog. Chat completions (`/v1/chat/completions`) route by model name — already-running, then the healthier Device. Inference API keys can list models and complete; they cannot pull or see the upstream Ollama key. BarkVisor does not require Ollama to install.
 - Remote access (PAS-89): detect Tailscale if installed (`tailscale ip -4` / MagicDNS), advertise it on inventory and pairing/sign-in QRs, optional “require tailnet for remote Home API”, WireGuard detection only. BarkVisor does not bundle Tailscale.
 - SPA inventory: Workloads, disks, networks, and logs share one Home-by-Device fetch helper (last-known when a Device is unreachable).
 

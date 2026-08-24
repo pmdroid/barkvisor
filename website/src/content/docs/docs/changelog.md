@@ -8,6 +8,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- RBAC (PAS-286): two Home roles, admin and inference. First user is admin. Console sessions and API tokens inherit the user role. Admin can mint an inference-only token for an Agent Workload. Inference may list models that are already there and call chat completions through the BarkVisor proxy; pull, keys, USB attach, pairing, and Device changes return 403.
+- Ollama (PAS-269): if Ollama is reachable on a Device, Home shows **Ollama** for pull/start/stop and a merged catalog. Chat completions (`/v1/chat/completions`) route by model name — already-running, then the healthier Device. Inference API keys can list models and complete; they cannot pull or see the upstream Ollama key. BarkVisor does not require Ollama to install.
 - Remote access (PAS-89): detect Tailscale if installed (`tailscale ip -4` / MagicDNS), advertise it on inventory and pairing/sign-in QRs, optional “require tailnet for remote Home API”, WireGuard detection only. BarkVisor does not bundle Tailscale.
 - SPA inventory: Workloads, disks, networks, and logs share one Home-by-Device fetch helper (last-known when a Device is unreachable).
 

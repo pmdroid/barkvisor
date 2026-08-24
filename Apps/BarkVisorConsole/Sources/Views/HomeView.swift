@@ -59,6 +59,15 @@ struct HomeView: View {
                 .platformListStyle()
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                NavigationLink {
+                    ModelsView()
+                } label: {
+                    Label("Ollama", systemImage: "cube")
+                }
+            }
+        }
         .refreshable {
             await model.refreshHome()
             let ready = await model.anyReadyLibraryImage()

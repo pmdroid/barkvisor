@@ -42,6 +42,7 @@ public enum APIKeyService {
         db: DatabasePool,
         bytes: [UInt8] = PlatformRandom.secureBytes(count: 32),
         hmacSecret: String? = nil,
+        kind: APIKeyKind = .full,
     ) async throws -> APIKeyCreateResult {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -70,6 +71,7 @@ public enum APIKeyService {
                 expiresAt: expiresAt,
                 lastUsedAt: nil,
                 createdAt: now,
+                kind: kind.rawValue,
             )
             try await db.write { db in
                 try apiKey.insert(db)

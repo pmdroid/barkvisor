@@ -43,15 +43,42 @@ describe('auth store (PAS-242)', () => {
 
   test('login stores the JWT and refresh token', async () => {
     api.post = mock(() =>
-      Promise.resolve({ data: { token: 'jwt-1', refreshToken: 'bvrt_abc' } }),
+      Promise.resolve({ data: { token: 'jwt-1', refreshToken: 'bvrt_abc', role: 'admin' } }),
     ) as typeof api.post
 
     const store = useAuthStore()
     await store.login('admin', 'secret')
     expect(store.token).toBe('jwt-1')
     expect(store.refreshToken).toBe('bvrt_abc')
+    expect(store.role).toBe('admin')
+    expect(store.isAdmin).toBe(true)
     expect(localStorage.getItem('token')).toBe('jwt-1')
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('bvrt_abc')
+    expect(localStorage.getItem('userRole')).toBe('admin')
+  })
+
+  test('unknown login role fails closed as inference', async () => {
+    api.post = mock(() =>
+      Promise.resolve({ data: { token: 'jwt-3', refreshToken: 'bvrt_x', role: 'owner' } }),
+    ) as typeof api.post
+
+    const store = useAuthStore()
+    await store.login('reader', 'secret')
+    expect(store.role).toBe('inference')
+    expect(store.isAdmin).toBe(false)
+  })
+
+  test('login stores an inference role', async () => {
+    api.post = mock(() =>
+      Promise.resolve({ data: { token: 'jwt-2', refreshToken: 'bvrt_inf', role: 'inference' } }),
+    ) as typeof api.post
+
+    const store = useAuthStore()
+    await store.login('reader', 'secret')
+    expect(store.role).toBe('inference')
+    expect(store.isAdmin).toBe(false)
+    expect(store.isInference).toBe(true)
+    expect(localStorage.getItem('userRole')).toBe('inference')
   })
 
   test('logout posts the refresh family then clears local session', async () => {

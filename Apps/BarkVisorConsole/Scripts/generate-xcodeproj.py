@@ -20,6 +20,7 @@ APP_SOURCES = [
     "Sources/Models/LoginOfferQR.swift",
     "Sources/Models/PairingOffer.swift",
     "Sources/Models/StreamSupport.swift",
+    "Sources/Models/OllamaModels.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
     "Sources/Services/AppModel.swift",
@@ -38,6 +39,7 @@ APP_SOURCES = [
     "Sources/Views/SerialConsoleView.swift",
     "Sources/Views/DisplayView.swift",
     "Sources/Views/LibraryView.swift",
+    "Sources/Views/ModelsView.swift",
     "Sources/Views/SettingsView.swift",
     "Sources/Views/Components/Components.swift",
 ]
@@ -49,6 +51,7 @@ TEST_SOURCES = [
     "Tests/LocalStreamTests.swift",
     "Tests/SessionTests.swift",
     "Tests/PairingOfferTests.swift",
+    "Tests/OllamaModelsTests.swift",
 ]
 
 
@@ -290,6 +293,7 @@ def main() -> None:
                 child_file("Sources/Models/LoginOfferQR.swift"),
                 child_file("Sources/Models/PairingOffer.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
+                child_file("Sources/Models/OllamaModels.swift"),
             ],
             "Models",
         )
@@ -324,6 +328,7 @@ def main() -> None:
                 child_file("Sources/Views/SerialConsoleView.swift"),
                 child_file("Sources/Views/DisplayView.swift"),
                 child_file("Sources/Views/LibraryView.swift"),
+                child_file("Sources/Views/ModelsView.swift"),
                 child_file("Sources/Views/SettingsView.swift"),
                 child_group("Components"),
             ],
@@ -354,6 +359,7 @@ def main() -> None:
                 child_file("Tests/LocalStreamTests.swift"),
                 child_file("Tests/SessionTests.swift"),
                 child_file("Tests/PairingOfferTests.swift"),
+                child_file("Tests/OllamaModelsTests.swift"),
             ],
             "Tests",
         )

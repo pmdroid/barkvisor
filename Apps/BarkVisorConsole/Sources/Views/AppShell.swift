@@ -108,6 +108,7 @@ struct MacAppShell: View {
         case .dashboard: DashboardView()
         case .devices: DevicesView()
         case .workloads: WorkloadsView()
+        case .models: ModelsView()
         case .library: LibraryView()
         case .disks: DisksView()
         case .networks: NetworksView()

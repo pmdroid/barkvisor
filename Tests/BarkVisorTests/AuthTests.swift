@@ -10,7 +10,11 @@ struct AuthTests {
 
     @Test func `authenticated user JWT`() {
         let user = AuthenticatedUser(
-            userId: "user-1", username: "admin", authMethod: "jwt", apiKeyId: nil,
+            userId: "user-1",
+            username: "admin",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
         )
         #expect(user.userId == "user-1")
         #expect(user.username == "admin")
@@ -20,15 +24,58 @@ struct AuthTests {
 
     @Test func `authenticated user API key`() {
         let user = AuthenticatedUser(
-            userId: "user-1", username: "admin", authMethod: "apikey", apiKeyId: "key-1",
+            userId: "user-1",
+            username: "admin",
+            authMethod: "apikey",
+            apiKeyId: "key-1",
+            role: UserRole.admin.rawValue,
         )
         #expect(user.authMethod == "apikey")
         #expect(user.apiKeyId == "key-1")
+        #expect(user.apiKeyKind == nil)
+    }
+
+    @Test func `authenticated user inference key`() {
+        let user = AuthenticatedUser(
+            userId: "user-1",
+            username: "admin",
+            authMethod: "apikey",
+            apiKeyId: "key-1",
+            apiKeyKind: APIKeyKind.inference.rawValue,
+            role: UserRole.admin.rawValue,
+        )
+        #expect(user.apiKeyKind == "inference")
+        #expect(user.role == UserRole.admin.rawValue)
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: user.role, authMethod: user.authMethod, apiKeyKind: user.apiKeyKind,
+            ) == .inferenceKey,
+        )
+    }
+
+    @Test func `authenticated inference user JWT`() {
+        let user = AuthenticatedUser(
+            userId: "user-2",
+            username: "reader",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.inference.rawValue,
+        )
+        #expect(user.userRole == .inference)
+        #expect(
+            OllamaAuthPolicy.principal(
+                userRole: user.role, authMethod: user.authMethod, apiKeyKind: nil,
+            ) == .inferenceKey,
+        )
     }
 
     @Test func `authenticated user ticket`() {
         let user = AuthenticatedUser(
-            userId: "user-1", username: "admin", authMethod: "ticket", apiKeyId: nil,
+            userId: "user-1",
+            username: "admin",
+            authMethod: "ticket",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
         )
         #expect(user.authMethod == "ticket")
     }

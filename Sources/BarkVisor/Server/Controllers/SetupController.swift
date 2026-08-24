@@ -93,15 +93,20 @@ struct SetupController: RouteCollection {
                     throw Abort(.conflict, reason: "Password already set for this user")
                 }
                 try db.execute(
-                    sql: "UPDATE users SET password = ? WHERE username = ? AND password = ''",
-                    arguments: [hash, body.username],
+                    sql: """
+                    UPDATE users SET password = ?, role = ?
+                    WHERE username = ? AND password = ''
+                    """,
+                    arguments: [hash, UserRole.admin.rawValue, body.username],
                 )
             } else {
+                let existingCount = try User.fetchCount(db)
                 let user = User(
                     id: UUID().uuidString,
                     username: body.username,
                     password: hash,
                     createdAt: iso8601.string(from: Date()),
+                    role: UserRolePolicy.roleForNewUser(existingUserCount: existingCount).rawValue,
                 )
                 try user.insert(db)
             }
@@ -315,6 +320,7 @@ struct SetupController: RouteCollection {
             sub: .init(value: admin.id),
             username: admin.username,
             exp: .init(value: Date().addingTimeInterval(2 * 60 * 60)),
+            role: admin.userRole.rawValue,
         )
         let token = try await keys.sign(payload)
 

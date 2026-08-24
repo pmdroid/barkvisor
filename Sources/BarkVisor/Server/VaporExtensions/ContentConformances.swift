@@ -48,3 +48,9 @@ extension HomePlacementScoreRequest: Content {}
 extension HomePlacementScoreResponse: Content {}
 extension HomePlacementCandidate: Content {}
 extension HomePlacementReason: Content {}
+extension OllamaDeviceSnapshot: Content {}
+extension OllamaDeviceStatus: Content {}
+extension OllamaHomeCatalog: Content {}
+extension OllamaSettingsSnapshot: Content {}
+extension OllamaNativeTags: Content {}
+extension OllamaNativePS: Content {}

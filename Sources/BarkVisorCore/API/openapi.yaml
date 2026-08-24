@@ -176,6 +176,22 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: getAuthMe
+      x-barkvisor-stability: stable
+      summary: Current user id, username, and Home role (admin or inference)
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthMeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/auth/login-offers:
     post:
       tags: [evolving]
@@ -1445,6 +1461,268 @@ paths:
         "101":
           description: Switching Protocols
 
+  /api/ollama/status:
+    get:
+      tags: [evolving]
+      operationId: getOllamaStatus
+      x-barkvisor-stability: evolving
+      summary: Host Ollama detect and reachability on this Device
+      responses:
+        "200":
+          description: Installed/reachable Ollama on this Device
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/snapshot:
+    get:
+      tags: [evolving]
+      operationId: getOllamaSnapshot
+      x-barkvisor-stability: evolving
+      summary: tags+ps snapshot for Home catalog merge
+      responses:
+        "200":
+          description: Device Ollama snapshot
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/tags:
+    get:
+      tags: [evolving]
+      operationId: getOllamaTags
+      x-barkvisor-stability: evolving
+      summary: Native Ollama GET /api/tags for this Device
+      responses:
+        "200":
+          description: Pulled models
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/ps:
+    get:
+      tags: [evolving]
+      operationId: getOllamaPs
+      x-barkvisor-stability: evolving
+      summary: Native Ollama GET /api/ps for this Device
+      responses:
+        "200":
+          description: Running models
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/pull:
+    post:
+      tags: [evolving]
+      operationId: postOllamaPull
+      x-barkvisor-stability: evolving
+      summary: Pull a model via native Ollama POST /api/pull
+      responses:
+        "200":
+          description: Background pull task
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/start:
+    post:
+      tags: [evolving]
+      operationId: postOllamaStart
+      x-barkvisor-stability: evolving
+      summary: Load a pulled model after a RAM fit check
+      responses:
+        "204":
+          description: Loaded
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/stop:
+    post:
+      tags: [evolving]
+      operationId: postOllamaStop
+      x-barkvisor-stability: evolving
+      summary: Unload a running Ollama model
+      responses:
+        "204":
+          description: Unloaded
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/settings:
+    get:
+      tags: [evolving]
+      operationId: getOllamaSettings
+      x-barkvisor-stability: evolving
+      summary: Upstream Ollama endpoint (loopback) and whether Home holds an API key
+      responses:
+        "200":
+          description: Settings without the raw key
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: putOllamaSettings
+      x-barkvisor-stability: evolving
+      summary: Set loopback Ollama URL and upstream API key
+      responses:
+        "200":
+          description: Saved settings
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ollama/v1/chat/completions:
+    post:
+      tags: [evolving]
+      operationId: postOllamaChatCompletions
+      x-barkvisor-stability: evolving
+      summary: OpenAI chat completions against this Device's Ollama
+      responses:
+        "200":
+          description: Completion
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/ollama/status:
+    get:
+      tags: [evolving]
+      operationId: getHomeOllamaStatus
+      x-barkvisor-stability: evolving
+      summary: Home Ollama map and whether Models should show
+      responses:
+        "200":
+          description: Merged catalog plus Device reachability
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/ollama/models:
+    get:
+      tags: [evolving]
+      operationId: getHomeOllamaModels
+      x-barkvisor-stability: evolving
+      summary: Merged tags+ps catalog for the Home
+      responses:
+        "200":
+          description: Catalog
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/ollama/pull:
+    post:
+      tags: [evolving]
+      operationId: postHomeOllamaPull
+      x-barkvisor-stability: evolving
+      summary: Pull a model on a chosen Device
+      responses:
+        "200":
+          description: Pull task
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/ollama/start:
+    post:
+      tags: [evolving]
+      operationId: postHomeOllamaStart
+      x-barkvisor-stability: evolving
+      summary: Load a model on a Device (prefer running, then healthier)
+      responses:
+        "204":
+          description: Loaded
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/home/ollama/stop:
+    post:
+      tags: [evolving]
+      operationId: postHomeOllamaStop
+      x-barkvisor-stability: evolving
+      summary: Unload a model on a Device
+      responses:
+        "204":
+          description: Unloaded
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/tags:
+    get:
+      tags: [evolving]
+      operationId: getNativeOllamaTags
+      x-barkvisor-stability: evolving
+      summary: Native Ollama GET /api/tags for the Home catalog
+      responses:
+        "200":
+          description: Pulled models
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/pull:
+    post:
+      tags: [evolving]
+      operationId: postNativeOllamaPull
+      x-barkvisor-stability: evolving
+      summary: Native Ollama POST /api/pull routed to one Device
+      responses:
+        "200":
+          description: Pull task
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/ps:
+    get:
+      tags: [evolving]
+      operationId: getNativeOllamaPs
+      x-barkvisor-stability: evolving
+      summary: Native Ollama GET /api/ps for running Home models
+      responses:
+        "200":
+          description: Running models
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/models:
+    get:
+      tags: [evolving]
+      operationId: getOpenAIModels
+      x-barkvisor-stability: evolving
+      summary: OpenAI list models from the Home Ollama catalog
+      responses:
+        "200":
+          description: Model list
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/chat/completions:
+    post:
+      tags: [evolving]
+      operationId: postOpenAIChatCompletions
+      x-barkvisor-stability: evolving
+      summary: OpenAI chat completions routed by model name
+      responses:
+        "200":
+          description: Completion
+        default:
+          $ref: "#/components/responses/Error"
+
+  /v1/models:
+    get:
+      tags: [evolving]
+      operationId: getOpenAIModelsRoot
+      x-barkvisor-stability: evolving
+      summary: OpenAI list models (Ollama-compatible base URL)
+      responses:
+        "200":
+          description: Model list
+        default:
+          $ref: "#/components/responses/Error"
+
+  /v1/chat/completions:
+    post:
+      tags: [evolving]
+      operationId: postOpenAIChatCompletionsRoot
+      x-barkvisor-stability: evolving
+      summary: OpenAI chat completions (Ollama-compatible base URL)
+      responses:
+        "200":
+          description: Completion
+        default:
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1671,12 +1949,28 @@ components:
 
     LoginResponse:
       type: object
-      required: [token, refreshToken]
+      required: [token, refreshToken, role]
       properties:
         token:
           type: string
         refreshToken:
           type: string
+        role:
+          type: string
+          enum: [admin, inference]
+          description: Home role. Tokens inherit this role. Admin may also mint inference-only API keys.
+
+    AuthMeResponse:
+      type: object
+      required: [id, username, role]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, inference]
 
     RefreshRequest:
       type: object
