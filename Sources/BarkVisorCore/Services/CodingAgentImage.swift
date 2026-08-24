@@ -99,6 +99,25 @@ public enum CodingAgentImage {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    public static func openaiAPIKeyForHomeGrant(_ raw: String?) throws -> String {
+        guard let raw else { return defaultOpenAIAPIKey }
+        return try normalizeOpenAIAPIKey(raw, required: true)
+    }
+
+    /// Unquoted `/etc/default/barkvisor-openai` assignment. GPU rewrite keeps a grant.
+    public static func openaiAPIKeyFromUserData(_ userData: String?) -> String? {
+        guard let userData, !userData.isEmpty else { return nil }
+        let pattern = #"(?m)^[ \t]*OPENAI_API_KEY=([A-Za-z0-9._+=-]+)[ \t]*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: userData, range: NSRange(userData.startIndex..., in: userData),
+              ),
+              let range = Range(match.range(at: 1), in: userData)
+        else { return nil }
+        let value = String(userData[range])
+        return isShellSafeOpenAIAPIKey(value) ? value : nil
+    }
+
     public static func usesDeviceOllama(_ url: String) -> Bool {
         guard let comps = URLComponents(string: url),
               comps.user == nil, comps.password == nil,
@@ -248,9 +267,11 @@ public enum CodingAgentImage {
         (userData ?? "").contains("barkvisor-coding-agent-setup")
     }
 
-    public static func userDataForGPU(gpuAttached: Bool) -> String {
-        userData(
+    public static func userDataForGPU(gpuAttached: Bool, existingUserData: String? = nil) -> String {
+        let key = openaiAPIKeyFromUserData(existingUserData) ?? defaultOpenAIAPIKey
+        return userData(
             openaiBaseURL: gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL,
+            openaiAPIKey: key,
             installGuestOllama: gpuAttached,
         )
     }
@@ -273,17 +294,22 @@ public enum CodingAgentImage {
         params: CreateVMParams,
         imageName: String?,
         imageSlug: String? = nil,
+        grantPlaintext: String? = nil,
     ) throws -> CreateVMParams {
         guard matches(name: imageName, slug: imageSlug) else { return params }
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let gpuAttached = !(params.gpuDevices ?? []).isEmpty
-        let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL
-        let userData = existing.isEmpty
-            ? Self.userData(openaiBaseURL: defaultURL, installGuestOllama: gpuAttached)
-            : existing
+        let userData: String
         if existing.isEmpty {
+            let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL
+            let key = try openaiAPIKeyForHomeGrant(grantPlaintext)
+            userData = Self.userData(
+                openaiBaseURL: defaultURL, openaiAPIKey: key, installGuestOllama: gpuAttached,
+            )
             try CloudInitService.validateUserData(userData)
+        } else {
+            userData = existing
         }
         let cloudInit = CloudInitConfig(
             sshAuthorizedKeys: params.cloudInit?.sshAuthorizedKeys,

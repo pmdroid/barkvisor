@@ -199,19 +199,31 @@ runcmd:
 `
 }
 
+export function openaiAPIKeyForHomeGrant(raw?: string | null): string {
+  if (raw == null) return DEFAULT_OPENAI_API_KEY
+  return normalizeOpenAIAPIKey(raw, true)
+}
+
+export function openaiAPIKeyFromUserData(userData?: string | null): string | null {
+  if (!userData) return null
+  const match = userData.match(/^[ \t]*OPENAI_API_KEY=([A-Za-z0-9._+=-]+)[ \t]*$/m)
+  return match?.[1] ?? null
+}
+
 export function mergeCodingAgentUserData(
   existing: string,
   img: { name?: string | null; slug?: string | null } | null | undefined,
   preset: OpenAIPreset,
   byoURL: string,
   byoAPIKey = '',
+  grantPlaintext?: string | null,
 ): string {
   const trimmed = existing.trim()
   if (trimmed) return trimmed
   if (!isCodingAgentImage(img)) return existing
   const url = isHomeOllamaGrant(preset) ? HOME_OLLAMA_GRANT_URL : normalizeOpenAIBaseURL(byoURL)
   const key = isHomeOllamaGrant(preset)
-    ? DEFAULT_OPENAI_API_KEY
+    ? openaiAPIKeyForHomeGrant(grantPlaintext)
     : normalizeOpenAIAPIKey(byoAPIKey, true)
   return codingAgentUserData(url, key)
 }
