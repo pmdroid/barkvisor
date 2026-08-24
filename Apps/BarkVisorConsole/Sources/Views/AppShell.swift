@@ -43,6 +43,14 @@ struct PhoneAppShell: View {
             } label: {
                 Label(Copy.library, systemImage: "opticaldisc")
             }
+            Tab(value: PhoneTab.models) {
+                NavigationStack {
+                    ModelsView()
+                        .navigationTitle(AppRoute.models.title)
+                }
+            } label: {
+                Label(AppRoute.models.title, systemImage: AppRoute.models.symbol)
+            }
             Tab(value: PhoneTab.devices) {
                 NavigationStack {
                     DevicesView()
