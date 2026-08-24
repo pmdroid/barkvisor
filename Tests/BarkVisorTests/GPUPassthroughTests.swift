@@ -398,7 +398,7 @@ struct GPUPassthroughTests {
     @Test func `host ollama grant is skipped when a gpu is attached`() {
         #expect(
             AgentNetworkCage.allowHostOllama(
-                userData: "OPENAI_BASE_URL=http://10.0.2.2:11434/v1",
+                userData: "export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'",
             ),
         )
         let gpu = WorkloadGPUDevice(
