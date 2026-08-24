@@ -12,15 +12,12 @@ struct DevicesView: View {
                     description: Text("This \(Copy.home.lowercased()) only lists Devices after the connected \(Copy.device.lowercased()) answers.")
                 )
             } else {
-                List(model.devices, selection: Binding(
-                    get: { model.selectedDeviceID },
-                    set: { next in
-                        guard let next, let device = model.devices.first(where: { $0.hostId == next }) else { return }
-                        Task { await model.select(device) }
+                List(model.devices) { device in
+                    NavigationLink {
+                        DeviceDetailView(deviceID: device.hostId, fallbackDevice: device)
+                    } label: {
+                        DeviceRow(device: device, selected: device.hostId == model.selectedDeviceID)
                     }
-                )) {
-                    DeviceRow(device: $0, selected: $0.hostId == model.selectedDeviceID)
-                        .tag($0.hostId)
                 }
                 .platformListStyle()
             }
@@ -61,13 +58,8 @@ struct DeviceRow: View {
 
     private var subtitle: String {
         var parts = [device.isSelf ? "This \(Copy.device)" : Copy.device, device.platformLabel, device.workloadLine]
-        if device.isReachable, let resources = device.resources {
-            if let cpu = resources.cpuLoadPercent {
-                parts.append("CPU \(Int(cpu.rounded()))%")
-            }
-            if let used = resources.memoryUsedMB, let total = resources.memoryTotalMB {
-                parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1024, Double(total) / 1024))
-            }
+        if let resources = device.resourcesLine {
+            parts.append(resources)
         }
         return parts.joined(separator: " · ")
     }

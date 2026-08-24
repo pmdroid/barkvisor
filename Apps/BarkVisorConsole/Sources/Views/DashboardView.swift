@@ -25,7 +25,7 @@ struct DashboardView: View {
             Section(Copy.device) {
                 if let device = model.selectedDevice {
                     NavigationLink {
-                        DevicesView()
+                        DeviceDetailView(deviceID: device.hostId, fallbackDevice: device)
                     } label: {
                         DeviceRow(device: device)
                     }
