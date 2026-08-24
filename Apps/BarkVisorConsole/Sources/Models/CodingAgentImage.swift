@@ -59,6 +59,24 @@ enum CodingAgentImage {
 
     static let defaultOpenAIAPIKey = "ollama"
 
+    static func openaiAPIKeyForHomeGrant(_ raw: String?) throws -> String {
+        guard let raw else { return defaultOpenAIAPIKey }
+        return try normalizeOpenAIAPIKey(raw, required: true)
+    }
+
+    static func openaiAPIKeyFromUserData(_ userData: String?) -> String? {
+        guard let userData, !userData.isEmpty else { return nil }
+        let pattern = #"(?m)^[ \t]*OPENAI_API_KEY=([A-Za-z0-9._+=-]+)[ \t]*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: userData, range: NSRange(userData.startIndex..., in: userData),
+              ),
+              let range = Range(match.range(at: 1), in: userData)
+        else { return nil }
+        let value = String(userData[range])
+        return isShellSafeOpenAIAPIKey(value) ? value : nil
+    }
+
     static func isShellSafeOpenAIAPIKey(_ value: String) -> Bool {
         !value.isEmpty && value.allSatisfy { ch in
             ch.isASCII && (ch.isLetter || ch.isNumber || "._+=-".contains(ch))

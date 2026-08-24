@@ -188,6 +188,15 @@ struct GPUPassthroughTests {
             vendorId: "10de",
             deviceId: "2684",
         )
+        let granted = CodingAgentImage.userData(
+            openaiBaseURL: CodingAgentImage.homeOllamaGrantURL,
+            openaiAPIKey: "barkvisor_abc",
+        )
+        let attachedWithGrant = CodingAgentImage.userDataForGPU(
+            gpuAttached: true, existingUserData: granted,
+        )
+        #expect(attachedWithGrant.contains("OPENAI_API_KEY=barkvisor_abc"))
+        #expect(attachedWithGrant.contains("127.0.0.1:11434"))
         let attached = CodingAgentImage.userDataForGPU(gpuAttached: true)
         try CloudInitService.validateUserData(attached)
         #expect(attached.contains("barkvisor-guest-ollama"))

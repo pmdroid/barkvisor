@@ -10,6 +10,8 @@ import {
   isCodingAgentImage,
   mergeCodingAgentUserData,
   normalizeOpenAIBaseURL,
+  openaiAPIKeyForHomeGrant,
+  openaiAPIKeyFromUserData,
   usesDeviceOllama,
 } from './codingAgentImage'
 
@@ -82,5 +84,26 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(byo).toContain('https://api.example/v1')
     expect(byo).toContain("export OPENAI_API_KEY='sk-test'")
     expect(mergeCodingAgentUserData('', { name: 'Ubuntu' }, 'device-ollama', '')).toBe('')
+    const granted = mergeCodingAgentUserData('', img, 'home-ollama', '', '', 'barkvisor_abc')
+    expect(granted).toContain("export OPENAI_API_KEY='barkvisor_abc'")
+    expect(granted).toContain('OPENAI_API_KEY=barkvisor_abc')
+    expect(granted).not.toContain("export OPENAI_API_KEY='ollama'")
+    expect(openaiAPIKeyFromUserData(granted)).toBe('barkvisor_abc')
+    expect(openaiAPIKeyFromUserData(injected)).toBe('ollama')
+  })
+
+  test('home grant is fail-closed and ignored when user-data exists', () => {
+    const img = { name: 'Coding Agent' }
+    expect(openaiAPIKeyForHomeGrant(null)).toBe('ollama')
+    expect(openaiAPIKeyForHomeGrant(undefined)).toBe('ollama')
+    expect(() => openaiAPIKeyForHomeGrant('')).toThrow('OPENAI_API_KEY is required')
+    expect(() => openaiAPIKeyForHomeGrant('  ')).toThrow('OPENAI_API_KEY is required')
+    expect(
+      mergeCodingAgentUserData('packages:\n  - vim\n', img, 'home-ollama', '', '', 'sk-$(id)'),
+    ).toContain('vim')
+    expect(() => mergeCodingAgentUserData('', img, 'home-ollama', '', '', '  ')).toThrow(
+      'OPENAI_API_KEY is required',
+    )
+    expect(mergeCodingAgentUserData('', img, 'home-ollama', '')).toContain("export OPENAI_API_KEY='ollama'")
   })
 })

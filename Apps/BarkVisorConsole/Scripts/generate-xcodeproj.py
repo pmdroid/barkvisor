@@ -22,6 +22,7 @@ APP_SOURCES = [
     "Sources/Models/PairingOffer.swift",
     "Sources/Models/StreamSupport.swift",
     "Sources/Models/OllamaModels.swift",
+    "Sources/Models/InferenceAPIHowTo.swift",
     "Sources/Models/Chat.swift",
     "Sources/Models/APIKeys.swift",
     "Sources/Services/KeychainStore.swift",
@@ -61,6 +62,7 @@ TEST_SOURCES = [
     "Tests/OllamaModelsTests.swift",
     "Tests/ChatTests.swift",
     "Tests/CodingAgentSessionTests.swift",
+    "Tests/InferenceAPIHowToTests.swift",
 ]
 
 
@@ -304,6 +306,7 @@ def main() -> None:
                 child_file("Sources/Models/PairingOffer.swift"),
                 child_file("Sources/Models/StreamSupport.swift"),
                 child_file("Sources/Models/OllamaModels.swift"),
+                child_file("Sources/Models/InferenceAPIHowTo.swift"),
                 child_file("Sources/Models/Chat.swift"),
                 child_file("Sources/Models/APIKeys.swift"),
             ],
@@ -378,6 +381,7 @@ def main() -> None:
                 child_file("Tests/OllamaModelsTests.swift"),
                 child_file("Tests/ChatTests.swift"),
                 child_file("Tests/CodingAgentSessionTests.swift"),
+                child_file("Tests/InferenceAPIHowToTests.swift"),
             ],
             "Tests",
         )

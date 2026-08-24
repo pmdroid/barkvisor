@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Inference how-to: web and Console Models always show a **Use this API** card. LAN is Home or Device `:7777/v1/chat/completions` with `Authorization: Bearer` and an inference key (not Device `:11434`). Copy curl and `OPENAI_BASE_URL` / `OPENAI_API_KEY`. From inside a Workload the cage URL is `http://10.0.2.2:11434/v1` (slirp guestfwd). Coding Agent cloud-init writes a real inference key when a grant is supplied.
 - In-app software updates are removed. Upgrade with Homebrew (`brew upgrade barkvisor`) on macOS, or your distro package on Linux. The Settings Updates tab, `/api/system/updates`, and the helper PKG installer are gone.
 - macOS no longer ships a privileged XPC helper. Bridged/vmnet attaches to Homebrew `socket_vmnet` (`brew install socket_vmnet && sudo brew services start socket_vmnet`). BarkVisor does not install, start, or stop that daemon.
 - Bridged start on Linux denies when `/etc/qemu/bridge.conf` is missing or unreadable (same as the Networks UI).

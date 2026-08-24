@@ -1,4 +1,46 @@
 import SwiftUI
+#if canImport(UIKit)
+    import UIKit
+#endif
+#if canImport(AppKit)
+    import AppKit
+#endif
+
+enum ClipboardCopy {
+    static func set(_ text: String) {
+        #if os(iOS)
+            UIPasteboard.general.string = text
+        #else
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+}
+
+struct CopyableSnippet: View {
+    var title: String
+    var text: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(copied ? "Copied" : "Copy") {
+                    ClipboardCopy.set(text)
+                    copied = true
+                }
+                .buttonStyle(.borderless)
+            }
+            Text(text)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+        }
+    }
+}
 
 struct StatusLabel: View {
     var text: String
