@@ -31,6 +31,36 @@ export const useAuthStore = defineStore('auth', () => {
     else localStorage.removeItem(REFRESH_TOKEN_KEY)
   }
 
+  /** Pick up access/refresh tokens injected by the iOS Chat WKWebView. */
+  function hydrateFromStorage() {
+    const nextToken = localStorage.getItem('token') || ''
+    const nextRefresh = localStorage.getItem(REFRESH_TOKEN_KEY) || ''
+    if (nextToken !== token.value) token.value = nextToken
+    if (nextRefresh !== refreshToken.value) refreshToken.value = nextRefresh
+  }
+
+  async function refreshSession(): Promise<boolean> {
+    hydrateFromStorage()
+    const presented = refreshToken.value
+    if (!presented) return false
+    try {
+      const { data } = await api.post<LoginSession>('/auth/refresh', { refreshToken: presented })
+      const nextRefresh =
+        typeof data.refreshToken === 'string' && data.refreshToken ? data.refreshToken : presented
+      persistSession(data.token, nextRefresh)
+      if (data.role === 'admin' || data.role === 'inference') persistRole(data.role)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('barkvisor:session', () => {
+      hydrateFromStorage()
+    })
+  }
+
   function persistRole(next: UserRole) {
     role.value = next
     localStorage.setItem(USER_ROLE_KEY, next)
@@ -92,5 +122,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     fetchMe,
+    refreshSession,
+    hydrateFromStorage,
   }
 })

@@ -27,3 +27,16 @@ export function apiErrorMessage(error: unknown, fallback = 'Request failed'): st
 export function isNotFoundError(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 404
 }
+
+/** Access JWT expired or missing. Callers may silent-refresh then retry once. */
+export function isUnauthorizedError(error: unknown): boolean {
+  if (axios.isAxiosError(error)) {
+    return error.response?.status === 401
+  }
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    (error as { status: unknown }).status === 401
+  )
+}

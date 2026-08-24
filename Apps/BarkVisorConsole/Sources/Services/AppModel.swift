@@ -172,6 +172,11 @@ final class AppModel {
         return api
     }
 
+    /// Refresh family for the iOS Chat web view. Access JWT rotation must not remount it.
+    var sessionRefreshToken: String? {
+        refreshToken
+    }
+
     var selectedDevice: HomeDeviceHealthSnapshot? {
         devices.first { $0.hostId == selectedDeviceID } ?? devices.first { $0.isSelf } ?? devices.first
     }

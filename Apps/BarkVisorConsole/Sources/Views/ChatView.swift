@@ -203,8 +203,12 @@ struct ChatNativeView: View {
                         ),
                     )
                 } else if let client = model.client, let token = client.token, !token.isEmpty {
-                    ChatHomeWebView(origin: client.baseURL, token: token)
-                        .id(client.baseURL.absoluteString + "\u{1e}" + token)
+                    ChatHomeWebView(
+                        origin: client.baseURL,
+                        token: token,
+                        refreshToken: model.sessionRefreshToken ?? "",
+                    )
+                    .id(ChatWebSession.viewIdentity(home: client.baseURL))
                 } else {
                     ContentUnavailableView(
                         "Sign in required",
@@ -223,42 +227,90 @@ struct ChatNativeView: View {
     struct ChatHomeWebView: UIViewRepresentable {
         var origin: URL
         var token: String
+        var refreshToken: String
 
         func makeCoordinator() -> ChatHomeWebCoordinator {
-            ChatHomeWebCoordinator(origin: origin, token: token)
+            ChatHomeWebCoordinator(origin: origin, token: token, refreshToken: refreshToken)
         }
 
         func makeUIView(context: Context) -> WKWebView {
             let config = WKWebViewConfiguration()
             config.websiteDataStore = .nonPersistent()
             config.defaultWebpagePreferences.allowsContentJavaScript = true
-            config.userContentController.addUserScript(
-                WKUserScript(
-                    source: ChatWebSession.userScriptSource(token: token),
-                    injectionTime: .atDocumentStart,
-                    forMainFrameOnly: false,
-                ),
-            )
             let view = WKWebView(frame: .zero, configuration: config)
             view.navigationDelegate = context.coordinator
             view.isOpaque = false
             view.backgroundColor = .systemBackground
             view.scrollView.keyboardDismissMode = .interactive
-            context.coordinator.load(view)
+            context.coordinator.applySession(
+                token: token,
+                refreshToken: refreshToken,
+                to: view,
+                loadIfNeeded: true,
+            )
             return view
         }
 
-        func updateUIView(_: WKWebView, context _: Context) {}
+        func updateUIView(_ view: WKWebView, context: Context) {
+            context.coordinator.applySession(
+                token: token,
+                refreshToken: refreshToken,
+                to: view,
+                loadIfNeeded: false,
+            )
+        }
     }
 
     final class ChatHomeWebCoordinator: NSObject, WKNavigationDelegate {
         private let homeOrigin: URL
-        private let token: String
+        private var token: String
+        private var refreshToken: String
         private var loaded = false
+        private var scriptsInstalled = false
 
-        init(origin: URL, token: String) {
+        init(origin: URL, token: String, refreshToken: String) {
             homeOrigin = origin
             self.token = token
+            self.refreshToken = refreshToken
+        }
+
+        func applySession(token: String, refreshToken: String, to view: WKWebView, loadIfNeeded: Bool) {
+            let changed = self.token != token || self.refreshToken != refreshToken
+            self.token = token
+            self.refreshToken = refreshToken
+            if changed || !scriptsInstalled {
+                installScripts(on: view)
+                if let cookie = ChatWebSession.cookie(home: homeOrigin, token: token) {
+                    view.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
+                }
+            }
+            if !loaded {
+                if loadIfNeeded {
+                    load(view)
+                }
+                return
+            }
+            if changed {
+                view.evaluateJavaScript(
+                    ChatWebSession.userScriptSource(token: token, refreshToken: refreshToken),
+                    completionHandler: nil,
+                )
+            }
+        }
+
+        private func installScripts(on view: WKWebView) {
+            let controller = view.configuration.userContentController
+            if scriptsInstalled {
+                controller.removeAllUserScripts()
+            }
+            controller.addUserScript(
+                WKUserScript(
+                    source: ChatWebSession.userScriptSource(token: token, refreshToken: refreshToken),
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: false,
+                ),
+            )
+            scriptsInstalled = true
         }
 
         func load(_ view: WKWebView) {
@@ -285,11 +337,9 @@ struct ChatNativeView: View {
                 decisionHandler(.cancel)
                 return
             }
-            if url.scheme?.lowercased() == "about" {
-                decisionHandler(.allow)
-                return
-            }
-            if ChatWebSession.isHomeOrigin(url, home: homeOrigin) {
+            let origin = homeOrigin
+            let secrets = [token, refreshToken]
+            if ChatWebSession.allowsNavigation(url, home: origin, secrets: secrets) {
                 decisionHandler(.allow)
                 return
             }

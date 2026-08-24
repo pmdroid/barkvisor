@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { InternalAxiosRequestConfig } from 'axios'
 import { wsTicketPath } from '../utils/consoleHome'
 import { needsHomeSession } from '../utils/streamTicket'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
@@ -62,10 +63,43 @@ function revokeRefreshOnUnauthorized() {
     })
 }
 
+type RetriableConfig = InternalAxiosRequestConfig & { _authRetry?: boolean }
+
+let refreshInFlight: Promise<boolean> | null = null
+
+/** Single-flight POST /auth/refresh. Native Chat WKWebView injects the refresh family. */
+export async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = import('../stores/auth')
+    .then(({ useAuthStore }) => useAuthStore().refreshSession())
+    .catch(() => false)
+    .finally(() => {
+      refreshInFlight = null
+    })
+  return refreshInFlight
+}
+
+function applyAccessToken(config: RetriableConfig, token: string) {
+  const headers = config.headers as { set?: (name: string, value: string) => void; Authorization?: string }
+  if (typeof headers?.set === 'function') {
+    headers.set('Authorization', `Bearer ${token}`)
+  } else if (headers) {
+    headers.Authorization = `Bearer ${token}`
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && !isAuthBootstrapRequest(error.config)) {
+  async (error) => {
+    const config = error.config as RetriableConfig | undefined
+    if (error.response?.status === 401 && !isAuthBootstrapRequest(config) && !config?._authRetry) {
+      const recovered = await refreshAccessToken()
+      if (recovered && config) {
+        config._authRetry = true
+        const token = localStorage.getItem('token')
+        if (token) applyAccessToken(config, token)
+        return api.request(config)
+      }
       revokeRefreshOnUnauthorized()
       if (onUnauthorized) {
         onUnauthorized()

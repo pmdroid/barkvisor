@@ -31,6 +31,7 @@ import { useChatStore } from './chat'
 import { useOllamaStore } from './ollama'
 
 const originalGet = api.get
+const originalPost = api.post
 
 const reachable: OllamaHomeCatalog = {
   anyReachable: true,
@@ -62,6 +63,7 @@ describe('chat store (PAS-270)', () => {
 
   afterEach(() => {
     api.get = originalGet
+    api.post = originalPost
     localStorage.clear()
   })
 
@@ -191,20 +193,60 @@ describe('chat store (PAS-270)', () => {
     expect(chat.visible).toBe(false)
   })
 
+  test('send retries once after 401 when refresh succeeds', async () => {
+    api.get = mock(() => Promise.resolve({ data: reachable })) as typeof api.get
+    localStorage.setItem('token', 'jwt-old')
+    localStorage.setItem('refreshToken', 'bvrt_abc')
+    const auth = useAuthStore()
+    auth.token = 'jwt-old'
+    auth.refreshToken = 'bvrt_abc'
+    api.post = mock((url: string) => {
+      expect(url).toBe('/auth/refresh')
+      return Promise.resolve({ data: { token: 'jwt-new', refreshToken: 'bvrt_new' } })
+    }) as typeof api.post
+    await useOllamaStore().fetchCatalog()
+    const chat = useChatStore()
+    chat.draft = 'hello'
+    let calls = 0
+    await chat.send(async (opts) => {
+      calls += 1
+      if (calls === 1) {
+        expect(opts.token).toBe('jwt-old')
+        const err = new Error('Chat failed (401)') as Error & { status: number }
+        err.status = 401
+        throw err
+      }
+      expect(opts.token).toBe('jwt-new')
+      opts.onDelta('ok')
+    })
+    expect(calls).toBe(2)
+    expect(chat.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'ok' },
+    ])
+    expect(chat.streaming).toBe(false)
+    expect(chat.error).toBeNull()
+  })
+
   test('iOS WKWebView reuses /chat and localStorage token, never a query JWT', () => {
     const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
     expect(router).toContain("path: '/chat'")
     expect(router).toContain("name: 'chat'")
     expect(router).toContain("import('../views/ChatView.vue')")
+    expect(router).toContain('refreshSession')
     const panel = readFileSync(join(here, '../components/ChatPanel.vue'), 'utf8')
     expect(panel).toContain("from '../stores/chat'")
     const auth = readFileSync(join(here, './auth.ts'), 'utf8')
     expect(auth).toContain("localStorage.getItem('token')")
     expect(auth).toContain("localStorage.setItem('token', nextToken)")
+    expect(auth).toContain('refreshSession')
+    expect(auth).toContain('hydrateFromStorage')
+    expect(auth).toContain('barkvisor:session')
     const client = readFileSync(join(here, '../api/client.ts'), 'utf8')
     expect(client).toContain("localStorage.getItem('token')")
     expect(client).toContain('Authorization')
     expect(client).toContain('Bearer')
+    expect(client).toContain('refreshAccessToken')
     expect(router).not.toContain('?token=')
     expect(panel).not.toContain('?token=')
   })
