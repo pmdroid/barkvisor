@@ -2746,6 +2746,45 @@ components:
           type: string
           nullable: true
 
+    CapabilityDetail:
+      type: object
+      required: [code, supported]
+      properties:
+        code:
+          type: string
+          description: Stable capability id on GET /api/system/capabilities (PAS-37 / PAS-274)
+          enum:
+            - bridgedNetworking
+            - managedBridgeDaemon
+            - hostBridgeManagement
+            - usbPassthrough
+            - inAppUpdate
+            - kvmDevice
+            - qemuBridgeHelper
+            - tcgOnly
+            - vfio
+            - gpuPassthrough
+        supported:
+          type: boolean
+        reasonCode:
+          type: string
+          nullable: true
+          description: Why the capability is unsupported or degraded
+          enum:
+            - os_unsupported
+            - kvm_missing
+            - helper_missing
+            - interface_missing
+            - acl_denied
+            - linux_os_managed
+            - linux_pkg_update
+            - iommu_missing
+            - vfio_missing
+            - gpu_missing
+        remediation:
+          type: string
+          nullable: true
+
     Image:
       type: object
       required: [id, name, imageType, arch, status, createdAt, updatedAt]
@@ -2907,6 +2946,14 @@ components:
           type: boolean
         supportsInAppUpdate:
           type: boolean
+        supportsGPUPassthrough:
+          type: boolean
+          description: >
+            Linux IOMMU + vfio-pci + KVM + a GPU in an IOMMU group.
+            Probe only — not QEMU vfio-pci attach (PAS-274).
+        supportsVFIO:
+          type: boolean
+          description: IOMMU groups exist and vfio-pci (or /dev/vfio/vfio) is present.
         accelerator:
           type: string
         hostArch:
@@ -2920,7 +2967,7 @@ components:
         details:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/CapabilityDetail"
         inventorySchemaVersion:
           type: integer
         runnableArches:
@@ -3338,6 +3385,14 @@ components:
           type: boolean
         usbPassthrough:
           type: boolean
+        gpuPassthrough:
+          type: boolean
+          description: >
+            Host can bind a GPU with vfio-pci (Linux IOMMU + vfio + KVM + a GPU).
+            Absent on older member health JSON (decode as false). Not QEMU attach.
+        vfio:
+          type: boolean
+          description: IOMMU groups exist and vfio-pci (or /dev/vfio/vfio) is present.
 
     HomePlacementScoreRequest:
       type: object

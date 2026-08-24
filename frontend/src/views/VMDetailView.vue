@@ -78,6 +78,7 @@ import {
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
+import { gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
@@ -266,6 +267,11 @@ const usbAvailable = computed(() => (
 const usbExplanation = computed(() => (
   isMemberDetail.value ? memberUsbExplanation.value : usb.explanation
 ))
+const gpuCaps = computed(() => (
+  isMemberDetail.value ? memberCaps.value : caps.currentHost
+))
+const gpuReady = computed(() => gpuPassthroughSupported(gpuCaps.value))
+const gpuExplanation = computed(() => gpuPassthroughExplanation(gpuCaps.value))
 const editCpuMax = computed(() => {
   if (isMemberDetail.value) {
     const n = memberCaps.value?.hostCpuCount
@@ -1578,6 +1584,16 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
                 <td colspan="4"><EmptyState title="No USB devices attached" :subtitle="isMemberDetail ? 'Attach a USB device from that Device.' : 'Click &quot;Attach USB Device&quot; to pass through a USB device from this device.'" /></td>
               </tr>
         </DataTable>
+      </div>
+
+      <div v-if="!agentCage" style="margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h2 style="font-size:16px;font-weight:700">GPU passthrough</h2>
+        </div>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0">
+          {{ gpuReady ? 'This Device reports IOMMU, vfio-pci, and KVM.' : 'Not available on this Device.' }}
+        </p>
+        <UnsupportedHint :text="gpuExplanation" />
       </div>
     </div>
 

@@ -88,6 +88,10 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
         return currentHost.value.supportsUSBPassthrough
       case 'inAppUpdate':
         return currentHost.value.supportsInAppUpdate
+      case 'gpuPassthrough':
+        return currentHost.value.supportsGPUPassthrough === true
+      case 'vfio':
+        return currentHost.value.supportsVFIO === true
       default:
         return detailFor(code)?.supported === true
     }
