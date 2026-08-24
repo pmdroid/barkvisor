@@ -52,7 +52,7 @@ struct DeviceRow: View {
                 Image(systemName: "checkmark")
                     .foregroundStyle(.secondary)
             }
-            StatusLabel.reachability(device.isReachable)
+            StatusLabel.reachability(device)
         }
     }
 

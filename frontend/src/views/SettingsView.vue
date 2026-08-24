@@ -26,6 +26,7 @@ import {
 import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
   isCurrentPairingSeq,
@@ -365,7 +366,9 @@ const depotOptions = computed(() => {
   const devices = devicesStore.devices.map((device) => {
     const name = deviceDisplayLabel(device)
     const self = device.role === 'self' ? ` (this ${DEVICE_LABEL})` : ''
-    const reach = device.reachability === 'ok' ? '' : ' — unreachable'
+    const reach = isReachabilityOk(device.reachability)
+      ? ''
+      : ` — ${reachabilityLabel(device.reachability).toLowerCase()}`
     return { value: device.hostId, label: `${name}${self}${reach}` }
   })
   return [none, ...devices]

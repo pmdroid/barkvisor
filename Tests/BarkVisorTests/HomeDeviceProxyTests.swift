@@ -234,6 +234,19 @@ struct HomeDeviceProxyTests {
             HomeDeviceProxyError.memberHTTP(503).ollamaHopDescription
                 == "Ollama is down on the Device (HTTP 503)",
         )
+        #expect(
+            HomeDeviceProxyError.memberHTTP(404).ollamaHopDescription
+                == "Device returned HTTP 404",
+        )
+        #expect(
+            HomeDeviceProxyError.memberHTTP(401).ollamaHopDescription
+                == "Device returned HTTP 401",
+        )
+        #expect(
+            HomeDeviceProxyError.memberHTTP(400).ollamaHopDescription
+                == "Device returned HTTP 400",
+        )
+        #expect(!HomeDeviceProxyError.memberHTTP(404).ollamaHopDescription.contains("Ollama is down"))
         #expect(HomeDeviceProxyError.healthUnreachable.errorDescription == "Device is unreachable")
         #expect(
             HomeDeviceProxyError.connectTimeout.localizedDescription

@@ -1,5 +1,7 @@
 /** Home dashboard health display (PAS-52). */
 
+import { DEVICE_LABEL } from './terminology'
+
 /** CPU/memory from the health snapshot. Never GPU occupancy (gpu-devices). */
 export function deviceResourcesLine(device: {
   reachability?: string
@@ -58,4 +60,52 @@ export function homeWorkloadsRunningLine(
 ): string | null {
   if (totals?.workloadCount == null) return null
   return `${runningCount} of ${totals.workloadCount} workloads running`
+}
+
+export function isReachabilityOk(code: string | undefined): boolean {
+  return code === 'ok'
+}
+
+/** Pill on Device cards and Device detail. `memberHTTP` is not Unreachable. */
+export function reachabilityLabel(code: string | undefined): string {
+  switch (code) {
+    case 'ok':
+      return 'Reachable'
+    case 'connectTimeout':
+      return 'Timed out'
+    case 'cancelled':
+      return 'Cancelled'
+    case 'tlsFailure':
+      return 'TLS failed'
+    case 'memberHTTP':
+      return 'HTTP error'
+    case 'responseTooLarge':
+      return 'Response too large'
+    default:
+      return 'Unreachable'
+  }
+}
+
+export function reachabilityPillClass(code: string | undefined): string {
+  if (code === 'ok') return 'running'
+  if (code === 'memberHTTP') return 'degraded'
+  return 'failed'
+}
+
+export function reachabilityCardClass(code: string | undefined): string {
+  if (code === 'ok' || !code) return ''
+  if (code === 'memberHTTP') return 'http-error'
+  return 'unreachable'
+}
+
+export function reachabilityHint(
+  device: { reachability?: string; reachabilityError?: string | null },
+): string | null {
+  const code = device.reachability
+  if (!code || code === 'ok') return null
+  if (code === 'unreachable') {
+    return `This ${DEVICE_LABEL.toLowerCase()} is still running locally. The member did not answer.`
+  }
+  const error = device.reachabilityError?.trim()
+  return error || reachabilityLabel(code)
 }

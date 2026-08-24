@@ -170,6 +170,14 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
         reachability == "ok"
     }
 
+    var reachabilityLabel: String {
+        DeviceReachability.label(reachability)
+    }
+
+    var reachabilityStatusKey: String {
+        DeviceReachability.statusKey(reachability)
+    }
+
     static var placeholderSelf: HomeDeviceHealthSnapshot {
         HomeDeviceHealthSnapshot(
             hostId: "self",
@@ -222,6 +230,29 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
 enum DevicesTabBadge {
     static func count(in devices: [HomeDeviceHealthSnapshot]) -> Int {
         devices.count(where: { !$0.isReachable })
+    }
+}
+
+/// Health `reachability` codes from `GET /api/home/devices/health`.
+enum DeviceReachability {
+    static func label(_ code: String) -> String {
+        switch code {
+        case "ok": "Reachable"
+        case "connectTimeout": "Timed out"
+        case "cancelled": "Cancelled"
+        case "tlsFailure": "TLS failed"
+        case "memberHTTP": "HTTP error"
+        default: "Unreachable"
+        }
+    }
+
+    static func statusKey(_ code: String) -> String {
+        switch code {
+        case "ok": "reachable"
+        case "memberHTTP": "degraded"
+        case "connectTimeout", "cancelled", "tlsFailure": "failed"
+        default: "unreachable"
+        }
     }
 }
 
@@ -582,6 +613,17 @@ enum DeviceStatsHistory {
 
     static var unreachableCopy: String {
         "This \(Copy.device.lowercased()) did not answer. Workload counts are not shown. This \(Copy.device.lowercased()) is still running locally."
+    }
+
+    static func unavailableCopy(_ device: HomeDeviceHealthSnapshot) -> String {
+        if device.reachability == "unreachable" {
+            return unreachableCopy
+        }
+        let error = device.reachabilityError?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if error.isEmpty {
+            return "\(DeviceReachability.label(device.reachability)). Workload counts are not shown."
+        }
+        return "\(error) Workload counts are not shown."
     }
 
     static func shouldFetch(_ device: HomeDeviceHealthSnapshot) -> Bool {

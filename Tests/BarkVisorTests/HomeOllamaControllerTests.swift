@@ -312,6 +312,44 @@ struct HomeOllamaControllerTests {
         }
     }
 
+    @Test func `probeMember 404 is Device HTTP not Ollama down`() async throws {
+        let dir = try isolatedDir("hop-404")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let httpId = "http-404"
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: httpId, fingerprint: "cc", agentHost: "10.0.0.9", agentPort: 7_778)
+        let client = RecordingOllamaProxyClient()
+        client.respond(
+            host: "10.0.0.9",
+            port: 7_778,
+            path: "/api/ollama/snapshot",
+            status: 404,
+            body: Data("missing".utf8),
+        )
+        let keys = await makeKeys()
+        let ctl = controller(
+            dir: dir,
+            hostId: UUID().uuidString,
+            devices: store,
+            client: client,
+            keys: keys,
+            now: Date(),
+        )
+        let http = await ctl.probeMember(
+            HomeDevice(
+                hostId: httpId,
+                role: "member",
+                displayName: "studio",
+                agentHost: "10.0.0.9",
+                agentPort: 7_778,
+            ),
+            hopBearer: "jwt-hop",
+        )
+        #expect(http?.reachable == false)
+        #expect(http?.installHint == "Device returned HTTP 404")
+        #expect(http?.installHint.contains("Ollama is down") == false)
+    }
+
     @Test func `sendMember refuses to forward an API key to a member Device`() async throws {
         let dir = try isolatedDir("no-apikey")
         defer { try? FileManager.default.removeItem(at: dir) }
