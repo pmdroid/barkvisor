@@ -364,12 +364,12 @@ final class AppModel {
         }
     }
 
-    func startOllama(_ name: String) async {
+    func startOllama(_ name: String, hostId: String?) async {
         let key = "ollama/\(name)"
         actionIDs.insert(key)
         defer { actionIDs.remove(key) }
         do {
-            try await requireClient().startOllama(name)
+            try await requireClient().startOllama(name, hostId: hostId)
             await refreshOllama()
         } catch {
             handle(error)

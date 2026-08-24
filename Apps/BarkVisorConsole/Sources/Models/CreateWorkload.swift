@@ -185,23 +185,26 @@ enum CreateWorkload {
         let disk = coding ? max(diskSizeGB(osFamily: family), CodingAgentImage.defaultDiskGB) : diskSizeGB(
             osFamily: family,
         )
-        let klass: String? = if coding {
-            workloadClass == "house" ? "house" : "agent"
+        let klass: String?
+        if coding {
+            klass = workloadClass == "house" ? "house" : "agent"
         } else {
-            workloadClass == "agent" ? "agent" : nil
+            klass = workloadClass == "agent" ? "agent" : nil
         }
-        let cloudInit: CloudInitPayload? = if coding, !iso {
+        let cloudInit: CloudInitPayload?
+        if coding, !iso {
             let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
             let byo = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 && url != CodingAgentImage.homeOllamaGrantURL
-            try CloudInitPayload(
+            let apiKey = try CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo)
+            cloudInit = CloudInitPayload(
                 userData: CodingAgentImage.userData(
                     openaiBaseURL: url,
-                    openaiAPIKey: CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo),
+                    openaiAPIKey: apiKey,
                 ),
             )
         } else {
-            nil
+            cloudInit = nil
         }
         return Body(
             name: trimmed,

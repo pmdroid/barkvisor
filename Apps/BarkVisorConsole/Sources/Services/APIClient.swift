@@ -330,8 +330,8 @@ struct APIClient {
         try await post("/api/home/ollama/pull", body: OllamaPullBody(name: name, hostId: hostId))
     }
 
-    func startOllama(_ name: String) async throws {
-        try await post("/api/home/ollama/start", body: OllamaModelActionBody.start(name))
+    func startOllama(_ name: String, hostId: String?) async throws {
+        try await post("/api/home/ollama/start", body: OllamaModelActionBody.start(name, hostId: hostId))
     }
 
     func stopOllama(_ name: String, hostId: String?) async throws {

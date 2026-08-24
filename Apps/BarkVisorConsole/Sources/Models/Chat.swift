@@ -1,39 +1,5 @@
 import Foundation
 
-struct OllamaHomeCatalog: Decodable, Hashable {
-    var anyReachable: Bool
-    var anyInstalled: Bool
-    var models: [OllamaCatalogModel]
-    var devices: [OllamaDeviceStatus]
-}
-
-struct OllamaCatalogModel: Decodable, Hashable, Identifiable {
-    var name: String
-    var running: Bool
-    var locations: [OllamaModelLocation]
-
-    var id: String {
-        name
-    }
-}
-
-struct OllamaModelLocation: Decodable, Hashable {
-    var hostId: String
-    var displayName: String?
-    var running: Bool
-    var reachable: Bool
-    var probedAt: String
-}
-
-struct OllamaDeviceStatus: Decodable, Hashable {
-    var hostId: String
-    var displayName: String?
-    var installed: Bool
-    var reachable: Bool
-    var stale: Bool
-    var installHint: String
-}
-
 struct ChatTurn: Identifiable, Hashable {
     var id = UUID()
     var role: String
