@@ -34,17 +34,21 @@ public enum HostInventoryService {
         let storage = [dataDirStorage(at: dataDir)]
 
         let qemuBridgeHelper = qemuBridgeHelperPresent()
+        let osName = PlatformHost.platformName
+        let vfioFacts = VFIOProbe.live()
         let features = VirtualizationFeatures(
             bridgedNetworking: bridgedNetworkingSupported(
                 platformSupports: PlatformCapabilities.supportsBridgedNetworking,
                 qemuBridgeHelper: qemuBridgeHelper,
-                os: PlatformHost.platformName,
+                os: osName,
             ),
             managedBridgeDaemon: PlatformCapabilities.supportsManagedBridgeDaemon,
             usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
             inAppUpdate: PlatformCapabilities.supportsInAppUpdate,
             kvmDevice: kvmDevicePresent(),
             qemuBridgeHelper: qemuBridgeHelper,
+            gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
+            vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
         )
 
         // Only advertise guest types this host can run natively (PAS-48).
@@ -66,7 +70,7 @@ public enum HostInventoryService {
             displayName: hostname,
             agent: AgentInfo(version: version),
             platform: PlatformInfo(
-                os: PlatformHost.platformName,
+                os: osName,
                 osVersion: PlatformHost.osVersionString,
                 arch: arch,
                 hostname: hostname,
@@ -82,6 +86,7 @@ public enum HostInventoryService {
                 qemuCPUModel: PlatformCapabilities.qemuCPUModel,
                 defaultGuestArch: PlatformCapabilities.defaultGuestArch,
                 features: features,
+                vfioProbe: vfioFacts.inventory,
             ),
             guestTypes: guestTypes,
             collectedAt: iso8601.string(from: now),
@@ -127,6 +132,24 @@ public enum HostInventoryService {
     }
 
     // MARK: - Probes
+
+    /// Placement / health flags. VFIO sysfs is TTL-cached inside `VFIOProbe.live()`.
+    public static func featureSummary() -> HomeDeviceFeatureSummary {
+        let osName = PlatformHost.platformName
+        let qemuBridgeHelper = qemuBridgeHelperPresent()
+        let vfioFacts = VFIOProbe.live()
+        return HomeDeviceFeatureSummary(
+            kvmDevice: kvmDevicePresent(),
+            bridgedNetworking: bridgedNetworkingSupported(
+                platformSupports: PlatformCapabilities.supportsBridgedNetworking,
+                qemuBridgeHelper: qemuBridgeHelper,
+                os: osName,
+            ),
+            usbPassthrough: PlatformCapabilities.supportsUSBPassthrough,
+            gpuPassthrough: VFIOProbe.gpuPassthroughSupported(os: osName, facts: vfioFacts),
+            vfio: VFIOProbe.vfioSupported(os: osName, facts: vfioFacts),
+        )
+    }
 
     /// Linux: `/dev/kvm` present. Other platforms: false.
     public static func kvmDevicePresent() -> Bool {

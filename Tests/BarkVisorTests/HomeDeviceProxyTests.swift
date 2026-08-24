@@ -89,6 +89,50 @@ struct HomeDeviceProxyTests {
         }
     }
 
+    @Test func `cancellable stream cancels producer when consumer stops`() async throws {
+        final class Flag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var cancelled = false
+            func mark() {
+                lock.lock()
+                cancelled = true
+                lock.unlock()
+            }
+            func value() -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                return cancelled
+            }
+        }
+        let flag = Flag()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            let stream = CancellableAsyncThrowingStream.make { continuation in
+                continuation.yield(Data([1]))
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 5_000_000)
+                }
+                flag.mark()
+                continuation.finish()
+            }
+            group.addTask {
+                for try await _ in stream {
+                    break
+                }
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+        var seen = false
+        for _ in 0 ..< 200 {
+            if flag.value() {
+                seen = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(seen)
+    }
+
     @Test func `member URL allows loopback and RFC1918 and rejects public`() throws {
         let lan = try HomeDeviceProxy.memberURL(
             host: "192.168.1.9",

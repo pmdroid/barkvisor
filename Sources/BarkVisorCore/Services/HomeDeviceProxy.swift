@@ -278,6 +278,21 @@ extension HomeDeviceProxyClient {
     }
 }
 
+/// `AsyncThrowingStream` whose producer `Task` cancels when the consumer
+/// stops (disconnect / `break` / parent cancel).
+public enum CancellableAsyncThrowingStream {
+    public static func make<Element: Sendable>(
+        _ work: @escaping @Sendable (AsyncThrowingStream<Element, Error>.Continuation) async -> Void,
+    ) -> AsyncThrowingStream<Element, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                await work(continuation)
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
 public enum HomeDeviceProxyError: Error, LocalizedError, Sendable, Equatable {
     case unreachable(String)
     case responseTooLarge

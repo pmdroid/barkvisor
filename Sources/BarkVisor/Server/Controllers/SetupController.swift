@@ -92,12 +92,10 @@ struct SetupController: RouteCollection {
                 guard existing.password.isEmpty else {
                     throw Abort(.conflict, reason: "Password already set for this user")
                 }
-                try db.execute(
-                    sql: """
-                    UPDATE users SET password = ?, role = ?
-                    WHERE username = ? AND password = ''
-                    """,
-                    arguments: [hash, UserRole.admin.rawValue, body.username],
+                try Self.setPasswordIfEmpty(
+                    username: body.username,
+                    hash: hash,
+                    db: db,
                 )
             } else {
                 let existingCount = try User.fetchCount(db)
@@ -113,6 +111,18 @@ struct SetupController: RouteCollection {
         }
 
         return AdminResponse(success: true)
+    }
+
+    /// Empty-password row: set the hash only. Setup must not overwrite `role`
+    /// (an inference user with no password must not become admin).
+    static func setPasswordIfEmpty(username: String, hash: String, db: Database) throws {
+        try db.execute(
+            sql: """
+            UPDATE users SET password = ?
+            WHERE username = ? AND password = ''
+            """,
+            arguments: [hash, username],
+        )
     }
 
     // MARK: - Network Interfaces & Bridge
