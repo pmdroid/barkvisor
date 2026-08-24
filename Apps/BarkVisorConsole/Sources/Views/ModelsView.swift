@@ -16,6 +16,8 @@ struct ModelsView: View {
     @State private var keyHostId = ""
     @State private var keyDraft = ""
     @State private var keySaving = false
+    @State private var mintedKey: String?
+    @State private var mintAttempted = false
 
     var body: some View {
         Group {
@@ -96,7 +98,10 @@ struct ModelsView: View {
             }
         }
         .refreshable { await model.refreshOllama() }
-        .task { await model.refreshOllama() }
+        .task {
+            await model.refreshOllama()
+            await mintHowToKeyIfNeeded()
+        }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
             startSheet(row)
         }
@@ -129,6 +134,9 @@ struct ModelsView: View {
             role: isMember ? .member : .thisDevice,
             origin: model.connectedURL,
             memberHost: isMember ? device?.agentHost : nil,
+            grantPlaintext: mintedKey,
+            advertiseHost: model.remoteAccess?.advertiseUrl,
+            tailnetHost: InferenceAPIHowTo.tailnetListenHost(model.remoteAccess?.tailscale),
         )
     }
 
@@ -141,12 +149,37 @@ struct ModelsView: View {
             .foregroundStyle(.secondary)
             CopyableSnippet(title: "curl", text: howTo.curl)
             CopyableSnippet(title: "Environment", text: howTo.env)
+            if let mintedKey {
+                CopyableSnippet(title: "API key (shown once)", text: mintedKey)
+            }
             Text(
                 "From inside a Workload, Device Ollama is \(howTo.cageBaseURL) (PAS-268 guestfwd). \(howTo.cageDnsLine)",
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
             CopyableSnippet(title: "Cage environment", text: howTo.cageEnv)
+        }
+    }
+
+    private func mintHowToKeyIfNeeded() async {
+        guard !mintAttempted else { return }
+        mintAttempted = true
+        guard let client = model.client else {
+            model.banner = InferenceHowToMint.bannerMessage(from: APIError.unauthorized)
+            return
+        }
+        do {
+            let keys = try await client.listAPIKeys()
+            guard InferenceHowToMint.needsMint(keys: keys) else { return }
+            let body = InferenceHowToMint.createBody()
+            let created = try await client.createAPIKey(
+                name: body.name,
+                expiresIn: body.expiresIn,
+                kind: body.kind,
+            )
+            mintedKey = created.key
+        } catch {
+            model.banner = InferenceHowToMint.bannerMessage(from: error)
         }
     }
 

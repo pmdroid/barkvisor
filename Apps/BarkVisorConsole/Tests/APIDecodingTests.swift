@@ -6,6 +6,22 @@ import Testing
 struct APIDecodingTests {
     private let decoder = JSONDecoder()
 
+    @Test func `remote access status decodes advertise url and tailnet`() throws {
+        let json = """
+        {
+          "tailscale": { "available": true, "ip": "100.64.0.8", "dnsName": "box.tailnet.ts.net" },
+          "wireguard": { "configured": false },
+          "advertiseUrl": "box.tailnet.ts.net",
+          "requireTailnetForRemote": false
+        }
+        """.data(using: .utf8)!
+        let status = try decoder.decode(RemoteAccessStatus.self, from: json)
+        #expect(status.advertiseUrl == "box.tailnet.ts.net")
+        #expect(status.tailscale.available)
+        #expect(status.tailscale.dnsName == "box.tailnet.ts.net")
+        #expect(InferenceAPIHowTo.tailnetListenHost(status.tailscale) == "box.tailnet.ts.net")
+    }
+
     @Test func `home device health report decodes`() throws {
         let json = """
         {

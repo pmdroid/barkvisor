@@ -1,16 +1,25 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   CAGE_DNS_LINE,
   CAGE_OPENAI_BASE_URL,
   HOME_LISTEN_PORT,
   MISSING_INFERENCE_KEY,
+  advertiseHostName,
   inferenceHowTo,
   inferenceHowToFromOrigin,
   lanCompletionsURL,
   lanListenHost,
   lanListenPort,
   lanOpenAIBaseURL,
+  lanOrigin,
+  preferredListenHost,
+  tailnetListenHost,
 } from './inferenceApiHowTo'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 describe('inferenceApiHowTo (#212)', () => {
   test('self uses the connected Home origin on :7777, not Device :11434', () => {
@@ -109,5 +118,56 @@ describe('inferenceApiHowTo (#212)', () => {
     })
     expect(member.lanBaseURL).toBe('http://10.0.0.8:7777/v1')
     expect(member.curl).toContain('Bearer barkvisor_abc')
+  })
+
+  test('host precedence is saved advertise then tailnet then LAN origin', () => {
+    expect(advertiseHostName('https://box.ts.net:443')).toBe('box.ts.net')
+    expect(advertiseHostName('http://box.ts.net:7777/ignored')).toBe('box.ts.net')
+    expect(advertiseHostName('100.64.1.2')).toBe('100.64.1.2')
+    expect(tailnetListenHost({ available: true, dnsName: 'box.tailnet.ts.net', ip: '100.64.1.2' }))
+      .toBe('box.tailnet.ts.net')
+    expect(tailnetListenHost({ available: true, dnsName: null, ip: '100.64.1.2' })).toBe('100.64.1.2')
+    expect(tailnetListenHost({ available: false, dnsName: 'stale.ts.net', ip: '100.64.1.2' })).toBe('')
+
+    const advertised = {
+      role: 'self' as const,
+      originHost: '192.168.30.1',
+      originPort: 8443,
+      originScheme: 'https',
+      advertiseHost: 'https://box.ts.net:443',
+      tailnetHost: 'box.tailnet.ts.net',
+    }
+    expect(preferredListenHost(advertised)).toBe('box.ts.net')
+    expect(lanListenHost(advertised)).toBe('box.ts.net')
+    expect(lanListenPort(advertised)).toBe(7777)
+    expect(lanOrigin(advertised)).toBe('http://box.ts.net:7777')
+    expect(lanOpenAIBaseURL(advertised)).toBe('http://box.ts.net:7777/v1')
+    expect(lanOrigin(advertised)).not.toContain('https://')
+    expect(lanOrigin(advertised)).not.toContain(':443')
+
+    const tailnet = {
+      role: 'self' as const,
+      originHost: '192.168.30.1',
+      originPort: HOME_LISTEN_PORT,
+      originScheme: 'http',
+      advertiseHost: '  ',
+      tailnetHost: '100.64.1.2',
+    }
+    expect(lanOpenAIBaseURL(tailnet)).toBe('http://100.64.1.2:7777/v1')
+
+    const lan = inferenceHowToFromOrigin('http://192.168.30.1:7777', { role: 'self' })
+    expect(lan.lanBaseURL).toBe('http://192.168.30.1:7777/v1')
+    expect(lan.cageBaseURL).toBe(CAGE_OPENAI_BASE_URL)
+    expect(lan.cageBaseURL).toBe('http://10.0.2.2:11434/v1')
+    expect(lan.env).not.toContain(':11434')
+    expect(lan.cageEnv).toContain("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'")
+
+    const models = readFileSync(join(here, '../views/ModelsView.vue'), 'utf8')
+    expect(models).toContain('advertiseHost')
+    expect(models).toContain('tailnetListenHost')
+    expect(models).toContain("api.get<RemoteAccessStatus>('/system/remote-access')")
+    expect(models).toContain('CAGE_OPENAI_BASE_URL')
+    expect(models).toContain('howTo.cageBaseURL')
+    expect(models).toContain('howTo.lanCompletionsURL')
   })
 })

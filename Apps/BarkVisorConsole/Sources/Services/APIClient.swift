@@ -383,6 +383,10 @@ struct APIClient {
         try await streamChatBytes(request, allowRefresh: true, onDelta: onDelta)
     }
 
+    func remoteAccess() async throws -> RemoteAccessStatus {
+        try await get("/api/system/remote-access")
+    }
+
     func pairingCode() async throws -> PairingIssue? {
         do {
             return try await get("/api/pairing/codes")
