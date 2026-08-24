@@ -1,8 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { Line } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+} from 'chart.js'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import type { OllamaCatalogModel, OllamaTaskAccepted, RemoteAccessStatus } from '../api/types'
+import type {
+  HostGPUDevice,
+  OllamaCatalogModel,
+  OllamaTaskAccepted,
+  RemoteAccessStatus,
+  SystemStatsSample,
+} from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppModal from '../components/ui/AppModal.vue'
@@ -13,13 +28,28 @@ import { useTaskPoller } from '../composables/useTaskPoller'
 import { useAuthStore } from '../stores/auth'
 import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
+import {
+  emptyDeviceStatsChartSeries,
+  mapStatsHistorySamples,
+} from '../utils/deviceStatsHistory'
 import { formatBytes } from '../utils/format'
+import { deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { useDevicesStore } from '../stores/devices'
+import {
+  defaultOllamaStatsHostId,
+  ollamaGpuEmptyCopy,
+  ollamaGpuOccupancyLines,
+  ollamaStatsApiTarget,
+  ollamaStatsUnreachableCopy,
+  shouldFetchOllamaDeviceStats,
+} from '../utils/ollamaDeviceStats'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { inferenceHowToFromOrigin, tailnetListenHost } from '../utils/inferenceApiHowTo'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
 const auth = useAuthStore()
 const store = useOllamaStore()
@@ -43,6 +73,9 @@ const stopTarget = ref<OllamaCatalogModel | null>(null)
 const stopping = ref(false)
 const copied = ref('')
 const remoteAccess = ref<RemoteAccessStatus | null>(null)
+const statsHost = ref('')
+const hostGPUs = ref<HostGPUDevice[] | null>(null)
+const history = reactive(emptyDeviceStatsChartSeries())
 
 const howTo = computed(() =>
   inferenceHowToFromOrigin(window.location.origin, {
@@ -83,6 +116,138 @@ const selectedHostSettings = computed(() =>
 )
 const keyBody = computed(() => ollamaSettingsKeyBody(selectedKeyHost.value, apiKeyDraft.value))
 
+const statsHostOptions = computed(() => {
+  const selected = statsHost.value
+  return store.devices
+    .filter((row) => row.reachable || row.hostId === selected)
+    .map((row) => ({
+      value: row.hostId,
+      label: row.displayName?.trim() || row.hostId,
+    }))
+})
+
+const selectedCatalogDevice = computed(
+  () => store.devices.find((row) => row.hostId === statsHost.value) ?? null,
+)
+
+const statsTarget = computed(() =>
+  ollamaStatsApiTarget(
+    statsHost.value,
+    store.devices,
+    (id) => devices.deviceByHostId(id),
+    devices.selfDevice?.hostId,
+  ),
+)
+
+const fetchLiveStats = computed(() =>
+  shouldFetchOllamaDeviceStats(selectedCatalogDevice.value, statsTarget.value),
+)
+
+const gpuEmptyCopy = computed(() => ollamaGpuEmptyCopy(hostGPUs.value))
+
+function resetHistory() {
+  const empty = emptyDeviceStatsChartSeries()
+  history.labels = empty.labels
+  history.cpu = empty.cpu
+  history.memoryGB = empty.memoryGB
+  history.memoryTotalGB = empty.memoryTotalGB
+}
+
+function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
+  history.labels = series.labels
+  history.cpu = series.cpu
+  history.memoryGB = series.memoryGB
+  history.memoryTotalGB = series.memoryTotalGB
+}
+
+function makeSparkOpts(max?: number) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    scales: {
+      x: { display: false },
+      y: { display: false, beginAtZero: true, max },
+    },
+    plugins: { tooltip: { enabled: false }, legend: { display: false } },
+    elements: {
+      point: { radius: 0 },
+      line: { tension: 0.4, borderWidth: 1.5 },
+    },
+  }
+}
+
+const cpuSparkOpts = computed(() => makeSparkOpts(100))
+const memSparkOpts = computed(() =>
+  makeSparkOpts(history.memoryTotalGB != null ? Math.ceil(history.memoryTotalGB) : undefined),
+)
+
+const cpuSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.cpu,
+    borderColor: 'rgba(0,144,248,0.5)',
+    backgroundColor: 'rgba(0,144,248,0.06)',
+    fill: true,
+  }],
+}))
+
+const memSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.memoryGB,
+    borderColor: 'rgba(52,211,153,0.5)',
+    backgroundColor: 'rgba(52,211,153,0.06)',
+    fill: true,
+  }],
+}))
+
+const latestCpu = computed(() => {
+  if (!fetchLiveStats.value) return null
+  if (history.cpu.length) return history.cpu[history.cpu.length - 1]
+  return devices.deviceByHostId(statsHost.value)?.resources?.cpuLoadPercent ?? null
+})
+const latestMemoryGB = computed(() => {
+  if (!fetchLiveStats.value) return null
+  if (history.memoryGB.length) return history.memoryGB[history.memoryGB.length - 1]
+  const used = devices.deviceByHostId(statsHost.value)?.resources?.memoryUsedMB
+  return used != null ? used / 1024 : null
+})
+const memoryTotalGB = computed(() => {
+  if (history.memoryTotalGB != null) return history.memoryTotalGB
+  const total = devices.deviceByHostId(statsHost.value)?.resources?.memoryTotalMB
+  return total != null ? total / 1024 : null
+})
+
+let statsSeq = 0
+
+async function refreshLiveStats() {
+  const host = statsHost.value
+  const target = statsTarget.value
+  const seq = ++statsSeq
+  if (!host || !fetchLiveStats.value || !target) {
+    if (seq !== statsSeq) return
+    resetHistory()
+    hostGPUs.value = null
+    return
+  }
+  try {
+    const { data } = await api.get<SystemStatsSample[]>(deviceStatsHistoryPath(target))
+    if (seq !== statsSeq || statsHost.value !== host) return
+    applyHistory(mapStatsHistorySamples(Array.isArray(data) ? data : []))
+  } catch {
+    if (seq !== statsSeq || statsHost.value !== host) return
+  }
+  try {
+    const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(target))
+    if (seq !== statsSeq || statsHost.value !== host) return
+    hostGPUs.value = Array.isArray(data) ? data : []
+  } catch {
+    if (seq !== statsSeq || statsHost.value !== host) return
+    hostGPUs.value = []
+  }
+}
+
 const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
 const pullIndeterminate = computed(() => pullPercent.value == null)
 const pullProgressLabel = computed(() => {
@@ -92,6 +257,7 @@ const pullProgressLabel = computed(() => {
 })
 
 let pollTimer: number
+let statsTimer: number
 async function fetchRemoteAccess() {
   try {
     const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
@@ -104,13 +270,37 @@ async function fetchRemoteAccess() {
 onMounted(() => {
   void store.fetchCatalog()
   void fetchRemoteAccess()
+  void devices.fetchHealth()
   if (auth.isAdmin) {
     void store.fetchSettings()
-    void devices.fetchHealth()
   }
   pollTimer = window.setInterval(() => { void store.fetchCatalog() }, 10_000)
+  statsTimer = window.setInterval(() => { void refreshLiveStats() }, 5_000)
 })
-onUnmounted(() => clearInterval(pollTimer))
+onUnmounted(() => {
+  clearInterval(pollTimer)
+  clearInterval(statsTimer)
+})
+
+watch(
+  () => [store.models, store.devices] as const,
+  () => {
+    const current = statsHost.value
+    if (!current || !store.devices.some((row) => row.hostId === current)) {
+      statsHost.value = defaultOllamaStatsHostId(store.models, store.devices)
+    }
+  },
+  { immediate: true, deep: true },
+)
+
+watch(
+  () => [statsHost.value, fetchLiveStats.value] as const,
+  () => {
+    resetHistory()
+    hostGPUs.value = null
+    void refreshLiveStats()
+  },
+)
 
 function locationLabel(model: OllamaCatalogModel): string {
   return model.locations
@@ -257,13 +447,18 @@ async function saveKey() {
         Models on this {{ HOME_LABEL }}. Completions go to the Device that already has the model.
       </p>
     </div>
-    <AppButton
-      v-if="store.anyReachable"
-      :disabled="store.models.length === 0"
-      @click="exportPs"
-    >
-      Export JSON
-    </AppButton>
+    <details v-if="store.anyReachable" class="overflow-menu">
+      <summary>More</summary>
+      <div class="overflow-menu-panel">
+        <button
+          type="button"
+          :disabled="store.models.length === 0"
+          @click="exportPs"
+        >
+          Export JSON
+        </button>
+      </div>
+    </details>
   </div>
 
   <div class="card" style="margin-bottom:16px">
@@ -309,6 +504,62 @@ async function saveKey() {
   />
 
   <template v-else>
+    <div class="card" style="margin-bottom:16px">
+      <div class="form-group" style="margin:0 0 12px">
+        <label>{{ DEVICE_LABEL }}</label>
+        <select v-model="statsHost" style="min-width:160px">
+          <option v-for="opt in statsHostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+      </div>
+
+      <template v-if="!fetchLiveStats">
+        <p class="stats-unknown">{{ ollamaStatsUnreachableCopy() }}</p>
+        <p class="stats-unknown">CPU unknown · Memory unknown · GPU unknown</p>
+      </template>
+
+      <template v-else>
+        <div class="stat-grid">
+          <div class="dash-stat" style="border-left: 3px solid var(--accent)">
+            <div class="dash-stat-spark" v-if="history.cpu.length > 1">
+              <Line :data="cpuSparkData" :options="cpuSparkOpts" />
+            </div>
+            <div class="dash-stat-content">
+              <div class="dash-stat-top">
+                <span class="dash-stat-number">{{ latestCpu == null ? '—' : latestCpu.toFixed(0) + '%' }}</span>
+                <span class="dash-stat-trend up">device</span>
+              </div>
+              <div class="dash-stat-label">CPU</div>
+            </div>
+          </div>
+          <div class="dash-stat" style="border-left: 3px solid var(--green)">
+            <div class="dash-stat-spark" v-if="history.memoryGB.length > 1">
+              <Line :data="memSparkData" :options="memSparkOpts" />
+            </div>
+            <div class="dash-stat-content">
+              <div class="dash-stat-top">
+                <span class="dash-stat-number">
+                  <template v-if="latestMemoryGB == null">—</template>
+                  <template v-else>{{ latestMemoryGB.toFixed(1) }} <small>GB</small></template>
+                </span>
+                <span v-if="memoryTotalGB != null" class="dash-stat-trend up">/ {{ memoryTotalGB.toFixed(0) }} GB</span>
+              </div>
+              <div class="dash-stat-label">Memory</div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="gpuEmptyCopy || (hostGPUs && hostGPUs.length)" class="gpu-card">
+          <div class="gpu-card-title">GPU</div>
+          <p v-if="gpuEmptyCopy" class="gpu-card-status">{{ gpuEmptyCopy }}</p>
+          <ul v-else-if="hostGPUs && hostGPUs.length" class="gpu-list">
+            <li v-for="gpu in hostGPUs" :key="gpu.pciAddress">
+              <span v-for="line in ollamaGpuOccupancyLines(gpu)" :key="line" class="gpu-meta">{{ line }}</span>
+            </li>
+          </ul>
+        </div>
+      </template>
+    </div>
+
     <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
         <label>Pull a model</label>
@@ -448,5 +699,161 @@ async function saveKey() {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 6px 0 8px;
+}
+.overflow-menu {
+  position: relative;
+}
+.overflow-menu summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+}
+.overflow-menu summary::-webkit-details-marker {
+  display: none;
+}
+.overflow-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow);
+  z-index: 5;
+  padding: 4px;
+}
+.overflow-menu-panel button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+.overflow-menu-panel button:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+.overflow-menu-panel button:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+.stats-unknown {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.dash-stat {
+  position: relative;
+  background: var(--bg);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 120px;
+}
+.dash-stat-spark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.dash-stat-spark canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.dash-stat-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px;
+}
+.dash-stat-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.dash-stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.dash-stat-number small {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.dash-stat-trend {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 3px 8px;
+  border-radius: 2px;
+}
+.dash-stat-trend.up {
+  color: var(--green);
+  background: var(--green-muted);
+}
+.dash-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.gpu-card {
+  padding: 12px 0 0;
+}
+.gpu-card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.gpu-card-status {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.gpu-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gpu-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gpu-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.gpu-list li .gpu-meta:first-child {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+}
+@media (max-width: 720px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
