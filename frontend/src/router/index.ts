@@ -90,13 +90,15 @@ router.beforeEach(async (to) => {
 
   // Normal auth guard
   if (to.name === 'login') return
+  const auth = useAuthStore()
   const token = localStorage.getItem('token')
   if (!token || isTokenExpired(token)) {
-    void useAuthStore().logout()
-    return { name: 'login' }
+    const recovered = await auth.refreshSession()
+    if (!recovered) {
+      void auth.logout()
+      return { name: 'login' }
+    }
   }
-
-  const auth = useAuthStore()
   if (auth.isAuthenticated && auth.role !== 'admin' && auth.role !== 'inference') {
     await auth.fetchMe()
   }

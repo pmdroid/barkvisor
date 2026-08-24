@@ -117,11 +117,32 @@ enum ChatSSE {
 /// iOS Chat tab loads the Home web Chat route in WKWebView (GitHub #228).
 /// Auth is the session JWT or minted inference key, injected as a header,
 /// cookie, and `localStorage` — never the page query string.
+/// WKWebView identity is the Home origin only; JWT rotation updates storage in place.
 enum ChatWebSession {
     static let routePath = "/chat"
     static let tokenStorageKey = "token"
+    static let refreshStorageKey = "refreshToken"
+    static let sessionEventName = "barkvisor:session"
     static let tokenCookieName = "token"
     static let authorizationHeaderName = "Authorization"
+
+    /// Stable SwiftUI identity: origin only, never the access JWT.
+    static func viewIdentity(home origin: URL) -> String {
+        let home = (try? DeviceURL.normalize(origin.absoluteString)) ?? origin
+        return home.absoluteString
+    }
+
+    /// Same-origin navigations that still carry a JWT or refresh token are cancelled.
+    static func allowsNavigation(_ url: URL, home origin: URL, secrets: [String]) -> Bool {
+        if url.scheme?.lowercased() == "about" {
+            return true
+        }
+        guard isHomeOrigin(url, home: origin) else { return false }
+        for secret in secrets where containsSecret(url, secret: secret) {
+            return false
+        }
+        return true
+    }
 
     static func pageURL(home origin: URL) throws -> URL {
         let origin = try DeviceURL.normalize(origin.absoluteString)
@@ -161,17 +182,25 @@ enum ChatWebSession {
         return HTTPCookie(properties: properties)
     }
 
-    static func userScriptSource(token: String) -> String {
+    static func userScriptSource(token: String, refreshToken: String = "") -> String {
         let tokenJSON = jsonString(token)
+        let refreshJSON = jsonString(refreshToken)
         let keyJSON = jsonString(tokenStorageKey)
+        let refreshKeyJSON = jsonString(refreshStorageKey)
         let cookieNameJSON = jsonString(tokenCookieName)
+        let eventJSON = jsonString(sessionEventName)
         return """
         (function() {
           var token = \(tokenJSON);
+          var refresh = \(refreshJSON);
           try { localStorage.setItem(\(keyJSON), token); } catch (e) {}
+          try {
+            if (refresh) { localStorage.setItem(\(refreshKeyJSON), refresh); }
+          } catch (e) {}
           try {
             document.cookie = \(cookieNameJSON) + '=' + encodeURIComponent(token) + '; path=/; SameSite=Lax';
           } catch (e) {}
+          try { window.dispatchEvent(new CustomEvent(\(eventJSON))); } catch (e) {}
         })();
         """
     }

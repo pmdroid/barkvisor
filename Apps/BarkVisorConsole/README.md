@@ -46,7 +46,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Connect | Device URL |
 | Sign in | `POST /api/auth/login` or scan `barkvisor://login/v1` (`POST /api/auth/login-offers/redeem`) |
 | Home (iOS) | Union of workloads on reachable Devices; a row pushes native Workload detail. Swipe and context menu Start / ACPI Stop use the same Device or Home-proxy APIs as detail. Force Stop stays on detail. Library is its own tab. |
-| Chat | Hidden unless the Home Ollama catalog has a model (`showsChat`). iOS embeds the connected Home `/chat` route (web `ChatPanel`) in a WKWebView; session JWT or inference key is injected as Authorization, cookie, and `localStorage` — never the query string. Mac keeps the SwiftUI streamer over `/v1/chat/completions`. |
+| Chat | Hidden unless the Home Ollama catalog has a model (`showsChat`). iOS embeds the connected Home `/chat` route (web `ChatPanel`) in a WKWebView; session JWT or inference key is injected as Authorization, cookie, and `localStorage` (plus the Keychain refresh family) — never the query string. JWT rotation updates storage in place and does not remount the web view. Same-origin navigations that carry the JWT are cancelled. Mac keeps the SwiftUI streamer over `/v1/chat/completions`. |
 | Dashboard (Mac) | Counts, selected Device, recent workloads (each opens Workload detail) |
 | Devices | `GET /api/home/devices/health` (reachable / unreachable) |
 | Workloads (Mac) | List for the selected Device; a row pushes Workload detail. Same Start / ACPI Stop swipe and context menu as Home. |

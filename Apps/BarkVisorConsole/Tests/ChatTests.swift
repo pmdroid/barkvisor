@@ -223,6 +223,41 @@ struct ChatTests {
         let quoted = ChatWebSession.userScriptSource(token: "tok\"en\n")
         #expect(quoted.contains(ChatWebSession.jsonString("tok\"en\n")))
         #expect(!quoted.contains("token = tok\"en"))
+
+        let refresh = "bvrt_family"
+        let withRefresh = ChatWebSession.userScriptSource(token: jwt, refreshToken: refresh)
+        #expect(withRefresh.contains(ChatWebSession.refreshStorageKey))
+        #expect(withRefresh.contains(refresh))
+        #expect(withRefresh.contains(ChatWebSession.sessionEventName))
+        #expect(!ChatWebSession.viewIdentity(home: origin).contains(jwt))
+        #expect(ChatWebSession.viewIdentity(home: origin).contains("home.local"))
+    }
+
+    @Test func `ios chat webview identity ignores jwt rotation and blocks secret urls`() throws {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.sig"
+        let refresh = "bvrt_family"
+        let origin = try DeviceURL.normalize("http://192.168.30.1:7777")
+        let identity = ChatWebSession.viewIdentity(home: origin)
+        #expect(identity == ChatWebSession.viewIdentity(home: origin))
+        #expect(!identity.contains(jwt))
+        #expect(!identity.contains("\u{1e}"))
+
+        let chat = try ChatWebSession.pageURL(home: origin)
+        #expect(ChatWebSession.allowsNavigation(chat, home: origin, secrets: [jwt, refresh]))
+        #expect(
+            ChatWebSession.allowsNavigation(
+                try #require(URL(string: "about:blank")),
+                home: origin,
+                secrets: [jwt],
+            ),
+        )
+        let sneaky = try #require(URL(string: "http://192.168.30.1:7777/chat?access_token=\(jwt)"))
+        #expect(!ChatWebSession.allowsNavigation(sneaky, home: origin, secrets: [jwt, refresh]))
+        #expect(ChatWebSession.containsSecret(sneaky, secret: jwt))
+        let refreshInQuery = try #require(URL(string: "http://192.168.30.1:7777/chat?refresh=\(refresh)"))
+        #expect(!ChatWebSession.allowsNavigation(refreshInQuery, home: origin, secrets: [jwt, refresh]))
+        let otherOrigin = try #require(URL(string: "https://evil.example/chat"))
+        #expect(!ChatWebSession.allowsNavigation(otherOrigin, home: origin, secrets: [jwt]))
     }
 
     @Test func `mac chat stays the completions streamer gated by showsChat`() throws {

@@ -104,7 +104,9 @@ export async function streamChatCompletions(opts: {
     } catch {
       // keep status text
     }
-    throw new Error(reason)
+    const error = new Error(reason) as Error & { status: number }
+    error.status = res.status
+    throw error
   }
   if (!res.body) {
     throw new Error('Chat stream was empty')

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useAuthStore } from './auth'
 import { useOllamaStore } from './ollama'
+import { isUnauthorizedError } from '../api/errors'
 import {
   type ChatMessage,
   chatIsVisible,
@@ -75,7 +76,8 @@ export const useChatStore = defineStore('chat', () => {
     const history: ChatMessage[] = messages.value
       .slice(0, -1)
       .map((turn) => ({ role: turn.role, content: turn.content }))
-    try {
+    const run = async () => {
+      auth.hydrateFromStorage()
       await stream({
         token: auth.token,
         model: picked,
@@ -88,10 +90,24 @@ export const useChatStore = defineStore('chat', () => {
           messages.value[idx].content += delta
         },
       })
+    }
+    try {
+      await run()
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return
       if (generation !== streamGeneration) return
-      error.value = err instanceof Error ? err.message : 'Chat failed'
+      let failure: unknown = err
+      if (isUnauthorizedError(err) && (await auth.refreshSession())) {
+        try {
+          await run()
+          return
+        } catch (retryErr) {
+          if ((retryErr as { name?: string }).name === 'AbortError') return
+          if (generation !== streamGeneration) return
+          failure = retryErr
+        }
+      }
+      error.value = failure instanceof Error ? failure.message : 'Chat failed'
       const idx = messages.value.findIndex((turn) => turn.id === assistantId)
       if (idx >= 0 && messages.value[idx].content === '') {
         const start = idx > 0 && messages.value[idx - 1].role === 'user' ? idx - 1 : idx

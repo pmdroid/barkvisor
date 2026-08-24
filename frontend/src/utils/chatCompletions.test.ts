@@ -86,4 +86,20 @@ describe('chat completions (PAS-270)', () => {
     expect(calls[0]?.headers.get('Authorization')).toBe('Bearer jwt-1')
     expect(tokens.join('')).toBe('ok')
   })
+
+  test('streamChatCompletions attaches HTTP status on failure', async () => {
+    const fetchImpl: typeof fetch = async () => new Response('{}', { status: 401 })
+    try {
+      await streamChatCompletions({
+        token: 'jwt-old',
+        model: 'llama3:latest',
+        messages: [{ role: 'user', content: 'hi' }],
+        onDelta: () => undefined,
+        fetchImpl,
+      })
+      throw new Error('expected 401')
+    } catch (error) {
+      expect((error as { status?: number }).status).toBe(401)
+    }
+  })
 })
