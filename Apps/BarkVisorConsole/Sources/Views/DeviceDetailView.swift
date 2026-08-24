@@ -172,22 +172,32 @@ struct DeviceDetailView: View {
     private func loadHistory() async {
         let target = device
         guard DeviceStatsHistory.shouldFetch(target) else {
+            guard !Task.isCancelled else { return }
             points = []
             return
         }
-        points = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
+        let next = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
+        guard !Task.isCancelled else { return }
+        points = next
     }
 
     private func loadAbout() async {
         let target = device
         guard DeviceStatsHistory.shouldFetch(target) else {
+            guard !Task.isCancelled else { return }
             deviceAbout = nil
             deviceCaps = nil
             hostGPUs = []
             return
         }
-        deviceAbout = await model.about(on: target)
-        deviceCaps = await model.capabilities(for: target)
-        hostGPUs = await model.gpuDevices(on: target)
+        let about = await model.about(on: target)
+        guard !Task.isCancelled else { return }
+        let caps = await model.capabilities(for: target)
+        guard !Task.isCancelled else { return }
+        let gpus = await model.gpuDevices(on: target)
+        guard !Task.isCancelled else { return }
+        deviceAbout = about
+        deviceCaps = caps
+        hostGPUs = gpus
     }
 }
