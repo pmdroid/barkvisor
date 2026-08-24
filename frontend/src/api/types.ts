@@ -678,12 +678,14 @@ export interface OllamaModelLocation {
   reachable: boolean
   probedAt: string
   size?: number | null
+  sizeVRAM?: number | null
 }
 
 export interface OllamaCatalogModel {
   name: string
   digest?: string | null
   size?: number | null
+  sizeVRAM?: number | null
   running: boolean
   locations: OllamaModelLocation[]
 }

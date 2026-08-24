@@ -51,6 +51,7 @@ public enum OllamaHomeMap {
                         reachable: true,
                         probedAt: snap.probedAt,
                         size: model.size,
+                        sizeVRAM: model.sizeVRAM,
                         digest: model.digest,
                         memoryTotalMB: snap.memoryTotalMB,
                         memoryUsedMB: snap.memoryUsedMB,
@@ -66,6 +67,7 @@ public enum OllamaHomeMap {
                 name: seed.name,
                 digest: seed.digest,
                 size: seed.size,
+                sizeVRAM: locations.first(where: \.running)?.sizeVRAM ?? seed.sizeVRAM,
                 running: locations.contains(where: \.running),
                 locations: locations,
             )

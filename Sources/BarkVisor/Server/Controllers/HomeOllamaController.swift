@@ -224,9 +224,16 @@ struct HomeOllamaController: RouteCollection {
     @Sendable
     func nativeTags(req: Vapor.Request) async throws -> OllamaNativeTags {
         let catalog = try await status(req: req)
+        let selfHostId = hostId
         return OllamaCatalog.nativeTags(
             from: catalog.models.map {
-                OllamaLocalModel(name: $0.name, digest: $0.digest, size: $0.size, running: $0.running)
+                OllamaLocalModel(
+                    name: $0.name,
+                    digest: $0.digest,
+                    size: $0.size,
+                    sizeVRAM: Self.runningSizeVRAM(selfHostId: selfHostId, locations: $0.locations),
+                    running: $0.running,
+                )
             },
         )
     }
@@ -234,11 +241,27 @@ struct HomeOllamaController: RouteCollection {
     @Sendable
     func nativePS(req: Vapor.Request) async throws -> OllamaNativePS {
         let catalog = try await status(req: req)
+        let selfHostId = hostId
         return OllamaCatalog.nativePS(
             from: catalog.models.map {
-                OllamaLocalModel(name: $0.name, digest: $0.digest, size: $0.size, running: $0.running)
+                OllamaLocalModel(
+                    name: $0.name,
+                    digest: $0.digest,
+                    size: $0.size,
+                    sizeVRAM: Self.runningSizeVRAM(selfHostId: selfHostId, locations: $0.locations),
+                    running: $0.running,
+                )
             },
         )
+    }
+
+    /// Prefer this Device when it is running the model; otherwise the running location with the lowest hostId.
+    static func runningSizeVRAM(selfHostId: String, locations: [OllamaModelLocation]) -> Int64? {
+        let running = locations.filter(\.running)
+        if let own = running.first(where: { $0.hostId == selfHostId }) {
+            return own.sizeVRAM
+        }
+        return running.min { $0.hostId < $1.hostId }?.sizeVRAM
     }
 
     @Sendable
