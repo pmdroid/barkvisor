@@ -109,6 +109,24 @@ struct OllamaSettingsTests {
         #expect(cleared.apiKey == nil)
     }
 
+    @Test func `endpoint-only save on a new Device keeps the global key`() throws {
+        _ = try dbPool.write { db in
+            try AppSetting(key: OllamaSettings.apiKeyKey, value: "global-secret-key")
+                .save(db, onConflict: .replace)
+            try OllamaSettings.save(
+                hostId: "desk",
+                endpoint: "http://127.0.0.1:11434",
+                apiKey: nil,
+                updateApiKey: false,
+                selfHostId: "home",
+                db: db,
+            )
+        }
+        let desk = try dbPool.read { db in try OllamaSettings.load(hostId: "desk", from: db) }
+        #expect(desk.apiKey == "global-secret-key")
+        #expect(desk.endpoint.absoluteString.contains("11434"))
+    }
+
     @Test func `omit apiKey leaves the stored key`() throws {
         _ = try dbPool.write { db in
             try OllamaSettings.save(

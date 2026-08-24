@@ -69,14 +69,17 @@ public enum OllamaSettings {
         let selfHostId = try requireHostId(selfHostId)
         try seedSelfFromLegacy(hostId: selfHostId, db: db)
         let target = try optionalHostId(hostId) ?? selfHostId
-        var row = try OllamaHostSettingRecord.fetch(db, hostId: target)
-            ?? OllamaHostSettingRecord(hostId: target, endpoint: nil, apiKey: nil)
+        let existing = try OllamaHostSettingRecord.fetch(db, hostId: target)
+        var row = existing ?? OllamaHostSettingRecord(hostId: target, endpoint: nil, apiKey: nil)
         if let endpoint {
             let url = try OllamaEndpoint.parse(endpoint)
             row.endpoint = url.absoluteString
         }
         if updateApiKey {
             row.apiKey = nonempty(apiKey)
+        } else if existing == nil {
+            // A new row with no apiKey would otherwise hide the global key from load().
+            row.apiKey = try loadGlobalRaw(from: db).apiKey
         }
         try row.save(db)
         return try list(knownHostIds: [target], selfHostId: selfHostId, from: db)

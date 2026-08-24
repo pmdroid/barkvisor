@@ -169,16 +169,6 @@ struct HomeOllamaController: RouteCollection {
         db: DatabasePool,
         user: AuthenticatedUser,
     ) async throws -> OllamaSettingsSnapshot {
-        let saved = try await db.write { db in
-            try OllamaSettings.save(
-                hostId: body.hostId,
-                endpoint: body.endpoint,
-                apiKey: body.apiKey,
-                updateApiKey: body.apiKey != nil,
-                selfHostId: hostId,
-                db: db,
-            )
-        }
         let target = body.hostId.trimmingCharacters(in: .whitespacesAndNewlines)
         if !target.isEmpty, target != hostId, body.endpoint != nil || body.apiKey != nil {
             try await proxyEmpty(
@@ -195,7 +185,16 @@ struct HomeOllamaController: RouteCollection {
                 user: user,
             )
         }
-        return saved
+        return try await db.write { db in
+            try OllamaSettings.save(
+                hostId: body.hostId,
+                endpoint: body.endpoint,
+                apiKey: body.apiKey,
+                updateApiKey: body.apiKey != nil,
+                selfHostId: hostId,
+                db: db,
+            )
+        }
     }
 
     func listSettings(db: DatabasePool) async throws -> OllamaSettingsSnapshot {
