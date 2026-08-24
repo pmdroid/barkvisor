@@ -16,6 +16,7 @@ defineProps<{
   sshKeys: SSHKey[]
   formatBytes: (b: number) => string
   isCodingAgentSelected?: boolean
+  isOnyxSelected?: boolean
   openaiPreset?: OpenAIPreset
   byoOpenAIURL?: string
   byoOpenAIAPIKey?: string
@@ -91,6 +92,9 @@ function setMode(m: 'iso' | 'cloud') {
         No SSH keys on Home yet. Add keys in Settings first.
       </div>
     </div>
+    <p v-if="mode === 'cloud' && isOnyxSelected" class="preset-hint" style="margin:8px 0">
+      Onyx Lite on guest :80. Home Ollama at http://10.0.2.2:11434 (native, not Device :7777).
+    </p>
     <div v-if="mode === 'cloud' && isCodingAgentSelected" class="form-group">
       <label>OPENAI_BASE_URL</label>
       <div class="os-grid">

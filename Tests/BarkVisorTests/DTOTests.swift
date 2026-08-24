@@ -43,6 +43,15 @@ struct DTOTests {
         #expect(response.portForwards?.count == 1)
         #expect(response.portForwards?.first?.guestPort == 22)
         #expect(response.portForwards?.first?.hostPort == 2_222)
+
+        let withOnyx = VMResponse(
+            from: vm,
+            extraPortForwards: [
+                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
+            ],
+        )
+        #expect(withOnyx.portForwards?.contains(where: { $0.guestPort == 80 && $0.hostPort == 8_080 }) == true)
+        #expect(withOnyx.portForwards?.contains(where: { $0.guestPort == 22 }) == true)
         #expect(response.spec.metadata.name == "test-vm")
         #expect(response.spec.spec.resources.cpu == 4)
         #expect(response.spec.spec.guestType == "linux-arm64")

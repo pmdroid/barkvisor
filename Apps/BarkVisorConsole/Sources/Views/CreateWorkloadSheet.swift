@@ -118,7 +118,7 @@ struct CreateWorkloadSheet: View {
             .disabled(creating)
             .task { await bootstrap() }
             .task(id: deviceID) { await loadImages() }
-            .onChange(of: imageID) { _, _ in applyCodingAgentDefaults() }
+            .onChange(of: imageID) { _, _ in applyLibraryImageDefaults() }
         #if os(iOS)
             .presentationDetents([.medium, .large])
         #endif
@@ -148,7 +148,14 @@ struct CreateWorkloadSheet: View {
         CodingAgentImage.matches(name: selectedImage?.name)
     }
 
+    private var isOnyx: Bool {
+        OnyxImage.matches(name: selectedImage?.name)
+    }
+
     private var footerCopy: String {
+        if isOnyx {
+            return "Agent cage. Onyx Lite on guest :\(OnyxImage.webUIPort), Home Ollama \(OnyxImage.ollamaAPIBase). \(CreateWorkload.webEditCopy)"
+        }
         if isCodingAgent {
             let url = openaiPreset == "byo" ? byoOpenAIURL : CodingAgentImage.homeOllamaGrantURL
             return "Agent cage. OPENAI_BASE_URL \(url). Presets share this Library image. \(CreateWorkload.webEditCopy)"
@@ -199,10 +206,15 @@ struct CreateWorkloadSheet: View {
         ) else { return }
         images = loaded ?? []
         imageID = CreateWorkload.ready(loaded ?? []).first?.id ?? ""
-        applyCodingAgentDefaults()
+        applyLibraryImageDefaults()
     }
 
-    private func applyCodingAgentDefaults() {
+    private func applyLibraryImageDefaults() {
+        if OnyxImage.matches(name: selectedImage?.name) {
+            workloadClass = OnyxImage.defaultClass(forName: selectedImage?.name)
+            openaiPreset = "home-ollama"
+            return
+        }
         workloadClass = CodingAgentImage.defaultClass(forName: selectedImage?.name)
         if !CodingAgentImage.matches(name: selectedImage?.name) {
             openaiPreset = "home-ollama"

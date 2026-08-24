@@ -28,6 +28,11 @@ public enum VMLifecycleService {
                 imageName: identified.name,
                 imageSlug: identified.slug,
             )
+            params = try OnyxImage.applyingCreateDefaults(
+                params: params,
+                imageName: identified.name,
+                imageSlug: identified.slug,
+            )
         }
         try await validateCreateVMInputs(params: params, db: db)
 

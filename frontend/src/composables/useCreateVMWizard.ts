@@ -66,6 +66,12 @@ import {
   mergeCodingAgentUserData,
   type OpenAIPreset,
 } from '../utils/codingAgentImage'
+import {
+  isOnyxImage,
+  mergeOnyxUserData,
+  ONYX_DEFAULT_DISK_GB,
+  ONYX_DEFAULT_MEMORY_MB,
+} from '../utils/onyxImage'
 
 export { cancelLivePlacementScores } from './usePlacement'
 
@@ -354,7 +360,7 @@ export function useCreateVMWizard(
       cpuCount.value = Math.min(2, maxCpu)
       memoryMB.value = 1024
       diskSizeGB.value = 10
-      if (homeLibrary.images.some((i) => i.status === 'ready' && isCodingAgentImage(i))) {
+      if (homeLibrary.images.some((i) => i.status === 'ready' && (isCodingAgentImage(i) || isOnyxImage(i)))) {
         mode.value = 'cloud'
       }
     }
@@ -374,14 +380,14 @@ export function useCreateVMWizard(
   const byoOpenAIAPIKey = ref('')
 
   watch(selectedImage, (img, prev) => {
-    const now = isCodingAgentImage(img)
-    const was = isCodingAgentImage(prev)
+    const now = isCodingAgentImage(img) || isOnyxImage(img)
+    const was = isCodingAgentImage(prev) || isOnyxImage(prev)
     if (now && !was) {
       workloadClass.value = 'agent'
       mode.value = 'cloud'
       openaiPreset.value = 'home-ollama'
-      if (memoryMB.value < 2048) memoryMB.value = 2048
-      if (diskSizeGB.value < 20) diskSizeGB.value = 20
+      if (memoryMB.value < ONYX_DEFAULT_MEMORY_MB) memoryMB.value = ONYX_DEFAULT_MEMORY_MB
+      if (diskSizeGB.value < ONYX_DEFAULT_DISK_GB) diskSizeGB.value = ONYX_DEFAULT_DISK_GB
       return
     }
     if (was && !now && osType.value === 'linux') {
@@ -760,12 +766,15 @@ export function useCreateVMWizard(
         mode: mode.value,
         imageId: createImage?.id,
         sshAuthorizedKeys: selectedKey ? [authorizedKeyForCloudInit(selectedKey)] : [],
-        userData: mergeCodingAgentUserData(
-          cloudUserData.value,
+        userData: mergeOnyxUserData(
+          mergeCodingAgentUserData(
+            cloudUserData.value,
+            selectedImage.value,
+            openaiPreset.value,
+            byoOpenAIURL.value,
+            byoOpenAIAPIKey.value,
+          ),
           selectedImage.value,
-          openaiPreset.value,
-          byoOpenAIURL.value,
-          byoOpenAIAPIKey.value,
         ),
         displayResolution: displayResolution.value,
         selectedNetworkId: selectedNetworkId.value,
@@ -865,6 +874,7 @@ export function useCreateVMWizard(
     byoOpenAIURL,
     byoOpenAIAPIKey,
     isCodingAgentSelected: computed(() => isCodingAgentImage(selectedImage.value)),
+    isOnyxSelected: computed(() => isOnyxImage(selectedImage.value)),
     filteredImages,
     foreignArchImageCount,
     hostImageArch,

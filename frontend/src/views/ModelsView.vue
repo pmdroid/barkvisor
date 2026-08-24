@@ -645,7 +645,7 @@ async function saveKey() {
       v-if="store.models.length === 0 && !store.loading"
       icon="monitor"
       title="No Ollama models yet"
-      subtitle="Pull a model to open Chat. Completions go through /v1/chat/completions."
+      subtitle="Pull a model. Completions go through /v1/chat/completions. Chat/Agents: Library Onyx."
     />
 
     <template v-else>

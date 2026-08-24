@@ -45,7 +45,8 @@ extension VMController {
 
     func respond(_ vm: VM, db: DatabasePool) async throws -> VMResponse {
         let signals = try await healthSignals(for: vm, db: db)
-        return VMResponse(from: vm, signals: signals)
+        let extra = await onyxLoopbackForwards(vmID: vm.id)
+        return VMResponse(from: vm, signals: signals, extraPortForwards: extra)
     }
 
     func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
@@ -57,9 +58,21 @@ extension VMController {
             let signals = await vmManager.healthSignals(
                 for: vm, lastSeenAt: lastSeen[vm.id], probes: probes,
             )
-            responses.append(VMResponse(from: vm, signals: signals))
+            let extra = await onyxLoopbackForwards(vmID: vm.id)
+            responses.append(VMResponse(from: vm, signals: signals, extraPortForwards: extra))
         }
         return responses
+    }
+
+    /// Loopback hostfwd for Onyx guest :80 is not stored in spec (Agent cage).
+    private func onyxLoopbackForwards(vmID: String) async -> [PortForwardRule] {
+        let userData = CloudInitService.storedUserData(vmID: vmID)
+        guard OnyxImage.wantsWebUI(userData: userData),
+              let hostPort = await CodingAgentSessionStore.shared.port(for: vmID)
+        else { return [] }
+        return [
+            PortForwardRule(protocol: "tcp", hostPort: hostPort, guestPort: OnyxImage.webUIPort),
+        ]
     }
 
     private func projectHealth(_ vm: VM, db: DatabasePool) async throws -> WorkloadHealthStatus {

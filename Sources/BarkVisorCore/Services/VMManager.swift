@@ -153,16 +153,20 @@ public actor VMManager: VMStateQuerying {
     ) async {
         runningVMs[vmID] = running
         let args = PlatformProcess.arguments(pid: running.pid)
+        let userData = CloudInitService.storedUserData(vmID: vmID)
+        let guestPort = OnyxImage.wantsWebUI(userData: userData)
+            ? OnyxImage.webUIPort
+            : CodingAgentImage.webTerminalPort
         if let port = CodingAgentSession.recoveredTerminalHostPort(
             qemuArguments: args,
             pidFilePort: codingAgentHostPort,
+            guestPort: guestPort,
         ) {
             await CodingAgentSessionStore.shared.record(vmID: vmID, terminalHostPort: port)
-        } else if CodingAgentSession.wantsWebTerminal(
-            userData: CloudInitService.storedUserData(vmID: vmID),
-        ) {
+        } else if CodingAgentSession.wantsWebTerminal(userData: userData)
+            || OnyxImage.wantsWebUI(userData: userData) {
             Log.vm.warning(
-                "VM \(vmID): reconnect did not recover ttyd loopback host port",
+                "VM \(vmID): reconnect did not recover loopback host port for guest :\(guestPort)",
                 vm: vmID,
             )
         }
@@ -213,10 +217,22 @@ public actor VMManager: VMStateQuerying {
 
             let userData = CloudInitService.storedUserData(vmID: vmID)
             var loopbackHostfwds: [QEMULoopbackForward] = []
+            let loopbackGuestPort: Int?
+            let loopbackPreferredHost: Int
             if CodingAgentSession.wantsWebTerminal(userData: userData) {
+                loopbackGuestPort = CodingAgentImage.webTerminalPort
+                loopbackPreferredHost = CodingAgentImage.webTerminalPort
+            } else if OnyxImage.wantsWebUI(userData: userData) {
+                loopbackGuestPort = OnyxImage.webUIPort
+                loopbackPreferredHost = OnyxImage.webUIPort
+            } else {
+                loopbackGuestPort = nil
+                loopbackPreferredHost = 0
+            }
+            if let loopbackGuestPort {
                 let occupied = await CodingAgentSessionStore.shared.occupiedHostPorts()
                 let hostPort = try await PortRegistry.nextFree(
-                    preferred: CodingAgentImage.webTerminalPort,
+                    preferred: loopbackPreferredHost,
                     proto: "tcp",
                     excludingVM: vmID,
                     extraOccupied: occupied,
@@ -225,7 +241,7 @@ public actor VMManager: VMStateQuerying {
                 loopbackHostfwds.append(
                     QEMULoopbackForward(
                         hostPort: hostPort,
-                        guestPort: CodingAgentImage.webTerminalPort,
+                        guestPort: loopbackGuestPort,
                     ),
                 )
                 // Dropped in cleanup() (handleTermination, stopAll, shutdownAll).

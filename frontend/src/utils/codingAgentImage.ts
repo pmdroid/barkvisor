@@ -1,3 +1,5 @@
+import { isOnyxImage } from './onyxImage'
+
 export const CODING_AGENT_NAME = 'Coding Agent'
 export const CODING_AGENT_SLUGS = ['coding-agent-arm64', 'coding-agent-x86_64'] as const
 export const DEVICE_OLLAMA_BASE_URL = 'http://10.0.2.2:11434/v1'
@@ -37,7 +39,7 @@ export function isCodingAgentImage(img: {
 }
 
 export function defaultWorkloadClassForImage(img: { name?: string | null; slug?: string | null } | null | undefined): 'house' | 'agent' {
-  return isCodingAgentImage(img) ? 'agent' : 'house'
+  return isCodingAgentImage(img) || isOnyxImage(img) ? 'agent' : 'house'
 }
 
 const OPENAI_BASE_URL_SAFE = /^[A-Za-z0-9:\/._%-]+$/

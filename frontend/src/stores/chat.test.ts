@@ -66,7 +66,7 @@ describe('chat store (PAS-270)', () => {
     const chat = useChatStore()
     expect(chat.visible).toBe(false)
     await ollama.fetchCatalog()
-    expect(chat.visible).toBe(true)
+    expect(chat.visible).toBe(false)
     expect(chat.model).toBe('llama3:latest')
   })
 
@@ -181,7 +181,7 @@ describe('chat store (PAS-270)', () => {
     const ollama = useOllamaStore()
     ollama.catalog = reachable
     const chat = useChatStore()
-    expect(chat.visible).toBe(true)
+    expect(chat.visible).toBe(false)
     await ollama.fetchCatalog()
     expect(chat.visible).toBe(false)
   })

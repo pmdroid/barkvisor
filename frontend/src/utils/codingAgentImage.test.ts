@@ -23,6 +23,7 @@ describe('codingAgentImage (PAS-271)', () => {
     expect(isCodingAgentImage({ name: 'my coding agent lab' })).toBe(false)
     expect(isCodingAgentImage({ name: 'Coding Agent', slug: 'ubuntu-24.04-arm64' })).toBe(false)
     expect(defaultWorkloadClassForImage({ name: 'Coding Agent' })).toBe('agent')
+    expect(defaultWorkloadClassForImage({ name: 'Onyx', slug: 'onyx-arm64' })).toBe('agent')
     expect(defaultWorkloadClassForImage({ name: 'Ubuntu' })).toBe('house')
   })
 
