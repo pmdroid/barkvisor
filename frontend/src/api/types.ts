@@ -322,6 +322,7 @@ export interface PortForwardRule {
   protocol: 'tcp' | 'udp'
   hostPort: number
   guestPort: number
+  httpPath?: string | null
 }
 
 export interface GPUPassthroughDevice {

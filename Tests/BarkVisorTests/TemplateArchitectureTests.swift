@@ -241,9 +241,19 @@ struct CatalogSlugResolutionTests {
         #expect(row.imageByArch?["x86_64"] == "ubuntu-24.04-x86_64")
         #expect(row.portForwards.contains { $0.protocol == "tcp" && $0.guestPort == 80 })
         #expect(row.userDataTemplate.contains("docker-compose.onyx-lite.yml"))
-        #expect(row.userDataTemplate.contains("http://10.0.2.2:11434"))
+        #expect(row.userDataTemplate.contains("{{ollama_url}}"))
+        #expect(row.inputs.contains { $0.id == "ollama_url" && $0.default == "http://10.0.2.2:11434" })
         #expect(!row.userDataTemplate.contains("10.0.2.2:11434/v1"))
         #expect(!row.userDataTemplate.contains(":7777"))
+        #expect(!row.inputs.contains { $0.id == "ssh_keys" })
+    }
+
+    @Test func `pi-hole declares optional ssh_keys input`() throws {
+        let url = repoRoot().appendingPathComponent("repos/templates.json")
+        let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: Data(contentsOf: url))
+        let row = try #require(catalog.templates.first { $0.slug == "pi-hole" })
+        #expect(row.userDataTemplate.contains("{{ssh_keys_yaml}}"))
+        #expect(row.inputs.contains { $0.id == "ssh_keys" && $0.required == false })
     }
 
     @Test func `checksum pins do not use rotating catalog URLs`() throws {
