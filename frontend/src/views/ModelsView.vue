@@ -16,6 +16,7 @@ import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
+import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { inferenceHowToFromOrigin } from '../utils/inferenceApiHowTo'
@@ -75,6 +76,7 @@ const selectedKeyHost = computed(() => keyHost.value || hostOptions.value[0]?.va
 const selectedHostSettings = computed(() =>
   selectedKeyHost.value ? store.hostSettings(selectedKeyHost.value) : null,
 )
+const keyBody = computed(() => ollamaSettingsKeyBody(selectedKeyHost.value, apiKeyDraft.value))
 
 const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
 const pullIndeterminate = computed(() => pullPercent.value == null)
@@ -217,11 +219,11 @@ function exportPs() {
 }
 
 async function saveKey() {
-  const hostId = selectedKeyHost.value
-  if (!hostId) return
+  const body = keyBody.value
+  if (!body) return
   keySaving.value = true
   try {
-    await store.saveSettings({ hostId, apiKey: apiKeyDraft.value })
+    await store.saveSettings(body)
     apiKeyDraft.value = ''
     toast.success('Ollama API key saved')
   } catch (e: unknown) {
@@ -388,7 +390,7 @@ async function saveKey() {
       <div class="form-group">
         <input v-model="apiKeyDraft" type="password" placeholder="OLLAMA_API_KEY" :disabled="!selectedKeyHost" />
       </div>
-      <AppButton variant="primary" :disabled="!selectedKeyHost" :loading="keySaving" loading-text="Saving..." @click="saveKey">
+      <AppButton variant="primary" :disabled="!keyBody" :loading="keySaving" loading-text="Saving..." @click="saveKey">
         Save Ollama key
       </AppButton>
     </div>

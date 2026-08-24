@@ -112,6 +112,9 @@ describe('ollama store (PAS-269)', () => {
     expect(src).not.toContain('store.settings?.hasApiKey')
     expect(src).toContain('Export JSON')
     expect(src).toContain('downloadOllamaPsExport(store.models)')
+    expect(src).toContain('ollamaSettingsKeyBody')
+    expect(src).not.toContain('apiKey: apiKeyDraft.value')
+    expect(src).toContain(':disabled="!keyBody"')
   })
 
   test('a failed fetch hides Models', async () => {

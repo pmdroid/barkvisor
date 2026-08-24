@@ -256,7 +256,7 @@ struct ModelsView: View {
                     Button("Save") {
                         Task { await saveKey() }
                     }
-                    .disabled(keyHostId.isEmpty || keySaving)
+                    .disabled(OllamaSettingsUpdate.saveKey(hostId: keyHostId, draft: keyDraft) == nil || keySaving)
                 }
             }
         }
@@ -266,11 +266,10 @@ struct ModelsView: View {
     }
 
     private func saveKey() async {
-        let hostId = keyHostId
-        guard !hostId.isEmpty else { return }
+        guard let body = OllamaSettingsUpdate.saveKey(hostId: keyHostId, draft: keyDraft) else { return }
         keySaving = true
         defer { keySaving = false }
-        let saved = await model.saveOllamaSettings(OllamaSettingsUpdate(hostId: hostId, apiKey: keyDraft))
+        let saved = await model.saveOllamaSettings(body)
         if saved {
             keyDraft = ""
             keySheet = false
