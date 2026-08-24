@@ -28,7 +28,6 @@ struct TemplateResponse: Content {
     let requiredFeatures: [String]
     let resolvedImageSlug: String?
     let compatible: Bool
-    let workloadClass: String
 
     init(from t: VMTemplate, host: HostInventory? = nil) {
         self.id = t.id
@@ -60,8 +59,6 @@ struct TemplateResponse: Content {
             self.resolvedImageSlug = nil
             self.compatible = true
         }
-        self.workloadClass = (try? WorkloadClass.parse(t.workloadClass).rawValue)
-            ?? WorkloadClass.house.rawValue
     }
 }
 

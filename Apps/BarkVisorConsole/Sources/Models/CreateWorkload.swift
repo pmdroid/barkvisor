@@ -179,26 +179,20 @@ enum CreateWorkload {
         let family = osFamily(for: image)
         let iso = isISO(image)
         let coding = CodingAgentImage.matches(name: image.name)
-        let onyx = OnyxImage.matches(name: image.name)
-        let libraryApp = coding || onyx
-        let appMemory = onyx ? OnyxImage.defaultMemoryMB : CodingAgentImage.defaultMemoryMB
-        let appDisk = onyx ? OnyxImage.defaultDiskGB : CodingAgentImage.defaultDiskGB
-        let memory = libraryApp ? max(memoryMB(osFamily: family), appMemory) : memoryMB(
+        let memory = coding ? max(memoryMB(osFamily: family), CodingAgentImage.defaultMemoryMB) : memoryMB(
             osFamily: family,
         )
-        let disk = libraryApp ? max(diskSizeGB(osFamily: family), appDisk) : diskSizeGB(
+        let disk = coding ? max(diskSizeGB(osFamily: family), CodingAgentImage.defaultDiskGB) : diskSizeGB(
             osFamily: family,
         )
         let klass: String?
-        if libraryApp {
+        if coding {
             klass = workloadClass == "house" ? "house" : "agent"
         } else {
             klass = workloadClass == "agent" ? "agent" : nil
         }
         let cloudInit: CloudInitPayload?
-        if onyx, !iso {
-            cloudInit = CloudInitPayload(userData: OnyxImage.userData())
-        } else if coding, !iso {
+        if coding, !iso {
             let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
             let trimmedURL = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let byo = !trimmedURL.isEmpty && url != CodingAgentImage.homeOllamaGrantURL

@@ -214,11 +214,14 @@
     {
       "slug": "onyx",
       "name": "Onyx",
-      "description": "Onyx Lite Chat/Agents on Ubuntu 24.04. Agent cage; Home Ollama at http://10.0.2.2:11434 (native, not Device :7777). Guest UI on :80 (loopback hostfwd). No session JWT.",
+      "description": "Onyx Lite Chat/Agents on Ubuntu 24.04. Home Ollama at http://10.0.2.2:11434. Web UI on port 80.",
       "category": "general",
       "icon": "message-square",
       "imageSlug": "ubuntu-24.04-arm64",
-      "architectures": ["arm64", "x86_64"],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
       "imageByArch": {
         "arm64": "ubuntu-24.04-arm64",
         "x86_64": "ubuntu-24.04-x86_64"
@@ -227,11 +230,17 @@
       "memoryMB": 2048,
       "minMemoryMB": 2048,
       "diskSizeGB": 20,
-      "portForwards": [],
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 80,
+          "guestPort": 80,
+          "httpPath": "/"
+        }
+      ],
       "networkMode": "nat",
-      "workloadClass": "agent",
       "inputs": [],
-      "userDataTemplate": "barkvisor_allow_host_ollama: true\n"
+      "userDataTemplate": "barkvisor_allow_host_ollama: true\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - git\n  - curl\n  - jq\n  - openssl\n  - ca-certificates\n  - qemu-guest-agent\nwrite_files:\n  - path: /usr/local/bin/barkvisor-onyx-setup\n    permissions: '0755'\n    content: |\n      #!/bin/bash\n      set -euo pipefail\n      install -d -m 0755 /opt/onyx /var/lib/barkvisor /etc/onyx\n      if [ ! -d /opt/onyx/.git ]; then\n        git clone --depth 1 --branch v4.6.2 https://github.com/onyx-dot-app/onyx.git /opt/onyx\n      fi\n      COMPOSE=/opt/onyx/deployment/docker_compose\n      if [ ! -f /etc/onyx/user-auth-secret ]; then\n        openssl rand -hex 32 > /etc/onyx/user-auth-secret\n        chmod 600 /etc/onyx/user-auth-secret\n      fi\n      if [ ! -f /etc/onyx/postgres-password ]; then\n        openssl rand -hex 16 > /etc/onyx/postgres-password\n        chmod 600 /etc/onyx/postgres-password\n      fi\n      SECRET=$(cat /etc/onyx/user-auth-secret)\n      PGPASS=$(cat /etc/onyx/postgres-password)\n      printf '%s\\n' \\\n        \"IMAGE_TAG=v4.6.2\" \\\n        \"USER_AUTH_SECRET=$SECRET\" \\\n        \"POSTGRES_USER=postgres\" \\\n        \"POSTGRES_PASSWORD=$PGPASS\" \\\n        \"AUTH_TYPE=basic\" \\\n        \"DISABLE_VECTOR_DB=true\" \\\n        \"FILE_STORE_BACKEND=postgres\" \\\n        \"CACHE_BACKEND=postgres\" \\\n        \"AUTH_BACKEND=postgres\" \\\n        \"COMPOSE_PROFILES=\" \\\n        \"WEB_DOMAIN=http://127.0.0.1\" \\\n        \"DISABLE_TELEMETRY=true\" \\\n        > \"$COMPOSE/.env\"\n      usermod -aG docker ubuntu || true\n      systemctl enable --now docker\n      cd \"$COMPOSE\"\n      docker compose -f docker-compose.yml -f docker-compose.onyx-lite.yml up -d\n      /usr/local/bin/barkvisor-onyx-seed || true\n  - path: /usr/local/bin/barkvisor-onyx-seed\n    permissions: '0755'\n    content: |\n      #!/bin/bash\n      set -euo pipefail\n      OLLAMA=http://10.0.2.2:11434\n      BASE=http://127.0.0.1\n      for _ in $(seq 1 90); do\n        if curl -fsS \"$BASE/api/health\" >/dev/null 2>&1; then\n          break\n        fi\n        sleep 5\n      done\n      MODELS=$(curl -fsS \"$OLLAMA/api/tags\" | jq -c '[.models[]?.name] // []' || echo '[]')\n      CONFIGS=$(echo \"$MODELS\" | jq -c '[.[] | {name: ., is_visible: true}]')\n      BODY=$(jq -n --arg base \"$OLLAMA\" --argjson models \"$CONFIGS\" \\\n        '{name:\"Home Ollama\",provider:\"ollama\",api_base:$base,is_public:true,model_configurations:$models}')\n      curl -fsS -X PUT \"$BASE/api/admin/llm/provider?is_creation=true\" \\\n        -H 'Content-Type: application/json' -d \"$BODY\" || true\n  - path: /etc/systemd/system/barkvisor-onyx.service\n    permissions: '0644'\n    content: |\n      [Unit]\n      Description=Onyx Lite\n      After=docker.service network-online.target\n      Wants=network-online.target docker.service\n      Requires=docker.service\n\n      [Service]\n      Type=oneshot\n      RemainAfterExit=yes\n      WorkingDirectory=/opt/onyx/deployment/docker_compose\n      ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.onyx-lite.yml up -d\n      ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.onyx-lite.yml down\n      TimeoutStartSec=0\n\n      [Install]\n      WantedBy=multi-user.target\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - [ bash, /usr/local/bin/barkvisor-onyx-setup ]\n  - systemctl enable barkvisor-onyx\n"
     }
   ]
 }

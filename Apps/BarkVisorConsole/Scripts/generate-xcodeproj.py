@@ -16,7 +16,6 @@ APP_SOURCES = [
     "Sources/Models/LibraryCatalog.swift",
     "Sources/Models/CreateWorkload.swift",
     "Sources/Models/CodingAgentImage.swift",
-    "Sources/Models/OnyxImage.swift",
     "Sources/Models/CodingAgentSession.swift",
     "Sources/Models/LoginURI.swift",
     "Sources/Models/LoginOfferQR.swift",

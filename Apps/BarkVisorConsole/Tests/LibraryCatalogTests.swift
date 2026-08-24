@@ -166,42 +166,6 @@ struct LibraryCatalogTests {
         #expect(CodingAgentImage.slugs == Set(catalog.map(\.slug)))
     }
 
-    @Test func onyxCatalogRowDecodesForBothArches() throws {
-        let catalogJSON = """
-        [
-          {
-            "id": "onyx-arm",
-            "repositoryId": "repo-images",
-            "slug": "onyx-arm64",
-            "name": "Onyx",
-            "description": "Onyx Lite Chat/Agents on guest :80, wired to Home Ollama at http://10.0.2.2:11434.",
-            "imageType": "cloud-image",
-            "arch": "arm64",
-            "version": "24.04",
-            "downloadUrl": "https://example.test/onyx-arm64.img",
-            "sizeBytes": 618370560
-          },
-          {
-            "id": "onyx-x86",
-            "repositoryId": "repo-images",
-            "slug": "onyx-x86_64",
-            "name": "Onyx",
-            "description": "Onyx Lite Chat/Agents on guest :80, wired to Home Ollama at http://10.0.2.2:11434.",
-            "imageType": "cloud-image",
-            "arch": "x86_64",
-            "version": "24.04",
-            "downloadUrl": "https://example.test/onyx-x86_64.img",
-            "sizeBytes": 624447488
-          }
-        ]
-        """.data(using: .utf8)!
-        let catalog = try decoder.decode([CatalogImage].self, from: catalogJSON)
-        #expect(catalog.map(\.slug) == ["onyx-arm64", "onyx-x86_64"])
-        #expect(Set(catalog.map(\.arch)) == ["arm64", "x86_64"])
-        #expect(catalog.allSatisfy { $0.name == "Onyx" })
-        #expect(OnyxImage.slugs == Set(catalog.map(\.slug)))
-    }
-
     @Test func catalogMatchesLibraryByDownloadUrlAndTracksProgress() {
         let catalog = CatalogImage(
             id: "cat-1",

@@ -43,15 +43,6 @@ struct DTOTests {
         #expect(response.portForwards?.count == 1)
         #expect(response.portForwards?.first?.guestPort == 22)
         #expect(response.portForwards?.first?.hostPort == 2_222)
-
-        let withOnyx = VMResponse(
-            from: vm,
-            extraPortForwards: [
-                PortForwardRule(protocol: "tcp", hostPort: 8_080, guestPort: 80),
-            ],
-        )
-        #expect(withOnyx.portForwards?.contains(where: { $0.guestPort == 80 && $0.hostPort == 8_080 }) == true)
-        #expect(withOnyx.portForwards?.contains(where: { $0.guestPort == 22 }) == true)
         #expect(response.spec.metadata.name == "test-vm")
         #expect(response.spec.spec.resources.cpu == 4)
         #expect(response.spec.spec.guestType == "linux-arm64")
@@ -275,7 +266,6 @@ struct DTOTests {
         #expect(response.inputs.count == 1)
         #expect(response.inputs.first?.id == "hostname")
         #expect(response.architectures.isEmpty || response.compatible)
-        #expect(response.workloadClass == "house")
     }
 
     @Test func `template response compatible uses features and min memory`() {
@@ -309,21 +299,6 @@ struct DTOTests {
             host: dtoTemplateHost(arch: "x86_64", bridged: true, memoryTotalMB: 256),
         )
         #expect(!lowHostRAM.compatible)
-    }
-
-    @Test func `template response reports agent class`() {
-        let template = VMTemplate(
-            id: "tpl-onyx", slug: "onyx", name: "Onyx", description: nil,
-            category: "general", icon: "message-square",
-            imageSlug: "ubuntu-24.04-arm64",
-            cpuCount: 2, memoryMB: 2_048, diskSizeGB: 20,
-            portForwards: "[]", networkMode: "nat", inputs: "[]",
-            userDataTemplate: "barkvisor_allow_host_ollama: true\n",
-            isBuiltIn: true, repositoryId: nil,
-            createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
-            workloadClass: "agent",
-        )
-        #expect(TemplateResponse(from: template).workloadClass == "agent")
     }
 
     // MARK: - RepositoryResponse

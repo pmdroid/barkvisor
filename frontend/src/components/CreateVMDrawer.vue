@@ -48,7 +48,6 @@ const {
   byoOpenAIURL,
   byoOpenAIAPIKey,
   isCodingAgentSelected,
-  isOnyxSelected,
   filteredImages,
   selectedImage,
   formatBytes,
@@ -143,7 +142,6 @@ function openUSBPicker() {
         :sshKeys="sshKeys"
         :formatBytes="formatBytes"
         :isCodingAgentSelected="isCodingAgentSelected"
-        :isOnyxSelected="isOnyxSelected"
         :openaiPreset="openaiPreset"
         :byoOpenAIURL="byoOpenAIURL"
         :byoOpenAIAPIKey="byoOpenAIAPIKey"

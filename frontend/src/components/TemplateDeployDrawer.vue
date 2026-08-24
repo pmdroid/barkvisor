@@ -591,12 +591,6 @@ async function submit() {
     <div class="modal" style="max-width:520px">
       <h2>Deploy {{ template.name }}</h2>
       <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">{{ template.description }}</p>
-      <p
-        v-if="template.workloadClass === 'agent'"
-        style="color:var(--text-dim);font-size:13px;margin:-8px 0 16px"
-      >
-        Agent cage. WAN yes, house no. Home Ollama at http://10.0.2.2:11434.
-      </p>
       <DevicePicker
         v-if="phase === 'form' && deviceOptions.length > 0"
         v-model="selectedHostId"

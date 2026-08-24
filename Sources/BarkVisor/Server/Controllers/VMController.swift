@@ -39,11 +39,7 @@ struct VMResponse: Content {
     let createdAt: String
     let updatedAt: String
 
-    init(
-        from vm: VM,
-        signals: WorkloadHealthSignals = .unobserved,
-        extraPortForwards: [PortForwardRule] = [],
-    ) {
+    init(from vm: VM, signals: WorkloadHealthSignals = .unobserved) {
         let spec = WorkloadSpecProjector.fromVM(vm)
         self.spec = spec
         let status = WorkloadSpecProjector.status(from: vm, signals: signals)
@@ -74,12 +70,7 @@ struct VMResponse: Content {
         self.additionalDiskIds = disks.isEmpty ? nil : disks
         let paths = vm.decodedSharedPaths
         self.sharedPaths = paths.isEmpty ? nil : paths
-        var pfs = vm.decodedPortForwards
-        for extra in extraPortForwards where !pfs.contains(where: {
-            $0.protocol == extra.protocol && $0.guestPort == extra.guestPort
-        }) {
-            pfs.append(extra)
-        }
+        let pfs = vm.decodedPortForwards
         self.portForwards = pfs.isEmpty ? nil : pfs
         let usb = vm.decodedUSBDevices
         self.usbDevices = usb.isEmpty ? nil : usb

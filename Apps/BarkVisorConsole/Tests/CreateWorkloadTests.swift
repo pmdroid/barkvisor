@@ -222,18 +222,6 @@ struct CreateWorkloadTests {
         #expect(afterSwitch.diskSizeGB == 10)
         #expect(afterSwitch.cloudInit == nil)
 
-        let onyxImg = image(id: "img-onyx", name: "Onyx", imageType: "cloud-image", arch: "arm64")
-        #expect(OnyxImage.matches(name: onyxImg.name))
-        let onyx = try CreateWorkload.body(name: "chat", image: onyxImg, hostCPUCount: 8)
-        #expect(onyx.workloadClass == "agent")
-        #expect(onyx.memoryMB == 2_048)
-        #expect(onyx.diskSizeGB == 20)
-        #expect(onyx.cloudInit?.userData?.contains("docker-compose.onyx-lite.yml") == true)
-        #expect(onyx.cloudInit?.userData?.contains("http://10.0.2.2:11434") == true)
-        #expect(onyx.cloudInit?.userData?.contains("10.0.2.2:11434/v1") != true)
-        #expect(onyx.cloudInit?.userData?.contains("Authorization: Bearer") != true)
-        #expect(onyx.cloudInit?.userData?.contains(OnyxImage.allowHostOllamaYAML) == true)
-
         let encoded = try json(body)
         #expect(encoded["workloadClass"] as? String == "agent")
         let cloudInit = encoded["cloudInit"] as? [String: Any]

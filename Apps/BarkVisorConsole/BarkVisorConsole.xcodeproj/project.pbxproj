@@ -13,7 +13,6 @@
 		EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */; };
 		D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */; };
 		875A95A55EF63D129EFA0CF5 /* CodingAgentImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1434A82B342472B527529F12 /* CodingAgentImage.swift */; };
-		9CB5A721B66F32136545ECFA /* OnyxImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40C2B106B174D049CC40308D /* OnyxImage.swift */; };
 		2C1455014BD97A73B1AB56E5 /* CodingAgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D923A534712593A9114E15 /* CodingAgentSession.swift */; };
 		70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F479E78AC8E6DA04341B1D0A /* LoginURI.swift */; };
 		010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */; };
@@ -76,7 +75,6 @@
 		9416B2FFA637735BD6A83D9E /* LibraryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalog.swift; sourceTree = "<group>"; };
 		4F90E2197568BEAE7ABFB99E /* CreateWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkload.swift; sourceTree = "<group>"; };
 		1434A82B342472B527529F12 /* CodingAgentImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingAgentImage.swift; sourceTree = "<group>"; };
-		40C2B106B174D049CC40308D /* OnyxImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnyxImage.swift; sourceTree = "<group>"; };
 		E4D923A534712593A9114E15 /* CodingAgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingAgentSession.swift; sourceTree = "<group>"; };
 		F479E78AC8E6DA04341B1D0A /* LoginURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginURI.swift; sourceTree = "<group>"; };
 		FE546D4E85BEAB00C60AEBB8 /* LoginOfferQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginOfferQR.swift; sourceTree = "<group>"; };
@@ -392,7 +390,6 @@
 				EEAF463302F7B80BDDF4DD1F /* LibraryCatalog.swift in Sources */,
 				D3917BDBB132CA31F7930F40 /* CreateWorkload.swift in Sources */,
 				875A95A55EF63D129EFA0CF5 /* CodingAgentImage.swift in Sources */,
-				9CB5A721B66F32136545ECFA /* OnyxImage.swift in Sources */,
 				2C1455014BD97A73B1AB56E5 /* CodingAgentSession.swift in Sources */,
 				70951B7FEA9379BF5991EE56 /* LoginURI.swift in Sources */,
 				010C45BE233A64785B84DE07 /* LoginOfferQR.swift in Sources */,

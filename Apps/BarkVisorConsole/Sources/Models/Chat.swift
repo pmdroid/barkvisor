@@ -60,7 +60,7 @@ enum ChatStreamApply {
 
 enum ChatAvailability {
     /// In-app Chat is retired. Completions stay on `/v1/chat/completions`;
-    /// Chat/Agents are Library Onyx.
+    /// Chat/Agents are the Onyx template.
     static func visible(anyReachable _: Bool, modelCount _: Int) -> Bool {
         false
     }

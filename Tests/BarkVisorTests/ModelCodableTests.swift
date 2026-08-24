@@ -133,7 +133,6 @@ struct ModelCodableTests {
         #expect(decoded.templates[0].portForwards[0].guestPort == 22)
         #expect(decoded.templates[0].architectures == nil)
         #expect(decoded.templates[0].imageByArch == nil)
-        #expect(decoded.templates[0].workloadClass == nil)
     }
 
     // MARK: - MetricSample
