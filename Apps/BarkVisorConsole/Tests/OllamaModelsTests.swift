@@ -7,10 +7,66 @@ struct OllamaModelsTests {
     private let decoder = JSONDecoder()
 
     @Test func startBodyOmitsHostIdSoHomePicks() throws {
-        let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest"))
+        let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest", hostId: nil))
         let object = try decoder.decode([String: String].self, from: data)
         #expect(object["name"] == "llama3:latest")
         #expect(object["hostId"] == nil)
+    }
+
+    @Test func startBodyIncludesHostIdWhenPicked() throws {
+        let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest", hostId: "desk"))
+        let object = try decoder.decode([String: String].self, from: data)
+        #expect(object["name"] == "llama3:latest")
+        #expect(object["hostId"] == "desk")
+    }
+
+    @Test func stopUsesLiveRunningHostNotSnapshot() {
+        let stale = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: true,
+            locations: [
+                OllamaModelLocation(hostId: "old", displayName: nil, running: true, reachable: true),
+            ],
+        )
+        let live = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: true,
+            locations: [
+                OllamaModelLocation(hostId: "old", displayName: nil, running: false, reachable: true),
+                OllamaModelLocation(hostId: "desk", displayName: nil, running: true, reachable: true),
+            ],
+        )
+        #expect(stale.runningHostId == "old")
+        #expect(OllamaCatalogModel.runningHostId(name: stale.name, in: [live]) == "desk")
+        let stopped = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [
+                OllamaModelLocation(hostId: "desk", displayName: nil, running: false, reachable: true),
+            ],
+        )
+        #expect(OllamaCatalogModel.runningHostId(name: "llama3:latest", in: [stopped]) == nil)
+        #expect(OllamaCatalogModel.runningHostId(name: "missing", in: [live]) == nil)
+    }
+
+    @Test func nameFilterIsCaseInsensitiveAndIgnoresBlankQuery() {
+        let row = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [],
+        )
+        #expect(row.matchesName(""))
+        #expect(row.matchesName("  "))
+        #expect(row.matchesName("LLAMA"))
+        #expect(!row.matchesName("mistral"))
     }
 
     @Test func localPullUsesDeviceTaskPath() {

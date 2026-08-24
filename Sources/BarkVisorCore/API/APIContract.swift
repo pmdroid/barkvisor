@@ -128,6 +128,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/ollama/tags", stability: .evolving),
         Route(method: "GET", path: "/api/ollama/ps", stability: .evolving),
         Route(method: "POST", path: "/api/ollama/pull", stability: .evolving),
+        // Body { name, hostId? }. Omit hostId so Home picks. Do not add fields.
         Route(method: "POST", path: "/api/ollama/start", stability: .evolving),
         Route(method: "POST", path: "/api/ollama/stop", stability: .evolving),
         Route(method: "GET", path: "/api/ollama/settings", stability: .evolving),
@@ -136,6 +137,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/home/ollama/status", stability: .evolving),
         Route(method: "GET", path: "/api/home/ollama/models", stability: .evolving),
         Route(method: "POST", path: "/api/home/ollama/pull", stability: .evolving),
+        // Body { name, hostId? }. Same shape as /api/ollama/start. Do not add fields.
         Route(method: "POST", path: "/api/home/ollama/start", stability: .evolving),
         Route(method: "POST", path: "/api/home/ollama/stop", stability: .evolving),
         Route(method: "GET", path: "/api/tags", stability: .evolving),

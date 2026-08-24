@@ -71,6 +71,14 @@ describe('ollama store (PAS-269)', () => {
     expect(post.mock.calls[0]?.[1]).toEqual({ name: 'llama3:latest' })
   })
 
+  test('start includes hostId when a Device is picked', async () => {
+    const post = mock(() => Promise.resolve({ data: {} }))
+    api.post = post as typeof api.post
+    const store = useOllamaStore()
+    await store.start('llama3:latest', 'desk')
+    expect(post.mock.calls[0]?.[1]).toEqual({ name: 'llama3:latest', hostId: 'desk' })
+  })
+
   test('a failed fetch hides Models', async () => {
     api.get = mock(() => Promise.reject(new TypeError('Failed to fetch'))) as typeof api.get
     const store = useOllamaStore()

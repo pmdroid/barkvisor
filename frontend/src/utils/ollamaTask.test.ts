@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { ollamaPullPercent, ollamaPullTaskPath, ollamaStartBody } from './ollamaTask'
+import {
+  ollamaModelMatchesName,
+  ollamaPullPercent,
+  ollamaPullTaskPath,
+  ollamaRunningHostId,
+  ollamaStartBody,
+} from './ollamaTask'
 
 describe('ollama pull/start helpers (PAS-269)', () => {
   test('local pull uses Device task path', () => {
@@ -15,6 +21,33 @@ describe('ollama pull/start helpers (PAS-269)', () => {
   test('Start does not pin a hostId from location order', () => {
     expect(ollamaStartBody('llama3:latest')).toEqual({ name: 'llama3:latest' })
     expect('hostId' in ollamaStartBody('llama3:latest')).toBe(false)
+  })
+
+  test('Start includes hostId when a Device is picked', () => {
+    expect(ollamaStartBody('llama3:latest', 'desk')).toEqual({
+      name: 'llama3:latest',
+      hostId: 'desk',
+    })
+  })
+
+  test('name filter is case-insensitive and ignores blank query', () => {
+    expect(ollamaModelMatchesName('llama3:latest', '')).toBe(true)
+    expect(ollamaModelMatchesName('llama3:latest', '  ')).toBe(true)
+    expect(ollamaModelMatchesName('llama3:latest', 'LLAMA')).toBe(true)
+    expect(ollamaModelMatchesName('llama3:latest', 'mistral')).toBe(false)
+  })
+
+  test('Stop uses the live running host, not a stale snapshot', () => {
+    const live = {
+      running: true,
+      locations: [
+        { hostId: 'old', running: false },
+        { hostId: 'desk', running: true },
+      ],
+    }
+    expect(ollamaRunningHostId(live)).toBe('desk')
+    expect(ollamaRunningHostId({ running: false, locations: live.locations })).toBeUndefined()
+    expect(ollamaRunningHostId(undefined)).toBeUndefined()
   })
 
   test('pull progress is a percent', () => {

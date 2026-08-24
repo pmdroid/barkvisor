@@ -150,7 +150,7 @@ struct ChatTests {
             baseURL: #require(URL(string: "http://127.0.0.1:7777")),
             token: "old",
         )
-        client.refreshOnce = { "new" }
+        client.refreshOnce = { .rotated("new") }
         var request = try URLRequest(url: #require(URL(string: "http://127.0.0.1:7777/v1/chat/completions")))
         request.setValue("Bearer old", forHTTPHeaderField: "Authorization")
         let retry = try await client.retryAfter401(request, status: 401, allowRefresh: true)
