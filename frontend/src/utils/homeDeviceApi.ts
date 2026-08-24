@@ -154,6 +154,11 @@ export function deviceGpuDevicesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/gpu-devices')
 }
 
+/** Host CPU/memory ring. Occupancy is gpu-devices, not this payload. */
+export function deviceStatsHistoryPath(device: DeviceApiTarget, minutes = 30): string {
+  return `${devicePath(device, '/system/stats/history')}?minutes=${minutes}`
+}
+
 export function deviceVmGpuPath(device: DeviceApiTarget, vmId: string): string {
   return `${deviceVmPath(device, vmId)}/gpu`
 }

@@ -1,5 +1,27 @@
 /** Home dashboard health display (PAS-52). */
 
+/** CPU/memory from the health snapshot. Never GPU occupancy (gpu-devices). */
+export function deviceResourcesLine(device: {
+  reachability?: string
+  resources?: {
+    cpuLoadPercent?: number | null
+    memoryUsedMB?: number | null
+    memoryTotalMB?: number | null
+  } | null
+}): string | null {
+  if (device.reachability !== 'ok' || !device.resources) return null
+  const parts: string[] = []
+  if (device.resources.cpuLoadPercent != null) {
+    parts.push(`CPU ${Math.round(device.resources.cpuLoadPercent)}%`)
+  }
+  if (device.resources.memoryUsedMB != null && device.resources.memoryTotalMB != null) {
+    parts.push(
+      `${(device.resources.memoryUsedMB / 1024).toFixed(1)} / ${(device.resources.memoryTotalMB / 1024).toFixed(0)} GB`,
+    )
+  }
+  return parts.length ? parts.join(' · ') : null
+}
+
 export function deviceWorkloadLine(device: {
   reachability?: string
   workloadCount?: number | null

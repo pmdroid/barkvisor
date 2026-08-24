@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Line } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+} from 'chart.js'
 import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
-import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice } from '../api/types'
+import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -16,10 +25,18 @@ import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
-import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath } from '../utils/homeDeviceApi'
+import {
+  emptyDeviceStatsChartSeries,
+  mapStatsHistorySamples,
+  shouldFetchDeviceStatsHistory,
+} from '../utils/deviceStatsHistory'
+import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { deviceResourcesLine, deviceWorkloadLine } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
 const route = useRoute()
 const router = useRouter()
@@ -60,6 +77,82 @@ const hostGPUs = ref<HostGPUDevice[]>([])
 
 const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
+const workloadLine = computed(() => (device.value ? deviceWorkloadLine(device.value) : ''))
+const resourcesLine = computed(() => (device.value ? deviceResourcesLine(device.value) : null))
+
+const history = reactive(emptyDeviceStatsChartSeries())
+
+function resetHistory() {
+  const empty = emptyDeviceStatsChartSeries()
+  history.labels = empty.labels
+  history.cpu = empty.cpu
+  history.memoryGB = empty.memoryGB
+  history.memoryTotalGB = empty.memoryTotalGB
+}
+
+function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
+  history.labels = series.labels
+  history.cpu = series.cpu
+  history.memoryGB = series.memoryGB
+  history.memoryTotalGB = series.memoryTotalGB
+}
+
+function makeSparkOpts(max?: number) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    scales: {
+      x: { display: false },
+      y: { display: false, beginAtZero: true, max },
+    },
+    plugins: { tooltip: { enabled: false }, legend: { display: false } },
+    elements: {
+      point: { radius: 0 },
+      line: { tension: 0.4, borderWidth: 1.5 },
+    },
+  }
+}
+
+const cpuSparkOpts = computed(() => makeSparkOpts(100))
+const memSparkOpts = computed(() =>
+  makeSparkOpts(history.memoryTotalGB != null ? Math.ceil(history.memoryTotalGB) : undefined),
+)
+
+const cpuSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.cpu,
+    borderColor: 'rgba(0,144,248,0.5)',
+    backgroundColor: 'rgba(0,144,248,0.06)',
+    fill: true,
+  }],
+}))
+
+const memSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.memoryGB,
+    borderColor: 'rgba(52,211,153,0.5)',
+    backgroundColor: 'rgba(52,211,153,0.06)',
+    fill: true,
+  }],
+}))
+
+const latestCpu = computed(() => {
+  if (history.cpu.length) return history.cpu[history.cpu.length - 1]
+  return device.value?.resources?.cpuLoadPercent ?? null
+})
+const latestMemoryGB = computed(() => {
+  if (history.memoryGB.length) return history.memoryGB[history.memoryGB.length - 1]
+  const used = device.value?.resources?.memoryUsedMB
+  return used != null ? used / 1024 : null
+})
+const memoryTotalGB = computed(() => {
+  if (history.memoryTotalGB != null) return history.memoryTotalGB
+  const total = device.value?.resources?.memoryTotalMB
+  return total != null ? total / 1024 : null
+})
 
 async function refreshCapabilities(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
@@ -93,10 +186,26 @@ function clearHostTransientState() {
   }
 }
 
+async function refreshHistory(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !shouldFetchDeviceStatsHistory(row)) {
+    resetHistory()
+    return
+  }
+  const host = row.hostId
+  try {
+    const { data } = await api.get<SystemStatsSample[]>(deviceStatsHistoryPath(row))
+    if (hostId.value !== host) return
+    applyHistory(mapStatsHistorySamples(Array.isArray(data) ? data : []))
+  } catch {
+    if (hostId.value !== host) return
+  }
+}
+
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
   await workloads.fetchFor(row)
   await refreshCapabilities(row)
+  await refreshHistory(row)
 }
 
 let refreshSeq = 0
@@ -118,6 +227,7 @@ onUnmounted(() => {
 })
 watch(hostId, () => {
   clearHostTransientState()
+  resetHistory()
   void refresh()
 })
 
@@ -203,6 +313,8 @@ async function doStop() {
             <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
             <span v-if="platformLabel">{{ platformLabel }}</span>
           </p>
+          <p class="detail-workload">{{ workloadLine }}</p>
+          <p v-if="resourcesLine" class="detail-res">{{ resourcesLine }}</p>
         </div>
         <div class="detail-actions">
           <AppButton
@@ -216,6 +328,36 @@ async function doStop() {
           <span class="status-pill" :class="reachable ? 'running' : 'failed'">
             {{ reachable ? 'Reachable' : 'Unreachable' }}
           </span>
+        </div>
+      </div>
+
+      <div v-if="shouldFetchDeviceStatsHistory(device)" class="stat-grid">
+        <div class="dash-stat" style="border-left: 3px solid var(--accent)">
+          <div class="dash-stat-spark" v-if="history.cpu.length > 1">
+            <Line :data="cpuSparkData" :options="cpuSparkOpts" />
+          </div>
+          <div class="dash-stat-content">
+            <div class="dash-stat-top">
+              <span class="dash-stat-number">{{ latestCpu == null ? '—' : latestCpu.toFixed(0) + '%' }}</span>
+              <span class="dash-stat-trend" :class="latestCpu != null && latestCpu > 80 ? 'warn' : 'up'">device</span>
+            </div>
+            <div class="dash-stat-label">CPU</div>
+          </div>
+        </div>
+        <div class="dash-stat" style="border-left: 3px solid var(--green)">
+          <div class="dash-stat-spark" v-if="history.memoryGB.length > 1">
+            <Line :data="memSparkData" :options="memSparkOpts" />
+          </div>
+          <div class="dash-stat-content">
+            <div class="dash-stat-top">
+              <span class="dash-stat-number">
+                <template v-if="latestMemoryGB == null">—</template>
+                <template v-else>{{ latestMemoryGB.toFixed(1) }} <small>GB</small></template>
+              </span>
+              <span v-if="memoryTotalGB != null" class="dash-stat-trend up">/ {{ memoryTotalGB.toFixed(0) }} GB</span>
+            </div>
+            <div class="dash-stat-label">Memory</div>
+          </div>
         </div>
       </div>
 
@@ -385,6 +527,84 @@ async function doStop() {
   color: var(--green);
   background: var(--green-muted);
 }
+.detail-workload,
+.detail-res {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.detail-res {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.dash-stat {
+  position: relative;
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 120px;
+}
+.dash-stat-spark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.dash-stat-spark canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.dash-stat-content {
+  position: relative;
+  z-index: 1;
+  padding: 20px;
+}
+.dash-stat-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.dash-stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.dash-stat-number small {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.dash-stat-trend {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 3px 8px;
+  border-radius: 2px;
+}
+.dash-stat-trend.up {
+  color: var(--green);
+  background: var(--green-muted);
+}
+.dash-stat-trend.warn {
+  color: var(--amber);
+  background: var(--amber-muted);
+}
+.dash-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 .unreachable-copy,
 .list-error,
 .list-loading,
@@ -457,5 +677,6 @@ async function doStop() {
 @media (max-width: 768px) {
   .detail-header h1,
   .missing h1 { font-size: 22px; }
+  .stat-grid { grid-template-columns: 1fr; }
 }
 </style>

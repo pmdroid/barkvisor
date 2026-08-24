@@ -461,6 +461,16 @@ final class AppModel {
         }
     }
 
+    func statsHistory(on device: HomeDeviceHealthSnapshot) async -> [SystemStatsSample] {
+        guard DeviceStatsHistory.shouldFetch(device) else { return [] }
+        do {
+            return try await requireClient().statsHistory(on: device)
+        } catch {
+            handle(error)
+            return []
+        }
+    }
+
     func attachGPU(_ pciAddress: String, to workload: Workload, on device: HomeDeviceHealthSnapshot) async {
         await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
             _ = try await client.attachGPU(workload.id, pciAddress: pciAddress, on: resolved)

@@ -265,6 +265,16 @@ struct APIClient {
         try await get(scoped("/system/stats", on: device))
     }
 
+    func statsHistory(
+        minutes: Int = DeviceStatsHistory.minutes,
+        on device: HomeDeviceHealthSnapshot?,
+    ) async throws -> [SystemStatsSample] {
+        try await get(
+            scoped("/system/stats/history", on: device),
+            query: [URLQueryItem(name: "minutes", value: String(minutes))],
+        )
+    }
+
     func about() async throws -> SystemAbout {
         try await get("/api/system/about")
     }
