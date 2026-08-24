@@ -7,14 +7,22 @@ export const INFERENCE_HOWTO_SIGN_IN = 'Sign in required'
 
 export type InferenceHowToKeyRow = {
   kind?: string | null
+  expiresAt?: string | null
 }
 
-export function hasInferenceKey(keys: InferenceHowToKeyRow[]): boolean {
-  return keys.some((key) => key.kind === INFERENCE_HOWTO_KIND)
+export function inferenceKeyIsExpired(expiresAt?: string | null, now: Date = new Date()): boolean {
+  if (!expiresAt) return false
+  const date = Date.parse(expiresAt)
+  if (Number.isNaN(date)) return false
+  return date < now.getTime()
 }
 
-export function needsInferenceHowToMint(keys: InferenceHowToKeyRow[]): boolean {
-  return !hasInferenceKey(keys)
+export function hasInferenceKey(keys: InferenceHowToKeyRow[], now: Date = new Date()): boolean {
+  return keys.some((key) => key.kind === INFERENCE_HOWTO_KIND && !inferenceKeyIsExpired(key.expiresAt, now))
+}
+
+export function needsInferenceHowToMint(keys: InferenceHowToKeyRow[], now: Date = new Date()): boolean {
+  return !hasInferenceKey(keys, now)
 }
 
 export function inferenceHowToMintBody(): {

@@ -6,8 +6,14 @@ enum InferenceHowToMint {
     static let kind = APIKeyKindOption.inference.rawValue
     static let expiresIn = APIKeyDisplay.defaultExpiry
 
-    static func needsMint(keys: [APIKeyResponse]) -> Bool {
-        !keys.contains { $0.kind == kind }
+    static func needsMint(keys: [APIKeyResponse], now: Date = Date()) -> Bool {
+        !keys.contains { $0.kind == kind && !isExpired($0.expiresAt, now: now) }
+    }
+
+    static func isExpired(_ expiresAt: String?, now: Date = Date()) -> Bool {
+        guard let expiresAt else { return false }
+        guard let date = APIKeyDisplay.parseISO8601(expiresAt) else { return false }
+        return date < now
     }
 
     static func createBody() -> APIKeyCreateBody {

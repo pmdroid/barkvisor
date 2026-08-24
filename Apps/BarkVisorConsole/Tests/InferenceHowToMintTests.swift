@@ -12,6 +12,19 @@ struct InferenceHowToMintTests {
         #expect(InferenceHowToMint.needsMint(keys: [key(kind: "full")]))
         #expect(!InferenceHowToMint.needsMint(keys: [key(kind: "inference")]))
         #expect(!InferenceHowToMint.needsMint(keys: [key(kind: "full"), key(kind: "inference")]))
+        let now = ISO8601DateFormatter().date(from: "2026-06-01T00:00:00Z")!
+        #expect(
+            InferenceHowToMint.needsMint(
+                keys: [key(kind: "inference", expiresAt: "2026-01-01T00:00:00Z")],
+                now: now,
+            ),
+        )
+        #expect(
+            !InferenceHowToMint.needsMint(
+                keys: [key(kind: "inference", expiresAt: "2026-12-01T00:00:00Z")],
+                now: now,
+            ),
+        )
     }
 
     @Test func `inference role still requests inference kind`() {
@@ -38,12 +51,12 @@ struct InferenceHowToMintTests {
         #expect(APIKeyDisplay.forbiddenMessage(from: APIError.unauthorized) == nil)
     }
 
-    private func key(kind: String) -> APIKeyResponse {
+    private func key(kind: String, expiresAt: String? = nil) -> APIKeyResponse {
         APIKeyResponse(
             id: "k-\(kind)",
             name: kind,
             keyPrefix: "barkvisor_",
-            expiresAt: nil,
+            expiresAt: expiresAt,
             lastUsedAt: nil,
             createdAt: "2026-01-01T00:00:00Z",
             kind: kind,

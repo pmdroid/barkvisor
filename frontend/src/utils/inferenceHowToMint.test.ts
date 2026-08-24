@@ -17,6 +17,10 @@ describe('inferenceHowToMint (#225)', () => {
     expect(needsInferenceHowToMint([{ kind: 'full' }])).toBe(true)
     expect(needsInferenceHowToMint([{ kind: 'inference' }])).toBe(false)
     expect(needsInferenceHowToMint([{ kind: 'full' }, { kind: 'inference' }])).toBe(false)
+    const now = new Date('2026-06-01T00:00:00Z')
+    expect(needsInferenceHowToMint([{ kind: 'inference', expiresAt: '2026-01-01T00:00:00Z' }], now)).toBe(true)
+    expect(needsInferenceHowToMint([{ kind: 'inference', expiresAt: '2026-12-01T00:00:00Z' }], now)).toBe(false)
+    expect(needsInferenceHowToMint([{ kind: 'inference', expiresAt: null }], now)).toBe(false)
   })
 
   test('auth failure banners sign-in; 403 is not a role-admin path', () => {
