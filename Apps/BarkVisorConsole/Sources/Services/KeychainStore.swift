@@ -30,7 +30,7 @@ enum KeychainStore {
         let previousRefresh = readRefreshToken()
         let tokenOk = saveToken(token)
         let refreshOk = saveRefreshToken(refreshToken)
-        if tokenOk && refreshOk { return true }
+        if tokenOk, refreshOk { return true }
         if let previousToken {
             _ = saveToken(previousToken)
         } else {
@@ -61,8 +61,8 @@ enum KeychainStore {
         return token && refresh
     }
 
-    private static func read(account: String) -> String? {
-        var query: [String: Any] = [
+    static func read(account: String) -> String? {
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
@@ -76,7 +76,11 @@ enum KeychainStore {
     }
 
     @discardableResult
-    private static func save(account: String, value: String) -> Bool {
+    static func save(account: String, value: String) -> Bool {
+        saveStatus(account: account, value: value) == errSecSuccess
+    }
+
+    static func saveStatus(account: String, value: String) -> OSStatus {
         let data = Data(value.utf8)
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -87,16 +91,19 @@ enum KeychainStore {
             query as CFDictionary,
             [kSecValueData as String: data] as CFDictionary,
         )
-        if updated == errSecSuccess { return true }
-        guard updated == errSecItemNotFound else { return false }
+        if updated == errSecSuccess { return errSecSuccess }
+        guard updated == errSecItemNotFound else { return updated }
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         query[kSecUseDataProtectionKeychain as String] = true
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+        let added = SecItemAdd(query as CFDictionary, nil)
+        if added == errSecSuccess { return errSecSuccess }
+        query.removeValue(forKey: kSecUseDataProtectionKeychain as String)
+        return SecItemAdd(query as CFDictionary, nil)
     }
 
     @discardableResult
-    private static func delete(account: String) -> Bool {
+    static func delete(account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

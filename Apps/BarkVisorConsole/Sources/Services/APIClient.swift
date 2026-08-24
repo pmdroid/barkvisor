@@ -377,6 +377,21 @@ struct APIClient {
         try await delete("/api/pairing/codes")
     }
 
+    func listAPIKeys() async throws -> [APIKeyResponse] {
+        try await get(APIKeyRoutes.collection)
+    }
+
+    func createAPIKey(name: String, expiresIn: String, kind: String) async throws -> APIKeyCreateResponse {
+        try await post(
+            APIKeyRoutes.collection,
+            body: APIKeyCreateBody(name: name, expiresIn: expiresIn, kind: kind),
+        )
+    }
+
+    func revokeAPIKey(id: String) async throws {
+        try await delete(APIKeyRoutes.item(id))
+    }
+
     private func makeRequest(method: String, path: String, query: [URLQueryItem]) throws -> URLRequest {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL

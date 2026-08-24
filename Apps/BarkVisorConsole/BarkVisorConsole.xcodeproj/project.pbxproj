@@ -20,6 +20,7 @@
 		3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */; };
 		672D83DB1AA1BBD3EE39EF98 /* OllamaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113D0559519883CC9981125D /* OllamaModels.swift */; };
 		32E3F907E72D7AC82B5BDB53 /* Chat.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC595B82F89104655FA5BD6D /* Chat.swift */; };
+		CED1B59B89AE7E14B46D45B0 /* APIKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F7250C8975B2E636F3F4BA /* APIKeys.swift */; };
 		4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */; };
 		3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16E71E792A18330E918CE2C /* APIClient.swift */; };
 		4BD46825C0B81C92CC81AD9B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC94B3E12BF8A75C918934D8 /* AppModel.swift */; };
@@ -41,6 +42,7 @@
 		09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6851D270665497BF2365DA20 /* LibraryView.swift */; };
 		ADA9E5B76527A277A4967A26 /* ModelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A77CF83D103110E5BF91E4 /* ModelsView.swift */; };
 		8D8B2DE73FDE3D090B7BF3A9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4CC16A220D98EE907BF334 /* SettingsView.swift */; };
+		701E76A4830D50A61BBA54FF /* APIKeysSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D66E1EB2C38F48F38CB2D1 /* APIKeysSection.swift */; };
 		9CB4F17BCA5715D9BAC8F201 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E14E47E20214650F056095 /* Components.swift */; };
 		FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E0E27618A2D2A8FEBDD49F35 /* Assets.xcassets */; };
 		D2AC7A94173F65741361BA3F /* noVNC in Resources */ = {isa = PBXBuildFile; fileRef = E8B498E4629DB56F072E5A0B /* noVNC */; };
@@ -73,6 +75,7 @@
 		B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
 		113D0559519883CC9981125D /* OllamaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaModels.swift; sourceTree = "<group>"; };
 		EC595B82F89104655FA5BD6D /* Chat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chat.swift; sourceTree = "<group>"; };
+		E4F7250C8975B2E636F3F4BA /* APIKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeys.swift; sourceTree = "<group>"; };
 		6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		C16E71E792A18330E918CE2C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		DC94B3E12BF8A75C918934D8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -94,6 +97,7 @@
 		6851D270665497BF2365DA20 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		B4A77CF83D103110E5BF91E4 /* ModelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsView.swift; sourceTree = "<group>"; };
 		3A4CC16A220D98EE907BF334 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		71D66E1EB2C38F48F38CB2D1 /* APIKeysSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeysSection.swift; sourceTree = "<group>"; };
 		E2E14E47E20214650F056095 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		5997AFB7C283ECF969D6B8E3 /* APIDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIDecodingTests.swift; sourceTree = "<group>"; };
 		22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalogTests.swift; sourceTree = "<group>"; };
@@ -192,6 +196,7 @@
 				B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */,
 				113D0559519883CC9981125D /* OllamaModels.swift */,
 				EC595B82F89104655FA5BD6D /* Chat.swift */,
+				E4F7250C8975B2E636F3F4BA /* APIKeys.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -227,6 +232,7 @@
 				6851D270665497BF2365DA20 /* LibraryView.swift */,
 				B4A77CF83D103110E5BF91E4 /* ModelsView.swift */,
 				3A4CC16A220D98EE907BF334 /* SettingsView.swift */,
+				71D66E1EB2C38F48F38CB2D1 /* APIKeysSection.swift */,
 				54FE5E34995DE10F87DF7B85 /* Components */,
 			);
 			path = Views;
@@ -370,6 +376,7 @@
 				3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */,
 				672D83DB1AA1BBD3EE39EF98 /* OllamaModels.swift in Sources */,
 				32E3F907E72D7AC82B5BDB53 /* Chat.swift in Sources */,
+				CED1B59B89AE7E14B46D45B0 /* APIKeys.swift in Sources */,
 				4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */,
 				3495C38B4E19F7ED749AE745 /* APIClient.swift in Sources */,
 				4BD46825C0B81C92CC81AD9B /* AppModel.swift in Sources */,
@@ -391,6 +398,7 @@
 				09B7827E25017555FD5BE1C2 /* LibraryView.swift in Sources */,
 				ADA9E5B76527A277A4967A26 /* ModelsView.swift in Sources */,
 				8D8B2DE73FDE3D090B7BF3A9 /* SettingsView.swift in Sources */,
+				701E76A4830D50A61BBA54FF /* APIKeysSection.swift in Sources */,
 				9CB4F17BCA5715D9BAC8F201 /* Components.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

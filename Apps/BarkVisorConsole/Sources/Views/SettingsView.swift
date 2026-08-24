@@ -25,6 +25,8 @@ struct SettingsView: View {
                 Text("Connection")
             }
 
+            APIKeysSection()
+
             #if os(macOS)
                 MacPairingSection()
 
