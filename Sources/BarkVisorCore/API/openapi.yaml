@@ -1978,7 +1978,7 @@ components:
           description: True when Home stores an upstream key for this Device. The key itself is never returned.
         apiKeyMasked:
           type: string
-          description: Last four characters of the stored key, prefixed with bullets. Never the raw key.
+          description: Bullets when a key is stored. Never the raw key or a suffix.
 
     OllamaSettingsSnapshot:
       type: object

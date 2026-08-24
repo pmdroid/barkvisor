@@ -54,7 +54,8 @@ struct OllamaSettingsTests {
         }
         let desk = try #require(snap.host("desk"))
         #expect(desk.hasApiKey)
-        #expect(desk.apiKeyMasked == "••••1234")
+        #expect(desk.apiKeyMasked == "••••")
+        #expect(!(desk.apiKeyMasked?.contains("1234") ?? false))
         let data = try JSONEncoder().encode(snap)
         let json = try #require(String(data: data, encoding: .utf8))
         #expect(!json.contains("sk-live-abcd1234"))
