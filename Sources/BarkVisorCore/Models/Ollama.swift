@@ -291,7 +291,7 @@ public struct OllamaSettingsSnapshot: Codable, Sendable, Equatable {
     }
 }
 
-/// PUT body `{ hostId, endpoint?, apiKey? }`. Omit `apiKey` to leave the stored key; send `""` to clear.
+/// PUT body `{ hostId, endpoint?, apiKey? }`. Omit `apiKey` to leave the effective key (stored or global fallback); send `""` to clear.
 public struct OllamaSettingsUpdate: Codable, Sendable, Equatable {
     public var hostId: String
     public var endpoint: String?

@@ -107,6 +107,36 @@ struct OllamaSettingsTests {
         }
         let cleared = try dbPool.read { db in try OllamaSettings.load(hostId: "desk", from: db) }
         #expect(cleared.apiKey == nil)
+        let stored = try dbPool.read { db in
+            try OllamaHostSettingRecord.fetch(db, hostId: "desk")?.apiKey
+        }
+        #expect(stored == "")
+    }
+
+    @Test func `endpoint-only save keeps the inherited global key`() throws {
+        _ = try dbPool.write { db in
+            try AppSetting(key: OllamaSettings.apiKeyKey, value: "global-secret-key")
+                .save(db, onConflict: .replace)
+            try OllamaSettings.save(
+                hostId: "desk",
+                endpoint: "http://127.0.0.1:11434",
+                apiKey: nil,
+                updateApiKey: false,
+                selfHostId: "home",
+                db: db,
+            )
+        }
+        let loaded = try dbPool.read { db in try OllamaSettings.load(hostId: "desk", from: db) }
+        #expect(loaded.apiKey == "global-secret-key")
+        #expect(loaded.endpoint.absoluteString.contains("11434"))
+        let stored = try dbPool.read { db in
+            try OllamaHostSettingRecord.fetch(db, hostId: "desk")?.apiKey
+        }
+        #expect(stored == nil)
+        let snap = try dbPool.read { db in
+            try OllamaSettings.snapshot(hostId: "desk", from: db)
+        }
+        #expect(snap.hasApiKey)
     }
 
     @Test func `omit apiKey leaves the stored key`() throws {

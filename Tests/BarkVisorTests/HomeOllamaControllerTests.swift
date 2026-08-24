@@ -300,6 +300,58 @@ struct HomeOllamaControllerTests {
         #expect(stored == "peer-secret")
     }
 
+    @Test func `failed settings fan-out does not commit Home`() async throws {
+        let dir = try isolatedDir("settings-fanout-fail")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pool = try DatabasePool(path: dir.appendingPathComponent("db.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let selfId = UUID().uuidString
+        let peerId = "peer-desk"
+        try await pool.write { db in
+            _ = try OllamaSettings.save(
+                hostId: peerId,
+                endpoint: nil,
+                apiKey: "old-secret",
+                updateApiKey: true,
+                selfHostId: selfId,
+                db: db,
+            )
+        }
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: peerId, fingerprint: "ff", agentHost: "10.0.0.8", agentPort: 7_778)
+        let client = RecordingOllamaProxyClient()
+        client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/ollama/settings",
+            status: 502,
+            body: Data(),
+        )
+        let keys = await makeKeys()
+        let ctl = controller(
+            dir: dir, hostId: selfId, devices: store, client: client, keys: keys, now: Date(),
+        )
+        let user = AuthenticatedUser(
+            userId: "admin-1",
+            username: "admin",
+            authMethod: "jwt",
+            apiKeyId: nil,
+            role: UserRole.admin.rawValue,
+        )
+        await #expect(throws: BarkVisorError.self) {
+            try await ctl.putSettings(
+                body: OllamaSettingsUpdate(hostId: peerId, apiKey: "new-secret"),
+                db: pool,
+                user: user,
+            )
+        }
+        #expect(client.calls.contains { $0.method == "PUT" })
+        let stored = try await pool.read { db in
+            try OllamaSettings.load(hostId: peerId, from: db).apiKey
+        }
+        #expect(stored == "old-secret")
+    }
+
     @Test func `local pull start stop pass decoded body instead of the consumed request`() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let source = try String(

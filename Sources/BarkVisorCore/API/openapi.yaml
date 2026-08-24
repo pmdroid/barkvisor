@@ -1975,7 +1975,7 @@ components:
           type: string
         hasApiKey:
           type: boolean
-          description: True when Home stores an upstream key for this Device. The key itself is never returned.
+          description: True when this Device has an upstream key after inheritance. The key itself is never returned.
         apiKeyMasked:
           type: string
           description: Bullets when a key is stored. Never the raw key or a suffix.
@@ -2002,7 +2002,7 @@ components:
           description: Loopback Ollama URL. Omit to leave the stored URL alone.
         apiKey:
           type: string
-          description: Upstream Ollama API key. Omit to leave it; empty string clears it.
+          description: Upstream Ollama API key. Omit to leave the effective key (stored or global fallback); empty string clears it and stops inheriting.
 
     APIContractSummary:
       type: object

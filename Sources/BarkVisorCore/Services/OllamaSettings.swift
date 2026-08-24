@@ -20,7 +20,9 @@ public enum OllamaSettings {
         if let row = try OllamaHostSettingRecord.fetch(db, hostId: hostId) {
             let global = try loadGlobalRaw(from: db)
             let endpointRaw = nonempty(row.endpoint) ?? global.endpoint
-            return try credentials(endpointRaw: endpointRaw, apiKeyRaw: row.apiKey)
+            // nil inherits the global key; "" is an explicit clear.
+            let apiKeyRaw = row.apiKey == nil ? global.apiKey : nonempty(row.apiKey)
+            return try credentials(endpointRaw: endpointRaw, apiKeyRaw: apiKeyRaw)
         }
         return try loadGlobal(from: db)
     }
@@ -76,7 +78,7 @@ public enum OllamaSettings {
             row.endpoint = url.absoluteString
         }
         if updateApiKey {
-            row.apiKey = nonempty(apiKey)
+            row.apiKey = nonempty(apiKey) ?? ""
         }
         try row.save(db)
         return try list(knownHostIds: [target], selfHostId: selfHostId, from: db)
