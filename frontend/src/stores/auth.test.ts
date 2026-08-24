@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
 import api, { isAuthBootstrapRequest, setUnauthorizedHandler } from '../api/client'
-import { REFRESH_TOKEN_KEY, useAuthStore } from './auth'
+import { emitSessionEvent, NATIVE_SESSION_HANDLER, REFRESH_TOKEN_KEY, useAuthStore } from './auth'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -39,6 +39,7 @@ describe('auth store (PAS-242)', () => {
     api.post = originalPost
     setUnauthorizedHandler(() => undefined)
     localStorage.clear()
+    Reflect.deleteProperty(globalThis, 'webkit')
   })
 
   test('login stores the JWT and refresh token', async () => {
@@ -137,6 +138,57 @@ describe('auth store (PAS-242)', () => {
     expect(localStorage.getItem('token')).toBe('jwt-2')
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('bvrt_new')
     expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('refreshSession asks native Chat WKWebView instead of posting /auth/refresh', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+    const post = mock(() => Promise.reject(new Error('must not POST /auth/refresh')))
+    api.post = post as typeof api.post
+    const messages: unknown[] = []
+    const webkit = {
+      messageHandlers: {
+        [NATIVE_SESSION_HANDLER]: {
+          postMessage(body: { type: string }) {
+            messages.push(body)
+            if (body.type === 'refresh') {
+              localStorage.setItem('token', 'jwt-native')
+              localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_native')
+              emitSessionEvent()
+            }
+          },
+        },
+      },
+    }
+    Object.defineProperty(globalThis, 'webkit', { configurable: true, value: webkit })
+    expect(await store.refreshSession()).toBe(true)
+    expect(store.token).toBe('jwt-native')
+    expect(store.refreshToken).toBe('bvrt_native')
+    expect(messages).toEqual([{ type: 'refresh' }])
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  test('persistSession posts rotated tokens to the native Chat WKWebView', async () => {
+    const messages: unknown[] = []
+    const webkit = {
+      messageHandlers: {
+        [NATIVE_SESSION_HANDLER]: {
+          postMessage(body: unknown) {
+            messages.push(body)
+          },
+        },
+      },
+    }
+    Object.defineProperty(globalThis, 'webkit', { configurable: true, value: webkit })
+    const store = useAuthStore()
+    api.post = mock(() =>
+      Promise.resolve({ data: { token: 'jwt-web', refreshToken: 'bvrt_web', role: 'admin' } }),
+    ) as typeof api.post
+    await store.login('admin', 'secret')
+    expect(messages).toContainEqual({ type: 'session', token: 'jwt-web', refreshToken: 'bvrt_web' })
   })
 
   test('401 interceptor refreshes once then retries', async () => {
@@ -290,5 +342,9 @@ describe('auth store (PAS-242)', () => {
     expect(router).toContain('refreshSession')
     expect(router).toContain('auth.logout()')
     expect(router).not.toContain("localStorage.removeItem('refreshToken')")
+    const auth = readFileSync(join(here, './auth.ts'), 'utf8')
+    expect(auth).toContain('nativeSessionBridge')
+    expect(auth).toContain('notifyNativeSession')
+    expect(auth).toContain('requestNativeRefresh')
   })
 })

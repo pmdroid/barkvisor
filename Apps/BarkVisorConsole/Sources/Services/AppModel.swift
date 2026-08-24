@@ -104,6 +104,19 @@ enum SessionRefreshResult: Equatable {
         if refreshToken == nil || origin == nil { return .unauthorized }
         return nil
     }
+
+    /// Web already stored a newer family while this request was in flight.
+    static func finishing(
+        error: Error,
+        presented: String?,
+        currentRefresh: String?,
+        currentAccess: String?,
+    ) -> SessionRefreshResult {
+        if presented != nil, currentRefresh != presented, let currentAccess, !currentAccess.isEmpty {
+            return .rotated(currentAccess)
+        }
+        return from(error: error)
+    }
 }
 
 @Observable
@@ -175,6 +188,24 @@ final class AppModel {
     /// Refresh family for the iOS Chat web view. Access JWT rotation must not remount it.
     var sessionRefreshToken: String? {
         refreshToken
+    }
+
+    /// WKWebView rotated first: store the new family in Keychain without POST /auth/refresh.
+    func adoptWebSession(token: String, refreshToken: String) {
+        guard ChatWebSession.shouldAdopt(
+            currentToken: self.token,
+            currentRefresh: self.refreshToken,
+            nextToken: token,
+            nextRefresh: refreshToken,
+        ) else { return }
+        persistSession(SessionTokens(token: token, refreshToken: refreshToken))
+    }
+
+    /// iOS Chat SPA asks native to own POST /auth/refresh (single-flight with polling).
+    func refreshSessionFromWeb() async -> SessionTokens? {
+        _ = await refreshAccessToken()
+        guard let token, let refreshToken, !token.isEmpty, !refreshToken.isEmpty else { return nil }
+        return SessionTokens(token: token, refreshToken: refreshToken)
     }
 
     var selectedDevice: HomeDeviceHealthSnapshot? {
@@ -946,7 +977,12 @@ final class AppModel {
                 self.persistSession(session)
                 return .rotated(session.token)
             } catch {
-                return SessionRefreshResult.from(error: error)
+                return SessionRefreshResult.finishing(
+                    error: error,
+                    presented: presented,
+                    currentRefresh: self.refreshToken,
+                    currentAccess: self.token,
+                )
             }
         }
         refreshTask = task

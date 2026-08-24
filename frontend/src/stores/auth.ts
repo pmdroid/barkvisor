@@ -7,11 +7,90 @@ import { useMetricsStore } from './metrics'
 
 export const REFRESH_TOKEN_KEY = 'refreshToken'
 export const USER_ROLE_KEY = 'userRole'
+export const NATIVE_SESSION_HANDLER = 'barkvisorSession'
+export const SESSION_EVENT_NAME = 'barkvisor:session'
 
 function parseRole(raw: unknown): UserRole {
   if (raw === 'admin') return 'admin'
   if (raw === 'inference') return 'inference'
   return 'inference'
+}
+
+type NativeSessionBridge = {
+  postMessage: (body: { type: string; token?: string; refreshToken?: string }) => void
+}
+
+type NativeSessionHost = {
+  webkit?: { messageHandlers?: Record<string, NativeSessionBridge | undefined> }
+}
+
+const sessionEvents = new EventTarget()
+
+function nativeSessionBridge(): NativeSessionBridge | null {
+  const hosts: NativeSessionHost[] = [globalThis as NativeSessionHost]
+  if (typeof window !== 'undefined') hosts.unshift(window as unknown as NativeSessionHost)
+  for (const host of hosts) {
+    const handler = host.webkit?.messageHandlers?.[NATIVE_SESSION_HANDLER]
+    if (handler && typeof handler.postMessage === 'function') return handler
+  }
+  return null
+}
+
+function subscribeSession(listener: () => void): () => void {
+  sessionEvents.addEventListener(SESSION_EVENT_NAME, listener)
+  if (typeof window !== 'undefined') {
+    window.addEventListener(SESSION_EVENT_NAME, listener)
+  }
+  return () => {
+    sessionEvents.removeEventListener(SESSION_EVENT_NAME, listener)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener(SESSION_EVENT_NAME, listener)
+    }
+  }
+}
+
+/** Tests and the Chat WKWebView script both land here after tokens hit storage. */
+export function emitSessionEvent() {
+  sessionEvents.dispatchEvent(new Event(SESSION_EVENT_NAME))
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESSION_EVENT_NAME))
+  }
+}
+
+function notifyNativeSession(nextToken: string, nextRefresh: string) {
+  const bridge = nativeSessionBridge()
+  if (!bridge || !nextToken || !nextRefresh) return
+  try {
+    bridge.postMessage({ type: 'session', token: nextToken, refreshToken: nextRefresh })
+  } catch {
+    // Plain browser, or the Chat WKWebView handler is not installed.
+  }
+}
+
+function requestNativeRefresh(hydrate: () => void): Promise<boolean> {
+  const bridge = nativeSessionBridge()
+  if (!bridge) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      stop()
+      resolve(ok)
+    }
+    const onSession = () => {
+      hydrate()
+      finish(!!localStorage.getItem('token') && !!localStorage.getItem(REFRESH_TOKEN_KEY))
+    }
+    const stop = subscribeSession(onSession)
+    const timer = setTimeout(() => finish(false), 8_000)
+    try {
+      bridge.postMessage({ type: 'refresh' })
+    } catch {
+      finish(false)
+    }
+  })
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -29,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('token', nextToken)
     if (nextRefresh) localStorage.setItem(REFRESH_TOKEN_KEY, nextRefresh)
     else localStorage.removeItem(REFRESH_TOKEN_KEY)
+    notifyNativeSession(nextToken, nextRefresh)
   }
 
   /** Pick up access/refresh tokens injected by the iOS Chat WKWebView. */
@@ -41,6 +121,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function refreshSession(): Promise<boolean> {
     hydrateFromStorage()
+    if (nativeSessionBridge()) {
+      return requestNativeRefresh(hydrateFromStorage)
+    }
     const presented = refreshToken.value
     if (!presented) return false
     try {
@@ -55,11 +138,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  if (typeof window !== 'undefined') {
-    window.addEventListener('barkvisor:session', () => {
-      hydrateFromStorage()
-    })
-  }
+  subscribeSession(() => {
+    hydrateFromStorage()
+  })
 
   function persistRole(next: UserRole) {
     role.value = next

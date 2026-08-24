@@ -96,6 +96,48 @@ struct AuthServiceTests {
         #expect(rows.contains { $0.usedAt == nil && $0.revokedAt == nil })
     }
 
+    @Test func `overlapping refresh inside the reuse window keeps the family`() async throws {
+        let (tmp, db) = try makeDB()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let keys = await makeKeys()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let first = try await AuthService.loginSession(
+            username: "admin",
+            password: "testpass10",
+            hasher: TestPasswordHasher(),
+            keys: keys,
+            db: db,
+            now: now,
+        )
+        let second = try await AuthService.refresh(
+            refreshToken: first.refreshToken,
+            keys: keys,
+            db: db,
+            now: now.addingTimeInterval(1),
+        )
+        let replay = try await AuthService.refresh(
+            refreshToken: first.refreshToken,
+            keys: keys,
+            db: db,
+            now: now.addingTimeInterval(2),
+        )
+        #expect(replay.refreshToken == second.refreshToken)
+        let rows = try await db.read { db in try RefreshTokenRecord.fetchAll(db) }
+        #expect(rows.contains { $0.revokedAt != nil } == false)
+        #expect(rows.contains { $0.usedAt == nil && $0.revokedAt == nil })
+
+        await #expect(throws: BarkVisorError.self) {
+            try await AuthService.refresh(
+                refreshToken: first.refreshToken,
+                keys: keys,
+                db: db,
+                now: now.addingTimeInterval(AuthService.refreshReuseWindow + 2),
+            )
+        }
+        let revoked = try await db.read { db in try RefreshTokenRecord.fetchAll(db) }
+        #expect(revoked.allSatisfy { $0.revokedAt != nil })
+    }
+
     @Test func `spent refresh drops the family`() async throws {
         let (tmp, db) = try makeDB()
         defer { try? FileManager.default.removeItem(at: tmp) }

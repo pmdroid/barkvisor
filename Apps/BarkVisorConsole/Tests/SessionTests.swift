@@ -90,6 +90,22 @@ struct SessionTests {
                 SessionRefreshResult.fromLocalMaterial(refreshToken: nil, origin: origin) ?? .unavailable("x"),
             ) == .fail(.unauthorized),
         )
+        #expect(
+            SessionRefreshResult.finishing(
+                error: APIError.unauthorized,
+                presented: "bvrt_old",
+                currentRefresh: "bvrt_new",
+                currentAccess: "jwt-2",
+            ) == .rotated("jwt-2"),
+        )
+        #expect(
+            SessionRefreshResult.finishing(
+                error: APIError.unauthorized,
+                presented: "bvrt_old",
+                currentRefresh: "bvrt_old",
+                currentAccess: "jwt-1",
+            ) == .unauthorized,
+        )
     }
 
     @Test func `qr scanner maps camera failures to a banner`() {
