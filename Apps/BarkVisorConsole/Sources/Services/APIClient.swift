@@ -23,8 +23,8 @@ enum APIError: LocalizedError, Equatable {
 struct APIClient {
     var baseURL: URL
     var token: String?
-    /// Called once on 401. Return a new access JWT to retry, or nil to fail.
-    var refreshOnce: (() async -> String?)?
+    /// Called once on 401. Only `.unauthorized` may drop the session; `.unavailable` must not.
+    var refreshOnce: (() async -> SessionRefreshResult)?
 
     private static let decoder: JSONDecoder = .init()
 
@@ -340,10 +340,15 @@ struct APIClient {
             throw APIError.transport("Invalid response")
         }
         if http.statusCode == 401 {
-            if allowRefresh, let refreshOnce, let newToken = await refreshOnce() {
-                var retry = request
-                retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-                return try await perform(retry, allowRefresh: false)
+            if allowRefresh, let refreshOnce {
+                switch await Self.retryAfter401(refreshOnce()) {
+                case let .retry(newToken):
+                    var retry = request
+                    retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                    return try await perform(retry, allowRefresh: false)
+                case let .fail(error):
+                    throw error
+                }
             }
             throw APIError.unauthorized
         }
@@ -362,6 +367,20 @@ struct APIClient {
     private func reason(from data: Data) -> String? {
         (try? Self.decoder.decode(APIErrorBody.self, from: data))?.reason
     }
+
+    /// Map a refresh outcome after an API 401. Transport/5xx keep the Keychain refresh token.
+    static func retryAfter401(_ refresh: SessionRefreshResult) -> AuthRefreshRetry {
+        switch refresh {
+        case let .rotated(token): .retry(token)
+        case .unauthorized: .fail(.unauthorized)
+        case let .unavailable(message): .fail(.transport(message))
+        }
+    }
+}
+
+enum AuthRefreshRetry: Equatable {
+    case retry(String)
+    case fail(APIError)
 }
 
 /// Used when the caller ignores the response body (204 / empty JSON).

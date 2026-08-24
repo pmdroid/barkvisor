@@ -76,6 +76,20 @@ struct SessionTests {
         } else {
             Issue.record("transport refresh must stay unavailable")
         }
+        #expect(APIClient.retryAfter401(.rotated("jwt-2")) == .retry("jwt-2"))
+        #expect(APIClient.retryAfter401(.unauthorized) == .fail(.unauthorized))
+        #expect(APIClient.retryAfter401(.unavailable("offline")) == .fail(.transport("offline")))
+        #expect(APIClient.retryAfter401(.unavailable("down")) != .fail(.unauthorized))
+        let origin = URL(string: "http://192.168.0.8:7777")
+        #expect(SessionRefreshResult.fromLocalMaterial(refreshToken: nil, origin: nil) == .unauthorized)
+        #expect(SessionRefreshResult.fromLocalMaterial(refreshToken: "bvrt", origin: nil) == .unauthorized)
+        #expect(SessionRefreshResult.fromLocalMaterial(refreshToken: nil, origin: origin) == .unauthorized)
+        #expect(SessionRefreshResult.fromLocalMaterial(refreshToken: "bvrt", origin: origin) == nil)
+        #expect(
+            APIClient.retryAfter401(
+                SessionRefreshResult.fromLocalMaterial(refreshToken: nil, origin: origin) ?? .unavailable("x"),
+            ) == .fail(.unauthorized),
+        )
     }
 
     @Test func `qr scanner maps camera failures to a banner`() {
