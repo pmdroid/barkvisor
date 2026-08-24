@@ -181,14 +181,12 @@ struct AgentLocalProxyController: RouteCollection {
                     body: body,
                 ),
             )
-        } catch let error as HomeDeviceProxyError {
-            throw Abort(.badGateway, reason: error.localizedDescription)
         } catch let error as BarkVisorError {
             throw error
         } catch {
             throw Abort(
                 .badGateway,
-                reason: "Local host API is unreachable: \(error.localizedDescription)",
+                reason: HomeDeviceProxyError.classify(error).localHopDescription,
             )
         }
         return HomeDevicesController.response(from: result)

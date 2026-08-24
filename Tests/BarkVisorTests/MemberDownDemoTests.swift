@@ -108,6 +108,113 @@ struct MemberDownDemoTests {
         #expect(written?.state == "stopped")
         #expect(try await pool.read { try VM.fetchOne($0, key: "vm-run") }?.state == "running")
     }
+
+    @Test func `error 1 connect timeout is hop failure, member 5xx is not offline, ok health stays ok`() async throws {
+        let dir = try isolatedDir("hop-vs-health")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selfId = UUID().uuidString
+        let timeoutId = "timeout-peer"
+        let httpId = "http-peer"
+        let okId = "ok-peer"
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: timeoutId, fingerprint: "aa", agentHost: "10.0.0.6", agentPort: 7_778)
+        try store.upsert(hostId: httpId, fingerprint: "bb", agentHost: "10.0.0.7", agentPort: 7_778)
+        try store.upsert(hostId: okId, fingerprint: "cc", agentHost: "10.0.0.8", agentPort: 7_778)
+
+        let error1 = NSError(
+            domain: "AsyncHTTPClient.HTTPClientError",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "The operation could not be completed. (AsyncHTTPClient.HTTPClientError error 1.)",
+            ],
+        )
+        let client = FailingMemberClient()
+        client.fail(
+            host: "10.0.0.6",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            error: HomeDeviceProxyError.classify(error1),
+        )
+        client.respond(
+            host: "10.0.0.7",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 503,
+            body: Data("down".utf8),
+        )
+        let inventory = HostInventory(
+            hostId: okId,
+            displayName: "ok-desk",
+            agent: AgentInfo(version: "test"),
+            platform: PlatformInfo(
+                os: "linux", osVersion: "6.8", arch: "arm64", hostname: "ok-desk",
+            ),
+            resources: ResourcesInfo(
+                cpuCount: 2, memoryTotalMB: 4_096, memoryUsedMB: 1_024, cpuLoadPercent: 5,
+            ),
+            storage: [],
+            networking: NetworkingInfo(interfaces: []),
+            virtualization: VirtualizationInfo(
+                accelerator: "tcg",
+                qemuCPUModel: "max",
+                defaultGuestArch: "arm64",
+                features: VirtualizationFeatures(
+                    bridgedNetworking: false,
+                    managedBridgeDaemon: false,
+                    usbPassthrough: false,
+                    inAppUpdate: false,
+                    kvmDevice: false,
+                    qemuBridgeHelper: false,
+                ),
+            ),
+            guestTypes: [],
+            collectedAt: "2026-08-14T00:00:00Z",
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory),
+        )
+        client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 500,
+            body: Data("nope".utf8),
+        )
+
+        let listed = HomeDeviceDirectory.list(
+            dataDir: dir, hostId: selfId, displayName: "this-device", devices: store,
+        )
+        let ctl = HomeDevicesController(
+            dataDir: dir,
+            hostId: selfId,
+            devices: store,
+            mtlsClient: client,
+        )
+        let report = await ctl.healthReport(
+            listed: listed,
+            local: localFacts(from: [], at: "2026-08-14T00:00:00Z"),
+            bearer: nil,
+        )
+
+        let timedOut = try #require(report.devices.first { $0.hostId == timeoutId })
+        #expect(timedOut.reachability == HomeDeviceHealthAggregator.connectTimeout)
+        #expect(timedOut.reachabilityError?.contains("Home cannot hop") == true)
+        #expect(!(timedOut.reachabilityError ?? "").hasPrefix("Device is unreachable:"))
+
+        let http = try #require(report.devices.first { $0.hostId == httpId })
+        #expect(http.reachability == HomeDeviceHealthAggregator.memberHTTP)
+        #expect(http.reachabilityError == "Device returned HTTP 503")
+
+        let okRow = try #require(report.devices.first { $0.hostId == okId })
+        #expect(okRow.reachability == HomeDeviceHealthAggregator.ok)
+        #expect(okRow.reachabilityError == nil)
+        #expect(okRow.workloadCount == nil)
+    }
 }
 
 private func localFacts(from rows: [VM], at: String) -> HomeDeviceLiveFacts {
@@ -189,6 +296,14 @@ private final class FailingMemberClient: HomeDeviceProxyClient, @unchecked Senda
         lock.lock()
         defer { lock.unlock() }
         responses["\(host):\(port)\(path)"] = .failure(error)
+    }
+
+    func respond(host: String, port: Int, path: String, status: Int, body: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        responses["\(host):\(port)\(path)"] = .success(
+            HomeDeviceProxyResponse(status: status, body: body),
+        )
     }
 
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {
