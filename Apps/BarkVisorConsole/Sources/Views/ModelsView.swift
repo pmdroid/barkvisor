@@ -24,8 +24,6 @@ struct ModelsView: View {
     @State private var keySaving = false
     @State private var statsHostId = ""
     @State private var points: [DeviceStatsChartPoint] = []
-    @State private var hostGPUs: [HostGPUDevice] = []
-    @State private var gpusLoaded = false
     @State private var mintedKey: String?
     @State private var mintAttempted = false
     @State private var rechecking = false
@@ -519,73 +517,32 @@ struct ModelsView: View {
             if !fetchLiveStats {
                 Text(OllamaDeviceStats.unreachableCopy)
                     .foregroundStyle(.secondary)
-                LabeledContent("CPU", value: "unknown")
-                LabeledContent("Memory", value: "unknown")
                 LabeledContent("GPU", value: "unknown")
             } else {
-                if points.count > 1 {
-                    Chart(points) { point in
+                if gpuPoints.count > 1 {
+                    Chart(gpuPoints) { point in
                         LineMark(
                             x: .value("Time", point.date),
-                            y: .value("CPU", point.cpuPercent),
+                            y: .value("GPU", point.gpuPercent ?? 0),
                         )
                         .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.accentColor.opacity(0.8))
+                        .foregroundStyle(Color.purple.opacity(0.8))
                         AreaMark(
                             x: .value("Time", point.date),
-                            y: .value("CPU", point.cpuPercent),
+                            y: .value("GPU", point.gpuPercent ?? 0),
                         )
                         .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.accentColor.opacity(0.12))
+                        .foregroundStyle(Color.purple.opacity(0.12))
                     }
                     .chartYScale(domain: 0 ... 100)
                     .chartXAxis(.hidden)
                     .frame(height: 140)
-                    .accessibilityLabel("CPU history")
+                    .accessibilityLabel("GPU history")
                 }
-                LabeledContent("CPU", value: cpuNow)
-                if points.count > 1 {
-                    Chart(points) { point in
-                        LineMark(
-                            x: .value("Time", point.date),
-                            y: .value("Memory", point.memoryUsedGB),
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.green.opacity(0.8))
-                        AreaMark(
-                            x: .value("Time", point.date),
-                            y: .value("Memory", point.memoryUsedGB),
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.green.opacity(0.12))
-                    }
-                    .chartYScale(domain: 0 ... memoryCeiling)
-                    .chartXAxis(.hidden)
-                    .frame(height: 140)
-                    .accessibilityLabel("Memory history")
-                }
-                LabeledContent("Memory", value: memoryNow)
+                LabeledContent("GPU", value: gpuNow)
             }
         } header: {
-            Text("Device stats")
-        }
-
-        if fetchLiveStats {
-            Section("GPU") {
-                if gpusLoaded, hostGPUs.isEmpty {
-                    Text(OllamaDeviceStats.gpuEmptyCopy)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(hostGPUs) { gpu in
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(OllamaDeviceStats.occupancyLines(gpu), id: \.self) { line in
-                                Text(line)
-                                    .foregroundStyle(line == gpu.name ? .primary : .secondary)
-                            }
-                        }
-                    }
-                }
-            }
+            Text("GPU")
         }
     }
 
@@ -609,28 +566,15 @@ struct ModelsView: View {
         OllamaDeviceStats.shouldFetch(catalogDevice: selectedCatalogDevice, health: statsHealth)
     }
 
-    private var cpuNow: String {
-        if let last = points.last {
-            return String(format: "%.0f%%", last.cpuPercent)
-        }
-        if let cpu = statsHealth?.resources?.cpuLoadPercent {
-            return String(format: "%.0f%%", cpu)
-        }
-        return "—"
+    private var gpuPoints: [DeviceStatsChartPoint] {
+        points.filter { $0.gpuPercent != nil }
     }
 
-    private var memoryNow: String {
-        if let last = points.last {
-            return String(format: "%.1f / %.0f GB", last.memoryUsedGB, last.memoryTotalGB)
-        }
-        if let used = statsHealth?.resources?.memoryUsedMB, let total = statsHealth?.resources?.memoryTotalMB {
-            return String(format: "%.1f / %.0f GB", Double(used) / 1_024, Double(total) / 1_024)
+    private var gpuNow: String {
+        if let gpu = points.reversed().compactMap(\.gpuPercent).first {
+            return String(format: "%.0f%%", gpu)
         }
         return "—"
-    }
-
-    private var memoryCeiling: Double {
-        max(points.last?.memoryTotalGB ?? 1, 1)
     }
 
     private func syncStatsHost() {
@@ -645,19 +589,11 @@ struct ModelsView: View {
         guard fetchLiveStats, let target = statsHealth else {
             guard !Task.isCancelled, statsHostId == requestedHost else { return }
             points = []
-            hostGPUs = []
-            gpusLoaded = true
             return
         }
-        gpusLoaded = false
-        async let history = DeviceStatsHistory.points(from: model.statsHistory(on: target))
-        async let gpus = model.gpuDevices(on: target)
-        let nextPoints = await history
-        let nextGpus = await gpus
+        let nextPoints = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
         guard !Task.isCancelled, statsHostId == requestedHost else { return }
         points = nextPoints
-        hostGPUs = nextGpus
-        gpusLoaded = true
     }
 
     private var pullFraction: Double? {

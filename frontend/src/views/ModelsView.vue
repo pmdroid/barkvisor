@@ -14,7 +14,6 @@ import { apiErrorMessage } from '../api/errors'
 import type {
   APIKeyCreateResponse,
   APIKeyResponse,
-  HostGPUDevice,
   OllamaCatalogModel,
   OllamaLibrarySearchResult,
   OllamaTaskAccepted,
@@ -33,16 +32,15 @@ import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
 import {
   emptyDeviceStatsChartSeries,
+  latestGpuPercent,
   mapStatsHistorySamples,
 } from '../utils/deviceStatsHistory'
 import { formatBytes } from '../utils/format'
-import { deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
 import {
   defaultOllamaStatsHostId,
-  ollamaGpuEmptyCopy,
-  ollamaGpuOccupancyLines,
   ollamaStatsApiTarget,
   ollamaStatsUnreachableCopy,
   shouldFetchOllamaDeviceStats,
@@ -116,7 +114,6 @@ const mintedKey = ref('')
 const mintBanner = ref('')
 let mintAttempted = false
 const statsHost = ref('')
-const hostGPUs = ref<HostGPUDevice[] | null>(null)
 const history = reactive(emptyDeviceStatsChartSeries())
 const rechecking = ref(false)
 
@@ -257,14 +254,13 @@ const fetchLiveStats = computed(() =>
   shouldFetchOllamaDeviceStats(selectedCatalogDevice.value, statsTarget.value),
 )
 
-const gpuEmptyCopy = computed(() => ollamaGpuEmptyCopy(hostGPUs.value))
-
 function resetHistory() {
   const empty = emptyDeviceStatsChartSeries()
   history.labels = empty.labels
   history.cpu = empty.cpu
   history.memoryGB = empty.memoryGB
   history.memoryTotalGB = empty.memoryTotalGB
+  history.gpu = empty.gpu
 }
 
 function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
@@ -272,6 +268,7 @@ function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
   history.cpu = series.cpu
   history.memoryGB = series.memoryGB
   history.memoryTotalGB = series.memoryTotalGB
+  history.gpu = series.gpu
 }
 
 function makeSparkOpts(max?: number) {
@@ -291,47 +288,18 @@ function makeSparkOpts(max?: number) {
   }
 }
 
-const cpuSparkOpts = computed(() => makeSparkOpts(100))
-const memSparkOpts = computed(() =>
-  makeSparkOpts(history.memoryTotalGB != null ? Math.ceil(history.memoryTotalGB) : undefined),
-)
-
-const cpuSparkData = computed(() => ({
+const gpuSparkOpts = computed(() => makeSparkOpts(100))
+const gpuSparkData = computed(() => ({
   labels: history.labels,
   datasets: [{
-    data: history.cpu,
-    borderColor: 'rgba(0,144,248,0.5)',
-    backgroundColor: 'rgba(0,144,248,0.06)',
+    data: history.gpu,
+    borderColor: 'rgba(168,85,247,0.55)',
+    backgroundColor: 'rgba(168,85,247,0.08)',
     fill: true,
   }],
 }))
-
-const memSparkData = computed(() => ({
-  labels: history.labels,
-  datasets: [{
-    data: history.memoryGB,
-    borderColor: 'rgba(52,211,153,0.5)',
-    backgroundColor: 'rgba(52,211,153,0.06)',
-    fill: true,
-  }],
-}))
-
-const latestCpu = computed(() => {
-  if (!fetchLiveStats.value) return null
-  if (history.cpu.length) return history.cpu[history.cpu.length - 1]
-  return devices.deviceByHostId(statsHost.value)?.resources?.cpuLoadPercent ?? null
-})
-const latestMemoryGB = computed(() => {
-  if (!fetchLiveStats.value) return null
-  if (history.memoryGB.length) return history.memoryGB[history.memoryGB.length - 1]
-  const used = devices.deviceByHostId(statsHost.value)?.resources?.memoryUsedMB
-  return used != null ? used / 1024 : null
-})
-const memoryTotalGB = computed(() => {
-  if (history.memoryTotalGB != null) return history.memoryTotalGB
-  const total = devices.deviceByHostId(statsHost.value)?.resources?.memoryTotalMB
-  return total != null ? total / 1024 : null
-})
+const latestGpu = computed(() => (fetchLiveStats.value ? latestGpuPercent(history.gpu) : null))
+const gpuSparkReady = computed(() => history.gpu.filter((value) => value != null).length > 1)
 
 let statsSeq = 0
 
@@ -342,7 +310,6 @@ async function refreshLiveStats() {
   if (!host || !fetchLiveStats.value || !target) {
     if (seq !== statsSeq) return
     resetHistory()
-    hostGPUs.value = null
     return
   }
   try {
@@ -351,14 +318,7 @@ async function refreshLiveStats() {
     applyHistory(mapStatsHistorySamples(Array.isArray(data) ? data : []))
   } catch {
     if (seq !== statsSeq || statsHost.value !== host) return
-  }
-  try {
-    const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(target))
-    if (seq !== statsSeq || statsHost.value !== host) return
-    hostGPUs.value = Array.isArray(data) ? data : []
-  } catch {
-    if (seq !== statsSeq || statsHost.value !== host) return
-    hostGPUs.value = []
+    resetHistory()
   }
 }
 
@@ -422,7 +382,6 @@ watch(
   () => [statsHost.value, fetchLiveStats.value] as const,
   () => {
     resetHistory()
-    hostGPUs.value = null
     void refreshLiveStats()
   },
 )
@@ -753,48 +712,23 @@ async function saveKey() {
 
       <template v-if="!fetchLiveStats">
         <p class="stats-unknown">{{ ollamaStatsUnreachableCopy() }}</p>
-        <p class="stats-unknown">CPU unknown · Memory unknown · GPU unknown</p>
+        <p class="stats-unknown">GPU unknown</p>
       </template>
 
       <template v-else>
-        <div class="stat-grid">
-          <div class="dash-stat" style="border-left: 3px solid var(--accent)">
-            <div class="dash-stat-spark" v-if="history.cpu.length > 1">
-              <Line :data="cpuSparkData" :options="cpuSparkOpts" />
+        <div class="stat-grid gpu-only">
+          <div class="dash-stat" style="border-left: 3px solid #a855f7">
+            <div class="dash-stat-spark" v-if="gpuSparkReady">
+              <Line :data="gpuSparkData" :options="gpuSparkOpts" />
             </div>
             <div class="dash-stat-content">
               <div class="dash-stat-top">
-                <span class="dash-stat-number">{{ latestCpu == null ? '—' : latestCpu.toFixed(0) + '%' }}</span>
+                <span class="dash-stat-number">{{ latestGpu == null ? '—' : latestGpu.toFixed(0) + '%' }}</span>
                 <span class="dash-stat-trend up">device</span>
               </div>
-              <div class="dash-stat-label">CPU</div>
+              <div class="dash-stat-label">GPU</div>
             </div>
           </div>
-          <div class="dash-stat" style="border-left: 3px solid var(--green)">
-            <div class="dash-stat-spark" v-if="history.memoryGB.length > 1">
-              <Line :data="memSparkData" :options="memSparkOpts" />
-            </div>
-            <div class="dash-stat-content">
-              <div class="dash-stat-top">
-                <span class="dash-stat-number">
-                  <template v-if="latestMemoryGB == null">—</template>
-                  <template v-else>{{ latestMemoryGB.toFixed(1) }} <small>GB</small></template>
-                </span>
-                <span v-if="memoryTotalGB != null" class="dash-stat-trend up">/ {{ memoryTotalGB.toFixed(0) }} GB</span>
-              </div>
-              <div class="dash-stat-label">Memory</div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="gpuEmptyCopy || (hostGPUs && hostGPUs.length)" class="gpu-card">
-          <div class="gpu-card-title">GPU</div>
-          <p v-if="gpuEmptyCopy" class="gpu-card-status">{{ gpuEmptyCopy }}</p>
-          <ul v-else-if="hostGPUs && hostGPUs.length" class="gpu-list">
-            <li v-for="gpu in hostGPUs" :key="gpu.pciAddress">
-              <span v-for="line in ollamaGpuOccupancyLines(gpu)" :key="line" class="gpu-meta">{{ line }}</span>
-            </li>
-          </ul>
         </div>
       </template>
     </div>
@@ -1107,6 +1041,9 @@ async function saveKey() {
   gap: 16px;
   margin-bottom: 16px;
   min-width: 0;
+}
+.stat-grid.gpu-only {
+  grid-template-columns: minmax(0, 360px);
 }
 .dash-stat {
   position: relative;

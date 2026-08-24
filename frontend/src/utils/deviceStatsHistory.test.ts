@@ -3,6 +3,7 @@ import type { SystemStatsSample } from '../api/types'
 import {
   DEVICE_STATS_HISTORY_MAX,
   emptyDeviceStatsChartSeries,
+  latestGpuPercent,
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from './deviceStatsHistory'
@@ -45,6 +46,20 @@ describe('device stats history mapping', () => {
     expect(series.cpu).toEqual([12.4, 40])
     expect(series.memoryGB).toEqual([8, 16])
     expect(series.memoryTotalGB).toBe(32)
+    expect(series.gpu).toEqual([null, null])
+  })
+
+  test('maps GPU percent without turning missing into zero', () => {
+    const series = mapStatsHistorySamples(
+      [
+        { ...sample('2026-08-24T12:00:00Z', 1, 1_024), hostGpuPercent: null },
+        { ...sample('2026-08-24T12:00:05Z', 1, 1_024), hostGpuPercent: 22 },
+      ],
+      { formatTime: (ts) => ts },
+    )
+    expect(series.gpu).toEqual([null, 22])
+    expect(latestGpuPercent(series.gpu)).toBe(22)
+    expect(latestGpuPercent([null, null])).toBeNull()
   })
 
   test('empty or missing payload is no series', () => {
@@ -54,6 +69,7 @@ describe('device stats history mapping', () => {
       cpu: [],
       memoryGB: [],
       memoryTotalGB: undefined,
+      gpu: [],
     })
   })
 

@@ -110,12 +110,16 @@ describe('ollama live Device stats', () => {
       'utf8',
     )
     expect(src).toContain('deviceStatsHistoryPath(target)')
-    expect(src).toContain('deviceGpuDevicesPath(target)')
+    expect(src).not.toContain('deviceGpuDevicesPath(target)')
     expect(src).toContain('overflow-menu')
     expect(src).toContain('Export JSON')
     expect(src).toContain('downloadOllamaPsExport(store.models)')
     expect(src).toContain('ollamaStatsUnreachableCopy')
-    expect(src).toContain('ollamaGpuOccupancyLines')
+    expect(src).toContain('latestGpuPercent')
+    expect(src).toContain('dash-stat-label">GPU')
+    expect(src).not.toContain('dash-stat-label">CPU')
+    expect(src).not.toContain('dash-stat-label">Memory')
+    expect(src).not.toContain('ollamaGpuOccupancyLines')
     expect(src).not.toMatch(/<AppButton[\s\S]*?>\s*Export JSON/)
   })
 

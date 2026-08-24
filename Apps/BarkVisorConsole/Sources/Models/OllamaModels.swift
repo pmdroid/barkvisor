@@ -314,7 +314,7 @@ enum OllamaDeviceStats {
     static let gpuEmptyCopy = "This Device has no GPU."
 
     static var unreachableCopy: String {
-        "This \(Copy.device.lowercased()) did not answer. CPU, memory, and GPU are unknown."
+        "This \(Copy.device.lowercased()) did not answer. GPU is unknown."
     }
 
     static func defaultHostId(models: [OllamaCatalogModel], devices: [OllamaDeviceStatus]) -> String {

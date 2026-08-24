@@ -32,14 +32,21 @@ public struct SystemStatsSample: Codable, Sendable {
     public let hostCpuPercent: Double
     public let hostMemoryUsedMB: Int
     public let hostMemoryTotalMB: Int
+    /// Device GPU busy 0...100. Null when this Device has no readable GPU.
+    public let hostGpuPercent: Double?
 
     public init(
-        timestamp: String, hostCpuPercent: Double, hostMemoryUsedMB: Int, hostMemoryTotalMB: Int,
+        timestamp: String,
+        hostCpuPercent: Double,
+        hostMemoryUsedMB: Int,
+        hostMemoryTotalMB: Int,
+        hostGpuPercent: Double? = nil,
     ) {
         self.timestamp = timestamp
         self.hostCpuPercent = hostCpuPercent
         self.hostMemoryUsedMB = hostMemoryUsedMB
         self.hostMemoryTotalMB = hostMemoryTotalMB
+        self.hostGpuPercent = hostGpuPercent
     }
 }
 
@@ -114,6 +121,7 @@ public actor MetricsCollector {
             hostCpuPercent: PlatformHost.cpuLoadPercent,
             hostMemoryUsedMB: PlatformHost.memoryUsedMB,
             hostMemoryTotalMB: PlatformHost.physicalMemoryMB,
+            hostGpuPercent: PlatformGPU.utilizationPercent(),
         )
 
         systemStatsBuffer.append(sample)

@@ -599,6 +599,7 @@ export interface SystemStatsSample {
   hostCpuPercent: number
   hostMemoryUsedMB: number
   hostMemoryTotalMB: number
+  hostGpuPercent?: number | null
 }
 
 /** GET /api/system/about (self) or Home-proxied member /v1/system/about. */
