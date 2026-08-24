@@ -17,6 +17,7 @@ import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
+import { inferenceHowToFromOrigin } from '../utils/inferenceApiHowTo'
 
 const auth = useAuthStore()
 const store = useOllamaStore()
@@ -37,6 +38,23 @@ const startHost = ref('')
 const starting = ref(false)
 const stopTarget = ref<OllamaCatalogModel | null>(null)
 const stopping = ref(false)
+const copied = ref('')
+
+const howTo = computed(() =>
+  inferenceHowToFromOrigin(window.location.origin, { role: 'self' }),
+)
+
+async function copySnippet(key: string, text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    copied.value = key
+    window.setTimeout(() => {
+      if (copied.value === key) copied.value = ''
+    }, 1500)
+  } catch {
+    /* ignore */
+  }
+}
 
 const hostOptions = computed(() =>
   store.devices
@@ -206,6 +224,41 @@ async function saveKey() {
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Use this API</h2>
+    <p style="color:var(--text-secondary);font-size:13px">
+      OpenAI-compatible completions on this {{ HOME_LABEL }}:
+      <code>/v1/chat/completions</code> at port 7777.
+      Send <code>Authorization: Bearer</code> with an inference key.
+      That is not Device :11434.
+    </p>
+    <div class="form-group">
+      <label>curl</label>
+      <pre class="howto-pre">{{ howTo.curl }}</pre>
+      <AppButton size="sm" @click="copySnippet('curl', howTo.curl)">
+        {{ copied === 'curl' ? 'Copied' : 'Copy curl' }}
+      </AppButton>
+    </div>
+    <div class="form-group">
+      <label>Environment</label>
+      <pre class="howto-pre">{{ howTo.env }}</pre>
+      <AppButton size="sm" @click="copySnippet('env', howTo.env)">
+        {{ copied === 'env' ? 'Copied' : 'Copy env' }}
+      </AppButton>
+    </div>
+    <h3>From inside a Workload</h3>
+    <p style="color:var(--text-secondary);font-size:13px">
+      Agent cage reaches Device Ollama at <code>{{ howTo.cageBaseURL }}</code>
+      (PAS-268 guestfwd). {{ howTo.cageDnsLine }}
+    </p>
+    <div class="form-group" style="margin-bottom:0">
+      <pre class="howto-pre">{{ howTo.cageEnv }}</pre>
+      <AppButton size="sm" @click="copySnippet('cage', howTo.cageEnv)">
+        {{ copied === 'cage' ? 'Copied' : 'Copy cage env' }}
+      </AppButton>
+    </div>
+  </div>
+
   <EmptyState
     v-if="!store.anyReachable && !store.loading"
     icon="monitor"
@@ -325,3 +378,18 @@ async function saveKey() {
     @cancel="stopTarget = null"
   />
 </template>
+
+<style scoped>
+.howto-pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 6px 0 8px;
+}
+</style>

@@ -16,15 +16,28 @@ struct ModelsView: View {
     var body: some View {
         Group {
             if !model.ollamaLoaded {
-                ProgressView("Loading Ollama…")
+                List {
+                    howToSection
+                    Section {
+                        ProgressView("Loading Ollama…")
+                    }
+                }
+                .platformListStyle()
             } else if !catalog.anyReachable {
-                ContentUnavailableView(
-                    "Ollama is not reachable",
-                    systemImage: "cube",
-                    description: Text(catalog.devices.first?.installHint ?? "Install Ollama on a Device."),
-                )
+                List {
+                    howToSection
+                    Section {
+                        ContentUnavailableView(
+                            "Ollama is not reachable",
+                            systemImage: "cube",
+                            description: Text(catalog.devices.first?.installHint ?? "Install Ollama on a Device."),
+                        )
+                    }
+                }
+                .platformListStyle()
             } else {
                 List {
+                    howToSection
                     Section("Pull a model") {
                         TextField("llama3", text: $pullName)
                         OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)
@@ -88,6 +101,34 @@ struct ModelsView: View {
         }
     }
 
+    private var howTo: InferenceAPIHowTo.Snippets {
+        let device = model.selectedDevice
+        let isMember = device?.isSelf == false
+        return InferenceAPIHowTo.snippets(
+            role: isMember ? .member : .thisDevice,
+            origin: model.connectedURL,
+            memberHost: isMember ? device?.agentHost : nil,
+        )
+    }
+
+    private var howToSection: some View {
+        Section("Use this API") {
+            Text(
+                "OpenAI-compatible completions on this \(Copy.home): \(howTo.lanCompletionsURL). Send Authorization: Bearer with an inference key. That is not Device :11434.",
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            CopyableSnippet(title: "curl", text: howTo.curl)
+            CopyableSnippet(title: "Environment", text: howTo.env)
+            Text(
+                "From inside a Workload, Device Ollama is \(howTo.cageBaseURL) (PAS-268 guestfwd). \(howTo.cageDnsLine)",
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            CopyableSnippet(title: "Cage environment", text: howTo.cageEnv)
+        }
+    }
+
     private var catalog: OllamaHomeCatalog {
         model.ollamaCatalog ?? OllamaHomeCatalog(
             anyReachable: false,
@@ -105,7 +146,6 @@ struct ModelsView: View {
         catalog.models.filter { $0.matchesName(nameQuery) }
     }
 
-    @ViewBuilder
     private func modelRow(_ row: OllamaCatalogModel) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {

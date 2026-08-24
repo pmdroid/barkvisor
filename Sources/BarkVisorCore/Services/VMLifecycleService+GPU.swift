@@ -79,7 +79,9 @@ extension VMLifecycleService {
         let stored = CloudInitService.storedUserData(vmID: vm.id)
         guard CodingAgentImage.isManagedUserData(stored) else { return }
         let gpuAttached = !vm.decodedGPUDevices.isEmpty
-        let userData = CodingAgentImage.userDataForGPU(gpuAttached: gpuAttached)
+        let userData = CodingAgentImage.userDataForGPU(
+            gpuAttached: gpuAttached, existingUserData: stored,
+        )
         try CloudInitService.validateUserData(userData)
         let keys = CloudInitService.sshAuthorizedKeys(from: stored)
         _ = try CloudInitService.generateISO(
