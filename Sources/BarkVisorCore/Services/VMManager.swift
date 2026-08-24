@@ -315,6 +315,7 @@ public actor VMManager: VMStateQuerying {
         } catch {
             await CodingAgentSessionStore.shared.remove(vmID: vmID)
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
+            GPUPassthroughService.releaseVFIO(loaded.vm.decodedGPUDevices)
             Log.vm.error("VM start failed: \(error.localizedDescription)", vm: vmID)
             do {
                 recordHealthError(error.localizedDescription, for: vmID)

@@ -8,6 +8,8 @@ import {
   deviceVmPath,
   deviceVmSessionPath,
   deviceVmSpecPath,
+  deviceVmGpuDevicePath,
+  deviceVmGpuPath,
   deviceVmUsbDevicePath,
   deviceVmUsbPath,
   deviceVmsBasePath,
@@ -124,6 +126,26 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     return data
   }
 
+  async function attachGPU(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    deviceId: string,
+  ): Promise<VM> {
+    const { data } = await api.post<VM>(deviceVmGpuPath(device, vmId), { deviceId })
+    await replaceOne(device, data)
+    return data
+  }
+
+  async function detachGPU(
+    device: HomeDeviceHealthSnapshot,
+    vmId: string,
+    deviceId: string,
+  ): Promise<VM> {
+    const { data } = await api.delete<VM>(deviceVmGpuDevicePath(device, vmId, deviceId))
+    await replaceOne(device, data)
+    return data
+  }
+
   async function runAction(
     device: HomeDeviceHealthSnapshot,
     vmId: string,
@@ -209,6 +231,8 @@ export const useDeviceWorkloadsStore = defineStore('deviceWorkloads', () => {
     fetchSpec,
     attachUSB,
     detachUSB,
+    attachGPU,
+    detachGPU,
     start,
     stop,
     restart,

@@ -26,6 +26,7 @@ extension VMManager {
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
             terminateSwtpm(running, vmID: vmID)
+            await releasePassthroughGPUs(vmID: vmID)
             await cleanup(vmID: vmID)
             // Process sources are already stopped, so handleTermination will not run.
             await consoleBuffers?.detach(vmID: vmID)
@@ -93,6 +94,7 @@ extension VMManager {
                 kill(running.pid, SIGKILL)
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
+            await releasePassthroughGPUs(vmID: vmID)
             await cleanup(vmID: vmID)
             await consoleBuffers?.detach(vmID: vmID)
             await metricsCollector?.stop(vmID: vmID)

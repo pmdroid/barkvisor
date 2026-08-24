@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
-import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot } from '../api/types'
+import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -15,8 +15,8 @@ import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
-import { canFetchDeviceWorkloads, deviceCapabilitiesPath } from '../utils/homeDeviceApi'
+import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
@@ -56,6 +56,7 @@ const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
 const showCreate = ref(false)
 const deviceCaps = ref<CurrentHostCapabilities | null>(null)
+const hostGPUs = ref<HostGPUDevice[]>([])
 
 const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
@@ -63,6 +64,7 @@ const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value
 async function refreshCapabilities(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
     deviceCaps.value = null
+    hostGPUs.value = []
     return
   }
   const host = row.hostId
@@ -73,6 +75,14 @@ async function refreshCapabilities(row: HomeDeviceHealthSnapshot | null = device
   } catch {
     if (hostId.value !== host) return
     deviceCaps.value = null
+  }
+  try {
+    const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(row))
+    if (hostId.value !== host) return
+    hostGPUs.value = Array.isArray(data) ? data : []
+  } catch {
+    if (hostId.value !== host) return
+    hostGPUs.value = []
   }
 }
 
@@ -213,6 +223,17 @@ async function doStop() {
         <div class="gpu-card-title">GPU passthrough</div>
         <p class="gpu-card-status">{{ gpuReady ? 'This Device reports IOMMU, vfio-pci, and KVM.' : 'Not available on this Device.' }}</p>
         <UnsupportedHint :text="gpuExplanation" />
+        <p v-if="gpuReady && hostGPUs.length === 1" class="gpu-warning" role="alert">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
+        <ul v-if="hostGPUs.length" class="gpu-list">
+          <li v-for="gpu in hostGPUs" :key="gpu.pciAddress">
+            <span class="gpu-name">{{ gpu.name }}</span>
+            <span class="gpu-meta">{{ gpu.pciAddress }} · IOMMU {{ gpu.iommuGroup }}</span>
+            <span class="gpu-meta">Group mates: {{ gpuGroupMatesLabel(gpu.pciAddress, gpu.groupAddresses) }}</span>
+            <span v-if="gpu.claimedByVMName" class="gpu-busy">Attached to {{ gpu.claimedByVMName }}</span>
+            <span v-else-if="gpu.inUseByHost" class="gpu-busy">{{ gpuHostOccupancyLabel(true) }}</span>
+          </li>
+        </ul>
+        <p v-if="gpuReady" class="gpu-card-status">Guest Ollama path: {{ GUEST_OLLAMA_PATH }}</p>
       </div>
 
       <p v-if="!canFetchDeviceWorkloads(device)" class="unreachable-copy">
@@ -410,6 +431,27 @@ async function doStop() {
   margin: 4px 0 0;
   font-size: 13px;
   color: var(--text-secondary);
+}
+.gpu-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.gpu-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.gpu-name { font-weight: 500; }
+.gpu-meta { font-family: var(--font-mono); color: var(--text-dim); }
+.gpu-busy { color: var(--red); }
+.gpu-warning {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--red);
 }
 
 @media (max-width: 768px) {

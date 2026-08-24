@@ -27,6 +27,7 @@ public struct CreateWorkloadExtras: Sendable {
     public var sharedPaths: [String]?
     public var portForwards: [PortForwardRule]?
     public var usbDevices: [USBPassthroughDevice]?
+    public var gpuDevices: [GPUPassthroughDevice]?
     public var description: String?
     public var bootOrder: String?
     public var displayResolution: String?
@@ -47,6 +48,7 @@ public struct CreateWorkloadExtras: Sendable {
         sharedPaths: [String]? = nil,
         portForwards: [PortForwardRule]? = nil,
         usbDevices: [USBPassthroughDevice]? = nil,
+        gpuDevices: [GPUPassthroughDevice]? = nil,
         description: String? = nil,
         bootOrder: String? = nil,
         displayResolution: String? = nil,
@@ -64,6 +66,7 @@ public struct CreateWorkloadExtras: Sendable {
         self.sharedPaths = sharedPaths
         self.portForwards = portForwards
         self.usbDevices = usbDevices
+        self.gpuDevices = gpuDevices
         self.description = description
         self.bootOrder = bootOrder
         self.displayResolution = displayResolution
@@ -162,6 +165,7 @@ public enum EffectiveWorkloadPipeline {
         sharedPaths: [String]? = nil,
         portForwards: [PortForwardRule]? = nil,
         usbDevices: [USBPassthroughDevice]? = nil,
+        gpuDevices: [GPUPassthroughDevice]? = nil,
         workloadClass: String? = nil,
     ) throws -> WorkloadSpec {
         let guestType = try flatGuestType(vmType: vmType, osFamily: osFamily)
@@ -181,6 +185,7 @@ public enum EffectiveWorkloadPipeline {
             portForwards: forwards,
         )
         let usb = (usbDevices ?? []).map { USBPassthroughService.workload(from: $0) }
+        let gpu = (gpuDevices ?? []).map { GPUPassthroughService.workload(from: $0) }
         // Leave firmware nil so omitted uefi/tpmEnabled stay omitted on CreateVMParams.
         // Synthesizing tpm: false here overrode the Windows default in buildVM.
         return WorkloadSpec(
@@ -192,6 +197,7 @@ public enum EffectiveWorkloadPipeline {
                 disks: disks,
                 networks: [network],
                 usb: usb,
+                gpu: gpu,
                 display: displayResolution.map { WorkloadDisplay(resolution: $0) },
                 sharedPaths: sharedPaths,
                 workloadClass: workloadClass,
@@ -238,6 +244,7 @@ public enum EffectiveWorkloadPipeline {
             PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
         }
         let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
+        let gpu = spec.spec.gpu.map { GPUPassthroughService.passthrough(from: $0) }
         let requestedID = spec.metadata.id?.trimmingCharacters(in: .whitespacesAndNewlines)
         return CreateVMParams(
             id: requestedID?.isEmpty == true ? nil : requestedID,
@@ -254,6 +261,7 @@ public enum EffectiveWorkloadPipeline {
             sharedPaths: extras.sharedPaths ?? spec.spec.sharedPaths,
             portForwards: extras.portForwards ?? forwards,
             usbDevices: extras.usbDevices ?? (usb.isEmpty ? nil : usb),
+            gpuDevices: extras.gpuDevices ?? (gpu.isEmpty ? nil : gpu),
             description: extras.description ?? spec.metadata.description,
             bootOrder: extras.bootOrder ?? spec.spec.bootOrder,
             displayResolution: extras.displayResolution ?? spec.spec.display?.resolution,

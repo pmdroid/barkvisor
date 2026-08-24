@@ -48,8 +48,13 @@ public enum CloudInitService {
         }
     }
 
-    public static func generateISO(vmID: String, vmName: String, sshKeys: [String], userData: String?)
-        throws -> URL {
+    public static func generateISO(
+        vmID: String,
+        vmName: String,
+        sshKeys: [String],
+        userData: String?,
+        instanceID: String? = nil,
+    ) throws -> URL {
         let dir = generatedISOURL(vmID: vmID).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -57,7 +62,9 @@ public enum CloudInitService {
         let safeName = vmName.filter {
             $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "."
         }
-        let metaData = "instance-id: \(vmID)\nlocal-hostname: \(safeName)\n"
+        let trimmedID = instanceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let resolvedID = trimmedID.isEmpty ? vmID : trimmedID
+        let metaData = "instance-id: \(resolvedID)\nlocal-hostname: \(safeName)\n"
         try metaData.write(
             to: dir.appendingPathComponent("meta-data"), atomically: true, encoding: .utf8,
         )
@@ -149,6 +156,19 @@ public enum CloudInitService {
             .deletingLastPathComponent()
             .appendingPathComponent("user-data")
         return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    public static func sshAuthorizedKeys(from storedUserData: String?) -> [String] {
+        guard let storedUserData, !storedUserData.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return [] }
+        let doc = storedUserData.hasPrefix("#cloud-config")
+            ? storedUserData
+            : "#cloud-config\n" + storedUserData
+        guard let node = try? Yams.compose(yaml: doc),
+              let seq = node.mapping?["ssh_authorized_keys"]?.sequence
+        else { return [] }
+        return seq.compactMap(\.string).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     /// Accept the VM's current path (no change) or the service-generated ISO only.

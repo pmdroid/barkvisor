@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import { defaultCapabilities } from './capabilitiesParse'
 import {
-  GPU_ATTACH_UNAVAILABLE,
+  GUEST_OLLAMA_PATH,
+  GPU_IOMMU_NOT_READY,
+  GPU_SINGLE_DISPLAY_WARNING,
+  gpuDetachAllowed,
+  gpuGroupMateAddresses,
+  gpuGroupMatesLabel,
+  gpuHostOccupancyLabel,
   gpuPassthroughExplanation,
   gpuPassthroughSupported,
 } from './gpuPassthrough'
 
-describe('gpuPassthrough copy (PAS-274)', () => {
+describe('gpuPassthrough copy (PAS-275)', () => {
   test('macos uses os remediation and is unsupported', () => {
     const caps = {
       ...defaultCapabilities,
@@ -26,7 +32,7 @@ describe('gpuPassthrough copy (PAS-274)', () => {
     expect(gpuPassthroughExplanation(caps)).not.toMatch(/node|cluster/i)
   })
 
-  test('ready host still explains that attach is not offered', () => {
+  test('ready host explains attach and guest Ollama', () => {
     const caps = {
       ...defaultCapabilities,
       platform: 'Linux',
@@ -35,7 +41,9 @@ describe('gpuPassthrough copy (PAS-274)', () => {
       details: [{ code: 'gpuPassthrough', supported: true }],
     }
     expect(gpuPassthroughSupported(caps)).toBe(true)
-    expect(gpuPassthroughExplanation(caps)).toContain(GPU_ATTACH_UNAVAILABLE)
+    expect(gpuPassthroughExplanation(caps)).toContain(GUEST_OLLAMA_PATH)
+    expect(gpuPassthroughExplanation(caps)).toContain('same card cannot be host and guest')
+    expect(gpuPassthroughExplanation(caps)).not.toContain('not attach')
   })
 
   test('linux missing kvm uses actionable server remediation', () => {
@@ -73,5 +81,34 @@ describe('gpuPassthrough copy (PAS-274)', () => {
     }
     expect(gpuPassthroughSupported(caps)).toBe(false)
     expect(gpuPassthroughExplanation(caps)).toContain('intel_iommu')
+  })
+
+  test('host occupancy is the driver not Ollama', () => {
+    expect(gpuHostOccupancyLabel(true)).toBe('In use by host')
+    expect(gpuHostOccupancyLabel(false)).toBeNull()
+    expect(gpuHostOccupancyLabel(undefined)).toBeNull()
+  })
+
+  test('detach is only allowed when the Workload is stopped', () => {
+    expect(gpuDetachAllowed('stopped')).toBe(true)
+    expect(gpuDetachAllowed('error')).toBe(true)
+    expect(gpuDetachAllowed('running')).toBe(false)
+    expect(gpuDetachAllowed('starting')).toBe(false)
+    expect(gpuDetachAllowed('stopping')).toBe(false)
+    expect(gpuDetachAllowed(undefined)).toBe(false)
+  })
+
+  test('group mates omit the GPU itself', () => {
+    expect(gpuGroupMateAddresses('0000:01:00.0', ['0000:01:00.0', '0000:01:00.1'])).toEqual([
+      '0000:01:00.1',
+    ])
+    expect(gpuGroupMatesLabel('0000:01:00.0', ['0000:01:00.0', '0000:01:00.1'])).toBe('0000:01:00.1')
+    expect(gpuGroupMatesLabel('0000:01:00.0', ['0000:01:00.0'])).toBe('none')
+    expect(gpuGroupMatesLabel('0000:01:00.0', undefined)).toBe('none')
+  })
+
+  test('single-GPU display warning is loud copy', () => {
+    expect(GPU_SINGLE_DISPLAY_WARNING).toContain('one GPU')
+    expect(GPU_SINGLE_DISPLAY_WARNING).toContain('host display')
   })
 })

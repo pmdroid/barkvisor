@@ -15,6 +15,8 @@ public enum CodingAgentImage {
     public static let deviceOllamaBaseURL = "http://\(deviceOllamaHost):\(deviceOllamaPort)/v1"
     /// Home Ollama grant (PAS-272). Same slirp URL; the cage guestfwd is the grant.
     public static let homeOllamaGrantURL = deviceOllamaBaseURL
+    /// Guest-local Ollama when a GPU is attached (PAS-275). Host Ollama is not forwarded.
+    public static let guestOllamaBaseURL = GPUPassthroughService.guestOllamaPath
 
     public static let defaultCPUCount = 2
     public static let defaultMemoryMB = 2_048
@@ -110,6 +112,7 @@ public enum CodingAgentImage {
     public static func userData(
         openaiBaseURL: String,
         openaiAPIKey: String = defaultOpenAIAPIKey,
+        installGuestOllama: Bool = false,
     ) -> String {
         let quotedURL = posixSingleQuoted(openaiBaseURL)
         let quotedKey = posixSingleQuoted(openaiAPIKey)
@@ -126,7 +129,26 @@ public enum CodingAgentImage {
         let ocArm = opencodeSha256Aarch64
         let ocX64 = opencodeSha256Amd64
         let ttydPort = webTerminalPort
-        return """
+        let guestOllamaFiles: String
+        let guestOllamaRun: String
+        if installGuestOllama {
+            guestOllamaFiles = """
+                  - path: /usr/local/bin/barkvisor-guest-ollama
+                    permissions: '0755'
+                    content: |
+                      #!/bin/bash
+                      set -euo pipefail
+                      if ! command -v ollama >/dev/null 2>&1; then
+                        curl -fsSL https://ollama.com/install.sh | sh
+                      fi
+                      systemctl enable --now ollama || true
+            """
+            guestOllamaRun = "          - [ bash, /usr/local/bin/barkvisor-guest-ollama ]\n"
+        } else {
+            guestOllamaFiles = ""
+            guestOllamaRun = ""
+        }
+        let yaml = """
         \(marker)package_update: true
         packages:
           - git
@@ -210,14 +232,41 @@ public enum CodingAgentImage {
               install_sha "https://github.com/tsl0922/ttyd/releases/download/\(ttydVer)/ttyd.${ttyd_arch}" "$ttyd_sha" /usr/local/bin/ttyd
               install_tarball_bin "https://github.com/anthropics/claude-code/releases/download/v\(claudeVer)/${claude_tar}" "$claude_sha" claude
               install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v\(ocVer)/${oc_tar}" "$oc_sha" opencode
-        runcmd:
+        \(guestOllamaFiles)runcmd:
           - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
           - install -d -m 1777 /var/lib/barkvisor
           - git config --system core.hooksPath /etc/git-hooks
           - systemctl enable --now qemu-guest-agent
           - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
           - systemctl enable --now ttyd
+
         """
+        return yaml + guestOllamaRun
+    }
+
+    public static func isManagedUserData(_ userData: String?) -> Bool {
+        (userData ?? "").contains("barkvisor-coding-agent-setup")
+    }
+
+    public static func userDataForGPU(gpuAttached: Bool) -> String {
+        userData(
+            openaiBaseURL: gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL,
+            installGuestOllama: gpuAttached,
+        )
+    }
+
+    public static func cloudInitInstanceID(vmID: String, gpuAttached: Bool) -> String {
+        gpuAttached ? "\(vmID)-gpu" : vmID
+    }
+
+    /// Managed Coding Agent ISOs flip `instance-id` so cloud-init re-runs on GPU attach/detach.
+    public static func cloudInitInstanceID(
+        vmID: String,
+        userData: String?,
+        gpuDevices: [GPUPassthroughDevice]?,
+    ) -> String? {
+        guard isManagedUserData(userData) else { return nil }
+        return cloudInitInstanceID(vmID: vmID, gpuAttached: !(gpuDevices ?? []).isEmpty)
     }
 
     public static func applyingCreateDefaults(
@@ -228,8 +277,10 @@ public enum CodingAgentImage {
         guard matches(name: imageName, slug: imageSlug) else { return params }
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let gpuAttached = !(params.gpuDevices ?? []).isEmpty
+        let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL
         let userData = existing.isEmpty
-            ? Self.userData(openaiBaseURL: homeOllamaGrantURL)
+            ? Self.userData(openaiBaseURL: defaultURL, installGuestOllama: gpuAttached)
             : existing
         if existing.isEmpty {
             try CloudInitService.validateUserData(userData)
@@ -253,6 +304,7 @@ public enum CodingAgentImage {
             sharedPaths: params.sharedPaths,
             portForwards: params.portForwards,
             usbDevices: params.usbDevices,
+            gpuDevices: params.gpuDevices,
             description: params.description,
             bootOrder: params.bootOrder,
             displayResolution: params.displayResolution,
