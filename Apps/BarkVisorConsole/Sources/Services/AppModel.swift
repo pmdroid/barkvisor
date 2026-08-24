@@ -277,6 +277,7 @@ final class AppModel {
         logs = []
         ollamaCatalog = nil
         ollamaSettings = nil
+        remoteAccess = nil
         if route == .chat { route = .dashboard }
         if phoneTab == .chat { phoneTab = .home }
         phase = url == nil ? .connect : .login
@@ -322,6 +323,7 @@ final class AppModel {
         logs = []
         ollamaCatalog = nil
         ollamaSettings = nil
+        remoteAccess = nil
         if route == .chat { route = .dashboard }
         if phoneTab == .chat { phoneTab = .home }
         phase = .connect
@@ -371,19 +373,31 @@ final class AppModel {
     }
 
     func loadRemoteAccess() async {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
         do {
-            remoteAccess = try await requireClient().remoteAccess()
+            let status = try await requireClient().remoteAccess()
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            remoteAccess = status
         } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
             handle(error)
         }
     }
 
     @discardableResult
     func saveRemoteAccess(_ body: RemoteAccessUpdate) async -> Bool {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
         do {
-            remoteAccess = try await requireClient().saveRemoteAccess(body)
+            let status = try await requireClient().saveRemoteAccess(body)
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return false }
+            remoteAccess = status
             return true
         } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return false }
             handle(error)
             return false
         }

@@ -36,6 +36,20 @@ struct APIDecodingTests {
         #expect(object.advertiseUrl == "192.168.0.8")
     }
 
+    @Test func `remote access status defaults advertised hosts when omitted`() throws {
+        let json = """
+        {
+          "tailscale": { "available": false },
+          "wireguard": { "configured": false },
+          "requireTailnetForRemote": false
+        }
+        """.data(using: .utf8)!
+        let status = try decoder.decode(RemoteAccessStatus.self, from: json)
+        #expect(status.advertisedHosts.isEmpty)
+        #expect(status.advertiseUrl == nil)
+        #expect(!status.requireTailnetForRemote)
+    }
+
     @Test func `home device health report decodes`() throws {
         let json = """
         {

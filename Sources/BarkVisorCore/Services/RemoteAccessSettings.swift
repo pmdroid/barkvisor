@@ -76,12 +76,17 @@ public enum RemoteAccessSettings {
 
     public static func status(settings: Snapshot) -> RemoteAccessStatus {
         let tailscale = TailscaleProbe.detect()
+        let hosts = PairingAddresses.advertisedHosts(
+            tailnet: tailscale,
+            advertiseUrl: settings.advertiseUrl,
+            hostname: ProcessInfo.processInfo.hostName,
+        )
         return RemoteAccessStatus(
             tailscale: tailscale,
             wireguard: WireGuardProbe.detect(),
             advertiseUrl: settings.advertiseUrl,
             requireTailnetForRemote: settings.requireTailnetForRemote,
-            advertisedHosts: advertisedHosts(advertiseUrl: settings.advertiseUrl),
+            advertisedHosts: hosts,
         )
     }
 

@@ -982,6 +982,19 @@ struct RemoteAccessStatus: Decodable, Hashable {
     var advertiseUrl: String?
     var requireTailnetForRemote: Bool
     var advertisedHosts: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case tailscale, wireguard, advertiseUrl, requireTailnetForRemote, advertisedHosts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tailscale = try container.decode(RemoteAccessTailnet.self, forKey: .tailscale)
+        wireguard = try container.decode(RemoteAccessWireGuard.self, forKey: .wireguard)
+        advertiseUrl = try container.decodeIfPresent(String.self, forKey: .advertiseUrl)
+        requireTailnetForRemote = try container.decode(Bool.self, forKey: .requireTailnetForRemote)
+        advertisedHosts = try container.decodeIfPresent([String].self, forKey: .advertisedHosts) ?? []
+    }
 }
 
 struct RemoteAccessUpdate: Encodable, Equatable {
