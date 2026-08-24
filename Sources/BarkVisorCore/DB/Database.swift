@@ -107,6 +107,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M012_UserRoles.identifier) { db in
             try M012_UserRoles.migrate(db)
         }
+        migrator.registerMigration(M013_CodingAgentSession.identifier) { db in
+            try M013_CodingAgentSession.migrate(db)
+        }
     }
 }
 

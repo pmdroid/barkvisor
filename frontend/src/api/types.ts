@@ -256,8 +256,29 @@ export interface VM {
   workloadClass?: 'house' | 'agent' | string | null
   /** PAS-258. Omitted / false: do not start after Device boot. */
   startOnBoot?: boolean | null
+  session?: CodingAgentSession | null
   createdAt: string
   updatedAt: string
+}
+
+export interface CodingAgentReceipt {
+  stoppedAt: string
+  reason: string
+  lastGitPushAt?: string | null
+  noPush: boolean
+}
+
+export interface CodingAgentSession {
+  ttlSeconds: number
+  startedAt?: string | null
+  expiresAt?: string | null
+  remainingSeconds?: number | null
+  warning: boolean
+  warningLeadSeconds: number
+  expiryAction: 'stop' | string
+  grant: string
+  receipt?: CodingAgentReceipt | null
+  actions: Array<'resume' | 'reset' | 'burn' | string>
 }
 
 export interface Disk {

@@ -82,6 +82,14 @@ export function deviceVmActionPath(
   return `${deviceVmPath(device, vmId)}/${action}`
 }
 
+export function deviceVmSessionPath(
+  device: DeviceApiTarget,
+  vmId: string,
+  action: 'resume' | 'reset' | 'burn',
+): string {
+  return `${deviceVmPath(device, vmId)}/session/${action}`
+}
+
 export function deviceVmSpecPath(device: DeviceApiTarget, vmId: string): string {
   return `${deviceVmPath(device, vmId)}/spec`
 }

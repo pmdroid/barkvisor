@@ -142,6 +142,12 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+  - path: /etc/git-hooks/pre-push
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      install -d -m 1777 /var/lib/barkvisor
+      date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/barkvisor/last-git-push
   - path: /usr/local/bin/barkvisor-coding-agent-setup
     permissions: '0755'
     content: |
@@ -185,6 +191,8 @@ write_files:
       install_tarball_bin "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/\${oc_tar}" "$oc_sha" opencode
 runcmd:
   - chown ubuntu:ubuntu /etc/default/barkvisor-openai /etc/profile.d/barkvisor-openai.sh
+  - install -d -m 1777 /var/lib/barkvisor
+  - git config --system core.hooksPath /etc/git-hooks
   - systemctl enable --now qemu-guest-agent
   - [ bash, /usr/local/bin/barkvisor-coding-agent-setup ]
   - systemctl enable --now ttyd

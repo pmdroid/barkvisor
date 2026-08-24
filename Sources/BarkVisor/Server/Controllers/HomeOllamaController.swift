@@ -84,7 +84,7 @@ struct HomeOllamaController: RouteCollection {
             user: user,
         )
         if target == hostId {
-            return try await localOllama.pull(req: req)
+            return try await localOllama.pull(body: body, db: req.db)
         }
         return try await proxyJSON(
             hostId: target,
@@ -108,7 +108,7 @@ struct HomeOllamaController: RouteCollection {
             user: user,
         )
         if target == hostId {
-            return try await localOllama.start(req: req)
+            return try await localOllama.start(body: body, db: req.db)
         }
         try await proxyEmpty(
             hostId: target,
@@ -133,7 +133,7 @@ struct HomeOllamaController: RouteCollection {
             user: user,
         )
         if target == hostId {
-            return try await localOllama.stop(req: req)
+            return try await localOllama.stop(body: body, db: req.db)
         }
         try await proxyEmpty(
             hostId: target,

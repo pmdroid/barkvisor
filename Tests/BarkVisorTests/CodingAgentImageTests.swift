@@ -100,6 +100,8 @@ struct CodingAgentImageTests {
         #expect(yaml.contains("export OPENAI_API_KEY='ollama'"))
         #expect(yaml.contains("permissions: '0600'"))
         #expect(yaml.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
+        #expect(yaml.contains("/etc/git-hooks/pre-push"))
+        #expect(yaml.contains("/var/lib/barkvisor/last-git-push"))
         let byo = CodingAgentImage.userData(
             openaiBaseURL: "https://api.openai.com/v1",
             openaiAPIKey: "sk-test",
@@ -194,7 +196,7 @@ struct CodingAgentImageTests {
         #expect(kept.cloudInit?.userData?.contains("ttyd") != true)
     }
 
-    @Test func `console and frontend user-data keep ttyd EnvironmentFile`() throws {
+    @Test func `console and frontend user-data keep git push stamp and posix quoting`() throws {
         let root = repoRoot()
         let console = try String(
             contentsOf: root.appendingPathComponent(
@@ -207,8 +209,11 @@ struct CodingAgentImageTests {
             encoding: .utf8,
         )
         for source in [console, frontend] {
-            #expect(source.contains("/etc/default/barkvisor-openai"))
+            #expect(source.contains("/etc/git-hooks/pre-push"))
+            #expect(source.contains("/var/lib/barkvisor/last-git-push"))
+            #expect(source.contains("posixSingleQuoted"))
             #expect(source.contains("EnvironmentFile=-/etc/default/barkvisor-openai"))
+            #expect(!source.contains("claude.ai/install.sh"))
         }
         #expect(console.contains("isShellSafeOpenAIBaseURL"))
         #expect(console.contains("isShellSafeOpenAIAPIKey"))

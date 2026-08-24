@@ -19,6 +19,7 @@ import {
   deviceTemplateDryRunPath,
   deviceTemplatesPath,
   deviceVmActionPath,
+  deviceVmSessionPath,
   deviceVmConsolePath,
   deviceVmPath,
   deviceVmSpecPath,
@@ -47,6 +48,10 @@ describe('homeDeviceApi (PAS-52)', () => {
       '/home/devices/peer%2F1/v1/vms/vm-9/start',
     )
     expect(deviceVmActionPath(self, 'vm-9', 'stop')).toBe('/vms/vm-9/stop')
+    expect(deviceVmSessionPath(self, 'vm-9', 'resume')).toBe('/vms/vm-9/session/resume')
+    expect(deviceVmSessionPath(member, 'vm-9', 'burn')).toBe(
+      '/home/devices/peer%2F1/v1/vms/vm-9/session/burn',
+    )
     expect(deviceVmActionPath(member, 'vm-9', 'restart')).toBe(
       '/home/devices/peer%2F1/v1/vms/vm-9/restart',
     )

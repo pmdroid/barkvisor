@@ -400,6 +400,18 @@ extension VMLifecycleService {
         )
         vm.setOverrides(params.overrides)
         vm.setHealth(params.health)
+        if (try? WorkloadClass.parse(params.workloadClass)) == .agent {
+            let grant = CodingAgentSession.usesHomeOllamaGrant(userData: params.cloudInit?.userData)
+                ? CodingAgentSession.grant
+                : "byo"
+            vm.setSession(
+                CodingAgentLifecycle.seed(
+                    grant: grant,
+                    cloudImageId: params.cloudImageId,
+                    diskSizeGB: params.diskSizeGB,
+                ),
+            )
+        }
         vm.syncSpecProjection(bumpGeneration: false)
         return vm
     }

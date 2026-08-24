@@ -101,9 +101,13 @@ struct OllamaController: RouteCollection {
     func pull(req: Vapor.Request) async throws -> OllamaTaskAccepted {
         _ = try req.requireUser
         let body = try req.content.decode(OllamaPullRequest.self)
+        return try await pull(body: body, db: req.db)
+    }
+
+    func pull(body: OllamaPullRequest, db: DatabasePool) async throws -> OllamaTaskAccepted {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
-        let client = try await resolvedClient(db: req.db)
+        let client = try await resolvedClient(db: db)
         guard await client.versionReachable() else {
             throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
         }
@@ -124,9 +128,13 @@ struct OllamaController: RouteCollection {
     @Sendable
     func start(req: Vapor.Request) async throws -> HTTPStatus {
         let body = try req.content.decode(OllamaModelActionRequest.self)
+        return try await start(body: body, db: req.db)
+    }
+
+    func start(body: OllamaModelActionRequest, db: DatabasePool) async throws -> HTTPStatus {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
-        let snap = try await currentSnapshot(db: req.db)
+        let snap = try await currentSnapshot(db: db)
         guard snap.reachable else {
             throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
         }
@@ -139,7 +147,7 @@ struct OllamaController: RouteCollection {
         guard fit.ok else {
             throw BarkVisorError.preconditionFailed(fit.reason ?? "Model does not fit in memory")
         }
-        let client = try await resolvedClient(db: req.db)
+        let client = try await resolvedClient(db: db)
         try await client.load(model: model?.name ?? name)
         return .noContent
     }
@@ -147,9 +155,13 @@ struct OllamaController: RouteCollection {
     @Sendable
     func stop(req: Vapor.Request) async throws -> HTTPStatus {
         let body = try req.content.decode(OllamaModelActionRequest.self)
+        return try await stop(body: body, db: req.db)
+    }
+
+    func stop(body: OllamaModelActionRequest, db: DatabasePool) async throws -> HTTPStatus {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
-        let client = try await resolvedClient(db: req.db)
+        let client = try await resolvedClient(db: db)
         guard await client.versionReachable() else {
             throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
         }
