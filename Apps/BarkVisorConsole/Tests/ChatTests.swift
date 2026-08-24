@@ -245,8 +245,8 @@ struct ChatTests {
         let chat = try ChatWebSession.pageURL(home: origin)
         #expect(ChatWebSession.allowsNavigation(chat, home: origin, secrets: [jwt, refresh]))
         #expect(
-            ChatWebSession.allowsNavigation(
-                try #require(URL(string: "about:blank")),
+            try ChatWebSession.allowsNavigation(
+                #require(URL(string: "about:blank")),
                 home: origin,
                 secrets: [jwt],
             ),
@@ -258,6 +258,53 @@ struct ChatTests {
         #expect(!ChatWebSession.allowsNavigation(refreshInQuery, home: origin, secrets: [jwt, refresh]))
         let otherOrigin = try #require(URL(string: "https://evil.example/chat"))
         #expect(!ChatWebSession.allowsNavigation(otherOrigin, home: origin, secrets: [jwt]))
+        #expect(ChatWebSession.navigationSecrets(token: jwt, refreshToken: refresh) == [jwt, refresh])
+        #expect(ChatWebSession.navigationSecrets(token: jwt, refreshToken: "").count == 1)
+        #expect(ChatWebSession.parseBridgeMessage(["type": "refresh"]) == .refresh)
+        #expect(
+            ChatWebSession.parseBridgeMessage(["type": "session", "token": jwt, "refreshToken": refresh])
+                == .session(token: jwt, refreshToken: refresh),
+        )
+        #expect(ChatWebSession.parseBridgeMessage(["type": "session", "token": ""]) == nil)
+        #expect(ChatWebSession.shouldAdopt(
+            currentToken: jwt,
+            currentRefresh: refresh,
+            nextToken: "jwt-2",
+            nextRefresh: "bvrt_next",
+        ))
+        #expect(
+            !ChatWebSession.shouldAdopt(
+                currentToken: jwt,
+                currentRefresh: refresh,
+                nextToken: jwt,
+                nextRefresh: refresh,
+            ),
+        )
+        #expect(
+            !ChatWebSession.shouldAdopt(
+                currentToken: jwt,
+                currentRefresh: refresh,
+                nextToken: "jwt-2",
+                nextRefresh: "",
+            ),
+        )
+    }
+
+    @Test func `ios chat webview syncs refresh through the native session bridge`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/ChatView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("ChatWebSession.messageHandlerName"))
+        #expect(source.contains("WKScriptMessageHandler"))
+        #expect(source.contains("Task { @MainActor"))
+        #expect(source.contains("ChatWebSession.navigationSecrets"))
+        #expect(source.contains("adoptWebSession"))
+        #expect(source.contains("refreshSessionFromWeb"))
+        #expect(source.contains("handleBridgeMessage"))
+        #expect(ChatWebSession.messageHandlerName == "barkvisorSession")
     }
 
     @Test func `mac chat stays the completions streamer gated by showsChat`() throws {

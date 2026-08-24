@@ -207,6 +207,12 @@ struct ChatNativeView: View {
                         origin: client.baseURL,
                         token: token,
                         refreshToken: model.sessionRefreshToken ?? "",
+                        onAdoptSession: { access, refresh in
+                            model.adoptWebSession(token: access, refreshToken: refresh)
+                        },
+                        onNativeRefresh: {
+                            await model.refreshSessionFromWeb()
+                        },
                     )
                     .id(ChatWebSession.viewIdentity(home: client.baseURL))
                 } else {
@@ -228,15 +234,27 @@ struct ChatNativeView: View {
         var origin: URL
         var token: String
         var refreshToken: String
+        var onAdoptSession: (String, String) -> Void
+        var onNativeRefresh: () async -> SessionTokens?
 
         func makeCoordinator() -> ChatHomeWebCoordinator {
-            ChatHomeWebCoordinator(origin: origin, token: token, refreshToken: refreshToken)
+            ChatHomeWebCoordinator(
+                origin: origin,
+                token: token,
+                refreshToken: refreshToken,
+                onAdoptSession: onAdoptSession,
+                onNativeRefresh: onNativeRefresh,
+            )
         }
 
         func makeUIView(context: Context) -> WKWebView {
             let config = WKWebViewConfiguration()
             config.websiteDataStore = .nonPersistent()
             config.defaultWebpagePreferences.allowsContentJavaScript = true
+            config.userContentController.add(
+                context.coordinator,
+                name: ChatWebSession.messageHandlerName,
+            )
             let view = WKWebView(frame: .zero, configuration: config)
             view.navigationDelegate = context.coordinator
             view.isOpaque = false
@@ -252,6 +270,8 @@ struct ChatNativeView: View {
         }
 
         func updateUIView(_ view: WKWebView, context: Context) {
+            context.coordinator.onAdoptSession = onAdoptSession
+            context.coordinator.onNativeRefresh = onNativeRefresh
             context.coordinator.applySession(
                 token: token,
                 refreshToken: refreshToken,
@@ -259,22 +279,42 @@ struct ChatNativeView: View {
                 loadIfNeeded: false,
             )
         }
+
+        static func dismantleUIView(_ view: WKWebView, coordinator: ChatHomeWebCoordinator) {
+            view.configuration.userContentController.removeScriptMessageHandler(
+                forName: ChatWebSession.messageHandlerName,
+            )
+            coordinator.webView = nil
+        }
     }
 
-    final class ChatHomeWebCoordinator: NSObject, WKNavigationDelegate {
+    @MainActor
+    final class ChatHomeWebCoordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         private let homeOrigin: URL
         private var token: String
         private var refreshToken: String
         private var loaded = false
         private var scriptsInstalled = false
+        var onAdoptSession: (String, String) -> Void
+        var onNativeRefresh: () async -> SessionTokens?
+        weak var webView: WKWebView?
 
-        init(origin: URL, token: String, refreshToken: String) {
+        init(
+            origin: URL,
+            token: String,
+            refreshToken: String,
+            onAdoptSession: @escaping (String, String) -> Void,
+            onNativeRefresh: @escaping () async -> SessionTokens?,
+        ) {
             homeOrigin = origin
             self.token = token
             self.refreshToken = refreshToken
+            self.onAdoptSession = onAdoptSession
+            self.onNativeRefresh = onNativeRefresh
         }
 
         func applySession(token: String, refreshToken: String, to view: WKWebView, loadIfNeeded: Bool) {
+            webView = view
             let changed = self.token != token || self.refreshToken != refreshToken
             self.token = token
             self.refreshToken = refreshToken
@@ -291,11 +331,15 @@ struct ChatNativeView: View {
                 return
             }
             if changed {
-                view.evaluateJavaScript(
-                    ChatWebSession.userScriptSource(token: token, refreshToken: refreshToken),
-                    completionHandler: nil,
-                )
+                notifySession(to: view)
             }
+        }
+
+        func notifySession(to view: WKWebView) {
+            view.evaluateJavaScript(
+                ChatWebSession.userScriptSource(token: token, refreshToken: refreshToken),
+                completionHandler: nil,
+            )
         }
 
         private func installScripts(on view: WKWebView) {
@@ -328,6 +372,41 @@ struct ChatNativeView: View {
             }
         }
 
+        private func handleBridgeMessage(_ body: Any, from view: WKWebView?) {
+            guard let parsed = ChatWebSession.parseBridgeMessage(body) else { return }
+            switch parsed {
+            case .refresh:
+                Task { @MainActor in
+                    let session = await onNativeRefresh()
+                    guard let target = view ?? webView else { return }
+                    if let session {
+                        applySession(
+                            token: session.token,
+                            refreshToken: session.refreshToken,
+                            to: target,
+                            loadIfNeeded: false,
+                        )
+                    }
+                    notifySession(to: target)
+                }
+            case let .session(token, refreshToken):
+                onAdoptSession(token, refreshToken)
+                self.token = token
+                self.refreshToken = refreshToken
+            }
+        }
+
+        nonisolated func userContentController(
+            _: WKUserContentController,
+            didReceive message: WKScriptMessage,
+        ) {
+            let body = message.body
+            let webView = message.webView
+            Task { @MainActor in
+                self.handleBridgeMessage(body, from: webView)
+            }
+        }
+
         nonisolated func webView(
             _: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
@@ -337,13 +416,14 @@ struct ChatNativeView: View {
                 decisionHandler(.cancel)
                 return
             }
-            let origin = homeOrigin
-            let secrets = [token, refreshToken]
-            if ChatWebSession.allowsNavigation(url, home: origin, secrets: secrets) {
-                decisionHandler(.allow)
-                return
+            Task { @MainActor in
+                let secrets = ChatWebSession.navigationSecrets(
+                    token: self.token,
+                    refreshToken: self.refreshToken,
+                )
+                let allow = ChatWebSession.allowsNavigation(url, home: self.homeOrigin, secrets: secrets)
+                decisionHandler(allow ? .allow : .cancel)
             }
-            decisionHandler(.cancel)
         }
     }
 #endif

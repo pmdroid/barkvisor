@@ -123,13 +123,46 @@ enum ChatWebSession {
     static let tokenStorageKey = "token"
     static let refreshStorageKey = "refreshToken"
     static let sessionEventName = "barkvisor:session"
+    static let messageHandlerName = "barkvisorSession"
     static let tokenCookieName = "token"
     static let authorizationHeaderName = "Authorization"
+
+    enum BridgeMessage: Equatable {
+        case refresh
+        case session(token: String, refreshToken: String)
+    }
 
     /// Stable SwiftUI identity: origin only, never the access JWT.
     static func viewIdentity(home origin: URL) -> String {
         let home = (try? DeviceURL.normalize(origin.absoluteString)) ?? origin
         return home.absoluteString
+    }
+
+    static func navigationSecrets(token: String, refreshToken: String) -> [String] {
+        [token, refreshToken].filter { !$0.isEmpty }
+    }
+
+    static func shouldAdopt(
+        currentToken: String?,
+        currentRefresh: String?,
+        nextToken: String,
+        nextRefresh: String,
+    ) -> Bool {
+        guard !nextToken.isEmpty, !nextRefresh.isEmpty else { return false }
+        return currentToken != nextToken || currentRefresh != nextRefresh
+    }
+
+    static func parseBridgeMessage(_ body: Any) -> BridgeMessage? {
+        guard let dict = body as? [String: Any] else { return nil }
+        switch dict["type"] as? String {
+        case "refresh":
+            return .refresh
+        case "session":
+            guard let token = dict["token"] as? String, !token.isEmpty else { return nil }
+            return .session(token: token, refreshToken: dict["refreshToken"] as? String ?? "")
+        default:
+            return nil
+        }
     }
 
     /// Same-origin navigations that still carry a JWT or refresh token are cancelled.

@@ -10,8 +10,32 @@ import JWTKit
 public enum AuthService {
     public static let accessTokenTTL: TimeInterval = 2 * 60 * 60
     public static let refreshTokenTTL: TimeInterval = 30 * 24 * 60 * 60
+    /// Overlapping native/web refresh of the same presented token must not revoke the family.
+    public static let refreshReuseWindow: TimeInterval = 10
     /// Home→Device mTLS hop. Verified on arrival, so this only covers RTT.
     public static let memberHopTokenTTL: TimeInterval = 2 * 60
+
+    private final class RefreshReplayCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [String: (refresh: String, at: Date)] = [:]
+
+        func remember(presentedHash: String, refresh: String, at: Date) {
+            lock.lock()
+            entries[presentedHash] = (refresh, at)
+            lock.unlock()
+        }
+
+        func lookup(presentedHash: String, now: Date, window: TimeInterval) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let entry = entries[presentedHash], now.timeIntervalSince(entry.at) <= window else {
+                return nil
+            }
+            return entry.refresh
+        }
+    }
+
+    private static let refreshReplay = RefreshReplayCache()
 
     /// Authenticate a user with username/password. Returns a signed JWT token.
     public static func login(
@@ -178,6 +202,18 @@ public enum AuthService {
                 return .reject("Invalid refresh token")
             }
             if existing.usedAt != nil {
+                if refreshWasUsedRecently(existing.usedAt, now: now),
+                   let replay = refreshReplay.lookup(
+                       presentedHash: presentedHash,
+                       now: now,
+                       window: refreshReuseWindow,
+                   ),
+                   let user = try User.filter(User.Columns.id == existing.userId).fetchOne(db) {
+                    return .rotated(user: user, refresh: replay)
+                }
+                if refreshWasUsedRecently(existing.usedAt, now: now) {
+                    return .reject("Refresh token already used")
+                }
                 try revokeFamilyLocked(familyId: existing.familyId, now: now, db: db)
                 return .reject("Refresh token already used")
             }
@@ -202,6 +238,7 @@ public enum AuthService {
                 expiresAt: iso8601.string(from: now.addingTimeInterval(ttl)),
             )
             try next.insert(db)
+            refreshReplay.remember(presentedHash: presentedHash, refresh: plaintext, at: now)
             return .rotated(user: user, refresh: plaintext)
         }
         switch outcome {
@@ -246,6 +283,11 @@ public enum AuthService {
                 try row.update(db)
             }
         }
+    }
+
+    private static func refreshWasUsedRecently(_ usedAt: String?, now: Date) -> Bool {
+        guard let usedAt, let used = iso8601.date(from: usedAt) else { return false }
+        return now.timeIntervalSince(used) <= refreshReuseWindow
     }
 
     private static func revokeFamilyLocked(
