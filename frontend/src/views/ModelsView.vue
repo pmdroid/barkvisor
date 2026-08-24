@@ -219,27 +219,31 @@ const memoryTotalGB = computed(() => {
   return total != null ? total / 1024 : null
 })
 
+let statsSeq = 0
+
 async function refreshLiveStats() {
   const host = statsHost.value
   const target = statsTarget.value
+  const seq = ++statsSeq
   if (!host || !fetchLiveStats.value || !target) {
+    if (seq !== statsSeq) return
     resetHistory()
     hostGPUs.value = null
     return
   }
   try {
     const { data } = await api.get<SystemStatsSample[]>(deviceStatsHistoryPath(target))
-    if (statsHost.value !== host) return
+    if (seq !== statsSeq || statsHost.value !== host) return
     applyHistory(mapStatsHistorySamples(Array.isArray(data) ? data : []))
   } catch {
-    if (statsHost.value !== host) return
+    if (seq !== statsSeq || statsHost.value !== host) return
   }
   try {
     const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(target))
-    if (statsHost.value !== host) return
+    if (seq !== statsSeq || statsHost.value !== host) return
     hostGPUs.value = Array.isArray(data) ? data : []
   } catch {
-    if (statsHost.value !== host) return
+    if (seq !== statsSeq || statsHost.value !== host) return
     hostGPUs.value = []
   }
 }

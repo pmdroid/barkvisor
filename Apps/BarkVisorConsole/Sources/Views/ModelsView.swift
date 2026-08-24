@@ -114,7 +114,7 @@ struct ModelsView: View {
             syncStatsHost()
             await loadLiveStats()
         }
-        .task(id: statsHostId) {
+        .task(id: "\(statsHostId)-\(fetchLiveStats)") {
             await loadLiveStats()
         }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
@@ -470,15 +470,22 @@ struct ModelsView: View {
 
     private func loadLiveStats() async {
         syncStatsHost()
+        let requestedHost = statsHostId
         guard fetchLiveStats, let target = statsHealth else {
+            guard !Task.isCancelled, statsHostId == requestedHost else { return }
             points = []
             hostGPUs = []
             gpusLoaded = true
             return
         }
         gpusLoaded = false
-        points = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
-        hostGPUs = await model.gpuDevices(on: target)
+        async let history = DeviceStatsHistory.points(from: model.statsHistory(on: target))
+        async let gpus = model.gpuDevices(on: target)
+        let nextPoints = await history
+        let nextGpus = await gpus
+        guard !Task.isCancelled, statsHostId == requestedHost else { return }
+        points = nextPoints
+        hostGPUs = nextGpus
         gpusLoaded = true
     }
 
