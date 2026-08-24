@@ -326,12 +326,27 @@ struct ChatNativeView: View {
             }
             if !loaded {
                 if loadIfNeeded {
-                    load(view)
+                    installContentRulesThenLoad(view)
                 }
                 return
             }
             if changed {
                 notifySession(to: view)
+            }
+        }
+
+        private func installContentRulesThenLoad(_ view: WKWebView) {
+            let json = ChatWebSession.homeOnlyContentRules(home: homeOrigin)
+            WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: "barkvisor-chat-home-\(homeOrigin.host ?? "origin")",
+                encodedContentRuleList: json,
+            ) { [weak self] list, _ in
+                Task { @MainActor in
+                    if let list {
+                        view.configuration.userContentController.add(list)
+                    }
+                    self?.load(view)
+                }
             }
         }
 

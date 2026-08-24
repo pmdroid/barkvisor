@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { isTokenExpired } from '../utils/authToken'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -40,15 +41,6 @@ const router = createRouter({
     { path: '/:pathMatch(.*)*', name: 'not-found', redirect: '/dashboard' },
   ],
 })
-
-function isTokenExpired(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.exp * 1000 < Date.now()
-  } catch {
-    return true
-  }
-}
 
 // Track setup state (checked once, then cached for the session)
 let setupChecked = false

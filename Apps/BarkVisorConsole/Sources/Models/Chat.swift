@@ -220,7 +220,6 @@ enum ChatWebSession {
         let refreshJSON = jsonString(refreshToken)
         let keyJSON = jsonString(tokenStorageKey)
         let refreshKeyJSON = jsonString(refreshStorageKey)
-        let cookieNameJSON = jsonString(tokenCookieName)
         let eventJSON = jsonString(sessionEventName)
         return """
         (function() {
@@ -230,11 +229,22 @@ enum ChatWebSession {
           try {
             if (refresh) { localStorage.setItem(\(refreshKeyJSON), refresh); }
           } catch (e) {}
-          try {
-            document.cookie = \(cookieNameJSON) + '=' + encodeURIComponent(token) + '; path=/; SameSite=Lax';
-          } catch (e) {}
           try { window.dispatchEvent(new CustomEvent(\(eventJSON))); } catch (e) {}
         })();
+        """
+    }
+
+    /// Block third-party subresources; Home origin and about: stay allowed.
+    static func homeOnlyContentRules(home origin: URL) -> String {
+        let home = (try? DeviceURL.normalize(origin.absoluteString)) ?? origin
+        let host = home.host ?? ""
+        let escaped = NSRegularExpression.escapedPattern(for: host)
+        return """
+        [
+          {"trigger":{"url-filter":".*"},"action":{"type":"block"}},
+          {"trigger":{"url-filter":"^about:"},"action":{"type":"ignore-previous-rules"}},
+          {"trigger":{"url-filter":"\(escaped)"},"action":{"type":"ignore-previous-rules"}}
+        ]
         """
     }
 
