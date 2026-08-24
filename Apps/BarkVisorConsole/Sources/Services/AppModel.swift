@@ -41,12 +41,42 @@ enum SessionPhase: Equatable {
     case ready
 }
 
-enum PhoneTab: String, Hashable {
+enum PhoneTab: String, Hashable, CaseIterable {
     case home
     case chat
     case library
+    case models
     case devices
     case settings
+
+    static let storageKey = "phoneTab"
+
+    static func restored(_ raw: String?) -> PhoneTab {
+        PhoneTab(rawValue: raw ?? "") ?? .home
+    }
+
+    init?(route: AppRoute) {
+        switch route {
+        case .dashboard: self = .home
+        case .chat: self = .chat
+        case .library: self = .library
+        case .models: self = .models
+        case .devices: self = .devices
+        case .settings: self = .settings
+        default: return nil
+        }
+    }
+
+    var appRoute: AppRoute {
+        switch self {
+        case .home: .dashboard
+        case .chat: .chat
+        case .library: .library
+        case .models: .models
+        case .devices: .devices
+        case .settings: .settings
+        }
+    }
 }
 
 /// Outcome of POST /api/auth/refresh. Only `.unauthorized` (401) may drop the Keychain refresh token.
@@ -181,6 +211,7 @@ final class AppModel {
         }
         username = UserDefaults.standard.string(forKey: "username") ?? ""
         selectedDeviceID = UserDefaults.standard.string(forKey: "selectedDeviceID")
+        phoneTab = PhoneTab.restored(UserDefaults.standard.string(forKey: PhoneTab.storageKey))
         token = KeychainStore.readToken()
         refreshToken = KeychainStore.readRefreshToken()
         if token != nil || refreshToken != nil {
@@ -279,7 +310,7 @@ final class AppModel {
         ollamaSettings = nil
         remoteAccess = nil
         if route == .chat { route = .dashboard }
-        if phoneTab == .chat { phoneTab = .home }
+        if phoneTab == .chat { persistPhoneTab(.home) }
         phase = url == nil ? .connect : .login
         banner = nil
         if let url, presented != nil || access != nil {
@@ -325,7 +356,7 @@ final class AppModel {
         ollamaSettings = nil
         remoteAccess = nil
         if route == .chat { route = .dashboard }
-        if phoneTab == .chat { phoneTab = .home }
+        if phoneTab == .chat { persistPhoneTab(.home) }
         phase = .connect
         banner = "Device URL changed. Sign in again."
     }
@@ -342,6 +373,9 @@ final class AppModel {
 
     func open(_ next: AppRoute) async {
         route = next
+        if let tab = PhoneTab(route: next) {
+            persistPhoneTab(tab)
+        }
         await refreshRoute()
     }
 
@@ -674,8 +708,14 @@ final class AppModel {
         await refreshHomeUnion()
     }
 
-    func openPhoneTab(_ tab: PhoneTab) async {
+    func persistPhoneTab(_ tab: PhoneTab) {
         phoneTab = tab
+        UserDefaults.standard.set(tab.rawValue, forKey: PhoneTab.storageKey)
+    }
+
+    func openPhoneTab(_ tab: PhoneTab) async {
+        persistPhoneTab(tab)
+        route = tab.appRoute
         switch tab {
         case .home:
             await refreshHome()
@@ -683,6 +723,8 @@ final class AppModel {
             await refreshOllamaCatalog()
         case .library:
             await refreshLibrary()
+        case .models:
+            await refreshOllama()
         case .devices:
             await refreshPhoneDevices()
         case .settings:
@@ -1001,6 +1043,7 @@ final class AppModel {
         homeLoaded = false
         ollamaCatalog = nil
         ollamaSettings = nil
+        remoteAccess = nil
     }
 
     func refreshOllamaCatalog() async {
@@ -1013,7 +1056,7 @@ final class AppModel {
         await refreshOllamaSettings()
         if !showsChat {
             if route == .chat { route = .dashboard }
-            if phoneTab == .chat { phoneTab = .home }
+            if phoneTab == .chat { persistPhoneTab(.home) }
         }
     }
 

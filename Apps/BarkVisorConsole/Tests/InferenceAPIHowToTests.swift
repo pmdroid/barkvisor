@@ -129,6 +129,8 @@ struct InferenceAPIHowToTests {
         #expect(!advertised.lanBaseURL.contains("https://"))
         #expect(!advertised.lanCompletionsURL.contains(":443"))
         #expect(advertised.cageBaseURL == "http://10.0.2.2:11434/v1")
+        #expect(!advertised.env.contains(":11434"))
+        #expect(advertised.cageEnv.contains("export OPENAI_BASE_URL='http://10.0.2.2:11434/v1'"))
         #expect(
             InferenceAPIHowTo.lanListenPort(
                 role: .thisDevice,
@@ -150,6 +152,7 @@ struct InferenceAPIHowToTests {
             tailnetHost: "100.64.1.2",
         )
         #expect(tailnet.lanBaseURL == "http://100.64.1.2:7777/v1")
+        #expect(tailnet.cageBaseURL == CodingAgentImage.homeOllamaGrantURL)
 
         let lan = InferenceAPIHowTo.snippets(
             role: .thisDevice,
