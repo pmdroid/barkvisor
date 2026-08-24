@@ -113,3 +113,84 @@ enum ChatSSE {
         return deltas
     }
 }
+
+/// iOS Chat tab loads the Home web Chat route in WKWebView (GitHub #228).
+/// Auth is the session JWT or minted inference key, injected as a header,
+/// cookie, and `localStorage` — never the page query string.
+enum ChatWebSession {
+    static let routePath = "/chat"
+    static let tokenStorageKey = "token"
+    static let tokenCookieName = "token"
+    static let authorizationHeaderName = "Authorization"
+
+    static func pageURL(home origin: URL) throws -> URL {
+        let origin = try DeviceURL.normalize(origin.absoluteString)
+        guard var components = URLComponents(url: origin, resolvingAgainstBaseURL: false) else {
+            throw APIError.invalidURL
+        }
+        components.path = routePath
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { throw APIError.invalidURL }
+        return url
+    }
+
+    static func authorizationHeader(token: String) -> String {
+        "Bearer \(token)"
+    }
+
+    static func pageRequest(home origin: URL, token: String) throws -> URLRequest {
+        let url = try pageURL(home: origin)
+        var request = URLRequest(url: url)
+        request.setValue(authorizationHeader(token: token), forHTTPHeaderField: authorizationHeaderName)
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    static func cookie(home origin: URL, token: String) -> HTTPCookie? {
+        let origin = (try? DeviceURL.normalize(origin.absoluteString)) ?? origin
+        var properties: [HTTPCookiePropertyKey: Any] = [
+            .originURL: origin,
+            .path: "/",
+            .name: tokenCookieName,
+            .value: token,
+        ]
+        if origin.scheme?.lowercased() == "https" {
+            properties[.secure] = "TRUE"
+        }
+        return HTTPCookie(properties: properties)
+    }
+
+    static func userScriptSource(token: String) -> String {
+        let tokenJSON = jsonString(token)
+        let keyJSON = jsonString(tokenStorageKey)
+        let cookieNameJSON = jsonString(tokenCookieName)
+        return """
+        (function() {
+          var token = \(tokenJSON);
+          try { localStorage.setItem(\(keyJSON), token); } catch (e) {}
+          try {
+            document.cookie = \(cookieNameJSON) + '=' + encodeURIComponent(token) + '; path=/; SameSite=Lax';
+          } catch (e) {}
+        })();
+        """
+    }
+
+    static func isHomeOrigin(_ url: URL, home origin: URL) -> Bool {
+        let home = (try? DeviceURL.normalize(origin.absoluteString)) ?? origin
+        return DeviceURL.sameOrigin(url, home)
+    }
+
+    static func containsSecret(_ url: URL, secret: String) -> Bool {
+        StreamURL.containsSecret(url, secret: secret)
+    }
+
+    static func jsonString(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let encoded = String(data: data, encoding: .utf8)
+        else {
+            return "\"\""
+        }
+        return encoded
+    }
+}

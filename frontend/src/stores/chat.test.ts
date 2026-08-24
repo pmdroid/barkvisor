@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
 import api from '../api/client'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 const memory = new Map<string, string>()
 Object.defineProperty(globalThis, 'localStorage', {
@@ -184,5 +189,23 @@ describe('chat store (PAS-270)', () => {
     expect(chat.visible).toBe(true)
     await ollama.fetchCatalog()
     expect(chat.visible).toBe(false)
+  })
+
+  test('iOS WKWebView reuses /chat and localStorage token, never a query JWT', () => {
+    const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
+    expect(router).toContain("path: '/chat'")
+    expect(router).toContain("name: 'chat'")
+    expect(router).toContain("import('../views/ChatView.vue')")
+    const panel = readFileSync(join(here, '../components/ChatPanel.vue'), 'utf8')
+    expect(panel).toContain("from '../stores/chat'")
+    const auth = readFileSync(join(here, './auth.ts'), 'utf8')
+    expect(auth).toContain("localStorage.getItem('token')")
+    expect(auth).toContain("localStorage.setItem('token', nextToken)")
+    const client = readFileSync(join(here, '../api/client.ts'), 'utf8')
+    expect(client).toContain("localStorage.getItem('token')")
+    expect(client).toContain('Authorization')
+    expect(client).toContain('Bearer')
+    expect(router).not.toContain('?token=')
+    expect(panel).not.toContain('?token=')
   })
 })

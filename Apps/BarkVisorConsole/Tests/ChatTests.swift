@@ -164,4 +164,82 @@ struct ChatTests {
         let unchanged = try await client.retryAfter401(request, status: 200, allowRefresh: true)
         #expect(unchanged?.value(forHTTPHeaderField: "Authorization") == nil)
     }
+
+    @Test func `ios chat webview loads home chat route without jwt in the query`() throws {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.sig"
+        let origin = try DeviceURL.normalize("http://192.168.30.1:7777/dashboard?token=\(jwt)")
+        let url = try ChatWebSession.pageURL(home: origin)
+        #expect(url.scheme == "http")
+        #expect(url.host == "192.168.30.1")
+        #expect(url.port == 7_777)
+        #expect(url.path == ChatWebSession.routePath)
+        #expect(url.path == "/chat")
+        #expect(url.query == nil)
+        #expect(url.fragment == nil)
+        #expect(!url.absoluteString.contains("?"))
+        #expect(!ChatWebSession.containsSecret(url, secret: jwt))
+        #expect(!url.absoluteString.lowercased().contains("bearer"))
+
+        let sneaky = try #require(URL(string: "http://192.168.30.1:7777/chat?access_token=\(jwt)&jwt=\(jwt)"))
+        let stripped = try ChatWebSession.pageURL(home: sneaky)
+        #expect(stripped.query == nil)
+        #expect(!ChatWebSession.containsSecret(stripped, secret: jwt))
+
+        let ipv6 = try ChatWebSession.pageURL(home: DeviceURL.normalize("http://[fd12:3456:789a::1]:7777"))
+        #expect(ipv6.path == "/chat")
+        #expect(ipv6.query == nil)
+        #expect(ipv6.host == "fd12:3456:789a::1")
+    }
+
+    @Test func `ios chat webview injects bearer header cookie and localStorage`() throws {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.sig"
+        let origin = try DeviceURL.normalize("https://home.local:7777")
+        let request = try ChatWebSession.pageRequest(home: origin, token: jwt)
+        #expect(request.url?.path == "/chat")
+        #expect(request.url?.query == nil)
+        #expect(try !ChatWebSession.containsSecret(#require(request.url), secret: jwt))
+        #expect(
+            request.value(forHTTPHeaderField: ChatWebSession.authorizationHeaderName)
+                == ChatWebSession.authorizationHeader(token: jwt),
+        )
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(jwt)")
+
+        let cookie = try #require(ChatWebSession.cookie(home: origin, token: jwt))
+        #expect(cookie.name == ChatWebSession.tokenCookieName)
+        #expect(cookie.value == jwt)
+        #expect(cookie.path == "/")
+        #expect(cookie.isSecure)
+        #expect(cookie.isHTTPOnly == false)
+
+        let script = ChatWebSession.userScriptSource(token: jwt)
+        #expect(script.contains("localStorage.setItem"))
+        #expect(script.contains(ChatWebSession.tokenStorageKey))
+        #expect(script.contains("document.cookie"))
+        #expect(script.contains(jwt))
+        #expect(script.contains("encodeURIComponent"))
+        #expect(!script.contains("?token="))
+        #expect(!script.contains("access_token="))
+
+        let quoted = ChatWebSession.userScriptSource(token: "tok\"en\n")
+        #expect(quoted.contains(ChatWebSession.jsonString("tok\"en\n")))
+        #expect(!quoted.contains("token = tok\"en"))
+    }
+
+    @Test func `mac chat stays the completions streamer gated by showsChat`() throws {
+        #expect(APIClient.chatCompletionsPath == "/v1/chat/completions")
+        #expect(!ChatAvailability.visible(catalog: nil))
+        #expect(!ChatAvailability.visible(anyReachable: true, modelCount: 0))
+        #expect(ChatAvailability.visible(anyReachable: true, modelCount: 1))
+        #expect(AppRoute.chat.title == "Chat")
+        #expect(PhoneTab.chat.rawValue == "chat")
+        #expect(PhoneTab.chat.appRoute == .chat)
+        let body = ChatCompletionBody(
+            model: "llama3:latest",
+            stream: true,
+            messages: [ChatWireMessage(role: "user", content: "hi")],
+        )
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any]
+        #expect(object?["stream"] as? Bool == true)
+        #expect(ChatWebSession.routePath == "/chat")
+    }
 }
