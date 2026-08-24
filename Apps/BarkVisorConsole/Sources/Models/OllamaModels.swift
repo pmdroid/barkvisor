@@ -176,6 +176,15 @@ struct OllamaSettingsUpdate: Encodable, Equatable {
     var endpoint: String?
     var apiKey: String?
 
+    /// PUT body for a new key. Nil when host or draft is blank so JSON omits
+    /// `apiKey`. A present empty string would clear the stored key.
+    static func saveKey(hostId: String, draft: String) -> OllamaSettingsUpdate? {
+        let hostId = hostId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !hostId.isEmpty, !apiKey.isEmpty else { return nil }
+        return OllamaSettingsUpdate(hostId: hostId, apiKey: apiKey)
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(hostId, forKey: .hostId)
