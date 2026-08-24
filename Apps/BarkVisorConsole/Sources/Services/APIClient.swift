@@ -346,6 +346,14 @@ struct APIClient {
         try await delete(OllamaTaskPath.rest(taskID: task.taskID, hostId: task.hostId, selfHostId: selfHostId))
     }
 
+    func ollamaSettings() async throws -> OllamaSettingsSnapshot {
+        try await get("/api/ollama/settings")
+    }
+
+    func saveOllamaSettings(_ body: OllamaSettingsUpdate) async throws -> OllamaSettingsSnapshot {
+        try await send(method: "PUT", path: "/api/ollama/settings", body: body, as: OllamaSettingsSnapshot.self)
+    }
+
     func streamChatCompletions(
         model: String,
         messages: [ChatWireMessage],

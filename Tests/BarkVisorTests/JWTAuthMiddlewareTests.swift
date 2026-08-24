@@ -311,6 +311,10 @@ struct JWTAuthMiddlewareTests {
         }
 
         try deny("/api/ollama/pull", method: .POST)
+        try deny("/api/ollama/settings", method: .GET)
+        try deny("/api/ollama/settings", method: .PUT)
+        try deny("/api/home/ollama/settings", method: .GET)
+        try deny("/api/home/ollama/settings", method: .PUT)
         try deny("/api/auth/keys", method: .POST)
         try deny("/api/vms/vm-1/usb", method: .POST)
         try deny("/api/home/devices", method: .GET)

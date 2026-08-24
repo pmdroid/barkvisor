@@ -246,8 +246,9 @@ public enum CodingAgentLifecycleService {
                 try await unloader.unloadRunningModels()
                 return
             }
-            let settings = try await db.read { db in try OllamaSettings.load(from: db) }
-            let client = OllamaClient(baseURL: settings.endpoint, apiKey: settings.apiKey)
+            let client = try await db.read { db in
+                try OllamaSettings.client(hostId: Config.hostId, from: db)
+            }
             let running = try await client.ps()
             for model in running {
                 try await client.unload(model: model.name)
