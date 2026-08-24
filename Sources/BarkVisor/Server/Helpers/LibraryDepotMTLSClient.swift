@@ -34,7 +34,7 @@ struct AgentLibraryDepotClient: LibraryDepotClient {
             ),
         )
         guard (200 ..< 300).contains(result.status) else {
-            throw HomeDeviceProxyError.unreachable("depot listing returned HTTP \(result.status)")
+            throw HomeDeviceProxyError.memberHTTP(result.status)
         }
         return try JSONDecoder().decode([LibraryDepotImageInfo].self, from: result.body)
     }
@@ -50,7 +50,7 @@ struct AgentLibraryDepotClient: LibraryDepotClient {
         )
         let streamed = try await stream.streamGet(url: url, to: destination)
         guard streamed.status == 200 else {
-            throw HomeDeviceProxyError.unreachable("depot bytes returned HTTP \(streamed.status)")
+            throw HomeDeviceProxyError.memberHTTP(streamed.status)
         }
         let filename = header(LibraryDepotHTTP.filenameHeader, in: streamed.headers)
         let reported = header(LibraryDepotHTTP.sha256Header, in: streamed.headers)

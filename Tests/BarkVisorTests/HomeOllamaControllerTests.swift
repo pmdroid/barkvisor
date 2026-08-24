@@ -229,6 +229,89 @@ struct HomeOllamaControllerTests {
         #expect(client.streamCalls == 0)
     }
 
+    @Test func `probeMember and sendMember distinguish hop timeout from Ollama HTTP 5xx`() async throws {
+        let dir = try isolatedDir("hop-codes")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let timeoutId = "timeout-peer"
+        let httpId = "http-peer"
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: timeoutId, fingerprint: "aa", agentHost: "10.0.0.6", agentPort: 7_778)
+        try store.upsert(hostId: httpId, fingerprint: "bb", agentHost: "10.0.0.7", agentPort: 7_778)
+        let client = RecordingOllamaProxyClient()
+        client.fail(
+            host: "10.0.0.6",
+            port: 7_778,
+            path: "/api/ollama/snapshot",
+            error: HomeDeviceProxyError.connectTimeout,
+        )
+        client.respond(
+            host: "10.0.0.7",
+            port: 7_778,
+            path: "/api/ollama/snapshot",
+            status: 503,
+            body: Data("nope".utf8),
+        )
+        let keys = await makeKeys()
+        let ctl = controller(
+            dir: dir,
+            hostId: UUID().uuidString,
+            devices: store,
+            client: client,
+            keys: keys,
+            now: Date(),
+        )
+        let timedOut = await ctl.probeMember(
+            HomeDevice(
+                hostId: timeoutId,
+                role: "member",
+                displayName: "desk",
+                agentHost: "10.0.0.6",
+                agentPort: 7_778,
+            ),
+            hopBearer: "jwt-hop",
+        )
+        #expect(timedOut?.reachable == false)
+        #expect(timedOut?.installHint == HomeDeviceProxyError.connectTimeout.ollamaHopDescription)
+        #expect(timedOut?.installHint.contains("Home cannot hop") == true)
+
+        let http = await ctl.probeMember(
+            HomeDevice(
+                hostId: httpId,
+                role: "member",
+                displayName: "studio",
+                agentHost: "10.0.0.7",
+                agentPort: 7_778,
+            ),
+            hopBearer: "jwt-hop",
+        )
+        #expect(http?.reachable == false)
+        #expect(http?.installHint == "Ollama is down on the Device (HTTP 503)")
+
+        await #expect(throws: BarkVisorError.self) {
+            try await ctl.sendMember(
+                hostId: timeoutId,
+                method: "GET",
+                path: "/api/ollama/snapshot",
+                body: nil,
+                hopBearer: "jwt-hop",
+            )
+        }
+        do {
+            _ = try await ctl.sendMember(
+                hostId: timeoutId,
+                method: "GET",
+                path: "/api/ollama/snapshot",
+                body: nil,
+                hopBearer: "jwt-hop",
+            )
+            Issue.record("expected sendMember connectTimeout to throw")
+        } catch let error as BarkVisorError {
+            #expect(error.httpStatus == 502)
+            #expect(error.sanitizedDescription.contains("Home cannot hop"))
+            #expect(!error.sanitizedDescription.hasPrefix("Device is unreachable:"))
+        }
+    }
+
     @Test func `sendMember refuses to forward an API key to a member Device`() async throws {
         let dir = try isolatedDir("no-apikey")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -438,6 +521,12 @@ private final class RecordingOllamaProxyClient: HomeDeviceProxyClient, @unchecke
         responses["\(host):\(port)\(path)"] = .success(
             HomeDeviceProxyResponse(status: status, body: body),
         )
+    }
+
+    func fail(host: String, port: Int, path: String, error: Error) {
+        lock.lock()
+        defer { lock.unlock() }
+        responses["\(host):\(port)\(path)"] = .failure(error)
     }
 
     func send(_ request: HomeDeviceProxyRequest) async throws -> HomeDeviceProxyResponse {

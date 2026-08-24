@@ -414,13 +414,9 @@ struct HomeOllamaController: RouteCollection {
                 hopBearer: hopBearer,
             )
             guard (200 ..< 300).contains(result.status) else {
-                return OllamaDeviceSnapshot(
-                    hostId: device.hostId,
-                    displayName: device.displayName,
-                    installed: false,
-                    reachable: false,
-                    installHint: OllamaDetect.installHint(),
-                    probedAt: iso8601.string(from: now?() ?? Date()),
+                return ollamaHopFailure(
+                    device,
+                    error: .memberHTTP(result.status),
                 )
             }
             var snap = try JSONDecoder().decode(OllamaDeviceSnapshot.self, from: result.body)
@@ -428,15 +424,22 @@ struct HomeOllamaController: RouteCollection {
             if snap.displayName == nil { snap.displayName = device.displayName }
             return snap
         } catch {
-            return OllamaDeviceSnapshot(
-                hostId: device.hostId,
-                displayName: device.displayName,
-                installed: false,
-                reachable: false,
-                installHint: OllamaDetect.installHint(),
-                probedAt: iso8601.string(from: now?() ?? Date()),
-            )
+            return ollamaHopFailure(device, error: HomeDeviceProxyError.classify(error))
         }
+    }
+
+    private func ollamaHopFailure(
+        _ device: HomeDevice,
+        error: HomeDeviceProxyError,
+    ) -> OllamaDeviceSnapshot {
+        OllamaDeviceSnapshot(
+            hostId: device.hostId,
+            displayName: device.displayName,
+            installed: false,
+            reachable: false,
+            installHint: error.ollamaHopDescription,
+            probedAt: iso8601.string(from: now?() ?? Date()),
+        )
     }
 
     private func proxyJSON<T: Decodable>(
@@ -451,7 +454,9 @@ struct HomeOllamaController: RouteCollection {
             hostId: hostId, method: method, path: path, body: body, user: user,
         )
         guard (200 ..< 300).contains(result.status) else {
-            throw BarkVisorError.badGateway("Device Ollama request failed (\(result.status))")
+            throw BarkVisorError.badGateway(
+                HomeDeviceProxyError.memberHTTP(result.status).ollamaHopDescription,
+            )
         }
         return try JSONDecoder().decode(T.self, from: result.body)
     }
@@ -467,7 +472,9 @@ struct HomeOllamaController: RouteCollection {
             hostId: hostId, method: method, path: path, body: body, user: user,
         )
         guard (200 ..< 300).contains(result.status) else {
-            throw BarkVisorError.badGateway("Device Ollama request failed (\(result.status))")
+            throw BarkVisorError.badGateway(
+                HomeDeviceProxyError.memberHTTP(result.status).ollamaHopDescription,
+            )
         }
     }
 
@@ -523,7 +530,15 @@ struct HomeOllamaController: RouteCollection {
             hopBearer: hopBearer,
             timeoutSeconds: timeoutSeconds,
         )
-        return try await prepared.client.send(prepared.request)
+        do {
+            return try await prepared.client.send(prepared.request)
+        } catch let error as BarkVisorError {
+            throw error
+        } catch {
+            throw BarkVisorError.badGateway(
+                HomeDeviceProxyError.classify(error).ollamaHopDescription,
+            )
+        }
     }
 
     func sendMemberStream(
@@ -561,7 +576,29 @@ struct HomeOllamaController: RouteCollection {
             hopBearer: hopBearer,
             timeoutSeconds: timeoutSeconds,
         )
-        return prepared.client.stream(prepared.request)
+        let inner = prepared.client.stream(prepared.request)
+        return CancellableAsyncThrowingStream.make { continuation in
+            do {
+                for try await chunk in inner {
+                    continuation.yield(chunk)
+                }
+                continuation.finish()
+            } catch is CancellationError {
+                continuation.finish()
+            } catch let error as BarkVisorError {
+                continuation.finish(throwing: error)
+            } catch {
+                if Task.isCancelled {
+                    continuation.finish()
+                    return
+                }
+                continuation.finish(
+                    throwing: BarkVisorError.badGateway(
+                        HomeDeviceProxyError.classify(error).ollamaHopDescription,
+                    ),
+                )
+            }
+        }
     }
 
     private func prepareMemberHop(

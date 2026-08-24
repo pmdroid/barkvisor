@@ -1,4 +1,7 @@
+import AsyncHTTPClient
 import Foundation
+import NIOCore
+import NIOSSL
 
 /// Path rewrite and target checks for `/api/home/devices/{id}/v1/*` (PAS-34).
 ///
@@ -295,14 +298,121 @@ public enum CancellableAsyncThrowingStream {
 
 public enum HomeDeviceProxyError: Error, LocalizedError, Sendable, Equatable {
     case unreachable(String)
+    case connectTimeout
+    case cancelled
+    case tlsFailure
+    case memberHTTP(Int)
+    case healthUnreachable
     case responseTooLarge
+
+    /// Token written to `HomeDeviceHealthSnapshot.reachability`.
+    public var reachability: String {
+        switch self {
+        case .unreachable, .healthUnreachable:
+            HomeDeviceHealthAggregator.unreachable
+        case .connectTimeout:
+            HomeDeviceHealthAggregator.connectTimeout
+        case .cancelled:
+            HomeDeviceHealthAggregator.cancelled
+        case .tlsFailure:
+            HomeDeviceHealthAggregator.tlsFailure
+        case .memberHTTP:
+            HomeDeviceHealthAggregator.memberHTTP
+        case .responseTooLarge:
+            HomeDeviceHealthAggregator.responseTooLarge
+        }
+    }
 
     public var errorDescription: String? {
         switch self {
         case let .unreachable(reason):
             "Device is unreachable: \(reason)"
+        case .connectTimeout:
+            "Home cannot hop to the Device: connection timed out"
+        case .cancelled:
+            "Home cannot hop to the Device: the hop was cancelled"
+        case .tlsFailure:
+            "Home cannot hop to the Device: TLS handshake failed"
+        case let .memberHTTP(status):
+            "Device returned HTTP \(status)"
+        case .healthUnreachable:
+            "Device is unreachable"
         case .responseTooLarge:
             "Device response is too large"
         }
+    }
+
+    /// Chat / Ollama hop copy. Member 5xx is Ollama down, not Device offline.
+    public var ollamaHopDescription: String {
+        switch self {
+        case let .memberHTTP(status):
+            "Ollama is down on the Device (HTTP \(status))"
+        default:
+            errorDescription ?? "Home cannot hop to the Device"
+        }
+    }
+
+    /// Agent-plane loopback hop (`:7778` → This Device host API).
+    public var localHopDescription: String {
+        switch self {
+        case .connectTimeout:
+            "Local host API timed out"
+        case .cancelled:
+            "Local host API hop was cancelled"
+        case .tlsFailure:
+            "Local host API TLS handshake failed"
+        case let .memberHTTP(status):
+            "Local host API returned HTTP \(status)"
+        case .healthUnreachable:
+            "Local host API is unreachable"
+        case let .unreachable(reason):
+            "Local host API is unreachable: \(reason)"
+        case .responseTooLarge:
+            "Local host API response is too large"
+        }
+    }
+
+    /// Map AsyncHTTPClient / NIO / cancellation into hop cases. Tests inject
+    /// already-classified errors through ``HomeDeviceProxyClient``.
+    public static func classify(_ error: Error) -> HomeDeviceProxyError {
+        if let already = error as? HomeDeviceProxyError {
+            return already
+        }
+        if error is CancellationError {
+            return .cancelled
+        }
+        if let http = error as? HTTPClientError {
+            return classifyHTTPClient(http)
+        }
+        if let channel = error as? ChannelError, case .connectTimeout = channel {
+            return .connectTimeout
+        }
+        if error is NIOSSLError || error is BoringSSLError || error is NIOSSLCloseTimedOutError {
+            return .tlsFailure
+        }
+        let blob = "\(error) \(error.localizedDescription)".lowercased()
+        if blob.contains("tls") || blob.contains("ssl") || blob.contains("handshake") {
+            return .tlsFailure
+        }
+        if blob.contains("cancel") {
+            return .cancelled
+        }
+        if blob.contains("timeout") || blob.contains("timed out") {
+            return .connectTimeout
+        }
+        if blob.contains("httpclienterror") {
+            return .connectTimeout
+        }
+        return .unreachable(error.localizedDescription)
+    }
+
+    private static func classifyHTTPClient(_ http: HTTPClientError) -> HomeDeviceProxyError {
+        if http == .cancelled || http == .requestStreamCancelled {
+            return .cancelled
+        }
+        if http == .tlsHandshakeTimeout {
+            return .tlsFailure
+        }
+        return .connectTimeout
     }
 }

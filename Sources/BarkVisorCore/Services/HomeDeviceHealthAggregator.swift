@@ -7,11 +7,17 @@ import Foundation
 public enum HomeDeviceProbeOutcome: Sendable, Equatable {
     case ok(HomeDeviceLiveFacts)
     case unreachable(String)
+    case failed(HomeDeviceProxyError)
 }
 
 public enum HomeDeviceHealthAggregator {
     public static let ok = "ok"
     public static let unreachable = "unreachable"
+    public static let connectTimeout = "connectTimeout"
+    public static let cancelled = "cancelled"
+    public static let tlsFailure = "tlsFailure"
+    public static let memberHTTP = "memberHTTP"
+    public static let responseTooLarge = "responseTooLarge"
 
     /// Merge the local registry list with live facts. `self` is always `ok`.
     public static func report(
@@ -31,6 +37,15 @@ public enum HomeDeviceHealthAggregator {
                 rows.append(snapshot(device: device, facts: facts, error: nil))
             case let .unreachable(reason):
                 rows.append(snapshot(device: device, facts: nil, error: reason))
+            case let .failed(error):
+                rows.append(
+                    snapshot(
+                        device: device,
+                        facts: nil,
+                        error: error.localizedDescription,
+                        reachability: error.reachability,
+                    ),
+                )
             case nil:
                 rows.append(
                     snapshot(device: device, facts: nil, error: "Device is unreachable"),
@@ -75,8 +90,14 @@ public enum HomeDeviceHealthAggregator {
         device: HomeDevice,
         facts: HomeDeviceLiveFacts?,
         error: String?,
+        reachability: String? = nil,
     ) -> HomeDeviceHealthSnapshot {
-        let reachable = error == nil
+        let code: String = if error == nil {
+            ok
+        } else {
+            reachability ?? unreachable
+        }
+        let live = code == ok
         return HomeDeviceHealthSnapshot(
             hostId: device.hostId,
             role: device.role,
@@ -85,14 +106,14 @@ public enum HomeDeviceHealthAggregator {
             agentHost: device.agentHost,
             agentPort: device.agentPort,
             pairedAt: device.pairedAt,
-            reachability: reachable ? ok : unreachable,
+            reachability: code,
             reachabilityError: error,
             collectedAt: facts?.collectedAt,
             platform: facts?.platform,
-            resources: reachable ? facts?.resources : nil,
-            features: reachable ? facts?.features : nil,
-            workloadCount: reachable ? facts?.workloadCount : nil,
-            healthCounts: reachable ? facts?.healthCounts : nil,
+            resources: live ? facts?.resources : nil,
+            features: live ? facts?.features : nil,
+            workloadCount: live ? facts?.workloadCount : nil,
+            healthCounts: live ? facts?.healthCounts : nil,
         )
     }
 

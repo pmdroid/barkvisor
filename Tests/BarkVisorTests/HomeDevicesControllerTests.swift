@@ -147,7 +147,7 @@ struct HomeDevicesControllerTests {
         }
     }
 
-    @Test func `probeMember maps HTTP, decode, and transport errors to unreachable`() async throws {
+    @Test func `probeMember maps HTTP, decode, and transport errors without a blanket 502`() async throws {
         let dir = try isolatedDir("probe-err")
         defer { try? FileManager.default.removeItem(at: dir) }
         let ctlHTTP = controller(
@@ -166,7 +166,7 @@ struct HomeDevicesControllerTests {
             HomeDevice(hostId: "peer", role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
             bearer: nil,
         )
-        #expect(http == .unreachable("Device is unreachable: member returned HTTP 503"))
+        #expect(http == .failed(.memberHTTP(503)))
 
         let ctlDecode = controller(
             dir: dir,
@@ -184,25 +184,25 @@ struct HomeDevicesControllerTests {
             HomeDevice(hostId: "peer", role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
             bearer: nil,
         )
-        guard case let .unreachable(reason) = decoded else {
-            Issue.record("expected decode failure to be unreachable, got \(decoded)")
+        guard case let .failed(decodeError) = decoded else {
+            Issue.record("expected decode failure to be classified, got \(decoded)")
             return
         }
-        #expect(reason.hasPrefix("Device is unreachable:"))
+        #expect(decodeError.localizedDescription.contains("Device is unreachable") || decodeError.reachability != "ok")
 
         let failing = RecordingProxyClient()
         failing.fail(
             host: "10.0.0.8",
             port: 7_778,
             path: "/api/agent/inventory",
-            error: HomeDeviceProxyError.unreachable("peer down"),
+            error: HomeDeviceProxyError.connectTimeout,
         )
         let ctlTransport = controller(dir: dir, hostId: UUID().uuidString, mtlsClient: failing)
         let transport = await ctlTransport.probeMember(
             HomeDevice(hostId: "peer", role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
             bearer: "tok",
         )
-        #expect(transport == .unreachable(HomeDeviceProxyError.unreachable("peer down").localizedDescription))
+        #expect(transport == .failed(.connectTimeout))
 
         let empty = await controller(dir: dir, hostId: UUID().uuidString, mtlsClient: RecordingProxyClient())
             .probeMember(HomeDevice(hostId: "ghost", role: "member"), bearer: nil)
@@ -337,6 +337,68 @@ struct HomeDevicesControllerTests {
         #expect(transportFacts.workloadCount == nil)
         #expect(transportFacts.healthCounts == nil)
         #expect(transportFacts.resources?.cpuCount == 2)
+    }
+
+    @Test func `connect timeout and member 5xx are not sold as Device offline`() async throws {
+        let dir = try isolatedDir("hop-codes")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let timeoutId = "timeout-peer"
+        let httpId = "http-peer"
+        let okId = "ok-peer"
+        let listed = HomeDeviceList(devices: [
+            HomeDevice(hostId: "self", role: "self", displayName: "this-device"),
+            HomeDevice(hostId: timeoutId, role: "member", agentHost: "10.0.0.6", agentPort: 7_778),
+            HomeDevice(hostId: httpId, role: "member", agentHost: "10.0.0.7", agentPort: 7_778),
+            HomeDevice(hostId: okId, role: "member", agentHost: "10.0.0.8", agentPort: 7_778),
+        ])
+        let client = RecordingProxyClient()
+        client.fail(
+            host: "10.0.0.6",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            error: HomeDeviceProxyError.connectTimeout,
+        )
+        client.respond(
+            host: "10.0.0.7",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 503,
+            body: Data("ollama down".utf8),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/agent/inventory",
+            status: 200,
+            body: JSONEncoder().encode(inventory(hostId: okId, name: "ok-desk")),
+        )
+        try client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/workloads/health-summary",
+            status: 200,
+            body: JSONEncoder().encode(summary(running: 1)),
+        )
+
+        let report = await controller(dir: dir, hostId: "self", mtlsClient: client).healthReport(
+            listed: listed,
+            local: localFacts(running: 1),
+            bearer: nil,
+        )
+        let timedOut = try #require(report.devices.first { $0.hostId == timeoutId })
+        #expect(timedOut.reachability == HomeDeviceHealthAggregator.connectTimeout)
+        #expect(timedOut.reachabilityError == HomeDeviceProxyError.connectTimeout.localizedDescription)
+        #expect(timedOut.reachability != HomeDeviceHealthAggregator.unreachable)
+
+        let http = try #require(report.devices.first { $0.hostId == httpId })
+        #expect(http.reachability == HomeDeviceHealthAggregator.memberHTTP)
+        #expect(http.reachabilityError == HomeDeviceProxyError.memberHTTP(503).localizedDescription)
+        #expect(!(http.reachabilityError ?? "").hasPrefix("Device is unreachable:"))
+
+        let okRow = try #require(report.devices.first { $0.hostId == okId })
+        #expect(okRow.reachability == HomeDeviceHealthAggregator.ok)
+        #expect(okRow.reachabilityError == nil)
+        #expect(okRow.workloadCount == 1)
     }
 
     @Test func `inventory-only member stays reachable with unknown workload count`() async throws {

@@ -3,6 +3,7 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import AsyncHTTPClient
 import Foundation
 import Testing
 @testable import BarkVisor
@@ -201,6 +202,43 @@ struct HomeDeviceProxyTests {
                 HomeDeviceProxy.normalizedAPIPath("/api/pairing/%6Aoin"),
             )
         }
+    }
+
+    @Test func `classify maps HTTPClientError connect cancel TLS and error 1`() {
+        #expect(HomeDeviceProxyError.classify(HTTPClientError.connectTimeout) == .connectTimeout)
+        #expect(HomeDeviceProxyError.classify(HTTPClientError.cancelled) == .cancelled)
+        #expect(HomeDeviceProxyError.classify(HTTPClientError.tlsHandshakeTimeout) == .tlsFailure)
+        #expect(HomeDeviceProxyError.classify(HTTPClientError.deadlineExceeded) == .connectTimeout)
+        #expect(HomeDeviceProxyError.classify(CancellationError()) == .cancelled)
+
+        let error1 = NSError(
+            domain: "AsyncHTTPClient.HTTPClientError",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "The operation could not be completed. (AsyncHTTPClient.HTTPClientError error 1.)",
+            ],
+        )
+        #expect(HomeDeviceProxyError.classify(error1) == .connectTimeout)
+        #expect(HomeDeviceProxyError.connectTimeout.reachability == "connectTimeout")
+        #expect(HomeDeviceProxyError.cancelled.reachability == "cancelled")
+        #expect(HomeDeviceProxyError.tlsFailure.reachability == "tlsFailure")
+        #expect(HomeDeviceProxyError.memberHTTP(503).reachability == "memberHTTP")
+        #expect(HomeDeviceProxyError.responseTooLarge.reachability == "responseTooLarge")
+        #expect(HomeDeviceProxyError.healthUnreachable.reachability == "unreachable")
+        #expect(
+            HomeDeviceProxyError.connectTimeout.errorDescription
+                == "Home cannot hop to the Device: connection timed out",
+        )
+        #expect(
+            HomeDeviceProxyError.memberHTTP(503).ollamaHopDescription
+                == "Ollama is down on the Device (HTTP 503)",
+        )
+        #expect(HomeDeviceProxyError.healthUnreachable.errorDescription == "Device is unreachable")
+        #expect(
+            HomeDeviceProxyError.connectTimeout.localizedDescription
+                != "Device is unreachable: The operation could not be completed. (AsyncHTTPClient.HTTPClientError error 1.)",
+        )
     }
 
     @Test func `proxy client 502 does not require sqlite`() async throws {
