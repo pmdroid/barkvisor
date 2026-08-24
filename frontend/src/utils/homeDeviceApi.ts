@@ -118,6 +118,10 @@ export function deviceCapabilitiesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/capabilities')
 }
 
+export function deviceAboutPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/about')
+}
+
 export function deviceHostBridgeReadinessPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/host-bridge-readiness')
 }

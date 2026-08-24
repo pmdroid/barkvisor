@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   canCallDeviceAPI,
   canFetchDeviceWorkloads,
+  deviceAboutPath,
   deviceBridgesPath,
   deviceCapabilitiesPath,
   deviceDiskPath,
@@ -79,6 +80,7 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(deviceTemplateDryRunPath(self, 'tpl/1')).toBe('/templates/tpl%2F1/deploy/dry-run')
     expect(deviceTaskPath(self, 'task-9')).toBe('/tasks/task-9')
     expect(deviceCapabilitiesPath(self)).toBe('/system/capabilities')
+    expect(deviceAboutPath(self)).toBe('/system/about')
     expect(deviceVmsBasePath(self)).toBe('/vms')
 
     expect(deviceTemplatesPath(member)).toBe('/home/devices/peer%2F1/v1/templates')
@@ -88,6 +90,7 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     )
     expect(deviceTaskPath(member, 'task-9')).toBe('/home/devices/peer%2F1/v1/tasks/task-9')
     expect(deviceCapabilitiesPath(member)).toBe('/home/devices/peer%2F1/v1/system/capabilities')
+    expect(deviceAboutPath(member)).toBe('/home/devices/peer%2F1/v1/system/about')
     expect(devicePath(member, '/images')).toBe('/home/devices/peer%2F1/v1/images')
   })
 
@@ -157,6 +160,15 @@ describe('homeDeviceApi (PAS-203)', () => {
     expect(devicePath(member, '/disks')).toBe('/home/devices/peer%2F1/v1/disks')
     expect(devicePath(member, '/networks')).toBe('/home/devices/peer%2F1/v1/networks')
     expect(devicePath(member, '/logs')).not.toContain('targetHostId')
+  })
+})
+
+describe('homeDeviceApi (device about)', () => {
+  test('self stays local; members use the Home proxy', () => {
+    expect(deviceAboutPath(self)).toBe('/system/about')
+    expect(deviceAboutPath(member)).toBe('/home/devices/peer%2F1/v1/system/about')
+    expect(deviceAboutPath(member)).not.toContain('targetHostId')
+    expect(canFetchDeviceWorkloads(down)).toBe(false)
   })
 })
 

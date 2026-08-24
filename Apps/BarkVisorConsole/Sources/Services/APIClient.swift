@@ -32,12 +32,16 @@ struct APIClient {
 
     private static let encoder: JSONEncoder = .init()
 
+    /// Path-segment encoding: `/` is reserved (host IDs like `peer/1` must stay one segment).
+    private static let pathSegmentAllowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+
     /// Device-scoped Device APIs (VMs, metrics, start/stop/restart).
     /// `self` stays on `/api/...`. Members go through `/api/home/devices/{id}/v1/...`.
     func scoped(_ path: String, on device: HomeDeviceHealthSnapshot?) -> String {
         let trimmed = path.hasPrefix("/") ? path : "/\(path)"
         guard let device, !device.isSelf else { return "/api\(trimmed)" }
-        return "/api/home/devices/\(device.hostId)/v1\(trimmed)"
+        let hostId = device.hostId.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) ?? device.hostId
+        return "/api/home/devices/\(hostId)/v1\(trimmed)"
     }
 
     func get<T: Decodable>(
@@ -275,8 +279,8 @@ struct APIClient {
         )
     }
 
-    func about() async throws -> SystemAbout {
-        try await get("/api/system/about")
+    func about(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemAbout {
+        try await get(scoped("/system/about", on: device))
     }
 
     func capabilities(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemCapabilities {

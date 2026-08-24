@@ -651,7 +651,7 @@ final class AppModel {
         case .devices:
             await refreshPhoneDevices()
         case .settings:
-            await refreshAbout()
+            break
         }
     }
 
@@ -1038,7 +1038,13 @@ final class AppModel {
     }
 
     func capabilities(for device: HomeDeviceHealthSnapshot) async -> SystemCapabilities? {
-        await optional { try await requireClient().capabilities(on: device) }
+        guard DeviceStatsHistory.shouldFetch(device) else { return nil }
+        return await optional { try await requireClient().capabilities(on: device) }
+    }
+
+    func about(on device: HomeDeviceHealthSnapshot) async -> SystemAbout? {
+        guard DeviceStatsHistory.shouldFetch(device) else { return nil }
+        return await optional { try await requireClient().about(on: device) }
     }
 
     private func refreshRoute() async {
@@ -1049,8 +1055,6 @@ final class AppModel {
         case .settings:
             await loadPairing()
             await loadLoginOffer()
-            await refreshAbout()
-            await refreshCapabilities()
         case .devices:
             _ = try? await refreshDevices()
         case .library:

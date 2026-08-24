@@ -86,6 +86,16 @@ struct DeviceDetailTests {
                 == "/api/home/devices/peer/v1/system/stats/history",
         )
         #expect(client.scoped("/system/gpu-devices", on: living) == "/api/home/devices/peer/v1/system/gpu-devices")
+        #expect(client.scoped("/system/about", on: nil) == "/api/system/about")
+        #expect(client.scoped("/system/about", on: studio) == "/api/system/about")
+        #expect(client.scoped("/system/about", on: living) == "/api/home/devices/peer/v1/system/about")
+        #expect(client.scoped("/system/capabilities", on: living) == "/api/home/devices/peer/v1/system/capabilities")
+        let slashMember = snapshot(hostId: "peer/1", role: "member", title: "Slash")
+        #expect(client.scoped("/system/about", on: slashMember) == "/api/home/devices/peer%2F1/v1/system/about")
+        #expect(
+            client.scoped("/system/stats/history", on: slashMember)
+                == "/api/home/devices/peer%2F1/v1/system/stats/history",
+        )
     }
 
     @Test func `resources line is cpu and memory never gpu`() {

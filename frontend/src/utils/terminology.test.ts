@@ -138,6 +138,8 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('Loading workloads...')
     expect(text).toContain('await devices.fetchHealth()')
     expect(text).not.toContain('Promise.all')
+    expect(text).toContain('deviceAboutPath')
+    expect(text).toContain('Device version')
     expect(text).toContain('CreateVMDrawer')
     expect(text).toContain('initial-host-id')
     expect(text).not.toContain('cluster')
