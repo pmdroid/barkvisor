@@ -203,6 +203,19 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
         if failed > 0 { return "\(count) workloads · \(failed) failed" }
         return count == 1 ? "1 workload" : "\(count) workloads"
     }
+
+    /// CPU and memory from health. GPU occupancy is `gpu-devices`, not this line.
+    var resourcesLine: String? {
+        guard isReachable, let resources else { return nil }
+        var parts: [String] = []
+        if let cpu = resources.cpuLoadPercent {
+            parts.append("CPU \(Int(cpu.rounded()))%")
+        }
+        if let used = resources.memoryUsedMB, let total = resources.memoryTotalMB {
+            parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1024, Double(total) / 1024))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 }
 
 /// iOS Devices tab badge: count of paired Devices whose health is not reachable.
@@ -542,6 +555,68 @@ struct SystemStats: Decodable {
     var totalVMs: Int
     var vmCpuPercent: Double
     var vmMemoryMB: Int
+}
+
+struct SystemStatsSample: Decodable, Hashable, Identifiable {
+    var timestamp: String
+    var hostCpuPercent: Double
+    var hostMemoryUsedMB: Int
+    var hostMemoryTotalMB: Int
+
+    var id: String {
+        timestamp
+    }
+}
+
+struct DeviceStatsChartPoint: Identifiable, Equatable {
+    var id: String
+    var date: Date
+    var cpuPercent: Double
+    var memoryUsedGB: Double
+    var memoryTotalGB: Double
+}
+
+enum DeviceStatsHistory {
+    static let minutes = 30
+    static let maxPoints = 60
+
+    static var unreachableCopy: String {
+        "This \(Copy.device.lowercased()) did not answer. Workload counts are not shown. This \(Copy.device.lowercased()) is still running locally."
+    }
+
+    static func shouldFetch(_ device: HomeDeviceHealthSnapshot) -> Bool {
+        device.isReachable
+    }
+
+    static func points(from samples: [SystemStatsSample], max: Int = maxPoints) -> [DeviceStatsChartPoint] {
+        guard !samples.isEmpty else { return [] }
+        return Array(samples.suffix(max)).enumerated().compactMap { index, sample in
+            guard let date = parseTimestamp(sample.timestamp) else { return nil }
+            DeviceStatsChartPoint(
+                id: "\(sample.timestamp)-\(index)",
+                date: date,
+                cpuPercent: sample.hostCpuPercent,
+                memoryUsedGB: Double(sample.hostMemoryUsedMB) / 1024,
+                memoryTotalGB: Double(sample.hostMemoryTotalMB) / 1024,
+            )
+        }
+    }
+
+    static func parseTimestamp(_ raw: String) -> Date? {
+        fractionalISO.date(from: raw) ?? iso.date(from: raw)
+    }
+
+    private static let iso: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let fractionalISO: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 }
 
 struct SystemAbout: Decodable {

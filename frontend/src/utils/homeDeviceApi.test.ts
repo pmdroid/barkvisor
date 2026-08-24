@@ -14,6 +14,7 @@ import {
   deviceNetworkPath,
   deviceNetworksPath,
   devicePath,
+  deviceStatsHistoryPath,
   deviceTaskPath,
   deviceTemplateDeployPath,
   deviceTemplateDryRunPath,
@@ -156,6 +157,19 @@ describe('homeDeviceApi (PAS-203)', () => {
     expect(devicePath(member, '/disks')).toBe('/home/devices/peer%2F1/v1/disks')
     expect(devicePath(member, '/networks')).toBe('/home/devices/peer%2F1/v1/networks')
     expect(devicePath(member, '/logs')).not.toContain('targetHostId')
+  })
+})
+
+describe('homeDeviceApi (device stats history)', () => {
+  test('self stays local; members use the Home proxy minutes query', () => {
+    expect(deviceStatsHistoryPath(self)).toBe('/system/stats/history?minutes=30')
+    expect(deviceStatsHistoryPath(member)).toBe(
+      '/home/devices/peer%2F1/v1/system/stats/history?minutes=30',
+    )
+    expect(deviceStatsHistoryPath(member, 15)).toBe(
+      '/home/devices/peer%2F1/v1/system/stats/history?minutes=15',
+    )
+    expect(deviceStatsHistoryPath(member)).not.toContain('targetHostId')
   })
 })
 

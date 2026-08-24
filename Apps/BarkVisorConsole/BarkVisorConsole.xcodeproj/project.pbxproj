@@ -33,6 +33,7 @@
 		066E278CB0B44DF9BF2A3171 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486354A327DD1C1F2B08B6C8 /* ChatView.swift */; };
 		8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40C0E3A9BCA1B51480836FF /* HomeView.swift */; };
 		2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BA85C5946B65A59DFF46D77 /* DevicesView.swift */; };
+		D6D1C7AFFF8E915295A7C8F0 /* DeviceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1403C931E8A299EBB48FF88 /* DeviceDetailView.swift */; };
 		5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */; };
 		11E524FFFCD88CD4978F96A8 /* CreateWorkloadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */; };
 		9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */; };
@@ -49,6 +50,7 @@
 		E1B4C9E9B34B37BDE12F5342 /* LibraryCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */; };
 		5768E7FA4356E7827E3F93D5 /* CreateWorkloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A026BC9CA66C66CEA2B15B5 /* CreateWorkloadTests.swift */; };
 		0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */; };
+		728B78ADDD1A6BAE059B1DF5 /* DeviceDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BEB196AE7284AEF4EB2666A /* DeviceDetailTests.swift */; };
 		D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */; };
 		0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFA94CEA740ED82135195F5 /* SessionTests.swift */; };
 		DFAAF0B2B149C7BAE4D60F65 /* PairingOfferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40CBB0AD5AB0EF09A550FF6 /* PairingOfferTests.swift */; };
@@ -86,6 +88,7 @@
 		486354A327DD1C1F2B08B6C8 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		C40C0E3A9BCA1B51480836FF /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		6BA85C5946B65A59DFF46D77 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
+		D1403C931E8A299EBB48FF88 /* DeviceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDetailView.swift; sourceTree = "<group>"; };
 		A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadsView.swift; sourceTree = "<group>"; };
 		623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkloadSheet.swift; sourceTree = "<group>"; };
 		5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailView.swift; sourceTree = "<group>"; };
@@ -99,6 +102,7 @@
 		22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCatalogTests.swift; sourceTree = "<group>"; };
 		4A026BC9CA66C66CEA2B15B5 /* CreateWorkloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkloadTests.swift; sourceTree = "<group>"; };
 		D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkloadDetailTests.swift; sourceTree = "<group>"; };
+		4BEB196AE7284AEF4EB2666A /* DeviceDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDetailTests.swift; sourceTree = "<group>"; };
 		F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStreamTests.swift; sourceTree = "<group>"; };
 		BAFA94CEA740ED82135195F5 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
 		E40CBB0AD5AB0EF09A550FF6 /* PairingOfferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingOfferTests.swift; sourceTree = "<group>"; };
@@ -219,6 +223,7 @@
 				486354A327DD1C1F2B08B6C8 /* ChatView.swift */,
 				C40C0E3A9BCA1B51480836FF /* HomeView.swift */,
 				6BA85C5946B65A59DFF46D77 /* DevicesView.swift */,
+				D1403C931E8A299EBB48FF88 /* DeviceDetailView.swift */,
 				A2210F025CB5CB601D421AC2 /* WorkloadsView.swift */,
 				623CAE304C77B61B00F58519 /* CreateWorkloadSheet.swift */,
 				5B71FF54AEAA3CBBCAE36961 /* WorkloadDetailView.swift */,
@@ -258,6 +263,7 @@
 				22FC7CFD982EE31324B0005D /* LibraryCatalogTests.swift */,
 				4A026BC9CA66C66CEA2B15B5 /* CreateWorkloadTests.swift */,
 				D2ED86E091468ABF880FF671 /* WorkloadDetailTests.swift */,
+				4BEB196AE7284AEF4EB2666A /* DeviceDetailTests.swift */,
 				F2736E37BD8088E36CB88836 /* LocalStreamTests.swift */,
 				BAFA94CEA740ED82135195F5 /* SessionTests.swift */,
 				E40CBB0AD5AB0EF09A550FF6 /* PairingOfferTests.swift */,
@@ -383,6 +389,7 @@
 				066E278CB0B44DF9BF2A3171 /* ChatView.swift in Sources */,
 				8D3E98BD70C737AADA346B93 /* HomeView.swift in Sources */,
 				2095399BAAD4B4CDA639CCBA /* DevicesView.swift in Sources */,
+				D6D1C7AFFF8E915295A7C8F0 /* DeviceDetailView.swift in Sources */,
 				5EE12625C18B3A818D879D8C /* WorkloadsView.swift in Sources */,
 				11E524FFFCD88CD4978F96A8 /* CreateWorkloadSheet.swift in Sources */,
 				9AC43EFDD19DB3039AB005B8 /* WorkloadDetailView.swift in Sources */,
@@ -403,6 +410,7 @@
 				E1B4C9E9B34B37BDE12F5342 /* LibraryCatalogTests.swift in Sources */,
 				5768E7FA4356E7827E3F93D5 /* CreateWorkloadTests.swift in Sources */,
 				0453A0E474EB6E667BA9AE63 /* WorkloadDetailTests.swift in Sources */,
+				728B78ADDD1A6BAE059B1DF5 /* DeviceDetailTests.swift in Sources */,
 				D8E0BC3A9E1CEA906979E925 /* LocalStreamTests.swift in Sources */,
 				0594E9D181A95AE9B9959531 /* SessionTests.swift in Sources */,
 				DFAAF0B2B149C7BAE4D60F65 /* PairingOfferTests.swift in Sources */,

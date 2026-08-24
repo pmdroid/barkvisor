@@ -1,10 +1,28 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  deviceResourcesLine,
   deviceWorkloadLine,
   hasKnownHealthCounts,
   homeWorkloadsRunningLine,
   resolveHealthCounts,
 } from './homeDeviceHealth'
+
+describe('deviceResourcesLine', () => {
+  test('reachable CPU and memory match the Device row, with no GPU copy', () => {
+    const line = deviceResourcesLine({
+      reachability: 'ok',
+      resources: {
+        cpuLoadPercent: 12.4,
+        memoryUsedMB: 8192,
+        memoryTotalMB: 32768,
+      },
+    })
+    expect(line).toBe('CPU 12% · 8.0 / 32 GB')
+    expect(line).not.toMatch(/gpu/i)
+    expect(deviceResourcesLine({ reachability: 'unreachable', resources: { cpuLoadPercent: 90 } })).toBeNull()
+    expect(deviceResourcesLine({ reachability: 'ok' })).toBeNull()
+  })
+})
 
 describe('deviceWorkloadLine', () => {
   test('reachable unknown count is not shown as zero workloads', () => {
