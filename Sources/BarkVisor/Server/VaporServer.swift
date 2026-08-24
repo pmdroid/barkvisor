@@ -365,6 +365,9 @@ public final class VaporServer: @unchecked Sendable {
                 "Failed to drop unverifiable API keys after HMAC secret split: \(error.localizedDescription)",
             )
         }
+        let ollama = OllamaController(backgroundTasks: backgroundTasks)
+        let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
+        _ = try? await home.refresh(db: pool)
     }
 
     private func schedulePeriodicTasks(
@@ -402,6 +405,12 @@ public final class VaporServer: @unchecked Sendable {
             ) {
                 await healthProbes.pollDue()
             }
+        }
+        let ollamaRefreshNs = UInt64(OllamaHomeMap.refreshInterval * 1_000_000_000)
+        await backgroundTasks.schedulePeriodicTask(id: "ollama-map", interval: ollamaRefreshNs) {
+            let ollama = OllamaController(backgroundTasks: backgroundTasks)
+            let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
+            _ = try? await home.refresh(db: pool)
         }
         await backgroundTasks.schedulePeriodicTask(
             id: "api-key-expiry", interval: 60 * 60 * 1_000_000_000,

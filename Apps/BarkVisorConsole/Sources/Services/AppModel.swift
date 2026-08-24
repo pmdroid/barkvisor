@@ -5,6 +5,7 @@ enum AppRoute: String, CaseIterable, Identifiable, Hashable {
     case dashboard
     case devices
     case workloads
+    case models
     case library
     case disks
     case networks
@@ -20,6 +21,7 @@ enum AppRoute: String, CaseIterable, Identifiable, Hashable {
         case .dashboard: "Dashboard"
         case .devices: Copy.devices
         case .workloads: Copy.workloads
+        case .models: "Ollama"
         case .library: Copy.library
         case .disks: "Disks"
         case .networks: "Networks"
@@ -104,6 +106,8 @@ final class AppModel {
     var homeLoadErrors: [HomeDeviceLoadError] = []
     var homeUnreachable: [HomeDeviceHealthSnapshot] = []
     var homeLoaded = false
+    var ollamaCatalog = OllamaHomeCatalog(anyReachable: false, anyInstalled: false, models: [], devices: [])
+    var ollamaLoaded = false
 
     private var token: String?
     private var refreshToken: String?
@@ -331,6 +335,57 @@ final class AppModel {
         await mutate(actionID(for: workload, explicit: device), on: target) { client, resolved in
             try await client.stopWorkload(workload.id, force: force, on: resolved)
         }
+    }
+
+    func refreshOllama() async {
+        ollamaLoaded = false
+        do {
+            ollamaCatalog = try await requireClient().ollamaCatalog()
+            ollamaLoaded = true
+        } catch {
+            ollamaLoaded = true
+            handle(error)
+        }
+    }
+
+    func startOllama(_ name: String) async {
+        let key = "ollama/\(name)"
+        actionIDs.insert(key)
+        defer { actionIDs.remove(key) }
+        do {
+            try await requireClient().startOllama(name)
+            await refreshOllama()
+        } catch {
+            handle(error)
+        }
+    }
+
+    func stopOllama(_ name: String, hostId: String?) async {
+        let key = "ollama/\(name)"
+        actionIDs.insert(key)
+        defer { actionIDs.remove(key) }
+        do {
+            try await requireClient().stopOllama(name, hostId: hostId)
+            await refreshOllama()
+        } catch {
+            handle(error)
+        }
+    }
+
+    func pullOllama(_ name: String, hostId: String?) async throws -> OllamaTaskAccepted {
+        try await requireClient().pullOllama(name: name, hostId: hostId)
+    }
+
+    func ollamaTask(_ task: OllamaTaskAccepted) async throws -> OllamaTaskEvent {
+        try await requireClient().ollamaTask(task, selfHostId: devices.first(where: \.isSelf)?.hostId)
+    }
+
+    func cancelOllamaPull(_ task: OllamaTaskAccepted) async throws {
+        try await requireClient().cancelOllamaTask(task, selfHostId: devices.first(where: \.isSelf)?.hostId)
+    }
+
+    func present(_ error: Error) {
+        handle(error)
     }
 
     func restartWorkload(_ workload: Workload, on device: HomeDeviceHealthSnapshot? = nil) async {
@@ -874,6 +929,8 @@ final class AppModel {
             _ = try? await refreshDevices()
         case .library:
             await refreshLibrary()
+        case .models:
+            await refreshOllama()
         default:
             await refreshDeviceScoped()
         }

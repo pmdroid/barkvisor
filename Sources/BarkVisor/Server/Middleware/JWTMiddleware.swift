@@ -13,6 +13,28 @@ struct AuthenticatedUser {
     let username: String
     let authMethod: String // "jwt", "apikey", or "ticket"
     let apiKeyId: String? // set when authMethod == "apikey"
+    let apiKeyKind: String?
+    let role: String
+
+    init(
+        userId: String,
+        username: String,
+        authMethod: String,
+        apiKeyId: String?,
+        apiKeyKind: String? = nil,
+        role: String,
+    ) {
+        self.userId = userId
+        self.username = username
+        self.authMethod = authMethod
+        self.apiKeyId = apiKeyId
+        self.apiKeyKind = apiKeyKind
+        self.role = role
+    }
+
+    var userRole: UserRole {
+        UserRolePolicy.parseStored(role)
+    }
 }
 
 struct AuthenticatedUserKey: StorageKey {
@@ -72,14 +94,42 @@ struct JWTAuthMiddleware: AsyncMiddleware {
 
         // API key auth: tokens starting with "barkvisor_"
         if token.hasPrefix("barkvisor_") {
-            request.authenticatedUser = try await authenticateAPIKey(token: token, request: request)
+            try await attach(
+                authenticateAPIKey(token: token, request: request),
+                to: request,
+            )
             return try await next.respond(to: request)
         }
 
         // JWT auth (existing flow)
-        request.authenticatedUser = try await authenticateJWT(token: token)
-
+        try await attach(
+            authenticateJWT(token: token, request: request),
+            to: request,
+        )
         return try await next.respond(to: request)
+    }
+
+    static func enforceInferenceACL(_ request: Vapor.Request) throws {
+        guard let user = request.authenticatedUser else { return }
+        let principal = OllamaAuthPolicy.principal(
+            userRole: user.role,
+            authMethod: user.authMethod,
+            apiKeyKind: user.apiKeyKind,
+        )
+        guard !OllamaAuthPolicy.allows(
+            principal: principal,
+            method: request.method.rawValue,
+            path: request.url.path,
+        ) else { return }
+        throw Abort(
+            .forbidden,
+            reason: "Inference callers can list models and call chat completions only",
+        )
+    }
+
+    private func attach(_ user: AuthenticatedUser, to request: Vapor.Request) throws {
+        request.authenticatedUser = user
+        try Self.enforceInferenceACL(request)
     }
 
     private func authenticateAPIKey(token: String, request: Vapor.Request) async throws
@@ -138,6 +188,8 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             username: user.username,
             authMethod: "apikey",
             apiKeyId: apiKey.id,
+            apiKeyKind: apiKey.kind,
+            role: user.userRole.rawValue,
         )
     }
 
@@ -200,11 +252,11 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         else {
             throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
         }
-        request.authenticatedUser = AuthenticatedUser(
-            userId: userInfo.userID,
-            username: userInfo.username,
-            authMethod: "ticket",
-            apiKeyId: nil,
+        try await attach(
+            ticketUser(
+                userID: userInfo.userID, username: userInfo.username, request: request,
+            ),
+            to: request,
         )
         return try await next.respond(to: request)
     }
@@ -217,11 +269,11 @@ struct JWTAuthMiddleware: AsyncMiddleware {
         guard let userInfo = await WebSocketTicketStore.shared.validateTicket(ticket) else {
             throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredTicketReason)
         }
-        request.authenticatedUser = AuthenticatedUser(
-            userId: userInfo.userID,
-            username: userInfo.username,
-            authMethod: "ticket",
-            apiKeyId: nil,
+        try await attach(
+            ticketUser(
+                userID: userInfo.userID, username: userInfo.username, request: request,
+            ),
+            to: request,
         )
         return try await next.respond(to: request)
     }
@@ -232,19 +284,23 @@ struct JWTAuthMiddleware: AsyncMiddleware {
     ) async throws -> Vapor.Response {
         if let auth = request.headers.bearerAuthorization {
             if auth.token.hasPrefix("barkvisor_") {
-                request.authenticatedUser = try await authenticateAPIKey(
-                    token: auth.token,
-                    request: request,
+                try await attach(
+                    authenticateAPIKey(token: auth.token, request: request),
+                    to: request,
                 )
             } else {
-                request.authenticatedUser = try await authenticateJWT(token: auth.token)
+                try await attach(
+                    authenticateJWT(token: auth.token, request: request),
+                    to: request,
+                )
             }
             return try await next.respond(to: request)
         }
         return try await HomeTunnelAuthMiddleware(keys: keys).respond(to: request, chainingTo: next)
     }
 
-    private func authenticateJWT(token: String) async throws -> AuthenticatedUser {
+    private func authenticateJWT(token: String, request: Vapor.Request) async throws
+        -> AuthenticatedUser {
         let payload: UserPayload
         do {
             payload = try await keys.verify(token, as: UserPayload.self)
@@ -252,12 +308,52 @@ struct JWTAuthMiddleware: AsyncMiddleware {
             throw Abort(.unauthorized, reason: "Invalid or expired token")
         }
 
+        let role = try await Self.resolveRole(
+            userId: payload.sub.value,
+            sessionFallback: payload.role,
+            request: request,
+        )
         return AuthenticatedUser(
             userId: payload.sub.value,
             username: payload.username,
             authMethod: "jwt",
             apiKeyId: nil,
+            role: role,
         )
+    }
+
+    private func ticketUser(userID: String, username: String, request: Vapor.Request) async throws
+        -> AuthenticatedUser {
+        let role = try await Self.resolveRole(
+            userId: userID, sessionFallback: nil, request: request,
+        )
+        return AuthenticatedUser(
+            userId: userID,
+            username: username,
+            authMethod: "ticket",
+            apiKeyId: nil,
+            role: role,
+        )
+    }
+
+    static func resolveRole(
+        userId: String,
+        sessionFallback: String?,
+        request: Vapor.Request,
+    ) async throws -> String {
+        guard let pool = request.application.databaseIfPresent?.pool else {
+            return UserRolePolicy.parseSession(sessionFallback).rawValue
+        }
+        // Member Devices only store the admin row from pairing. Home mints a
+        // short-lived hop JWT over mTLS, so a missing local row is expected for
+        // inference users; use the signed claim instead of 401.
+        let user = try await pool.read { db in
+            try User.fetchOne(db, key: userId)
+        }
+        if let user {
+            return user.userRole.rawValue
+        }
+        return UserRolePolicy.parseSession(sessionFallback).rawValue
     }
 }
 
@@ -275,12 +371,19 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
             } catch {
                 throw Abort(.unauthorized, reason: "Invalid or expired token")
             }
+            let role = try await JWTAuthMiddleware.resolveRole(
+                userId: payload.sub.value,
+                sessionFallback: payload.role,
+                request: request,
+            )
             request.authenticatedUser = AuthenticatedUser(
                 userId: payload.sub.value,
                 username: payload.username,
                 authMethod: "jwt",
                 apiKeyId: nil,
+                role: role,
             )
+            try JWTAuthMiddleware.enforceInferenceACL(request)
             return try await next.respond(to: request)
         }
         let session = StreamTicketPolicy.homeSession(fromQuery: request.url.query)
@@ -293,12 +396,17 @@ struct HomeTunnelAuthMiddleware: AsyncMiddleware {
             else {
                 throw Abort(.unauthorized, reason: StreamTicketPolicy.expiredSessionReason)
             }
+            let role = try await JWTAuthMiddleware.resolveRole(
+                userId: userInfo.userID, sessionFallback: nil, request: request,
+            )
             request.authenticatedUser = AuthenticatedUser(
                 userId: userInfo.userID,
                 username: userInfo.username,
                 authMethod: "ticket",
                 apiKeyId: nil,
+                role: role,
             )
+            try JWTAuthMiddleware.enforceInferenceACL(request)
             return try await next.respond(to: request)
         }
         throw Abort(.unauthorized, reason: "Missing authorization")

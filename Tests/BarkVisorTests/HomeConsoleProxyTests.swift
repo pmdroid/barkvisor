@@ -157,6 +157,7 @@ private struct StubHomeUserMiddleware: AsyncMiddleware {
             username: "admin",
             authMethod: "jwt",
             apiKeyId: nil,
+            role: UserRole.admin.rawValue,
         )
         return try await next.respond(to: request)
     }

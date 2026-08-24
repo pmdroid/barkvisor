@@ -408,4 +408,20 @@ struct DatabaseMigrationTests {
             #expect(tables.contains(table), "Expected table '\(table)' to exist, got: \(tables)")
         }
     }
+
+    @Test func `users role defaults to admin`() throws {
+        let queue = try migratedQueue()
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO users (id, username, password, createdAt)
+                VALUES ('user-1', 'admin', 'x', '2026-08-13T16:39:34Z')
+                """,
+            )
+        }
+        let role = try queue.read { db in
+            try String.fetchOne(db, sql: "SELECT role FROM users WHERE id = 'user-1'")
+        }
+        #expect(role == UserRole.admin.rawValue)
+    }
 }

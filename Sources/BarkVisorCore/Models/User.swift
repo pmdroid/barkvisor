@@ -8,12 +8,15 @@ public struct User: Codable, Sendable, FetchableRecord, PersistableRecord, Table
     public var username: String
     public var password: String // empty string = no password set yet (requires setup)
     public var createdAt: String
+    /// `admin` or `inference`. Existing Homes default admin (M012).
+    public var role: String
 
     public enum Columns {
         public static let id = Column(CodingKeys.id)
         public static let username = Column(CodingKeys.username)
         public static let password = Column(CodingKeys.password)
         public static let createdAt = Column(CodingKeys.createdAt)
+        public static let role = Column(CodingKeys.role)
     }
 
     public init(
@@ -21,10 +24,16 @@ public struct User: Codable, Sendable, FetchableRecord, PersistableRecord, Table
         username: String,
         password: String,
         createdAt: String,
+        role: String = UserRole.admin.rawValue,
     ) {
         self.id = id
         self.username = username
         self.password = password
         self.createdAt = createdAt
+        self.role = role
+    }
+
+    public var userRole: UserRole {
+        UserRolePolicy.parseStored(role)
     }
 }

@@ -7,6 +7,10 @@ struct AppDatabaseKey: StorageKey {
 }
 
 extension Vapor.Application {
+    var databaseIfPresent: AppDatabase? {
+        storage[AppDatabaseKey.self]
+    }
+
     var database: AppDatabase {
         get {
             guard let db = storage[AppDatabaseKey.self] else {

@@ -287,6 +287,30 @@ struct APIClient {
         try await get("/api/logs", query: [URLQueryItem(name: "limit", value: String(limit))])
     }
 
+    func ollamaCatalog() async throws -> OllamaHomeCatalog {
+        try await get("/api/home/ollama/models")
+    }
+
+    func pullOllama(name: String, hostId: String?) async throws -> OllamaTaskAccepted {
+        try await post("/api/home/ollama/pull", body: OllamaPullBody(name: name, hostId: hostId))
+    }
+
+    func startOllama(_ name: String) async throws {
+        try await post("/api/home/ollama/start", body: OllamaModelActionBody.start(name))
+    }
+
+    func stopOllama(_ name: String, hostId: String?) async throws {
+        try await post("/api/home/ollama/stop", body: OllamaModelActionBody.stop(name, hostId: hostId))
+    }
+
+    func ollamaTask(_ task: OllamaTaskAccepted, selfHostId: String?) async throws -> OllamaTaskEvent {
+        try await get(OllamaTaskPath.rest(taskID: task.taskID, hostId: task.hostId, selfHostId: selfHostId))
+    }
+
+    func cancelOllamaTask(_ task: OllamaTaskAccepted, selfHostId: String?) async throws {
+        try await delete(OllamaTaskPath.rest(taskID: task.taskID, hostId: task.hostId, selfHostId: selfHostId))
+    }
+
     func pairingCode() async throws -> PairingIssue? {
         do {
             return try await get("/api/pairing/codes")
