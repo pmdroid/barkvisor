@@ -4,7 +4,10 @@ import Yams
 public enum CloudInitService {
     /// Validate that user-data is valid YAML when combined with #cloud-config header.
     /// Also rejects keys that would override security-critical directives when appended.
-    public static func validateUserData(_ userData: String) throws {
+    public static func validateUserData(
+        _ userData: String,
+        allowCatalogIdentityKeys: Bool = false,
+    ) throws {
         let doc = "#cloud-config\n" + userData
         do {
             _ = try Yams.compose(yaml: doc)
@@ -12,8 +15,9 @@ public enum CloudInitService {
             throw BarkVisorError.badRequest("Invalid cloud-init user-data: \(error)")
         }
 
-        // Parse just the user-provided portion and reject protected keys
-        // that could override security-critical directives via YAML duplicate-key semantics
+        // Wizard extra user-data must not override SSH identity keys.
+        // Catalog recipes (Ubuntu, Pi-hole, Onyx) own the full document.
+        if allowCatalogIdentityKeys { return }
         let protectedKeys: Set = ["ssh_authorized_keys", "users", "chpasswd", "ssh_pwauth"]
         if let userNode = try? Yams.compose(yaml: "#cloud-config\n" + userData) {
             let mapping = userNode.mapping ?? [:]

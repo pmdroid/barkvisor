@@ -88,6 +88,15 @@ struct TemplateRendererTests {
         #expect(result == "value: simple")
     }
 
+    @Test func `ollama url with colon is yaml quoted`() throws {
+        let template = "OLLAMA={{ollama_url}}"
+        let result = try TemplateRenderer.render(
+            template: template,
+            inputs: ["ollama_url": "http://10.0.2.2:11434"],
+        )
+        #expect(result == "OLLAMA='http://10.0.2.2:11434'")
+    }
+
     // MARK: - SHA-512 Crypt
 
     @Test func `sha 512 crypt deterministic`() {

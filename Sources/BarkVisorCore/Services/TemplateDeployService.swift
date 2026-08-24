@@ -247,7 +247,7 @@ public enum TemplateDeployService {
             userData = String(userData.dropFirst("#cloud-config\n".count))
         }
         if !userData.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            try CloudInitService.validateUserData(userData)
+            try CloudInitService.validateUserData(userData, allowCatalogIdentityKeys: true)
         }
 
         let cloudInit = CloudInitConfig(

@@ -46,6 +46,7 @@ import {
   scorePlacement,
 } from '../utils/placement'
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
+import { natWebUILinks, templateDeclaresSshKeys } from '../utils/templateDeploy'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -300,6 +301,16 @@ watch(memoryMB, (_next, prev) => {
   if (prev !== undefined) schedulePlacementRefresh(false)
 }, { immediate: true })
 
+const showsSshPicker = computed(() => templateDeclaresSshKeys(props.template.inputs))
+const webUILinks = computed(() =>
+  natWebUILinks({
+    templateName: props.template.name,
+    networkMode: props.template.networkMode,
+    isSelfDevice: selectedDevice.value ? isSelfDevice(selectedDevice.value) : true,
+    portForwards: props.template.portForwards,
+  }),
+)
+
 // Step 2: Template inputs (dynamic) — ssh_keys is handled by the dedicated SSH key selector
 const visibleInputs = computed(() => props.template.inputs.filter(i => i.id !== 'ssh_keys'))
 const inputValues = ref<Record<string, string>>({})
@@ -354,9 +365,11 @@ function buildRequest(): DeployTemplateRequest {
     throw new Error("Not in this Device's Library")
   }
   const inputs = { ...inputValues.value }
-  const selectedKey = sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
-  if (selectedKey) {
-    inputs.ssh_keys = authorizedKeyForCloudInit(selectedKey)
+  if (showsSshPicker.value) {
+    const selectedKey = sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
+    if (selectedKey) {
+      inputs.ssh_keys = authorizedKeyForCloudInit(selectedKey)
+    }
   }
   return {
     templateId: resolved.id,
@@ -659,6 +672,29 @@ async function submit() {
         <div v-if="error" class="error-box" style="margin-top:16px">{{ error }}</div>
       </div>
 
+      <div v-else-if="phase === 'done'" style="padding:8px 0 0">
+        <p style="font-size:14px;margin-bottom:12px">{{ template.name }} is deployed.</p>
+        <p
+          v-if="webUILinks.length === 0 && template.networkMode === 'nat' && selectedDevice && !isSelfDevice(selectedDevice)"
+          style="font-size:13px;color:var(--text-dim);margin-bottom:12px"
+        >
+          Open the web UI on the Device that hosts this Workload. 127.0.0.1 in this browser is the wrong machine.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+          <a
+            v-for="link in webUILinks"
+            :key="link.href"
+            class="btn-primary"
+            :href="link.href"
+            target="_blank"
+            rel="noopener"
+          >{{ link.label }}</a>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <button class="btn-ghost" @click="emit('close')">Close</button>
+        </div>
+      </div>
+
       <!-- Form phase -->
       <template v-else-if="phase === 'form'">
         <!-- Step indicator -->
@@ -696,7 +732,7 @@ async function submit() {
             <label>Disk Size (GB)</label>
             <input v-model.number="diskSizeGB" type="number" min="1" />
           </div>
-          <div class="form-group">
+          <div v-if="showsSshPicker" class="form-group">
             <label>SSH Key</label>
             <AppSelect v-model="selectedSSHKeyId">
               <option value="">None</option>
@@ -763,7 +799,7 @@ async function submit() {
             <div><strong>Memory:</strong> {{ memoryMB }} MB</div>
             <div><strong>Disk:</strong> {{ diskSizeGB }} GB</div>
             <div><strong>Network:</strong> {{ networkModeLabel(template.networkMode) }}</div>
-            <div><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
+            <div v-if="showsSshPicker"><strong>SSH Key:</strong> {{ sshKeyStore.keys.find(k => k.id === selectedSSHKeyId)?.name || 'None' }}</div>
             <div><strong>Image:</strong> {{ compatibility?.resolvedImageSlug || template.imageSlug }}</div>
           </div>
         </div>

@@ -100,7 +100,7 @@ router.beforeEach(async (to) => {
   if (auth.isAuthenticated && auth.role !== 'admin' && auth.role !== 'inference') {
     await auth.fetchMe()
   }
-  if (auth.role === 'inference' && to.name !== 'models' && to.name !== 'chat') {
+  if (auth.role === 'inference' && to.name !== 'models') {
     return { name: 'models' }
   }
 })
