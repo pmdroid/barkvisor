@@ -12,6 +12,8 @@ import {
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type {
+  APIKeyCreateResponse,
+  APIKeyResponse,
   HostGPUDevice,
   OllamaCatalogModel,
   OllamaTaskAccepted,
@@ -48,6 +50,11 @@ import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { inferenceHowToFromOrigin, tailnetListenHost } from '../utils/inferenceApiHowTo'
+import {
+  inferenceHowToMintBanner,
+  inferenceHowToMintBody,
+  needsInferenceHowToMint,
+} from '../utils/inferenceHowToMint'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
@@ -73,6 +80,9 @@ const stopTarget = ref<OllamaCatalogModel | null>(null)
 const stopping = ref(false)
 const copied = ref('')
 const remoteAccess = ref<RemoteAccessStatus | null>(null)
+const mintedKey = ref('')
+const mintBanner = ref('')
+let mintAttempted = false
 const statsHost = ref('')
 const hostGPUs = ref<HostGPUDevice[] | null>(null)
 const history = reactive(emptyDeviceStatsChartSeries())
@@ -82,6 +92,7 @@ const howTo = computed(() =>
     role: 'self',
     advertiseHost: remoteAccess.value?.advertiseUrl,
     tailnetHost: tailnetListenHost(remoteAccess.value?.tailscale),
+    grantPlaintext: mintedKey.value || null,
   }),
 )
 
@@ -274,6 +285,7 @@ onMounted(() => {
   if (auth.isAdmin) {
     void store.fetchSettings()
   }
+  void loadHowTo()
   pollTimer = window.setInterval(() => { void store.fetchCatalog() }, 10_000)
   statsTimer = window.setInterval(() => { void refreshLiveStats() }, 5_000)
 })
@@ -423,6 +435,40 @@ function exportPs() {
   downloadOllamaPsExport(store.models)
 }
 
+async function loadHowTo() {
+  try {
+    const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
+    remoteAccess.value = data
+  } catch {
+    /* LAN origin fallback */
+  }
+  await mintHowToKeyIfNeeded()
+}
+
+async function mintHowToKeyIfNeeded() {
+  if (mintAttempted) return
+  mintAttempted = true
+  try {
+    const { data: keys } = await api.get<APIKeyResponse[]>('/auth/keys')
+    if (!needsInferenceHowToMint(keys)) return
+    const { data } = await api.post<APIKeyCreateResponse>('/auth/keys', inferenceHowToMintBody())
+    mintedKey.value = data.key
+  } catch (e: unknown) {
+    mintBanner.value = inferenceHowToMintBanner({
+      status: axiosStatus(e),
+      message: apiErrorMessage(e),
+    })
+  }
+}
+
+function axiosStatus(error: unknown): number | null {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const status = (error as { response?: { status?: number } }).response?.status
+    return typeof status === 'number' ? status : null
+  }
+  return null
+}
+
 async function saveKey() {
   const body = keyBody.value
   if (!body) return
@@ -465,10 +511,11 @@ async function saveKey() {
     <h2 style="margin-top:0">Use this API</h2>
     <p style="color:var(--text-secondary);font-size:13px">
       OpenAI-compatible completions on this {{ HOME_LABEL }}:
-      <code>/v1/chat/completions</code> at port 7777.
+      <code>{{ howTo.lanCompletionsURL }}</code>.
       Send <code>Authorization: Bearer</code> with an inference key.
       That is not Device :11434.
     </p>
+    <p v-if="mintBanner" style="color:var(--danger, #b42318);font-size:13px">{{ mintBanner }}</p>
     <div class="form-group">
       <label>curl</label>
       <pre class="howto-pre">{{ howTo.curl }}</pre>
@@ -477,16 +524,24 @@ async function saveKey() {
       </AppButton>
     </div>
     <div class="form-group">
-      <label>Environment</label>
+      <label>OPENAI_BASE_URL / OPENAI_API_KEY</label>
       <pre class="howto-pre">{{ howTo.env }}</pre>
       <AppButton size="sm" @click="copySnippet('env', howTo.env)">
         {{ copied === 'env' ? 'Copied' : 'Copy env' }}
       </AppButton>
     </div>
+    <div v-if="mintedKey" class="form-group">
+      <label>API key (shown once)</label>
+      <pre class="howto-pre">{{ mintedKey }}</pre>
+      <AppButton size="sm" @click="copySnippet('key', mintedKey)">
+        {{ copied === 'key' ? 'Copied' : 'Copy key' }}
+      </AppButton>
+    </div>
     <h3>From inside a Workload</h3>
     <p style="color:var(--text-secondary);font-size:13px">
-      Agent cage reaches Device Ollama at <code>{{ howTo.cageBaseURL }}</code>
-      (PAS-268 guestfwd). {{ howTo.cageDnsLine }}
+      Cage <code>OPENAI_BASE_URL</code> is <code>{{ howTo.cageBaseURL }}</code>
+      (<code>CAGE_OPENAI_BASE_URL</code>, PAS-268 guestfwd). {{ howTo.cageDnsLine }}
+      This is not the LAN :7777 URL.
     </p>
     <div class="form-group" style="margin-bottom:0">
       <pre class="howto-pre">{{ howTo.cageEnv }}</pre>
