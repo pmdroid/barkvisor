@@ -275,8 +275,8 @@ struct APIClient {
         )
     }
 
-    func about() async throws -> SystemAbout {
-        try await get("/api/system/about")
+    func about(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemAbout {
+        try await get(scoped("/system/about", on: device))
     }
 
     func capabilities(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemCapabilities {

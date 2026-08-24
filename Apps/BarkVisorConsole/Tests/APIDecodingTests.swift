@@ -381,6 +381,46 @@ struct APIDecodingTests {
         }
     }
 
+    @Test func `system about decodes version platform arch accelerator uptime`() throws {
+        let json = """
+        {
+          "version": "0.4.0",
+          "platform": "macOS",
+          "hostArch": "arm64",
+          "accelerator": "hvf",
+          "processUptimeSeconds": 42,
+          "licenses": [
+            {
+              "name": "QEMU",
+              "license": "GPL-2.0",
+              "url": "https://www.qemu.org/",
+              "description": "Machine emulator"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let about = try decoder.decode(SystemAbout.self, from: json)
+        #expect(about.version == "0.4.0")
+        #expect(about.platform == "macOS")
+        #expect(about.hostArch == "arm64")
+        #expect(about.accelerator == "hvf")
+        #expect(about.processUptimeSeconds == 42)
+    }
+
+    @Test func `system about decode fails without uptime`() throws {
+        let json = """
+        {
+          "version": "0.4.0",
+          "platform": "Linux",
+          "hostArch": "x86_64",
+          "accelerator": "kvm"
+        }
+        """.data(using: .utf8)!
+        #expect(throws: DecodingError.self) {
+            try decoder.decode(SystemAbout.self, from: json)
+        }
+    }
+
     @Test func `system capabilities decodes gpu passthrough`() throws {
         let macos = """
         {

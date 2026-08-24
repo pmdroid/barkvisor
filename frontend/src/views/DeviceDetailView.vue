@@ -12,7 +12,7 @@ import {
 } from 'chart.js'
 import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
-import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice, SystemStatsSample } from '../api/types'
+import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice, SystemAbout, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -30,7 +30,8 @@ import {
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
-import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { canFetchDeviceWorkloads, deviceAboutPath, deviceCapabilitiesPath, deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { parseSystemAbout } from '../utils/systemAbout'
 import {
   deviceResourcesLine,
   deviceWorkloadLine,
@@ -82,6 +83,8 @@ const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } |
 const showCreate = ref(false)
 const deviceCaps = ref<CurrentHostCapabilities | null>(null)
 const hostGPUs = ref<HostGPUDevice[]>([])
+const deviceAbout = ref<SystemAbout | null>(null)
+const aboutReady = ref(false)
 
 const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
@@ -162,6 +165,24 @@ const memoryTotalGB = computed(() => {
   return total != null ? total / 1024 : null
 })
 
+async function refreshAbout(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !canFetchDeviceWorkloads(row)) {
+    deviceAbout.value = null
+    aboutReady.value = true
+    return
+  }
+  const host = row.hostId
+  try {
+    const { data } = await api.get(deviceAboutPath(row))
+    if (hostId.value !== host) return
+    deviceAbout.value = parseSystemAbout(data)
+  } catch {
+    if (hostId.value !== host) return
+    deviceAbout.value = null
+  }
+  if (hostId.value === host) aboutReady.value = true
+}
+
 async function refreshCapabilities(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
     deviceCaps.value = null
@@ -212,6 +233,7 @@ async function refreshHistory(row: HomeDeviceHealthSnapshot | null = device.valu
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
   await workloads.fetchFor(row)
+  await refreshAbout(row)
   await refreshCapabilities(row)
   await refreshHistory(row)
 }
@@ -236,6 +258,10 @@ onUnmounted(() => {
 watch(hostId, () => {
   clearHostTransientState()
   resetHistory()
+  deviceAbout.value = null
+  aboutReady.value = false
+  deviceCaps.value = null
+  hostGPUs.value = []
   void refresh()
 })
 
@@ -367,6 +393,29 @@ async function doStop() {
             <div class="dash-stat-label">Memory</div>
           </div>
         </div>
+      </div>
+
+      <div v-if="canFetchDeviceWorkloads(device) && aboutReady" class="gpu-card">
+        <div class="gpu-card-title">About</div>
+        <dl v-if="deviceAbout" class="about-rows">
+          <div>
+            <dt>Device version</dt>
+            <dd>{{ deviceAbout.version }}</dd>
+          </div>
+          <div>
+            <dt>Platform</dt>
+            <dd>{{ deviceAbout.platform }} · {{ deviceAbout.hostArch }}</dd>
+          </div>
+          <div>
+            <dt>Accelerator</dt>
+            <dd>{{ deviceAbout.accelerator }}</dd>
+          </div>
+          <div>
+            <dt>Uptime</dt>
+            <dd>{{ deviceAbout.processUptimeSeconds }}s</dd>
+          </div>
+        </dl>
+        <p v-else class="gpu-card-status">Could not load this {{ DEVICE_LABEL.toLowerCase() }} version.</p>
       </div>
 
       <div v-if="deviceCaps" class="gpu-card">
@@ -643,6 +692,24 @@ async function doStop() {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+}
+.about-rows {
+  margin: 8px 0 0;
+  display: grid;
+  gap: 6px;
+}
+.about-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.about-rows dt {
+  color: var(--text-secondary);
+}
+.about-rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 .gpu-card {
   margin: 0 0 20px;

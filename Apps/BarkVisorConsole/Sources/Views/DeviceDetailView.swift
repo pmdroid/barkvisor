@@ -6,6 +6,9 @@ struct DeviceDetailView: View {
     var deviceID: String
     var fallbackDevice: HomeDeviceHealthSnapshot
     @State private var points: [DeviceStatsChartPoint] = []
+    @State private var deviceAbout: SystemAbout?
+    @State private var deviceCaps: SystemCapabilities?
+    @State private var hostGPUs: [HostGPUDevice] = []
 
     var body: some View {
         List {
@@ -17,6 +20,56 @@ struct DeviceDetailView: View {
                 LabeledContent(Copy.workloads, value: device.workloadLine)
                 if let resources = device.resourcesLine {
                     LabeledContent("Resources", value: resources)
+                }
+            }
+
+            if DeviceStatsHistory.shouldFetch(device) {
+                Section("About") {
+                    if let deviceAbout {
+                        LabeledContent("Device version", value: deviceAbout.version)
+                        LabeledContent("Platform", value: "\(deviceAbout.platform) · \(deviceAbout.hostArch)")
+                        LabeledContent("Accelerator", value: deviceAbout.accelerator)
+                        LabeledContent("Uptime", value: "\(deviceAbout.processUptimeSeconds)s")
+                    } else {
+                        Text("Could not load this \(Copy.device.lowercased()) version.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("GPU passthrough") {
+                    if let caps = deviceCaps {
+                        LabeledContent(
+                            "GPU passthrough",
+                            value: caps.gpuPassthroughSupported ? "Host ready" : "Not available",
+                        )
+                        Text(caps.gpuPassthroughExplanation)
+                            .foregroundStyle(.secondary)
+                        if caps.gpuPassthroughSupported {
+                            LabeledContent("Guest Ollama", value: GPUPassthroughCopy.guestOllamaPath)
+                        }
+                    } else {
+                        Text(GPUPassthroughCopy.iommuNotReady)
+                            .foregroundStyle(.secondary)
+                    }
+                    if hostGPUs.count == 1 {
+                        Text(GPUPassthroughCopy.singleDisplayWarning)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.red)
+                    }
+                    ForEach(hostGPUs) { gpu in
+                        LabeledContent(gpu.name, value: "\(gpu.pciAddress) · IOMMU \(gpu.iommuGroup)")
+                        LabeledContent(
+                            "Group mates",
+                            value: GPUPassthroughCopy.groupMatesLabel(
+                                pciAddress: gpu.pciAddress,
+                                groupAddresses: gpu.groupAddresses,
+                            ),
+                        )
+                        if let occupancy = gpu.occupancyCopy {
+                            Text(occupancy)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
@@ -80,8 +133,12 @@ struct DeviceDetailView: View {
         .task(id: "\(deviceID)-\(device.role)-\(device.reachability)") {
             await model.select(device)
             await loadHistory()
+            await loadAbout()
         }
-        .refreshable { await loadHistory() }
+        .refreshable {
+            await loadHistory()
+            await loadAbout()
+        }
     }
 
     private var device: HomeDeviceHealthSnapshot {
@@ -103,7 +160,7 @@ struct DeviceDetailView: View {
             return String(format: "%.1f / %.0f GB", last.memoryUsedGB, last.memoryTotalGB)
         }
         if let used = device.resources?.memoryUsedMB, let total = device.resources?.memoryTotalMB {
-            return String(format: "%.1f / %.0f GB", Double(used) / 1024, Double(total) / 1024)
+            return String(format: "%.1f / %.0f GB", Double(used) / 1_024, Double(total) / 1_024)
         }
         return "—"
     }
@@ -118,6 +175,19 @@ struct DeviceDetailView: View {
             points = []
             return
         }
-        points = DeviceStatsHistory.points(from: await model.statsHistory(on: target))
+        points = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
+    }
+
+    private func loadAbout() async {
+        let target = device
+        guard DeviceStatsHistory.shouldFetch(target) else {
+            deviceAbout = nil
+            deviceCaps = nil
+            hostGPUs = []
+            return
+        }
+        deviceAbout = await model.about(on: target)
+        deviceCaps = await model.capabilities(for: target)
+        hostGPUs = await model.gpuDevices(on: target)
     }
 }
