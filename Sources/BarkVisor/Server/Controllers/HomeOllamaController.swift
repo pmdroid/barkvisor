@@ -226,7 +226,13 @@ struct HomeOllamaController: RouteCollection {
         let catalog = try await status(req: req)
         return OllamaCatalog.nativeTags(
             from: catalog.models.map {
-                OllamaLocalModel(name: $0.name, digest: $0.digest, size: $0.size, running: $0.running)
+                OllamaLocalModel(
+                    name: $0.name,
+                    digest: $0.digest,
+                    size: $0.size,
+                    sizeVRAM: $0.locations.first(where: \.running)?.sizeVRAM,
+                    running: $0.running,
+                )
             },
         )
     }
@@ -236,7 +242,13 @@ struct HomeOllamaController: RouteCollection {
         let catalog = try await status(req: req)
         return OllamaCatalog.nativePS(
             from: catalog.models.map {
-                OllamaLocalModel(name: $0.name, digest: $0.digest, size: $0.size, running: $0.running)
+                OllamaLocalModel(
+                    name: $0.name,
+                    digest: $0.digest,
+                    size: $0.size,
+                    sizeVRAM: $0.locations.first(where: \.running)?.sizeVRAM,
+                    running: $0.running,
+                )
             },
         )
     }

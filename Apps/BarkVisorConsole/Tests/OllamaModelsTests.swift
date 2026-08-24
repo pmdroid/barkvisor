@@ -73,7 +73,48 @@ struct OllamaModelsTests {
         #expect(OllamaTaskPath.rest(taskID: "t1", hostId: "self", selfHostId: "self") == "/api/tasks/t1")
     }
 
-    @Test func modelsViewHoldsKeysPerDevice() throws {
+    @Test func psExportRoundTripKeepsNullSizeVRAM() throws {
+        let llama = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: 4000,
+            running: true,
+            locations: [
+                OllamaModelLocation(
+                    hostId: "desk",
+                    displayName: nil,
+                    running: true,
+                    reachable: true,
+                    size: 4000,
+                    sizeVRAM: 3000,
+                ),
+                OllamaModelLocation(
+                    hostId: "lab",
+                    displayName: nil,
+                    running: false,
+                    reachable: true,
+                    size: 4000,
+                    sizeVRAM: nil,
+                ),
+            ],
+        )
+        let export = OllamaPsExport.serialize([llama])
+        #expect(export.models.count == 2)
+        #expect(export.models[0].name == "llama3:latest")
+        #expect(export.models[0].size == 4000)
+        #expect(export.models[0].sizeVRAM == 3000)
+        #expect(export.models[0].running)
+        #expect(export.models[0].host == "desk")
+        #expect(export.models[1].sizeVRAM == nil)
+        #expect(export.models[1].running == false)
+        #expect(export.models[1].host == "lab")
+        let json = try export.jsonString()
+        let decoded = try decoder.decode(OllamaPsExport.self, from: Data(json.utf8))
+        #expect(decoded == export)
+        #expect(json.contains("\"sizeVRAM\" : null") || json.contains("\"sizeVRAM\": null"))
+    }
+
+    @Test func modelsViewSharesExportJSON() throws {
         let tests = URL(fileURLWithPath: #filePath)
         let url = tests.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/Views/ModelsView.swift")
@@ -81,6 +122,8 @@ struct OllamaModelsTests {
         #expect(source.contains("Home holds upstream keys per"))
         #expect(source.contains("OllamaSettingsUpdate(hostId:"))
         #expect(!source.contains("saved on this Device"))
+        #expect(source.contains("ShareLink(item: exportJSON)"))
+        #expect(source.contains("Export JSON"))
     }
 
     @Test func memberPullUsesHomeProxyTaskPath() {

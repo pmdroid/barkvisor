@@ -110,6 +110,8 @@ describe('ollama store (PAS-269)', () => {
     expect(src).toContain('Home holds upstream keys per')
     expect(src).not.toContain('saved on this Device')
     expect(src).not.toContain('store.settings?.hasApiKey')
+    expect(src).toContain('Export JSON')
+    expect(src).toContain('downloadOllamaPsExport(store.models)')
   })
 
   test('a failed fetch hides Models', async () => {

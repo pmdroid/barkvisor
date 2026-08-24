@@ -24,6 +24,7 @@ public enum OllamaCatalog {
                     name: tag.name,
                     digest: tag.digest ?? live?.digest,
                     size: tag.size ?? live?.size,
+                    sizeVRAM: live?.sizeVRAM,
                     running: live != nil,
                     parameterSize: tag.parameterSize,
                     quantization: tag.quantization,
@@ -39,6 +40,7 @@ public enum OllamaCatalog {
                     name: row.name,
                     digest: row.digest,
                     size: row.size,
+                    sizeVRAM: row.sizeVRAM,
                     running: true,
                 ),
             )
@@ -62,6 +64,7 @@ public enum OllamaCatalog {
                     model: $0.name,
                     size: $0.size,
                     digest: $0.digest,
+                    sizeVRAM: $0.sizeVRAM,
                 )
             },
         )

@@ -30,6 +30,7 @@ public struct OllamaLocalModel: Codable, Sendable, Equatable {
     public var name: String
     public var digest: String?
     public var size: Int64?
+    public var sizeVRAM: Int64?
     public var running: Bool
     public var parameterSize: String?
     public var quantization: String?
@@ -38,6 +39,7 @@ public struct OllamaLocalModel: Codable, Sendable, Equatable {
         name: String,
         digest: String? = nil,
         size: Int64? = nil,
+        sizeVRAM: Int64? = nil,
         running: Bool,
         parameterSize: String? = nil,
         quantization: String? = nil,
@@ -45,6 +47,7 @@ public struct OllamaLocalModel: Codable, Sendable, Equatable {
         self.name = name
         self.digest = digest
         self.size = size
+        self.sizeVRAM = sizeVRAM
         self.running = running
         self.parameterSize = parameterSize
         self.quantization = quantization
@@ -134,6 +137,7 @@ public struct OllamaModelLocation: Codable, Sendable, Equatable {
     public var reachable: Bool
     public var probedAt: String
     public var size: Int64?
+    public var sizeVRAM: Int64?
     public var digest: String?
     public var memoryTotalMB: Int?
     public var memoryUsedMB: Int?
@@ -146,6 +150,7 @@ public struct OllamaModelLocation: Codable, Sendable, Equatable {
         reachable: Bool,
         probedAt: String,
         size: Int64? = nil,
+        sizeVRAM: Int64? = nil,
         digest: String? = nil,
         memoryTotalMB: Int? = nil,
         memoryUsedMB: Int? = nil,
@@ -157,6 +162,7 @@ public struct OllamaModelLocation: Codable, Sendable, Equatable {
         self.reachable = reachable
         self.probedAt = probedAt
         self.size = size
+        self.sizeVRAM = sizeVRAM
         self.digest = digest
         self.memoryTotalMB = memoryTotalMB
         self.memoryUsedMB = memoryUsedMB
@@ -173,6 +179,7 @@ public struct OllamaCatalogModel: Codable, Sendable, Equatable {
     public var name: String
     public var digest: String?
     public var size: Int64?
+    public var sizeVRAM: Int64?
     public var running: Bool
     public var locations: [OllamaModelLocation]
 
@@ -180,14 +187,82 @@ public struct OllamaCatalogModel: Codable, Sendable, Equatable {
         name: String,
         digest: String? = nil,
         size: Int64? = nil,
+        sizeVRAM: Int64? = nil,
         running: Bool,
         locations: [OllamaModelLocation],
     ) {
         self.name = name
         self.digest = digest
         self.size = size
+        self.sizeVRAM = sizeVRAM
         self.running = running
         self.locations = locations
+    }
+}
+
+/// Point-in-time `/api/ps` fields for web and Console export. One row per Device location.
+public struct OllamaPSExportRow: Codable, Sendable, Equatable {
+    public var name: String
+    public var size: Int64?
+    public var sizeVRAM: Int64?
+    public var running: Bool
+    public var host: String
+
+    public init(name: String, size: Int64?, sizeVRAM: Int64?, running: Bool, host: String) {
+        self.name = name
+        self.size = size
+        self.sizeVRAM = sizeVRAM
+        self.running = running
+        self.host = host
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(size, forKey: .size)
+        try container.encode(sizeVRAM, forKey: .sizeVRAM)
+        try container.encode(running, forKey: .running)
+        try container.encode(host, forKey: .host)
+    }
+}
+
+public struct OllamaPSExportDocument: Codable, Sendable, Equatable {
+    public var models: [OllamaPSExportRow]
+
+    public init(models: [OllamaPSExportRow]) {
+        self.models = models
+    }
+}
+
+public enum OllamaPSExport {
+    public static func rows(from models: [OllamaCatalogModel]) -> [OllamaPSExportRow] {
+        models.flatMap { model in
+            model.locations.map { loc in
+                let vram = loc.sizeVRAM ?? (loc.running ? model.sizeVRAM : nil)
+                return OllamaPSExportRow(
+                    name: model.name,
+                    size: loc.size ?? model.size,
+                    sizeVRAM: vram,
+                    running: loc.running,
+                    host: loc.hostId,
+                )
+            }
+        }
+    }
+
+    public static func document(from models: [OllamaCatalogModel]) -> OllamaPSExportDocument {
+        OllamaPSExportDocument(models: rows(from: models))
+    }
+
+    public static func jsonData(from models: [OllamaCatalogModel]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        return try encoder.encode(document(from: models))
+    }
+
+    public static func jsonString(from models: [OllamaCatalogModel]) throws -> String {
+        let data = try jsonData(from: models)
+        return String(decoding: data, as: UTF8.self)
     }
 }
 
