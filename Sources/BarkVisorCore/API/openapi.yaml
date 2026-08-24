@@ -399,6 +399,54 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/vms/{id}/session/resume:
+    post:
+      tags: [vms]
+      operationId: resumeCodingSession
+      x-barkvisor-stability: evolving
+      summary: Resume a stopped coding session (new TTL clock)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/session/reset:
+    post:
+      tags: [vms]
+      operationId: resetCodingSession
+      x-barkvisor-stability: evolving
+      summary: Reset the boot disk to the Library image
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VM"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/vms/{id}/session/burn:
+    post:
+      tags: [vms]
+      operationId: burnCodingSession
+      x-barkvisor-stability: evolving
+      summary: Destroy the coding session Workload and unload the local-model grant
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "202":
+          description: Delete accepted
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms/{id}/attach-iso:
     post:
       tags: [vms]
@@ -2113,10 +2161,63 @@ components:
           description: >
             Start this Workload after the Device boots. Default false so House
             appliances stay stopped. Daemon restart on the same boot does not start it.
+        workloadClass:
+          type: string
+        session:
+          nullable: true
+          $ref: "#/components/schemas/CodingAgentSession"
         createdAt:
           type: string
         updatedAt:
           type: string
+
+    CodingAgentSession:
+      type: object
+      description: Agent coding session TTL, receipt, and actions (PAS-273). Expiry stops the guest; it does not destroy or suspend.
+      required: [ttlSeconds, warning, warningLeadSeconds, expiryAction, grant, actions]
+      properties:
+        ttlSeconds:
+          type: integer
+        startedAt:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          nullable: true
+        remainingSeconds:
+          type: integer
+          nullable: true
+        warning:
+          type: boolean
+        warningLeadSeconds:
+          type: integer
+        expiryAction:
+          type: string
+          enum: [stop]
+        grant:
+          type: string
+        receipt:
+          nullable: true
+          $ref: "#/components/schemas/CodingAgentReceipt"
+        actions:
+          type: array
+          items:
+            type: string
+            enum: [resume, reset, burn]
+
+    CodingAgentReceipt:
+      type: object
+      required: [stoppedAt, reason, noPush]
+      properties:
+        stoppedAt:
+          type: string
+        reason:
+          type: string
+        lastGitPushAt:
+          type: string
+          nullable: true
+        noPush:
+          type: boolean
 
     VMState:
       type: string

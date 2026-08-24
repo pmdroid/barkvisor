@@ -46,3 +46,34 @@ export function consoleTabLabel(raw: {
 } | null | undefined): string {
   return isCodingAgentSession(raw) ? 'Terminal' : 'Console'
 }
+
+export const SESSION_NO_PUSH = 'NO PUSH'
+export const SESSION_EXPIRY_ACTION = 'stop'
+
+export function sessionWarningCopy(remainingSeconds: number | null | undefined): string {
+  const minutes = Math.max(1, Math.ceil((remainingSeconds ?? 0) / 60))
+  return minutes === 1
+    ? 'Session expires in 1 minute. Push your changes. TTL stop keeps the disk.'
+    : `Session expires in ${minutes} minutes. Push your changes. TTL stop keeps the disk.`
+}
+
+export function sessionIsLive(vmState: string | null | undefined): boolean {
+  return vmState === 'running' || vmState === 'starting' || vmState === 'stopping'
+}
+
+export function sessionReceiptCopy(
+  receipt: {
+    stoppedAt: string
+    lastGitPushAt?: string | null
+    noPush: boolean
+  } | null | undefined,
+  vmState?: string | null,
+): { stoppedAt: string; git: string; loud: boolean } | null {
+  if (!receipt) return null
+  if (sessionIsLive(vmState)) return null
+  return {
+    stoppedAt: receipt.stoppedAt,
+    git: receipt.noPush || !receipt.lastGitPushAt ? SESSION_NO_PUSH : receipt.lastGitPushAt,
+    loud: receipt.noPush || !receipt.lastGitPushAt,
+  }
+}

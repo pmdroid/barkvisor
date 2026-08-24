@@ -73,7 +73,11 @@ public final class VaporServer: @unchecked Sendable {
         app.middleware.use(RequestLogMiddleware())
 
         await runStartupTasks(pool: database.pool, backgroundTasks: services.backgroundTasks)
-        await schedulePeriodicTasks(pool: database.pool, backgroundTasks: services.backgroundTasks)
+        await schedulePeriodicTasks(
+            pool: database.pool,
+            backgroundTasks: services.backgroundTasks,
+            vmManager: services.manager,
+        )
 
         Log.server.info("BarkVisor server starting on port \(Config.port)")
 
@@ -371,7 +375,7 @@ public final class VaporServer: @unchecked Sendable {
     }
 
     private func schedulePeriodicTasks(
-        pool: DatabasePool, backgroundTasks: BackgroundTaskManager,
+        pool: DatabasePool, backgroundTasks: BackgroundTaskManager, vmManager: VMManager,
     ) async {
         await backgroundTasks.schedulePeriodicTask(
             id: "audit-prune", interval: 24 * 60 * 60 * 1_000_000_000,
@@ -411,6 +415,11 @@ public final class VaporServer: @unchecked Sendable {
             let ollama = OllamaController(backgroundTasks: backgroundTasks)
             let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
             _ = try? await home.refresh(db: pool)
+        }
+        await backgroundTasks.schedulePeriodicTask(
+            id: "coding-agent-ttl", interval: 30 * 1_000_000_000,
+        ) {
+            await CodingAgentLifecycleService.tick(now: Date(), vmManager: vmManager, db: pool)
         }
         await backgroundTasks.schedulePeriodicTask(
             id: "api-key-expiry", interval: 60 * 60 * 1_000_000_000,

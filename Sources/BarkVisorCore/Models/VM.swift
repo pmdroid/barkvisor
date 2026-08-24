@@ -62,6 +62,8 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
     public var healthJson: String?
     /// PAS-268: `house` | `agent`. Nil on pre-M010 rows is house.
     public var workloadClass: String?
+    /// PAS-273 coding session TTL / receipt. Nil on house and pre-M013 rows.
+    public var sessionJson: String?
     public var specGeneration: Int
     /// PAS-258: start after Device boot. Default off so House appliances stay stopped.
     public var startOnBoot: Bool
@@ -95,6 +97,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         overridesJson: String? = nil,
         healthJson: String? = nil,
         workloadClass: String? = WorkloadClass.house.rawValue,
+        sessionJson: String? = nil,
         specGeneration: Int = 1,
         startOnBoot: Bool = false,
         createdAt: String,
@@ -126,6 +129,7 @@ public struct VM: Codable, Sendable, FetchableRecord, PersistableRecord, TableRe
         self.overridesJson = overridesJson
         self.healthJson = healthJson
         self.workloadClass = workloadClass
+        self.sessionJson = sessionJson
         self.specGeneration = specGeneration
         self.startOnBoot = startOnBoot
         self.createdAt = createdAt

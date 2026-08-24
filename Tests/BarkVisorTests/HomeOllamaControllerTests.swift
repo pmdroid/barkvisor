@@ -254,6 +254,22 @@ struct HomeOllamaControllerTests {
         }
         #expect(client.calls.isEmpty)
     }
+
+    @Test func `local pull start stop pass decoded body instead of the consumed request`() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(
+            contentsOf: root.appendingPathComponent(
+                "Sources/BarkVisor/Server/Controllers/HomeOllamaController.swift",
+            ),
+            encoding: .utf8,
+        )
+        #expect(source.contains("localOllama.pull(body: body, db: req.db)"))
+        #expect(source.contains("localOllama.start(body: body, db: req.db)"))
+        #expect(source.contains("localOllama.stop(body: body, db: req.db)"))
+        #expect(!source.contains("localOllama.pull(req: req)"))
+        #expect(!source.contains("localOllama.start(req: req)"))
+        #expect(!source.contains("localOllama.stop(req: req)"))
+    }
 }
 
 private func header(_ name: String, in headers: [(String, String)]) -> String? {
