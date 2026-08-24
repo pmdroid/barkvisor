@@ -1,13 +1,14 @@
 import Foundation
 
-/// One Linux Library image (arm64 + x86_64) that boots Onyx Lite pointed at
-/// Home Ollama (`http://10.0.2.2:11434`, native API, not Device `:7777`).
+/// Onyx Lite Template: Ubuntu 24.04 cloud image, Agent cage, Home Ollama
+/// at `http://10.0.2.2:11434` (native API, not Device `:7777`).
 public enum OnyxImage {
     public static let name = "Onyx"
+    public static let templateSlug = "onyx"
     public static let slugPrefix = "onyx-"
     public static let arm64Slug = "onyx-arm64"
     public static let amd64Slug = "onyx-x86_64"
-    public static let slugs: Set<String> = [arm64Slug, amd64Slug]
+    public static let slugs: Set<String> = [arm64Slug, amd64Slug, templateSlug]
 
     /// Native Ollama in the cage (not OpenAI-compat `/v1`).
     public static let ollamaAPIBase = "http://\(AgentNetworkCage.slirpGateway):\(AgentNetworkCage.ollamaPort)"
@@ -42,6 +43,16 @@ public enum OnyxImage {
 
     public static func wantsWebUI(userData: String?) -> Bool {
         isManagedUserData(userData)
+    }
+
+    /// Template deploy: catalog `userDataTemplate` may be empty; fill from here.
+    public static func deployUserData(
+        templateName: String?,
+        templateSlug: String?,
+        rendered: String,
+    ) -> String {
+        if matches(name: templateName, slug: templateSlug) { return userData() }
+        return rendered
     }
 
     public static func userData() -> String {

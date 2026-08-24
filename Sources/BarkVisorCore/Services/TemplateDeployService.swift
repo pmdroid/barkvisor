@@ -220,6 +220,9 @@ public enum TemplateDeployService {
             template: template.userDataTemplate,
             inputs: options.inputs,
         )
+        let klass = OnyxImage.matches(name: template.name, slug: template.slug)
+            ? OnyxImage.defaultWorkloadClass(explicit: template.workloadClass)
+            : template.workloadClass
 
         let vmType = GuestProfiles.defaultLinuxID(forImageArch: localImage.arch)
         let cpu = options.cpuCount ?? template.cpuCount
@@ -231,9 +234,11 @@ public enum TemplateDeployService {
             vmName: options.vmName, db: db,
         )
 
-        let portForwards = JSONColumnCoding.decodeArray(
+        let decodedForwards = JSONColumnCoding.decodeArray(
             PortForwardRule.self, from: template.portForwards,
         )
+        let agent = (try? WorkloadClass.parse(klass)) == .agent
+        let portForwards = agent ? nil : decodedForwards
 
         let sshKeys =
             options.inputs["ssh_keys"]?
@@ -242,7 +247,11 @@ public enum TemplateDeployService {
                 .filter { !$0.isEmpty } ?? []
 
         // Strip optional leading cloud-config header; CloudInitService adds it when generating ISO.
-        var userData = renderedUserData
+        var userData = OnyxImage.deployUserData(
+            templateName: template.name,
+            templateSlug: template.slug,
+            rendered: renderedUserData,
+        )
         if userData.hasPrefix("#cloud-config\n") {
             userData = String(userData.dropFirst("#cloud-config\n".count))
         }
@@ -268,6 +277,7 @@ public enum TemplateDeployService {
             description: "Deployed from template: \(template.name)",
             uefi: true,
             tpmEnabled: false,
+            workloadClass: klass,
         )
 
         let result = try await VMLifecycleService.createVM(

@@ -210,6 +210,28 @@
       "networkMode": "nat",
       "inputs": [],
       "userDataTemplate": ""
+    },
+    {
+      "slug": "onyx",
+      "name": "Onyx",
+      "description": "Onyx Lite Chat/Agents on Ubuntu 24.04. Agent cage; Home Ollama at http://10.0.2.2:11434 (native, not Device :7777). Guest UI on :80 (loopback hostfwd). No session JWT.",
+      "category": "general",
+      "icon": "message-square",
+      "imageSlug": "ubuntu-24.04-arm64",
+      "architectures": ["arm64", "x86_64"],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 2048,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "workloadClass": "agent",
+      "inputs": [],
+      "userDataTemplate": "barkvisor_allow_host_ollama: true\n"
     }
   ]
 }

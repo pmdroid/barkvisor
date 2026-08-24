@@ -116,6 +116,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M014_OllamaPerHostSettings.identifier) { db in
             try M014_OllamaPerHostSettings.migrate(db)
         }
+        migrator.registerMigration(M015_TemplateWorkloadClass.identifier) { db in
+            try M015_TemplateWorkloadClass.migrate(db)
+        }
     }
 }
 

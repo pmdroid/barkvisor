@@ -42,6 +42,7 @@ public struct RepoCatalogTemplate: Codable, Sendable {
     public let imageByArch: [String: String]?
     public let minMemoryMB: Int?
     public let requiredFeatures: [String]?
+    public let workloadClass: String?
 
     public init(
         slug: String,
@@ -61,6 +62,7 @@ public struct RepoCatalogTemplate: Codable, Sendable {
         imageByArch: [String: String]? = nil,
         minMemoryMB: Int? = nil,
         requiredFeatures: [String]? = nil,
+        workloadClass: String? = nil,
     ) {
         self.slug = slug
         self.name = name
@@ -79,6 +81,7 @@ public struct RepoCatalogTemplate: Codable, Sendable {
         self.imageByArch = imageByArch
         self.minMemoryMB = minMemoryMB
         self.requiredFeatures = requiredFeatures
+        self.workloadClass = workloadClass
     }
 }
 
@@ -209,6 +212,7 @@ public actor RepositorySyncService {
                     inputs: entry.inputs, userDataTemplate: entry.userDataTemplate,
                     architectures: entry.architectures, imageByArch: entry.imageByArch,
                     minMemoryMB: entry.minMemoryMB, requiredFeatures: entry.requiredFeatures,
+                    workloadClass: entry.workloadClass,
                 )
             },
         )
@@ -270,6 +274,7 @@ public actor RepositorySyncService {
                 minMemoryMB: entry.minMemoryMB,
                 requiredFeaturesJson: JSONColumnCoding.encodeArrayOrNil(entry.requiredFeatures),
                 imageByArchJson: JSONColumnCoding.encode(entry.imageByArch),
+                workloadClass: entry.workloadClass,
             )
             if var existing =
                 try VMTemplate
@@ -293,6 +298,7 @@ public actor RepositorySyncService {
                 existing.minMemoryMB = template.minMemoryMB
                 existing.requiredFeaturesJson = template.requiredFeaturesJson
                 existing.imageByArchJson = template.imageByArchJson
+                existing.workloadClass = template.workloadClass
                 try existing.update(db)
             } else {
                 try template.insert(db)

@@ -4,29 +4,31 @@ import Yams
 @testable import BarkVisorCore
 
 struct OnyxImageTests {
-    @Test func `catalog ships one image family for both arches`() throws {
-        let url = repoRoot().appendingPathComponent("repos/images.json")
-        let catalog = try JSONDecoder().decode(RepoCatalog.self, from: Data(contentsOf: url))
-        let rows = catalog.images.filter { OnyxImage.slugs.contains($0.slug) }
-        #expect(Set(rows.map(\.slug)) == OnyxImage.slugs)
-        #expect(Set(rows.map(\.arch)) == ["arm64", "x86_64"])
-        #expect(rows.allSatisfy { $0.name == OnyxImage.name })
-        #expect(rows.allSatisfy { $0.imageType == "cloud-image" })
-        #expect(rows.allSatisfy { ($0.description ?? "").contains("10.0.2.2:11434") })
-        let ubuntu = Dictionary(
-            uniqueKeysWithValues: catalog.images.filter { $0.slug.hasPrefix("ubuntu-24.04-") }
-                .map { ($0.arch, $0) },
-        )
-        for row in rows {
-            let base = try #require(ubuntu[row.arch])
-            #expect(row.downloadUrl == base.downloadUrl)
-            #expect(row.sha256 == base.sha256)
-        }
+    @Test func `catalog is a template on ubuntu cloud images`() throws {
+        let url = repoRoot().appendingPathComponent("repos/templates.json")
+        let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: Data(contentsOf: url))
+        let row = try #require(catalog.templates.first { $0.slug == OnyxImage.templateSlug })
+        #expect(row.name == OnyxImage.name)
+        #expect(row.workloadClass == WorkloadClass.agent.rawValue)
+        #expect(row.networkMode == "nat")
+        #expect(row.portForwards.isEmpty)
+        #expect(row.cpuCount == OnyxImage.defaultCPUCount)
+        #expect(row.memoryMB == OnyxImage.defaultMemoryMB)
+        #expect(row.diskSizeGB == OnyxImage.defaultDiskGB)
+        #expect(row.imageByArch?["arm64"] == "ubuntu-24.04-arm64")
+        #expect(row.imageByArch?["x86_64"] == "ubuntu-24.04-x86_64")
+        #expect((row.description ?? "").contains("10.0.2.2:11434"))
+        #expect(row.userDataTemplate.contains(AgentNetworkCage.allowHostOllamaKey))
+        let imagesURL = repoRoot().appendingPathComponent("repos/images.json")
+        let images = try JSONDecoder().decode(RepoCatalog.self, from: Data(contentsOf: imagesURL))
+        #expect(!images.images.contains { OnyxImage.slugs.contains($0.slug) && $0.slug != OnyxImage.templateSlug })
+        #expect(!images.images.contains { $0.slug == "onyx-arm64" || $0.slug == "onyx-x86_64" })
     }
 
     @Test func `matches name and slug not generic ubuntu`() {
         #expect(OnyxImage.matches(name: "Onyx", slug: nil))
         #expect(OnyxImage.matches(name: "onyx", slug: nil))
+        #expect(OnyxImage.matches(name: "Onyx", slug: "onyx"))
         #expect(!OnyxImage.matches(name: "my onyx lab", slug: nil))
         #expect(OnyxImage.matches(name: "Ubuntu", slug: "onyx-arm64"))
         #expect(!OnyxImage.matches(name: "Onyx", slug: "ubuntu-24.04-arm64"))
@@ -90,6 +92,20 @@ struct OnyxImageTests {
         #expect(applied.cloudInit?.userData?.contains("10.0.2.2:11434") == true)
         #expect(applied.cloudInit?.userData?.contains("Authorization: Bearer") != true)
         #expect(applied.cloudInit?.userData?.contains("OPENAI_API_KEY=") != true)
+
+        let filled = OnyxImage.deployUserData(
+            templateName: "Onyx",
+            templateSlug: "onyx",
+            rendered: "packages:\n  - vim\n",
+        )
+        #expect(filled.contains("docker-compose.onyx-lite.yml"))
+        #expect(
+            OnyxImage.deployUserData(
+                templateName: "Ubuntu Server",
+                templateSlug: "ubuntu-cloud",
+                rendered: "packages:\n  - vim\n",
+            ) == "packages:\n  - vim\n",
+        )
 
         let ubuntu = try OnyxImage.applyingCreateDefaults(
             params: params,

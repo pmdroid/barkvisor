@@ -29,6 +29,8 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
     public var requiredFeaturesJson: String?
     /// JSON-encoded `{arch: imageSlug}` map.
     public var imageByArchJson: String?
+    /// `house` | `agent`. Nil is house (omitted in older catalogs).
+    public var workloadClass: String?
 
     public init(
         id: String,
@@ -53,6 +55,7 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
         minMemoryMB: Int? = nil,
         requiredFeaturesJson: String? = nil,
         imageByArchJson: String? = nil,
+        workloadClass: String? = nil,
     ) {
         self.id = id
         self.slug = slug
@@ -76,6 +79,7 @@ public struct VMTemplate: Codable, Sendable, FetchableRecord, PersistableRecord,
         self.minMemoryMB = minMemoryMB
         self.requiredFeaturesJson = requiredFeaturesJson
         self.imageByArchJson = imageByArchJson
+        self.workloadClass = workloadClass
     }
 
     public var architectures: [String] {
@@ -166,6 +170,7 @@ public struct TemplateCatalogEntry: Codable, Sendable {
     public let imageByArch: [String: String]?
     public let minMemoryMB: Int?
     public let requiredFeatures: [String]?
+    public let workloadClass: String?
 
     public init(
         slug: String,
@@ -185,6 +190,7 @@ public struct TemplateCatalogEntry: Codable, Sendable {
         imageByArch: [String: String]? = nil,
         minMemoryMB: Int? = nil,
         requiredFeatures: [String]? = nil,
+        workloadClass: String? = nil,
     ) {
         self.slug = slug
         self.name = name
@@ -203,5 +209,6 @@ public struct TemplateCatalogEntry: Codable, Sendable {
         self.imageByArch = imageByArch
         self.minMemoryMB = minMemoryMB
         self.requiredFeatures = requiredFeatures
+        self.workloadClass = workloadClass
     }
 }

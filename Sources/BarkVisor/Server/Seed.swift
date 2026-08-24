@@ -135,6 +135,7 @@ enum Seeder {
                         entry.requiredFeatures,
                     )
                     existing.imageByArchJson = JSONColumnCoding.encode(entry.imageByArch)
+                    existing.workloadClass = entry.workloadClass
                     existing.updatedAt = now
                     try existing.update(database)
                 } else {
@@ -163,6 +164,7 @@ enum Seeder {
                         minMemoryMB: entry.minMemoryMB,
                         requiredFeaturesJson: JSONColumnCoding.encodeArrayOrNil(entry.requiredFeatures),
                         imageByArchJson: JSONColumnCoding.encode(entry.imageByArch),
+                        workloadClass: entry.workloadClass,
                     )
                     try template.insert(database)
                 }

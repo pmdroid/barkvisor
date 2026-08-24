@@ -624,6 +624,7 @@ export interface VMTemplate {
   requiredFeatures?: string[]
   resolvedImageSlug?: string | null
   compatible?: boolean
+  workloadClass?: 'house' | 'agent'
 }
 
 export interface TemplateCompatibilityReason {

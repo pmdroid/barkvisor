@@ -3,7 +3,7 @@ import Foundation
 /// Mirrors BarkVisorCore.OnyxImage for the native console.
 enum OnyxImage {
     static let name = "Onyx"
-    static let slugs: Set<String> = ["onyx-arm64", "onyx-x86_64"]
+    static let slugs: Set<String> = ["onyx", "onyx-arm64", "onyx-x86_64"]
     static let ollamaAPIBase = "http://10.0.2.2:11434"
     static let defaultMemoryMB = 2_048
     static let defaultDiskGB = 20

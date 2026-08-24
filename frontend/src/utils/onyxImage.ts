@@ -1,5 +1,5 @@
 export const ONYX_NAME = 'Onyx'
-export const ONYX_SLUGS = ['onyx-arm64', 'onyx-x86_64'] as const
+export const ONYX_SLUGS = ['onyx', 'onyx-arm64', 'onyx-x86_64'] as const
 export const ONYX_OLLAMA_API_BASE = 'http://10.0.2.2:11434'
 export const ONYX_WEB_UI_PORT = 80
 export const ONYX_RELEASE_TAG = 'v4.6.2'

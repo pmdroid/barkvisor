@@ -10,7 +10,8 @@ import {
 
 describe('onyxImage', () => {
   test('one image family: slugs for arm64 and x86_64', () => {
-    expect(ONYX_SLUGS).toEqual(['onyx-arm64', 'onyx-x86_64'])
+    expect(ONYX_SLUGS).toEqual(['onyx', 'onyx-arm64', 'onyx-x86_64'])
+    expect(isOnyxImage({ name: 'Onyx', slug: 'onyx' })).toBe(true)
     expect(isOnyxImage({ name: 'Onyx', slug: 'onyx-arm64' })).toBe(true)
     expect(isOnyxImage({ name: 'Ubuntu 24.04 LTS', slug: 'ubuntu-24.04-arm64' })).toBe(false)
     expect(isOnyxImage({ name: 'my onyx lab' })).toBe(false)
