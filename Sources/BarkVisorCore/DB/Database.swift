@@ -113,6 +113,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M013_GPUPassthrough.identifier) { db in
             try M013_GPUPassthrough.migrate(db)
         }
+        migrator.registerMigration(M014_OllamaPerHostSettings.identifier) { db in
+            try M014_OllamaPerHostSettings.migrate(db)
+        }
     }
 }
 

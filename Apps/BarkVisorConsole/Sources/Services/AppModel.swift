@@ -112,6 +112,7 @@ final class AppModel {
     var homeLoaded = false
     var ollamaCatalog: OllamaHomeCatalog?
     var ollamaLoaded = false
+    var ollamaSettings: OllamaSettingsSnapshot?
 
     var showsChat: Bool {
         ChatAvailability.visible(catalog: ollamaCatalog)
@@ -274,6 +275,7 @@ final class AppModel {
         capabilities = nil
         logs = []
         ollamaCatalog = nil
+        ollamaSettings = nil
         if route == .chat { route = .dashboard }
         if phoneTab == .chat { phoneTab = .home }
         phase = url == nil ? .connect : .login
@@ -318,6 +320,7 @@ final class AppModel {
         capabilities = nil
         logs = []
         ollamaCatalog = nil
+        ollamaSettings = nil
         if route == .chat { route = .dashboard }
         if phoneTab == .chat { phoneTab = .home }
         phase = .connect
@@ -358,9 +361,32 @@ final class AppModel {
         do {
             ollamaCatalog = try await requireClient().ollamaCatalog()
             ollamaLoaded = true
+            await refreshOllamaSettings()
         } catch {
             ollamaLoaded = true
             handle(error)
+        }
+    }
+
+    func refreshOllamaSettings() async {
+        do {
+            ollamaSettings = try await requireClient().ollamaSettings()
+        } catch let APIError.http(status, _) where status == 403 {
+            ollamaSettings = nil
+        } catch {
+            ollamaSettings = nil
+            handle(error)
+        }
+    }
+
+    @discardableResult
+    func saveOllamaSettings(_ body: OllamaSettingsUpdate) async -> Bool {
+        do {
+            ollamaSettings = try await requireClient().saveOllamaSettings(body)
+            return true
+        } catch {
+            handle(error)
+            return false
         }
     }
 
@@ -939,6 +965,7 @@ final class AppModel {
         homeUnreachable = []
         homeLoaded = false
         ollamaCatalog = nil
+        ollamaSettings = nil
     }
 
     func refreshOllamaCatalog() async {
@@ -948,6 +975,7 @@ final class AppModel {
         } else {
             ollamaCatalog = nil
         }
+        await refreshOllamaSettings()
         if !showsChat {
             if route == .chat { route = .dashboard }
             if phoneTab == .chat { phoneTab = .home }

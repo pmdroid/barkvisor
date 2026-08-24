@@ -194,8 +194,8 @@ enum CreateWorkload {
         let cloudInit: CloudInitPayload?
         if coding, !iso {
             let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
-            let byo = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                && url != CodingAgentImage.homeOllamaGrantURL
+            let trimmedURL = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let byo = !trimmedURL.isEmpty && url != CodingAgentImage.homeOllamaGrantURL
             let apiKey = try CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo)
             cloudInit = CloudInitPayload(
                 userData: CodingAgentImage.userData(

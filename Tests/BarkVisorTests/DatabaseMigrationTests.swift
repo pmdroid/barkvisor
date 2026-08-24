@@ -409,6 +409,7 @@ struct DatabaseMigrationTests {
 
         let expected = [
             "api_keys", "app_settings", "audit_log", "bridges", "disks", "guest_info",
+            "ollama_host_settings",
             "image_repositories", "images", "networks", "repository_images", "ssh_keys",
             "tus_uploads", "users", "vm_templates", "vms",
         ]

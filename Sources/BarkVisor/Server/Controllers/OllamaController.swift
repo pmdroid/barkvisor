@@ -13,11 +13,6 @@ struct OllamaModelActionRequest: Content {
     var hostId: String?
 }
 
-struct OllamaSettingsUpdate: Content {
-    var endpoint: String?
-    var apiKey: String?
-}
-
 struct OllamaTaskAccepted: Content {
     var taskID: String
     var hostId: String
@@ -60,8 +55,6 @@ struct OllamaController: RouteCollection {
         ollama.post("pull", use: pull)
         ollama.post("start", use: start)
         ollama.post("stop", use: stop)
-        ollama.get("settings", use: getSettings)
-        ollama.put("settings", use: putSettings)
         ollama.post("v1", "chat", "completions", use: localCompletions)
     }
 
@@ -170,28 +163,6 @@ struct OllamaController: RouteCollection {
     }
 
     @Sendable
-    func getSettings(req: Vapor.Request) async throws -> OllamaSettingsSnapshot {
-        _ = try req.requireUser
-        return try await req.db.read { db in
-            try OllamaSettings.snapshot(from: db)
-        }
-    }
-
-    @Sendable
-    func putSettings(req: Vapor.Request) async throws -> OllamaSettingsSnapshot {
-        _ = try req.requireUser
-        let body = try req.content.decode(OllamaSettingsUpdate.self)
-        return try await req.db.write { db in
-            try OllamaSettings.save(
-                endpoint: body.endpoint,
-                apiKey: body.apiKey,
-                updateApiKey: body.apiKey != nil,
-                db: db,
-            )
-        }
-    }
-
-    @Sendable
     func localCompletions(req: Vapor.Request) async throws -> Response {
         let collected = try await req.body.collect(max: HomeDeviceProxy.maxBodyBytes).get()
         guard let buffer = collected else {
@@ -233,9 +204,8 @@ struct OllamaController: RouteCollection {
         if let makeClient {
             return try await makeClient(db)
         }
-        let loaded = try await db.read { db in
-            try OllamaSettings.load(from: db)
+        return try await db.read { db in
+            try OllamaSettings.client(hostId: hostId, from: db)
         }
-        return OllamaClient(baseURL: loaded.endpoint, apiKey: loaded.apiKey)
     }
 }

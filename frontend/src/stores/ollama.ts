@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '../api/client'
-import type { OllamaHomeCatalog, OllamaSettingsSnapshot, OllamaTaskAccepted } from '../api/types'
+import type {
+  OllamaHomeCatalog,
+  OllamaHostSettings,
+  OllamaSettingsSnapshot,
+  OllamaSettingsUpdate,
+  OllamaTaskAccepted,
+} from '../api/types'
 
 export const useOllamaStore = defineStore('ollama', () => {
   const catalog = ref<OllamaHomeCatalog | null>(null)
@@ -33,11 +39,15 @@ export const useOllamaStore = defineStore('ollama', () => {
 
   async function fetchSettings(): Promise<void> {
     try {
-      const { data } = await api.get<OllamaSettingsSnapshot>('/ollama/settings')
+      const { data } = await api.get<OllamaSettingsSnapshot>('/home/ollama/settings')
       settings.value = data
     } catch {
       settings.value = null
     }
+  }
+
+  function hostSettings(hostId: string): OllamaHostSettings | undefined {
+    return settings.value?.hosts.find((row) => row.hostId === hostId)
   }
 
   async function pull(name: string, hostId?: string): Promise<OllamaTaskAccepted> {
@@ -53,8 +63,8 @@ export const useOllamaStore = defineStore('ollama', () => {
     await api.post('/home/ollama/stop', { name, hostId })
   }
 
-  async function saveSettings(payload: { endpoint?: string; apiKey?: string }): Promise<void> {
-    const { data } = await api.put<OllamaSettingsSnapshot>('/ollama/settings', payload)
+  async function saveSettings(payload: OllamaSettingsUpdate): Promise<void> {
+    const { data } = await api.put<OllamaSettingsSnapshot>('/home/ollama/settings', payload)
     settings.value = data
   }
 
@@ -68,6 +78,7 @@ export const useOllamaStore = defineStore('ollama', () => {
     devices,
     fetchCatalog,
     fetchSettings,
+    hostSettings,
     pull,
     start,
     stop,
