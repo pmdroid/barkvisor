@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { HomeDeviceHealthSnapshot, WorkloadHealth } from '../api/types'
-import { deviceWorkloadLine } from '../utils/homeDeviceHealth'
+import {
+  deviceWorkloadLine,
+  isReachabilityOk,
+  reachabilityCardClass,
+  reachabilityHint,
+  reachabilityLabel,
+  reachabilityPillClass,
+} from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { healthLabel } from '../utils/workloadHealth'
 
@@ -9,7 +16,11 @@ const props = defineProps<{
   device: HomeDeviceHealthSnapshot
 }>()
 
-const reachable = computed(() => props.device.reachability === 'ok')
+const reachable = computed(() => isReachabilityOk(props.device.reachability))
+const reachHint = computed(() => reachabilityHint(props.device))
+const reachLabel = computed(() => reachabilityLabel(props.device.reachability))
+const reachPill = computed(() => reachabilityPillClass(props.device.reachability))
+const cardClass = computed(() => reachabilityCardClass(props.device.reachability))
 
 const title = computed(() => {
   if (props.device.displayName && props.device.displayName.trim()) return props.device.displayName
@@ -35,7 +46,7 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
     :to="{ name: 'device-detail', params: { hostId: device.hostId } }"
     :aria-label="`Open workloads on ${title}`"
   >
-  <article class="device-card" :class="{ unreachable: !reachable }">
+  <article class="device-card" :class="cardClass">
     <div class="device-card-top">
       <div>
         <h3>{{ title }}</h3>
@@ -45,13 +56,13 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
           <span>{{ platformLabel }}</span>
         </p>
       </div>
-      <span class="status-pill" :class="reachable ? 'running' : 'failed'">
-        {{ reachable ? 'Reachable' : 'Unreachable' }}
+      <span class="status-pill" :class="reachPill">
+        {{ reachLabel }}
       </span>
     </div>
     <p class="device-card-workloads">{{ workloadLine }}</p>
-    <p v-if="!reachable" class="device-card-hint">
-      This {{ DEVICE_LABEL.toLowerCase() }} is still running locally. The member did not answer.
+    <p v-if="reachHint" class="device-card-hint">
+      {{ reachHint }}
     </p>
     <div v-else-if="device.healthCounts" class="device-card-health">
       <span
@@ -94,6 +105,9 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
 }
 .device-card.unreachable {
   border-color: rgba(248, 113, 113, 0.35);
+}
+.device-card.http-error {
+  border-color: rgba(245, 158, 11, 0.4);
 }
 .device-card-top {
   display: flex;

@@ -342,10 +342,11 @@ public enum HomeDeviceProxyError: Error, LocalizedError, Sendable, Equatable {
         }
     }
 
-    /// Chat / Ollama hop copy. Member 5xx is Ollama down, not Device offline.
+    /// Chat / Ollama hop copy. Member 5xx is Ollama down. 4xx means the Device
+    /// answered and the request was rejected; Ollama itself may still be up.
     public var ollamaHopDescription: String {
         switch self {
-        case let .memberHTTP(status):
+        case let .memberHTTP(status) where (500 ..< 600).contains(status):
             "Ollama is down on the Device (HTTP \(status))"
         default:
             errorDescription ?? "Home cannot hop to the Device"

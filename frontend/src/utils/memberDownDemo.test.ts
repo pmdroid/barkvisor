@@ -7,7 +7,12 @@ import api from '../api/client'
 import type { HomeDeviceHealthReport } from '../api/types'
 import { useDevicesStore } from '../stores/devices'
 import { DEVICE_LABEL } from './terminology'
-import { deviceWorkloadLine, homeWorkloadsRunningLine } from './homeDeviceHealth'
+import {
+  deviceWorkloadLine,
+  homeWorkloadsRunningLine,
+  reachabilityHint,
+  reachabilityLabel,
+} from './homeDeviceHealth'
 
 const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const originalGet = api.get
@@ -67,15 +72,25 @@ describe('member-down demo (PAS-47)', () => {
   })
 
   test('Device card and drill-down say the member is still running locally', () => {
+    expect(reachabilityLabel('unreachable')).toBe('Unreachable')
+    expect(reachabilityHint({ reachability: 'unreachable' })).toBe(
+      `This ${DEVICE_LABEL.toLowerCase()} is still running locally. The member did not answer.`,
+    )
+    expect(
+      reachabilityHint({
+        reachability: 'memberHTTP',
+        reachabilityError: 'Device returned HTTP 503',
+      }),
+    ).toBe('Device returned HTTP 503')
+
     const card = readFileSync(join(srcRoot, 'components/DeviceCard.vue'), 'utf8')
-    expect(card).toContain('Unreachable')
-    expect(card).toContain('still running locally')
-    expect(card).toContain('The member did not answer')
+    expect(card).toContain('reachabilityLabel')
+    expect(card).toContain('reachabilityHint')
     expect(card).toContain(DEVICE_LABEL)
 
     const detail = readFileSync(join(srcRoot, 'views/DeviceDetailView.vue'), 'utf8')
-    expect(detail).toContain('Unreachable')
-    expect(detail).toContain('still running locally')
+    expect(detail).toContain('reachabilityLabel')
+    expect(detail).toContain('reachabilityHint')
     expect(detail).toContain('Workload counts are not shown')
   })
 })

@@ -69,8 +69,8 @@ struct StatusLabel: View {
         StatusLabel(text: WorkloadHealth.label(raw), key: raw)
     }
 
-    static func reachability(_ ok: Bool) -> StatusLabel {
-        StatusLabel(text: ok ? "Reachable" : "Unreachable", key: ok ? "reachable" : "unreachable")
+    static func reachability(_ device: HomeDeviceHealthSnapshot) -> StatusLabel {
+        StatusLabel(text: device.reachabilityLabel, key: device.reachabilityStatusKey)
     }
 }
 

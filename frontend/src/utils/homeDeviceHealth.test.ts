@@ -4,6 +4,11 @@ import {
   deviceWorkloadLine,
   hasKnownHealthCounts,
   homeWorkloadsRunningLine,
+  isReachabilityOk,
+  reachabilityCardClass,
+  reachabilityHint,
+  reachabilityLabel,
+  reachabilityPillClass,
   resolveHealthCounts,
 } from './homeDeviceHealth'
 
@@ -64,6 +69,43 @@ describe('deviceWorkloadLine', () => {
     expect(deviceWorkloadLine({ reachability: 'unreachable', workloadCount: null })).toBe(
       'Health unavailable',
     )
+    expect(deviceWorkloadLine({ reachability: 'memberHTTP', workloadCount: 2 })).toBe(
+      'Health unavailable',
+    )
+  })
+})
+
+describe('reachability copy', () => {
+  test('memberHTTP is HTTP error, not Unreachable', () => {
+    expect(isReachabilityOk('ok')).toBe(true)
+    expect(isReachabilityOk('memberHTTP')).toBe(false)
+    expect(reachabilityLabel('ok')).toBe('Reachable')
+    expect(reachabilityLabel('memberHTTP')).toBe('HTTP error')
+    expect(reachabilityLabel('connectTimeout')).toBe('Timed out')
+    expect(reachabilityLabel('cancelled')).toBe('Cancelled')
+    expect(reachabilityLabel('tlsFailure')).toBe('TLS failed')
+    expect(reachabilityLabel('unreachable')).toBe('Unreachable')
+    expect(reachabilityPillClass('memberHTTP')).toBe('degraded')
+    expect(reachabilityPillClass('ok')).toBe('running')
+    expect(reachabilityPillClass('connectTimeout')).toBe('failed')
+    expect(reachabilityCardClass('memberHTTP')).toBe('http-error')
+    expect(reachabilityCardClass('unreachable')).toBe('unreachable')
+    expect(reachabilityHint({ reachability: 'ok' })).toBeNull()
+    expect(
+      reachabilityHint({
+        reachability: 'memberHTTP',
+        reachabilityError: 'Device returned HTTP 503',
+      }),
+    ).toBe('Device returned HTTP 503')
+    expect(reachabilityHint({ reachability: 'unreachable' })).toBe(
+      'This device is still running locally. The member did not answer.',
+    )
+    expect(
+      reachabilityHint({
+        reachability: 'connectTimeout',
+        reachabilityError: 'Home cannot hop to the Device: connection timed out',
+      }),
+    ).toBe('Home cannot hop to the Device: connection timed out')
   })
 })
 
