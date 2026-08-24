@@ -31,7 +31,13 @@ import {
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
 import { canFetchDeviceWorkloads, deviceCapabilitiesPath, deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
-import { deviceResourcesLine, deviceWorkloadLine } from '../utils/homeDeviceHealth'
+import {
+  deviceResourcesLine,
+  deviceWorkloadLine,
+  reachabilityHint,
+  reachabilityLabel,
+  reachabilityPillClass,
+} from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
@@ -46,7 +52,9 @@ const toast = useToastStore()
 
 const hostId = computed(() => String(route.params.hostId ?? ''))
 const device = computed(() => devices.deviceByHostId(hostId.value))
-const reachable = computed(() => device.value?.reachability === 'ok')
+const reachLabel = computed(() => reachabilityLabel(device.value?.reachability))
+const reachPill = computed(() => reachabilityPillClass(device.value?.reachability))
+const reachHint = computed(() => (device.value ? reachabilityHint(device.value) : null))
 const title = computed(() => {
   if (!device.value) return hostId.value
   return devices.deviceLabel(device.value)
@@ -325,8 +333,8 @@ async function doStop() {
           >
             Create VM
           </AppButton>
-          <span class="status-pill" :class="reachable ? 'running' : 'failed'">
-            {{ reachable ? 'Reachable' : 'Unreachable' }}
+          <span class="status-pill" :class="reachPill">
+            {{ reachLabel }}
           </span>
         </div>
       </div>
@@ -379,8 +387,8 @@ async function doStop() {
       </div>
 
       <p v-if="!canFetchDeviceWorkloads(device)" class="unreachable-copy">
-        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Workload counts are not shown.
-        This {{ DEVICE_LABEL.toLowerCase() }} is still running locally.
+        {{ reachHint }}
+        Workload counts are not shown.
       </p>
 
       <template v-else>

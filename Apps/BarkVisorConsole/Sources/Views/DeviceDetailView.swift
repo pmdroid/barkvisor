@@ -12,7 +12,7 @@ struct DeviceDetailView: View {
             Section {
                 LabeledContent("Platform", value: device.platformLabel)
                 LabeledContent("Status") {
-                    StatusLabel.reachability(device.isReachable)
+                    StatusLabel.reachability(device)
                 }
                 LabeledContent(Copy.workloads, value: device.workloadLine)
                 if let resources = device.resourcesLine {
@@ -22,7 +22,7 @@ struct DeviceDetailView: View {
 
             if !DeviceStatsHistory.shouldFetch(device) {
                 Section {
-                    Text(DeviceStatsHistory.unreachableCopy)
+                    Text(DeviceStatsHistory.unavailableCopy(device))
                         .foregroundStyle(.secondary)
                 }
             } else {

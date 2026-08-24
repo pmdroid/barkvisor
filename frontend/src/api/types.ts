@@ -878,7 +878,13 @@ export type HostBridgeReadiness = {
 export type CurrentHostCapabilities = SystemCapabilities
 
 export type HomeDeviceRole = 'self' | 'member'
-export type HomeDeviceReachability = 'ok' | 'unreachable'
+export type HomeDeviceReachability =
+  | 'ok'
+  | 'unreachable'
+  | 'connectTimeout'
+  | 'cancelled'
+  | 'tlsFailure'
+  | 'memberHTTP'
 
 export interface HomeDevicePlatformSummary {
   os: string

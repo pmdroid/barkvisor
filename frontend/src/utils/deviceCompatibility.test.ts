@@ -8,6 +8,7 @@ import {
   templateIncompatibilityReasons,
   toPickOption,
 } from './deviceCompatibility'
+import { reachabilityHint, reachabilityLabel } from './homeDeviceHealth'
 
 function device(
   partial: Partial<HomeDeviceHealthSnapshot> & Pick<HomeDeviceHealthSnapshot, 'hostId' | 'role'>,
@@ -67,8 +68,41 @@ describe('deviceCompatibility (PAS-34)', () => {
     const self = device({ hostId: 'desk', role: 'self', reachability: 'unreachable' })
     const peer = device({ hostId: 'studio', role: 'member', reachability: 'unreachable' })
     expect(createVMIncompatibilityReasons(self)).toEqual([])
-    expect(createVMIncompatibilityReasons(peer)).toEqual(['Device is unreachable'])
-    expect(templateIncompatibilityReasons(peer, template())).toEqual(['Device is unreachable'])
+    expect(createVMIncompatibilityReasons(peer)).toEqual([reachabilityHint(peer)!])
+    expect(templateIncompatibilityReasons(peer, template())).toEqual([reachabilityHint(peer)!])
+  })
+
+  test('placement reasons use hop reachability codes', () => {
+    const timedOut = device({
+      hostId: 'studio',
+      role: 'member',
+      reachability: 'connectTimeout',
+      reachabilityError: 'Home cannot hop to the Device: connection timed out',
+    })
+    expect(createVMIncompatibilityReasons(timedOut)).toEqual([
+      'Home cannot hop to the Device: connection timed out',
+    ])
+    expect(templateIncompatibilityReasons(timedOut, template())).toEqual([
+      'Home cannot hop to the Device: connection timed out',
+    ])
+
+    const http = device({
+      hostId: 'studio',
+      role: 'member',
+      reachability: 'memberHTTP',
+      reachabilityError: 'Device returned HTTP 503',
+    })
+    expect(createVMIncompatibilityReasons(http)).toEqual(['Device returned HTTP 503'])
+
+    const tls = device({ hostId: 'studio', role: 'member', reachability: 'tlsFailure' })
+    expect(createVMIncompatibilityReasons(tls)).toEqual([reachabilityLabel('tlsFailure')])
+
+    const timedOutBare = device({
+      hostId: 'studio',
+      role: 'member',
+      reachability: 'connectTimeout',
+    })
+    expect(createVMIncompatibilityReasons(timedOutBare)).toEqual([reachabilityLabel('connectTimeout')])
   })
 
   test('PAS-33 arch fields disable a Device that cannot run the guest', () => {

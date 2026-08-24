@@ -49,6 +49,32 @@ struct DeviceDetailTests {
         #expect(!DeviceStatsHistory.unreachableCopy.localizedCaseInsensitiveContains("cluster"))
     }
 
+    @Test func `memberHTTP is HTTP error not Unreachable`() {
+        var http = snapshot(hostId: "peer", role: "member", title: "Studio", reachable: false)
+        http.reachability = "memberHTTP"
+        http.reachabilityError = "Device returned HTTP 503"
+        #expect(DeviceReachability.label("memberHTTP") == "HTTP error")
+        #expect(DeviceReachability.statusKey("memberHTTP") == "degraded")
+        #expect(DeviceReachability.label("connectTimeout") == "Timed out")
+        #expect(DeviceReachability.statusKey("connectTimeout") == "failed")
+        #expect(http.reachabilityLabel == "HTTP error")
+        let pill = StatusLabel.reachability(http)
+        #expect(pill.text == "HTTP error")
+        #expect(pill.key == "degraded")
+        #expect(!pill.text.localizedCaseInsensitiveContains("unreachable"))
+        let copy = DeviceStatsHistory.unavailableCopy(http)
+        #expect(copy.contains("Device returned HTTP 503"))
+        #expect(!copy.contains("did not answer"))
+
+        let down = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        #expect(StatusLabel.reachability(down).text == "Unreachable")
+        #expect(DeviceStatsHistory.unavailableCopy(down) == DeviceStatsHistory.unreachableCopy)
+
+        var ok = snapshot(hostId: "ok", role: "member", title: "Office", reachable: true)
+        ok.reachability = "ok"
+        #expect(DeviceStatsHistory.unavailableCopy(ok) != DeviceStatsHistory.unreachableCopy)
+    }
+
     @Test func `history path uses local api or home proxy`() throws {
         let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")))
         let studio = snapshot(hostId: "self", role: "self", title: "Studio")
