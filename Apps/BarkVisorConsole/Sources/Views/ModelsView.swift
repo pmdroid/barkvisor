@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct ModelsView: View {
@@ -16,6 +17,10 @@ struct ModelsView: View {
     @State private var keyHostId = ""
     @State private var keyDraft = ""
     @State private var keySaving = false
+    @State private var statsHostId = ""
+    @State private var points: [DeviceStatsChartPoint] = []
+    @State private var hostGPUs: [HostGPUDevice] = []
+    @State private var gpusLoaded = false
 
     var body: some View {
         Group {
@@ -42,6 +47,7 @@ struct ModelsView: View {
             } else {
                 List {
                     howToSection
+                    liveStatsSection
                     Section("Pull a model") {
                         TextField("llama3", text: $pullName)
                         OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)
@@ -86,17 +92,31 @@ struct ModelsView: View {
         .navigationTitle("Ollama")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                ShareLink(
-                    item: OllamaPsShareFile(models: catalog.models),
-                    preview: SharePreview(OllamaPsExport.filename),
-                ) {
-                    Label("Export JSON", systemImage: "square.and.arrow.up")
+                Menu {
+                    ShareLink(
+                        item: OllamaPsShareFile(models: catalog.models),
+                        preview: SharePreview(OllamaPsExport.filename),
+                    ) {
+                        Label("Export JSON", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(catalog.models.isEmpty)
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
                 }
-                .disabled(catalog.models.isEmpty)
             }
         }
-        .refreshable { await model.refreshOllama() }
-        .task { await model.refreshOllama() }
+        .refreshable {
+            await model.refreshOllama()
+            await loadLiveStats()
+        }
+        .task {
+            await model.refreshOllama()
+            syncStatsHost()
+            await loadLiveStats()
+        }
+        .task(id: statsHostId) {
+            await loadLiveStats()
+        }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
             startSheet(row)
         }
@@ -315,6 +335,151 @@ struct ModelsView: View {
         #if os(iOS)
         .presentationDetents([.medium])
         #endif
+    }
+
+    @ViewBuilder
+    private var liveStatsSection: some View {
+        Section {
+            Picker(Copy.device, selection: $statsHostId) {
+                ForEach(statsPickerDevices) { device in
+                    Text(device.reachable ? device.title : "\(device.title) (unreachable)").tag(device.hostId)
+                }
+            }
+            if !fetchLiveStats {
+                Text(OllamaDeviceStats.unreachableCopy)
+                    .foregroundStyle(.secondary)
+                LabeledContent("CPU", value: "unknown")
+                LabeledContent("Memory", value: "unknown")
+                LabeledContent("GPU", value: "unknown")
+            } else {
+                if points.count > 1 {
+                    Chart(points) { point in
+                        LineMark(
+                            x: .value("Time", point.date),
+                            y: .value("CPU", point.cpuPercent),
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(Color.accentColor.opacity(0.8))
+                        AreaMark(
+                            x: .value("Time", point.date),
+                            y: .value("CPU", point.cpuPercent),
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(Color.accentColor.opacity(0.12))
+                    }
+                    .chartYScale(domain: 0 ... 100)
+                    .chartXAxis(.hidden)
+                    .frame(height: 140)
+                    .accessibilityLabel("CPU history")
+                }
+                LabeledContent("CPU", value: cpuNow)
+                if points.count > 1 {
+                    Chart(points) { point in
+                        LineMark(
+                            x: .value("Time", point.date),
+                            y: .value("Memory", point.memoryUsedGB),
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(Color.green.opacity(0.8))
+                        AreaMark(
+                            x: .value("Time", point.date),
+                            y: .value("Memory", point.memoryUsedGB),
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(Color.green.opacity(0.12))
+                    }
+                    .chartYScale(domain: 0 ... memoryCeiling)
+                    .chartXAxis(.hidden)
+                    .frame(height: 140)
+                    .accessibilityLabel("Memory history")
+                }
+                LabeledContent("Memory", value: memoryNow)
+            }
+        } header: {
+            Text("Device stats")
+        }
+
+        if fetchLiveStats {
+            Section("GPU") {
+                if gpusLoaded, hostGPUs.isEmpty {
+                    Text(OllamaDeviceStats.gpuEmptyCopy)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(hostGPUs) { gpu in
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(OllamaDeviceStats.occupancyLines(gpu), id: \.self) { line in
+                                Text(line)
+                                    .foregroundStyle(line == gpu.name ? .primary : .secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var statsPickerDevices: [OllamaDeviceStatus] {
+        catalog.devices.filter { $0.reachable || $0.hostId == statsHostId }
+    }
+
+    private var selectedCatalogDevice: OllamaDeviceStatus? {
+        catalog.devices.first { $0.hostId == statsHostId }
+    }
+
+    private var statsHealth: HomeDeviceHealthSnapshot? {
+        OllamaDeviceStats.healthTarget(
+            hostId: statsHostId,
+            catalog: catalog.devices,
+            devices: model.devices,
+        )
+    }
+
+    private var fetchLiveStats: Bool {
+        OllamaDeviceStats.shouldFetch(catalogDevice: selectedCatalogDevice, health: statsHealth)
+    }
+
+    private var cpuNow: String {
+        if let last = points.last {
+            return String(format: "%.0f%%", last.cpuPercent)
+        }
+        if let cpu = statsHealth?.resources?.cpuLoadPercent {
+            return String(format: "%.0f%%", cpu)
+        }
+        return "—"
+    }
+
+    private var memoryNow: String {
+        if let last = points.last {
+            return String(format: "%.1f / %.0f GB", last.memoryUsedGB, last.memoryTotalGB)
+        }
+        if let used = statsHealth?.resources?.memoryUsedMB, let total = statsHealth?.resources?.memoryTotalMB {
+            return String(format: "%.1f / %.0f GB", Double(used) / 1_024, Double(total) / 1_024)
+        }
+        return "—"
+    }
+
+    private var memoryCeiling: Double {
+        max(points.last?.memoryTotalGB ?? 1, 1)
+    }
+
+    private func syncStatsHost() {
+        if statsHostId.isEmpty || !catalog.devices.contains(where: { $0.hostId == statsHostId }) {
+            statsHostId = OllamaDeviceStats.defaultHostId(models: catalog.models, devices: catalog.devices)
+        }
+    }
+
+    private func loadLiveStats() async {
+        syncStatsHost()
+        guard fetchLiveStats, let target = statsHealth else {
+            points = []
+            hostGPUs = []
+            gpusLoaded = true
+            return
+        }
+        gpusLoaded = false
+        points = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
+        hostGPUs = await model.gpuDevices(on: target)
+        gpusLoaded = true
     }
 
     private var pullFraction: Double? {
