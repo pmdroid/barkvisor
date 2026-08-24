@@ -966,6 +966,29 @@ struct PairingIssue: Decodable, Hashable {
     var apiVersion: Int
 }
 
+struct RemoteAccessTailnet: Decodable, Hashable {
+    var available: Bool
+    var ip: String?
+    var dnsName: String?
+}
+
+struct RemoteAccessWireGuard: Decodable, Hashable {
+    var configured: Bool
+}
+
+struct RemoteAccessStatus: Decodable, Hashable {
+    var tailscale: RemoteAccessTailnet
+    var wireguard: RemoteAccessWireGuard
+    var advertiseUrl: String?
+    var requireTailnetForRemote: Bool
+    var advertisedHosts: [String]
+}
+
+struct RemoteAccessUpdate: Encodable, Equatable {
+    var requireTailnetForRemote: Bool
+    var advertiseUrl: String
+}
+
 enum PairingExpiry {
     /// Remaining TTL from the offer's absolute `expiresAt`, not the issued `ttlSeconds` snapshot.
     static func remainingSeconds(expiresAt: String, now: Date = Date()) -> Int {

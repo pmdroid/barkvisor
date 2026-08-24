@@ -113,6 +113,7 @@ final class AppModel {
     var ollamaCatalog: OllamaHomeCatalog?
     var ollamaLoaded = false
     var ollamaSettings: OllamaSettingsSnapshot?
+    var remoteAccess: RemoteAccessStatus?
 
     var showsChat: Bool {
         ChatAvailability.visible(catalog: ollamaCatalog)
@@ -362,9 +363,29 @@ final class AppModel {
             ollamaCatalog = try await requireClient().ollamaCatalog()
             ollamaLoaded = true
             await refreshOllamaSettings()
+            await loadRemoteAccess()
         } catch {
             ollamaLoaded = true
             handle(error)
+        }
+    }
+
+    func loadRemoteAccess() async {
+        do {
+            remoteAccess = try await requireClient().remoteAccess()
+        } catch {
+            handle(error)
+        }
+    }
+
+    @discardableResult
+    func saveRemoteAccess(_ body: RemoteAccessUpdate) async -> Bool {
+        do {
+            remoteAccess = try await requireClient().saveRemoteAccess(body)
+            return true
+        } catch {
+            handle(error)
+            return false
         }
     }
 
@@ -651,7 +672,7 @@ final class AppModel {
         case .devices:
             await refreshPhoneDevices()
         case .settings:
-            break
+            await loadRemoteAccess()
         }
     }
 
@@ -1055,6 +1076,7 @@ final class AppModel {
         case .settings:
             await loadPairing()
             await loadLoginOffer()
+            await loadRemoteAccess()
         case .devices:
             _ = try? await refreshDevices()
         case .library:

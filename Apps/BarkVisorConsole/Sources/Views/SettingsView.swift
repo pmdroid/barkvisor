@@ -27,6 +27,7 @@ struct SettingsView: View {
 
             if model.client != nil {
                 APIKeysSection()
+                RemoteAccessSection()
             }
 
             #if os(macOS)
@@ -86,6 +87,120 @@ struct SettingsView: View {
             NSPasteboard.general.setString(text, forType: .string)
         }
     #endif
+}
+
+private struct RemoteAccessSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var selectedHost = ""
+    @State private var customHost = ""
+    @State private var requireTailnet = false
+    @State private var saving = false
+
+    var body: some View {
+        Section {
+            Text(
+                "LAN works without a VPN. For off-LAN, install Tailscale on this \(Copy.device) and the phone or laptop. BarkVisor does not bundle Tailscale. Pairing and inference URLs use the advertise URL, then the tailnet address, then a LAN IP.",
+            )
+            .foregroundStyle(.secondary)
+            if let status = model.remoteAccess {
+                if status.tailscale.available {
+                    Text(tailscaleLine(status.tailscale))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Tailscale is not detected. Install tailscaled, sign in, then reload.")
+                        .foregroundStyle(.secondary)
+                }
+                Text(
+                    status.wireguard.configured
+                        ? "WireGuard: a tunnel interface is present. BarkVisor does not configure WireGuard."
+                        : "WireGuard: not detected.",
+                )
+                .foregroundStyle(.secondary)
+                Picker("Advertise URL", selection: $selectedHost) {
+                    ForEach(status.advertisedHosts, id: \.self) { host in
+                        Text(host).tag(host)
+                    }
+                    Text("Other / DNS name…").tag(PairingAdvertisedHost.customSentinel)
+                }
+                .pickerStyle(.menu)
+                .disabled(saving)
+                if selectedHost == PairingAdvertisedHost.customSentinel {
+                    TextField("hostname, MagicDNS, or tailnet IP", text: $customHost)
+                    #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    #endif
+                        .disabled(saving)
+                }
+                Toggle(
+                    "Require Tailscale (or LAN) for the Home API off this network",
+                    isOn: $requireTailnet,
+                )
+                .disabled(saving)
+                Button("Save remote access") { save() }
+                    .disabled(saving)
+            } else {
+                Text("Could not load remote access.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Remote access")
+        }
+        .task {
+            await model.loadRemoteAccess()
+            syncPicker()
+        }
+        .onChange(of: model.remoteAccess, initial: true) { _, _ in
+            syncPicker()
+        }
+    }
+
+    private func syncPicker() {
+        guard let status = model.remoteAccess else { return }
+        let picker = PairingAdvertisedHost.syncAdvertisePicker(
+            advertiseUrl: status.advertiseUrl,
+            listedHosts: status.advertisedHosts,
+        )
+        selectedHost = picker.selectedHost
+        customHost = picker.customHost
+        requireTailnet = status.requireTailnetForRemote
+    }
+
+    private func save() {
+        if selectedHost != PairingAdvertisedHost.customSentinel {
+            if PairingAdvertisedHost.applyListedHost(selectedHost, currentIssued: nil) == .rejectedHost {
+                model.banner = PairingAdvertisedHost.rejectedMessage
+                return
+            }
+        } else {
+            let trimmed = customHost.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty,
+               PairingAdvertisedHost.applyCustomHost(trimmed, currentIssued: nil) == .rejectedHost {
+                model.banner = PairingAdvertisedHost.rejectedMessage
+                return
+            }
+        }
+        let host = PairingAdvertisedHost.hostForOffer(selectedHost: selectedHost, customHost: customHost) ?? ""
+        saving = true
+        Task {
+            _ = await model.saveRemoteAccess(
+                RemoteAccessUpdate(requireTailnetForRemote: requireTailnet, advertiseUrl: host),
+            )
+            saving = false
+            syncPicker()
+        }
+    }
+
+    private func tailscaleLine(_ tail: RemoteAccessTailnet) -> String {
+        var line = "Tailscale is up"
+        if let ip = tail.ip, !ip.isEmpty {
+            line += " — \(ip)"
+        }
+        if let dns = tail.dnsName, !dns.isEmpty {
+            line += " (\(dns))"
+        }
+        return line
+    }
 }
 
 #if os(macOS)

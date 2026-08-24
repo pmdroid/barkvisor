@@ -37,6 +37,18 @@ export function advertisedHostForOffer(selectedHost: string, customHost: string)
   return host.length > 0 ? host : undefined
 }
 
+/** Settings advertise-URL picker: listed host, or Other / DNS name. */
+export function syncAdvertiseHostPicker(
+  advertiseUrl: string | null | undefined,
+  advertisedHosts: string[],
+): { selectedHost: string; customHost: string } {
+  const host = advertiseUrl?.trim() ?? ''
+  if (host && advertisedHosts.includes(host)) {
+    return { selectedHost: host, customHost: '' }
+  }
+  return { selectedHost: CUSTOM_ADVERTISED_HOST, customHost: host }
+}
+
 /** Host baked into a pairing URI (`host=`). */
 export function pairingHostFromPayload(qrPayload: string): string | null {
   try {

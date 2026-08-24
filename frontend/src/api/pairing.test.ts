@@ -9,6 +9,7 @@ import {
   issuedAdvertisedHost,
   pairingHostFromPayload,
   PAIRING_URI_PREFIX,
+  syncAdvertiseHostPicker,
 } from './pairing'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -105,5 +106,36 @@ describe('PAS-51 pairing client', () => {
       'box.home.example',
     )
     expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '   ')).toBeUndefined()
+  })
+
+  test('advertise URL picker selects listed hosts or custom', () => {
+    const hosts = ['studio.local', '192.168.0.8', '100.64.0.8', 'box.tailnet.ts.net']
+    expect(syncAdvertiseHostPicker('192.168.0.8', hosts)).toEqual({
+      selectedHost: '192.168.0.8',
+      customHost: '',
+    })
+    expect(syncAdvertiseHostPicker('box.tailnet.ts.net', hosts)).toEqual({
+      selectedHost: 'box.tailnet.ts.net',
+      customHost: '',
+    })
+    expect(syncAdvertiseHostPicker('home.ts.net', hosts)).toEqual({
+      selectedHost: CUSTOM_ADVERTISED_HOST,
+      customHost: 'home.ts.net',
+    })
+    expect(syncAdvertiseHostPicker(null, hosts)).toEqual({
+      selectedHost: CUSTOM_ADVERTISED_HOST,
+      customHost: '',
+    })
+    expect(advertisedHostForOffer('100.64.0.8', '')).toBe('100.64.0.8')
+    expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '  nas.home  ')).toBe('nas.home')
+    expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '')).toBeUndefined()
+
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    expect(settings).toContain('syncAdvertiseHostPicker')
+    expect(settings).toContain('advertiseHostOptions')
+    expect(settings).toContain('advertiseSelected')
+    expect(settings).toContain('Advertise URL')
+    expect(settings).not.toContain('advertiseDraft')
+    expect(settings).toContain("api.put<RemoteAccessStatus>('/home/settings/remote-access'")
   })
 })

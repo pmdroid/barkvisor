@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import type { OllamaCatalogModel, OllamaTaskAccepted } from '../api/types'
+import type { OllamaCatalogModel, OllamaTaskAccepted, RemoteAccessStatus } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppModal from '../components/ui/AppModal.vue'
@@ -19,7 +19,7 @@ import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
-import { inferenceHowToFromOrigin } from '../utils/inferenceApiHowTo'
+import { inferenceHowToFromOrigin, tailnetListenHost } from '../utils/inferenceApiHowTo'
 
 const auth = useAuthStore()
 const store = useOllamaStore()
@@ -42,9 +42,14 @@ const starting = ref(false)
 const stopTarget = ref<OllamaCatalogModel | null>(null)
 const stopping = ref(false)
 const copied = ref('')
+const remoteAccess = ref<RemoteAccessStatus | null>(null)
 
 const howTo = computed(() =>
-  inferenceHowToFromOrigin(window.location.origin, { role: 'self' }),
+  inferenceHowToFromOrigin(window.location.origin, {
+    role: 'self',
+    advertiseHost: remoteAccess.value?.advertiseUrl,
+    tailnetHost: tailnetListenHost(remoteAccess.value?.tailscale),
+  }),
 )
 
 async function copySnippet(key: string, text: string) {
@@ -87,8 +92,18 @@ const pullProgressLabel = computed(() => {
 })
 
 let pollTimer: number
+async function fetchRemoteAccess() {
+  try {
+    const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
+    remoteAccess.value = data
+  } catch {
+    remoteAccess.value = null
+  }
+}
+
 onMounted(() => {
   void store.fetchCatalog()
+  void fetchRemoteAccess()
   if (auth.isAdmin) {
     void store.fetchSettings()
     void devices.fetchHealth()

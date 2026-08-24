@@ -363,11 +363,12 @@ public enum PairingAddresses {
     }
 
     /// Pairing/login picker: configured advertise URL, then MagicDNS / tailnet
-    /// IP, then interface addresses. Duplicates are dropped.
+    /// IP, then hostname, then interface addresses. Duplicates are dropped.
     public static func advertisedHosts(
         from interfaces: [HostInterfaceInfo] = HostInfoService.listInterfaceAddresses(),
         tailnet: TailnetInfo? = nil,
         advertiseUrl: String? = nil,
+        hostname: String? = nil,
     ) -> [String] {
         var seen = Set<String>()
         var preferred: [String] = []
@@ -382,6 +383,7 @@ public enum PairingAddresses {
             add(tailnet?.dnsName)
             add(tailnet?.ip)
         }
+        add(hostname)
         let rest = advertisedIPv4(from: interfaces).filter { seen.insert($0).inserted }
         return preferred + rest
     }

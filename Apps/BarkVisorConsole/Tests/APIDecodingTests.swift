@@ -6,6 +6,36 @@ import Testing
 struct APIDecodingTests {
     private let decoder = JSONDecoder()
 
+    @Test func `remote access status decodes advertised hosts`() throws {
+        let json = """
+        {
+          "tailscale": { "available": true, "ip": "100.64.0.8", "dnsName": "box.tailnet.ts.net" },
+          "wireguard": { "configured": false },
+          "advertiseUrl": "box.tailnet.ts.net",
+          "requireTailnetForRemote": false,
+          "advertisedHosts": ["box.tailnet.ts.net", "100.64.0.8", "192.168.0.8"]
+        }
+        """.data(using: .utf8)!
+        let status = try decoder.decode(RemoteAccessStatus.self, from: json)
+        #expect(status.advertiseUrl == "box.tailnet.ts.net")
+        #expect(status.advertisedHosts == ["box.tailnet.ts.net", "100.64.0.8", "192.168.0.8"])
+        #expect(status.tailscale.available)
+        #expect(
+            PairingAdvertisedHost.syncAdvertisePicker(
+                advertiseUrl: status.advertiseUrl,
+                listedHosts: status.advertisedHosts,
+            ) == .init(selectedHost: "box.tailnet.ts.net", customHost: ""),
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode(
+            RemoteAccessUpdate(requireTailnetForRemote: true, advertiseUrl: "192.168.0.8"),
+        )
+        let object = try decoder.decode(RemoteAccessUpdateJSON.self, from: body)
+        #expect(object.requireTailnetForRemote == true)
+        #expect(object.advertiseUrl == "192.168.0.8")
+    }
+
     @Test func `home device health report decodes`() throws {
         let json = """
         {
@@ -592,4 +622,9 @@ struct APIDecodingTests {
             gpuDevices: nil,
         )
     }
+}
+
+private struct RemoteAccessUpdateJSON: Decodable {
+    var requireTailnetForRemote: Bool
+    var advertiseUrl: String
 }

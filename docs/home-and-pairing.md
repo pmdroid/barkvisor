@@ -77,7 +77,7 @@ BarkVisor does not ship Tailscale. Install [tailscaled](https://tailscale.com/do
 
 On **Settings → Home**:
 
-- **Advertise URL** — optional host stamped on a new pairing or sign-in QR as `host=` when you do not pick another address. Accepts a LAN IP, CGNAT `100.64/10` address, or DNS name (MagicDNS). You can paste `http://box.ts.net:7777`; only the host is stored.
+- **Advertise URL** — pick hostname, LAN IP, Tailscale IP, or MagicDNS (or **Other / DNS name…**). That host is stamped on a new pairing or sign-in QR as `host=` when you do not pick another address, and Models inference how-to uses it for `OPENAI_BASE_URL`. You can paste `https://box.ts.net`; only the host is stored. LAN inference stays `http://<host>:7777`.
 - **Require Tailscale (or LAN) for the Home API** — off by default. When on, requests to this Device from a public address return 403. Loopback, RFC1918, IPv6 unique-local, and `100.64.0.0/10` (except `100.100.100.200`) stay allowed. The gate uses the TCP peer on `:7777`, not `X-Forwarded-For`. Do not put a local reverse proxy in front of BarkVisor if you rely on this checkbox.
 
 LAN management never needs a VPN.
