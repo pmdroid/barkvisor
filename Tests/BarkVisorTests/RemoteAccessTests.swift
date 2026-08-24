@@ -191,6 +191,16 @@ struct RemoteAccessTests {
             PairingAddresses.advertisedHosts(from: ifaces, tailnet: tailnet, advertiseUrl: nil)
                 .first == "box.tailnet.ts.net",
         )
+        #expect(
+            PairingAddresses.advertisedHosts(
+                from: ifaces, tailnet: tailnet, advertiseUrl: nil, hostname: "studio.local",
+            ) == [
+                "box.tailnet.ts.net",
+                "100.64.12.34",
+                "studio.local",
+                "192.168.0.4",
+            ],
+        )
         let down = TailnetInfo(
             available: false, ip: nil, dnsName: "stale.tailnet.ts.net",
         )

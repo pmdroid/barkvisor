@@ -30,16 +30,19 @@ public struct RemoteAccessStatus: Codable, Sendable, Equatable {
     public var wireguard: WireGuardInfo
     public var advertiseUrl: String?
     public var requireTailnetForRemote: Bool
+    public var advertisedHosts: [String]
 
     public init(
         tailscale: TailnetInfo,
         wireguard: WireGuardInfo,
         advertiseUrl: String?,
         requireTailnetForRemote: Bool,
+        advertisedHosts: [String] = [],
     ) {
         self.tailscale = tailscale
         self.wireguard = wireguard
         self.advertiseUrl = advertiseUrl
         self.requireTailnetForRemote = requireTailnetForRemote
+        self.advertisedHosts = advertisedHosts
     }
 }

@@ -25,6 +25,8 @@ struct InferenceAPIHowToTests {
             #expect(source.contains("OPENAI_BASE_URL"))
             #expect(source.contains("OPENAI_API_KEY"))
             #expect(source.contains("<inference-key>"))
+            #expect(source.contains("advertiseHost"))
+            #expect(source.contains("tailnetHost"))
             #expect(!source.contains(":7778"))
         }
         #expect(CodingAgentImage.deviceOllamaBaseURL == "http://10.0.2.2:11434/v1")

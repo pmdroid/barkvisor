@@ -15,6 +15,7 @@ import {
   joinHome,
   isPairingPayload,
   revokePairingCode,
+  syncAdvertiseHostPicker,
   type PairingIssue,
 } from '../api/pairing'
 import {
@@ -325,16 +326,31 @@ const depotSaving = ref(false)
 const remoteAccess = ref<RemoteAccessStatus | null>(null)
 const remoteAccessLoading = ref(false)
 const remoteAccessSaving = ref(false)
-const advertiseDraft = ref('')
+const advertiseSelected = ref('')
+const advertiseCustom = ref('')
 const requireTailnetDraft = ref(false)
+
+const advertiseHostOptions = computed(() => {
+  const hosts = remoteAccess.value?.advertisedHosts ?? pairingOffer.value?.advertisedHosts ?? []
+  return [
+    ...hosts.map((host) => ({ value: host, label: host })),
+    { value: CUSTOM_ADVERTISED_HOST, label: 'Other / DNS name…' },
+  ]
+})
+
+function applyRemoteAccess(data: RemoteAccessStatus) {
+  remoteAccess.value = data
+  requireTailnetDraft.value = data.requireTailnetForRemote
+  const picker = syncAdvertiseHostPicker(data.advertiseUrl, data.advertisedHosts ?? [])
+  advertiseSelected.value = picker.selectedHost
+  advertiseCustom.value = picker.customHost
+}
 
 async function fetchRemoteAccess() {
   remoteAccessLoading.value = true
   try {
     const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
-    remoteAccess.value = data
-    advertiseDraft.value = data.advertiseUrl ?? ''
-    requireTailnetDraft.value = data.requireTailnetForRemote
+    applyRemoteAccess(data)
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e, 'Could not load remote access'))
   } finally {
@@ -344,15 +360,14 @@ async function fetchRemoteAccess() {
 
 async function saveRemoteAccess() {
   if (!remoteAccess.value) return
+  const advertiseUrl = advertisedHostForOffer(advertiseSelected.value, advertiseCustom.value) ?? ''
   remoteAccessSaving.value = true
   try {
     const { data } = await api.put<RemoteAccessStatus>('/home/settings/remote-access', {
       requireTailnetForRemote: requireTailnetDraft.value,
-      advertiseUrl: advertiseDraft.value,
+      advertiseUrl,
     })
-    remoteAccess.value = data
-    advertiseDraft.value = data.advertiseUrl ?? ''
-    requireTailnetDraft.value = data.requireTailnetForRemote
+    applyRemoteAccess(data)
     toast.success('Remote access saved')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e, 'Could not save remote access'))
@@ -669,21 +684,30 @@ onUnmounted(() => {
       <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
         WireGuard:
         {{ remoteAccess?.wireguard.configured ? 'a tunnel interface is present' : 'not detected' }}.
-        BarkVisor does not configure WireGuard. If you run your own tunnel, put that address in
-        the advertise URL.
+        BarkVisor does not configure WireGuard. If you run your own tunnel, pick that address
+        as the advertise URL.
       </p>
       <div class="form-group" style="margin:0 0 12px;text-align:left">
         <label for="advertise-url">Advertise URL</label>
-        <input
+        <AppSelect
           id="advertise-url"
-          v-model="advertiseDraft"
-          class="pairing-input"
-          type="text"
-          placeholder="hostname, MagicDNS, or tailnet IP"
-          autocomplete="off"
-          spellcheck="false"
+          :modelValue="advertiseSelected"
+          :options="advertiseHostOptions"
           :disabled="!remoteAccess || remoteAccessLoading || remoteAccessSaving"
+          @update:modelValue="advertiseSelected = $event"
         />
+        <div v-if="advertiseSelected === CUSTOM_ADVERTISED_HOST" class="pairing-custom">
+          <input
+            v-model="advertiseCustom"
+            class="pairing-input"
+            type="text"
+            placeholder="hostname, MagicDNS, or tailnet IP"
+            autocomplete="off"
+            spellcheck="false"
+            :disabled="!remoteAccess || remoteAccessLoading || remoteAccessSaving"
+            @keydown.enter.prevent="saveRemoteAccess"
+          />
+        </div>
       </div>
       <label class="pairing-hint" style="display:flex;gap:8px;align-items:center;text-align:left;margin:0 0 12px">
         <input

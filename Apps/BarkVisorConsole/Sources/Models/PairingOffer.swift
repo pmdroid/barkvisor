@@ -69,6 +69,15 @@ enum PairingAdvertisedHost {
         return Picker(selectedHost: customSentinel, customHost: host ?? "")
     }
 
+    /// Advertise URL picker: listed host, or Other / DNS name.
+    static func syncAdvertisePicker(advertiseUrl: String?, listedHosts: [String]) -> Picker {
+        let host = advertiseUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !host.isEmpty, listedHosts.contains(host) {
+            return Picker(selectedHost: host, customHost: "")
+        }
+        return Picker(selectedHost: customSentinel, customHost: host)
+    }
+
     static func applyListedHost(_ selectedHost: String, currentIssued: String?) -> Apply {
         if selectedHost == customSentinel { return .skip }
         let host = selectedHost.trimmingCharacters(in: .whitespacesAndNewlines)

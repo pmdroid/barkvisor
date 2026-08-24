@@ -113,6 +113,7 @@ final class AppModel {
     var ollamaCatalog: OllamaHomeCatalog?
     var ollamaLoaded = false
     var ollamaSettings: OllamaSettingsSnapshot?
+    var remoteAccess: RemoteAccessStatus?
 
     var showsChat: Bool {
         ChatAvailability.visible(catalog: ollamaCatalog)
@@ -276,6 +277,7 @@ final class AppModel {
         logs = []
         ollamaCatalog = nil
         ollamaSettings = nil
+        remoteAccess = nil
         if route == .chat { route = .dashboard }
         if phoneTab == .chat { phoneTab = .home }
         phase = url == nil ? .connect : .login
@@ -321,6 +323,7 @@ final class AppModel {
         logs = []
         ollamaCatalog = nil
         ollamaSettings = nil
+        remoteAccess = nil
         if route == .chat { route = .dashboard }
         if phoneTab == .chat { phoneTab = .home }
         phase = .connect
@@ -362,9 +365,41 @@ final class AppModel {
             ollamaCatalog = try await requireClient().ollamaCatalog()
             ollamaLoaded = true
             await refreshOllamaSettings()
+            await loadRemoteAccess()
         } catch {
             ollamaLoaded = true
             handle(error)
+        }
+    }
+
+    func loadRemoteAccess() async {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
+        do {
+            let status = try await requireClient().remoteAccess()
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            remoteAccess = status
+        } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return }
+            handle(error)
+        }
+    }
+
+    @discardableResult
+    func saveRemoteAccess(_ body: RemoteAccessUpdate) async -> Bool {
+        let generation = sessionGeneration
+        let origin = sessionURL
+        let access = token
+        do {
+            let status = try await requireClient().saveRemoteAccess(body)
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return false }
+            remoteAccess = status
+            return true
+        } catch {
+            guard sessionStillCurrent(generation: generation, origin: origin, access: access) else { return false }
+            handle(error)
+            return false
         }
     }
 
@@ -651,7 +686,7 @@ final class AppModel {
         case .devices:
             await refreshPhoneDevices()
         case .settings:
-            break
+            await loadRemoteAccess()
         }
     }
 
@@ -1055,6 +1090,7 @@ final class AppModel {
         case .settings:
             await loadPairing()
             await loadLoginOffer()
+            await loadRemoteAccess()
         case .devices:
             _ = try? await refreshDevices()
         case .library:
