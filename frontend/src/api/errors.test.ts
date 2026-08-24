@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { apiErrorMessage, isNotFoundError } from './errors'
+import { apiErrorMessage, isNotFoundError, isUnauthorizedError } from './errors'
 
 function axiosResponse(status: number, reason?: string) {
   return {
@@ -27,5 +27,12 @@ describe('isNotFoundError (PAS-202)', () => {
   test('apiErrorMessage still prefers the Abort reason', () => {
     expect(apiErrorMessage(axiosResponse(502, 'Device is unreachable'))).toBe('Device is unreachable')
     expect(apiErrorMessage(axiosResponse(404, 'Workload not found'))).toBe('Workload not found')
+  })
+
+  test('isUnauthorizedError matches HTTP 401 and stream status', () => {
+    expect(isUnauthorizedError(axiosResponse(401, 'expired'))).toBe(true)
+    expect(isUnauthorizedError(axiosResponse(403, 'forbidden'))).toBe(false)
+    expect(isUnauthorizedError({ status: 401 })).toBe(true)
+    expect(isUnauthorizedError(new Error('401'))).toBe(false)
   })
 })

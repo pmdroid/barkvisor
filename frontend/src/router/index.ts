@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { isAccessTokenExpired } from '../utils/accessToken'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -41,15 +42,6 @@ const router = createRouter({
   ],
 })
 
-function isTokenExpired(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.exp * 1000 < Date.now()
-  } catch {
-    return true
-  }
-}
-
 // Track setup state (checked once, then cached for the session)
 let setupChecked = false
 let setupRequired = false
@@ -90,13 +82,15 @@ router.beforeEach(async (to) => {
 
   // Normal auth guard
   if (to.name === 'login') return
-  const token = localStorage.getItem('token')
-  if (!token || isTokenExpired(token)) {
-    void useAuthStore().logout()
-    return { name: 'login' }
-  }
-
   const auth = useAuthStore()
+  const token = localStorage.getItem('token')
+  if (!token || isAccessTokenExpired(token)) {
+    const recovered = await auth.refreshSession()
+    if (!recovered) {
+      void auth.logout()
+      return { name: 'login' }
+    }
+  }
   if (auth.isAuthenticated && auth.role !== 'admin' && auth.role !== 'inference') {
     await auth.fetchMe()
   }

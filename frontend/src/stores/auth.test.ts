@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
 import api, { isAuthBootstrapRequest, setUnauthorizedHandler } from '../api/client'
-import { REFRESH_TOKEN_KEY, useAuthStore } from './auth'
+import { emitSessionEvent, NATIVE_SESSION_HANDLER, REFRESH_TOKEN_KEY, useAuthStore } from './auth'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -39,6 +39,7 @@ describe('auth store (PAS-242)', () => {
     api.post = originalPost
     setUnauthorizedHandler(() => undefined)
     localStorage.clear()
+    Reflect.deleteProperty(globalThis, 'webkit')
   })
 
   test('login stores the JWT and refresh token', async () => {
@@ -119,7 +120,103 @@ describe('auth store (PAS-242)', () => {
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
   })
 
-  test('401 interceptor posts logout instead of dropping the refresh token locally', async () => {
+  test('refreshSession rotates the access JWT without logging out', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+    const post = mock((url: string, body: unknown) => {
+      expect(url).toBe('/auth/refresh')
+      expect(body).toEqual({ refreshToken: 'bvrt_abc' })
+      return Promise.resolve({ data: { token: 'jwt-2', refreshToken: 'bvrt_new', role: 'admin' } })
+    })
+    api.post = post as typeof api.post
+    expect(await store.refreshSession()).toBe(true)
+    expect(store.token).toBe('jwt-2')
+    expect(store.refreshToken).toBe('bvrt_new')
+    expect(localStorage.getItem('token')).toBe('jwt-2')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('bvrt_new')
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('refreshSession asks native Chat WKWebView instead of posting /auth/refresh', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+    const post = mock(() => Promise.reject(new Error('must not POST /auth/refresh')))
+    api.post = post as typeof api.post
+    const messages: unknown[] = []
+    const webkit = {
+      messageHandlers: {
+        [NATIVE_SESSION_HANDLER]: {
+          postMessage(body: { type: string }) {
+            messages.push(body)
+            if (body.type === 'refresh') {
+              localStorage.setItem('token', 'jwt-native')
+              localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_native')
+              emitSessionEvent()
+            }
+          },
+        },
+      },
+    }
+    Object.defineProperty(globalThis, 'webkit', { configurable: true, value: webkit })
+    expect(await store.refreshSession()).toBe(true)
+    expect(store.token).toBe('jwt-native')
+    expect(store.refreshToken).toBe('bvrt_native')
+    expect(messages).toEqual([{ type: 'refresh' }])
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  test('persistSession posts rotated tokens to the native Chat WKWebView', async () => {
+    const messages: unknown[] = []
+    const webkit = {
+      messageHandlers: {
+        [NATIVE_SESSION_HANDLER]: {
+          postMessage(body: unknown) {
+            messages.push(body)
+          },
+        },
+      },
+    }
+    Object.defineProperty(globalThis, 'webkit', { configurable: true, value: webkit })
+    const store = useAuthStore()
+    api.post = mock(() =>
+      Promise.resolve({ data: { token: 'jwt-web', refreshToken: 'bvrt_web', role: 'admin' } }),
+    ) as typeof api.post
+    await store.login('admin', 'secret')
+    expect(messages).toContainEqual({ type: 'session', token: 'jwt-web', refreshToken: 'bvrt_web' })
+  })
+
+  test('late refresh after logout does not restore the session', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+    let finishRefresh: ((value: { data: { token: string; refreshToken: string } }) => void) | undefined
+    api.post = mock((url: string) => {
+      if (url === '/auth/refresh') {
+        return new Promise((resolve) => {
+          finishRefresh = resolve
+        })
+      }
+      return Promise.resolve({ status: 204 })
+    }) as typeof api.post
+    const pending = store.refreshSession()
+    await store.logout()
+    finishRefresh?.({ data: { token: 'jwt-late', refreshToken: 'bvrt_late' } })
+    expect(await pending).toBe(false)
+    expect(store.token).toBe('')
+    expect(store.refreshToken).toBe('')
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
+  })
+
+  test('401 interceptor refreshes once then retries', async () => {
     localStorage.setItem('token', 'jwt-1')
     localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
     const store = useAuthStore()
@@ -127,6 +224,60 @@ describe('auth store (PAS-242)', () => {
     store.refreshToken = 'bvrt_abc'
 
     const post = mock((url: string, body: unknown) => {
+      expect(url).toBe('/auth/refresh')
+      expect(body).toEqual({ refreshToken: 'bvrt_abc' })
+      return Promise.resolve({ data: { token: 'jwt-2', refreshToken: 'bvrt_new' } })
+    })
+    api.post = post as typeof api.post
+
+    let redirected = 0
+    setUnauthorizedHandler(() => {
+      redirected += 1
+    })
+
+    let attempts = 0
+    const adapter = async (config: { url?: string }) => {
+      attempts += 1
+      if (attempts === 1) {
+        return Promise.reject({
+          config,
+          response: { status: 401 },
+          message: 'unauthorized',
+        })
+      }
+      expect(localStorage.getItem('token')).toBe('jwt-2')
+      return {
+        data: { ok: true },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }
+    }
+    const result = await api.request({ url: '/vms', adapter })
+    expect(result.data).toEqual({ ok: true })
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(redirected).toBe(0)
+    expect(store.token).toBe('jwt-2')
+    expect(store.refreshToken).toBe('bvrt_new')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('bvrt_new')
+  })
+
+  test('401 interceptor posts logout when refresh fails', async () => {
+    localStorage.setItem('token', 'jwt-1')
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'bvrt_abc')
+    const store = useAuthStore()
+    store.token = 'jwt-1'
+    store.refreshToken = 'bvrt_abc'
+
+    const post = mock((url: string, body: unknown) => {
+      if (url === '/auth/refresh') {
+        return Promise.reject({
+          config: { url: '/auth/refresh' },
+          response: { status: 401 },
+          message: 'unauthorized',
+        })
+      }
       expect(url).toBe('/auth/logout')
       expect(body).toEqual({ refreshToken: 'bvrt_abc' })
       return Promise.resolve({ status: 204 })
@@ -152,7 +303,7 @@ describe('auth store (PAS-242)', () => {
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledTimes(2)
     expect(redirected).toBe(1)
     expect(store.refreshToken).toBe('')
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
@@ -211,8 +362,16 @@ describe('auth store (PAS-242)', () => {
     const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
     expect(client).toContain('revokeRefreshOnUnauthorized')
     expect(client).toContain('useAuthStore().logout()')
+    expect(client).toContain('refreshAccessToken')
     expect(client).not.toMatch(/if \(error\.response\?\.status === 401\) \{\s*localStorage\.removeItem\('token'\)/)
-    expect(router).toContain('useAuthStore().logout()')
+    expect(router).toContain('refreshSession')
+    expect(router).toContain('auth.logout()')
+    expect(router).toContain('isAccessTokenExpired')
     expect(router).not.toContain("localStorage.removeItem('refreshToken')")
+    const auth = readFileSync(join(here, './auth.ts'), 'utf8')
+    expect(auth).toContain('nativeSessionBridge')
+    expect(auth).toContain('notifyNativeSession')
+    expect(auth).toContain('requestNativeRefresh')
+    expect(auth).toContain('sessionEpoch')
   })
 })
