@@ -46,8 +46,12 @@ describe('codingAgentSession (PAS-272)', () => {
   test('PAS-273: TTL stop, 15-minute warning, NO PUSH receipt', () => {
     expect(SESSION_EXPIRY_ACTION).toBe('stop')
     expect(SESSION_NO_PUSH).toBe('NO PUSH')
-    expect(sessionWarningCopy(15 * 60)).toBe('Session expires in 15 minutes. TTL stop keeps the disk.')
-    expect(sessionWarningCopy(60)).toBe('Session expires in 1 minute. TTL stop keeps the disk.')
+    expect(sessionWarningCopy(15 * 60)).toBe(
+      'Session expires in 15 minutes. Push your changes. TTL stop keeps the disk.',
+    )
+    expect(sessionWarningCopy(60)).toBe(
+      'Session expires in 1 minute. Push your changes. TTL stop keeps the disk.',
+    )
     expect(sessionReceiptCopy({
       stoppedAt: '2026-08-23T12:00:00Z',
       lastGitPushAt: null,

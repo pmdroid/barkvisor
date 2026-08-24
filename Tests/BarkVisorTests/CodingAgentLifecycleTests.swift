@@ -293,6 +293,76 @@ struct CodingAgentLifecycleTests {
         #expect(session?.receipt?.reason == CodingAgentLifecycle.stopReason)
         #expect(!unloader.didUnload)
     }
+
+    @Test func `grant unload counts stopping sessions and skips on empty peers`() {
+        let stopped = agentVM(id: "vm-a", state: "stopped")
+        let stopping = agentVM(id: "vm-b", state: "stopping")
+        let house = agentVM(id: "vm-c", state: "running")
+        var houseRow = house
+        houseRow.workloadClass = "house"
+        #expect(
+            CodingAgentLifecycle.otherLiveAgentSessions(
+                stoppedID: stopped.id, vms: [stopped, stopping],
+            ) == 1,
+        )
+        #expect(
+            CodingAgentLifecycle.otherLiveAgentSessions(
+                stoppedID: stopped.id, vms: [stopped, houseRow],
+            ) == 0,
+        )
+        #expect(
+            CodingAgentLifecycle.shouldUnloadGrant(usesHomeOllama: true, otherRunningAgentSessions: 1)
+                == false,
+        )
+    }
+
+    @Test func `unloadGrantIfLast keeps models when another agent is stopping`() async throws {
+        let start = try anchorDate()
+        let (dir, pool, vmID) = try await isolatedAgentSession(startedAt: start, ttlSeconds: 60)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let peer = agentVM(id: "vm-peer", state: "stopping")
+        try await pool.write { db in
+            try peer.insert(db)
+        }
+        let unloader = RecordingUnloader()
+        let stopped = try await pool.read { db in try VM.fetchOne(db, key: vmID) }
+        let row = try #require(stopped)
+        await CodingAgentLifecycleService.unloadGrantIfLast(
+            stopped: row, db: pool, unloader: unloader,
+        )
+        #expect(!unloader.didUnload)
+    }
+
+    @Test func `reset throws when occupancy never drops`() async throws {
+        let start = try anchorDate()
+        let (dir, pool, vmID) = try await isolatedAgentSession(startedAt: start, ttlSeconds: 60)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runtime = FakeCodingAgentRuntime()
+        runtime.active = true
+        do {
+            try await CodingAgentLifecycleService.reset(vmID: vmID, vmManager: runtime, db: pool)
+            Issue.record("reset should time out while occupancy remains")
+        } catch let BarkVisorError.conflict(message) {
+            #expect(message.contains("Timed out waiting for workload to stop"))
+        } catch {
+            Issue.record("unexpected reset error: \(error)")
+        }
+        #expect(runtime.stopCount == 1)
+        #expect(runtime.occupancyCalls > 20)
+    }
+}
+
+private func agentVM(id: String, state: String) -> VM {
+    VM(
+        id: id, name: id, vmType: "linux-arm64", state: state,
+        cpuCount: 2, memoryMb: 2_048, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
+        description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+        uefi: true, tpmEnabled: false,
+        macAddress: nil, sharedPaths: nil, portForwards: nil,
+        autoCreated: false, pendingChanges: false,
+        workloadClass: "agent",
+        createdAt: "2026-08-23T12:00:00Z", updatedAt: "2026-08-23T12:00:00Z",
+    )
 }
 
 private final class FakeCodingAgentRuntime: CodingAgentControlling, @unchecked Sendable {

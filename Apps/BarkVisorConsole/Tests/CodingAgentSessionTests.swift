@@ -54,5 +54,13 @@ struct CodingAgentSessionTests {
         #expect(session.receiptLine(vmState: "stopped")?.git == CodingAgentSession.noPushCopy)
         #expect(session.receiptLine(vmState: "running") == nil)
         #expect(session.receiptLine(vmState: "stopping") == nil)
+        #expect(
+            CodingAgentSession.warningCopy(remainingSeconds: 15 * 60)
+                == "Session expires in 15 minutes. Push your changes. TTL stop keeps the disk.",
+        )
+        #expect(
+            CodingAgentSession.warningCopy(remainingSeconds: 60)
+                == "Session expires in 1 minute. Push your changes. TTL stop keeps the disk.",
+        )
     }
 }

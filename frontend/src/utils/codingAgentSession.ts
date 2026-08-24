@@ -53,8 +53,8 @@ export const SESSION_EXPIRY_ACTION = 'stop'
 export function sessionWarningCopy(remainingSeconds: number | null | undefined): string {
   const minutes = Math.max(1, Math.ceil((remainingSeconds ?? 0) / 60))
   return minutes === 1
-    ? 'Session expires in 1 minute. TTL stop keeps the disk.'
-    : `Session expires in ${minutes} minutes. TTL stop keeps the disk.`
+    ? 'Session expires in 1 minute. Push your changes. TTL stop keeps the disk.'
+    : `Session expires in ${minutes} minutes. Push your changes. TTL stop keeps the disk.`
 }
 
 export function sessionIsLive(vmState: string | null | undefined): boolean {

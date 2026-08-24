@@ -104,7 +104,7 @@ struct WorkloadDetailView: View {
                         LabeledContent("Expires", value: expires)
                     }
                     if session.warning {
-                        Text("Expires in 15 minutes. TTL stop keeps the disk.")
+                        Text(CodingAgentSession.warningCopy(remainingSeconds: session.remainingSeconds))
                             .foregroundStyle(.orange)
                     }
                     if let line = session.receiptLine(vmState: workload.state) {

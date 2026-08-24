@@ -33,6 +33,13 @@ enum CodingAgentSession {
     static let noPushCopy = "NO PUSH"
     static let expiryAction = "stop"
     static let warningLeadSeconds = 15 * 60
+
+    static func warningCopy(remainingSeconds: Int?) -> String {
+        let minutes = max(1, Int(ceil(Double(remainingSeconds ?? 0) / 60.0)))
+        return minutes == 1
+            ? "Session expires in 1 minute. Push your changes. TTL stop keeps the disk."
+            : "Session expires in \(minutes) minutes. Push your changes. TTL stop keeps the disk."
+    }
 }
 
 struct CodingAgentReceipt: Decodable, Hashable {

@@ -229,6 +229,15 @@ public enum CodingAgentLifecycle {
     public static func shouldUnloadGrant(usesHomeOllama: Bool, otherRunningAgentSessions: Int) -> Bool {
         usesHomeOllama && otherRunningAgentSessions <= 0
     }
+
+    /// Other Agent Workloads that are still live, including `stopping`.
+    public static func otherLiveAgentSessions(stoppedID: String, vms: [VM]) -> Int {
+        vms.count { other in
+            other.id != stoppedID
+                && (try? WorkloadClass.parse(other.workloadClass)) == .agent
+                && isSessionLive(other.state)
+        }
+    }
 }
 
 /// Start/stop/occupancy used by coding-session TTL. Tests pass a fake.

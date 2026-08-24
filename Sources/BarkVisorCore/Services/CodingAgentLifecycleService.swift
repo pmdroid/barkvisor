@@ -206,6 +206,9 @@ public enum CodingAgentLifecycleService {
             try? await vmManager.stop(vmID: vmID, force: true, method: "force")
         }
         try await waitUntilInactive(vmID: vmID, vmManager: vmManager)
+        if await vmManager.isActiveOrStarting(vmID) {
+            throw BarkVisorError.conflict("Timed out waiting for workload to stop")
+        }
         await unloadGrantIfLast(stopped: vm, db: db, unloader: unloader)
         return try await VMLifecycleService.deleteVM(
             id: vmID, keepDisk: false, vmManager: vmManager,
@@ -227,14 +230,13 @@ public enum CodingAgentLifecycleService {
         let others: Int
         do {
             others = try await db.read { db in
-                try VM.fetchAll(db).count { other in
-                    other.id != stoppedID
-                        && (try? WorkloadClass.parse(other.workloadClass)) == .agent
-                        && (other.state == "running" || other.state == "starting")
-                }
+                let vms = try VM.fetchAll(db)
+                return CodingAgentLifecycle.otherLiveAgentSessions(
+                    stoppedID: stoppedID, vms: vms,
+                )
             }
         } catch {
-            others = 0
+            return
         }
         guard CodingAgentLifecycle.shouldUnloadGrant(
             usesHomeOllama: usesGrant, otherRunningAgentSessions: others,
@@ -282,6 +284,9 @@ public enum CodingAgentLifecycleService {
         for _ in 0 ..< 20 {
             if await !vmManager.isActiveOrStarting(vmID) { return }
             try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        if await vmManager.isActiveOrStarting(vmID) {
+            throw BarkVisorError.conflict("Timed out waiting for workload to stop")
         }
     }
 }
