@@ -57,30 +57,6 @@ struct SettingsView: View {
                     Text("Phone sign-in")
                 }
             #endif
-
-            Section {
-                LabeledContent("Console", value: "BarkVisor native console")
-                if let about = model.about {
-                    LabeledContent("Device version", value: about.version)
-                    LabeledContent("Platform", value: "\(about.platform) · \(about.hostArch)")
-                    LabeledContent("Accelerator", value: about.accelerator)
-                    LabeledContent("Uptime", value: "\(about.processUptimeSeconds)s")
-                } else {
-                    Text("Could not load /api/system/about.")
-                        .foregroundStyle(.secondary)
-                }
-                if let caps = model.capabilities {
-                    LabeledContent(
-                        "GPU passthrough",
-                        value: caps.gpuPassthroughSupported ? "Host ready" : "Not available",
-                    )
-                    Text(caps.gpuPassthroughExplanation)
-                        .foregroundStyle(.secondary)
-                }
-                LabeledContent("Glossary", value: "Home / Device / Workload / Library")
-            } header: {
-                Text("About")
-            }
         }
         .formStyle(.grouped)
         .onAppear { urlDraft = model.serverURLText }

@@ -582,6 +582,15 @@ export interface SystemStatsSample {
   hostMemoryTotalMB: number
 }
 
+/** GET /api/system/about (self) or Home-proxied member /v1/system/about. */
+export interface SystemAbout {
+  version: string
+  platform: string
+  hostArch: string
+  accelerator: string
+  processUptimeSeconds: number
+}
+
 export interface TemplateInput {
   id: string
   label: string
