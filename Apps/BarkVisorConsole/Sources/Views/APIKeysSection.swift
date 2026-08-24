@@ -60,7 +60,7 @@ struct APIKeysSection: View {
                     }
                 }
             }
-            if forbidden == nil {
+            if forbidden == nil, model.client != nil {
                 Button("Create key") { showCreate = true }
             }
         } header: {
@@ -208,13 +208,18 @@ private struct CreateAPIKeySheet: View {
                 }
             }
             .disabled(creating)
+            .onAppear {
+                if model.client == nil {
+                    localError = APIKeyDisplay.signInRequired
+                }
+            }
         #if os(iOS)
             .presentationDetents([.medium, .large])
         #endif
     }
 
     private var canSubmit: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        model.client != nil && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func expiryPickerLabel(_ value: String) -> String {
@@ -228,7 +233,10 @@ private struct CreateAPIKeySheet: View {
     }
 
     private func submit() async {
-        guard let client = model.client else { return }
+        guard let client = model.client else {
+            localError = APIKeyDisplay.signInRequired
+            return
+        }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         creating = true
         defer { creating = false }

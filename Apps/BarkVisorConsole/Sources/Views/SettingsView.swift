@@ -25,7 +25,9 @@ struct SettingsView: View {
                 Text("Connection")
             }
 
-            APIKeysSection()
+            if model.client != nil {
+                APIKeysSection()
+            }
 
             #if os(macOS)
                 MacPairingSection()

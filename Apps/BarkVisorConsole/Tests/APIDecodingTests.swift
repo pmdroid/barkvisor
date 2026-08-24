@@ -326,6 +326,24 @@ struct APIDecodingTests {
         )
         #expect(APIKeyDisplay.forbiddenMessage(from: APIError.unauthorized) == nil)
         #expect(APIKeyDisplay.inferenceCopy == "inference = Ollama list + chat completions only")
+        #expect(APIKeyDisplay.signInRequired == "Sign in required")
+        #expect(APIKeyDisplay.signInRequired == APIError.unauthorized.errorDescription)
+    }
+
+    @Test func `api key display reuses cached ISO8601 formatters`() {
+        let fractional = "2026-08-01T12:30:00.000Z"
+        let whole = "2026-08-01T12:30:00Z"
+        let parsedFractional = APIKeyDisplay.parseISO8601(fractional)
+        let parsedWhole = APIKeyDisplay.parseISO8601(whole)
+        #expect(parsedFractional != nil)
+        #expect(parsedWhole != nil)
+        #expect(APIKeyDisplay.parseISO8601(fractional) == parsedFractional)
+        #expect(APIKeyDisplay.parseISO8601(whole) == parsedWhole)
+        #expect(APIKeyDisplay.parseISO8601("not-a-date") == nil)
+        #expect(APIKeyDisplay.createdLabel(fractional) == "2026-08-01")
+        #expect(APIKeyDisplay.createdLabel(whole) == "2026-08-01")
+        #expect(APIKeyDisplay.usedLabel(fractional) == "2026-08-01 12:30")
+        #expect(APIKeyDisplay.usedLabel(whole) == "2026-08-01 12:30")
     }
 
     @Test func `minted api key keychain round trip does not touch session jwt`() {

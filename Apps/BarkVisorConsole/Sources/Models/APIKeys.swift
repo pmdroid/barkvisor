@@ -136,25 +136,41 @@ struct APIKeyCreateBody: Encodable, Equatable {
 enum APIKeyDisplay {
     static let inferenceCopy = "inference = Ollama list + chat completions only"
     static let forbiddenFallback = "API keys are admin-only."
+    static let signInRequired = "Sign in required"
     static let expiryChoices = ["30d", "90d", "1y", "never"]
     static let defaultExpiry = "90d"
+
+    private static let iso8601Fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let iso8601Whole: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let shortDate = posixFormatter("yyyy-MM-dd")
+    private static let shortDateTime = posixFormatter("yyyy-MM-dd HH:mm")
 
     static func expiryLabel(_ expiresAt: String?, now: Date = Date()) -> String {
         guard let expiresAt else { return "Never" }
         guard let date = parseISO8601(expiresAt) else { return expiresAt }
         if date < now { return "Expired" }
-        return shortDate(date)
+        return shortDate.string(from: date)
     }
 
     static func usedLabel(_ lastUsedAt: String?) -> String {
         guard let lastUsedAt else { return "Never" }
         guard let date = parseISO8601(lastUsedAt) else { return lastUsedAt }
-        return shortDateTime(date)
+        return shortDateTime.string(from: date)
     }
 
     static func createdLabel(_ createdAt: String) -> String {
         guard let date = parseISO8601(createdAt) else { return createdAt }
-        return shortDate(date)
+        return shortDate.string(from: date)
     }
 
     static func forbiddenMessage(from error: Error) -> String? {
@@ -166,20 +182,8 @@ enum APIKeyDisplay {
     }
 
     static func parseISO8601(_ raw: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: raw) { return date }
-        let whole = ISO8601DateFormatter()
-        whole.formatOptions = [.withInternetDateTime]
-        return whole.date(from: raw)
-    }
-
-    private static func shortDate(_ date: Date) -> String {
-        posixFormatter("yyyy-MM-dd").string(from: date)
-    }
-
-    private static func shortDateTime(_ date: Date) -> String {
-        posixFormatter("yyyy-MM-dd HH:mm").string(from: date)
+        if let date = iso8601Fractional.date(from: raw) { return date }
+        return iso8601Whole.date(from: raw)
     }
 
     private static func posixFormatter(_ format: String) -> DateFormatter {
