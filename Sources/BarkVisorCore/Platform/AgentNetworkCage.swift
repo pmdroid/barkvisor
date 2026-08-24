@@ -113,7 +113,7 @@ public enum AgentNetworkCage {
         (deny network-outbound (remote ip "224.0.0.0/4"))
         """
         if allowHostOllama {
-            profile += "(allow network-outbound (remote tcp \"127.0.0.1:\(ollamaPort)\"))\n"
+            profile += "\n(allow network-outbound (remote tcp \"127.0.0.1:\(ollamaPort)\"))\n"
         }
         return profile
     }

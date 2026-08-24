@@ -18,6 +18,7 @@ public struct CreateVMParams: Sendable {
     public let sharedPaths: [String]?
     public let portForwards: [PortForwardRule]?
     public let usbDevices: [USBPassthroughDevice]?
+    public let gpuDevices: [GPUPassthroughDevice]?
     public let description: String?
     public let bootOrder: String?
     public let displayResolution: String?
@@ -42,6 +43,7 @@ public struct CreateVMParams: Sendable {
         sharedPaths: [String]? = nil,
         portForwards: [PortForwardRule]? = nil,
         usbDevices: [USBPassthroughDevice]? = nil,
+        gpuDevices: [GPUPassthroughDevice]? = nil,
         description: String? = nil,
         bootOrder: String? = nil,
         displayResolution: String? = nil,
@@ -65,6 +67,7 @@ public struct CreateVMParams: Sendable {
         self.sharedPaths = sharedPaths
         self.portForwards = portForwards
         self.usbDevices = usbDevices
+        self.gpuDevices = gpuDevices
         self.description = description
         self.bootOrder = bootOrder
         self.displayResolution = displayResolution
@@ -83,6 +86,7 @@ public struct UpdateVMParams: Sendable {
     public let networkId: String?
     public let portForwards: [PortForwardRule]?
     public let usbDevices: [USBPassthroughDevice]?
+    public let gpuDevices: [GPUPassthroughDevice]?
     public let description: String?
     public let bootOrder: String?
     public let displayResolution: String?
@@ -100,6 +104,7 @@ public struct UpdateVMParams: Sendable {
         networkId: String? = nil,
         portForwards: [PortForwardRule]? = nil,
         usbDevices: [USBPassthroughDevice]? = nil,
+        gpuDevices: [GPUPassthroughDevice]? = nil,
         description: String? = nil,
         bootOrder: String? = nil,
         displayResolution: String? = nil,
@@ -116,6 +121,7 @@ public struct UpdateVMParams: Sendable {
         self.networkId = networkId
         self.portForwards = portForwards
         self.usbDevices = usbDevices
+        self.gpuDevices = gpuDevices
         self.description = description
         self.bootOrder = bootOrder
         self.displayResolution = displayResolution

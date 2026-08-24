@@ -27,6 +27,7 @@ import Foundation
 /// | spec.networks[0].portForwards | portForwards |
 /// | spec.cloudInit.userDataRef | cloudInitPath |
 /// | spec.usb | usbDevices |
+/// | spec.gpu | gpuDevices |
 /// | spec.sharedPaths | sharedPaths |
 /// | spec.health | healthJson |
 /// | spec.workloadClass | workloadClass |
@@ -60,6 +61,7 @@ public enum WorkloadSpecProjector {
         let cloudInit: WorkloadCloudInit? =
             vm.cloudInitPath.map { WorkloadCloudInit(userDataRef: $0) }
         let usb = vm.decodedUSBDevices.map { USBPassthroughService.workload(from: $0) }
+        let gpu = vm.decodedGPUDevices.map { GPUPassthroughService.workload(from: $0) }
         let shared = vm.decodedSharedPaths
         return WorkloadSpec(
             metadata: WorkloadMetadata(
@@ -79,6 +81,7 @@ public enum WorkloadSpecProjector {
                 networks: [network],
                 cloudInit: cloudInit,
                 usb: usb,
+                gpu: gpu,
                 display: WorkloadDisplay(resolution: vm.displayResolution),
                 sharedPaths: shared.isEmpty ? nil : shared,
                 health: vm.decodedHealth,
@@ -160,6 +163,8 @@ public enum WorkloadSpecProjector {
         }
         let usb = spec.spec.usb.map { USBPassthroughService.passthrough(from: $0) }
         vm.setUSBDevices(usb.isEmpty ? nil : usb)
+        let gpu = spec.spec.gpu.map { GPUPassthroughService.passthrough(from: $0) }
+        vm.setGPUDevices(gpu.isEmpty ? nil : gpu)
         if let shared = spec.spec.sharedPaths {
             vm.setSharedPaths(shared.isEmpty ? nil : shared)
         }

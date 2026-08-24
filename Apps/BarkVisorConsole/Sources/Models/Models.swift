@@ -248,6 +248,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var status: WorkloadRuntimeStatus?
     var portForwards: [GuestPortForward]?
     var startOnBoot: Bool? = nil
+    var gpuDevices: [GPUPassthroughDevice]?
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -260,6 +261,10 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
     var canStart: Bool {
         state == "stopped" || state == "error"
+    }
+    /// vfio-pci is bound at start, not hot-plugged.
+    var canDetachGPU: Bool {
+        canStart
     }
     var canStop: Bool {
         state == "running" || state == "starting"
@@ -579,19 +584,84 @@ struct SystemCapabilities: Decodable, Equatable {
 }
 
 enum GPUPassthroughCopy {
-    static let attachUnavailable = "BarkVisor does not attach a GPU to a Workload yet."
+    static let guestOllamaPath = "http://127.0.0.1:11434/v1"
+    static let attachReady =
+        "This Device has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is \(guestOllamaPath). The same card cannot be host and guest."
+    static let iommuNotReady =
+        "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
+    static let singleDisplayWarning =
+        "This Device lists one GPU. Passing it through can blank the host display."
+
+    static func groupMatesLabel(pciAddress: String, groupAddresses: [String]?) -> String {
+        let mates = (groupAddresses ?? []).filter { !$0.isEmpty && $0 != pciAddress }
+        return mates.isEmpty ? "none" : mates.joined(separator: ", ")
+    }
 
     static func explanation(supported: Bool, remediation: String?, platform: String) -> String {
         if supported {
-            return "This Device has IOMMU, vfio-pci, and KVM. \(attachUnavailable)"
+            return attachReady
         }
         let trimmed = remediation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
         if platform.caseInsensitiveCompare("macOS") == .orderedSame {
             return "GPU passthrough is not available on macOS. Use a Linux Device with IOMMU, vfio-pci, and KVM."
         }
-        return "GPU passthrough is not available on this Device. \(attachUnavailable)"
+        return iommuNotReady
     }
+}
+
+struct GPUPassthroughDevice: Decodable, Hashable, Identifiable {
+    var pciAddress: String
+    var iommuGroup: String
+    var vendorId: String
+    var deviceId: String
+    var label: String?
+    var groupAddresses: [String]?
+
+    var id: String { pciAddress }
+
+    var displayName: String {
+        if let label, !label.isEmpty { return label }
+        return pciAddress
+    }
+}
+
+struct HostGPUDevice: Decodable, Hashable, Identifiable {
+    var id: String
+    var pciAddress: String
+    var iommuGroup: String
+    var vendorId: String
+    var deviceId: String
+    var name: String
+    var driver: String?
+    var vfioBound: Bool?
+    var inUseByHost: Bool?
+    var attachable: Bool?
+    var excludedReason: String?
+    var groupAddresses: [String]?
+    var guestOllamaPath: String?
+    var busy: Bool?
+    var attachedToVmId: String?
+    var claimedByVMId: String?
+    var claimedByVMName: String?
+
+    var canAttach: Bool {
+        attachable == true && claimedByVMId == nil
+    }
+
+    var occupancyCopy: String? {
+        if let claimedByVMName, !claimedByVMName.isEmpty {
+            return "Attached to \(claimedByVMName)"
+        }
+        if inUseByHost == true {
+            return "In use by host"
+        }
+        return excludedReason
+    }
+}
+
+struct GPUAttachBody: Encodable {
+    var deviceId: String
 }
 
 struct LibraryImage: Decodable, Identifiable, Hashable {

@@ -79,6 +79,7 @@ public enum WorkloadSpecDocument {
         if spec["disks"] == nil { spec["disks"] = [] }
         if spec["networks"] == nil { spec["networks"] = [] }
         if spec["usb"] == nil { spec["usb"] = [] }
+        if spec["gpu"] == nil { spec["gpu"] = [] }
         result["spec"] = spec
         return result
     }

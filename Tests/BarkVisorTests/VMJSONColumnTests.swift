@@ -105,6 +105,16 @@ struct VMJSONColumnTests {
         #expect(vm.decodedUSBDevices.count == 1)
         vm.setUSBDevices([])
         #expect(vm.usbDevices == nil)
+        let gpu = GPUPassthroughDevice(
+            pciAddress: "0000:01:00.0",
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+        )
+        vm.setGPUDevices([gpu])
+        #expect(vm.decodedGPUDevices.count == 1)
+        vm.setGPUDevices([])
+        #expect(vm.gpuDevices == nil)
     }
 
     @Test func `decodeArrayOrEmpty handles nil blank and valid`() {

@@ -28,6 +28,7 @@ extension VMManager {
             Log.vm.error("VM terminated unexpectedly (exit status \(status))", vm: vmID)
         }
 
+        await releasePassthroughGPUs(vmID: vmID)
         await cleanup(vmID: vmID)
         runningVMs.removeValue(forKey: vmID)
 
@@ -53,6 +54,20 @@ extension VMManager {
         // Notify SSE listeners
         let event = VMStateEvent(id: vmID, state: newState, error: errorMsg)
         await stateStreamService?.broadcast(event: event)
+    }
+
+    func releasePassthroughGPUs(vmID: String) async {
+        do {
+            let devices = try await dbPool.read { db in
+                try VM.fetchOne(db, key: vmID)?.decodedGPUDevices ?? []
+            }
+            GPUPassthroughService.releaseVFIO(devices)
+        } catch {
+            Log.vm.warning(
+                "vfio-pci unbind skipped; could not load GPU list: \(error.localizedDescription)",
+                vm: vmID,
+            )
+        }
     }
 
     // MARK: - Guest-Initiated Shutdown

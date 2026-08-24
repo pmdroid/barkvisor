@@ -118,6 +118,25 @@
             }
           }
         },
+        "gpu": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pciAddress", "iommuGroup", "vendorId", "deviceId"],
+            "properties": {
+              "pciAddress": { "type": "string" },
+              "iommuGroup": { "type": "string" },
+              "vendorId": { "type": "string" },
+              "deviceId": { "type": "string" },
+              "label": { "type": ["string", "null"] },
+              "groupAddresses": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
         "display": {
           "type": ["object", "null"],
           "additionalProperties": false,

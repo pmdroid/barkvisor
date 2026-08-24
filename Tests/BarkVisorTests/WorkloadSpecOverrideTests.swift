@@ -336,7 +336,7 @@ struct WorkloadSpecOverrideTests {
             name: nil, vmType: nil, osFamily: nil, cpuCount: nil, memoryMB: nil,
             diskSizeGB: 20, isoId: nil, cloudImageId: nil, cloudInit: nil,
             networkId: nil, existingDiskId: nil, sharedPaths: nil,
-            portForwards: nil, usbDevices: nil, description: nil,
+            portForwards: nil, usbDevices: nil, gpuDevices: nil, description: nil,
             bootOrder: nil, displayResolution: nil, uefi: nil, tpmEnabled: nil,
             spec: spec,
             workloadClass: nil,

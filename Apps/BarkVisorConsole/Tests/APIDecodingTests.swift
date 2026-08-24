@@ -300,7 +300,63 @@ struct APIDecodingTests {
         """.data(using: .utf8)!
         let ready = try decoder.decode(SystemCapabilities.self, from: linux)
         #expect(ready.gpuPassthroughSupported)
-        #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.attachUnavailable))
+        #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
+        #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
+    }
+
+    @Test func `host gpu device decodes iommu group and guest ollama path`() throws {
+        let json = """
+        {
+          "id": "0000:01:00.0",
+          "pciAddress": "0000:01:00.0",
+          "iommuGroup": "14",
+          "vendorId": "10de",
+          "deviceId": "2684",
+          "name": "NVIDIA 2684 (nvidia)",
+          "attachable": true,
+          "inUseByHost": false,
+          "guestOllamaPath": "http://127.0.0.1:11434/v1",
+          "groupAddresses": ["0000:01:00.0", "0000:01:00.1"],
+          "claimedByVMId": null,
+          "claimedByVMName": null
+        }
+        """.data(using: .utf8)!
+        let gpu = try decoder.decode(HostGPUDevice.self, from: json)
+        #expect(gpu.pciAddress == "0000:01:00.0")
+        #expect(gpu.iommuGroup == "14")
+        #expect(gpu.canAttach)
+        #expect(gpu.guestOllamaPath == GPUPassthroughCopy.guestOllamaPath)
+        #expect(gpu.occupancyCopy == nil)
+        #expect(
+            GPUPassthroughCopy.groupMatesLabel(
+                pciAddress: gpu.pciAddress, groupAddresses: gpu.groupAddresses,
+            ) == "0000:01:00.1",
+        )
+        #expect(GPUPassthroughCopy.singleDisplayWarning.contains("one GPU"))
+        #expect(GPUPassthroughCopy.groupMatesLabel(pciAddress: "0000:01:00.0", groupAddresses: nil) == "none")
+
+        let busyJSON = """
+        {
+          "id": "0000:01:00.0",
+          "pciAddress": "0000:01:00.0",
+          "iommuGroup": "14",
+          "vendorId": "10de",
+          "deviceId": "2684",
+          "name": "NVIDIA",
+          "attachable": true,
+          "inUseByHost": true
+        }
+        """.data(using: .utf8)!
+        let busy = try decoder.decode(HostGPUDevice.self, from: busyJSON)
+        #expect(busy.canAttach)
+        #expect(busy.occupancyCopy == "In use by host")
+    }
+
+    @Test func `gpu detach is only allowed when the workload is stopped`() {
+        #expect(!workload(id: "vm-1", name: "gpu").canDetachGPU)
+        #expect(!workload(id: "vm-1", name: "gpu", state: "starting").canDetachGPU)
+        #expect(workload(id: "vm-1", name: "gpu", state: "stopped").canDetachGPU)
+        #expect(workload(id: "vm-1", name: "gpu", state: "error").canDetachGPU)
     }
 
     @Test func `gpu passthrough copy prefers server remediation`() {
@@ -355,12 +411,12 @@ struct APIDecodingTests {
         )
     }
 
-    private func workload(id: String, name: String) -> Workload {
+    private func workload(id: String, name: String, state: String = "running") -> Workload {
         Workload(
             id: id,
             name: name,
             vmType: "linux-arm64",
-            state: "running",
+            state: state,
             health: "running",
             cpuCount: 2,
             memoryMB: 1_024,
@@ -374,6 +430,7 @@ struct APIDecodingTests {
             updatedAt: "2026-01-02T00:00:00Z",
             status: nil,
             portForwards: nil,
+            gpuDevices: nil,
         )
     }
 }
