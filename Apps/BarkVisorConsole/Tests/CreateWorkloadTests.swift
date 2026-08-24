@@ -202,6 +202,13 @@ struct CreateWorkloadTests {
         )
         #expect(granted.cloudInit?.userData?.contains("OPENAI_API_KEY='barkvisor_abc'") == true)
         #expect(granted.cloudInit?.userData?.contains("OPENAI_API_KEY='ollama'") != true)
+        #expect(try CodingAgentImage.openaiAPIKeyForHomeGrant(nil) == "ollama")
+        #expect(throws: CreateWorkload.DraftError.missingOpenAIAPIKey) {
+            try CodingAgentImage.openaiAPIKeyForHomeGrant("")
+        }
+        #expect(throws: CreateWorkload.DraftError.missingOpenAIAPIKey) {
+            try CodingAgentImage.openaiAPIKeyForHomeGrant("  ")
+        }
 
         let ubuntu = image(id: "img-u", name: "Ubuntu 24.04 LTS", imageType: "cloud-image", arch: "arm64")
         let afterSwitch = try CreateWorkload.body(

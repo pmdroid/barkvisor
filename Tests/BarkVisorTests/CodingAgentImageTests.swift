@@ -220,6 +220,54 @@ struct CodingAgentImageTests {
         #expect(kept.cloudInit?.userData?.contains("ttyd") != true)
     }
 
+    @Test func `home grant is fail-closed and ignored when user-data exists`() throws {
+        #expect(try CodingAgentImage.openaiAPIKeyForHomeGrant(nil) == "ollama")
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.openaiAPIKeyForHomeGrant("")
+        }
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.openaiAPIKeyForHomeGrant("  ")
+        }
+
+        let existing = CreateVMParams(
+            name: "coder",
+            vmType: "linux-arm64",
+            cpuCount: 2,
+            memoryMB: 1_024,
+            diskSizeGB: 10,
+            cloudImageId: "img-1",
+            cloudInit: CloudInitConfig(sshAuthorizedKeys: nil, userData: "packages:\n  - vim\n"),
+        )
+        let kept = try CodingAgentImage.applyingCreateDefaults(
+            params: existing,
+            imageName: "Coding Agent",
+            grantPlaintext: "sk-$(id)",
+        )
+        #expect(kept.cloudInit?.userData?.contains("vim") == true)
+        #expect(kept.cloudInit?.userData?.contains("ttyd") != true)
+
+        let empty = CreateVMParams(
+            name: "coder",
+            vmType: "linux-arm64",
+            cpuCount: 2,
+            memoryMB: 1_024,
+            diskSizeGB: 10,
+            cloudImageId: "img-1",
+        )
+        #expect(throws: BarkVisorError.self) {
+            try CodingAgentImage.applyingCreateDefaults(
+                params: empty,
+                imageName: "Coding Agent",
+                grantPlaintext: "  ",
+            )
+        }
+        let defaults = try CodingAgentImage.applyingCreateDefaults(
+            params: empty,
+            imageName: "Coding Agent",
+        )
+        #expect(defaults.cloudInit?.userData?.contains("OPENAI_API_KEY=ollama") == true)
+    }
+
     @Test func `console and frontend user-data keep git push stamp and posix quoting`() throws {
         let root = repoRoot()
         let console = try String(

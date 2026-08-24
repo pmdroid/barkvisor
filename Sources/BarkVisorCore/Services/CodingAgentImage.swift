@@ -100,7 +100,8 @@ public enum CodingAgentImage {
     }
 
     public static func openaiAPIKeyForHomeGrant(_ raw: String?) throws -> String {
-        try normalizeOpenAIAPIKey(raw)
+        guard let raw else { return defaultOpenAIAPIKey }
+        return try normalizeOpenAIAPIKey(raw, required: true)
     }
 
     /// Unquoted `/etc/default/barkvisor-openai` assignment. GPU rewrite keeps a grant.
@@ -299,15 +300,16 @@ public enum CodingAgentImage {
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let gpuAttached = !(params.gpuDevices ?? []).isEmpty
-        let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL
-        let key = try openaiAPIKeyForHomeGrant(grantPlaintext)
-        let userData = existing.isEmpty
-            ? Self.userData(
+        let userData: String
+        if existing.isEmpty {
+            let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL
+            let key = try openaiAPIKeyForHomeGrant(grantPlaintext)
+            userData = Self.userData(
                 openaiBaseURL: defaultURL, openaiAPIKey: key, installGuestOllama: gpuAttached,
             )
-            : existing
-        if existing.isEmpty {
             try CloudInitService.validateUserData(userData)
+        } else {
+            userData = existing
         }
         let cloudInit = CloudInitConfig(
             sshAuthorizedKeys: params.cloudInit?.sshAuthorizedKeys,

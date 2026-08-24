@@ -60,7 +60,8 @@ enum CodingAgentImage {
     static let defaultOpenAIAPIKey = "ollama"
 
     static func openaiAPIKeyForHomeGrant(_ raw: String?) throws -> String {
-        try normalizeOpenAIAPIKey(raw)
+        guard let raw else { return defaultOpenAIAPIKey }
+        return try normalizeOpenAIAPIKey(raw, required: true)
     }
 
     static func openaiAPIKeyFromUserData(_ userData: String?) -> String? {

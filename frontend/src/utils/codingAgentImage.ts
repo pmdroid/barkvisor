@@ -200,7 +200,8 @@ runcmd:
 }
 
 export function openaiAPIKeyForHomeGrant(raw?: string | null): string {
-  return normalizeOpenAIAPIKey(raw)
+  if (raw == null) return DEFAULT_OPENAI_API_KEY
+  return normalizeOpenAIAPIKey(raw, true)
 }
 
 export function openaiAPIKeyFromUserData(userData?: string | null): string | null {
@@ -215,7 +216,7 @@ export function mergeCodingAgentUserData(
   preset: OpenAIPreset,
   byoURL: string,
   byoAPIKey = '',
-  grantPlaintext = '',
+  grantPlaintext?: string | null,
 ): string {
   const trimmed = existing.trim()
   if (trimmed) return trimmed
