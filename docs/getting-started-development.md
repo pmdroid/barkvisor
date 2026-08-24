@@ -60,17 +60,15 @@ QEMU resources (`-L` data dir, firmware, keymaps):
 2. `/usr/local/share/qemu/<name>`
 3. Leftover `{prefix}/share/barkvisor/qemu/<name>`
 
-The privileged XPC helper is still installed by the pkg. Linux still uses distro QEMU.
+The pkg does not ship a privileged helper. Linux still uses distro QEMU.
 
 ## Project Structure
 
-The project is organized as 5 Swift Package Manager targets:
+The project is organized as 3 Swift Package Manager library/executable targets:
 
 ```
 Package.swift
 Sources/
-  BarkVisorHelperProtocol/   # Shared XPC protocol between app and helper
-  BarkVisorHelper/           # Privileged helper (bridge/vmnet management)
   BarkVisorCore/             # Core library: models, services, helpers (no Vapor)
   BarkVisor/                 # Vapor HTTP layer: controllers, middleware, routes
   BarkVisorApp/              # Executable entry point (headless daemon)
@@ -82,15 +80,11 @@ frontend/                    # Vue 3 + TypeScript SPA (Vite)
 ### Target Dependency Graph
 
 ```
-BarkVisorHelperProtocol
-    |
-    +-- BarkVisorHelper  (executable -- privileged helper daemon)
-    |
-    +-- BarkVisorCore    (depends on: GRDB, JWTKit, Yams, NIO)
-            |
-            +-- BarkVisor  (depends on: Vapor)
-                    |
-                    +-- BarkVisorApp  (executable -- headless daemon)
+BarkVisorCore    (depends on: GRDB, JWTKit, Yams, NIO)
+        |
+        +-- BarkVisor  (depends on: Vapor)
+                |
+                +-- BarkVisorApp  (executable -- headless daemon)
 ```
 
 ### Key Dependencies
@@ -304,19 +298,14 @@ Out of scope here: more than two Devices, auto-placement, template deploy
 via proxy, UI/Cypress, first-time join only. Guest-boot CI does not run
 this smoke; see [ci-kvm-runner.md](ci-kvm-runner.md).
 
-## Privileged Helper in Debug Builds
+## Bridged networking in development
 
-The XPC privileged helper (`BarkVisorHelper`) is used for operations that
-require root, such as configuring bridged networking via `socket_vmnet`.
-
-In debug builds, `kHelperTeamID` is set to `"DEVELOPMENT"` (defined in
-`Sources/BarkVisorHelperProtocol/HelperProtocol.swift`). The helper skips
-code-signing verification in this mode, so you do not need a real Apple
-Developer Team ID during development.
-
-For release builds, `scripts/build-release.sh` injects the real
-`APPLE_TEAM_ID` via sed before compiling:
+BarkVisor does not ship a privileged helper. For bridged/vmnet on macOS:
 
 ```sh
-sed -e 's/kHelperTeamID = "DEVELOPMENT"/kHelperTeamID = "<TEAM_ID>"/' ...
+brew install socket_vmnet
+sudo brew services start socket_vmnet
 ```
+
+NAT Workloads do not need that service. `APPLE_TEAM_ID` is still required
+when notarizing a release pkg, not for a helper.

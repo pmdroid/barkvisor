@@ -18,11 +18,13 @@ struct LinuxBridgeUSBTests {
             #expect(err?.httpStatus == 422)
             #expect(err?.code == "managed_bridge_daemon")
         #elseif os(macOS)
-            #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
             #expect(!PlatformCapabilities.supportsHostBridgeManagement)
-            #expect(throws: Never.self) {
+            let err = #expect(throws: BarkVisorError.self) {
                 try PlatformCapabilities.requireManagedBridgeDaemon()
             }
+            #expect(err?.httpStatus == 422)
+            #expect(err?.code == "managed_bridge_daemon")
         #endif
     }
 

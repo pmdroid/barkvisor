@@ -65,18 +65,16 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
 /Library/
   LaunchDaemons/
     dev.barkvisor.plist              # launchd plist for the main daemon
-    dev.barkvisor.helper.plist       # launchd plist for the privileged helper
-  PrivilegedHelperTools/
-    dev.barkvisor.helper             # Privileged XPC helper daemon (bridged networking)
 ```
 
 QEMU, swtpm, and socket_vmnet are **not** in the pkg. Install them with Homebrew before starting Workloads:
 
 ```sh
 brew install qemu swtpm socket_vmnet
+sudo brew services start socket_vmnet   # only if you want bridged/vmnet
 ```
 
-The privileged XPC helper (`dev.barkvisor.helper`) is still in the pkg. That is required for bridged networking.
+BarkVisor does not ship a privileged helper. Bridged/vmnet attaches to the Homebrew `socket_vmnet` service. NAT Workloads do not need that service.
 
 ## Data Directory
 
@@ -121,11 +119,11 @@ Additionally, short-lived unix sockets for QMP communication are stored in a sho
    ```
    sudo rm -rf /var/lib/barkvisor
    ```
-4. **(Optional)** If you installed the privileged helper, remove it:
+4. **(Optional)** Remove a leftover privileged helper from older installs:
    ```
    sudo launchctl bootout system/dev.barkvisor.helper
-   sudo rm /Library/LaunchDaemons/dev.barkvisor.helper.plist
-   sudo rm /Library/PrivilegedHelperTools/dev.barkvisor.helper
+   sudo rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
+   sudo rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
    ```
 
 ## Upgrading
@@ -145,4 +143,4 @@ From a `.pkg` or standalone archive:
 
 Your data directory is preserved across upgrades. Database migrations run automatically on startup -- BarkVisor uses GRDB's `DatabaseMigrator`, which tracks which migrations have already been applied and only runs new ones. No manual intervention is required.
 
-If you previously installed the privileged helper, it continues to work across app upgrades. Re-installation is only needed if the helper binary itself changes (release notes will mention this).
+Older installs may still have `dev.barkvisor.helper`. New builds do not use it; remove it with the uninstall steps above.

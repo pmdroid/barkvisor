@@ -36,12 +36,39 @@ struct HostBridgeReadinessTests {
         #expect(!LinuxHostNetwork.bridgeACLAllows("br0", fileContents: "allow br1\n"))
     }
 
-    @Test func `probe never reports ready on macOS`() {
-        #if os(macOS)
-            let ready = HostBridgeReadinessService.probe()
-            #expect(!ready.ready)
-            #expect(ready.bridges.isEmpty)
-        #endif
+    @Test func `mac socket_vmnet missing is not ready and shows brew commands`() {
+        let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(macSocketVmnet: true))
+        #expect(!facts.ready)
+        #expect(facts.bridges.isEmpty)
+        #expect(facts.remediations.map(\.id) == ["homebrew-socket-vmnet"])
+        #expect(facts.remediations[0].commands.contains("brew install socket_vmnet"))
+        #expect(facts.remediations[0].commands.contains("brew services start socket_vmnet"))
+    }
+
+    @Test func `mac socket_vmnet present is ready without linux remediations`() {
+        let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
+            bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+            macSocketVmnet: true,
+        ))
+        #expect(facts.ready)
+        #expect(facts.remediations.isEmpty)
+        #expect(facts.bridges.map(\.name) == ["en0"])
+    }
+
+    @Test func `bridged template deploy uses socket uplink not vmnet`() throws {
+        struct MacSockets: HostBridgeFactSource {
+            func inputs() -> HostBridgeFactInputs {
+                HostBridgeFactInputs(
+                    bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+                    macSocketVmnet: true,
+                )
+            }
+        }
+        let iface = try HostBridgeFactsService.activeBridgedInterface(
+            records: [], source: MacSockets(),
+        )
+        #expect(iface == "en0")
+        #expect(iface != "vmnet")
     }
 
     @Test func `facts seam is ready only with helper ACL and a bridge`() {
@@ -94,34 +121,35 @@ struct HostBridgeReadinessTests {
         }
     }
 
+    @Test func `status map uniquifies duplicate socket ifaces`() {
+        struct Dup: HostBridgeFactSource {
+            func inputs() -> HostBridgeFactInputs {
+                HostBridgeFactInputs(
+                    bridges: [
+                        HostBridgeSnapshot(name: "en0", enslaved: []),
+                        HostBridgeSnapshot(name: "en0", enslaved: []),
+                    ],
+                    macSocketVmnet: true,
+                )
+            }
+        }
+        let map = HostBridgeFactsService.statusByInterface(records: [], source: Dup())
+        #expect(map == ["en0": "active"])
+    }
+
     @Test func `status map on Linux uses facts not fabricated records`() {
-        #if os(Linux)
-            let fromDB = HostBridgeFactsService.statusByInterface(records: [
-                BridgeRecord(
-                    id: nil,
-                    interface: "ghost0",
-                    socketPath: nil,
-                    plistExists: true,
-                    daemonRunning: true,
-                    status: "active",
-                    updatedAt: "now",
-                ),
-            ])
-            #expect(fromDB["ghost0"] == nil)
-        #elseif os(macOS)
-            let fromDB = HostBridgeFactsService.statusByInterface(records: [
-                BridgeRecord(
-                    id: nil,
-                    interface: "en0",
-                    socketPath: nil,
-                    plistExists: true,
-                    daemonRunning: true,
-                    status: "active",
-                    updatedAt: "now",
-                ),
-            ])
-            #expect(fromDB["en0"] == "active")
-        #endif
+        let fromDB = HostBridgeFactsService.statusByInterface(records: [
+            BridgeRecord(
+                id: nil,
+                interface: "ghost0",
+                socketPath: nil,
+                plistExists: true,
+                daemonRunning: true,
+                status: "active",
+                updatedAt: "now",
+            ),
+        ])
+        #expect(fromDB["ghost0"] == nil)
     }
 
     @Test func `unused bridged interface uniqueness lives in facts`() {
@@ -173,31 +201,17 @@ struct HostBridgeReadinessTests {
             HostBridgeSnapshot(name: "br0", enslaved: ["eth1"]),
         ]
 
-        #if os(Linux)
-            let iface = try HostBridgeFactsService.activeBridgedInterface(
-                records: [ghost], source: stub,
-            )
-            #expect(iface == "br0")
+        let iface = try HostBridgeFactsService.activeBridgedInterface(
+            records: [ghost], source: stub,
+        )
+        #expect(iface == "br0")
 
-            let missing = #expect(throws: BarkVisorError.self) {
-                try HostBridgeFactsService.activeBridgedInterface(
-                    records: [ghost], source: StubHostBridgeFacts(),
-                )
-            }
-            #expect(missing?.httpStatus == 412)
-            #expect(missing?.errorDescription?.contains("Helper") != true)
-        #elseif os(macOS)
-            let iface = try HostBridgeFactsService.activeBridgedInterface(
-                records: [ghost], source: stub,
+        let missing = #expect(throws: BarkVisorError.self) {
+            try HostBridgeFactsService.activeBridgedInterface(
+                records: [ghost], source: StubHostBridgeFacts(),
             )
-            #expect(iface == "ghost0")
-
-            let missing = #expect(throws: BarkVisorError.self) {
-                try HostBridgeFactsService.activeBridgedInterface(
-                    records: [], source: stub,
-                )
-            }
-            #expect(missing?.httpStatus == 412)
-        #endif
+        }
+        #expect(missing?.httpStatus == 412)
+        #expect(missing?.errorDescription?.contains("Helper") != true)
     }
 }

@@ -3,7 +3,6 @@ import PackageDescription
 
 // NOTE: PackageDescription.SupportedPlatform has no `.linux` case; Linux builds
 // are unconstrained by `platforms` and work when the toolchain targets Linux.
-// Helper / HelperProtocol targets are macOS-only (NSXPC / SMJobBless).
 
 var coreDependencies: [Target.Dependency] = [
     .product(name: "GRDB", package: "GRDB.swift"),
@@ -36,30 +35,7 @@ var testDependencies: [Target.Dependency] = [
     .product(name: "Vapor", package: "vapor"),
 ]
 
-#if os(macOS)
-    coreDependencies.insert("BarkVisorHelperProtocol", at: 0)
-    testDependencies.append("BarkVisorHelperProtocol")
-#endif
-
 var packageTargets: [Target] = []
-
-#if os(macOS)
-    packageTargets.append(contentsOf: [
-        .target(
-            name: "BarkVisorHelperProtocol",
-            path: "Sources/BarkVisorHelperProtocol",
-        ),
-        .executableTarget(
-            name: "BarkVisorHelper",
-            dependencies: [
-                "BarkVisorHelperProtocol",
-                .product(name: "Logging", package: "swift-log"),
-                .product(name: "SwiftSentry", package: "swift-sentry"),
-            ],
-            path: "Sources/BarkVisorHelper",
-        ),
-    ])
-#endif
 
 packageTargets.append(contentsOf: [
     // Core library: services, models, helpers — no Vapor dependency

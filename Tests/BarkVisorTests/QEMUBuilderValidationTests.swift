@@ -352,36 +352,40 @@ struct QEMUBuilderValidationTests {
 
     // MARK: - Firmware
 
-    // MARK: - socket_vmnet (PAS-278)
+    // MARK: - socket_vmnet (PAS-294 Homebrew service)
 
-    @Test func `socket_vmnet candidates are per-iface only`() {
+    @Test func `socket_vmnet candidates include Homebrew shared socket`() {
         let iface = "en0"
         let candidates = QEMUBuilder.socketVmnetSocketCandidates(bridgeInterface: iface)
-        #expect(candidates == [
-            "/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)",
-            "/var/run/socket_vmnet.bridged.\(iface)",
-        ])
-        #expect(!candidates.contains("/var/run/socket_vmnet"))
-        #expect(!candidates.contains("/opt/homebrew/var/run/socket_vmnet"))
+        #expect(candidates.contains("/opt/homebrew/var/run/socket_vmnet.bridged.\(iface)"))
+        #expect(candidates.contains("/var/run/socket_vmnet.bridged.\(iface)"))
+        #expect(candidates.contains("/opt/homebrew/var/run/socket_vmnet"))
+        #expect(candidates.contains("/var/run/socket_vmnet"))
         #expect(QEMUBuilder.isSharedSocketVmnetPath("/var/run/socket_vmnet"))
         #expect(QEMUBuilder.isSharedSocketVmnetPath("/opt/homebrew/var/run/socket_vmnet"))
         #expect(!QEMUBuilder.isSharedSocketVmnetPath("/var/run/socket_vmnet.bridged.en0"))
     }
 
-    @Test func `shared socket_vmnet is not a fallback when per-iface is missing`() {
-        let exists: (String) -> Bool = { path in
-            QEMUBuilder.isSharedSocketVmnetPath(path)
-        }
+    @Test func `shared socket_vmnet is used when per-iface is missing`() throws {
+        let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
+            bridgeInterface: "en0",
+            dbSocketPath: nil,
+            fileExists: { QEMUBuilder.isSharedSocketVmnetPath($0) },
+        )
+        #expect(QEMUBuilder.isSharedSocketVmnetPath(path))
+    }
+
+    @Test func `missing socket_vmnet tells the operator to start Homebrew service`() {
         let err = #expect(throws: BarkVisorError.self) {
             _ = try QEMUBuilder.resolveSocketVmnetSocketPath(
                 bridgeInterface: "en0",
-                dbSocketPath: "/var/run/socket_vmnet",
-                fileExists: exists,
+                dbSocketPath: nil,
+                fileExists: { _ in false },
             )
         }
         #expect(err?.code == "process_spawn_failed")
-        #expect(err?.errorDescription?.contains("en0") == true)
-        #expect(err?.errorDescription?.contains("socket_vmnet daemon socket not found") == true)
+        #expect(err?.errorDescription?.contains("brew install socket_vmnet") == true)
+        #expect(err?.errorDescription?.contains("brew services start socket_vmnet") == true)
     }
 
     @Test func `per-iface socket_vmnet is used when present`() throws {
@@ -389,9 +393,131 @@ struct QEMUBuilderValidationTests {
         let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
             bridgeInterface: "en1",
             dbSocketPath: "/var/run/socket_vmnet",
-            fileExists: { $0 == perIface || QEMUBuilder.isSharedSocketVmnetPath($0) },
+            fileExists: { $0 == perIface || $0 == "/var/run/socket_vmnet" },
         )
         #expect(path == perIface)
+    }
+
+    @Test func `db shared socket_vmnet is accepted`() throws {
+        let dbPath = "/opt/homebrew/var/run/socket_vmnet"
+        let path = try QEMUBuilder.resolveSocketVmnetSocketPath(
+            bridgeInterface: "en0",
+            dbSocketPath: dbPath,
+            fileExists: { $0 == dbPath },
+        )
+        #expect(path == dbPath)
+    }
+
+    @Test func `socket_vmnet discovery lists per-iface and does not fake vmnet`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: { path in
+                path.hasSuffix("socket_vmnet.bridged.en0") || path == "/opt/homebrew/var/run/socket_vmnet"
+            },
+            listBridged: { dir in
+                dir == "/opt/homebrew/var/run" ? ["socket_vmnet.bridged.en0"] : []
+            },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en0"])
+        #expect(!found.map(\.interface).contains("vmnet"))
+        #expect(found[0].path.hasSuffix("socket_vmnet.bridged.en0"))
+    }
+
+    @Test func `existingSockets keeps one row per interface when prefixes collide`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: { path in
+                path == "/opt/homebrew/var/run/socket_vmnet"
+                    || path == "/usr/local/var/run/socket_vmnet"
+                    || path.hasSuffix("socket_vmnet.bridged.en0")
+            },
+            listBridged: { dir in
+                if dir == "/opt/homebrew/var/run" || dir == "/usr/local/var/run" {
+                    return ["socket_vmnet.bridged.en0"]
+                }
+                return []
+            },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en0"])
+        #expect(found[0].path.hasSuffix("socket_vmnet.bridged.en0"))
+        #expect(found[0].path.hasPrefix("/opt/homebrew/var/run"))
+    }
+
+    @Test func `existingSockets keeps one shared path when several prefixes exist`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: {
+                $0 == "/opt/homebrew/var/run/socket_vmnet"
+                    || $0 == "/usr/local/var/run/socket_vmnet"
+            },
+            listBridged: { _ in [] },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en0"])
+        #expect(found.map(\.path) == ["/opt/homebrew/var/run/socket_vmnet"])
+    }
+
+    @Test func `shared socket_vmnet listed when uplink differs from per-iface`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: { path in
+                path.hasSuffix("socket_vmnet.bridged.en1")
+                    || path == "/opt/homebrew/var/run/socket_vmnet"
+            },
+            listBridged: { dir in
+                dir == "/opt/homebrew/var/run" ? ["socket_vmnet.bridged.en1"] : []
+            },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en1", "en0"])
+        #expect(!found.map(\.interface).contains("vmnet"))
+    }
+
+    @Test func `shared socket_vmnet maps to a real host uplink not vmnet`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: { $0 == "/opt/homebrew/var/run/socket_vmnet" },
+            listBridged: { _ in [] },
+            sharedUplink: { "en0" },
+        )
+        #expect(found.map(\.interface) == ["en0"])
+        #expect(!found.map(\.interface).contains("vmnet"))
+        #expect(found[0].path == "/opt/homebrew/var/run/socket_vmnet")
+    }
+
+    @Test func `shared socket_vmnet is omitted without a host uplink`() {
+        let found = SocketVmnetDiscovery.existingSockets(
+            fileExists: { $0 == "/opt/homebrew/var/run/socket_vmnet" },
+            listBridged: { _ in [] },
+            sharedUplink: { nil },
+        )
+        #expect(found.isEmpty)
+        #expect(SocketVmnetDiscovery.socketAvailable(
+            fileExists: { $0 == "/opt/homebrew/var/run/socket_vmnet" },
+        ))
+    }
+
+    @Test func `shared uplink prefers en0 then en1 then a non-loopback extra`() {
+        #expect(
+            SocketVmnetDiscovery.sharedUplinkInterface(
+                interfaceExists: { $0 == "en0" }, extraNames: { [] },
+            ) == "en0",
+        )
+        #expect(
+            SocketVmnetDiscovery.sharedUplinkInterface(
+                interfaceExists: { $0 == "en1" }, extraNames: { [] },
+            ) == "en1",
+        )
+        #expect(
+            SocketVmnetDiscovery.sharedUplinkInterface(
+                interfaceExists: { $0 == "en5" }, extraNames: { ["lo0", "en5"] },
+            ) == "en5",
+        )
+        #expect(
+            SocketVmnetDiscovery.sharedUplinkInterface(
+                interfaceExists: { _ in false }, extraNames: { ["lo0"] },
+            ) == nil,
+        )
+        #expect(SocketVmnetDiscovery.isLoopbackInterface("lo0"))
+        #expect(SocketVmnetDiscovery.isLoopbackInterface("lo"))
+        #expect(!SocketVmnetDiscovery.isLoopbackInterface("en0"))
     }
 
     @Test func `db per-iface socket_vmnet is preferred when present`() throws {
