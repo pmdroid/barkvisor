@@ -154,6 +154,21 @@ ready, deploy again.
 If the image is already available, the VM is created immediately through the
 same pipeline as the wizard (cloud-image mode with rendered user data).
 
+### Onyx
+
+**Onyx** (Lite) is a catalog template, same slot as Pi-hole. It installs Onyx
+Chat/Agents on Ubuntu 24.04 and talks to Home Ollama at
+`http://10.0.2.2:11434` (the slirp host). You can change that URL in the
+deploy form. NAT publishes guest `:80` on This Device as `http://127.0.0.1/`.
+A member Device's localhost is the wrong machine — open the UI on that
+Device.
+
+First boot clones the Onyx repo and runs `docker compose` Lite. That takes
+several minutes; it is not instant. This template does not grant the Agent
+network cage. `10.0.2.2:11434` is ordinary slirp host access. The SSH key
+picker only appears when a recipe declares an `ssh_keys` input (Ubuntu,
+Pi-hole); Onyx does not.
+
 ## Starting a VM and Connecting
 
 ### Start

@@ -8,6 +8,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Template **Onyx** (Lite) in the Templates catalog: Ubuntu 24.04, NAT `:80`, cloud-init installs Onyx Lite. Ollama URL is a deploy input (default `http://10.0.2.2:11434`). After deploy on This Device, **Open Onyx** is `http://127.0.0.1/`. SSH key picker only when the recipe declares `ssh_keys`. In-app Chat tab is gone; completions stay on `/v1/chat/completions`.
 - Settings Remote access: pick hostname / LAN / Tailscale DNS (or Other) as the advertise URL. The same host drives pairing QR `host=` and Models inference how-to (`OPENAI_BASE_URL` is saved advertise, then MagicDNS/tailnet IP, then LAN). HTTPS Tailscale Serve origins contribute hostname only; LAN stays `http://<host>:7777`. Cage URL is still `http://10.0.2.2:11434/v1`.
 - Inference how-to: web and Console Models always show a **Use this API** card. LAN is Home or Device `:7777/v1/chat/completions` with `Authorization: Bearer` and an inference key (not Device `:11434`). Copy curl and `OPENAI_BASE_URL` / `OPENAI_API_KEY`. From inside a Workload the cage URL is `http://10.0.2.2:11434/v1` (slirp guestfwd). Coding Agent cloud-init writes a real inference key when a grant is supplied.
 - GPU attach (PAS-275): Linux Devices list GPUs with their IOMMU group and attach/detach them like USB. Fail closed if IOMMU is not ready. Occupancy is the host GPU driver. Detach, stop, and delete unbind vfio-pci. Guest Ollama is `http://127.0.0.1:11434/v1`.

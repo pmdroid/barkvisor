@@ -39,7 +39,7 @@ struct ChatTests {
         """.data(using: .utf8)!
 
         let catalog = try decoder.decode(OllamaHomeCatalog.self, from: json)
-        #expect(ChatAvailability.visible(catalog: catalog))
+        #expect(!ChatAvailability.visible(catalog: catalog))
         #expect(ChatAvailability.defaultModel(in: catalog) == "llama3:latest")
         #expect(!ChatAvailability.visible(anyReachable: true, modelCount: 0))
         #expect(!ChatAvailability.visible(catalog: nil))

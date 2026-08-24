@@ -59,8 +59,10 @@ enum ChatStreamApply {
 }
 
 enum ChatAvailability {
-    static func visible(anyReachable: Bool, modelCount: Int) -> Bool {
-        anyReachable && modelCount > 0
+    /// In-app Chat is retired. Completions stay on `/v1/chat/completions`;
+    /// Chat/Agents are the Onyx template.
+    static func visible(anyReachable _: Bool, modelCount _: Int) -> Bool {
+        false
     }
 
     static func visible(catalog: OllamaHomeCatalog?) -> Bool {

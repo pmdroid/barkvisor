@@ -13,7 +13,7 @@ describe('chat completions (PAS-270)', () => {
     expect(chatIsVisible(false, 0)).toBe(false)
     expect(chatIsVisible(true, 0)).toBe(false)
     expect(chatIsVisible(false, 1)).toBe(false)
-    expect(chatIsVisible(true, 1)).toBe(true)
+    expect(chatIsVisible(true, 1)).toBe(false)
   })
 
   test('prefers a running model then the first catalog name', () => {

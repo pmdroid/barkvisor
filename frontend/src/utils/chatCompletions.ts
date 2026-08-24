@@ -3,8 +3,9 @@ export interface ChatMessage {
   content: string
 }
 
-export function chatIsVisible(anyReachable: boolean, modelCount: number): boolean {
-  return anyReachable && modelCount > 0
+/** In-app Chat is retired. Completions stay on `/v1/chat/completions`. */
+export function chatIsVisible(_anyReachable: boolean, _modelCount: number): boolean {
+  return false
 }
 
 export function defaultChatModel(names: string[], running: string[]): string {

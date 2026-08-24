@@ -51,6 +51,22 @@ struct CloudInitServiceTests {
         #expect(throws: (any Error).self) { try CloudInitService.validateUserData(":\n  bad:\n bad") }
     }
 
+    @Test func `wizard user data rejects identity keys`() {
+        #expect(throws: (any Error).self) {
+            try CloudInitService.validateUserData("users:\n  - name: ubuntu\n")
+        }
+        #expect(throws: (any Error).self) {
+            try CloudInitService.validateUserData("ssh_authorized_keys:\n  - ssh-ed25519 AAAA\n")
+        }
+    }
+
+    @Test func `catalog user data allows identity keys`() throws {
+        try CloudInitService.validateUserData(
+            "users:\n  - name: ubuntu\n    ssh_authorized_keys:\n      - ssh-ed25519 AAAA\n",
+            allowCatalogIdentityKeys: true,
+        )
+    }
+
     // MARK: - userDataRef confinement
 
     @Test func `userDataRef accepts current path without change`() throws {
