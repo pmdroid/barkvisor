@@ -69,6 +69,10 @@ struct DeviceDetailTests {
         let down = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
         #expect(StatusLabel.reachability(down).text == "Unreachable")
         #expect(DeviceStatsHistory.unavailableCopy(down) == DeviceStatsHistory.unreachableCopy)
+
+        var ok = snapshot(hostId: "ok", role: "member", title: "Office", reachable: true)
+        ok.reachability = "ok"
+        #expect(DeviceStatsHistory.unavailableCopy(ok) != DeviceStatsHistory.unreachableCopy)
     }
 
     @Test func `history path uses local api or home proxy`() throws {

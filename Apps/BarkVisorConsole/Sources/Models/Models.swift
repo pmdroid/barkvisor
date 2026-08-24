@@ -616,7 +616,7 @@ enum DeviceStatsHistory {
     }
 
     static func unavailableCopy(_ device: HomeDeviceHealthSnapshot) -> String {
-        if device.reachability == "unreachable" || device.reachability == "ok" {
+        if device.reachability == "unreachable" {
             return unreachableCopy
         }
         let error = device.reachabilityError?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

@@ -79,6 +79,8 @@ export function reachabilityLabel(code: string | undefined): string {
       return 'TLS failed'
     case 'memberHTTP':
       return 'HTTP error'
+    case 'responseTooLarge':
+      return 'Response too large'
     default:
       return 'Unreachable'
   }

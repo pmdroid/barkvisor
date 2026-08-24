@@ -7,8 +7,13 @@ import {
 } from './capabilitiesParse'
 import { imageArchSupportedOnHost, normalizeImageArch, templateArchSupportedOnHost, templateDeclaredArches } from './imageArch'
 import { isSelfDevice } from './homeDeviceApi'
+import { reachabilityHint, reachabilityLabel } from './homeDeviceHealth'
 
 export const DEVICE_LIBRARY_MISSING_REASON = "Not in this Device's Library"
+
+function placementUnreachableReason(device: HomeDeviceHealthSnapshot): string {
+  return reachabilityHint(device) || reachabilityLabel(device.reachability)
+}
 
 export type DevicePickOption = {
   hostId: string
@@ -77,7 +82,7 @@ export function createVMIncompatibilityReasons(
   } = {},
 ): string[] {
   if (!isSelfDevice(device) && device.reachability !== 'ok') {
-    return ['Device is unreachable']
+    return [placementUnreachableReason(device)]
   }
   if (opts.hasImage === false) {
     return [DEVICE_LIBRARY_MISSING_REASON]
@@ -121,7 +126,7 @@ export function templateIncompatibilityReasons(
   } = {},
 ): string[] {
   if (!isSelfDevice(device) && device.reachability !== 'ok') {
-    return ['Device is unreachable']
+    return [placementUnreachableReason(device)]
   }
   if (opts.hasTemplate === false) {
     return [DEVICE_LIBRARY_MISSING_REASON]
