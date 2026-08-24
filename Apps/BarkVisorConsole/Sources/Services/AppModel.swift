@@ -379,11 +379,14 @@ final class AppModel {
         }
     }
 
-    func saveOllamaSettings(_ body: OllamaSettingsUpdate) async {
+    @discardableResult
+    func saveOllamaSettings(_ body: OllamaSettingsUpdate) async -> Bool {
         do {
             ollamaSettings = try await requireClient().saveOllamaSettings(body)
+            return true
         } catch {
             handle(error)
+            return false
         }
     }
 

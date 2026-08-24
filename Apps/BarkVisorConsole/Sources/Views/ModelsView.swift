@@ -259,8 +259,8 @@ struct ModelsView: View {
         guard !hostId.isEmpty else { return }
         keySaving = true
         defer { keySaving = false }
-        await model.saveOllamaSettings(OllamaSettingsUpdate(hostId: hostId, apiKey: keyDraft))
-        if model.banner == nil {
+        let saved = await model.saveOllamaSettings(OllamaSettingsUpdate(hostId: hostId, apiKey: keyDraft))
+        if saved {
             keyDraft = ""
             keySheet = false
         }

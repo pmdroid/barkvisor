@@ -1789,7 +1789,17 @@ paths:
       summary: Per-Device upstream Ollama keys stored on Home
       responses:
         "200":
-          description: Settings without the raw key
+          description: Masked settings for known Devices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaSettingsSnapshot"
+        "403":
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
     put:
@@ -1797,9 +1807,25 @@ paths:
       operationId: putHomeOllamaSettings
       x-barkvisor-stability: evolving
       summary: Set a Device's upstream Ollama URL and API key on Home
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaSettingsUpdate"
       responses:
         "200":
-          description: Saved settings
+          description: Masked settings after save
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaSettingsSnapshot"
+        "403":
+          description: Admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
 
@@ -1975,10 +2001,10 @@ components:
           type: string
         hasApiKey:
           type: boolean
-          description: True when Home stores an upstream key for this Device. The key itself is never returned.
+          description: True when an effective upstream key is present for this Device (stored on the Device row or inherited from the global key). The key itself is never returned.
         apiKeyMasked:
           type: string
-          description: Bullets when a key is stored. Never the raw key or a suffix.
+          description: Bullets when an effective key is present (stored or inherited). Never the raw key or a suffix.
 
     OllamaSettingsSnapshot:
       type: object
