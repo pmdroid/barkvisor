@@ -54,7 +54,7 @@ If the Device returns `503 setup_required`, the app tells you to finish first-ru
 | Console | Serial via SwiftTerm + `URLSessionWebSocketTask`. This Device: `POST /api/auth/ws-ticket` then `/api/vms/{id}/console?ticket=`. Member: mint ticket on the Device, then Home tunnel `/api/home/devices/{id}/v1/vms/{id}/console?ticket=&session=`. |
 | Display | VNC via bundled noVNC 1.6.0 in `WKWebView`. Same ticket + path mapping as Console (`/vnc`). Pinch/pan, pointer, on-screen keyboard, Ctrl+Alt+Del. |
 | Library / Disks / Networks / Logs | Library lists images on the Device, downloads from the image catalog (`POST /api/repositories/images/{id}/download`), and can create a Workload from a ready image. Disks, Networks, and Logs stay read-only. Depot path stays in the web UI. |
-| Settings | URL, logout, about (`/api/system/about`), Add Device pairing code. On Mac, issue a phone sign-in QR (`POST /api/auth/login-offers`). Changing origin signs you out. |
+| Settings | URL, logout, about (`/api/system/about`), Add Device pairing code, API keys (`GET/POST/DELETE /api/auth/keys`: list, mint inference-by-default, show-once secret, revoke). Admin-only; 403 is an inline banner. On Mac, issue a phone sign-in QR (`POST /api/auth/login-offers`). Changing origin signs you out. |
 
 Remote Device APIs go through `/api/home/devices/{id}/v1/...`. The connected Device (`role=self`) uses `/api/...` directly.
 
@@ -64,7 +64,7 @@ Home and Mac Workload rows push a SwiftUI Workload detail. They do not open Safa
 
 `CreateWorkloadTests` covers ready-image gating, guest type from the image arch, default CPU/RAM/disk (clamped to a provided host CPU count, never this Mac’s `cpuCount`), ISO vs cloud-image POST bodies, 202 `{ taskID, vm }` decode, and member create via the Home proxy.
 
-`APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, and Device URL normalization.
+`APIDecodingTests` covers Home device health JSON, workload `memoryMB` / health dual-read, the error envelope, Device URL normalization, API key list/create DTOs (no list secret, `/api/auth/keys`), and a Keychain round-trip of a minted secret that does not touch the session JWT.
 
 `WorkloadDetailTests` covers guest-info OS/IP decode, vmType fallback, and Console/Display opening on a reachable member the same as This Device.
 

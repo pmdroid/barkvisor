@@ -23,6 +23,7 @@ APP_SOURCES = [
     "Sources/Models/StreamSupport.swift",
     "Sources/Models/OllamaModels.swift",
     "Sources/Models/Chat.swift",
+    "Sources/Models/APIKeys.swift",
     "Sources/Services/KeychainStore.swift",
     "Sources/Services/APIClient.swift",
     "Sources/Services/AppModel.swift",
@@ -45,6 +46,7 @@ APP_SOURCES = [
     "Sources/Views/LibraryView.swift",
     "Sources/Views/ModelsView.swift",
     "Sources/Views/SettingsView.swift",
+    "Sources/Views/APIKeysSection.swift",
     "Sources/Views/Components/Components.swift",
 ]
 TEST_SOURCES = [
@@ -303,6 +305,7 @@ def main() -> None:
                 child_file("Sources/Models/StreamSupport.swift"),
                 child_file("Sources/Models/OllamaModels.swift"),
                 child_file("Sources/Models/Chat.swift"),
+                child_file("Sources/Models/APIKeys.swift"),
             ],
             "Models",
         )
@@ -341,6 +344,7 @@ def main() -> None:
                 child_file("Sources/Views/LibraryView.swift"),
                 child_file("Sources/Views/ModelsView.swift"),
                 child_file("Sources/Views/SettingsView.swift"),
+                child_file("Sources/Views/APIKeysSection.swift"),
                 child_group("Components"),
             ],
             "Views",

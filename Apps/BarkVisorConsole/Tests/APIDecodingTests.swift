@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import BarkVisorConsole
 
@@ -243,6 +244,124 @@ struct APIDecodingTests {
             loads: [studio.hostId: .success([])],
         )
         #expect(DevicesTabBadge.count(in: [studio, living, garage]) == union.unreachable.count)
+    }
+
+    @Test func `api key routes use auth keys not bare keys`() {
+        #expect(APIKeyRoutes.collection == "/api/auth/keys")
+        #expect(APIKeyRoutes.item("k1") == "/api/auth/keys/k1")
+        #expect(!APIKeyRoutes.collection.hasPrefix("/api/keys"))
+        #expect(APIKeyKindOption.createDefault == .inference)
+        #expect(APIKeyKindOption.badge("full") == "full")
+        #expect(APIKeyKindOption.badge(nil) == "inference")
+        #expect(APIKeyKindOption.badge("mystery") == "inference")
+    }
+
+    @Test func `api key list decodes without secret`() throws {
+        let json = """
+        {
+          "id": "k1",
+          "name": "ollama-cli",
+          "keyPrefix": "barkvisor_abcde",
+          "expiresAt": "2027-06-15T00:00:00Z",
+          "lastUsedAt": "2026-08-01T12:30:00Z",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "kind": "inference",
+          "key": "barkvisor_abcdeSECRET"
+        }
+        """.data(using: .utf8)!
+        let key = try decoder.decode(APIKeyResponse.self, from: json)
+        #expect(key.id == "k1")
+        #expect(key.name == "ollama-cli")
+        #expect(key.keyPrefix == "barkvisor_abcde")
+        #expect(key.kindBadge == "inference")
+        #expect(key.expiresAt == "2027-06-15T00:00:00Z")
+        #expect(key.lastUsedAt == "2026-08-01T12:30:00Z")
+        #expect(!key.hasSecretField)
+        #expect(
+            APIKeyDisplay.expiryLabel(key.expiresAt, now: iso("2026-08-01T00:00:00.000Z")) == "2027-06-15",
+        )
+        #expect(APIKeyDisplay.expiryLabel(nil) == "Never")
+        #expect(
+            APIKeyDisplay.expiryLabel("2020-01-01T00:00:00Z", now: iso("2026-01-01T00:00:00.000Z")) == "Expired",
+        )
+        #expect(APIKeyDisplay.usedLabel(nil) == "Never")
+        #expect(APIKeyDisplay.usedLabel(key.lastUsedAt) == "2026-08-01 12:30")
+        #expect(APIKeyDisplay.createdLabel(key.createdAt) == "2026-01-01")
+    }
+
+    @Test func `api key create decodes secret once and defaults kind`() throws {
+        let json = """
+        {
+          "id": "k2",
+          "name": "ci",
+          "key": "barkvisor_live_secret",
+          "keyPrefix": "barkvisor_live_",
+          "expiresAt": null,
+          "createdAt": "2026-02-02T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let created = try decoder.decode(APIKeyCreateResponse.self, from: json)
+        #expect(created.key == "barkvisor_live_secret")
+        #expect(created.kind == "full")
+        #expect(created.expiresAt == nil)
+        let missingKindList = """
+        {
+          "id": "k3",
+          "name": "legacy",
+          "keyPrefix": "barkvisor_legac",
+          "expiresAt": null,
+          "lastUsedAt": null,
+          "createdAt": "2026-01-01T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let listed = try decoder.decode(APIKeyResponse.self, from: missingKindList)
+        #expect(listed.kindBadge == "full")
+        #expect(
+            APIKeyDisplay.forbiddenMessage(from: APIError.http(status: 403, reason: "forbidden"))
+                == "forbidden",
+        )
+        #expect(
+            APIKeyDisplay.forbiddenMessage(from: APIError.http(status: 403, reason: "  "))
+                == APIKeyDisplay.forbiddenFallback,
+        )
+        #expect(APIKeyDisplay.forbiddenMessage(from: APIError.unauthorized) == nil)
+        #expect(APIKeyDisplay.inferenceCopy == "inference = Ollama list + chat completions only")
+        #expect(APIKeyDisplay.signInRequired == "Sign in required")
+        #expect(APIKeyDisplay.signInRequired == APIError.unauthorized.errorDescription)
+    }
+
+    @Test func `api key display reuses cached ISO8601 formatters`() {
+        let fractional = "2026-08-01T12:30:00.000Z"
+        let whole = "2026-08-01T12:30:00Z"
+        let parsedFractional = APIKeyDisplay.parseISO8601(fractional)
+        let parsedWhole = APIKeyDisplay.parseISO8601(whole)
+        #expect(parsedFractional != nil)
+        #expect(parsedWhole != nil)
+        #expect(APIKeyDisplay.parseISO8601(fractional) == parsedFractional)
+        #expect(APIKeyDisplay.parseISO8601(whole) == parsedWhole)
+        #expect(APIKeyDisplay.parseISO8601("not-a-date") == nil)
+        #expect(APIKeyDisplay.createdLabel(fractional) == "2026-08-01")
+        #expect(APIKeyDisplay.createdLabel(whole) == "2026-08-01")
+        #expect(APIKeyDisplay.usedLabel(fractional) == "2026-08-01 12:30")
+        #expect(APIKeyDisplay.usedLabel(whole) == "2026-08-01 12:30")
+    }
+
+    @Test func `minted api key keychain round trip does not touch session jwt`() {
+        let account = "test-minted-api-key-\(UUID().uuidString)"
+        let secret = "barkvisor_live_roundtrip"
+        let previousJWT = KeychainStore.readToken()
+        defer {
+            _ = KeychainStore.delete(account: account)
+        }
+        #expect(account != KeychainStore.tokenAccount)
+        #expect(account != KeychainStore.refreshAccount)
+        let status = KeychainStore.saveStatus(account: account, value: secret)
+        #expect(status == errSecSuccess)
+        #expect(KeychainStore.read(account: account) == secret)
+        #expect(KeychainStore.readToken() == previousJWT)
+        #expect(KeychainStore.delete(account: account))
+        #expect(KeychainStore.read(account: account) == nil)
+        #expect(KeychainStore.readToken() == previousJWT)
     }
 
     @Test func `home device directory does not mask non 404`() throws {
