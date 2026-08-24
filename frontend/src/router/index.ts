@@ -31,6 +31,7 @@ const router = createRouter({
     },
     { path: '/images', name: 'images', component: () => import('../views/ImageLibraryView.vue') },
     { path: '/models', name: 'models', component: () => import('../views/ModelsView.vue') },
+    { path: '/chat', name: 'chat', component: () => import('../views/ChatView.vue') },
     { path: '/disks', name: 'disks', component: () => import('../views/DiskView.vue') },
     { path: '/networks', name: 'networks', component: () => import('../views/NetworkView.vue') },
     { path: '/registry', name: 'registry', component: () => import('../views/RegistryView.vue') },
@@ -99,7 +100,7 @@ router.beforeEach(async (to) => {
   if (auth.isAuthenticated && auth.role !== 'admin' && auth.role !== 'inference') {
     await auth.fetchMe()
   }
-  if (auth.role === 'inference' && to.name !== 'models') {
+  if (auth.role === 'inference' && to.name !== 'models' && to.name !== 'chat') {
     return { name: 'models' }
   }
 })

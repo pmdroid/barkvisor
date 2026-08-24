@@ -25,6 +25,23 @@ public struct LibraryDepotStreamResult: Sendable {
     }
 }
 
+/// AsyncThrowingStream whose producer Task is cancelled when the consumer
+/// drops the stream (client disconnect, `break`, or Task cancel).
+enum CancellableProxyStream {
+    static func make(
+        _ work: @escaping @Sendable (AsyncThrowingStream<Data, Error>.Continuation) async -> Void,
+    ) -> AsyncThrowingStream<Data, Error> {
+        let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream()
+        let task = Task {
+            await work(continuation)
+        }
+        continuation.onTermination = { @Sendable _ in
+            task.cancel()
+        }
+        return stream
+    }
+}
+
 /// mTLS HTTP client for member proxy (PAS-34).
 ///
 /// Uses NIO sockets (not Network.framework) so client certificates work
@@ -68,6 +85,43 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
             throw error
         } catch {
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+        }
+    }
+
+    public func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error> {
+        CancellableProxyStream.make { continuation in
+            do {
+                try Task.checkCancellation()
+                let client = try AgentMTLSRuntime.shared.client(
+                    for: material,
+                    presentationCertificatePEM: presentationCertificatePEM,
+                    trustCertificatePEMs: trustCertificatePEMs,
+                    timeoutSeconds: timeoutSeconds,
+                )
+                let response = try await executeHeaders(request, on: client)
+                try Task.checkCancellation()
+                let status = Int(response.status.code)
+                if !(200 ..< 300).contains(status) {
+                    let buffer = try await collectProxyBody(response.body, maxBytes: 65_536)
+                    let reason = String(buffer: buffer)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    continuation.finish(
+                        throwing: BarkVisorError.badGateway(
+                            reason.isEmpty ? "HTTP \(status)" : reason,
+                        ),
+                    )
+                    return
+                }
+                for try await part in response.body {
+                    try Task.checkCancellation()
+                    continuation.yield(Data(part.readableBytesView))
+                }
+                continuation.finish()
+            } catch is CancellationError {
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
         }
     }
 
@@ -172,6 +226,20 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         _ request: HomeDeviceProxyRequest,
         on client: HTTPClient,
     ) async throws -> HomeDeviceProxyResponse {
+        let response = try await executeHeaders(request, on: client)
+        let buffer = try await collectProxyBody(response.body, maxBytes: HomeDeviceProxy.maxBodyBytes)
+        let headers = response.headers.map { ($0.name, $0.value) }
+        return HomeDeviceProxyResponse(
+            status: Int(response.status.code),
+            headers: headers,
+            body: Data(buffer.readableBytesView),
+        )
+    }
+
+    private func executeHeaders(
+        _ request: HomeDeviceProxyRequest,
+        on client: HTTPClient,
+    ) async throws -> HTTPClientResponse {
         var outbound = HTTPClientRequest(url: request.url.absoluteString)
         outbound.method = HTTPMethod(rawValue: request.method.uppercased())
         for (name, value) in request.headers {
@@ -180,19 +248,11 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         if let body = request.body {
             outbound.body = .bytes(body)
         }
-        let response: HTTPClientResponse
         do {
-            response = try await client.execute(outbound, timeout: .seconds(timeoutSeconds))
+            return try await client.execute(outbound, timeout: .seconds(timeoutSeconds))
         } catch {
             throw HomeDeviceProxyError.unreachable(error.localizedDescription)
         }
-        let buffer = try await collectProxyBody(response.body, maxBytes: HomeDeviceProxy.maxBodyBytes)
-        let headers = response.headers.map { ($0.name, $0.value) }
-        return HomeDeviceProxyResponse(
-            status: Int(response.status.code),
-            headers: headers,
-            body: Data(buffer.readableBytesView),
-        )
     }
 }
 

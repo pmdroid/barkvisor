@@ -28,4 +28,10 @@ public enum UserRolePolicy {
     public static func inheritKeyKind(userRole: UserRole, requested: APIKeyKind) -> APIKeyKind {
         userRole == .inference ? .inference : requested
     }
+
+    /// Inference is narrower than admin. A signed hop claim of inference must
+    /// not become admin because the member Device only has the paired admin row.
+    public static func moreRestrictive(_ lhs: UserRole, _ rhs: UserRole) -> UserRole {
+        lhs == .admin && rhs == .admin ? .admin : .inference
+    }
 }

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { useOllamaStore } from './stores/ollama'
 import { useThemeStore } from './stores/theme'
+import { chatIsVisible } from './utils/chatCompletions'
 import ToastContainer from './components/ToastContainer.vue'
 
 const route = useRoute()
@@ -76,6 +77,12 @@ function isActive(path: string) {
             <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/>
           </svg>
           <span class="nav-label">Ollama</span>
+        </router-link>
+        <router-link v-if="chatIsVisible(ollama.anyReachable, ollama.models.length)" to="/chat" :class="{ active: isActive('/chat') }">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/>
+          </svg>
+          <span class="nav-label">Chat</span>
         </router-link>
         <router-link v-if="auth.isAdmin" to="/images" :class="{ active: isActive('/images') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

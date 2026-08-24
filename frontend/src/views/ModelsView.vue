@@ -203,7 +203,7 @@ async function saveKey() {
       v-if="store.models.length === 0 && !store.loading"
       icon="monitor"
       title="No Ollama models yet"
-      subtitle="Pull a model to use chat completions through BarkVisor."
+      subtitle="Pull a model to open Chat. Completions go through /v1/chat/completions."
     />
 
     <DataTable

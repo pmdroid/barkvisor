@@ -179,14 +179,26 @@ struct HomeOllamaController: RouteCollection {
             throw BarkVisorError.badRequest("Missing chat completion body")
         }
         let data = Data(buffer.readableBytesView)
-        let model = try OllamaChatProxy.parseBufferedRequest(data)
+        let model = try OllamaLocalProbe.modelName(fromChatBody: data)
         let catalog = try await catalogForCompletion(model: model, db: req.db, user: user)
         guard let picked = OllamaRouter.pick(model: model, catalog: catalog, now: now?() ?? Date())
         else {
             throw BarkVisorError.notFound("No Device has Ollama model \(model)")
         }
+        let stream = OllamaLocalProbe.wantsStream(fromChatBody: data)
         if picked.hostId == hostId {
             return try await localOllama.complete(body: data, db: req.db)
+        }
+        if stream {
+            let memberStream = try await sendMemberStream(
+                hostId: picked.hostId,
+                method: "POST",
+                path: "/api/ollama/v1/chat/completions",
+                body: data,
+                user: user,
+                timeoutSeconds: OllamaChatProxy.streamTimeoutSeconds,
+            )
+            return try await OllamaChatProxy.stream(memberStream)
         }
         let result = try await sendMember(
             hostId: picked.hostId,
@@ -194,11 +206,13 @@ struct HomeOllamaController: RouteCollection {
             path: "/api/ollama/v1/chat/completions",
             body: data,
             user: user,
+            timeoutSeconds: OllamaChatProxy.streamTimeoutSeconds,
         )
-        return OllamaChatHTTP.response(
+        return OllamaChatProxy.buffered(
             status: result.status,
-            headers: result.headers,
             body: result.body,
+            stream: false,
+            memberHeaders: result.headers,
         )
     }
 
@@ -382,6 +396,7 @@ struct HomeOllamaController: RouteCollection {
         path: String,
         body: Data?,
         user: AuthenticatedUser,
+        timeoutSeconds: Int64? = nil,
     ) async throws -> HomeDeviceProxyResponse {
         let hopBearer = try await memberHopBearer(for: user)
         return try await sendMember(
@@ -390,6 +405,7 @@ struct HomeOllamaController: RouteCollection {
             path: path,
             body: body,
             hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
         )
     }
 
@@ -399,7 +415,65 @@ struct HomeOllamaController: RouteCollection {
         path: String,
         body: Data?,
         hopBearer: String,
+        timeoutSeconds: Int64? = nil,
     ) async throws -> HomeDeviceProxyResponse {
+        let prepared = try prepareMemberHop(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
+        )
+        return try await prepared.client.send(prepared.request)
+    }
+
+    func sendMemberStream(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        user: AuthenticatedUser,
+        timeoutSeconds: Int64? = nil,
+    ) async throws -> AsyncThrowingStream<Data, Error> {
+        let hopBearer = try await memberHopBearer(for: user)
+        return try sendMemberStream(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
+        )
+    }
+
+    func sendMemberStream(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        hopBearer: String,
+        timeoutSeconds: Int64? = nil,
+    ) throws -> AsyncThrowingStream<Data, Error> {
+        let prepared = try prepareMemberHop(
+            hostId: hostId,
+            method: method,
+            path: path,
+            body: body,
+            hopBearer: hopBearer,
+            timeoutSeconds: timeoutSeconds,
+        )
+        return prepared.client.stream(prepared.request)
+    }
+
+    private func prepareMemberHop(
+        hostId: String,
+        method: String,
+        path: String,
+        body: Data?,
+        hopBearer: String,
+        timeoutSeconds: Int64?,
+    ) throws -> (client: any HomeDeviceProxyClient, request: HomeDeviceProxyRequest) {
         if hopBearer.hasPrefix("barkvisor_") {
             throw BarkVisorError.internalError("API keys cannot authenticate on member Devices")
         }
@@ -411,18 +485,36 @@ struct HomeOllamaController: RouteCollection {
             throw BarkVisorError.badGateway("Device has no reachable address")
         }
         let url = try HomeDeviceProxy.memberURL(host: agentHost, port: record.agentPort, path: path)
-        let client: any HomeDeviceProxyClient = if let mtlsClient {
-            mtlsClient
-        } else {
-            try HomeDevicesMTLS.client(dataDir: dataDir, hostId: self.hostId)
-        }
+        let client = try memberClient(timeoutSeconds: timeoutSeconds)
         var headers: [(String, String)] = [(APIContract.versionHeaderName, String(APIContract.version))]
         headers.append(("Authorization", "Bearer \(hopBearer)"))
         if body != nil {
             headers.append(("Content-Type", "application/json"))
         }
-        return try await client.send(
+        return (
+            client,
             HomeDeviceProxyRequest(method: method, url: url, headers: headers, body: body),
+        )
+    }
+
+    private func memberClient(timeoutSeconds: Int64?) throws -> any HomeDeviceProxyClient {
+        if let mtlsClient { return mtlsClient }
+        guard let timeoutSeconds else {
+            return try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
+        }
+        let receipt = try? PairingService.loadReceipt(dataDir: dataDir)
+        let material = try HomeCAService.loadOrCreate(dataDir: dataDir, hostId: hostId)
+        return AgentMTLSClient(
+            material: material,
+            presentationCertificatePEM: AgentPlaneCertificates.presentationCertificatePEM(
+                material: material,
+                receipt: receipt,
+            ),
+            trustCertificatePEMs: AgentPlaneCertificates.trustCertificatePEMs(
+                material: material,
+                receipt: receipt,
+            ),
+            timeoutSeconds: timeoutSeconds,
         )
     }
 }
