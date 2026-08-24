@@ -8,9 +8,19 @@ export function ollamaPullTaskPath(
   return `/home/devices/${encodeURIComponent(task.hostId)}/v1/tasks/${id}`
 }
 
-/** Start payload without hostId so Home picks already-running, then healthier Device. */
-export function ollamaStartBody(name: string): { name: string } {
-  return { name }
+/** Start JSON is `{ name, hostId? }`. Omit hostId so Home picks already-running, then healthier Device. */
+export function ollamaStartBody(
+  name: string,
+  hostId?: string,
+): { name: string; hostId?: string } {
+  return hostId ? { name, hostId } : { name }
+}
+
+/** Client-side Models table filter. Empty query matches every name. */
+export function ollamaModelMatchesName(name: string, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return name.toLowerCase().includes(q)
 }
 
 /** Task progress is 0...1 from the backend. */

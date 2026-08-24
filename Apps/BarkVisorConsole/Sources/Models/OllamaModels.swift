@@ -16,6 +16,12 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
 
     var id: String { name }
 
+    func matchesName(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { return true }
+        return name.localizedCaseInsensitiveContains(q)
+    }
+
     var locationLine: String {
         locations.map { loc in
             let trimmed = loc.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -59,13 +65,13 @@ struct OllamaPullBody: Encodable, Equatable {
     var hostId: String?
 }
 
-/// Start/stop without a hostId lets Home pick already-running, then healthier Device.
+/// Start/stop JSON is `{ name, hostId? }`. Omit hostId so Home picks already-running, then healthier Device.
 struct OllamaModelActionBody: Encodable, Equatable {
     var name: String
     var hostId: String?
 
-    static func start(_ name: String) -> OllamaModelActionBody {
-        OllamaModelActionBody(name: name, hostId: nil)
+    static func start(_ name: String, hostId: String?) -> OllamaModelActionBody {
+        OllamaModelActionBody(name: name, hostId: hostId)
     }
 
     static func stop(_ name: String, hostId: String?) -> OllamaModelActionBody {

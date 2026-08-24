@@ -3,7 +3,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type { OllamaCatalogModel, OllamaTaskAccepted } from '../api/types'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
+import AppModal from '../components/ui/AppModal.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
@@ -13,7 +15,7 @@ import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
-import { ollamaPullPercent, ollamaPullTaskPath, ollamaStartBody } from '../utils/ollamaTask'
+import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const auth = useAuthStore()
@@ -29,6 +31,12 @@ const pullTask = ref<OllamaTaskAccepted | null>(null)
 const cancelledByUser = ref(false)
 const apiKeyDraft = ref('')
 const keySaving = ref(false)
+const nameQuery = ref('')
+const startTarget = ref<OllamaCatalogModel | null>(null)
+const startHost = ref('')
+const starting = ref(false)
+const stopTarget = ref<OllamaCatalogModel | null>(null)
+const stopping = ref(false)
 
 const hostOptions = computed(() =>
   store.devices
@@ -37,6 +45,10 @@ const hostOptions = computed(() =>
       value: row.hostId,
       label: row.displayName?.trim() || row.hostId,
     })),
+)
+
+const filteredModels = computed(() =>
+  store.models.filter((row) => ollamaModelMatchesName(row.name, nameQuery.value)),
 )
 
 const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
@@ -121,23 +133,45 @@ async function cancelPull() {
   }
 }
 
-async function startModel(model: OllamaCatalogModel) {
+function requestStart(model: OllamaCatalogModel) {
+  startTarget.value = model
+  startHost.value = ''
+}
+
+function requestStop(model: OllamaCatalogModel) {
+  stopTarget.value = model
+}
+
+async function startModel() {
+  const model = startTarget.value
+  if (!model) return
+  starting.value = true
   try {
-    await store.start(ollamaStartBody(model.name).name)
+    const body = ollamaStartBody(model.name, startHost.value || undefined)
+    await store.start(body.name, body.hostId)
     toast.success(`Ollama loaded ${model.name}`)
+    startTarget.value = null
     await store.fetchCatalog()
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
+  } finally {
+    starting.value = false
   }
 }
 
-async function stopModel(model: OllamaCatalogModel) {
+async function stopModel() {
+  const model = stopTarget.value
+  if (!model) return
+  stopping.value = true
   try {
     await store.stop(model.name, model.locations.find((loc) => loc.running)?.hostId)
     toast.success(`Ollama unloaded ${model.name}`)
+    stopTarget.value = null
     await store.fetchCatalog()
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
+  } finally {
+    stopping.value = false
   }
 }
 
@@ -206,31 +240,44 @@ async function saveKey() {
       subtitle="Pull a model to open Chat. Completions go through /v1/chat/completions."
     />
 
-    <DataTable
-      v-else
-      :columns="[
-        { key: 'name', label: 'Model' },
-        { key: 'size', label: 'Size' },
-        { key: 'where', label: DEVICE_LABEL },
-        { key: 'state', label: 'State' },
-        ...(auth.isAdmin ? [{ key: 'actions', label: '', align: 'right' as const }] : []),
-      ]"
-    >
-      <tr v-for="model in store.models" :key="model.name">
-        <td style="font-weight:500">{{ model.name }}</td>
-        <td style="color:var(--text-secondary)">{{ model.size ? formatBytes(model.size) : '—' }}</td>
-        <td style="color:var(--text-secondary)">{{ locationLabel(model) }}</td>
-        <td>
-          <span class="badge" :class="model.running ? 'badge-green' : 'badge-gray'">
-            {{ model.running ? 'Running' : 'Pulled' }}
-          </span>
-        </td>
-        <td v-if="auth.isAdmin" style="text-align:right;white-space:nowrap">
-          <AppButton v-if="!model.running" size="sm" @click="startModel(model)">Start</AppButton>
-          <AppButton v-else size="sm" @click="stopModel(model)">Stop</AppButton>
-        </td>
-      </tr>
-    </DataTable>
+    <template v-else>
+      <div class="form-group" style="margin-bottom:12px">
+        <input v-model="nameQuery" placeholder="Search models..." style="width:100%;max-width:360px" />
+      </div>
+
+      <EmptyState
+        v-if="filteredModels.length === 0 && !store.loading"
+        icon="monitor"
+        title="No matching models"
+        subtitle="Try a different name."
+      />
+
+      <DataTable
+        v-else
+        :columns="[
+          { key: 'name', label: 'Model' },
+          { key: 'size', label: 'Size' },
+          { key: 'where', label: DEVICE_LABEL },
+          { key: 'state', label: 'State' },
+          ...(auth.isAdmin ? [{ key: 'actions', label: '', align: 'right' as const }] : []),
+        ]"
+      >
+        <tr v-for="model in filteredModels" :key="model.name">
+          <td style="font-weight:500">{{ model.name }}</td>
+          <td style="color:var(--text-secondary)">{{ model.size ? formatBytes(model.size) : '—' }}</td>
+          <td style="color:var(--text-secondary)">{{ locationLabel(model) }}</td>
+          <td>
+            <span class="badge" :class="model.running ? 'badge-green' : 'badge-gray'">
+              {{ model.running ? 'Running' : 'Pulled' }}
+            </span>
+          </td>
+          <td v-if="auth.isAdmin" style="text-align:right;white-space:nowrap">
+            <AppButton v-if="!model.running" size="sm" @click="requestStart(model)">Start</AppButton>
+            <AppButton v-else size="sm" @click="requestStop(model)">Stop</AppButton>
+          </td>
+        </tr>
+      </DataTable>
+    </template>
 
     <div v-if="auth.isAdmin" class="card" style="margin-top:24px">
       <h2 style="margin-top:0">Ollama API key</h2>
@@ -246,4 +293,28 @@ async function saveKey() {
       </AppButton>
     </div>
   </template>
+
+  <AppModal v-if="startTarget" :title="`Start ${startTarget.name}`" @close="!starting && (startTarget = null)">
+    <div class="form-group" style="margin:0">
+      <select v-model="startHost" style="min-width:160px">
+        <option value="">Any reachable {{ DEVICE_LABEL }}</option>
+        <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
+    </div>
+    <template #actions>
+      <AppButton variant="ghost" :disabled="starting" @click="startTarget = null">Cancel</AppButton>
+      <AppButton variant="primary" :loading="starting" loading-text="Starting..." @click="startModel">Start</AppButton>
+    </template>
+  </AppModal>
+
+  <ConfirmDialog
+    v-if="stopTarget"
+    title="Stop model"
+    :message="`Stop ${stopTarget.name} on the ${DEVICE_LABEL} that is running it?`"
+    confirm-label="Stop"
+    danger
+    :loading="stopping"
+    @confirm="stopModel"
+    @cancel="stopTarget = null"
+  />
 </template>

@@ -7,10 +7,31 @@ struct OllamaModelsTests {
     private let decoder = JSONDecoder()
 
     @Test func startBodyOmitsHostIdSoHomePicks() throws {
-        let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest"))
+        let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest", hostId: nil))
         let object = try decoder.decode([String: String].self, from: data)
         #expect(object["name"] == "llama3:latest")
         #expect(object["hostId"] == nil)
+    }
+
+    @Test func startBodyIncludesHostIdWhenPicked() throws {
+        let data = try encoder.encode(OllamaModelActionBody.start("llama3:latest", hostId: "desk"))
+        let object = try decoder.decode([String: String].self, from: data)
+        #expect(object["name"] == "llama3:latest")
+        #expect(object["hostId"] == "desk")
+    }
+
+    @Test func nameFilterIsCaseInsensitiveAndIgnoresBlankQuery() {
+        let row = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [],
+        )
+        #expect(row.matchesName(""))
+        #expect(row.matchesName("  "))
+        #expect(row.matchesName("LLAMA"))
+        #expect(!row.matchesName("mistral"))
     }
 
     @Test func localPullUsesDeviceTaskPath() {
