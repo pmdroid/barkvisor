@@ -20,6 +20,7 @@
 		3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */; };
 		672D83DB1AA1BBD3EE39EF98 /* OllamaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113D0559519883CC9981125D /* OllamaModels.swift */; };
 		E8CA72D807E304822B50FC67 /* InferenceAPIHowTo.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB818867E450C98D20B3A5AA /* InferenceAPIHowTo.swift */; };
+		7FD2BE31A00FEF522CB11DFB /* InferenceHowToMint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39ECCAF773AE0A99102F8C0 /* InferenceHowToMint.swift */; };
 		32E3F907E72D7AC82B5BDB53 /* Chat.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC595B82F89104655FA5BD6D /* Chat.swift */; };
 		CED1B59B89AE7E14B46D45B0 /* APIKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4F7250C8975B2E636F3F4BA /* APIKeys.swift */; };
 		4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */; };
@@ -61,6 +62,8 @@
 		2E78904B91B8F1EC30085112 /* ChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C98BDFE53740C15BA087AE6F /* ChatTests.swift */; };
 		D3CC8598B488A6FE4DC5BC63 /* CodingAgentSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F9D10DC105A8DFE0F33DC3 /* CodingAgentSessionTests.swift */; };
 		20333925523EE9BEAB8442DE /* InferenceAPIHowToTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D0857812DF47295B7C3E00 /* InferenceAPIHowToTests.swift */; };
+		A61E2FFE8719182253E14E7F /* InferenceHowToMintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E55C19A688618F705A25543B /* InferenceHowToMintTests.swift */; };
+		395C45C453756BA43D62B43A /* PhoneTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116BB861239C483500C4C042 /* PhoneTabTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -79,6 +82,7 @@
 		B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamSupport.swift; sourceTree = "<group>"; };
 		113D0559519883CC9981125D /* OllamaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaModels.swift; sourceTree = "<group>"; };
 		DB818867E450C98D20B3A5AA /* InferenceAPIHowTo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceAPIHowTo.swift; sourceTree = "<group>"; };
+		A39ECCAF773AE0A99102F8C0 /* InferenceHowToMint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceHowToMint.swift; sourceTree = "<group>"; };
 		EC595B82F89104655FA5BD6D /* Chat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chat.swift; sourceTree = "<group>"; };
 		E4F7250C8975B2E636F3F4BA /* APIKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeys.swift; sourceTree = "<group>"; };
 		6CE29C3169565F90D27BF2D1 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -117,6 +121,8 @@
 		C98BDFE53740C15BA087AE6F /* ChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTests.swift; sourceTree = "<group>"; };
 		D1F9D10DC105A8DFE0F33DC3 /* CodingAgentSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodingAgentSessionTests.swift; sourceTree = "<group>"; };
 		20D0857812DF47295B7C3E00 /* InferenceAPIHowToTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceAPIHowToTests.swift; sourceTree = "<group>"; };
+		E55C19A688618F705A25543B /* InferenceHowToMintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceHowToMintTests.swift; sourceTree = "<group>"; };
+		116BB861239C483500C4C042 /* PhoneTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneTabTests.swift; sourceTree = "<group>"; };
 		D9C6393D6C2EE0244C1E3BAF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6CFFB50779C3195239B4A46F /* BarkVisorConsole.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BarkVisorConsole.entitlements; sourceTree = "<group>"; };
 		AA4ACA445B3FBAF47CDE31AC /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -204,6 +210,7 @@
 				B91FA22625E91B4AE84B4B12 /* StreamSupport.swift */,
 				113D0559519883CC9981125D /* OllamaModels.swift */,
 				DB818867E450C98D20B3A5AA /* InferenceAPIHowTo.swift */,
+				A39ECCAF773AE0A99102F8C0 /* InferenceHowToMint.swift */,
 				EC595B82F89104655FA5BD6D /* Chat.swift */,
 				E4F7250C8975B2E636F3F4BA /* APIKeys.swift */,
 			);
@@ -282,6 +289,8 @@
 				C98BDFE53740C15BA087AE6F /* ChatTests.swift */,
 				D1F9D10DC105A8DFE0F33DC3 /* CodingAgentSessionTests.swift */,
 				20D0857812DF47295B7C3E00 /* InferenceAPIHowToTests.swift */,
+				E55C19A688618F705A25543B /* InferenceHowToMintTests.swift */,
+				116BB861239C483500C4C042 /* PhoneTabTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -388,6 +397,7 @@
 				3111420B5795A7B5C4C9EB7C /* StreamSupport.swift in Sources */,
 				672D83DB1AA1BBD3EE39EF98 /* OllamaModels.swift in Sources */,
 				E8CA72D807E304822B50FC67 /* InferenceAPIHowTo.swift in Sources */,
+				7FD2BE31A00FEF522CB11DFB /* InferenceHowToMint.swift in Sources */,
 				32E3F907E72D7AC82B5BDB53 /* Chat.swift in Sources */,
 				CED1B59B89AE7E14B46D45B0 /* APIKeys.swift in Sources */,
 				4D5F42AAD9FFEA4C03B4A640 /* KeychainStore.swift in Sources */,
@@ -433,6 +443,8 @@
 				2E78904B91B8F1EC30085112 /* ChatTests.swift in Sources */,
 				D3CC8598B488A6FE4DC5BC63 /* CodingAgentSessionTests.swift in Sources */,
 				20333925523EE9BEAB8442DE /* InferenceAPIHowToTests.swift in Sources */,
+				A61E2FFE8719182253E14E7F /* InferenceHowToMintTests.swift in Sources */,
+				395C45C453756BA43D62B43A /* PhoneTabTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

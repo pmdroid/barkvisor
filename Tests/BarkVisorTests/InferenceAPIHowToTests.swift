@@ -25,11 +25,22 @@ struct InferenceAPIHowToTests {
             #expect(source.contains("OPENAI_BASE_URL"))
             #expect(source.contains("OPENAI_API_KEY"))
             #expect(source.contains("<inference-key>"))
+            #expect(source.contains("advertiseHost"))
+            #expect(source.contains("preferredListenHost"))
             #expect(!source.contains(":7778"))
         }
         #expect(CodingAgentImage.deviceOllamaBaseURL == "http://10.0.2.2:11434/v1")
         #expect(AgentNetworkCage.slirpGateway == "10.0.2.2")
         #expect(AgentNetworkCage.ollamaPort == 11_434)
+        let extra = AgentNetworkCage.slirpExtras(mode: .nat, allowHostOllama: true)
+        #expect(
+            extra.contains(
+                "guestfwd=tcp:10.0.2.2:\(AgentNetworkCage.ollamaPort)-tcp:127.0.0.1:\(AgentNetworkCage.ollamaPort)",
+            ),
+        )
+        let seatbelt = AgentNetworkCage.seatbeltProfile(allowHostOllama: true)
+        #expect(seatbelt.contains("127.0.0.1:\(AgentNetworkCage.ollamaPort)"))
+        #expect(!seatbelt.contains(":7777"))
     }
 }
 

@@ -212,7 +212,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
             parts.append("CPU \(Int(cpu.rounded()))%")
         }
         if let used = resources.memoryUsedMB, let total = resources.memoryTotalMB {
-            parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1024, Double(total) / 1024))
+            parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1_024, Double(total) / 1_024))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -307,9 +307,13 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
 
     /// Missing JSON is off so House appliances are not surprised.
-    var startsOnDeviceBoot: Bool { startOnBoot == true || status?.startOnBoot == true }
+    var startsOnDeviceBoot: Bool {
+        startOnBoot == true || status?.startOnBoot == true
+    }
 
-    var startOnBootFooter: String { WorkloadStartOnBoot.footer(isAgent: isAgentClass) }
+    var startOnBootFooter: String {
+        WorkloadStartOnBoot.footer(isAgent: isAgentClass)
+    }
 }
 
 enum WorkloadStartOnBoot {
@@ -596,8 +600,8 @@ enum DeviceStatsHistory {
                 id: "\(sample.timestamp)-\(index)",
                 date: date,
                 cpuPercent: sample.hostCpuPercent,
-                memoryUsedGB: Double(sample.hostMemoryUsedMB) / 1024,
-                memoryTotalGB: Double(sample.hostMemoryTotalMB) / 1024,
+                memoryUsedGB: Double(sample.hostMemoryUsedMB) / 1_024,
+                memoryTotalGB: Double(sample.hostMemoryTotalMB) / 1_024,
             )
         }
     }
@@ -693,7 +697,9 @@ struct GPUPassthroughDevice: Decodable, Hashable, Identifiable {
     var label: String?
     var groupAddresses: [String]?
 
-    var id: String { pciAddress }
+    var id: String {
+        pciAddress
+    }
 
     var displayName: String {
         if let label, !label.isEmpty { return label }
@@ -922,6 +928,23 @@ struct PairingIssue: Decodable, Hashable {
     var advertisedHost: String?
     var advertisedHosts: [String]
     var apiVersion: Int
+}
+
+struct RemoteAccessTailnet: Decodable, Hashable {
+    var available: Bool
+    var ip: String?
+    var dnsName: String?
+}
+
+struct RemoteAccessWireGuard: Decodable, Hashable {
+    var configured: Bool
+}
+
+struct RemoteAccessStatus: Decodable, Hashable {
+    var tailscale: RemoteAccessTailnet
+    var wireguard: RemoteAccessWireGuard
+    var advertiseUrl: String?
+    var requireTailnetForRemote: Bool
 }
 
 enum PairingExpiry {
