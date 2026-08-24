@@ -419,7 +419,7 @@ struct JWTAuthMiddlewareTests {
         }
     }
 
-    @Test func `resolveRole prefers the local User row over the JWT claim`() async throws {
+    @Test func `resolveRole takes the tighter of the JWT claim and the local User row`() async throws {
         let app = try await makeApp()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "pas-286-stored-\(UUID().uuidString)",
@@ -437,15 +437,96 @@ struct JWTAuthMiddlewareTests {
                     createdAt: "2026-01-01T00:00:00Z",
                     role: UserRole.admin.rawValue,
                 ).insert(db)
+                try User(
+                    id: "reader-1",
+                    username: "reader",
+                    password: "hashed:unused-password",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    role: UserRole.inference.rawValue,
+                ).insert(db)
             }
             app.database = database
             let req = request(app, path: "/v1/chat/completions")
-            let role = try await JWTAuthMiddleware.resolveRole(
+            let hop = try await JWTAuthMiddleware.resolveRole(
                 userId: "user-1",
                 sessionFallback: UserRole.inference.rawValue,
                 request: req,
             )
-            #expect(role == UserRole.admin.rawValue)
+            #expect(hop == UserRole.inference.rawValue)
+            let demoted = try await JWTAuthMiddleware.resolveRole(
+                userId: "reader-1",
+                sessionFallback: UserRole.admin.rawValue,
+                request: req,
+            )
+            #expect(demoted == UserRole.inference.rawValue)
+            let admin = try await JWTAuthMiddleware.resolveRole(
+                userId: "user-1",
+                sessionFallback: UserRole.admin.rawValue,
+                request: req,
+            )
+            #expect(admin == UserRole.admin.rawValue)
+            let preRBAC = try await JWTAuthMiddleware.resolveRole(
+                userId: "user-1",
+                sessionFallback: nil,
+                request: req,
+            )
+            #expect(preRBAC == UserRole.admin.rawValue)
+            await stop(app)
+        } catch {
+            await stop(app)
+            throw error
+        }
+    }
+
+    @Test func `inference hop JWT stays inference when the member has the paired admin row`()
+        async throws {
+        let app = try await makeApp()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "pas-270-hop-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        do {
+            let database = try AppDatabase(path: dir.appendingPathComponent("test.sqlite").path)
+            try database.migrate()
+            try await database.pool.write { db in
+                try User(
+                    id: "admin-1",
+                    username: "admin",
+                    password: "hashed:unused-password",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    role: UserRole.admin.rawValue,
+                ).insert(db)
+            }
+            app.database = database
+
+            let keys = await makeKeys()
+            let jwt = JWTAuthMiddleware(keys: keys)
+            let payload = UserPayload(
+                sub: .init(value: "admin-1"),
+                username: "admin",
+                exp: .init(value: Date().addingTimeInterval(3_600)),
+                role: UserRole.inference.rawValue,
+            )
+            let token = try await keys.sign(payload)
+
+            let completions = request(app, path: "/v1/chat/completions")
+            completions.method = .POST
+            completions.headers.add(name: .authorization, value: "Bearer \(token)")
+            let response = try await jwt.respond(to: completions, chainingTo: OKResponder())
+            #expect(response.status == .ok)
+            #expect(completions.authenticatedUser?.userId == "admin-1")
+            #expect(completions.authenticatedUser?.role == UserRole.inference.rawValue)
+
+            let pull = request(app, path: "/api/ollama/pull")
+            pull.method = .POST
+            pull.headers.add(name: .authorization, value: "Bearer \(token)")
+            do {
+                _ = try await jwt.respond(to: pull, chainingTo: OKResponder())
+                Issue.record("expected forbidden for inference hop against the paired admin row")
+            } catch let error as AbortError {
+                #expect(error.status == .forbidden)
+            }
             await stop(app)
         } catch {
             await stop(app)

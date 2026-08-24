@@ -35,10 +35,7 @@ public enum OllamaLocalProbe {
     }
 
     public static func modelName(fromChatBody body: Data) throws -> String {
-        guard let object = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
-            throw BarkVisorError.badRequest("Chat completion body must be JSON")
-        }
-        return try modelName(fromObject: object)
+        try modelName(fromObject: chatObject(from: body))
     }
 
     public static func modelName(fromObject object: [String: Any]) throws -> String {
@@ -50,5 +47,18 @@ public enum OllamaLocalProbe {
             throw BarkVisorError.badRequest("Chat completion requires model")
         }
         return trimmed
+    }
+
+    /// OpenAI `stream: true`. Missing or non-bool is non-streaming.
+    public static func wantsStream(fromChatBody body: Data) -> Bool {
+        guard let object = try? chatObject(from: body) else { return false }
+        return object["stream"] as? Bool == true
+    }
+
+    private static func chatObject(from body: Data) throws -> [String: Any] {
+        guard let object = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            throw BarkVisorError.badRequest("Chat completion body must be JSON")
+        }
+        return object
     }
 }

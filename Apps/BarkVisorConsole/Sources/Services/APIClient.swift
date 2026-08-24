@@ -21,6 +21,8 @@ enum APIError: LocalizedError, Equatable {
 }
 
 struct APIClient {
+    static let chatCompletionsPath = "/v1/chat/completions"
+
     var baseURL: URL
     var token: String?
     /// Called once on 401. Only `.unauthorized` may drop the session; `.unavailable` must not.
@@ -311,6 +313,21 @@ struct APIClient {
         try await delete(OllamaTaskPath.rest(taskID: task.taskID, hostId: task.hostId, selfHostId: selfHostId))
     }
 
+    func streamChatCompletions(
+        model: String,
+        messages: [ChatWireMessage],
+        onDelta: @escaping (String) async -> Void,
+    ) async throws {
+        var request = try makeRequest(method: "POST", path: Self.chatCompletionsPath, query: [])
+        request.timeoutInterval = 3_600
+        request.httpBody = try Self.encoder.encode(
+            ChatCompletionBody(model: model, stream: true, messages: messages),
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        try await streamChatBytes(request, allowRefresh: true, onDelta: onDelta)
+    }
+
     func pairingCode() async throws -> PairingIssue? {
         do {
             return try await get("/api/pairing/codes")
@@ -363,18 +380,8 @@ struct APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("Invalid response")
         }
-        if http.statusCode == 401 {
-            if allowRefresh, let refreshOnce {
-                switch await Self.retryAfter401(refreshOnce()) {
-                case let .retry(newToken):
-                    var retry = request
-                    retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-                    return try await perform(retry, allowRefresh: false)
-                case let .fail(error):
-                    throw error
-                }
-            }
-            throw APIError.unauthorized
+        if let retry = try await retryAfter401(request, status: http.statusCode, allowRefresh: allowRefresh) {
+            return try await perform(retry, allowRefresh: false)
         }
         if http.statusCode == 503, reason(from: data) == "setup_required" {
             throw APIError.setupRequired
@@ -386,6 +393,62 @@ struct APIClient {
             )
         }
         return (data, http)
+    }
+
+    /// Chat streaming bypasses `perform`; still retry once on 401.
+    func retryAfter401(
+        _ request: URLRequest,
+        status: Int,
+        allowRefresh: Bool,
+    ) async throws -> URLRequest? {
+        guard status == 401 else { return nil }
+        if allowRefresh, let refreshOnce {
+            switch await Self.retryAfter401(refreshOnce()) {
+            case let .retry(newToken):
+                var retry = request
+                retry.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                return retry
+            case let .fail(error):
+                throw error
+            }
+        }
+        throw APIError.unauthorized
+    }
+
+    private func streamChatBytes(
+        _ request: URLRequest,
+        allowRefresh: Bool,
+        onDelta: @escaping (String) async -> Void,
+    ) async throws {
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("Invalid response")
+        }
+        if let retry = try await retryAfter401(request, status: http.statusCode, allowRefresh: allowRefresh) {
+            return try await streamChatBytes(retry, allowRefresh: false, onDelta: onDelta)
+        }
+        if http.statusCode == 503 { throw APIError.setupRequired }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw APIError.http(
+                status: http.statusCode,
+                reason: HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            )
+        }
+        var buffer = ""
+        for try await line in bytes.lines {
+            buffer.append(line)
+            buffer.append("\n")
+            let deltas = ChatSSE.drain(buffer: &buffer)
+            for delta in deltas {
+                await onDelta(delta)
+            }
+        }
+        if !buffer.isEmpty {
+            buffer.append("\n")
+            for delta in ChatSSE.drain(buffer: &buffer) {
+                await onDelta(delta)
+            }
+        }
     }
 
     private func reason(from data: Data) -> String? {

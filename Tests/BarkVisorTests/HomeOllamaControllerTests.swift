@@ -162,6 +162,72 @@ struct HomeOllamaControllerTests {
         #expect(!token.hasPrefix("barkvisor_"))
     }
 
+    @Test func `sendMemberStream forwards chat SSE without collecting in the controller`() async throws {
+        let dir = try isolatedDir("chat-stream")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: "peer", fingerprint: "dd", agentHost: "10.0.0.8", agentPort: 7_778)
+        let client = RecordingOllamaProxyClient()
+        let sse = Data(#"data: {"choices":[{"delta":{"content":"Hi"}}]}"#.utf8)
+        client.respond(
+            host: "10.0.0.8",
+            port: 7_778,
+            path: "/api/ollama/v1/chat/completions",
+            status: 200,
+            body: sse,
+        )
+        let keys = await makeKeys()
+        let ctl = controller(
+            dir: dir,
+            hostId: UUID().uuidString,
+            devices: store,
+            client: client,
+            keys: keys,
+            now: Date(),
+        )
+        var collected = Data()
+        for try await chunk in try ctl.sendMemberStream(
+            hostId: "peer",
+            method: "POST",
+            path: "/api/ollama/v1/chat/completions",
+            body: Data(#"{"model":"llama3","stream":true}"#.utf8),
+            hopBearer: "jwt-hop",
+        ) {
+            collected.append(chunk)
+        }
+        #expect(client.streamCalls == 1)
+        #expect(collected == sse)
+        #expect(client.calls[0].method == "POST")
+    }
+
+    @Test func `sendMemberStream refuses to forward an API key to a member Device`() async throws {
+        let dir = try isolatedDir("no-apikey-stream")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = DeviceRegistry(dataDir: dir)
+        try store.upsert(hostId: "peer", fingerprint: "ee", agentHost: "10.0.0.8", agentPort: 7_778)
+        let client = RecordingOllamaProxyClient()
+        let keys = await makeKeys()
+        let ctl = controller(
+            dir: dir,
+            hostId: UUID().uuidString,
+            devices: store,
+            client: client,
+            keys: keys,
+            now: Date(),
+        )
+        #expect(throws: BarkVisorError.self) {
+            _ = try ctl.sendMemberStream(
+                hostId: "peer",
+                method: "POST",
+                path: "/api/ollama/v1/chat/completions",
+                body: Data(),
+                hopBearer: "barkvisor_testkey",
+            )
+        }
+        #expect(client.calls.isEmpty)
+        #expect(client.streamCalls == 0)
+    }
+
     @Test func `sendMember refuses to forward an API key to a member Device`() async throws {
         let dir = try isolatedDir("no-apikey")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -203,12 +269,19 @@ private final class RecordingOllamaProxyClient: HomeDeviceProxyClient, @unchecke
 
     private let lock = NSLock()
     private var _calls: [Call] = []
+    private var _streamCalls = 0
     private var responses: [String: Result<HomeDeviceProxyResponse, Error>] = [:]
 
     var calls: [Call] {
         lock.lock()
         defer { lock.unlock() }
         return _calls
+    }
+
+    var streamCalls: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _streamCalls
     }
 
     func respond(host: String, port: Int, path: String, status: Int, body: Data) {
@@ -227,6 +300,29 @@ private final class RecordingOllamaProxyClient: HomeDeviceProxyClient, @unchecke
             throw error
         case nil:
             return HomeDeviceProxyResponse(status: 404, body: Data())
+        }
+    }
+
+    func stream(_ request: HomeDeviceProxyRequest) -> AsyncThrowingStream<Data, Error> {
+        lock.lock()
+        _streamCalls += 1
+        lock.unlock()
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let response = try await send(request)
+                    if !(200 ..< 300).contains(response.status) {
+                        continuation.finish(throwing: BarkVisorError.badGateway("HTTP \(response.status)"))
+                        return
+                    }
+                    if !response.body.isEmpty {
+                        continuation.yield(response.body)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
         }
     }
 

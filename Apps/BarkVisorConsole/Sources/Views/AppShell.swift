@@ -25,6 +25,16 @@ struct PhoneAppShell: View {
             } label: {
                 Label(Copy.home, systemImage: "house")
             }
+            if model.showsChat {
+                Tab(value: PhoneTab.chat) {
+                    NavigationStack {
+                        ChatView()
+                            .navigationTitle("Chat")
+                    }
+                } label: {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                }
+            }
             Tab(value: PhoneTab.library) {
                 NavigationStack {
                     LibraryView()
@@ -69,7 +79,7 @@ struct MacAppShell: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $model.route) {
                 Section {
-                    ForEach(AppRoute.allCases.filter { $0 != .settings }, id: \.self) { item in
+                    ForEach(AppRoute.allCases.filter { $0 != .settings && shows($0) }, id: \.self) { item in
                         Label(item.title, systemImage: item.symbol)
                             .tag(item)
                     }
@@ -102,10 +112,16 @@ struct MacAppShell: View {
         }
     }
 
+    private func shows(_ route: AppRoute) -> Bool {
+        if route == .chat { return model.showsChat }
+        return true
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch model.route {
         case .dashboard: DashboardView()
+        case .chat: ChatView()
         case .devices: DevicesView()
         case .workloads: WorkloadsView()
         case .models: ModelsView()
