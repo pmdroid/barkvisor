@@ -205,14 +205,12 @@ struct HomeDevicesController: RouteCollection {
                     body: body,
                 ),
             )
-        } catch let error as HomeDeviceProxyError {
-            throw Abort(.badGateway, reason: error.localizedDescription)
         } catch let error as BarkVisorError {
             throw error
         } catch {
             throw Abort(
                 .badGateway,
-                reason: "Device is unreachable: \(error.localizedDescription)",
+                reason: HomeDeviceProxyError.classify(error).localizedDescription,
             )
         }
         return Self.response(from: result)
@@ -334,10 +332,8 @@ struct HomeDevicesController: RouteCollection {
                 url: summaryURL, client: client, bearer: bearer, hostId: device.hostId,
             )
             return .ok(HomeDeviceHealthAggregator.facts(from: inventory, summary: summary))
-        } catch let error as HomeDeviceProxyError {
-            return .unreachable(error.localizedDescription)
         } catch {
-            return .unreachable("Device is unreachable: \(error.localizedDescription)")
+            return .failed(HomeDeviceProxyError.classify(error))
         }
     }
 
@@ -383,7 +379,7 @@ struct HomeDevicesController: RouteCollection {
             HomeDeviceProxyRequest(method: "GET", url: url, headers: headers, body: nil),
         )
         guard (200 ..< 300).contains(result.status) else {
-            throw HomeDeviceProxyError.unreachable("member returned HTTP \(result.status)")
+            throw HomeDeviceProxyError.memberHTTP(result.status)
         }
         return result.body
     }

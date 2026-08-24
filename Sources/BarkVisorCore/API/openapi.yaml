@@ -1319,9 +1319,11 @@ paths:
       summary: Aggregated Device health for the Home dashboard
       description: |
         JWT. This Device is always included from local inventory and
-        workload health. Members are probed over mTLS; unreachable
-        Devices stay in the list with `reachability: unreachable` and
-        no live resources. Local SQLite / QEMU are unchanged (PAS-47).
+        workload health. Members are probed over mTLS. Hop failures
+        use `reachability` codes (`connectTimeout`, `cancelled`,
+        `tlsFailure`, `memberHTTP`) instead of claiming the Device is
+        offline. A true down member stays `unreachable` with no live
+        resources. Local SQLite / QEMU are unchanged (PAS-47).
       responses:
         "200":
           content:
@@ -3634,7 +3636,7 @@ components:
           type: string
         reachability:
           type: string
-          enum: [ok, unreachable]
+          enum: [ok, unreachable, connectTimeout, cancelled, tlsFailure, memberHTTP, responseTooLarge]
         reachabilityError:
           type: string
         collectedAt:

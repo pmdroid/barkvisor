@@ -84,7 +84,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         } catch let error as HomeDeviceProxyError {
             throw error
         } catch {
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
     }
 
@@ -120,7 +120,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
             } catch is CancellationError {
                 continuation.finish()
             } catch {
-                continuation.finish(throwing: error)
+                continuation.finish(throwing: HomeDeviceProxyError.classify(error))
             }
         }
     }
@@ -152,7 +152,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         do {
             response = try await client.execute(outbound, timeout: .seconds(readTimeoutSeconds))
         } catch {
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
         let headers = response.headers.map { ($0.name, $0.value) }
         let status = Int(response.status.code)
@@ -172,7 +172,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         do {
             handle = try FileHandle(forWritingTo: part)
         } catch {
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
         defer { try? handle.close() }
 
@@ -205,7 +205,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
             throw error
         } catch {
             try? FileManager.default.removeItem(at: part)
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
         let digest = hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
         if FileManager.default.fileExists(atPath: destination.path) {
@@ -215,7 +215,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
             try FileManager.default.moveItem(at: part, to: destination)
         } catch {
             try? FileManager.default.removeItem(at: part)
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
         return LibraryDepotStreamResult(
             status: status, headers: headers, bytesWritten: written, sha256: digest,
@@ -251,7 +251,7 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
         do {
             return try await client.execute(outbound, timeout: .seconds(timeoutSeconds))
         } catch {
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
     }
 }
@@ -397,7 +397,7 @@ public struct LocalHostProxyClient: HomeDeviceProxyClient {
         do {
             response = try await LocalHostProxyHTTP.shared.execute(outbound, timeout: .seconds(seconds))
         } catch {
-            throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+            throw HomeDeviceProxyError.classify(error)
         }
         let buffer = try await collectProxyBody(response.body, maxBytes: maxBodyBytes)
         let headers = response.headers.map { ($0.name, $0.value) }
@@ -438,6 +438,6 @@ private func collectProxyBody(
     } catch let error as HomeDeviceProxyError {
         throw error
     } catch {
-        throw HomeDeviceProxyError.unreachable(error.localizedDescription)
+        throw HomeDeviceProxyError.classify(error)
     }
 }
