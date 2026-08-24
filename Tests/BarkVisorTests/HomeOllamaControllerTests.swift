@@ -360,6 +360,47 @@ struct HomeOllamaControllerTests {
         #expect(!source.contains("localOllama.pull(req: req)"))
         #expect(!source.contains("localOllama.start(req: req)"))
         #expect(!source.contains("localOllama.stop(req: req)"))
+        #expect(source.contains("Self.runningSizeVRAM(selfHostId: selfHostId, locations: $0.locations)"))
+        #expect(!source.contains("locations.first(where: \\.running)?.sizeVRAM"))
+    }
+}
+
+@Suite("Home Ollama native sizeVRAM")
+struct HomeOllamaNativeSizeVRAMTests {
+    private func location(_ hostId: String, running: Bool, sizeVRAM: Int64?) -> OllamaModelLocation {
+        OllamaModelLocation(
+            hostId: hostId,
+            running: running,
+            reachable: true,
+            probedAt: "2026-01-01T00:00:00Z",
+            sizeVRAM: sizeVRAM,
+        )
+    }
+
+    @Test func `prefers self when running else lowest hostId`() {
+        let disordered = [
+            location("zeta", running: true, sizeVRAM: 9),
+            location("alpha", running: true, sizeVRAM: 1),
+            location("self", running: false, sizeVRAM: 50),
+        ]
+        #expect(
+            HomeOllamaController.runningSizeVRAM(selfHostId: "self", locations: disordered) == 1,
+        )
+
+        let withSelfRunning = disordered + [
+            location("self", running: true, sizeVRAM: 7),
+        ]
+        #expect(
+            HomeOllamaController.runningSizeVRAM(selfHostId: "self", locations: withSelfRunning)
+                == 7,
+        )
+        #expect(HomeOllamaController.runningSizeVRAM(selfHostId: "self", locations: []) == nil)
+        #expect(
+            HomeOllamaController.runningSizeVRAM(
+                selfHostId: "self",
+                locations: [location("lab", running: false, sizeVRAM: 3)],
+            ) == nil,
+        )
     }
 }
 

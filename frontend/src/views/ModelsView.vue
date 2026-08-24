@@ -15,6 +15,7 @@ import { useOllamaStore } from '../stores/ollama'
 import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
+import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { inferenceHowToFromOrigin } from '../utils/inferenceApiHowTo'
@@ -211,6 +212,10 @@ function onKeyHost(event: Event) {
   keyHost.value = target.value
 }
 
+function exportPs() {
+  downloadOllamaPsExport(store.models)
+}
+
 async function saveKey() {
   const hostId = selectedKeyHost.value
   if (!hostId) return
@@ -235,6 +240,13 @@ async function saveKey() {
         Models on this {{ HOME_LABEL }}. Completions go to the Device that already has the model.
       </p>
     </div>
+    <AppButton
+      v-if="store.anyReachable"
+      :disabled="store.models.length === 0"
+      @click="exportPs"
+    >
+      Export JSON
+    </AppButton>
   </div>
 
   <div class="card" style="margin-bottom:16px">

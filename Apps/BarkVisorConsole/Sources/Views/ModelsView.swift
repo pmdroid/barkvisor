@@ -84,6 +84,17 @@ struct ModelsView: View {
             }
         }
         .navigationTitle("Ollama")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(
+                    item: OllamaPsShareFile(models: catalog.models),
+                    preview: SharePreview(OllamaPsExport.filename),
+                ) {
+                    Label("Export JSON", systemImage: "square.and.arrow.up")
+                }
+                .disabled(catalog.models.isEmpty)
+            }
+        }
         .refreshable { await model.refreshOllama() }
         .task { await model.refreshOllama() }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
