@@ -99,6 +99,29 @@ struct CodingAgentImageTests {
         #expect(!yaml.contains("| bash"))
         #expect(AgentNetworkCage.allowHostOllama(userData: yaml))
         #expect(yaml.contains("export OPENAI_API_KEY='ollama'"))
+        #expect(CodingAgentImage.openaiAPIKeyFromUserData(yaml) == "ollama")
+        let grantKey = try CodingAgentImage.openaiAPIKeyForHomeGrant("barkvisor_abc")
+        let granted = CodingAgentImage.userData(
+            openaiBaseURL: CodingAgentImage.deviceOllamaBaseURL,
+            openaiAPIKey: grantKey,
+        )
+        #expect(granted.contains("export OPENAI_API_KEY='barkvisor_abc'"))
+        #expect(granted.contains("OPENAI_API_KEY=barkvisor_abc"))
+        #expect(!granted.contains("export OPENAI_API_KEY='ollama'"))
+        #expect(CodingAgentImage.openaiAPIKeyFromUserData(granted) == "barkvisor_abc")
+        let appliedGrant = try CodingAgentImage.applyingCreateDefaults(
+            params: CreateVMParams(
+                name: "coder",
+                vmType: "linux-arm64",
+                cpuCount: 2,
+                memoryMB: 1_024,
+                diskSizeGB: 10,
+                cloudImageId: "img-1",
+            ),
+            imageName: "Coding Agent",
+            grantPlaintext: "barkvisor_abc",
+        )
+        #expect(appliedGrant.cloudInit?.userData?.contains("OPENAI_API_KEY=barkvisor_abc") == true)
         #expect(yaml.contains("permissions: '0600'"))
         #expect(yaml.contains("chown ubuntu:ubuntu /etc/default/barkvisor-openai"))
         #expect(yaml.contains("/etc/git-hooks/pre-push"))
@@ -220,6 +243,8 @@ struct CodingAgentImageTests {
         #expect(console.contains("isShellSafeOpenAIAPIKey"))
         #expect(frontend.contains("OPENAI_BASE_URL_SAFE"))
         #expect(frontend.contains("OPENAI_API_KEY_SAFE"))
+        #expect(console.contains("openaiAPIKeyForHomeGrant"))
+        #expect(frontend.contains("openaiAPIKeyForHomeGrant"))
         #expect(frontend.contains("url.hostname"))
         for source in [console, frontend] {
             #expect(source.contains("permissions: '0600'"))
