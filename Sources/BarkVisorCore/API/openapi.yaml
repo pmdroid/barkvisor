@@ -3636,7 +3636,7 @@ components:
           type: string
         reachability:
           type: string
-          enum: [ok, unreachable, connectTimeout, cancelled, tlsFailure, memberHTTP]
+          enum: [ok, unreachable, connectTimeout, cancelled, tlsFailure, memberHTTP, responseTooLarge]
         reachabilityError:
           type: string
         collectedAt:

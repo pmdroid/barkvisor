@@ -224,6 +224,7 @@ struct HomeDeviceProxyTests {
         #expect(HomeDeviceProxyError.cancelled.reachability == "cancelled")
         #expect(HomeDeviceProxyError.tlsFailure.reachability == "tlsFailure")
         #expect(HomeDeviceProxyError.memberHTTP(503).reachability == "memberHTTP")
+        #expect(HomeDeviceProxyError.responseTooLarge.reachability == "responseTooLarge")
         #expect(HomeDeviceProxyError.healthUnreachable.reachability == "unreachable")
         #expect(
             HomeDeviceProxyError.connectTimeout.errorDescription

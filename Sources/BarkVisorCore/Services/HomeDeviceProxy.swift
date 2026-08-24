@@ -319,7 +319,7 @@ public enum HomeDeviceProxyError: Error, LocalizedError, Sendable, Equatable {
         case .memberHTTP:
             HomeDeviceHealthAggregator.memberHTTP
         case .responseTooLarge:
-            "responseTooLarge"
+            HomeDeviceHealthAggregator.responseTooLarge
         }
     }
 

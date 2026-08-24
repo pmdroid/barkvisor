@@ -583,9 +583,15 @@ struct HomeOllamaController: RouteCollection {
                     continuation.yield(chunk)
                 }
                 continuation.finish()
+            } catch is CancellationError {
+                continuation.finish()
             } catch let error as BarkVisorError {
                 continuation.finish(throwing: error)
             } catch {
+                if Task.isCancelled {
+                    continuation.finish()
+                    return
+                }
                 continuation.finish(
                     throwing: BarkVisorError.badGateway(
                         HomeDeviceProxyError.classify(error).ollamaHopDescription,

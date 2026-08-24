@@ -17,6 +17,7 @@ public enum HomeDeviceHealthAggregator {
     public static let cancelled = "cancelled"
     public static let tlsFailure = "tlsFailure"
     public static let memberHTTP = "memberHTTP"
+    public static let responseTooLarge = "responseTooLarge"
 
     /// Merge the local registry list with live facts. `self` is always `ok`.
     public static func report(
