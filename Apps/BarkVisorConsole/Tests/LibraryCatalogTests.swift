@@ -130,6 +130,42 @@ struct LibraryCatalogTests {
         #expect(LibraryCatalog.groups(repos: repos, imagesByRepo: [:]).isEmpty)
     }
 
+    @Test func codingAgentCatalogRowDecodesForBothArches() throws {
+        let catalogJSON = """
+        [
+          {
+            "id": "ca-arm",
+            "repositoryId": "repo-images",
+            "slug": "coding-agent-arm64",
+            "name": "Coding Agent",
+            "description": "Linux with git, ttyd web terminal (guest :7681), and coding-agent CLIs.",
+            "imageType": "cloud-image",
+            "arch": "arm64",
+            "version": "24.04",
+            "downloadUrl": "https://example.test/coding-agent-arm64.img",
+            "sizeBytes": 618370560
+          },
+          {
+            "id": "ca-x86",
+            "repositoryId": "repo-images",
+            "slug": "coding-agent-x86_64",
+            "name": "Coding Agent",
+            "description": "Linux with git, ttyd web terminal (guest :7681), and coding-agent CLIs.",
+            "imageType": "cloud-image",
+            "arch": "x86_64",
+            "version": "24.04",
+            "downloadUrl": "https://example.test/coding-agent-x86_64.img",
+            "sizeBytes": 624447488
+          }
+        ]
+        """.data(using: .utf8)!
+        let catalog = try decoder.decode([CatalogImage].self, from: catalogJSON)
+        #expect(catalog.map(\.slug) == ["coding-agent-arm64", "coding-agent-x86_64"])
+        #expect(Set(catalog.map(\.arch)) == ["arm64", "x86_64"])
+        #expect(catalog.allSatisfy { $0.name == "Coding Agent" })
+        #expect(CodingAgentImage.slugs == Set(catalog.map(\.slug)))
+    }
+
     @Test func catalogMatchesLibraryByDownloadUrlAndTracksProgress() {
         let catalog = CatalogImage(
             id: "cat-1",

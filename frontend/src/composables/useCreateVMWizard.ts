@@ -60,6 +60,12 @@ import { usePlacement } from './usePlacement'
 import { useVirtioDownload } from './useVirtioDownload'
 import { useUSBPicker } from './useUSBPicker'
 import { useCreateVMPayload } from './useCreateVMPayload'
+import {
+  DEVICE_OLLAMA_BASE_URL,
+  isCodingAgentImage,
+  mergeCodingAgentUserData,
+  type OpenAIPreset,
+} from '../utils/codingAgentImage'
 
 export { cancelLivePlacementScores } from './usePlacement'
 
@@ -348,6 +354,9 @@ export function useCreateVMWizard(
       cpuCount.value = Math.min(2, maxCpu)
       memoryMB.value = 1024
       diskSizeGB.value = 10
+      if (homeLibrary.images.some((i) => i.status === 'ready' && isCodingAgentImage(i))) {
+        mode.value = 'cloud'
+      }
     }
   }
 
@@ -360,6 +369,26 @@ export function useCreateVMWizard(
   const selectedSSHKeyId = ref('')
   const showCloudInit = ref(false)
   const cloudUserData = ref('')
+  const openaiPreset = ref<OpenAIPreset>('device-ollama')
+  const byoOpenAIURL = ref(DEVICE_OLLAMA_BASE_URL)
+
+  watch(selectedImage, (img, prev) => {
+    const now = isCodingAgentImage(img)
+    const was = isCodingAgentImage(prev)
+    if (now && !was) {
+      workloadClass.value = 'agent'
+      mode.value = 'cloud'
+      openaiPreset.value = 'device-ollama'
+      if (memoryMB.value < 2048) memoryMB.value = 2048
+      if (diskSizeGB.value < 20) diskSizeGB.value = 20
+      return
+    }
+    if (was && !now && osType.value === 'linux') {
+      workloadClass.value = 'house'
+      memoryMB.value = 1024
+      diskSizeGB.value = 10
+    }
+  })
 
   // Dynamic step mapping (PAS-182): Basics → Image → Place → Hardware → Drivers? → Storage → Network → Summary
   const needsDriverStep = computed(() => osType.value === 'windows' && !virtioWinAvailable.value)
@@ -730,7 +759,12 @@ export function useCreateVMWizard(
         mode: mode.value,
         imageId: createImage?.id,
         sshAuthorizedKeys: selectedKey ? [authorizedKeyForCloudInit(selectedKey)] : [],
-        userData: cloudUserData.value,
+        userData: mergeCodingAgentUserData(
+          cloudUserData.value,
+          selectedImage.value,
+          openaiPreset.value,
+          byoOpenAIURL.value,
+        ),
         displayResolution: displayResolution.value,
         selectedNetworkId: selectedNetworkId.value,
         portForwards: portForwards.value,
@@ -825,6 +859,9 @@ export function useCreateVMWizard(
     selectedSSHKeyId,
     showCloudInit,
     cloudUserData,
+    openaiPreset,
+    byoOpenAIURL,
+    isCodingAgentSelected: computed(() => isCodingAgentImage(selectedImage.value)),
     filteredImages,
     foreignArchImageCount,
     hostImageArch,

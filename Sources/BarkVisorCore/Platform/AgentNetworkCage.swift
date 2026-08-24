@@ -11,6 +11,9 @@ import Foundation
 public enum AgentNetworkCage {
     public static let slirpGateway = "10.0.2.2"
 
+    /// Device-local Ollama (PAS-271). Guest reaches it at 10.0.2.2:11434.
+    public static let ollamaPort = 11_434
+
     public static let blockedIPv4CIDRs = [
         "10.0.0.0/8",
         "172.16.0.0/12",
@@ -25,12 +28,38 @@ public enum AgentNetworkCage {
         [Config.port, Config.agentPort]
     }
 
+    /// YAML key emitted in Coding Agent Device-Ollama user-data. Must be a real
+    /// mapping entry (not a comment): generateISO round-trips via Yams and
+    /// drops comments.
+    public static let allowHostOllamaKey = "barkvisor_allow_host_ollama"
+    public static let allowHostOllamaYAML = "\(allowHostOllamaKey): true"
+
+    /// Device Ollama guestfwd/seatbelt/iptables exception. Opt-in via the
+    /// YAML key or an `OPENAI_BASE_URL` assignment to the Device Ollama
+    /// endpoint (not a raw substring). Other Agent-class NAT Workloads keep
+    /// the loopback black-hole.
+    public static func allowHostOllama(userData: String?) -> Bool {
+        guard let userData, !userData.isEmpty else { return false }
+        let key = NSRegularExpression.escapedPattern(for: allowHostOllamaKey)
+        let keyPattern = #"(?m)^[ \t]*\#(key):[ \t]*true\b"#
+        if userData.range(of: keyPattern, options: .regularExpression) != nil {
+            return true
+        }
+        let host = NSRegularExpression.escapedPattern(for: slirpGateway)
+        let pattern =
+            #"(?m)^[ \t]*(?:export[ \t]+)?OPENAI_BASE_URL=['"]http://\#(host):\#(ollamaPort)(?:/v1)?/?['"]"#
+        return userData.range(of: pattern, options: .regularExpression) != nil
+    }
+
     /// Extra `-netdev user` suffixes for Agent NAT (not isolated).
-    public static func slirpExtras(mode: NetworkMode) -> String {
+    public static func slirpExtras(mode: NetworkMode, allowHostOllama: Bool = false) -> String {
         guard mode == .nat else { return "" }
         var extra = ",ipv6=off"
         for port in hostServicePorts {
             extra += ",guestfwd=tcp:\(slirpGateway):\(port)-cmd:true"
+        }
+        if allowHostOllama {
+            extra += ",guestfwd=tcp:\(slirpGateway):\(ollamaPort)-tcp:127.0.0.1:\(ollamaPort)"
         }
         return extra
     }
@@ -38,6 +67,7 @@ public enum AgentNetworkCage {
     public static func wrapLaunch(
         _ launch: QEMULaunchConfig,
         workloadClass: WorkloadClass,
+        allowHostOllama: Bool = false,
     ) throws -> QEMULaunchConfig {
         guard workloadClass == .agent else { return launch }
         #if os(macOS)
@@ -49,30 +79,44 @@ public enum AgentNetworkCage {
             }
             return QEMULaunchConfig(
                 executable: sandbox,
-                arguments: ["-p", seatbeltProfile, launch.executable.path] + launch.arguments,
+                arguments: [
+                    "-p", seatbeltProfile(allowHostOllama: allowHostOllama),
+                    launch.executable.path,
+                ] + launch.arguments,
                 swtpmExecutable: launch.swtpmExecutable,
                 swtpmArguments: launch.swtpmArguments,
                 swtpmStateDir: launch.swtpmStateDir,
             )
         #else
+            _ = allowHostOllama
             return launch
         #endif
     }
 
     /// Seatbelt: allow everything, then deny private/loopback outbound except DNS.
-    public static let seatbeltProfile = """
-    (version 1)
-    (allow default)
-    (allow network-outbound (remote udp "*:53"))
-    (allow network-outbound (remote tcp "*:53"))
-    (deny network-outbound (remote ip "10.0.0.0/8"))
-    (deny network-outbound (remote ip "172.16.0.0/12"))
-    (deny network-outbound (remote ip "192.168.0.0/16"))
-    (deny network-outbound (remote ip "169.254.0.0/16"))
-    (deny network-outbound (remote ip "127.0.0.0/8"))
-    (deny network-outbound (remote ip "100.64.0.0/10"))
-    (deny network-outbound (remote ip "224.0.0.0/4"))
-    """
+    public static var seatbeltProfile: String {
+        seatbeltProfile(allowHostOllama: false)
+    }
+
+    public static func seatbeltProfile(allowHostOllama: Bool) -> String {
+        var profile = """
+        (version 1)
+        (allow default)
+        (allow network-outbound (remote udp "*:53"))
+        (allow network-outbound (remote tcp "*:53"))
+        (deny network-outbound (remote ip "10.0.0.0/8"))
+        (deny network-outbound (remote ip "172.16.0.0/12"))
+        (deny network-outbound (remote ip "192.168.0.0/16"))
+        (deny network-outbound (remote ip "169.254.0.0/16"))
+        (deny network-outbound (remote ip "127.0.0.0/8"))
+        (deny network-outbound (remote ip "100.64.0.0/10"))
+        (deny network-outbound (remote ip "224.0.0.0/4"))
+        """
+        if allowHostOllama {
+            profile += "(allow network-outbound (remote tcp \"127.0.0.1:\(ollamaPort)\"))\n"
+        }
+        return profile
+    }
 
     public static func linuxOwnerRejectCommands(pid: Int32) -> [[String]] {
         linuxOwnerCommands(pid: pid, action: "-I")
@@ -103,6 +147,9 @@ public enum AgentNetworkCage {
                 )
             }
             try runIptables(exe: exe, commands: linuxOwnerRejectCommands(pid: pid), vmID: vmID)
+            if allowHostOllama(userData: CloudInitService.storedUserData(vmID: vmID)) {
+                try runIptables(exe: exe, commands: linuxOllamaAcceptCommands(pid: pid), vmID: vmID)
+            }
             Log.vm.info("Agent LAN filter applied for pid \(pid)", vm: vmID)
         #else
             _ = pid
@@ -113,7 +160,7 @@ public enum AgentNetworkCage {
     public static func removeLinuxFilter(pid: Int32, vmID: String) {
         #if os(Linux)
             guard let exe = resolveIptables() else { return }
-            for args in linuxOwnerDeleteCommands(pid: pid) {
+            for args in linuxOllamaDeleteCommands(pid: pid) + linuxOwnerDeleteCommands(pid: pid) {
                 let proc = Process()
                 proc.executableURL = exe
                 proc.arguments = Array(args.dropFirst())
@@ -138,6 +185,25 @@ public enum AgentNetworkCage {
                 "-j", "REJECT",
             ]
         }
+    }
+
+    public static func linuxOllamaAcceptCommands(pid: Int32) -> [[String]] {
+        linuxOllamaCommands(pid: pid, action: "-I")
+    }
+
+    public static func linuxOllamaDeleteCommands(pid: Int32) -> [[String]] {
+        linuxOllamaCommands(pid: pid, action: "-D")
+    }
+
+    private static func linuxOllamaCommands(pid: Int32, action: String) -> [[String]] {
+        [[
+            "iptables", action, "OUTPUT",
+            "-m", "owner", "--pid-owner", "\(pid)",
+            "-p", "tcp",
+            "-d", "127.0.0.1",
+            "--dport", "\(ollamaPort)",
+            "-j", "ACCEPT",
+        ]]
     }
 
     #if os(Linux)
