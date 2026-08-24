@@ -592,7 +592,7 @@ enum DeviceStatsHistory {
         guard !samples.isEmpty else { return [] }
         return Array(samples.suffix(max)).enumerated().compactMap { index, sample in
             guard let date = parseTimestamp(sample.timestamp) else { return nil }
-            DeviceStatsChartPoint(
+            return DeviceStatsChartPoint(
                 id: "\(sample.timestamp)-\(index)",
                 date: date,
                 cpuPercent: sample.hostCpuPercent,
