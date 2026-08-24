@@ -190,18 +190,20 @@ enum CreateWorkload {
         } else {
             workloadClass == "agent" ? "agent" : nil
         }
-        let cloudInit: CloudInitPayload? = if coding, !iso {
+        let cloudInit: CloudInitPayload?
+        if coding, !iso {
             let url = try CodingAgentImage.normalizeOpenAIBaseURL(openaiBaseURL)
             let byo = openaiBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 && url != CodingAgentImage.homeOllamaGrantURL
-            try CloudInitPayload(
+            let apiKey = try CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo)
+            cloudInit = CloudInitPayload(
                 userData: CodingAgentImage.userData(
                     openaiBaseURL: url,
-                    openaiAPIKey: CodingAgentImage.normalizeOpenAIAPIKey(openaiAPIKey, required: byo),
+                    openaiAPIKey: apiKey,
                 ),
             )
         } else {
-            nil
+            cloudInit = nil
         }
         return Body(
             name: trimmed,
