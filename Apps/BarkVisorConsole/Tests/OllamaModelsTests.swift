@@ -77,7 +77,7 @@ struct OllamaModelsTests {
         let llama = OllamaCatalogModel(
             name: "llama3:latest",
             digest: nil,
-            size: 4000,
+            size: 4_000,
             running: true,
             locations: [
                 OllamaModelLocation(
@@ -85,15 +85,15 @@ struct OllamaModelsTests {
                     displayName: nil,
                     running: true,
                     reachable: true,
-                    size: 4000,
-                    sizeVRAM: 3000,
+                    size: 4_000,
+                    sizeVRAM: 3_000,
                 ),
                 OllamaModelLocation(
                     hostId: "lab",
                     displayName: nil,
                     running: false,
                     reachable: true,
-                    size: 4000,
+                    size: 4_000,
                     sizeVRAM: nil,
                 ),
             ],
@@ -101,8 +101,8 @@ struct OllamaModelsTests {
         let export = OllamaPsExport.serialize([llama])
         #expect(export.models.count == 2)
         #expect(export.models[0].name == "llama3:latest")
-        #expect(export.models[0].size == 4000)
-        #expect(export.models[0].sizeVRAM == 3000)
+        #expect(export.models[0].size == 4_000)
+        #expect(export.models[0].sizeVRAM == 3_000)
         #expect(export.models[0].running)
         #expect(export.models[0].host == "desk")
         #expect(export.models[1].sizeVRAM == nil)
