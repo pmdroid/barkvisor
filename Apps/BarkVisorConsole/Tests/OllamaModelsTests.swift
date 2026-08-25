@@ -537,6 +537,11 @@ struct OllamaModelsTests {
         #expect(source.contains("model.ollamaRefreshing"))
         #expect(!source.contains("description: Text(catalog.devices.first?.installHint"))
         #expect(source.contains("installSection"))
+        #expect(source.contains("DisclosureGroup(\"Use this API\""))
+        #expect(source.contains("OllamaInstall.shouldShowInstall"))
+        #expect(source.contains("OllamaInstall.installDevices"))
+        #expect(!source.contains("Section(\"Use this API\")"))
+        #expect(source.contains("reachableDevices.isEmpty"))
         if let flag = source.range(of: "rechecking = true"),
            let task = source.range(of: "await model.refreshOllamaCatalog()")
         {
@@ -544,5 +549,69 @@ struct OllamaModelsTests {
         } else {
             Issue.record("Recheck must set rechecking before refreshOllamaCatalog")
         }
+    }
+
+    @Test func `AgentBox and Mac mini are not Ollama install targets`() {
+        #expect(OllamaInstall.skipDevice("agentbox"))
+        #expect(OllamaInstall.skipDevice("AgentBox"))
+        #expect(OllamaInstall.skipDevice("Mac mini"))
+        #expect(OllamaInstall.skipDevice("macmini"))
+        #expect(OllamaInstall.skipDevice("mac-mini"))
+        #expect(!OllamaInstall.skipDevice("Desk"))
+        let rows = [
+            OllamaDeviceStatus(
+                hostId: "agentbox",
+                displayName: "AgentBox",
+                installed: false,
+                reachable: false,
+                stale: false,
+                installHint: "",
+            ),
+            OllamaDeviceStatus(
+                hostId: "desk",
+                displayName: "Desk",
+                installed: false,
+                reachable: false,
+                stale: false,
+                installHint: "",
+            ),
+            OllamaDeviceStatus(
+                hostId: "mini",
+                displayName: "Mac mini",
+                installed: false,
+                reachable: false,
+                stale: false,
+                installHint: "",
+            ),
+        ]
+        #expect(OllamaInstall.installDevices(rows).map(\.hostId) == ["desk"])
+        #expect(
+            !OllamaInstall.shouldShowInstall(
+                loaded: true,
+                anyReachable: false,
+                devices: [rows[0], rows[2]],
+            ),
+        )
+        #expect(
+            OllamaInstall.shouldShowInstall(
+                loaded: true,
+                anyReachable: false,
+                devices: rows,
+            ),
+        )
+        #expect(
+            !OllamaInstall.shouldShowInstall(
+                loaded: true,
+                anyReachable: true,
+                devices: [],
+            ),
+        )
+        #expect(
+            !OllamaInstall.shouldShowInstall(
+                loaded: false,
+                anyReachable: false,
+                devices: [],
+            ),
+        )
     }
 }

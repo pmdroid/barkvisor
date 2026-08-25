@@ -304,6 +304,31 @@ enum OllamaInstall {
         return hint(os: os)
     }
 
+    /// AgentBox / Mac mini are not Ollama install targets.
+    static func skipDevice(_ name: String?) -> Bool {
+        let key = (name ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+        return key == "agentbox" || key == "macmini"
+    }
+
+    static func installDevices(_ devices: [OllamaDeviceStatus]) -> [OllamaDeviceStatus] {
+        devices.filter { !skipDevice($0.displayName) && !skipDevice($0.hostId) }
+    }
+
+    static func shouldShowInstall(
+        loaded: Bool,
+        anyReachable: Bool,
+        devices: [OllamaDeviceStatus],
+    ) -> Bool {
+        guard loaded, !anyReachable else { return false }
+        if !devices.isEmpty, installDevices(devices).isEmpty { return false }
+        return true
+    }
+
     /// Recheck is ignored while a prior Recheck or refreshOllama is already in flight.
     static func canRecheck(rechecking: Bool, refreshInFlight: Bool) -> Bool {
         !rechecking && !refreshInFlight
