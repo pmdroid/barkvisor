@@ -35,9 +35,9 @@ esac
 pass=$((pass + 1))
 
 # Download URL for fixed version — real barkvisor_swift_download_url
-URL="$(barkvisor_swift_download_url 6.2.3)"
+URL="$(barkvisor_swift_download_url 6.3.3)"
 case "$URL" in
-  https://download.swift.org/swift-6.2.3-release/*swift-6.2.3-RELEASE*.tar.gz) ;;
+  https://download.swift.org/swift-6.3.3-release/*swift-6.3.3-RELEASE*.tar.gz) ;;
   *) fail "download URL shape unexpected: $URL" ;;
 esac
 pass=$((pass + 1))

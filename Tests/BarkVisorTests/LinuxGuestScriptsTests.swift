@@ -515,8 +515,8 @@ struct LinuxGuestScriptsTests {
         ] {
             #expect(workflow.contains(needle), "guest-boot.yml should mention \(needle)")
         }
-        #expect(workflow.contains("3e0b8eaf9210131a1756e6a1a9e9103bac83609a0ae604d6f2e791053f98f115"))
-        #expect(workflow.contains("48dc99bcabc54feadd2942f4830be854ca2396e2db4ca4ec6b6c926a25c87d55"))
+        #expect(workflow.contains("da8272a5fddccd65b1529ed0e52e04526e2eadd4237d58d6220efeb973c6cd19"))
+        #expect(workflow.contains("47126395429653fa768d370655876ec1b68f6a95c7884f5e4f179700141c9b7f"))
         #expect(workflow.contains("if: vars.KVM_RUNNER_ENABLED == 'true'"))
         #expect(!workflow.localizedCaseInsensitiveContains("cluster"))
         #expect(!workflow.localizedCaseInsensitiveContains("quorum"))

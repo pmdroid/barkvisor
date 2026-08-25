@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./scripts/install-swift-linux.sh              # install to /opt/swift
-#   SWIFT_VERSION=6.2.3 PREFIX=$HOME/swift ./scripts/install-swift-linux.sh
+#   SWIFT_VERSION=6.3.3 PREFIX=$HOME/swift ./scripts/install-swift-linux.sh
 #   ./scripts/install-swift-linux.sh --check      # only ensure compat + print env
 set -euo pipefail
 
@@ -18,7 +18,7 @@ source "$ROOT/scripts/lib/linux-distro.sh"
 # shellcheck source=lib/linux-swift-compat.sh
 source "$ROOT/scripts/lib/linux-swift-compat.sh"
 
-SWIFT_VERSION="${SWIFT_VERSION:-6.2.3}"
+SWIFT_VERSION="${SWIFT_VERSION:-6.3.3}"
 PREFIX="${PREFIX:-/opt/swift}"
 CHECK_ONLY=0
 

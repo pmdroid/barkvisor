@@ -109,19 +109,17 @@ jobs:
             qemu-system-x86 qemu-system-arm qemu-utils ovmf \
             genisoimage jq python3
 
-      - name: Install Swift 6.2.3
+      - name: Install Swift 6.3.3
         if: steps.gate.outputs.run == 'yes' && steps.kvm.outputs.kvm == 'yes'
         run: |
           set -euo pipefail
           ARCH=$(uname -m)
           if [ "$ARCH" = "x86_64" ]; then
-            URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04.tar.gz"
-            # Official download.swift.org tarball (2026-08-16).
-            SHA256="3e0b8eaf9210131a1756e6a1a9e9103bac83609a0ae604d6f2e791053f98f115"
+            URL="https://download.swift.org/swift-6.3.3-release/ubuntu2404/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-ubuntu24.04.tar.gz"
+            SHA256="da8272a5fddccd65b1529ed0e52e04526e2eadd4237d58d6220efeb973c6cd19"
           else
-            URL="https://download.swift.org/swift-6.2.3-release/ubuntu2404-aarch64/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE-ubuntu24.04-aarch64.tar.gz"
-            # Official download.swift.org tarball (2026-08-16).
-            SHA256="48dc99bcabc54feadd2942f4830be854ca2396e2db4ca4ec6b6c926a25c87d55"
+            URL="https://download.swift.org/swift-6.3.3-release/ubuntu2404-aarch64/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-ubuntu24.04-aarch64.tar.gz"
+            SHA256="47126395429653fa768d370655876ec1b68f6a95c7884f5e4f179700141c9b7f"
           fi
           curl -fL "$URL" -o /tmp/swift.tar.gz
           echo "${SHA256}  /tmp/swift.tar.gz" | sha256sum -c -

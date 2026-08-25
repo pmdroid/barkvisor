@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$ROOT/build/linux-packages}"
 FORMATS="${FORMATS:-tar,deb,rpm}"
-SWIFT_VERSION="${SWIFT_VERSION:-6.2.3}"
+SWIFT_VERSION="${SWIFT_VERSION:-6.3.3}"
 UBUNTU_VERSION="${UBUNTU_VERSION:-24.04}"
 IMAGE_TAG="${IMAGE_TAG:-barkvisor-pkgbuild:local}"
 
