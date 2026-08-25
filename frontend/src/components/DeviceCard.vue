@@ -1,26 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { HomeDeviceHealthSnapshot, WorkloadHealth } from '../api/types'
-import {
-  deviceWorkloadLine,
-  isReachabilityOk,
-  reachabilityCardClass,
-  reachabilityHint,
-  reachabilityLabel,
-  reachabilityPillClass,
-} from '../utils/homeDeviceHealth'
+import { useRouter } from 'vue-router'
+import type { HomeDeviceHealthSnapshot } from '../api/types'
+import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
-import { healthLabel } from '../utils/workloadHealth'
 
 const props = defineProps<{
   device: HomeDeviceHealthSnapshot
+  selectable?: boolean
+  selected?: boolean
+  tempLabel?: string | null
+  storageLabel?: string | null
 }>()
 
+const emit = defineEmits<{ click: [] }>()
+const router = useRouter()
+
 const reachable = computed(() => isReachabilityOk(props.device.reachability))
-const reachHint = computed(() => reachabilityHint(props.device))
 const reachLabel = computed(() => reachabilityLabel(props.device.reachability))
-const reachPill = computed(() => reachabilityPillClass(props.device.reachability))
-const cardClass = computed(() => reachabilityCardClass(props.device.reachability))
+const reachHint = computed(() => reachabilityHint(props.device))
 
 const title = computed(() => {
   if (props.device.displayName && props.device.displayName.trim()) return props.device.displayName
@@ -35,154 +33,87 @@ const platformLabel = computed(() => {
   return reachable.value ? DEVICE_LABEL : 'Unknown platform'
 })
 
-const workloadLine = computed(() => deviceWorkloadLine(props.device))
+const failedCount = computed(() => props.device.healthCounts?.failed ?? 0)
 
-const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed', 'stopped']
+const countLabel = computed(() => {
+  const count = props.device.workloadCount
+  if (count == null) return '—'
+  return `${count} workload${count === 1 ? '' : 's'}`
+})
+
+const cpuPercent = computed(() => {
+  if (!reachable.value) return null
+  const value = props.device.resources?.cpuLoadPercent
+  return value == null ? null : Math.round(value)
+})
+
+const memLabel = computed(() => {
+  if (!reachable.value) return null
+  const used = props.device.resources?.memoryUsedMB
+  const total = props.device.resources?.memoryTotalMB
+  if (used == null || total == null) return null
+  return `${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} GB`
+})
+
+const memPercent = computed(() => {
+  if (!reachable.value) return 0
+  const used = props.device.resources?.memoryUsedMB
+  const total = props.device.resources?.memoryTotalMB
+  if (used == null || !total) return 0
+  return Math.min((used / total) * 100, 100)
+})
+
+function onClick() {
+  emit('click')
+  if (!props.selectable) {
+    router.push({ name: 'device-detail', params: { hostId: props.device.hostId } })
+  }
+}
 </script>
 
 <template>
-  <router-link
-    class="device-card-link"
-    :to="{ name: 'device-detail', params: { hostId: device.hostId } }"
-    :aria-label="`Open workloads on ${title}`"
+  <button
+    type="button"
+    class="ops-dev"
+    :class="{ selected, unreachable: !reachable }"
+    :aria-label="`${title} — Workloads`"
+    :title="reachHint || undefined"
+    @click="onClick"
   >
-  <article class="device-card" :class="cardClass">
-    <div class="device-card-top">
-      <div>
-        <h3>{{ title }}</h3>
-        <p class="device-card-meta">
-          <span v-if="device.role === 'self'" class="device-chip self">This {{ DEVICE_LABEL }}</span>
-          <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
-          <span>{{ platformLabel }}</span>
-        </p>
-      </div>
-      <span class="status-pill" :class="reachPill">
-        {{ reachLabel }}
+    <span class="ops-dev-top">
+      <span class="ops-dot" :class="[reachable ? 'ok' : 'bad', { pulse: !reachable }]"></span>
+      <span class="ops-dev-name">{{ title }}</span>
+      <span v-if="device.role === 'self'" class="ops-dev-tag">This {{ DEVICE_LABEL }}</span>
+      <span v-if="!reachable" class="ops-dev-tag-bad">{{ reachLabel }}</span>
+      <span v-else-if="failedCount > 0" class="ops-dev-pill-bad">{{ failedCount }} failed</span>
+      <span class="ops-dev-count">{{ countLabel }}</span>
+    </span>
+    <span class="ops-dev-meta">
+      <template v-if="platformLabel">{{ platformLabel }} · </template>
+      <span :class="reachable ? 'ops-ok-text' : 'ops-bad-text'">{{ reachLabel }}</span>
+    </span>
+    <span class="ops-meter">
+      <span class="ops-m-label">CPU</span>
+      <span class="ops-track">
+        <span
+          v-if="cpuPercent != null"
+          class="ops-fill"
+          :class="cpuPercent >= 60 ? 'hot' : 'cpu'"
+          :style="{ width: cpuPercent + '%' }"
+        ></span>
       </span>
-    </div>
-    <p class="device-card-workloads">{{ workloadLine }}</p>
-    <p v-if="reachHint" class="device-card-hint">
-      {{ reachHint }}
-    </p>
-    <div v-else-if="device.healthCounts" class="device-card-health">
-      <span
-        v-for="key in healthKeys"
-        :key="key"
-        class="health-mini"
-      >
-        {{ device.healthCounts[key] ?? 0 }} {{ healthLabel(key) }}
+      <span class="ops-m-val">{{ cpuPercent == null ? '—' : cpuPercent + '%' }}</span>
+    </span>
+    <span class="ops-meter">
+      <span class="ops-m-label">MEM</span>
+      <span class="ops-track">
+        <span v-if="memLabel" class="ops-fill mem" :style="{ width: memPercent + '%' }"></span>
       </span>
-    </div>
-    <p v-if="reachable && device.resources" class="device-card-res">
-      <span v-if="device.resources.cpuLoadPercent != null">
-        CPU {{ device.resources.cpuLoadPercent.toFixed(0) }}%
-      </span>
-      <span v-if="device.resources.memoryUsedMB != null && device.resources.memoryTotalMB">
-        Mem {{ (device.resources.memoryUsedMB / 1024).toFixed(1) }} /
-        {{ (device.resources.memoryTotalMB / 1024).toFixed(0) }} GB
-      </span>
-    </p>
-    <p class="device-card-open">Workloads</p>
-  </article>
-  </router-link>
+      <span class="ops-m-val">{{ memLabel ?? '—' }}</span>
+    </span>
+    <span v-if="tempLabel || storageLabel" class="ops-dev-sub">
+      <span v-if="tempLabel">{{ tempLabel }}</span>
+      <span v-if="storageLabel">Storage {{ storageLabel }}</span>
+    </span>
+  </button>
 </template>
-
-<style scoped>
-.device-card-link {
-  display: block;
-  min-width: 0;
-  color: inherit;
-  text-decoration: none;
-}
-.device-card-link:hover .device-card,
-.device-card-link:focus-visible .device-card {
-  border-color: var(--accent);
-}
-.device-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  min-width: 0;
-  overflow: hidden;
-}
-.device-card.unreachable {
-  border-color: rgba(248, 113, 113, 0.35);
-}
-.device-card.http-error {
-  border-color: rgba(245, 158, 11, 0.4);
-}
-.device-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.device-card h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
-}
-.device-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-.device-chip {
-  display: inline-flex;
-  padding: 2px 8px;
-  border-radius: 2px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 10px;
-}
-.device-chip.self {
-  color: var(--green);
-  background: var(--green-muted);
-}
-.device-card-workloads {
-  margin: 14px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.device-card-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.device-card-health {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-.health-mini {
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.device-card-res {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 10px 0 0;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-}
-.device-card-open {
-  margin: 12px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-}
-</style>

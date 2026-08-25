@@ -985,7 +985,6 @@ async function loadLocalDetail(existingVersion?: number) {
   const loadVersion = existingVersion ?? ++detailLoadVersion
   stopRealtimeSync()
   guestInfo.value = null
-  diskUsages.value = {}
   try {
     await Promise.all([
       store.fetchOne(vmId.value),
@@ -1247,60 +1246,144 @@ const currentNetwork = computed(() => {
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
+const toolbarSub = computed(() => {
+  const v = vm.value
+  if (!v) return ''
+  const type = v.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+  const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
+  return device ? `${type} · ${devicesStore.deviceLabel(device)}` : type
+})
+
+const healthBanner = computed(() => {
+  const v = vm.value
+  if (!v) return null
+  const health = vmHealth(v)
+  const error = v.status?.healthError || null
+  if (health !== 'failed' && !(health === 'degraded' && error)) return null
+  return {
+    title: `${healthLabel(health)} — ${error || 'guest failed'}`,
+    sub: v.state === 'running' ? 'The Workload is still running.' : 'Start the Workload to retry.',
+  }
+})
+
 </script>
 
 <template>
-  <div v-if="!vm" class="empty">
-    <template v-if="isMemberDetail && memberLoadSettled">
-      <div class="page-header">
-        <div style="display:flex;align-items:center;gap:10px">
-          <button class="back-icon" @click="router.push('/vms')" title="Back to VMs">
-            <AppIcon name="chevron-left" :size="18" />
-          </button>
-          <h1>{{ vmId }}</h1>
-        </div>
-      </div>
-      <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
-      <p v-else-if="!memberReachable">
-        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Live state unavailable.
-      </p>
-      <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
-    </template>
-    <p v-else>Loading...</p>
-  </div>
-  <div v-else>
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button class="back-icon" @click="router.push('/vms')" title="Back to VMs">
-          <AppIcon name="chevron-left" :size="18" />
-        </button>
-        <h1>{{ vm.name }}</h1>
-        <span class="badge badge-gray" :title="grantCopy">{{ grantCopy }}</span>
-        <WorkloadDeviceChip
-          v-if="isMemberDetail && memberDevice"
-          :label="devicesStore.deviceLabel(memberDevice)"
-          :reachable="memberReachable"
-        />
-      </div>
-      <div style="display: flex; gap: 8px; align-items: center">
-        <span
-          class="status-pill"
-          :class="healthPillClass(vmHealth(vm))"
-          :title="vm.status?.healthError || undefined"
-        >{{ healthLabel(vmHealth(vm)) }}</span>
+  <div class="ops-page">
+  <template v-if="!vm">
+    <div v-if="isMemberDetail && memberLoadSettled" class="ops-toolbar">
+      <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
+        <AppIcon name="chevron-left" :size="16" />
+        <span>Virtual Machines</span>
+      </button>
+      <h1>{{ vmId }}</h1>
+    </div>
+    <div class="ops-body empty">
+      <template v-if="isMemberDetail && memberLoadSettled">
+        <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
+        <p v-else-if="!memberReachable">
+          This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Live state unavailable.
+        </p>
+        <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
+      </template>
+      <p v-else>Loading...</p>
+    </div>
+  </template>
+  <template v-else>
+    <div class="ops-toolbar vm-toolbar">
+      <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
+        <AppIcon name="chevron-left" :size="16" />
+        <span>Virtual Machines</span>
+      </button>
+      <h1>{{ vm.name }}</h1>
+      <span
+        class="status-pill"
+        :class="healthPillClass(vmHealth(vm))"
+        :title="vm.status?.healthError || undefined"
+      >{{ healthLabel(vmHealth(vm)) }}</span>
+      <span class="ops-sub">{{ toolbarSub }}</span>
+      <span class="badge badge-gray" :title="grantCopy">{{ grantCopy }}</span>
+      <WorkloadDeviceChip
+        v-if="isMemberDetail && memberDevice"
+        :label="devicesStore.deviceLabel(memberDevice)"
+        :reachable="memberReachable"
+      />
+      <div class="ops-actions">
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
+        <AppButton v-if="vm.state === 'running'"
+          :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
         <AppButton
           v-if="showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
           title="Open VNC in a new resizable window"
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
         >VNC</AppButton>
-        <AppButton v-if="vm.state === 'running'"
-          :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
         <AppButton v-if="!isMemberDetail && (vm.state === 'stopped' || vm.state === 'error')" variant="danger" :disabled="!!actionLoading" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
       </div>
+    </div>
+    <div class="ops-body">
+
+    <div v-if="healthBanner" class="ops-banner">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+      <div>
+        <div class="ops-banner-title"><span class="ops-dot bad pulse"></span>{{ healthBanner.title }}</div>
+        <div class="ops-banner-sub">{{ healthBanner.sub }}</div>
+      </div>
+    </div>
+
+    <div v-if="isMemberDetail && !memberReachable" class="ops-banner">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+      <div>
+        <div class="ops-banner-title">{{ DEVICE_LABEL }} unreachable</div>
+        <div class="ops-banner-sub">This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known data, not live state.</div>
+      </div>
+    </div>
+    <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
+
+    <div v-if="codingAgent && session?.warning" class="ops-banner amber">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+      <div>
+        <div class="ops-banner-title">{{ sessionWarningCopy(session.remainingSeconds) }}</div>
+      </div>
+    </div>
+
+    <div v-if="codingAgent && sessionReceipt" class="ops-banner" :class="{ amber: !sessionReceipt.loud }">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+      <div>
+        <div class="ops-banner-title">Stopped at {{ sessionReceipt.stoppedAt }}.</div>
+        <div class="ops-banner-sub">
+          <strong v-if="sessionReceipt.loud">{{ SESSION_NO_PUSH }}</strong>
+          <span v-else>Last git push {{ sessionReceipt.git }}.</span>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="vm.pendingChanges" class="ops-banner amber">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+      <div>
+        <div class="ops-banner-title">Pending restart</div>
+        <div class="ops-banner-sub">Configuration changed. Restart the VM to apply new settings.</div>
+      </div>
+    </div>
+
+    <div v-if="backend?.emulated && backend.warning" class="ops-banner amber">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+      <div>
+        <div class="ops-banner-title">{{ backend.warning }}</div>
+      </div>
+    </div>
+
+    <div v-if="!isMemberDetail && bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="ops-banner">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+      <div>
+        <div v-if="bridgeStatus === 'installed'" class="ops-banner-title">Bridge daemon is not running for <strong>{{ currentNetwork?.bridge }}</strong></div>
+        <div v-else class="ops-banner-title">Bridge is not configured for <strong>{{ currentNetwork?.bridge }}</strong></div>
+        <div v-if="bridgeStatus === 'installed'" class="ops-banner-sub">The VM cannot start until the daemon is active.</div>
+        <div v-else class="ops-banner-sub">The VM cannot start until the bridge is set up.</div>
+      </div>
+      <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :loading="!!bridgeLoading" loading-text="Setting up..." @click="setupBridgeFromDetail">Setup Bridge</AppButton>
     </div>
 
     <div v-if="!isMemberDetail" class="tabs">
@@ -1317,44 +1400,6 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div v-if="showMemberConnect" class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
-    </div>
-
-    <div v-if="isMemberDetail && !memberReachable" class="pending-banner">
-      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known data, not live state.
-    </div>
-    <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
-
-    <div v-if="codingAgent && session?.warning" class="pending-banner">
-      {{ sessionWarningCopy(session.remainingSeconds) }}
-    </div>
-
-    <div v-if="codingAgent && sessionReceipt" class="pending-banner" :class="{ 'session-nopush': sessionReceipt.loud }">
-      Stopped at {{ sessionReceipt.stoppedAt }}.
-      <strong v-if="sessionReceipt.loud">{{ SESSION_NO_PUSH }}</strong>
-      <span v-else>Last git push {{ sessionReceipt.git }}.</span>
-    </div>
-
-    <div v-if="vm.pendingChanges" class="pending-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      Configuration changed. Restart the VM to apply new settings.
-    </div>
-
-    <div v-if="backend?.emulated && backend.warning" class="emu-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
-      {{ backend.warning }}
-    </div>
-
-    <div v-if="!isMemberDetail && bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
-      <span v-if="bridgeStatus === 'installed'">Bridge daemon is not running for <strong>{{ currentNetwork?.bridge }}</strong>. The VM cannot start until the daemon is active.</span>
-      <span v-else>Bridge is not configured for <strong>{{ currentNetwork?.bridge }}</strong>. The VM cannot start until the bridge is set up.</span>
-      <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :loading="!!bridgeLoading" loading-text="Setting up..." @click="setupBridgeFromDetail">Setup Bridge</AppButton>
     </div>
 
     <div v-if="tab === 'overview'">
@@ -1378,12 +1423,12 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           <AppButton variant="danger" :disabled="controlDisabled" @click="showBurnDialog = true">Burn</AppButton>
         </div>
       </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div></div>
+      <div class="card config-sheet">
+        <div class="sheet-head">
+          <h3>Configuration</h3>
           <AppButton size="sm" :disabled="isMemberDetail && (!memberReachable || !editCpuMax)" @click="openEditModal">Edit Settings</AppButton>
         </div>
-        <div class="detail-grid">
+        <div class="detail-grid sheet-grid">
           <div class="detail-row">
             <span class="detail-label">Type</span>
             <span><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></span>
@@ -1412,11 +1457,11 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">Memory</span>
             <span>{{ vm.memoryMB }} MB</span>
           </div>
-          <div class="detail-row">
+          <div class="detail-row span-2">
             <span class="detail-label">Description</span>
             <span style="color:var(--text-secondary)">{{ vm.description || '-' }}</span>
           </div>
-          <div class="detail-row">
+          <div class="detail-row span-2">
             <span class="detail-label">{{ startOnBootLabel() }}</span>
             <span>
               <label class="pairing-hint" style="display:flex;gap:8px;align-items:flex-start;text-align:left;margin:0">
@@ -1439,7 +1484,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">Resolution</span>
             <span class="mono">{{ vm.displayResolution || '1280x800' }}</span>
           </div>
-          <div class="detail-row">
+          <div class="detail-row span-2">
             <span class="detail-label">Network</span>
             <span style="display:flex;align-items:center;gap:6px">
               <template v-if="currentNetwork">
@@ -1458,7 +1503,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <span v-else style="color:var(--text-dim)">Default NAT</span>
             </span>
           </div>
-          <div v-if="!currentNetwork || currentNetwork.mode === 'nat'" class="detail-row">
+          <div v-if="!currentNetwork || currentNetwork.mode === 'nat'" class="detail-row span-2">
             <span class="detail-label">Port Forwards</span>
             <span class="detail-editable">
               <span v-if="vm.portForwards && vm.portForwards.length > 0" style="display:flex;flex-wrap:wrap;gap:4px">
@@ -1470,7 +1515,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor()">Edit</AppButton>
             </span>
           </div>
-          <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
+          <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row span-2">
             <span class="detail-label">Services</span>
             <span style="display:flex;flex-wrap:wrap;gap:4px">
               <template v-if="guestInfo?.ipAddresses?.length">
@@ -1488,7 +1533,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               </template>
             </span>
           </div>
-          <div class="detail-row">
+          <div class="detail-row span-2">
             <span class="detail-label">ISOs</span>
             <span style="display:flex;flex-direction:column;gap:6px;flex:1">
               <div v-for="iso in isoImages" :key="iso.id" style="display:flex;align-items:center;justify-content:space-between">
@@ -1521,7 +1566,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             <span class="detail-label">OS</span>
             <span>{{ memberOsLabel }}</span>
           </div>
-          <div v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
+          <div v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row span-2">
             <span class="detail-label">IP Address</span>
             <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
@@ -1993,7 +2038,8 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </template>
 
   <!-- Folder Picker -->
   <FolderPicker
@@ -2140,9 +2186,17 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
+.vm-toolbar {
+  height: auto;
+  min-height: 58px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
 .empty p,
 .list-error {
   color: var(--text-secondary);
@@ -2172,52 +2226,60 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 .edit-field select {
   width: 100%;
 }
-.pending-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--amber-muted);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--amber, #f59e0b);
-}
-.session-nopush {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.12);
+.back-icon.back-labeled {
+  width: auto;
+  padding: 0 10px;
+  gap: 7px;
+  font-size: 12.5px;
   font-weight: 600;
 }
-.emu-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--amber-muted);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--amber, #f59e0b);
+.card.config-sheet {
+  padding: 0;
 }
-.bridge-banner {
+.sheet-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--red-muted, rgba(248, 113, 113, 0.1));
-  border: 1px solid rgba(248, 113, 113, 0.25);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--red, #f87171);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sheet-head h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+.ops-banner-sub strong {
+  color: var(--red);
 }
 .detail-grid {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+.detail-grid.sheet-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 28px;
+  padding: 4px 14px 8px;
+}
+.sheet-grid .detail-row {
+  padding: 9px 0;
+}
+.sheet-grid .detail-label {
+  width: 118px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+}
+.sheet-grid .span-2 {
+  grid-column: 1 / -1;
+}
+@media (max-width: 768px) {
+  .detail-grid.sheet-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .detail-row {
   display: flex;

@@ -12,7 +12,7 @@ import { useDeviceNetworksStore } from '../stores/deviceNetworks'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
-import type { SystemStats, GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
+import type { GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { filterRowsByHealth, healthLabel, healthPillClass, vmHealth, vmListEmptyKind } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
@@ -23,9 +23,8 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
-import { pct } from '../utils/format'
 import { scopeRows } from '../utils/deviceScope'
-import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 import {
   guestInfoFetchPath,
@@ -51,7 +50,6 @@ const { byId: networkMap } = storeToRefs(networkStore)
 const router = useRouter()
 const route = useRoute()
 const showCreate = ref(false)
-const stats = ref<SystemStats | null>(null)
 const healthSummary = ref<WorkloadHealthSummary | null>(null)
 const healthFilter = ref<WorkloadHealth | 'all'>('all')
 const guestInfoMap = reactive<Record<string, GuestInfo>>({})
@@ -90,11 +88,18 @@ const healthStrip = computed(() => {
     .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
 })
 
-async function fetchStats() {
-  try {
-    const { data } = await api.get('/system/stats')
-    stats.value = data
-  } catch { /* ignore */ }
+const healthTotal = computed(() => healthStrip.value.reduce((sum, row) => sum + row.count, 0))
+
+const homeDeviceCount = computed(() => new Set(homeRows.value.map((row) => row.hostId)).size)
+
+const healthDotClass: Record<WorkloadHealth, string> = {
+  unknown: 'off',
+  running: 'ok',
+  guest_ready: 'ok',
+  starting: 'warn',
+  degraded: 'warn',
+  failed: 'bad',
+  stopped: 'off',
 }
 
 async function fetchHealthSummary() {
@@ -160,12 +165,10 @@ function isNatVM(vm: typeof store.vms[0]): boolean {
 let pollTimer: number
 onMounted(async () => {
   await refreshHomeWorkloads()
-  fetchStats()
   fetchHealthSummary()
   fetchGuestInfo()
   void networkStore.fetchAll()
   pollTimer = window.setInterval(() => {
-    fetchStats()
     fetchHealthSummary()
     void refreshHomeWorkloads().then(fetchGuestInfo)
   }, 5000)
@@ -306,46 +309,34 @@ async function doStop() {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar">
     <h1>Virtual Machines</h1>
-    <AppButton variant="primary" icon="plus" @click="showCreate = true">Create VM</AppButton>
-  </div>
-
-  <!-- System Stats -->
-  <div v-if="stats" class="stats-row">
-    <div class="stat-card">
-      <div class="stat-label">{{ DEVICE_CPU_LABEL }}</div>
-      <div class="stat-value">{{ stats.hostCpuPercent.toFixed(0) }}%</div>
-      <div class="stat-bar"><div class="stat-bar-fill" :style="{ width: Math.min(stats.hostCpuPercent, 100) + '%', background: 'var(--accent)' }" /></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">{{ DEVICE_MEMORY_LABEL }}</div>
-      <div class="stat-value">{{ (stats.hostMemoryUsedMB / 1024).toFixed(1) }} / {{ (stats.hostMemoryTotalMB / 1024).toFixed(0) }} GB</div>
-      <div class="stat-bar"><div class="stat-bar-fill" :style="{ width: pct(stats.hostMemoryUsedMB, stats.hostMemoryTotalMB) + '%', background: '#34d399' }" /></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">VM CPU Usage</div>
-      <div class="stat-value">{{ stats.vmCpuPercent.toFixed(1) }}%</div>
-      <div class="stat-bar"><div class="stat-bar-fill" :style="{ width: Math.min(stats.vmCpuPercent, 100) + '%', background: '#fbbf24' }" /></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">VM Memory</div>
-      <div class="stat-value">{{ stats.vmMemoryMB >= 1024 ? (stats.vmMemoryMB / 1024).toFixed(1) + ' GB' : stats.vmMemoryMB + ' MB' }}</div>
-      <div class="stat-sub">{{ stats.runningVMs }} of {{ stats.totalVMs }} VMs running</div>
+    <span class="ops-sub">{{ devicesStore.devices.length ? `${homeRows.length} across ${homeDeviceCount} ${homeDeviceCount === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}` : `${homeRows.length} VMs` }}</span>
+    <div class="ops-actions">
+      <AppButton variant="primary" icon="plus" @click="showCreate = true">Create VM</AppButton>
     </div>
   </div>
 
+  <div class="ops-body">
   <div v-if="healthSummary" class="health-strip">
+    <button
+      type="button"
+      class="fchip"
+      :class="{ active: healthFilter === 'all' }"
+      @click="healthFilter = 'all'"
+    >
+      All <span class="n">{{ healthTotal }}</span>
+    </button>
     <button
       v-for="row in healthStrip"
       :key="row.key"
       type="button"
-      class="health-chip"
-      :class="[row.key, { active: healthFilter === row.key }]"
+      class="fchip"
+      :class="{ active: healthFilter === row.key }"
       @click="healthFilter = healthFilter === row.key ? 'all' : row.key"
     >
-      <span class="health-chip-count">{{ row.count }}</span>
-      <span class="health-chip-label">{{ row.label }}</span>
+      <span class="ops-dot" :class="healthDotClass[row.key]"></span>{{ row.label }} <span class="n">{{ row.count }}</span>
     </button>
   </div>
 
@@ -369,7 +360,7 @@ async function doStop() {
     { key: 'status', label: 'Status' },
     { key: 'actions', label: '' },
   ]">
-        <tr v-for="row in visibleRows" :key="rowKey(row)" class="vm-row" @click="openRow(row)">
+        <tr v-for="row in visibleRows" :key="rowKey(row)" :class="['vm-row', { failed: vmHealth(row.vm) === 'failed' }]" @click="openRow(row)">
           <td>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
               <span style="font-weight:500">{{ row.vm.name }}</span>
@@ -480,6 +471,8 @@ async function doStop() {
         </tr>
   </DataTable>
 
+  </div>
+
   <ConfirmDialog
     v-if="stopConfirm"
     :title="stopConfirm.method === 'force' ? 'Force Stop VM' : 'Shutdown VM'"
@@ -495,53 +488,12 @@ async function doStop() {
     v-if="showCreate"
     :initial-host-id="deviceScope.isAll ? undefined : deviceScope.selectedHostId"
     @close="showCreate = false"
-    @created="showCreate = false; refreshHomeWorkloads(); fetchStats()"
+    @created="showCreate = false; refreshHomeWorkloads()"
   />
+  </div>
 </template>
 
 <style scoped>
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.stat-card {
-  background: var(--bg-card);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius);
-  padding: 16px;
-}
-.stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  margin-bottom: 6px;
-}
-.stat-value {
-  font-size: 18px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 8px;
-}
-.stat-sub {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.stat-bar {
-  height: 4px;
-  background: rgba(255,255,255,0.06);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.stat-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.5s ease;
-}
 .vm-row {
   cursor: pointer;
 }
@@ -579,40 +531,7 @@ async function doStop() {
 .health-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.health-chip {
-  display: inline-flex;
-  align-items: baseline;
   gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-glass);
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.health-chip.active {
-  border-color: var(--accent);
-  color: var(--text);
-}
-.health-chip-count {
-  font-size: 16px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.health-chip-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-@media (max-width: 1024px) {
-  .stats-row { grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (max-width: 768px) {
-  .stats-row { grid-template-columns: 1fr; gap: 8px; margin-bottom: 16px; }
+  margin-bottom: 12px;
 }
 </style>

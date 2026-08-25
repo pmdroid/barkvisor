@@ -9,41 +9,41 @@ describe('Network Management', () => {
     cy.visit('/networks')
   })
 
-  it('shows page header with Networks / Bridge Management tabs', () => {
+  it('shows page header with Bridge setup and Create Network', () => {
     cy.contains('h1', 'Networks').should('be.visible')
-    cy.get('.tab-bar button').should('contain', 'Networks')
-    cy.get('.tab-bar button').should('contain', 'Bridge Management')
-  })
-
-  it('Networks tab is active by default', () => {
-    cy.get('.tab-bar button').contains('Networks').should('have.class', 'active')
-  })
-
-  it('Create Network button is visible on Networks tab', () => {
+    cy.contains('button', 'Bridge setup').should('exist')
     cy.contains('button', 'Create Network').should('exist')
   })
 
-  it('Create Network button is hidden on Bridge Management tab', () => {
-    cy.get('.tab-bar button').contains('Bridge Management').click()
-    cy.contains('button', 'Create Network').should('not.exist')
+  it('selects the first network row by default', () => {
+    cy.get('.nrow').first().should('have.class', 'selected')
+    cy.get('.inspect .detail-head h2').should('exist')
+  })
+
+  it('Create Network button is visible in the toolbar', () => {
+    cy.contains('button', 'Create Network').should('exist')
   })
 
   it('lists the default NAT network', () => {
-    cy.contains('Default NAT').should('exist')
-    cy.get('.badge').contains('nat').should('exist')
+    cy.contains('.nrow', 'Default NAT').should('exist')
+    cy.contains('.nrow', 'Default NAT').find('.badge').contains('nat').should('exist')
+    cy.contains('.nrow', 'Default NAT').click()
+    cy.get('.inspect').contains('.chip', 'Default NAT').should('exist')
   })
 
-  it('network table shows Name, Mode, Bridge, DNS columns', () => {
-    cy.get('table thead th').should('contain', 'Name')
-    cy.get('table thead th').should('contain', 'Mode')
-    cy.get('table thead th').should('contain', 'Bridge')
-    cy.get('table thead th').should('contain', 'DNS')
+  it('network list and inspector show Name, Mode, Bridge, DNS', () => {
+    cy.get('.nrow .nrow-name').should('have.length.gte', 1)
+    cy.get('.nrow').first().click()
+    cy.get('.inspect .sheet').should('contain', 'Mode')
+    cy.get('.inspect .sheet').should('contain', 'DNS')
+    cy.get('.inspect .sheet').should('contain', 'Device')
   })
 
   it('default network has no Edit / Delete buttons', () => {
-    cy.contains('tr', 'Default NAT').then(($row) => {
-      expect($row.find('button:contains("Edit")').length).to.equal(0)
-      expect($row.find('button:contains("Delete")').length).to.equal(0)
+    cy.contains('.nrow', 'Default NAT').click()
+    cy.get('.inspect .detail-head').within(() => {
+      cy.contains('button', 'Edit').should('not.exist')
+      cy.contains('button', 'Delete').should('not.exist')
     })
   })
 
@@ -108,14 +108,15 @@ describe('Network Management', () => {
     cy.contains(netName).should('exist')
   })
 
-  it('created network shows in table with nat mode badge', () => {
-    cy.contains('tr', netName).within(() => {
-      cy.get('.badge').should('contain', 'nat')
+  it('created network shows in the list with nat mode', () => {
+    cy.contains('.nrow', netName).within(() => {
+      cy.get('.nrow-state').should('contain', 'nat')
     })
   })
 
-  it('created network has Edit and Delete buttons', () => {
-    cy.contains('tr', netName).within(() => {
+  it('created network has Edit and Delete buttons in the inspector', () => {
+    cy.contains('.nrow', netName).click()
+    cy.get('.inspect .detail-head').within(() => {
       cy.contains('button', 'Edit').should('exist')
       cy.contains('button', 'Delete').should('exist')
     })
@@ -124,7 +125,8 @@ describe('Network Management', () => {
   // --- Edit ---
 
   it('opens Edit modal for the created network', () => {
-    cy.contains('tr', netName).contains('button', 'Edit').click()
+    cy.contains('.nrow', netName).click()
+    cy.get('.inspect').contains('button', 'Edit').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('h2', 'Edit Network').should('be.visible')
     // Name should be pre-filled
@@ -133,7 +135,8 @@ describe('Network Management', () => {
   })
 
   it('edit modal shows Save button instead of Create', () => {
-    cy.contains('tr', netName).contains('button', 'Edit').click()
+    cy.contains('.nrow', netName).click()
+    cy.get('.inspect').contains('button', 'Edit').click()
     cy.get('.modal').contains('button', 'Save').should('exist')
     cy.get('.modal').contains('button', 'Cancel').click()
   })
@@ -141,7 +144,8 @@ describe('Network Management', () => {
   // --- Delete ---
 
   it('delete opens confirm dialog with network name', () => {
-    cy.contains('tr', netName).contains('button', 'Delete').click()
+    cy.contains('.nrow', netName).click()
+    cy.get('.inspect').contains('button', 'Delete').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('Delete Network').should('be.visible')
     cy.contains(netName).should('exist')
@@ -150,45 +154,22 @@ describe('Network Management', () => {
   })
 
   it('deletes the created network', () => {
-    cy.contains('tr', netName).contains('button', 'Delete').click()
+    cy.contains('.nrow', netName).click()
+    cy.get('.inspect').contains('button', 'Delete').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('Delete Network').should('be.visible')
     cy.get('.modal-overlay').contains('button', 'Delete').click()
     cy.contains(netName).should('not.exist')
   })
 
-  // --- Bridge Management tab ---
-
-  it('switches to Bridge Management tab and shows interface table', () => {
-    cy.get('.tab-bar button').contains('Bridge Management').click()
-    // Should show interfaces table (may take a moment to load)
-    cy.get('table thead', { timeout: 5000 }).should('contain', 'Interface')
-    cy.get('table thead').should('contain', 'IP Address')
-    cy.get('table thead').should('contain', 'Bridge Status')
-  })
-
-  it('bridge table shows status badges for each interface', () => {
-    cy.get('.tab-bar button').contains('Bridge Management').click()
-    cy.get('table tbody tr', { timeout: 5000 }).should('have.length.gte', 1)
-    cy.get('table tbody .badge').should('have.length.gte', 1)
-    // Badges should show active, installed, or no bridge
-    cy.get('table tbody .badge').first().invoke('text').should('match', /active|installed|no bridge/)
-  })
-
-  it('bridge table rows have action buttons based on bridge status', () => {
-    cy.get('.tab-bar button').contains('Bridge Management').click()
-    cy.get('table tbody tr', { timeout: 5000 }).should('have.length.gte', 1)
-    // Each row should have at least one action button
-    cy.get('table tbody tr').first().within(() => {
-      cy.get('button').should('have.length.gte', 1)
+  it('Bridge setup opens the setup modal and closes', () => {
+    cy.contains('button', 'Bridge setup').then(($btn) => {
+      if ($btn.prop('disabled')) return
+      cy.wrap($btn).click()
+      cy.get('.modal-overlay').should('be.visible')
+      cy.contains('Bridge setup').should('exist')
+      cy.get('.modal-overlay').contains('button', 'Close').click()
+      cy.get('.modal-overlay').should('not.exist')
     })
-  })
-
-  it('switching between tabs preserves network list', () => {
-    cy.contains('Default NAT').should('exist')
-    cy.get('.tab-bar button').contains('Bridge Management').click()
-    cy.get('table thead').should('contain', 'Interface')
-    cy.get('.tab-bar button').contains('Networks').click()
-    cy.contains('Default NAT').should('exist')
   })
 })

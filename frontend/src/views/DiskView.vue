@@ -23,6 +23,7 @@ import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { guestResizeCommands } from '../utils/guestAgentInstall'
+import { isReachabilityOk } from '../utils/homeDeviceHealth'
 import { formatBytes } from '../utils/format'
 import {
   canCallDeviceAPI,
@@ -121,6 +122,17 @@ const summaryCards = computed<SummaryCard[]>(() => {
         }]
       : []
   return scopeRows(cards, deviceScope.selectedHostId)
+})
+
+const unreachableCards = computed(() => {
+  if (!useHomeUnion.value) return []
+  const covered = new Set(summaryCards.value.map((card) => card.hostId))
+  return scopeRows(devicesStore.devices, deviceScope.selectedHostId)
+    .filter((device) => !covered.has(device.hostId) && !isReachabilityOk(device.reachability))
+    .map((device) => ({
+      hostId: device.hostId,
+      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    }))
 })
 
 const formDevice = computed(() => {
@@ -442,23 +454,25 @@ async function resizeDisk() {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar">
     <h1>Disks</h1>
-    <AppButton variant="primary" icon="plus" @click="openCreate">Create Disk</AppButton>
+    <span class="ops-sub">Default directory for new disks is in <router-link to="/settings?tab=disks">Settings → Disks</router-link>.</span>
+    <div class="ops-actions">
+      <AppButton variant="primary" icon="plus" @click="openCreate">Create Disk</AppButton>
+    </div>
   </div>
-  <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">
-    Default directory for new disks is in
-    <router-link to="/settings?tab=disks">Settings → Disks</router-link>.
-  </p>
+  <div class="ops-body">
 
   <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
     {{ loadErrors[0] }}
   </p>
 
+  <div v-if="summaryCards.length || unreachableCards.length" class="usage-row">
   <div
     v-for="card in summaryCards"
     :key="card.hostId || 'local'"
-    class="storage-summary"
+    class="storage-summary use-card"
   >
     <div class="storage-summary-header">
       <div>
@@ -490,6 +504,15 @@ async function resizeDisk() {
       <span><span class="legend-dot" style="background:rgba(255,255,255,0.06)"></span>Free</span>
     </div>
   </div>
+  <div
+    v-for="card in unreachableCards"
+    :key="card.hostId"
+    class="use-card bad"
+  >
+    <div class="use-head">{{ card.label }} <span class="pct">—</span></div>
+    <div class="use-sub" style="color:var(--red)">Unreachable — Workloads keep running locally.</div>
+  </div>
+  </div>
 
   <EmptyState
     v-if="homeRows.length === 0 && !pageLoading"
@@ -497,7 +520,9 @@ async function resizeDisk() {
     title="No disks. Disks are created automatically when you create a VM."
   />
 
-  <DataTable v-else-if="homeRows.length > 0" :columns="[
+  <div v-else-if="homeRows.length > 0" class="sheet">
+  <div class="sheet-head">Disks <span style="font-variant-numeric:tabular-nums">{{ homeRows.length }}</span></div>
+  <DataTable :columns="[
     { key: 'name', label: 'Name' },
     { key: 'device', label: 'Device' },
     { key: 'path', label: 'Path' },
@@ -550,6 +575,8 @@ async function resizeDisk() {
       </td>
     </tr>
   </DataTable>
+  </div>
+  </div>
 
   <div v-if="showCreate" class="modal-overlay" @click.self="showCreate = false">
     <div class="modal">
@@ -668,16 +695,16 @@ async function resizeDisk() {
     @cancel="deleteTarget = null"
     @confirm="doDeleteDisk"
   />
+  </div>
 </template>
 
 <style scoped>
-.storage-summary {
-  background: var(--bg-card);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 20px;
+.sheet :deep(.data-table-wrap) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 .storage-summary-header {
   display: flex;

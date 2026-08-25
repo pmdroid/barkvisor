@@ -226,6 +226,21 @@ function rowKey(row: HomeNetworkRow): string {
   return `${row.hostId}:${row.network.id}`
 }
 
+const selectedKey = ref('')
+const selectedRow = computed(() =>
+  homeRows.value.find((row) => rowKey(row) === selectedKey.value) ?? null,
+)
+
+watch(homeRows, (rows) => {
+  if (!rows.length) {
+    selectedKey.value = ''
+    return
+  }
+  if (!rows.some((row) => rowKey(row) === selectedKey.value)) {
+    selectedKey.value = rowKey(rows[0]!)
+  }
+}, { immediate: true })
+
 function canMutate(row: HomeNetworkRow): boolean {
   return row.reachable && !row.network.isDefault
 }
@@ -542,9 +557,10 @@ async function doDeleteNetwork() {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar">
     <h1>Networks</h1>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="ops-actions">
       <span :title="canShowBridgeSetup ? undefined : (managedBridge.explanation || undefined)">
         <AppButton
           icon="settings"
@@ -555,54 +571,104 @@ async function doDeleteNetwork() {
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
   </div>
+  <div class="ops-body" :class="{ split: homeRows.length > 0 }">
 
+  <template v-if="homeRows.length > 0">
+  <section class="list-col">
+    <div class="list-head">Networks <span style="font-variant-numeric:tabular-nums">{{ homeRows.length }}</span></div>
+    <div class="list-scroll">
+      <button
+        v-for="row in homeRows"
+        :key="rowKey(row)"
+        type="button"
+        class="nrow"
+        :class="{ selected: selectedKey === rowKey(row) }"
+        @click="selectedKey = rowKey(row)"
+      >
+        <span class="nrow-top">
+          <span class="ops-dot" :class="row.reachable ? 'ok' : 'off'"></span>
+          <span class="nrow-name">{{ row.network.name }}</span>
+          <span v-if="row.network.isDefault" class="badge badge-accent">nat</span>
+          <span class="nrow-state" :class="row.reachable ? 'ok' : 'dim'">{{ row.network.mode }}</span>
+        </span>
+        <span class="nrow-meta">
+          {{ row.role === 'self' ? `This ${DEVICE_LABEL}` : row.label }} · {{ modeLabel(row.network.mode) }}<template v-if="row.network.bridge"> · {{ row.network.bridge }}</template><template v-else-if="row.network.dnsServer"> · DNS {{ row.network.dnsServer }}</template>
+        </span>
+      </button>
+    </div>
+  </section>
+
+  <section v-if="selectedRow" class="inspect">
+    <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0">
+      {{ loadErrors[0] }}
+    </p>
+
+    <div class="detail-head">
+      <h2>{{ selectedRow.network.name }}</h2>
+      <div class="chips">
+        <span class="chip on">{{ modeLabel(selectedRow.network.mode) }}</span>
+        <span v-if="selectedRow.network.isDefault" class="chip green">Default NAT</span>
+        <span
+          v-if="getBridgeStatusForNetwork(selectedRow)"
+          class="chip"
+          :class="getBridgeStatusForNetwork(selectedRow) === 'active' ? 'green' : getBridgeStatusForNetwork(selectedRow) === 'installed' ? 'on' : ''"
+        >bridge {{ bridgeBadgeLabel(getBridgeStatusForNetwork(selectedRow)!) }}</span>
+      </div>
+      <span class="spacer"></span>
+      <template v-if="canMutate(selectedRow)">
+        <AppButton size="sm" @click="openEdit(selectedRow)">Edit</AppButton>
+        <AppButton size="sm" @click="deleteNetwork(selectedRow)">Delete</AppButton>
+      </template>
+    </div>
+
+    <div class="sheet">
+      <div class="sheet-head">Configuration</div>
+      <div class="fact">
+        <span class="k">Mode</span>
+        <span class="v"><span class="badge" :class="modeBadgeClass(selectedRow.network.mode)">{{ selectedRow.network.mode }}</span></span>
+      </div>
+      <div v-if="selectedRow.network.bridge" class="fact">
+        <span class="k">Bridge</span>
+        <span class="v">
+          {{ selectedRow.network.bridge }}
+          <span v-if="interfaceIp(selectedRow.network.bridge, selectedRow.hostId)" class="sub" style="font-family:var(--font-mono)">{{ interfaceIp(selectedRow.network.bridge, selectedRow.hostId) }}</span>
+        </span>
+      </div>
+      <div class="fact">
+        <span class="k">DNS</span>
+        <span class="v" style="font-family:var(--font-mono);font-size:12px">{{ selectedRow.network.dnsServer || '—' }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">{{ DEVICE_LABEL }}</span>
+        <span class="v">
+          <WorkloadDeviceChip
+            :label="selectedRow.label"
+            :self="selectedRow.role === 'self'"
+            :reachable="selectedRow.reachable"
+          />
+        </span>
+      </div>
+    </div>
+
+    <div v-if="selectedRow.network.mode === 'nat'" class="sheet fwd-hint">
+      NAT — Workloads reach out; nothing reaches in by default. Publish a service with port
+      forwards on the Workload, reachable as <code>localhost:port</code> on this {{ DEVICE_LABEL }}.
+    </div>
+  </section>
+  </template>
+
+  <template v-else>
   <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
     {{ loadErrors[0] }}
   </p>
 
   <EmptyState
-    v-if="homeRows.length === 0 && !pageLoading"
+    v-if="!pageLoading"
     icon="globe"
     title="No networks configured. VMs use NAT networking by default."
   />
-
-  <DataTable v-else-if="homeRows.length > 0" :columns="[
-    { key: 'name', label: 'Name' },
-    { key: 'device', label: 'Device' },
-    { key: 'mode', label: 'Mode' },
-    { key: 'bridge', label: 'Bridge' },
-    { key: 'dns', label: 'DNS' },
-    { key: 'actions', label: '', align: 'right' },
-  ]">
-    <tr v-for="row in homeRows" :key="rowKey(row)">
-      <td style="font-weight:500">{{ row.network.name }}</td>
-      <td>
-        <WorkloadDeviceChip
-          :label="row.label"
-          :self="row.role === 'self'"
-          :reachable="row.reachable"
-        />
-      </td>
-      <td><span class="badge" :class="modeBadgeClass(row.network.mode)">{{ row.network.mode }}</span></td>
-      <td>
-        <template v-if="row.network.bridge">
-          <span style="display:flex;align-items:center;gap:6px">
-            {{ row.network.bridge }}
-            <span v-if="interfaceIp(row.network.bridge, row.hostId)" class="mono" style="color:var(--text-secondary);font-size:12px">{{ interfaceIp(row.network.bridge, row.hostId) }}</span>
-            <span v-if="getBridgeStatusForNetwork(row)" class="badge" :class="bridgeBadgeClass(getBridgeStatusForNetwork(row)!)">{{ bridgeBadgeLabel(getBridgeStatusForNetwork(row)!) }}</span>
-          </span>
-        </template>
-        <template v-else>-</template>
-      </td>
-      <td class="mono" style="color:var(--text-secondary)">{{ row.network.dnsServer || '-' }}</td>
-      <td style="text-align:right">
-        <div v-if="canMutate(row)" style="display:flex;gap:4px;justify-content:flex-end">
-          <AppButton size="sm" @click="openEdit(row)">Edit</AppButton>
-          <AppButton size="sm" @click="deleteNetwork(row)">Delete</AppButton>
-        </div>
-      </td>
-    </tr>
-  </DataTable>
+  </template>
+  </div>
 
   <!-- Bridge setup (install guides only) -->
   <AppModal v-if="showBridges" title="Bridge setup" max-width="800px" @close="showBridges = false">
@@ -771,4 +837,5 @@ async function doDeleteNetwork() {
     @confirm="doDeleteNetwork"
     @cancel="deleteTarget = null"
   />
+  </div>
 </template>

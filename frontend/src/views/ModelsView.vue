@@ -23,13 +23,12 @@ import { useToastStore } from '../stores/toast'
 import { formatBytes } from '../utils/format'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import { canCallDeviceAPI, isSelfDevice } from '../utils/homeDeviceApi'
 import {
-  ollamaCatalogInstallHint,
-  ollamaInstallDevices,
   ollamaInstallOsLabel,
   ollamaInstallOses,
   ollamaInstallSteps,
-  shouldShowOllamaInstall,
 } from '../utils/ollamaInstall'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
@@ -101,47 +100,114 @@ const howTo = computed(() =>
   }),
 )
 
-const showOllamaInstall = computed(() =>
-  shouldShowOllamaInstall({
-    loading: store.loading,
-    catalog: store.catalog,
-    anyReachable: store.anyReachable,
-    devices: store.devices,
-  }),
+const selectedHostId = ref('')
+
+watch(
+  () => devices.selfDevice?.hostId,
+  (id) => {
+    if (!selectedHostId.value && id) selectedHostId.value = id
+  },
+  { immediate: true },
 )
 
-const showOllamaCatalog = computed(
-  () => store.anyReachable || (!store.loading && store.catalog != null && !showOllamaInstall.value),
+watch(
+  () => devices.devices,
+  (list) => {
+    if (!list.length) return
+    if (!list.some((device) => device.hostId === selectedHostId.value)) {
+      selectedHostId.value = devices.selfDevice?.hostId || list[0]?.hostId || ''
+    }
+  },
 )
 
-const installDevices = computed(() => ollamaInstallDevices(store.devices))
-
-const installOses = computed(() => {
-  const platforms = [
-    devices.selfDevice?.platform?.os,
-    ...installDevices.value.map((row) => devices.deviceByHostId(row.hostId)?.platform?.os),
-  ]
-  return ollamaInstallOses({
-    installHints: installDevices.value.map((row) => row.installHint),
-    platformOs: platforms.find((os) => os?.trim()) ?? null,
-  })
+const pickerRows = computed(() => {
+  if (devices.devices.length === 0) {
+    const selfId = devices.selfDevice?.hostId || ''
+    return [{
+      hostId: selfId,
+      name: `This ${DEVICE_LABEL}`,
+      isSelf: true,
+      deviceReachable: true,
+      platform: '',
+      ollama: store.devices.find((row) => row.hostId === selfId) ?? store.devices[0] ?? null,
+    }]
+  }
+  return devices.devices.map((device) => ({
+    hostId: device.hostId,
+    name: deviceDisplayLabel(device),
+    isSelf: isSelfDevice(device),
+    deviceReachable: canCallDeviceAPI(device),
+    platform: device.platform
+      ? [device.platform.os, device.platform.arch].filter(Boolean).join(' · ')
+      : '',
+    ollama: store.devices.find((row) => row.hostId === device.hostId) ?? null,
+  }))
 })
 
-const installHint = computed(() =>
-  ollamaCatalogInstallHint(installDevices.value, installOses.value[0] ?? 'macos'),
+const selectedRow = computed(() =>
+  pickerRows.value.find((row) => row.hostId === selectedHostId.value) ?? pickerRows.value[0] ?? null,
 )
 
-const deviceInstallLines = computed(() =>
-  installDevices.value.filter((row) => row.installHint?.trim()),
+const selectedName = computed(() => selectedRow.value?.name || `This ${DEVICE_LABEL}`)
+
+function modelCountFor(hostId: string): number {
+  return store.models.filter((model) => model.locations.some((loc) => loc.hostId === hostId)).length
+}
+
+function pickerState(row: (typeof pickerRows.value)[number]): { label: string; cls: string } {
+  if (!row.deviceReachable) return { label: 'Unreachable', cls: 'bad' }
+  if (row.ollama?.reachable) {
+    const count = modelCountFor(row.hostId)
+    return { label: count ? `${count} model${count === 1 ? '' : 's'}` : 'Ollama up', cls: 'ok' }
+  }
+  return { label: 'No Ollama', cls: '' }
+}
+
+function pickerDot(row: (typeof pickerRows.value)[number]): string {
+  if (!row.deviceReachable) return 'off'
+  return row.ollama?.reachable ? 'ok' : 'warn'
+}
+
+function selectDevice(hostId: string) {
+  selectedHostId.value = hostId
+  const valid = new Set(hostOptions.value.map((opt) => opt.value))
+  if (valid.has(hostId)) {
+    pullHost.value = hostId
+    keyHost.value = hostId
+  }
+}
+
+const selectedDeviceReachable = computed(() => selectedRow.value?.deviceReachable ?? true)
+const selectedOllamaReachable = computed(() => Boolean(selectedRow.value?.ollama?.reachable))
+
+const showSelectedInstall = computed(() =>
+  selectedDeviceReachable.value && !selectedOllamaReachable.value && !store.loading,
 )
 
-const installStepsByOs = computed(() =>
-  installOses.value.map((os) => ({
+const showSelectedCatalog = computed(() =>
+  selectedOllamaReachable.value
+  || (!store.loading && store.catalog != null && !showSelectedInstall.value),
+)
+
+const selectedChip = computed(() => {
+  if (!selectedDeviceReachable.value) return { label: 'Unreachable', cls: 'red' }
+  if (selectedOllamaReachable.value) return { label: 'Ollama up', cls: 'green' }
+  return { label: 'No Ollama', cls: '' }
+})
+
+const selectedInstallSteps = computed(() => {
+  const device = devices.devices.find((row) => row.hostId === selectedRow.value?.hostId)
+  const platformOs = device?.platform?.os ?? devices.selfDevice?.platform?.os ?? null
+  const hint = selectedRow.value?.ollama?.installHint ?? ''
+  return ollamaInstallOses({
+    installHints: hint ? [hint] : [],
+    platformOs,
+  }).map((os) => ({
     os,
     label: ollamaInstallOsLabel(os),
     steps: ollamaInstallSteps(os),
-  })),
-)
+  }))
+})
 
 async function recheckOllama() {
   if (rechecking.value) return
@@ -202,6 +268,14 @@ const filteredModels = computed(() =>
     deviceScope.selectedHostId,
   ),
 )
+
+const scopedModels = computed(() => {
+  const row = selectedRow.value
+  if (!row || devices.devices.length === 0) return filteredModels.value
+  return filteredModels.value.filter((model) =>
+    model.locations.some((loc) => loc.hostId === row.hostId),
+  )
+})
 
 const selectedKeyHost = computed(() => keyHost.value || hostOptions.value[0]?.value || '')
 const selectedHostSettings = computed(() =>
@@ -473,25 +547,57 @@ async function saveKey() {
 </script>
 
 <template>
-  <div class="page-header">
-    <div>
-      <h1>Ollama</h1>
-      <p class="welcome-sub">
-        Models on this {{ HOME_LABEL }}. Completions go to the Device that already has the model.
-      </p>
+  <div class="ops-page">
+  <div class="ops-toolbar">
+    <h1>Ollama</h1>
+    <span class="ops-sub">Models on this {{ HOME_LABEL }}. Completions go to the Device that already has the model.</span>
+    <div class="ops-actions">
+      <details v-if="store.anyReachable" class="overflow-menu">
+        <summary>More</summary>
+        <div class="overflow-menu-panel">
+          <button
+            type="button"
+            :disabled="store.models.length === 0"
+            @click="exportPs"
+          >
+            Export JSON
+          </button>
+        </div>
+      </details>
     </div>
-    <details v-if="store.anyReachable" class="overflow-menu">
-      <summary>More</summary>
-      <div class="overflow-menu-panel">
-        <button
-          type="button"
-          :disabled="store.models.length === 0"
-          @click="exportPs"
-        >
-          Export JSON
-        </button>
-      </div>
-    </details>
+  </div>
+  <div class="ops-body split">
+
+  <section class="list-col">
+    <div class="list-head">{{ DEVICE_LABEL }}s</div>
+    <div class="picker-list">
+      <button
+        v-for="row in pickerRows"
+        :key="row.hostId || 'self'"
+        type="button"
+        class="pick"
+        :class="{ selected: selectedRow?.hostId === row.hostId, dimd: !row.deviceReachable }"
+        @click="selectDevice(row.hostId)"
+      >
+        <span class="pick-top">
+          <span class="ops-dot" :class="pickerDot(row)"></span>
+          <span class="pick-name">{{ row.name }}</span>
+          <span v-if="row.isSelf" class="pick-tag">This {{ DEVICE_LABEL }}</span>
+          <span class="pick-state" :class="pickerState(row).cls">{{ pickerState(row).label }}</span>
+        </span>
+        <span class="pick-meta">{{ row.platform || row.ollama?.installHint || '' }}</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="inspect">
+  <div class="install-head">
+    <h2>{{ selectedName }}</h2>
+    <span class="chip" :class="selectedChip.cls">{{ selectedChip.label }}</span>
+    <span class="spacer"></span>
+    <AppButton size="sm" :loading="rechecking" loading-text="Checking..." @click="recheckOllama">
+      Recheck
+    </AppButton>
   </div>
 
   <details class="card howto-collapse" style="margin-bottom:16px">
@@ -538,41 +644,38 @@ async function saveKey() {
     </div>
   </details>
 
-  <div v-if="showOllamaInstall" class="card ollama-install">
-    <h2 style="margin-top:0">Ollama is not reachable</h2>
-    <ul v-if="deviceInstallLines.length" class="install-devices">
-      <li v-for="row in deviceInstallLines" :key="row.hostId">
-        <strong>{{ row.displayName?.trim() || row.hostId }}</strong>
-        — {{ row.installHint }}
-      </li>
-    </ul>
-    <p v-else class="install-hint">{{ installHint }}</p>
-    <div v-for="group in installStepsByOs" :key="group.os" class="install-os-group">
-      <h3 class="install-os">{{ group.label }}</h3>
-      <ol class="install-steps">
-        <li v-for="(step, index) in group.steps" :key="group.os + index">
-          <div>{{ step.title }}</div>
-          <div v-if="step.command" class="form-group" style="margin:8px 0 0">
-            <pre class="howto-pre">{{ step.command }}</pre>
+  <div v-if="!selectedDeviceReachable" class="sheet fwd-hint">
+    Unreachable — Workloads and Ollama on this {{ DEVICE_LABEL }} keep running locally.
+  </div>
+
+  <div v-else-if="showSelectedInstall" class="sheet">
+    <div class="sheet-head">Install Ollama</div>
+    <div v-if="selectedRow?.ollama?.installHint" class="fwd-hint" style="border-bottom:1px solid var(--border-glass)">
+      {{ selectedRow.ollama.installHint }}
+    </div>
+    <template v-for="group in selectedInstallSteps" :key="group.os">
+      <div v-for="(step, index) in group.steps" :key="group.os + index" class="step">
+        <span class="num">{{ index + 1 }}</span>
+        <div class="step-body">
+          <div class="step-title">{{ step.title }}<span v-if="selectedInstallSteps.length > 1" class="step-sub" style="display:inline;margin-left:6px">{{ group.label }}</span></div>
+          <div v-if="step.command" class="cmd">
+            <span>{{ step.command }}</span>
             <AppButton size="sm" @click="copySnippet('install-' + group.os + index, step.command)">
               {{ copied === 'install-' + group.os + index ? 'Copied' : 'Copy' }}
             </AppButton>
           </div>
-          <div v-if="step.href" class="form-group" style="margin:8px 0 0">
-            <a class="install-link" :href="step.href" target="_blank" rel="noopener noreferrer">{{ step.href }}</a>
+          <div v-if="step.href" class="cmd">
+            <span><a :href="step.href" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">{{ step.href }}</a></span>
             <AppButton size="sm" @click="copySnippet('install-href-' + group.os + index, step.href)">
               {{ copied === 'install-href-' + group.os + index ? 'Copied' : 'Copy' }}
             </AppButton>
           </div>
-        </li>
-      </ol>
-    </div>
-    <AppButton variant="primary" :loading="rechecking" loading-text="Checking..." @click="recheckOllama">
-      Recheck
-    </AppButton>
+        </div>
+      </div>
+    </template>
   </div>
 
-  <template v-else-if="showOllamaCatalog">
+  <template v-else-if="showSelectedCatalog">
     <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
         <label>Pull by name</label>
@@ -647,10 +750,10 @@ async function saveKey() {
     </div>
 
     <EmptyState
-      v-if="store.models.length === 0 && !store.loading"
+      v-if="scopedModels.length === 0 && !store.loading"
       icon="monitor"
-      title="No Ollama models yet"
-      subtitle="Pull a model. Completions go through /v1/chat/completions. Chat/Agents: Library Onyx."
+      :title="store.models.length === 0 ? 'No Ollama models yet' : nameQuery ? 'No matching models' : `No models on ${selectedName}`"
+      :subtitle="nameQuery && store.models.length > 0 ? 'Try a different name.' : 'Pull a model. Completions go through /v1/chat/completions. Chat/Agents: Library Onyx.'"
     />
 
     <template v-else>
@@ -659,15 +762,7 @@ async function saveKey() {
         <input v-model="nameQuery" placeholder="Filter pulled models..." style="width:100%;max-width:360px" />
       </div>
 
-      <EmptyState
-        v-if="filteredModels.length === 0 && !store.loading"
-        icon="monitor"
-        title="No matching models"
-        subtitle="Try a different name."
-      />
-
       <DataTable
-        v-else
         :columns="[
           { key: 'name', label: 'Model' },
           { key: 'size', label: 'Size' },
@@ -676,7 +771,7 @@ async function saveKey() {
           ...(auth.isAdmin ? [{ key: 'actions', label: '', align: 'right' as const }] : []),
         ]"
       >
-        <tr v-for="model in filteredModels" :key="model.name">
+        <tr v-for="model in scopedModels" :key="model.name">
           <td style="font-weight:500">{{ model.name }}</td>
           <td style="color:var(--text-secondary)">{{ model.size ? formatBytes(model.size) : '—' }}</td>
           <td style="color:var(--text-secondary)">{{ locationLabel(model) }}</td>
@@ -728,6 +823,7 @@ async function saveKey() {
       </AppButton>
     </div>
   </template>
+  </section>
 
   <AppModal v-if="startTarget" :title="`Start ${startTarget.name}`" @close="!starting && (startTarget = null)">
     <div class="form-group" style="margin:0">
@@ -762,6 +858,8 @@ async function saveKey() {
     @confirm="stopModel"
     @cancel="stopTarget = null"
   />
+  </div>
+  </div>
 </template>
 
 <style scoped>
@@ -796,37 +894,6 @@ details.howto-collapse[open] > .howto-summary::before {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 6px 0 8px;
-}
-.install-hint,
-.install-devices {
-  margin: 0 0 12px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.install-devices {
-  padding-left: 18px;
-}
-.install-os-group + .install-os-group {
-  margin-top: 8px;
-}
-.install-os {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.install-steps {
-  margin: 0 0 16px;
-  padding-left: 20px;
-}
-.install-steps li {
-  margin-bottom: 12px;
-}
-.install-link {
-  display: inline-block;
-  margin: 0 8px 8px 0;
-  color: var(--accent);
-  font-size: 13px;
 }
 .overflow-menu {
   position: relative;

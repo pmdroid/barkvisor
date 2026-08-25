@@ -4,12 +4,16 @@ describe('Settings', () => {
     cy.visit('/settings')
   })
 
-  it('shows page header and three tabs', () => {
+  it('shows page header and seven tabs', () => {
     cy.contains('h1', 'Settings').should('be.visible')
-    cy.get('.tabs button').should('have.length', 3)
-    cy.get('.tabs button').eq(0).should('contain', 'API Keys')
-    cy.get('.tabs button').eq(1).should('contain', 'SSH Keys')
-    cy.get('.tabs button').eq(2).should('contain', 'Audit Log')
+    cy.get('.tabs button').should('have.length', 7)
+    cy.get('.tabs button').eq(0).should('contain', 'Home')
+    cy.get('.tabs button').eq(1).should('contain', 'Pairing')
+    cy.get('.tabs button').eq(2).should('contain', 'Library')
+    cy.get('.tabs button').eq(3).should('contain', 'Disks')
+    cy.get('.tabs button').eq(4).should('contain', 'API Keys')
+    cy.get('.tabs button').eq(5).should('contain', 'SSH Keys')
+    cy.get('.tabs button').eq(6).should('contain', 'Audit Log')
   })
 
   // ==================== API Keys ====================

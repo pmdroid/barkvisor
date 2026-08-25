@@ -12,11 +12,11 @@ describe('Log Viewer', () => {
     cy.contains('button', 'Diagnostics').should('exist')
   })
 
-  it('shows source filter tabs (All / Server / QEMU)', () => {
+  it('shows source filter tabs (All / Server / VM)', () => {
     cy.get('.tab-group').first().within(() => {
       cy.contains('button', 'All').should('exist')
       cy.contains('button', 'Server').should('exist')
-      cy.contains('button', 'QEMU').should('exist')
+      cy.contains('button', 'VM').should('exist')
     })
   })
 
@@ -42,11 +42,13 @@ describe('Log Viewer', () => {
   })
 
   it('time range selector has correct options', () => {
-    cy.get('.page-header select option').should('contain', 'Last Hour')
-    cy.get('.page-header select option').should('contain', 'Last 6 Hours')
-    cy.get('.page-header select option').should('contain', 'Last 24 Hours')
-    cy.get('.page-header select option').should('contain', 'Last 7 Days')
-    cy.get('.page-header select option').should('contain', 'All Time')
+    cy.get('.page-header select').last().within(() => {
+      cy.get('option').should('contain', 'Last Hour')
+      cy.get('option').should('contain', 'Last 6 Hours')
+      cy.get('option').should('contain', 'Last 24 Hours')
+      cy.get('option').should('contain', 'Last 7 Days')
+      cy.get('option').should('contain', 'All Time')
+    })
   })
 
   it('loads log entries or shows empty state', () => {
@@ -139,8 +141,8 @@ describe('Log Viewer', () => {
       cy.contains('button.active', 'Server').should('exist')
     })
     cy.get('.tab-group').first().within(() => {
-      cy.contains('button', 'QEMU').click()
-      cy.contains('button.active', 'QEMU').should('exist')
+      cy.contains('button', 'VM').click()
+      cy.contains('button.active', 'VM').should('exist')
     })
   })
 
@@ -163,10 +165,10 @@ describe('Log Viewer', () => {
   })
 
   it('changing time range reloads logs', () => {
-    cy.get('.page-header select').select('1h')
+    cy.get('.page-header select').last().select('1h')
     // Just verify no crash — content depends on data
     cy.wait(500)
-    cy.get('.page-header select').select('7d')
+    cy.get('.page-header select').last().select('7d')
     cy.wait(500)
   })
 

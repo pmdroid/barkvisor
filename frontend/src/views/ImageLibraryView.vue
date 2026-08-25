@@ -40,6 +40,12 @@ const librarySpaceLoaded = ref(false)
 const librarySpaceLine = computed(() =>
   librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes),
 )
+const libraryCapPercent = computed(() => {
+  const total = librarySettings.value?.totalBytes
+  const used = librarySettings.value?.usedBytes
+  if (total == null || total <= 0 || used == null) return null
+  return Math.min(100, Math.round((used / total) * 100))
+})
 
 function imageRowsFromLibrary(images: HomeImage[]) {
   return images.flatMap((img) =>
@@ -423,29 +429,28 @@ async function doDeleteImage() {
 </script>
 
 <template>
-  <div class="page-header">
-    <div>
-      <h1>Images</h1>
-      <p v-if="librarySpaceLine" style="color:var(--text-secondary);font-size:13px;margin:4px 0 0 0">
-        {{ librarySpaceLine }}
-      </p>
-      <p
-        v-else-if="librarySpaceLoaded"
-        style="color:var(--text-dim);font-size:13px;margin:4px 0 0 0"
-      >
-        Capacity unavailable
-      </p>
-    </div>
-    <div style="display:flex;gap:8px">
+  <div class="ops-page">
+  <div class="ops-toolbar">
+    <h1>Images</h1>
+    <span v-if="librarySpaceLine" class="ops-sub">{{ librarySpaceLine }}</span>
+    <span v-else-if="librarySpaceLoaded" class="ops-sub">Capacity unavailable</span>
+    <div class="ops-actions">
+      <div v-if="libraryCapPercent != null" class="cap">
+        <span class="track"><span class="cf" :style="{ width: libraryCapPercent + '%' }"></span></span>
+        <span>{{ libraryCapPercent }}% used</span>
+      </div>
       <AppButton icon="upload" @click="openUpload">Upload Image</AppButton>
       <AppButton variant="primary" icon="download" @click="openDownload">Download Image</AppButton>
     </div>
   </div>
+  <div class="ops-body">
 
   <EmptyState v-if="visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
 
-  <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'type', label: 'Type' }, { key: 'arch', label: 'Arch' }, { key: 'size', label: 'Size' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]">
-        <tr v-for="img in visibleImages" :key="'hostId' in img ? `${img.hostId}:${img.id}` : img.id">
+  <div v-else class="sheet">
+  <div class="sheet-head">Library <span style="font-variant-numeric:tabular-nums">{{ visibleImages.length }}</span></div>
+  <DataTable :columns="[{ key: 'name', label: 'Name' }, { key: 'type', label: 'Type' }, { key: 'arch', label: 'Arch' }, { key: 'size', label: 'Size' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]">
+        <tr v-for="img in visibleImages" :key="'hostId' in img ? `${img.hostId}:${img.id}` : img.id" :class="{ pending: isTransferringStatus(img.status) || img.status === 'uploading' }">
           <td>
             <div style="font-weight:500">{{ img.name }}</div>
             <ProgressBar
@@ -477,6 +482,8 @@ async function doDeleteImage() {
           <td style="text-align:right"><AppButton size="sm" @click="deleteImage(img.id, img.name)">Delete</AppButton></td>
         </tr>
   </DataTable>
+  </div>
+  </div>
 
   <!-- Upload Modal -->
   <div v-if="showUpload" class="modal-overlay" @click.self="!uploading && (showUpload = false)">
@@ -587,9 +594,17 @@ async function doDeleteImage() {
     @confirm="doDeleteImage"
     @cancel="confirmTarget = null"
   />
+  </div>
 </template>
 
 <style scoped>
+.sheet :deep(.data-table-wrap) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
 .file-drop {
   border: 2px dashed var(--border);
   border-radius: var(--radius);

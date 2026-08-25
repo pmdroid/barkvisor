@@ -18,79 +18,59 @@ onUnmounted(() => clearInterval(pollTimer))
 </script>
 
 <template>
-  <div class="devices-page">
-    <div class="welcome">
-      <div>
-        <h1>{{ DEVICE_LABEL }}s</h1>
-        <p class="welcome-sub">
-          <template v-if="devices.totals">
-            {{ devices.totals.reachable }} of {{ devices.totals.devices }} reachable
-            <span v-if="devices.totals.unreachable > 0">
-              · {{ devices.totals.unreachable }} unreachable
-            </span>
-            <template v-if="devices.totals.workloadCount != null">
-              · {{ devices.totals.workloadCount }} workloads across this {{ HOME_LABEL }}
-            </template>
+  <div class="ops-page">
+    <div class="ops-toolbar">
+      <h1>{{ DEVICE_LABEL }}s</h1>
+      <span class="ops-sub">
+        <template v-if="devices.totals">
+          {{ devices.totals.reachable }} of {{ devices.totals.devices }} reachable
+          <span v-if="devices.totals.unreachable > 0">
+            · {{ devices.totals.unreachable }} unreachable
+          </span>
+          <template v-if="devices.totals.workloadCount != null">
+            · {{ devices.totals.workloadCount }} workloads across this {{ HOME_LABEL }}
           </template>
-          <template v-else>
-            Every {{ DEVICE_LABEL.toLowerCase() }} in this {{ HOME_LABEL }}
-          </template>
-        </p>
+        </template>
+        <template v-else>
+          Every {{ DEVICE_LABEL.toLowerCase() }} in this {{ HOME_LABEL }}
+        </template>
+      </span>
+      <div class="ops-actions">
+        <AppButton variant="primary" icon="plus" @click="router.push('/settings?tab=pairing')">
+          Add a {{ DEVICE_LABEL }}
+        </AppButton>
       </div>
-      <AppButton variant="primary" icon="plus" @click="router.push('/settings?tab=pairing')">
-        Add a {{ DEVICE_LABEL }}
-      </AppButton>
     </div>
-
-    <p v-if="devices.error && !devices.report" class="devices-error">
-      Could not load {{ DEVICE_LABEL.toLowerCase() }} health. This {{ DEVICE_LABEL.toLowerCase() }} is still running.
-    </p>
-
-    <div v-if="devices.devices.length" class="device-grid">
-      <DeviceCard v-for="row in devices.devices" :key="row.hostId" :device="row" />
+    <div class="ops-body">
+      <p v-if="devices.error && !devices.report" class="devices-error">
+        Could not load {{ DEVICE_LABEL.toLowerCase() }} health. This {{ DEVICE_LABEL.toLowerCase() }} is still running.
+      </p>
+      <div v-if="devices.devices.length" class="dev-rows">
+        <DeviceCard v-for="row in devices.devices" :key="row.hostId" :device="row" />
+      </div>
+      <div v-else class="dev-empty">No {{ DEVICE_LABEL }}s in this {{ HOME_LABEL }} yet</div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.devices-page {
-  min-width: 0;
-  max-width: 100%;
-}
-.welcome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 32px;
-}
-.welcome h1 {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-.welcome-sub {
-  color: var(--text-dim);
-  font-size: 13px;
-  margin-top: 4px;
-}
 .devices-error {
   color: var(--text-secondary);
   font-size: 13px;
-  margin: -12px 0 20px;
+  margin: 0 0 12px;
 }
-.device-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-  gap: 16px;
+.dev-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 720px;
 }
-.device-grid > * {
-  min-width: 0;
-}
-
-@media (max-width: 768px) {
-  .welcome { flex-direction: column; align-items: flex-start; gap: 12px; margin-bottom: 24px; }
-  .welcome h1 { font-size: 22px; }
+.dev-empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 16px 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 </style>

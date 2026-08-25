@@ -222,6 +222,16 @@ function rowKey(row: HomeLogRow, index: number): string {
   return `${row.hostId}:${row.entry.ts}:${row.entry.msg}:${index}`
 }
 
+const scopeNote = computed(() => {
+  const deviceLabel = deviceFilter.value
+    ? deviceOptions.value.find((opt) => opt.value === deviceFilter.value)?.label ?? deviceFilter.value
+    : `All ${DEVICE_LABEL}s`
+  const vmLabel = vmFilter.value
+    ? vmOptions.value.find((opt) => opt.id === vmFilter.value)?.name ?? vmFilter.value
+    : 'All Workloads'
+  return `${deviceLabel} · ${vmLabel} · ${liveTail.value ? 'following' : 'history'}`
+})
+
 async function downloadDiagnostics() {
   if (diagnosticsBusy.value) return
   diagnosticsBusy.value = true
@@ -271,9 +281,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar log-toolbar page-header">
     <h1>Logs</h1>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="ops-actions">
       <input
         v-model="search"
         type="text"
@@ -299,10 +310,11 @@ onUnmounted(() => {
         <option value="7d">Last 7 Days</option>
         <option value="">All Time</option>
       </AppSelect>
-      <AppButton :variant="liveTail ? 'primary' : 'ghost'" style="min-width:140px;text-align:center" @click="toggleLiveTail">{{ liveTail ? 'Stop Tail' : 'Live Tail' }}</AppButton>
+      <AppButton :variant="liveTail ? 'primary' : 'ghost'" :class="{ 'btn-live-active': liveTail }" style="min-width:140px;text-align:center" @click="toggleLiveTail">{{ liveTail ? 'Stop Tail' : 'Live Tail' }}</AppButton>
       <AppButton icon="download" :loading="diagnosticsBusy" loading-text="Diagnostics" @click="downloadDiagnostics">Diagnostics</AppButton>
     </div>
   </div>
+  <div class="ops-body">
 
   <!-- Filter tabs -->
   <div class="log-filters">
@@ -328,7 +340,12 @@ onUnmounted(() => {
   </div>
 
   <!-- Log table -->
-  <DataTable v-else :columns="tableColumns">
+  <div v-else class="term">
+  <div class="term-head">
+    <span class="ttl"><span class="ops-dot" :class="liveTail ? 'ok pulse' : 'off'"></span>{{ liveTail ? 'Live tail' : 'History' }}</span>
+    <span class="scope-note">{{ scopeNote }}</span>
+  </div>
+  <DataTable :columns="tableColumns">
       <tr v-for="(row, i) in displayRows" :key="rowKey(row, i)" :class="{ 'row-error': row.entry.level === 'error' || row.entry.level === 'fatal', 'row-warn': row.entry.level === 'warn' }">
         <td class="mono">{{ formatTime(row.entry.ts) }}</td>
         <td v-if="useHomeUnion">
@@ -349,9 +366,22 @@ onUnmounted(() => {
         </td>
       </tr>
   </DataTable>
+  </div>
+  </div>
+  </div>
 </template>
 
 <style scoped>
+.log-toolbar {
+  height: auto;
+  min-height: 58px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.ops-toolbar.page-header {
+  margin-bottom: 0;
+}
 .log-filters {
   display: flex;
   align-items: center;
@@ -360,7 +390,9 @@ onUnmounted(() => {
 }
 
 .row-error td { background: var(--red-muted); }
+.row-error td:first-child { box-shadow: inset 2px 0 0 var(--red); }
 .row-warn td { background: var(--log-warn-row); }
+.row-warn td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
 
 .vm-link {
   background: none;

@@ -21,23 +21,13 @@ describe('VM Lifecycle', () => {
     cy.contains('button', 'Create VM').should('be.visible')
   })
 
-  it('shows system stats bar on VM list', () => {
+  it('shows health filter chips when workloads exist', () => {
     cy.visit('/vms')
-    cy.contains('Device CPU').should('exist')
-    cy.contains('Device Memory').should('exist')
-    cy.contains('VM CPU Usage').should('exist')
-    cy.contains('VM Memory').should('exist')
-  })
-
-  it('stats bar shows utilization bars', () => {
-    cy.visit('/vms')
-    cy.get('.stat-bar', { timeout: 5000 }).should('have.length.gte', 1)
-    cy.get('.stat-bar-fill').should('have.length.gte', 1)
-  })
-
-  it('VM Memory stat shows running count', () => {
-    cy.visit('/vms')
-    cy.get('.stat-sub', { timeout: 5000 }).should('contain', 'VMs running')
+    cy.get('body').then(($b) => {
+      if ($b.find('.health-strip').length) {
+        cy.get('.health-strip .fchip').first().should('contain', 'All')
+      }
+    })
   })
 
   it('shows VM table or empty state', () => {
