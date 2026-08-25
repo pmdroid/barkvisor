@@ -1,5 +1,10 @@
 import Foundation
 import Testing
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 @testable import BarkVisorCore
 
 struct BlockDeviceServiceTests {
@@ -101,5 +106,94 @@ struct BlockDeviceServiceTests {
     @Test func `qemu cache is none for host devices`() {
         #expect(QEMUBuilder.diskCacheMode(path: "/dev/sdb") == "none")
         #expect(QEMUBuilder.diskCacheMode(path: "/var/lib/barkvisor/disks/a.qcow2") == "writeback")
+    }
+
+    @Test func `readWriteDeniedReason is nil when the probe opens`() {
+        #expect(
+            BlockDeviceService.readWriteDeniedReason(path: "/dev/sdb", openReadWrite: { _ in })
+                == nil,
+        )
+    }
+
+    @Test func `readWriteDeniedReason names the path and disk group on EACCES`() {
+        let reason = BlockDeviceService.readWriteDeniedReason(
+            path: "/dev/sda",
+            openReadWrite: { _ in
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+            },
+        )
+        #expect(reason == BlockDeviceService.readWriteDeniedCopy(path: "/dev/sda"))
+        #expect(reason?.contains("/dev/sda") == true)
+        #expect(reason?.contains("disk group") == true)
+        #expect(reason?.contains("udev ACL") == true)
+    }
+
+    @Test func `requireReadWrite throws badRequest on EPERM`() {
+        do {
+            try BlockDeviceService.requireReadWrite(
+                path: "/dev/sda",
+                openReadWrite: { _ in
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))
+                },
+            )
+            Issue.record("expected requireReadWrite to throw")
+        } catch let BarkVisorError.badRequest(msg) {
+            #expect(msg == BlockDeviceService.readWriteDeniedCopy(path: "/dev/sda"))
+        } catch {
+            Issue.record("expected badRequest, got \(error)")
+        }
+    }
+
+    @Test func `requireHostDeviceReadWrite skips image paths`() throws {
+        try BlockDeviceService.requireHostDeviceReadWrite(
+            paths: ["/var/lib/barkvisor/disks/a.qcow2"],
+            openReadWrite: { _ in Issue.record("must not open image paths") },
+        )
+    }
+
+    @Test func `additionalDiskArgs fails closed before the drive line on permission`() {
+        let disk = Disk(
+            id: "d1",
+            name: "passthrough",
+            path: "/dev/sda",
+            sizeBytes: 1_024,
+            format: "raw",
+            vmId: "vm-1",
+            autoCreated: false,
+            status: "ready",
+            createdAt: "2026-01-01T00:00:00Z",
+        )
+        do {
+            _ = try QEMUBuilder.additionalDiskArgs(
+                [disk],
+                openReadWrite: { _ in
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+                },
+            )
+            Issue.record("expected additionalDiskArgs to throw")
+        } catch let BarkVisorError.badRequest(msg) {
+            #expect(msg == BlockDeviceService.readWriteDeniedCopy(path: "/dev/sda"))
+            #expect(!msg.contains("-drive"))
+            #expect(!msg.contains("qemu"))
+        } catch {
+            Issue.record("expected badRequest, got \(error)")
+        }
+    }
+
+    @Test func `additionalDiskArgs still emits drive when probe ok`() throws {
+        let disk = Disk(
+            id: "d1",
+            name: "passthrough",
+            path: "/dev/sdb",
+            sizeBytes: 1_024,
+            format: "raw",
+            vmId: "vm-1",
+            autoCreated: false,
+            status: "ready",
+            createdAt: "2026-01-01T00:00:00Z",
+        )
+        let args = try QEMUBuilder.additionalDiskArgs([disk], openReadWrite: { _ in })
+        #expect(args.contains("-drive"))
+        #expect(args.contains { $0.contains("file=/dev/sdb") })
     }
 }

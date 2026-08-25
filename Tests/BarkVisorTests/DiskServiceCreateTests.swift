@@ -1,6 +1,11 @@
 import Foundation
 import GRDB
 import Testing
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 @testable import BarkVisorCore
 
 final class StubBlockFileManager: FileManager, @unchecked Sendable {
@@ -45,6 +50,7 @@ final class DiskServiceCreateTests {
         allowBlockDevices: Bool? = nil,
         mounts: String? = nil,
         swaps: String? = nil,
+        openReadWrite: ((String) throws -> Void)? = nil,
     ) async throws {
         do {
             _ = try await DiskService.createDisk(
@@ -58,6 +64,7 @@ final class DiskServiceCreateTests {
                 allowBlockDevices: allowBlockDevices,
                 mounts: mounts,
                 swaps: swaps,
+                openReadWrite: openReadWrite,
                 createBlank: { _, _, _ in
                     Issue.record("qemu-img must not run")
                 },
@@ -157,6 +164,7 @@ final class DiskServiceCreateTests {
             fileManager: fm,
             allowBlockDevices: true,
             mounts: "",
+            openReadWrite: { _ in },
             createBlank: { _, _, _ in qemuCalled = true },
         )
         #expect(!qemuCalled)
@@ -196,6 +204,35 @@ final class DiskServiceCreateTests {
         )
     }
 
+    @Test func `createDisk rejects a block device this Device cannot open`() async throws {
+        let fm = StubBlockFileManager()
+        fm.blockPaths = ["/dev/sda"]
+        fm.sizes = ["/dev/sda": 10_737_418_240]
+        do {
+            _ = try await DiskService.createDisk(
+                name: "passthrough",
+                sizeGB: 1,
+                format: "raw",
+                blockDevice: "/dev/sda",
+                db: dbPool,
+                fileManager: fm,
+                allowBlockDevices: true,
+                mounts: "",
+                openReadWrite: { _ in
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+                },
+                createBlank: { _, _, _ in Issue.record("qemu-img must not run") },
+            )
+            Issue.record("expected createDisk to throw")
+        } catch let BarkVisorError.badRequest(msg) {
+            #expect(msg == BlockDeviceService.readWriteDeniedCopy(path: "/dev/sda"))
+        } catch {
+            Issue.record("expected badRequest, got \(error)")
+        }
+        let count = try await dbPool.read { db in try Disk.fetchCount(db) }
+        #expect(count == 0)
+    }
+
     @Test func `createDisk conflicts when the block path is already attached`() async throws {
         let fm = StubBlockFileManager()
         fm.blockPaths = ["/dev/sdb"]
@@ -209,6 +246,7 @@ final class DiskServiceCreateTests {
             fileManager: fm,
             allowBlockDevices: true,
             mounts: "",
+            openReadWrite: { _ in },
             createBlank: { _, _, _ in Issue.record("qemu-img must not run") },
         )
         do {
@@ -221,6 +259,7 @@ final class DiskServiceCreateTests {
                 fileManager: fm,
                 allowBlockDevices: true,
                 mounts: "",
+                openReadWrite: { _ in },
                 createBlank: { _, _, _ in Issue.record("qemu-img must not run") },
             )
             Issue.record("expected createDisk to throw")
