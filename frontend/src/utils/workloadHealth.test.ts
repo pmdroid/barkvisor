@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applyVMStateEvent, healthFromState, healthLabel, vmHealth } from './workloadHealth'
+import { applyVMStateEvent, filterRowsByHealth, healthFromState, healthLabel, vmHealth } from './workloadHealth'
 import type { VM, VMRuntimeStatus } from '../api/types'
 
 function vm(partial: Partial<VM> & Pick<VM, 'state'>): VM {
@@ -141,5 +141,28 @@ describe('healthLabel', () => {
     expect(healthLabel('guest_ready')).toBe('Guest ready')
     expect(healthLabel('failed')).toBe('Failed')
     expect(vmHealth(vm({ state: 'running', health: 'guest_ready' }))).toBe('guest_ready')
+  })
+})
+
+describe('filterRowsByHealth', () => {
+  const rows = [
+    { vm: vm({ id: 'run', state: 'running', health: 'running' }) },
+    { vm: vm({ id: 'fail', state: 'error', health: 'failed' }) },
+    { vm: vm({ id: 'stop', state: 'stopped', health: 'stopped' }) },
+    { vm: vm({ id: 'deg', state: 'running', health: 'degraded' }) },
+  ]
+
+  test('all returns every row', () => {
+    expect(filterRowsByHealth(rows, 'all')).toEqual(rows)
+  })
+
+  test('running / failed / stopped filter by vmHealth', () => {
+    expect(filterRowsByHealth(rows, 'running').map((row) => row.vm.id)).toEqual(['run'])
+    expect(filterRowsByHealth(rows, 'failed').map((row) => row.vm.id)).toEqual(['fail'])
+    expect(filterRowsByHealth(rows, 'stopped').map((row) => row.vm.id)).toEqual(['stop'])
+  })
+
+  test('a health key other than all keeps matching rows', () => {
+    expect(filterRowsByHealth(rows, 'degraded').map((row) => row.vm.id)).toEqual(['deg'])
   })
 })
