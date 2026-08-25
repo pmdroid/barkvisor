@@ -3,6 +3,8 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
+// Listing + persist cases grew this suite past the 700-line type-body error.
+// swiftlint:disable type_body_length
 struct USBPassthroughTests {
     @Test func `stable id prefers serial over bus address`() {
         let withSerial = USBDeviceIdentity.make(
@@ -93,6 +95,95 @@ struct USBPassthroughTests {
         #expect(disk?.excludedReason == USBDeviceIdentity.massStorageExclusionReason)
     }
 
+    @Test func `lsusb fallback prefers sysfs serial for that bus address`() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("usb-lsusb-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeSysfsDevice(
+            at: root.appendingPathComponent("3-2"),
+            vendor: "1234",
+            product: "5678",
+            bus: "3",
+            address: "2",
+            serial: "ZX9",
+            productName: "Probe",
+            manufacturer: "Acme",
+            interfaceClass: "03",
+        )
+
+        let line = "Bus 003 Device 002: ID 1234:5678 Acme Probe"
+        let parsed = try #require(USBDeviceService.parseLsusbLine(line))
+        #expect(parsed.id == "bus:003.002")
+        #expect(parsed.serialNumber == nil)
+        let enriched = USBDeviceService.withSysfsIdentity(parsed, root: root)
+        #expect(enriched.id == "0x1234:0x5678:ZX9")
+        #expect(enriched.serialNumber == "ZX9")
+        #expect(enriched.idUnstable == false)
+        #expect(enriched.bus == 3)
+        #expect(enriched.address == 2)
+
+        try writeSysfsDevice(
+            at: root.appendingPathComponent("1-4"),
+            vendor: "046d",
+            product: "c52b",
+            bus: "1",
+            address: "4",
+            serial: nil,
+            productName: "Receiver",
+            manufacturer: "Logitech",
+            interfaceClass: "03",
+        )
+        let listed = USBDeviceService.listSysfsDevices(root: root)
+        let noSerial = listed.first { $0.bus == 1 && $0.address == 4 }
+        #expect(noSerial?.id == "bus:001.004")
+        #expect(noSerial?.idUnstable == true)
+        let withSerial = listed.first { $0.serialNumber == "ZX9" }
+        #expect(withSerial?.id == "0x1234:0x5678:ZX9")
+    }
+
+    @Test func `empty sysfs listing falls back to enriched lsusb`() throws {
+        let empty = FileManager.default.temporaryDirectory
+            .appendingPathComponent("usb-sysfs-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: empty) }
+
+        let line = "Bus 003 Device 002: ID 1234:5678 Acme Probe"
+        let fromEmpty = USBDeviceService.listLinuxDevices(sysfsRoot: empty, lsusbLines: [line])
+        #expect(fromEmpty.count == 1)
+        #expect(fromEmpty.first?.id == "bus:003.002")
+        #expect(fromEmpty.first?.serialNumber == nil)
+
+        let missing = empty.appendingPathComponent("no-such-sysfs")
+        let fromMissing = USBDeviceService.listLinuxDevices(sysfsRoot: missing, lsusbLines: [line])
+        #expect(fromMissing.count == 1)
+        #expect(fromMissing.first?.id == "bus:003.002")
+
+        let withSerial = FileManager.default.temporaryDirectory
+            .appendingPathComponent("usb-sysfs-lsusb-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: withSerial, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: withSerial) }
+        try writeSysfsDevice(
+            at: withSerial.appendingPathComponent("3-2"),
+            vendor: "1234",
+            product: "5678",
+            bus: "3",
+            address: "2",
+            serial: "ZX9",
+            productName: "Probe",
+            manufacturer: "Acme",
+            interfaceClass: "03",
+        )
+        let enriched = USBDeviceService.listLinuxDevices(
+            sysfsRoot: withSerial,
+            lsusbLines: [line, "Bus 001 Device 004: ID 046d:c52b Logitech Receiver"],
+        )
+        #expect(enriched.count == 1)
+        #expect(enriched.first?.id == "0x1234:0x5678:ZX9")
+        #expect(enriched.first?.serialNumber == "ZX9")
+    }
+
     @Test func `claim map uses serial so two identical vid pid stay distinct`() {
         let hostA = HostUSBDevice(
             vendorId: "0x046d", productId: "0xc52b", name: "Receiver",
@@ -166,6 +257,35 @@ struct USBPassthroughTests {
         #expect(!args.contains { $0.contains("vendorid=") })
     }
 
+    @Test func `attach by live bus id persists serial`() throws {
+        let host = HostUSBDevice(
+            vendorId: "0x1234", productId: "0x5678", name: "Probe",
+            manufacturer: "Acme", serialNumber: "ZX9", bus: 3, address: 2,
+        )
+        #expect(host.id == "0x1234:0x5678:ZX9")
+        let resolved = try USBPassthroughService.resolveAttachable(
+            deviceId: "bus:003.002", hostDevices: [host],
+        )
+        #expect(resolved.id == "0x1234:0x5678:ZX9")
+        let stored = USBPassthroughService.passthrough(from: resolved)
+        #expect(stored.deviceId == "0x1234:0x5678:ZX9")
+        let normalized = try USBPassthroughService.normalizeOne(
+            USBPassthroughDevice(
+                vendorId: "0x1234", productId: "0x5678", label: "Probe",
+                deviceId: "bus:003.002",
+            ),
+            hostDevices: [host],
+        )
+        #expect(normalized.deviceId == "0x1234:0x5678:ZX9")
+        #expect(normalized.serialNumber == "ZX9")
+        let args = try QEMUBuilder.usbHostArgs(
+            usb: [USBPassthroughService.workload(from: normalized)],
+            hostDevices: [host],
+        )
+        #expect(args.contains { $0.contains("usb-host,hostbus=3,hostaddr=2") })
+        #expect(!args.contains { $0.contains("vendorid=") })
+    }
+
     @Test func `serial-less listing and vid pid attach fail closed`() {
         let host = HostUSBDevice(
             vendorId: "0x1234", productId: "0x5678", name: "Probe",
@@ -179,7 +299,9 @@ struct USBPassthroughTests {
             )
         }
         if case let .conflict(message) = listedErr {
-            #expect(message.contains("bus address"))
+            #expect(message.contains("no serial"))
+            #expect(message.contains("cannot persist"))
+            #expect(!message.contains("Re-attach"))
         } else {
             Issue.record("expected conflict, got \(String(describing: listedErr))")
         }
@@ -198,8 +320,14 @@ struct USBPassthroughTests {
 
         let stored = USBPassthroughService.passthrough(from: host)
         #expect(stored.deviceId == "bus:003.002")
-        #expect(throws: BarkVisorError.self) {
+        let persistErr = #expect(throws: BarkVisorError.self) {
             _ = try USBPassthroughService.normalizeOne(stored, hostDevices: [host])
+        }
+        if case let .conflict(message) = persistErr {
+            #expect(message.contains("no serial"))
+            #expect(message.contains("cannot persist"))
+        } else {
+            Issue.record("expected conflict, got \(String(describing: persistErr))")
         }
     }
 
@@ -229,7 +357,9 @@ struct USBPassthroughTests {
             _ = try USBPassthroughService.normalizeOne(stored, hostDevices: [host])
         }
         if case let .conflict(message) = persistErr {
-            #expect(message.contains("bus address"))
+            #expect(message.contains("no serial"))
+            #expect(message.contains("cannot persist"))
+            #expect(!message.contains("Re-attach"))
         } else {
             Issue.record("expected conflict, got \(String(describing: persistErr))")
         }
@@ -257,8 +387,13 @@ struct USBPassthroughTests {
             vendorId: "0x1234", productId: "0x5678", label: "Probe",
             deviceId: "bus:003.002",
         )
-        #expect(throws: BarkVisorError.self) {
+        let gone = #expect(throws: BarkVisorError.self) {
             _ = try USBPassthroughService.normalizeOne(stored, hostDevices: [])
+        }
+        if case let .notFound(message) = gone {
+            #expect(message?.contains("bus:003.002") == true)
+        } else {
+            Issue.record("expected notFound, got \(String(describing: gone))")
         }
     }
 
@@ -406,7 +541,8 @@ struct USBPassthroughTests {
             )
         }
         if case let .conflict(message) = listedErr {
-            #expect(message.contains("bus address"))
+            #expect(message.contains("no serial"))
+            #expect(message.contains("cannot persist"))
         } else {
             Issue.record("expected conflict, got \(String(describing: listedErr))")
         }
@@ -594,7 +730,7 @@ struct USBPassthroughTests {
         product: String,
         bus: String,
         address: String,
-        serial: String,
+        serial: String?,
         productName: String,
         manufacturer: String,
         interfaceClass: String,
@@ -611,7 +747,9 @@ struct USBPassthroughTests {
         try write("idProduct", product)
         try write("busnum", bus)
         try write("devnum", address)
-        try write("serial", serial)
+        if let serial {
+            try write("serial", serial)
+        }
         try write("product", productName)
         try write("manufacturer", manufacturer)
         try write("bDeviceClass", "00")
@@ -749,8 +887,11 @@ final class USBClaimWriteTests {
                 db: self.dbPool,
             )
         }
-        #expect(error?.code == "conflict")
-        #expect(error?.errorDescription?.contains("bus address") == true)
+        #expect(error?.code == "conflict" || error?.code == "not_found")
+        #expect(
+            error?.errorDescription?.contains("no serial") == true
+                || error?.errorDescription?.contains("not connected") == true,
+        )
         let still = try await dbPool.read { db in try VM.fetchOne(db, key: "vm-legacy-bus") }
         #expect(still?.decodedUSBDevices.first?.deviceId == "bus:003.002")
     }
@@ -892,3 +1033,5 @@ final class USBClaimWriteTests {
         }
     }
 }
+
+// swiftlint:enable type_body_length

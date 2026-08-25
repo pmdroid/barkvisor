@@ -46,6 +46,7 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
+import { usbCanPersist, usbNoSerialCopy } from '../composables/useUSBPicker'
 import { formatBytes } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
@@ -719,6 +720,7 @@ async function fetchUSBDevices() {
 }
 
 async function usbAttach(dev: HostUSBDevice) {
+  if (!usbCanPersist(dev)) return
   usbLoading.value = true
   try {
     if (isMemberDetail.value) {
@@ -1863,19 +1865,20 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               <tr
                 v-for="dev in hostUSBDevices"
                 :key="usbDeviceKey(dev)"
-                :style="dev.claimedByVMId || dev.attachable === false ? 'opacity:0.5' : ''"
+                :style="dev.claimedByVMId || dev.attachable === false || !usbCanPersist(dev) ? 'opacity:0.5' : ''"
               >
                 <td>
                   <div style="font-weight:500">{{ dev.productName || dev.name }}</div>
                   <div v-if="dev.manufacturer" style="font-size:11px;color:var(--text-dim)">{{ dev.manufacturer }}</div>
                   <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
                   <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
-                  <div v-else-if="dev.idUnstable" style="font-size:11px;color:var(--text-dim)">ID may change if the device is replugged</div>
+                  <div v-else-if="!usbCanPersist(dev)" style="font-size:11px;color:var(--text-dim)">{{ usbNoSerialCopy }}</div>
                 </td>
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ usbDeviceKey(dev) }}</span></td>
                 <td style="text-align:right">
                   <span v-if="dev.claimedByVMId" style="font-size:12px;color:var(--text-dim)">In use by {{ dev.claimedByVMName }}</span>
                   <span v-else-if="dev.attachable === false" style="font-size:12px;color:var(--text-dim)">Unavailable</span>
+                  <span v-else-if="!usbCanPersist(dev)" style="font-size:12px;color:var(--text-dim)">{{ usbNoSerialCopy }}</span>
                   <span v-else-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to attach</span>
                   <AppButton v-else variant="primary" size="sm" :disabled="usbLoading" @click="usbAttach(dev)">Attach</AppButton>
                 </td>
