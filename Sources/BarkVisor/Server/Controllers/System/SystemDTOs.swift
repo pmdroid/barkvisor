@@ -51,6 +51,15 @@ struct BrowseEntry: Content {
     let isDirectory: Bool
 }
 
+struct HostBlockDeviceResponse: Content {
+    let path: String
+    let name: String
+    let sizeBytes: Int64
+    let model: String?
+    let attachable: Bool
+    let excludedReason: String?
+}
+
 struct VirtioWinStatusResponse: Content {
     let available: Bool
     let imageId: String?

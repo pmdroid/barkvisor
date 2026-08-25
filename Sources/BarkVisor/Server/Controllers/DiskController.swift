@@ -5,12 +5,13 @@ import Vapor
 
 struct CreateDiskRequest: Content, Validatable {
     let name: String
-    let sizeGB: Int
+    var sizeGB: Int?
     var format: String?
+    var directory: String?
+    var blockDevice: String?
 
     static func validations(_ validations: inout Validations) {
         validations.add("name", as: String.self, is: .count(1 ... 128))
-        validations.add("sizeGB", as: Int.self, is: .range(1 ... 8_192))
     }
 }
 
@@ -66,7 +67,12 @@ struct DiskController: RouteCollection {
         try CreateDiskRequest.validate(content: req)
         let body = try req.content.decode(CreateDiskRequest.self)
         let disk = try await DiskService.createDisk(
-            name: body.name, sizeGB: body.sizeGB, format: body.format, db: req.db,
+            name: body.name,
+            sizeGB: body.sizeGB,
+            format: body.format,
+            directory: body.directory,
+            blockDevice: body.blockDevice,
+            db: req.db,
         )
         AuditService.log(
             action: "disk.create", resourceType: "disk", resourceId: disk.id, resourceName: disk.name,
@@ -95,6 +101,10 @@ struct DiskController: RouteCollection {
             return DiskUsageResponse(
                 virtualSizeBytes: cached.virtualSize, actualSizeBytes: cached.actualSize,
             )
+        }
+
+        if DiskSettings.isHostDevicePath(disk.path) {
+            return DiskUsageResponse(virtualSizeBytes: disk.sizeBytes, actualSizeBytes: disk.sizeBytes)
         }
 
         guard FileManager.default.fileExists(atPath: disk.path) else {

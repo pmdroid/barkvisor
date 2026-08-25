@@ -9,6 +9,8 @@ import {
   deviceDiskResizePath,
   deviceDiskSummaryPath,
   deviceDiskUsagePath,
+  deviceBlockDevicesPath,
+  deviceDiskSettingsPath,
   deviceDisksPath,
   deviceGuestInfoPath,
   deviceInterfacesPath,
@@ -192,12 +194,16 @@ describe('homeDeviceApi (PAS-218)', () => {
     expect(deviceDiskUsagePath(self, 'd-1')).toBe('/disks/d-1/usage')
     expect(deviceDiskResizePath(self, 'd-1')).toBe('/disks/d-1/resize')
     expect(deviceDiskSummaryPath(self)).toBe('/disks/summary')
+    expect(deviceDiskSettingsPath(self)).toBe('/system/disk/settings')
+    expect(deviceBlockDevicesPath(self)).toBe('/system/block-devices')
 
     expect(deviceDisksPath(member)).toBe('/home/devices/peer%2F1/v1/disks')
     expect(deviceDiskPath(member, 'd/1')).toBe('/home/devices/peer%2F1/v1/disks/d%2F1')
     expect(deviceDiskUsagePath(member, 'd/1')).toBe('/home/devices/peer%2F1/v1/disks/d%2F1/usage')
     expect(deviceDiskResizePath(member, 'd/1')).toBe('/home/devices/peer%2F1/v1/disks/d%2F1/resize')
     expect(deviceDiskSummaryPath(member)).toBe('/home/devices/peer%2F1/v1/disks/summary')
+    expect(deviceDiskSettingsPath(member)).toBe('/home/devices/peer%2F1/v1/system/disk/settings')
+    expect(deviceBlockDevicesPath(member)).toBe('/home/devices/peer%2F1/v1/system/block-devices')
     expect(deviceDiskPath(member, 'd-1')).not.toContain('targetHostId')
   })
 })

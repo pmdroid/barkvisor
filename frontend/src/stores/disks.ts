@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed } from 'vue'
 import type { Disk, DiskUsage, StorageSummary } from '../api/types'
+import type { DiskWriteBody } from './deviceDisks'
 import { thisDeviceTarget } from './homeInventory'
 import { useDeviceDisksStore } from './deviceDisks'
 import { useDevicesStore } from './devices'
@@ -77,7 +78,7 @@ export const useDiskStore = defineStore('disks', () => {
     home.applySummary(rememberSelf(), next)
   }
 
-  async function create(body: { name: string; sizeGB: number; format: string }): Promise<Disk> {
+  async function create(body: DiskWriteBody): Promise<Disk> {
     return home.create(selfTarget(), body)
   }
 

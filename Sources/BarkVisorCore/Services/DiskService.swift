@@ -247,10 +247,33 @@ public enum DiskService {
 
     // MARK: - High-level operations (extracted from DiskController)
 
-    /// Create a new disk image and persist the record.
-    public static func createDisk(name: String, sizeGB: Int, format: String?, db: DatabasePool)
-        async throws -> Disk {
-        guard sizeGB >= 1, sizeGB <= 8_192 else {
+    public static func createDisk(
+        name: String,
+        sizeGB: Int?,
+        format: String?,
+        directory: String? = nil,
+        blockDevice: String? = nil,
+        db: DatabasePool,
+        fileManager: FileManager = .default,
+        allowBlockDevices: Bool? = nil,
+        mounts: String? = nil,
+        swaps: String? = nil,
+        createBlank: ((URL, Int, String) throws -> Void)? = nil,
+    ) async throws -> Disk {
+        if let blockDevice {
+            return try await attachBlockDevice(
+                name: name,
+                blockDevice: blockDevice,
+                directory: directory,
+                db: db,
+                fileManager: fileManager,
+                allowBlockDevices: allowBlockDevices,
+                mounts: mounts,
+                swaps: swaps,
+            )
+        }
+
+        guard let sizeGB, sizeGB >= 1, sizeGB <= 8_192 else {
             throw BarkVisorError.badRequest("sizeGB must be between 1 and 8192")
         }
 
@@ -261,10 +284,14 @@ public enum DiskService {
             )
         }
 
+        let dir = try await resolvedCreateDirectory(directory, db: db)
         let id = UUID().uuidString
-        let ext = fmt == "raw" ? "img" : "qcow2"
-        let path = Config.dataDir.appendingPathComponent("disks/\(id).\(ext)")
-        try createBlank(path: path, sizeGB: sizeGB, format: fmt)
+        let path = DiskSettings.fileURL(id: id, format: fmt, directory: dir)
+        if let createBlank {
+            try createBlank(path, sizeGB, fmt)
+        } else {
+            try Self.createBlank(path: path, sizeGB: sizeGB, format: fmt)
+        }
 
         let disk = Disk(
             id: id, name: name, path: path.path,
@@ -272,10 +299,106 @@ public enum DiskService {
             format: fmt, vmId: nil, autoCreated: false,
             status: "ready", createdAt: iso8601.string(from: Date()),
         )
-        try await db.write { db in
-            try disk.insert(db)
+        do {
+            try await db.write { db in
+                try DiskSettings.recordPreviousDirectory(dir, db: db)
+                try disk.insert(db)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: path)
+            throw error
         }
         return disk
+    }
+
+    private static func attachBlockDevice(
+        name: String,
+        blockDevice: String,
+        directory: String?,
+        db: DatabasePool,
+        fileManager: FileManager,
+        allowBlockDevices: Bool?,
+        mounts: String?,
+        swaps: String?,
+    ) async throws -> Disk {
+        if let directory, !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw BarkVisorError.badRequest("directory cannot be combined with blockDevice")
+        }
+        let allowed = allowBlockDevices ?? {
+            #if os(Linux)
+                true
+            #else
+                false
+            #endif
+        }()
+        guard allowed else {
+            throw BarkVisorError.badRequest("Host block devices are only supported on Linux")
+        }
+
+        let trimmed = blockDevice.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/dev/") else {
+            throw BarkVisorError.badRequest("Block device path must be an absolute /dev path")
+        }
+        _ = try QEMUBuilder.sanitizeQEMUArg(trimmed, label: "Block device path")
+        let path = URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        guard DiskSettings.isHostDevicePath(path) else {
+            throw BarkVisorError.badRequest("Block device path must be an absolute /dev path")
+        }
+        guard BlockDeviceService.isBlockDevice(path, fileManager: fileManager) else {
+            throw BarkVisorError.badRequest("Not a block device: \(path)")
+        }
+        guard let sizeBytes = BlockDeviceService.sizeBytes(path, fileManager: fileManager), sizeBytes > 0
+        else {
+            throw BarkVisorError.badRequest("Could not determine size of block device \(path)")
+        }
+
+        let mountsText = mounts ?? linuxProcFile("/proc/mounts")
+        let swapsText = swaps ?? linuxProcFile("/proc/swaps")
+        if let reason = BlockDeviceService.hostUseReason(path: path, mounts: mountsText, swaps: swapsText) {
+            throw BarkVisorError.badRequest(reason)
+        }
+
+        let id = UUID().uuidString
+        let disk = Disk(
+            id: id, name: name, path: path,
+            sizeBytes: sizeBytes,
+            format: "raw", vmId: nil, autoCreated: false,
+            status: "ready", createdAt: iso8601.string(from: Date()),
+        )
+        do {
+            try await db.write { db in
+                if try Disk.filter(Column("path") == path).fetchOne(db) != nil {
+                    throw BarkVisorError.conflict("Block device is already attached as a disk")
+                }
+                try disk.insert(db)
+            }
+        } catch let error as BarkVisorError {
+            throw error
+        } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
+            throw BarkVisorError.conflict("Block device is already attached as a disk")
+        }
+        return disk
+    }
+
+    private static func linuxProcFile(_ path: String) -> String {
+        #if os(Linux)
+            (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        #else
+            _ = path
+            return ""
+        #endif
+    }
+
+    private static func resolvedCreateDirectory(_ directory: String?, db: DatabasePool) async throws
+        -> URL {
+        let trimmed = directory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            return try await db.read { try DiskSettings.resolvedDirectory(from: $0) }
+        }
+        guard let prepared = try DiskSettings.validateAndPrepare(trimmed) else {
+            return try await db.read { try DiskSettings.resolvedDirectory(from: $0) }
+        }
+        return prepared
     }
 
     /// Compute aggregate storage summary across all disks.
@@ -284,20 +407,34 @@ public enum DiskService {
         db: DatabasePool,
     ) async throws -> StorageSummary {
         let disks = try await db.read { db in try Disk.fetchAll(db) }
+        let volumeFS = fileSystemNumber(of: Config.dataDir.path)
         var totalVirtual: Int64 = 0
         var totalActual: Int64 = 0
         for disk in disks {
+            if DiskSettings.isHostDevicePath(disk.path) {
+                totalVirtual += disk.sizeBytes
+                continue
+            }
+            let virtualSize: Int64
+            let actualSize: Int64
             if let cached = await diskInfoCache.get(disk.id) {
-                totalVirtual += cached.virtualSize
-                totalActual += cached.actualSize
+                virtualSize = cached.virtualSize
+                actualSize = cached.actualSize
             } else if FileManager.default.fileExists(atPath: disk.path) {
                 do {
                     let info = try getImageInfo(path: disk.path)
-                    totalVirtual += info.virtualSize
-                    totalActual += info.actualSize
+                    virtualSize = info.virtualSize
+                    actualSize = info.actualSize
                 } catch {
                     Log.server.warning("Failed to get image info for disk \(disk.id): \(error)")
+                    continue
                 }
+            } else {
+                continue
+            }
+            totalVirtual += virtualSize
+            if fileSystemNumber(of: disk.path) == volumeFS {
+                totalActual += actualSize
             }
         }
 
@@ -326,6 +463,9 @@ public enum DiskService {
         var disk = try await db.write { db -> Disk in
             guard let disk = try Disk.fetchOne(db, key: request.id) else {
                 throw BarkVisorError.notFound()
+            }
+            if DiskSettings.isHostDevicePath(disk.path) {
+                throw BarkVisorError.badRequest("Cannot resize a host block device")
             }
             let newSizeBytes = Int64(request.sizeGB) * 1_024 * 1_024 * 1_024
             guard newSizeBytes > disk.sizeBytes else {
@@ -361,9 +501,12 @@ public enum DiskService {
             throw BarkVisorError.conflict("Disk is attached to a VM")
         }
 
-        // Resolve symlinks; allow unlink under dataDir, current Library, or a previous Library.
         let resolvedPath = (disk.path as NSString).resolvingSymlinksInPath
-        if try await db.read({ try LibrarySettings.isManagedStoragePath(disk.path, db: $0) }) {
+        let managed = try await db.read { db in
+            try LibrarySettings.isManagedStoragePath(disk.path, db: db)
+                || DiskSettings.isManagedStoragePath(disk.path, db: db)
+        }
+        if managed, !DiskSettings.isHostDevicePath(disk.path) {
             do {
                 try FileManager.default.removeItem(atPath: resolvedPath)
             } catch let fileError {
@@ -374,7 +517,7 @@ public enum DiskService {
             }
         } else {
             Log.server.warning(
-                "Skipping file deletion for disk outside data/Library directory: \(disk.path) -> \(resolvedPath)",
+                "Skipping file deletion for disk outside data/Library/disk directory: \(disk.path) -> \(resolvedPath)",
             )
         }
 
@@ -382,6 +525,11 @@ public enum DiskService {
         guard deleted else { throw BarkVisorError.notFound() }
         await diskInfoCache.invalidate(id)
         return disk
+    }
+
+    private static func fileSystemNumber(of path: String) -> NSNumber? {
+        let attrs = try? FileManager.default.attributesOfFileSystem(forPath: path)
+        return attrs?[.systemNumber] as? NSNumber
     }
 
     private static func resolveQEMUImg() throws -> URL {
