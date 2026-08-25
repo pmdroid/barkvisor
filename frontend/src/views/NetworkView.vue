@@ -20,12 +20,11 @@ import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceNetworksStore, type HomeNetworkRow, type NetworkWriteBody } from '../stores/deviceNetworks'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
-import { useFeature } from '../composables/useFeature'
+import { bridgeManagementMode, useFeature } from '../composables/useFeature'
 import { defaultCapabilities } from '../utils/capabilitiesParse'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
-  deviceBridgesPath,
   deviceHostBridgeReadinessPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
@@ -33,6 +32,9 @@ import { HOST_BRIDGE_SUGGESTED } from '../utils/hostBridgeFacts'
 import {
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
+  macosSocketVmnetSetupGroups,
+  macosSocketVmnetStatusSummary,
+  readinessAppliesTo,
 } from '../utils/linuxBridgeSetup'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { scopeRows } from '../utils/deviceScope'
@@ -62,7 +64,6 @@ const error = ref('')
 
 const showBridges = ref(false)
 const bridgeHostId = ref('')
-const bridgeLoading = ref<string | null>(null)
 
 const deleteTarget = ref<{ id: string; name: string; hostId: string } | null>(null)
 const deleting = ref(false)
@@ -118,7 +119,6 @@ const formCaps = computed(() => {
 
 const formNetworkModes = computed(() => formCaps.value.networkModes ?? defaultCapabilities.networkModes!)
 const formBridgedAvailable = computed(() => formCaps.value.supportsBridgedNetworking)
-const formManagedBridge = computed(() => formCaps.value.supportsManagedBridgeDaemon)
 const formBridgedExplanation = computed(() => {
   const row = formCaps.value.details?.find((detail) => detail.code === 'bridgedNetworking')
   if (row && !row.supported) return row.remediation || 'Bridged networking is not available on this Device.'
@@ -157,41 +157,61 @@ const bridgeCaps = computed(() => {
   return caps.currentHost
 })
 
-const selectedManagedBridge = computed(() => bridgeCaps.value.supportsManagedBridgeDaemon)
-const selectedHostBridgeManagement = computed(() => {
-  const device = bridgeDevice.value
-  if (device) return deviceOffersLinuxBridgeGuide(device)
-  return (
-    caps.currentHost.supportsHostBridgeManagement === true
-    || (caps.currentHost.platform || '').toLowerCase() === 'linux'
-  )
-})
-function deviceOffersLinuxBridgeGuide(device: HomeDeviceHealthSnapshot): boolean {
+function deviceBridgeGuideMode(device: HomeDeviceHealthSnapshot) {
   const c = deviceCapsFor(device.hostId)
-  if (c.supportsHostBridgeManagement === true) return true
-  return (device.platform?.os || c.platform || '').toLowerCase() === 'linux'
+  return bridgeManagementMode({
+    platform: c.platform || device.platform?.os,
+    supportsHostBridgeManagement: c.supportsHostBridgeManagement,
+    supportsManagedBridgeDaemon: c.supportsManagedBridgeDaemon,
+  })
 }
 
-const canManageBridges = computed(() => {
+const selectedBridgeMode = computed(() => {
+  const device = bridgeDevice.value
+  if (device) return deviceBridgeGuideMode(device)
+  return bridgeManagementMode({
+    platform: caps.currentHost.platform,
+    supportsHostBridgeManagement: caps.currentHost.supportsHostBridgeManagement,
+    supportsManagedBridgeDaemon: caps.currentHost.supportsManagedBridgeDaemon,
+  })
+})
+
+const canShowBridgeSetup = computed(() => {
   if (!useHomeUnion.value) {
-    return (
-      managedBridge.available
-      || caps.currentHost.supportsHostBridgeManagement === true
-      || (caps.currentHost.platform || '').toLowerCase() === 'linux'
-    )
+    return bridgeManagementMode({
+      platform: caps.currentHost.platform,
+      supportsHostBridgeManagement: caps.currentHost.supportsHostBridgeManagement,
+      supportsManagedBridgeDaemon: caps.currentHost.supportsManagedBridgeDaemon,
+    }) !== 'hidden'
   }
   return devicesStore.devices.some((device) => {
     if (!canCallDeviceAPI(device)) return false
-    return deviceCapsFor(device.hostId).supportsManagedBridgeDaemon === true
-      || deviceOffersLinuxBridgeGuide(device)
+    return deviceBridgeGuideMode(device) !== 'hidden'
   })
 })
 const linuxReadiness = ref<HostBridgeReadiness | null>(null)
 const linuxReadinessHostId = ref<string | null>(null)
+const linuxReadinessMode = ref<string | null>(null)
 const linuxReadinessLoading = ref(false)
+/** Newest host-bridge-readiness request; stale completions must not write. */
+let readinessSeq = 0
+
+const appliedReadiness = computed(() => {
+  if (!readinessAppliesTo(
+    bridgeDevice.value?.hostId ?? '',
+    linuxReadinessHostId.value,
+    selectedBridgeMode.value,
+    linuxReadinessMode.value,
+  )) {
+    return null
+  }
+  return linuxReadiness.value
+})
 const linuxSetupGroups = computed(() =>
-  linuxReadiness.value ? linuxBridgeSetupGroups(linuxReadiness.value) : [],
+  appliedReadiness.value ? linuxBridgeSetupGroups(appliedReadiness.value) : [],
 )
+const macosSetupGroups = computed(() => macosSocketVmnetSetupGroups(appliedReadiness.value))
+const macosStatusSummary = computed(() => macosSocketVmnetStatusSummary(appliedReadiness.value))
 
 const bridgeDeviceOptions = computed(() =>
   scopeRows(devicesStore.devices, deviceScope.selectedHostId)
@@ -241,11 +261,6 @@ function bridgeBadgeLabel(status: string): string {
   return 'no bridge'
 }
 
-const selectedInterfaceBridge = computed(() => {
-  if (!newBridge.value) return null
-  return getBridgeStatus(newBridge.value, formHostId.value || undefined)
-})
-
 const usedBridgeInterfaces = computed(() => {
   const used = new Map<string, string>()
   const nets = useHomeUnion.value && formHostId.value
@@ -283,13 +298,6 @@ const typedBridgeMissing = computed(() => {
 })
 
 const cannotSaveBridged = computed(() => newMode.value === 'bridged' && !formBridgedAvailable.value)
-
-const selectedInterfaceNeedsBridge = computed(() => {
-  if (!formManagedBridge.value) return false
-  if (!newBridge.value) return false
-  const info = selectedInterfaceBridge.value
-  return !info || info.status === 'not_configured'
-})
 
 function interfaceIp(ifaceName: string, hostId?: string): string {
   const list = hostId && useHomeUnion.value ? homeNets.interfacesFor(hostId) : hostInterfaces.value
@@ -331,40 +339,54 @@ async function loadFormContext() {
   if (bridged.available) await fetchLocalBridges()
 }
 
+function discardReadinessForScope(hostId: string, mode: string): void {
+  if (readinessAppliesTo(hostId, linuxReadinessHostId.value, mode, linuxReadinessMode.value)) return
+  readinessSeq += 1
+  linuxReadiness.value = null
+  linuxReadinessHostId.value = hostId
+  linuxReadinessMode.value = mode
+}
+
 async function loadBridgeContext() {
   const device = bridgeDevice.value
+  const hostId = device?.hostId ?? ''
+  const mode = selectedBridgeMode.value
+  const showGuide = mode !== 'hidden'
+  discardReadinessForScope(hostId, mode)
+  if (showGuide) linuxReadinessLoading.value = true
   if (device && useHomeUnion.value) {
     await homeNets.fetchContext(device)
-    if (selectedHostBridgeManagement.value) await fetchLinuxReadiness()
+    if (showGuide) await fetchLinuxReadiness()
     return
   }
   await fetchLocalInterfaces()
-  if (managedBridge.available) await fetchLocalBridges()
-  if (selectedHostBridgeManagement.value) await fetchLinuxReadiness()
+  if (bridged.available || mode === 'macos-guide') await fetchLocalBridges()
+  if (showGuide) await fetchLinuxReadiness()
 }
 
 async function fetchLinuxReadiness() {
   const device = bridgeDevice.value
   const requestHost = device?.hostId ?? ''
+  const requestMode = selectedBridgeMode.value
+  discardReadinessForScope(requestHost, requestMode)
+  const seq = ++readinessSeq
   linuxReadinessLoading.value = true
-  if (linuxReadinessHostId.value !== requestHost) {
-    linuxReadiness.value = null
-    linuxReadinessHostId.value = requestHost
-  }
   try {
     const path =
       device && useHomeUnion.value
         ? deviceHostBridgeReadinessPath(device)
         : '/system/host-bridge-readiness'
     const { data } = await api.get<HostBridgeReadiness>(path)
-    if ((bridgeDevice.value?.hostId ?? '') !== requestHost) return
+    if (seq !== readinessSeq) return
     linuxReadiness.value = data
+    linuxReadinessHostId.value = requestHost
+    linuxReadinessMode.value = requestMode
   } catch {
-    if ((bridgeDevice.value?.hostId ?? '') !== requestHost) return
+    if (seq !== readinessSeq) return
     // Same Device: keep a prior successful snapshot. First miss stays null
-    // so Manage Bridges can show "Could not read" instead of a fake DTO.
+    // so Bridge setup can show "Could not read" instead of a fake DTO.
   } finally {
-    linuxReadinessLoading.value = false
+    if (seq === readinessSeq) linuxReadinessLoading.value = false
   }
 }
 
@@ -387,12 +409,11 @@ onMounted(() => {
 watch(showBridges, (open) => {
   if (open) {
     if (!bridgeHostId.value) {
-      const managed = devicesStore.devices.find((device) => {
+      const guided = devicesStore.devices.find((device) => {
         if (!canCallDeviceAPI(device)) return false
-        const c = deviceCapsFor(device.hostId)
-        return c.supportsManagedBridgeDaemon === true || deviceOffersLinuxBridgeGuide(device)
+        return deviceBridgeGuideMode(device) !== 'hidden'
       })
-      bridgeHostId.value = managed?.hostId || defaultFormHostId()
+      bridgeHostId.value = guided?.hostId || defaultFormHostId()
     }
     void loadBridgeContext()
     bridgePoll = window.setInterval(() => { void loadBridgeContext() }, 7000)
@@ -402,7 +423,7 @@ watch(showBridges, (open) => {
   }
 })
 
-watch(bridgeHostId, () => {
+watch([bridgeHostId, selectedBridgeMode], () => {
   if (showBridges.value) void loadBridgeContext()
 })
 
@@ -518,131 +539,18 @@ async function doDeleteNetwork() {
   }
 }
 
-async function refreshAfterBridge(device: HomeDeviceHealthSnapshot | null) {
-  if (device && useHomeUnion.value) {
-    await Promise.all([homeNets.fetchContext(device), homeNets.fetchFor(device)])
-    return
-  }
-  await Promise.all([fetchLocalBridges(), networkStore.fetchAll()])
-}
-
-function actionDevice(): HomeDeviceHealthSnapshot | null {
-  return showBridges.value ? bridgeDevice.value : formDevice.value
-}
-
-async function setupBridge(ifaceName: string) {
-  const device = actionDevice()
-  if (homeUnionDeviceBlocked(device)) {
-    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
-    return
-  }
-  bridgeLoading.value = ifaceName
-  try {
-    const path = device ? deviceBridgesPath(device) : '/system/bridges'
-    await api.post(path, { interface: ifaceName })
-    toast.success(`Bridge installed for ${ifaceName}`)
-    await refreshAfterBridge(device)
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    bridgeLoading.value = null
-  }
-}
-
-async function removeBridge(ifaceName: string) {
-  const device = actionDevice()
-  if (homeUnionDeviceBlocked(device)) {
-    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
-    return
-  }
-  bridgeLoading.value = ifaceName
-  try {
-    const path = device
-      ? `${deviceBridgesPath(device)}/${encodeURIComponent(ifaceName)}`
-      : `/system/bridges/${ifaceName}`
-    await api.delete(path)
-    toast.success(`Bridge removed for ${ifaceName}`)
-    await refreshAfterBridge(device)
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    bridgeLoading.value = null
-  }
-}
-
-async function startBridge(ifaceName: string) {
-  const device = actionDevice()
-  if (homeUnionDeviceBlocked(device)) {
-    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
-    return
-  }
-  bridgeLoading.value = ifaceName
-  try {
-    const path = device
-      ? `${deviceBridgesPath(device)}/${encodeURIComponent(ifaceName)}/start`
-      : `/system/bridges/${ifaceName}/start`
-    await api.post(path)
-    toast.success(`Bridge started for ${ifaceName}`)
-    await refreshAfterBridge(device)
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    bridgeLoading.value = null
-  }
-}
-
-async function stopBridge(ifaceName: string) {
-  const device = actionDevice()
-  if (homeUnionDeviceBlocked(device)) {
-    toast.error('Device is unreachable. Workloads on this Device keep running locally.')
-    return
-  }
-  bridgeLoading.value = ifaceName
-  try {
-    const path = device
-      ? `${deviceBridgesPath(device)}/${encodeURIComponent(ifaceName)}/stop`
-      : `/system/bridges/${ifaceName}/stop`
-    await api.post(path)
-    toast.success(`Bridge stopped for ${ifaceName}`)
-    await refreshAfterBridge(device)
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    bridgeLoading.value = null
-  }
-}
-
-async function setupBridgeInline() {
-  if (!newBridge.value) return
-  const device = formDevice.value
-  if (homeUnionDeviceBlocked(device)) {
-    error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
-    return
-  }
-  bridgeLoading.value = newBridge.value
-  try {
-    const path = device ? deviceBridgesPath(device) : '/system/bridges'
-    await api.post(path, { interface: newBridge.value })
-    toast.success(`Bridge installed for ${newBridge.value}`)
-    await refreshAfterBridge(device)
-  } catch (e: unknown) {
-    error.value = apiErrorMessage(e)
-  } finally {
-    bridgeLoading.value = null
-  }
-}
 </script>
 
 <template>
   <div class="page-header">
     <h1>Networks</h1>
     <div style="display:flex;gap:8px;align-items:center">
-      <span :title="canManageBridges ? undefined : (managedBridge.explanation || undefined)">
+      <span :title="canShowBridgeSetup ? undefined : (managedBridge.explanation || undefined)">
         <AppButton
           icon="settings"
-          :disabled="!canManageBridges"
+          :disabled="!canShowBridgeSetup"
           @click="showBridges = true"
-        >Manage Bridges</AppButton>
+        >Bridge setup</AppButton>
       </span>
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
@@ -696,18 +604,18 @@ async function setupBridgeInline() {
     </tr>
   </DataTable>
 
-  <!-- Bridge Management Modal -->
-  <AppModal v-if="showBridges" title="Manage Bridges" max-width="800px" @close="showBridges = false">
+  <!-- Bridge setup (install guides only) -->
+  <AppModal v-if="showBridges" title="Bridge setup" max-width="800px" @close="showBridges = false">
     <div v-if="bridgeDeviceOptions.length > 0" class="form-group">
       <label>{{ DEVICE_LABEL }}</label>
       <AppSelect v-model="bridgeHostId" :options="bridgeDeviceOptions" />
     </div>
-    <div v-if="selectedHostBridgeManagement" class="linux-bridge-guide">
+    <div v-if="selectedBridgeMode === 'linux-guide'" class="linux-bridge-guide">
       <p v-if="linuxReadinessLoading" style="color:var(--text-secondary);font-size:13px">Checking this Device…</p>
-      <template v-else-if="linuxReadiness">
-        <p style="font-size:13px;margin:0 0 12px">{{ linuxBridgeStatusSummary(linuxReadiness) }}</p>
-        <ul v-if="linuxReadiness.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
-          <li v-for="br in linuxReadiness.bridges" :key="br.name">
+      <template v-else-if="appliedReadiness">
+        <p style="font-size:13px;margin:0 0 12px">{{ linuxBridgeStatusSummary(appliedReadiness) }}</p>
+        <ul v-if="appliedReadiness.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in appliedReadiness.bridges" :key="br.name">
             <span class="mono">{{ br.name }}</span>
             <span v-if="br.enslaved.length" style="color:var(--text-secondary)">
               — {{ br.enslaved.join(', ') }}
@@ -719,7 +627,7 @@ async function setupBridgeInline() {
           :groups="linuxSetupGroups"
           :initial-open="linuxSetupGroups[0]?.id ?? null"
         />
-        <p v-if="linuxReadiness.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
+        <p v-if="appliedReadiness.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
           Do not enslave the only uplink. Prefer NAT on this Device.
         </p>
       </template>
@@ -727,53 +635,51 @@ async function setupBridgeInline() {
         Could not read host-bridge status on this Device.
       </p>
     </div>
+    <div v-else-if="selectedBridgeMode === 'macos-guide'" class="linux-bridge-guide">
+      <p v-if="linuxReadinessLoading" style="color:var(--text-secondary);font-size:13px">Checking this Device…</p>
+      <template v-else>
+        <p style="font-size:13px;margin:0 0 12px">{{ macosStatusSummary }}</p>
+        <ul v-if="appliedReadiness?.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in (appliedReadiness?.bridges ?? [])" :key="br.name">
+            <span class="mono">{{ br.name }}</span>
+          </li>
+        </ul>
+        <GuestCommandAccordion
+          v-if="macosSetupGroups.length"
+          :groups="macosSetupGroups"
+          :initial-open="macosSetupGroups[0]?.id ?? null"
+        />
+        <DataTable
+          v-if="hostInterfaces.length"
+          style="margin-top:16px"
+          :columns="[
+            { key: 'interface', label: 'Interface' },
+            { key: 'ip', label: 'IP' },
+            { key: 'status', label: 'Status' },
+          ]"
+        >
+          <tr v-for="iface in hostInterfaces" :key="iface.name">
+            <td style="font-weight:500">
+              {{ iface.name }}
+              <div v-if="iface.displayName !== iface.name" style="color:var(--text-secondary);font-size:11px">{{ iface.displayName }}</div>
+            </td>
+            <td class="mono" style="color:var(--text-secondary)">{{ iface.ipAddress || '-' }}</td>
+            <td>
+              <span class="badge" :class="bridgeBadgeClass(getBridgeStatus(iface.name, bridgeHostId)?.status || 'not_configured')">
+                {{ bridgeBadgeLabel(getBridgeStatus(iface.name, bridgeHostId)?.status || 'not_configured') }}
+              </span>
+            </td>
+          </tr>
+        </DataTable>
+      </template>
+    </div>
     <UnsupportedHint
-      v-else-if="!selectedManagedBridge"
+      v-else
       :text="bridgeCaps.details?.find((d) => d.code === 'managedBridgeDaemon' && !d.supported)?.remediation || managedBridge.explanation"
     />
-    <EmptyState v-else-if="hostInterfaces.length === 0" title="Loading interfaces..." style="padding:24px" />
-    <DataTable v-else :columns="[
-      { key: 'interface', label: 'Interface' },
-      { key: 'ip', label: 'IP' },
-      { key: 'status', label: 'Status' },
-      { key: 'actions', label: '' },
-    ]">
-      <tr v-for="iface in hostInterfaces" :key="iface.name">
-        <td style="font-weight:500">
-          {{ iface.name }}
-          <div v-if="iface.displayName !== iface.name" style="color:var(--text-secondary);font-size:11px">{{ iface.displayName }}</div>
-        </td>
-        <td class="mono" style="color:var(--text-secondary)">{{ iface.ipAddress || '-' }}</td>
-        <td>
-          <span class="badge" :class="bridgeBadgeClass(getBridgeStatus(iface.name, bridgeHostId)?.status || 'not_configured')">
-            {{ bridgeBadgeLabel(getBridgeStatus(iface.name, bridgeHostId)?.status || 'not_configured') }}
-          </span>
-        </td>
-        <td style="text-align:right">
-          <template v-if="bridgeLoading === iface.name">
-            <AppButton size="sm" disabled>Working...</AppButton>
-          </template>
-          <template v-else-if="getBridgeStatus(iface.name, bridgeHostId)?.status === 'active'">
-            <div style="display:flex;gap:4px;justify-content:flex-end">
-              <AppButton size="sm" @click="stopBridge(iface.name)">Stop</AppButton>
-              <AppButton size="sm" variant="danger" @click="removeBridge(iface.name)">Remove</AppButton>
-            </div>
-          </template>
-          <template v-else-if="getBridgeStatus(iface.name, bridgeHostId)?.status === 'installed'">
-            <div style="display:flex;gap:4px;justify-content:flex-end">
-              <AppButton size="sm" @click="startBridge(iface.name)">Start</AppButton>
-              <AppButton size="sm" variant="danger" @click="removeBridge(iface.name)">Remove</AppButton>
-            </div>
-          </template>
-          <template v-else>
-            <AppButton size="sm" @click="setupBridge(iface.name)">Setup</AppButton>
-          </template>
-        </td>
-      </tr>
-    </DataTable>
     <template #actions>
       <AppButton
-        v-if="selectedHostBridgeManagement"
+        v-if="selectedBridgeMode !== 'hidden'"
         :disabled="linuxReadinessLoading"
         @click="fetchLinuxReadiness"
       >Re-check</AppButton>
@@ -843,14 +749,6 @@ async function setupBridgeInline() {
           fail closed with a structured error instead of a QEMU log.
         </p>
       </template>
-      <div v-if="selectedInterfaceNeedsBridge" class="bridge-warning">
-        <span style="color:var(--text-secondary);font-size:13px">No bridge configured for this interface.</span>
-        <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Setting up..." @click="setupBridgeInline">Setup Bridge</AppButton>
-      </div>
-      <div v-else-if="formManagedBridge && selectedInterfaceBridge?.status === 'installed'" class="bridge-note">
-        <span style="color:var(--text-secondary);font-size:13px">Bridge is installed but not currently running.</span>
-        <AppButton size="sm" style="margin-left:8px" :loading="bridgeLoading === newBridge" loading-text="Starting..." @click="startBridge(newBridge)">Start Bridge</AppButton>
-      </div>
     </div>
     <div v-if="newMode === 'nat' || newMode === 'isolated'" class="form-group">
       <label>DNS Server</label>
@@ -874,19 +772,3 @@ async function setupBridgeInline() {
     @cancel="deleteTarget = null"
   />
 </template>
-
-<style scoped>
-.bridge-warning, .bridge-note {
-  display: flex;
-  align-items: center;
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-radius: var(--radius-xs);
-}
-.bridge-warning {
-  background: var(--red-muted);
-}
-.bridge-note {
-  background: var(--accent-muted);
-}
-</style>

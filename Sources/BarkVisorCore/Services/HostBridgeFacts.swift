@@ -1,6 +1,6 @@
 import Foundation
 
-/// Copyable host-bridge setup step for Manage Bridges (PAS-222 / PAS-236).
+/// Copyable host-bridge setup step for Bridge setup (PAS-222 / PAS-236).
 public struct HostBridgeRemediation: Codable, Sendable, Equatable {
     public var id: String
     public var label: String
@@ -290,7 +290,7 @@ public enum HostBridgeFactsService {
                 throw BarkVisorError.preconditionFailed(
                     """
                     This template requires bridged networking, but no host bridge is present. \
-                    Create a Linux bridge (for example \(suggestedBridgeName)) in Manage Bridges, then retry.
+                    Create a Linux bridge (for example \(suggestedBridgeName)) in Bridge setup, then retry.
                     """,
                 )
             #endif
