@@ -220,7 +220,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
             parts.append("CPU \(Int(cpu.rounded()))%")
         }
         if let used = resources.memoryUsedMB, let total = resources.memoryTotalMB {
-            parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1024, Double(total) / 1024))
+            parts.append(String(format: "%.1f / %.0f GB", Double(used) / 1_024, Double(total) / 1_024))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -338,9 +338,13 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
 
     /// Missing JSON is off so House appliances are not surprised.
-    var startsOnDeviceBoot: Bool { startOnBoot == true || status?.startOnBoot == true }
+    var startsOnDeviceBoot: Bool {
+        startOnBoot == true || status?.startOnBoot == true
+    }
 
-    var startOnBootFooter: String { WorkloadStartOnBoot.footer(isAgent: isAgentClass) }
+    var startOnBootFooter: String {
+        WorkloadStartOnBoot.footer(isAgent: isAgentClass)
+    }
 }
 
 enum WorkloadStartOnBoot {
@@ -638,8 +642,8 @@ enum DeviceStatsHistory {
                 id: "\(sample.timestamp)-\(index)",
                 date: date,
                 cpuPercent: sample.hostCpuPercent,
-                memoryUsedGB: Double(sample.hostMemoryUsedMB) / 1024,
-                memoryTotalGB: Double(sample.hostMemoryTotalMB) / 1024,
+                memoryUsedGB: Double(sample.hostMemoryUsedMB) / 1_024,
+                memoryTotalGB: Double(sample.hostMemoryTotalMB) / 1_024,
             )
         }
     }
@@ -736,7 +740,9 @@ struct GPUPassthroughDevice: Decodable, Hashable, Identifiable {
     var label: String?
     var groupAddresses: [String]?
 
-    var id: String { pciAddress }
+    var id: String {
+        pciAddress
+    }
 
     var displayName: String {
         if let label, !label.isEmpty { return label }
@@ -794,6 +800,7 @@ struct LibraryImage: Decodable, Identifiable, Hashable {
     var error: String?
     var createdAt: String
     var updatedAt: String
+    var downloadPercent: Int? = nil
 
     var isReadyISO: Bool {
         imageType == "iso" && status == "ready"
@@ -801,6 +808,12 @@ struct LibraryImage: Decodable, Identifiable, Hashable {
 
     var isTransferring: Bool {
         status == "downloading" || status == "decompressing" || status == "uploading"
+    }
+
+    /// 0...1 while transferring with a known total. Nil → indeterminate ProgressView.
+    var transferProgress: Double? {
+        guard isTransferring, let downloadPercent else { return nil }
+        return min(1, max(0, Double(downloadPercent) / 100))
     }
 }
 

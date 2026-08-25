@@ -158,6 +158,7 @@ final class AppModel {
     private var sessionGeneration = 0
     private var scopedGeneration = 0
     private var catalogGeneration = 0
+    private var libraryImagesGeneration = 0
     private var homeGeneration = 0
     private var pairingGeneration = 0
     private var pairingMutating = false
@@ -633,13 +634,14 @@ final class AppModel {
     func refreshLibrary() async {
         guard let client else { return }
         let generation = catalogGeneration
+        let imagesGeneration = beginLibraryImagesFetch()
         let device = libraryDevice
         async let imagesLoad = optional { try await client.images(on: device) }
         async let reposLoad = optional { try await client.repositories(on: device) }
         let nextImages = await imagesLoad
         let nextRepos = await reposLoad
         guard generation == catalogGeneration else { return }
-        if let nextImages { images = nextImages }
+        applyLibraryImages(nextImages, generation: imagesGeneration)
         guard let repos = nextRepos else {
             catalogLoaded = true
             return
@@ -1002,6 +1004,7 @@ final class AppModel {
     private func refreshDeviceScoped() async {
         guard let client else { return }
         let generation = scopedGeneration
+        let imagesGeneration = beginLibraryImagesFetch()
         let device = selectedDevice
         async let w = optional { try await client.workloads(on: device) }
         async let s = optional { try await client.stats(on: device) }
@@ -1016,7 +1019,7 @@ final class AppModel {
         guard generation == scopedGeneration else { return }
         if let nextWorkloads { workloads = nextWorkloads }
         if let nextStats { stats = nextStats }
-        if let nextImages { images = nextImages }
+        applyLibraryImages(nextImages, generation: imagesGeneration)
         if let nextDisks { disks = nextDisks }
         if let nextNetworks { networks = nextNetworks }
     }
@@ -1024,6 +1027,7 @@ final class AppModel {
     private func dropScopedState() {
         scopedGeneration += 1
         catalogGeneration += 1
+        libraryImagesGeneration += 1
         workloads = []
         stats = nil
         images = []
@@ -1208,11 +1212,24 @@ final class AppModel {
         }
     }
 
-    private func refreshLibraryImages() async {
+    func refreshLibraryImages() async {
         guard let client else { return }
-        if let next = await optional({ try await client.images(on: libraryDevice) }) {
-            images = next
+        let generation = beginLibraryImagesFetch()
+        let device = libraryDevice
+        let next = await optional { try await client.images(on: device) }
+        applyLibraryImages(next, generation: generation)
+    }
+
+    private func beginLibraryImagesFetch() -> Int {
+        libraryImagesGeneration += 1
+        return libraryImagesGeneration
+    }
+
+    private func applyLibraryImages(_ next: [LibraryImage]?, generation: Int) {
+        guard LibraryImagesFetch.shouldApply(request: generation, current: libraryImagesGeneration) else {
+            return
         }
+        if let next { images = next }
     }
 
     private func requireClient() throws -> APIClient {

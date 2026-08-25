@@ -201,6 +201,55 @@ struct LibraryCatalogTests {
         #expect(CatalogDownloadState.starting.buttonTitle == "Starting")
     }
 
+    @Test func libraryImagesFetchIgnoresStalePolls() {
+        #expect(LibraryImagesFetch.shouldApply(request: 2, current: 2))
+        #expect(!LibraryImagesFetch.shouldApply(request: 1, current: 2))
+        #expect(!LibraryImagesFetch.shouldApply(request: 3, current: 2))
+    }
+
+    @Test func libraryImageDecodesDownloadPercentForDeterminateProgress() throws {
+        let json = Data("""
+        {
+          "id": "img-1",
+          "name": "Ubuntu",
+          "imageType": "iso",
+          "arch": "arm64",
+          "status": "downloading",
+          "sizeBytes": null,
+          "sourceUrl": "https://example.test/ubuntu.iso",
+          "error": null,
+          "createdAt": "2026-01-01T00:00:00Z",
+          "updatedAt": "2026-01-02T00:00:00Z",
+          "downloadPercent": 37
+        }
+        """.utf8)
+        let image = try decoder.decode(LibraryImage.self, from: json)
+        #expect(image.downloadPercent == 37)
+        #expect(image.transferProgress == 0.37)
+
+        let omitted = try decoder.decode(
+            LibraryImage.self,
+            from: Data("""
+            {
+              "id": "img-2",
+              "name": "Ubuntu",
+              "imageType": "iso",
+              "arch": "arm64",
+              "status": "downloading",
+              "createdAt": "2026-01-01T00:00:00Z",
+              "updatedAt": "2026-01-02T00:00:00Z"
+            }
+            """.utf8),
+        )
+        #expect(omitted.downloadPercent == nil)
+        #expect(omitted.transferProgress == nil)
+
+        let ready = libraryImage(status: "ready", sourceUrl: "https://example.test/ubuntu.iso")
+        var readyWithPercent = ready
+        readyWithPercent.downloadPercent = 100
+        #expect(readyWithPercent.transferProgress == nil)
+    }
+
     @Test func catalogMergeKeepsPreviousImagesWhenAFetchFails() {
         let kept = catalogImage(id: "cat-keep", name: "HAOS")
         let next = catalogImage(id: "cat-next", name: "Ubuntu")

@@ -3098,6 +3098,14 @@ components:
           type: string
         updatedAt:
           type: string
+        downloadPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: >
+            In-flight download percent (0-100) from the live downloader.
+            Null when total size is unknown or the image is not transferring.
 
     DownloadImageRequest:
       type: object
