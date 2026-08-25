@@ -13,7 +13,7 @@ files into `/docs/*` (`cd website && bun install && bun run dev`).
 | Requirement      | Minimum version | Notes                                   |
 |------------------|-----------------|-----------------------------------------|
 | macOS            | 26              | Apple Silicon required (HVF acceleration requires arm64 host for arm64 VMs) |
-| Xcode / Swift    | Swift 6.x       | Local pin: `.swift-version` / `mise.toml` (currently 6.3). Linux CI/Docker package builds use **6.2.3** Ubuntu toolchains — keep that in mind for release binaries. |
+| Xcode / Swift    | Swift 6.x       | Local pin: `.swift-version` / `mise.toml` (currently 6.3.3). Linux CI/Docker package builds use the same **6.3.3** Ubuntu toolchains. |
 | Bun              | Latest           | JavaScript runtime for the frontend     |
 | Homebrew         | Latest           | For installing build and runtime deps   |
 | mise (optional)  | Latest           | Toolchain + tasks (`mise run build|test|lint`) |

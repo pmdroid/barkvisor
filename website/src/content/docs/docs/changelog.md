@@ -8,6 +8,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Swift toolchain is **6.3.3** locally (mise / `.swift-version`) and on Linux CI, guest-boot, and package Docker builds. `swift-tools-version` is 6.3.
 - Default VM disk directory is **Settings → Disks** (`?tab=disks`). The Disks list still creates disks and can pick a folder per disk.
 - Linux Create Disk and Workload start fail closed when this Device cannot open a host block device for read/write. The error names the path and that the BarkVisor user needs the disk group (or a udev ACL). QEMU is not started with that `-drive`. When group **disk** exists, postinst adds the service user to it, writes `barkvisor.service.d/disk.conf` (`SupplementaryGroups=disk`), and `try-restart`s a running unit so upgrades pick up `/dev/sdX`. A host without group disk still starts.
 - PCI picker occupancy is GPU host driver / Workload claim, not every bound kernel module.

@@ -331,9 +331,9 @@ barkvisor_swift_channel() {
 }
 
 # Print official Swift Linux tarball URL for this host.
-# Args: [swift_version]  default 6.2.3
+# Args: [swift_version]  default 6.3.3
 barkvisor_swift_download_url() {
-  local version="${1:-6.2.3}"
+  local version="${1:-6.3.3}"
   local channel file_tag arch_suffix=""
   channel="$(barkvisor_swift_channel)"
   case "$channel" in

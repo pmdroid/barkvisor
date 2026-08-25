@@ -10,9 +10,9 @@
 #
 # Align Ubuntu major with the official Swift Linux toolchain you use locally
 # (Ubuntu 24.04 / noble recommended). Override tags:
-#   docker build --build-arg SWIFT_VERSION=6.2.3 --build-arg UBUNTU_VERSION=24.04 .
+#   docker build --build-arg SWIFT_VERSION=6.3.3 --build-arg UBUNTU_VERSION=24.04 .
 
-ARG SWIFT_VERSION=6.2.3
+ARG SWIFT_VERSION=6.3.3
 ARG UBUNTU_VERSION=24.04
 ARG BUN_VERSION=1.2.5
 # Optional: bake product version into Config.swift (e.g. 1.2.3). Default leaves 0.0.0-dev.
