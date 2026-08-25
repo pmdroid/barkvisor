@@ -68,8 +68,10 @@ import {
   ollamaRunningHostId,
   ollamaSoleStartHostId,
   ollamaStartBody,
-  ollamaStartLocations,
+  ollamaStartCanStart,
+  ollamaStartDisabledReason,
   ollamaStartNeedsPicker,
+  ollamaStartReachableCandidates,
 } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { scopeOllamaModels, scopeRows } from '../utils/deviceScope'
@@ -194,15 +196,26 @@ const hostOptions = computed(() =>
 )
 
 const startHostOptions = computed(() =>
-  ollamaStartLocations(startTarget.value).map((loc) => {
+  ollamaStartReachableCandidates(startTarget.value, deviceScope.selectedHostId).map((loc) => {
     const name = loc.displayName?.trim() || loc.hostId
     return {
       value: loc.hostId,
-      label: loc.reachable ? name : `${name} (unreachable)`,
-      disabled: !loc.reachable,
+      label: name,
+      disabled: false,
     }
   }),
 )
+
+const startHostIsCandidate = computed(() =>
+  startHostOptions.value.some((opt) => opt.value === startHost.value),
+)
+
+watch(startHostOptions, (opts) => {
+  if (!startTarget.value) return
+  if (!opts.some((opt) => opt.value === startHost.value)) {
+    startHost.value = opts[0]?.value ?? ''
+  }
+})
 
 const filteredModels = computed(() =>
   scopeOllamaModels(
@@ -508,12 +521,14 @@ async function cancelPull() {
 
 function requestStart(model: OllamaCatalogModel) {
   if (starting.value) return
-  if (ollamaStartNeedsPicker(model)) {
+  const scope = deviceScope.selectedHostId
+  if (!ollamaStartCanStart(model, scope)) return
+  if (ollamaStartNeedsPicker(model, scope)) {
     startTarget.value = model
-    startHost.value = ollamaDefaultStartHostId(model) ?? ''
+    startHost.value = ollamaDefaultStartHostId(model, scope) ?? ''
     return
   }
-  void startModelAt(model, ollamaSoleStartHostId(model))
+  void startModelAt(model, ollamaSoleStartHostId(model, scope))
 }
 
 function requestStop(model: OllamaCatalogModel) {
@@ -538,7 +553,11 @@ async function startModelAt(model: OllamaCatalogModel, hostId?: string) {
 async function startModel() {
   const model = startTarget.value
   if (!model) return
-  await startModelAt(model, startHost.value || undefined)
+  if (!startHostIsCandidate.value) {
+    toast.error(ollamaStartDisabledReason(model, deviceScope.selectedHostId) ?? 'Pick a Device that has this model')
+    return
+  }
+  await startModelAt(model, startHost.value)
 }
 
 async function stopModel() {
@@ -893,7 +912,13 @@ async function saveKey() {
             </span>
           </td>
           <td v-if="auth.isAdmin" style="text-align:right;white-space:nowrap">
-            <AppButton v-if="!model.running" size="sm" :disabled="starting" @click="requestStart(model)">Start</AppButton>
+            <AppButton
+              v-if="!model.running"
+              size="sm"
+              :disabled="starting || !ollamaStartCanStart(model, deviceScope.selectedHostId)"
+              :title="ollamaStartDisabledReason(model, deviceScope.selectedHostId)"
+              @click="requestStart(model)"
+            >Start</AppButton>
             <AppButton v-else size="sm" @click="requestStop(model)">Stop</AppButton>
           </td>
         </tr>
@@ -945,7 +970,7 @@ async function saveKey() {
       <AppButton variant="ghost" :disabled="starting" @click="startTarget = null">Cancel</AppButton>
       <AppButton
         variant="primary"
-        :disabled="!startHost || startHostOptions.find((opt) => opt.value === startHost)?.disabled"
+        :disabled="!startHostIsCandidate || starting"
         :loading="starting"
         loading-text="Starting..."
         @click="startModel"
