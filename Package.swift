@@ -1,4 +1,4 @@
-// swift-tools-version:6.2.3
+// swift-tools-version:6.3
 import PackageDescription
 
 // NOTE: PackageDescription.SupportedPlatform has no `.linux` case; Linux builds

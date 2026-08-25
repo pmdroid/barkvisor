@@ -2,7 +2,7 @@
 # Multi-stage: frontend + Swift release binary + package tooling (deb/rpm/tar).
 #
 # Used by scripts/build-linux-packages-docker.sh
-ARG SWIFT_VERSION=6.2.3
+ARG SWIFT_VERSION=6.3.3
 ARG UBUNTU_VERSION=24.04
 ARG BUN_VERSION=1.2.5
 
