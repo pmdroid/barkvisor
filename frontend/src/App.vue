@@ -2,27 +2,43 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { useDevicesStore } from './stores/devices'
+import { useDeviceScopeStore } from './stores/deviceScope'
 import { useOllamaStore } from './stores/ollama'
 import { useThemeStore } from './stores/theme'
 import { chatIsVisible } from './utils/chatCompletions'
+import { DEVICE_SCOPE_ALL } from './utils/deviceScope'
+import { DEVICE_LABEL } from './utils/terminology'
 import ToastContainer from './components/ToastContainer.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
 const ollama = useOllamaStore()
+const devices = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const mobileMenuOpen = ref(false)
 
 onMounted(() => {
   if (auth.isAuthenticated) {
     void auth.fetchMe()
     void ollama.fetchCatalog()
+    void devices.fetchHealth()
   }
 })
 watch(
   () => auth.isAuthenticated,
   (ok) => {
-    if (ok) void ollama.fetchCatalog()
+    if (ok) {
+      void ollama.fetchCatalog()
+      void devices.fetchHealth()
+    }
+  },
+)
+watch(
+  () => devices.devices.map((row) => row.hostId),
+  (hostIds) => {
+    deviceScope.forgetUnknownHost(hostIds)
   },
 )
 
@@ -51,6 +67,21 @@ function isActive(path: string) {
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
+      </div>
+      <div class="sidebar-scope">
+        <label for="device-scope">{{ DEVICE_LABEL }}</label>
+        <select
+          id="device-scope"
+          :value="deviceScope.selectedHostId"
+          @change="deviceScope.select(($event.target as HTMLSelectElement).value)"
+        >
+          <option :value="DEVICE_SCOPE_ALL">All</option>
+          <option
+            v-for="row in devices.devices"
+            :key="row.hostId"
+            :value="row.hostId"
+          >{{ devices.deviceLabel(row) }}</option>
+        </select>
       </div>
       <nav class="sidebar-nav">
         <router-link v-if="auth.isAdmin" to="/dashboard" :class="{ active: route.path === '/dashboard' }">
