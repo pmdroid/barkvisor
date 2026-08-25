@@ -37,8 +37,8 @@ describe('VM Lifecycle', () => {
         cy.get('table thead').should('contain', 'Name')
         cy.get('table thead').should('contain', 'Status')
         cy.get('table thead').should('contain', 'OS')
-        cy.get('table thead').should('contain', 'Resources')
-        cy.get('table thead').should('contain', 'IP / Ports')
+        cy.get('table thead').should('contain', 'CPU')
+        cy.get('table thead').should('contain', 'Ports')
       } else {
         cy.contains('No virtual machines').should('exist')
         cy.contains('button', 'Create your first VM').should('exist')

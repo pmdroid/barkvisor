@@ -6,10 +6,8 @@ import { useRouter } from 'vue-router'
 import type { DiskSettings, HomeDeviceHealthSnapshot, HostBlockDevice, StorageSummary } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
-import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
-import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
@@ -31,7 +29,7 @@ import {
   deviceDiskSettingsPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
-import { DEVICE_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { scopeRows } from '../utils/deviceScope'
 import { openWorkloadRow, workloadDetailPath } from '../utils/workloadDetail'
 import { storeToRefs } from 'pinia'
@@ -457,7 +455,7 @@ async function resizeDisk() {
   <div class="ops-page">
   <div class="ops-toolbar">
     <h1>Disks</h1>
-    <span class="ops-sub">Default directory for new disks is in <router-link to="/settings?tab=disks">Settings → Disks</router-link>.</span>
+    <span class="ops-sub">Storage across {{ HOME_LABEL }}</span>
     <div class="ops-actions">
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Disk</AppButton>
     </div>
@@ -469,49 +467,34 @@ async function resizeDisk() {
   </p>
 
   <div v-if="summaryCards.length || unreachableCards.length" class="usage-row">
-  <div
+  <section
     v-for="card in summaryCards"
     :key="card.hostId || 'local'"
-    class="storage-summary use-card"
+    class="use-card"
   >
-    <div class="storage-summary-header">
-      <div>
-        <WorkloadDeviceChip
-          v-if="useHomeUnion"
-          :label="card.label"
-          :self="card.role === 'self'"
-          :reachable="card.reachable"
-        />
-        <span class="storage-label" :class="{ 'storage-label-after-chip': useHomeUnion }">Disk Usage</span>
-        <span class="storage-actual">{{ formatBytes(card.summary.totalActualBytes) }}</span>
-        <span class="storage-dim"> used on disk</span>
-        <span class="storage-dim"> / {{ formatBytes(card.summary.totalVirtualBytes) }} provisioned</span>
-      </div>
-      <div>
-        <span class="storage-label">System Volume</span>
-        <span class="storage-actual">{{ formatBytes(card.summary.volumeTotalBytes - card.summary.volumeAvailableBytes) }}</span>
-        <span class="storage-dim"> / {{ formatBytes(card.summary.volumeTotalBytes) }}</span>
-        <span class="storage-dim"> ({{ formatBytes(card.summary.volumeAvailableBytes) }} free)</span>
-      </div>
+    <div class="use-top">
+      <span class="ops-dot" :class="card.reachable ? 'ok' : 'off'"></span>
+      <span class="use-name">{{ card.role === 'self' ? (card.label || `This ${DEVICE_LABEL}`) : card.label }}</span>
+      <span v-if="card.role === 'self'" class="tag">This {{ DEVICE_LABEL }}</span>
+      <span class="use-val"><b>{{ formatBytes(card.summary.volumeTotalBytes - card.summary.volumeAvailableBytes) }}</b> used of {{ formatBytes(card.summary.volumeTotalBytes) }}</span>
     </div>
-    <div class="storage-bar">
-      <div class="storage-bar-vm" :style="{ width: barPct(card.summary.totalActualBytes, card.summary.volumeTotalBytes) + '%' }" />
-      <div class="storage-bar-other" :style="{ width: volumeOtherPct(card.summary) + '%' }" />
-    </div>
-    <div class="storage-legend">
-      <span><span class="legend-dot" style="background:var(--purple)"></span>VM disks</span>
-      <span><span class="legend-dot" style="background:var(--text-dim)"></span>Other</span>
-      <span><span class="legend-dot" style="background:rgba(255,255,255,0.06)"></span>Free</span>
-    </div>
-  </div>
-  <div
+    <div class="ops-track big"><div class="ops-fill cpu" :style="{ width: barPct(card.summary.volumeTotalBytes - card.summary.volumeAvailableBytes, card.summary.volumeTotalBytes) + '%' }"></div></div>
+    <div class="use-sub">{{ card.summary.diskCount }} BarkVisor disk{{ card.summary.diskCount === 1 ? '' : 's' }} · {{ formatBytes(card.summary.totalVirtualBytes) }} provisioned for Workloads</div>
+  </section>
+  <section
     v-for="card in unreachableCards"
     :key="card.hostId"
     class="use-card bad"
   >
-    <div class="use-head">{{ card.label }} <span class="pct">—</span></div>
-    <div class="use-sub" style="color:var(--red)">Unreachable — Workloads keep running locally.</div>
-  </div>
+    <div class="use-top">
+      <span class="ops-dot bad pulse"></span>
+      <span class="use-name">{{ card.label }}</span>
+      <span class="tag-bad">Unreachable</span>
+      <span class="use-val">—</span>
+    </div>
+    <div class="ops-track big"></div>
+    <div class="use-sub">Usage unknown</div>
+  </section>
   </div>
 
   <EmptyState
@@ -521,60 +504,42 @@ async function resizeDisk() {
   />
 
   <div v-else-if="homeRows.length > 0" class="sheet">
-  <div class="sheet-head">Disks <span style="font-variant-numeric:tabular-nums">{{ homeRows.length }}</span></div>
-  <DataTable :columns="[
-    { key: 'name', label: 'Name' },
-    { key: 'device', label: 'Device' },
-    { key: 'path', label: 'Path' },
-    { key: 'format', label: 'Format' },
-    { key: 'provisioned', label: 'Provisioned' },
-    { key: 'used', label: 'Used on Disk' },
-    { key: 'vm', label: 'VM' },
-    { key: 'actions', label: '' },
-  ]">
+  <div class="sheet-head">
+    <h3>Disks</h3>
+    <span class="n">{{ homeRows.length }}</span>
+    <router-link class="hint-link" to="/settings?tab=disks">Settings → Disks</router-link>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Device</th><th>Path</th><th>Format</th><th>Size</th><th>VM</th><th>Resize</th><th>Delete</th></tr>
+    </thead>
+    <tbody>
     <tr v-for="row in homeRows" :key="rowKey(row)">
-      <td style="font-weight:500">{{ row.disk.name }}</td>
-      <td>
-        <WorkloadDeviceChip
-          :label="row.label"
-          :self="row.role === 'self'"
-          :reachable="row.reachable"
-        />
-      </td>
-      <td class="mono" :title="row.disk.path" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.disk.path }}</td>
-      <td><span class="badge badge-gray">{{ row.disk.format }}</span></td>
-      <td class="mono">{{ formatBytes(row.disk.sizeBytes) }}</td>
-      <td class="mono">
-        <template v-if="usageFor(row)">
-          {{ formatBytes(usageFor(row)!.actualSizeBytes) }}
-          <div class="usage-bar">
-            <div
-              class="usage-bar-fill"
-              :style="{ width: barPct(usageFor(row)!.actualSizeBytes, usageFor(row)!.virtualSizeBytes) + '%' }"
-            />
-          </div>
-        </template>
-        <span v-else style="color:var(--text-dim)">-</span>
-      </td>
+      <td><span class="d-name">{{ row.disk.name }}</span></td>
+      <td>{{ row.role === 'self' ? (row.label || `This ${DEVICE_LABEL}`) : row.label }}</td>
+      <td><span class="path" :title="row.disk.path">{{ row.disk.path }}</span></td>
+      <td><span class="fmt">{{ row.disk.format }}</span></td>
+      <td class="num">{{ formatBytes(row.disk.sizeBytes) }}</td>
       <td>
         <a
           v-if="row.disk.vmId"
+          class="vm-link"
           :href="workloadHref(row)"
           @click.prevent="openWorkload(row)"
-          style="color:var(--accent);text-decoration:none"
         >
           {{ workloadName(row) }}
         </a>
         <span v-else class="badge badge-gray">Unattached</span>
       </td>
-      <td style="text-align:right">
-        <div v-if="canMutate(row)" style="display:flex;gap:4px;justify-content:flex-end">
-          <AppButton v-if="!isBlockDisk(row)" size="sm" @click="openResize(row)">Resize</AppButton>
-          <AppButton v-if="!row.disk.vmId" size="sm" @click="deleteDisk(row)">Delete</AppButton>
-        </div>
+      <td>
+        <button v-if="canMutate(row) && !isBlockDisk(row)" type="button" class="mini" @click="openResize(row)">Resize</button>
+      </td>
+      <td>
+        <button v-if="canMutate(row) && !row.disk.vmId" type="button" class="mini danger" @click="deleteDisk(row)">Delete</button>
       </td>
     </tr>
-  </DataTable>
+    </tbody>
+  </table>
   </div>
   </div>
 

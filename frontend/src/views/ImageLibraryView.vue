@@ -7,12 +7,13 @@ import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useHomeLibraryStore, type HomeImage } from '../stores/homeLibrary'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import { useVMStore } from '../stores/vms'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
-import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
@@ -34,12 +35,19 @@ const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeLibrary = useHomeLibraryStore()
+const homeWorkloads = useDeviceWorkloadsStore()
+const vmStore = useVMStore()
 const route = useRoute()
 const librarySettings = ref<LibrarySettings | null>(null)
 const librarySpaceLoaded = ref(false)
-const librarySpaceLine = computed(() =>
-  librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes),
-)
+const librarySpaceLine = computed(() => {
+  const total = librarySettings.value?.totalBytes
+  const used = librarySettings.value?.usedBytes
+  if (total != null && used != null && total > 0) {
+    return `${formatBytes(used)} of ${formatBytes(total)} used`
+  }
+  return librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes)
+})
 const libraryCapPercent = computed(() => {
   const total = librarySettings.value?.totalBytes
   const used = librarySettings.value?.usedBytes
@@ -114,6 +122,36 @@ const progressStreams: Record<string, ReturnType<typeof useImageProgress>> = {}
 
 function isTransferringStatus(status: string | undefined) {
   return status === 'downloading' || status === 'decompressing'
+}
+
+function imageTypeLabel(type: string): string {
+  return type === 'iso' ? 'Installer ISO' : 'Disk image'
+}
+
+function imageFileName(img: { name: string; sourceUrl: string | null; imageType: string; arch: string }): string {
+  const src = img.sourceUrl?.trim()
+  if (src) {
+    try {
+      const path = new URL(src).pathname
+      const base = path.split('/').pop()
+      if (base) return decodeURIComponent(base)
+    } catch {
+      const base = src.split('/').pop()
+      if (base) return base
+    }
+  }
+  const ext = img.imageType === 'iso' ? 'iso' : 'qcow2'
+  return `${img.name.toLowerCase().replace(/\s+/g, '-')}-${img.arch}.${ext}`
+}
+
+function usedByNames(img: { id: string }): string {
+  const vms = devicesStore.devices.length
+    ? homeWorkloads.homeRows(devicesStore.devices).map((row) => row.vm)
+    : vmStore.vms
+  const names = vms
+    .filter((vm) => vm.isoId === img.id || (vm.isoIds ?? []).includes(img.id))
+    .map((vm) => vm.name)
+  return names.length ? `used by ${names.join(', ')}` : ''
 }
 
 function subscribeDownloading() {
@@ -267,6 +305,9 @@ onMounted(async () => {
   await Promise.all([
     store.fetchAll(),
     homeLibrary.fetchImages(devicesStore.devices),
+    devicesStore.devices.length
+      ? homeWorkloads.fetchHomeAll(devicesStore.devices)
+      : vmStore.fetchAll(),
   ])
   subscribeDownloading()
   pollTimer = window.setInterval(() => {
@@ -432,15 +473,14 @@ async function doDeleteImage() {
   <div class="ops-page">
   <div class="ops-toolbar">
     <h1>Images</h1>
-    <span v-if="librarySpaceLine" class="ops-sub">{{ librarySpaceLine }}</span>
+    <div v-if="librarySpaceLine" class="cap">
+      <span class="track"><span class="cf" :style="{ width: (libraryCapPercent ?? 0) + '%' }"></span></span>
+      {{ librarySpaceLine }}
+    </div>
     <span v-else-if="librarySpaceLoaded" class="ops-sub">Capacity unavailable</span>
     <div class="ops-actions">
-      <div v-if="libraryCapPercent != null" class="cap">
-        <span class="track"><span class="cf" :style="{ width: libraryCapPercent + '%' }"></span></span>
-        <span>{{ libraryCapPercent }}% used</span>
-      </div>
-      <AppButton icon="upload" @click="openUpload">Upload Image</AppButton>
-      <AppButton variant="primary" icon="download" @click="openDownload">Download Image</AppButton>
+      <AppButton icon="upload" @click="openUpload">Upload</AppButton>
+      <AppButton variant="primary" icon="download" @click="openDownload">Download</AppButton>
     </div>
   </div>
   <div class="ops-body">
@@ -448,40 +488,38 @@ async function doDeleteImage() {
   <EmptyState v-if="visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
 
   <div v-else class="sheet">
-  <div class="sheet-head">Library <span style="font-variant-numeric:tabular-nums">{{ visibleImages.length }}</span></div>
-  <DataTable :columns="[{ key: 'name', label: 'Name' }, { key: 'type', label: 'Type' }, { key: 'arch', label: 'Arch' }, { key: 'size', label: 'Size' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]">
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Type</th><th>Arch</th><th>Size</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
         <tr v-for="img in visibleImages" :key="'hostId' in img ? `${img.hostId}:${img.id}` : img.id" :class="{ pending: isTransferringStatus(img.status) || img.status === 'uploading' }">
           <td>
-            <div style="font-weight:500">{{ img.name }}</div>
-            <ProgressBar
-              v-if="downloadProgress[img.id]"
-              :percent="downloadProgress[img.id].percent ?? 0"
-              :indeterminate="downloadProgress[img.id].percent == null"
-              style="margin-top:4px"
-            >
-              <template v-if="downloadProgress[img.id].status === 'decompressing'">Decompressing...</template>
-              <template v-else-if="downloadProgress[img.id].percent == null">
-                {{ formatBytes(downloadProgress[img.id].bytesReceived) }}
-                <template v-if="downloadProgress[img.id].totalBytes"> / {{ formatBytes(downloadProgress[img.id].totalBytes) }}</template>
-              </template>
-              <template v-else>
-                {{ downloadProgress[img.id].percent }}% &middot;
-                {{ formatBytes(downloadProgress[img.id].bytesReceived) }}
-                <template v-if="downloadProgress[img.id].totalBytes"> / {{ formatBytes(downloadProgress[img.id].totalBytes) }}</template>
-              </template>
-            </ProgressBar>
+            <div class="img">{{ img.name }}</div>
+            <div class="row-sub">{{ imageFileName(img) }}</div>
+            <div v-if="downloadProgress[img.id]" class="prog">
+              <span class="track"><span class="pf" :style="{ width: (downloadProgress[img.id].percent ?? 0) + '%' }"></span></span>
+              <span class="pct">{{ downloadProgress[img.id].percent ?? 0 }}%</span>
+            </div>
           </td>
-          <td><span class="badge" :class="img.imageType === 'iso' ? 'badge-blue' : 'badge-purple'">{{ img.imageType }}</span></td>
-          <td><span class="badge badge-gray">{{ img.arch }}</span></td>
-          <td class="mono">{{ formatBytes(img.sizeBytes) }}</td>
+          <td>{{ imageTypeLabel(img.imageType) }}</td>
+          <td><span class="arch">{{ img.arch }}</span></td>
+          <td class="num">{{ formatBytes(img.sizeBytes) }}</td>
           <td>
-            <span class="status-pill" :class="img.status === 'ready' ? 'running' : img.status === 'error' ? 'error' : 'starting'">
-              {{ img.status }}
+            <span class="state" :class="img.status === 'ready' ? 'ok' : img.status === 'error' ? 'bad' : 'warn'">
+              <span class="ops-dot" :class="img.status === 'ready' ? 'ok' : img.status === 'error' ? 'bad' : 'warn pulse'"></span>
+              {{ img.status === 'ready' ? 'Ready' : img.status === 'downloading' ? 'Downloading' : img.status }}
             </span>
+            <div v-if="usedByNames(img)" class="row-sub">{{ usedByNames(img) }}</div>
           </td>
-          <td style="text-align:right"><AppButton size="sm" @click="deleteImage(img.id, img.name)">Delete</AppButton></td>
+          <td class="del">
+            <button type="button" class="icon-btn" aria-label="Delete" @click="deleteImage(img.id, img.name)">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 3.5h10M5.5 3.5v-1h3v1M3.5 3.5l.5 8.5h6l.5-8.5M5.8 6v3.5M8.2 6v3.5"/></svg>
+            </button>
+          </td>
         </tr>
-  </DataTable>
+    </tbody>
+  </table>
   </div>
   </div>
 

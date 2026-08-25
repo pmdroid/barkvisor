@@ -2,12 +2,9 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
-import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
-import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
-import TabGroup from '../components/ui/TabGroup.vue'
 import { useTaskPoller } from '../composables/useTaskPoller'
 import { useDeviceLogsStore, LOG_HISTORY_LIMIT, LOG_TAIL_CAP, type HomeLogRow } from '../stores/deviceLogs'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
@@ -19,7 +16,8 @@ import { useVMStore } from '../stores/vms'
 import { requestDiagnosticsBundle, saveBlob } from '../utils/diagnosticsBundle'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isSelfDevice } from '../utils/homeDeviceApi'
-import { DEVICE_LABEL } from '../utils/terminology'
+import { formatLogClock, parseLogDate } from '../utils/format'
+import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 
 const store = useLogStore()
@@ -33,24 +31,13 @@ const diagnosticsPoller = useTaskPoller()
 const diagnosticsBusy = ref(false)
 
 const category = ref('')
-const level = ref('warn')
+const level = ref('')
 const search = ref('')
 const timeRange = ref('24h')
 const liveTail = ref(false)
 const vmFilter = ref('')
 const deviceFilter = ref('')
-
-const categories = [
-  { key: '', label: 'All' },
-  { key: 'vm', label: 'VM' },
-  { key: 'server', label: 'Server' },
-  { key: 'app', label: 'App' },
-  { key: 'auth', label: 'Auth' },
-  { key: 'images', label: 'Images' },
-  { key: 'metrics', label: 'Metrics' },
-  { key: 'audit', label: 'Audit' },
-  { key: 'sync', label: 'Sync' },
-]
+const hideBefore = ref(0)
 
 const useHomeUnion = computed(() => devicesStore.devices.length > 0)
 
@@ -76,22 +63,6 @@ function fetchParams() {
   }
 }
 
-const tableColumns = computed(() => {
-  const columns = [
-    { key: 'time', label: 'Time', width: '160px' },
-    { key: 'level', label: 'Level', width: '70px' },
-    { key: 'source', label: 'Source', width: '80px' },
-    { key: 'message', label: 'Message' },
-    { key: 'vm', label: 'VM', width: '120px' },
-  ]
-  if (!useHomeUnion.value) return columns
-  return [
-    columns[0]!,
-    { key: 'device', label: 'Device', width: '140px' },
-    ...columns.slice(1),
-  ]
-})
-
 const deviceOptions = computed(() =>
   scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
@@ -111,7 +82,7 @@ const vmOptions = computed(() => {
   return options
 })
 
-const displayRows = computed<HomeLogRow[]>(() => {
+const rawRows = computed<HomeLogRow[]>(() => {
   const limit = liveTail.value ? LOG_TAIL_CAP : LOG_HISTORY_LIMIT
   if (useHomeUnion.value) {
     return scopeRows(
@@ -135,6 +106,15 @@ const displayRows = computed<HomeLogRow[]>(() => {
     })),
     deviceScope.selectedHostId,
   )
+})
+
+const displayRows = computed<HomeLogRow[]>(() => {
+  const rows = [...rawRows.value].reverse()
+  if (!hideBefore.value) return rows
+  return rows.filter((row) => {
+    const parsed = parseLogDate(row.entry.ts)
+    return parsed ? parsed.getTime() >= hideBefore.value : true
+  })
 })
 
 const pageLoading = computed(() => {
@@ -178,35 +158,16 @@ function toggleLiveTail() {
   liveTail.value = true
 }
 
-function formatTime(ts: string): string {
-  try {
-    return new Date(ts).toLocaleString([], {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-    })
-  } catch { return ts }
+function lineClass(level: string): string {
+  if (level === 'error' || level === 'fatal') return 'err'
+  if (level === 'warn') return 'warn-l'
+  return ''
 }
 
-function levelBadge(lvl: string): string {
-  switch (lvl) {
-    case 'error': case 'fatal': return 'badge-red'
-    case 'warn': return 'badge-amber'
-    case 'info': return 'badge-blue'
-    default: return 'badge-gray'
-  }
-}
-
-function catBadge(cat: string): string {
-  switch (cat) {
-    case 'vm': return 'badge-purple'
-    case 'server': return 'badge-blue'
-    case 'auth': return 'badge-amber'
-    case 'audit': return 'badge-amber'
-    case 'images': return 'badge-green'
-    case 'sync': return 'badge-green'
-    case 'metrics': return 'badge-gray'
-    default: return 'badge-gray'
-  }
+function levelClass(level: string): string {
+  if (level === 'error' || level === 'fatal') return 'error'
+  if (level === 'warn') return 'warn'
+  return 'info'
 }
 
 function vmName(row: HomeLogRow): string {
@@ -229,8 +190,18 @@ const scopeNote = computed(() => {
   const vmLabel = vmFilter.value
     ? vmOptions.value.find((opt) => opt.id === vmFilter.value)?.name ?? vmFilter.value
     : 'All Workloads'
-  return `${deviceLabel} · ${vmLabel} · ${liveTail.value ? 'following' : 'history'}`
+  return `${HOME_LABEL} · ${deviceLabel} · ${vmLabel} · ${liveTail.value ? 'following' : 'history'}`
 })
+
+const cursorClock = computed(() => {
+  const last = displayRows.value[displayRows.value.length - 1]
+  if (!last) return formatLogClock(Date.now())
+  return formatLogClock(last.entry.ts)
+})
+
+function clearStream() {
+  hideBefore.value = Date.now()
+}
 
 async function downloadDiagnostics() {
   if (diagnosticsBusy.value) return
@@ -287,9 +258,9 @@ onUnmounted(() => {
     <div class="ops-actions">
       <input
         v-model="search"
-        type="text"
-        placeholder="Search logs..."
-        style="width:220px"
+        class="ops-search"
+        type="search"
+        placeholder="Search messages"
       />
       <AppSelect v-if="useHomeUnion" v-model="deviceFilter">
         <option value="">All Devices</option>
@@ -300,72 +271,62 @@ onUnmounted(() => {
         >{{ opt.label }}</option>
       </AppSelect>
       <AppSelect v-model="vmFilter">
-        <option value="">All VMs</option>
+        <option value="">All Workloads</option>
         <option v-for="vm in vmOptions" :key="vm.id" :value="vm.id">{{ vm.name }}</option>
       </AppSelect>
       <AppSelect v-model="timeRange">
-        <option value="1h">Last Hour</option>
-        <option value="6h">Last 6 Hours</option>
         <option value="24h">Last 24 Hours</option>
+        <option value="1h">Last Hour</option>
         <option value="7d">Last 7 Days</option>
-        <option value="">All Time</option>
       </AppSelect>
-      <AppButton :variant="liveTail ? 'primary' : 'ghost'" :class="{ 'btn-live-active': liveTail }" style="min-width:140px;text-align:center" @click="toggleLiveTail">{{ liveTail ? 'Stop Tail' : 'Live Tail' }}</AppButton>
+      <AppButton
+        :class="{ 'btn-live': liveTail, 'btn-live-active': liveTail }"
+        @click="toggleLiveTail"
+      >
+        <span class="ops-dot" :class="liveTail ? 'ok pulse' : 'off'"></span>
+        Live Tail
+      </AppButton>
       <AppButton icon="download" :loading="diagnosticsBusy" loading-text="Diagnostics" @click="downloadDiagnostics">Diagnostics</AppButton>
     </div>
   </div>
-  <div class="ops-body">
+  <div class="ops-body term-body">
 
-  <!-- Filter tabs -->
-  <div class="log-filters">
-    <TabGroup v-model="category" :tabs="categories" />
-    <TabGroup v-model="level" :tabs="[
-      { key: '', label: 'All' },
-      { key: 'info', label: 'Info+' },
-      { key: 'warn', label: 'Warn+' },
-      { key: 'error', label: 'Errors' },
-    ]" />
-  </div>
-
-  <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
+  <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:12px 16px 0">
     {{ loadErrors[0] }}
   </p>
 
-  <!-- Empty state -->
-  <EmptyState v-if="displayRows.length === 0 && !pageLoading" icon="file" title="No log entries found" subtitle="Try adjusting the time range or level filter" />
-
-  <!-- Loading -->
-  <div v-else-if="pageLoading && displayRows.length === 0" class="empty">
-    <p>Loading logs...</p>
-  </div>
-
-  <!-- Log table -->
-  <div v-else class="term">
-  <div class="term-head">
-    <span class="ttl"><span class="ops-dot" :class="liveTail ? 'ok pulse' : 'off'"></span>{{ liveTail ? 'Live tail' : 'History' }}</span>
-    <span class="scope-note">{{ scopeNote }}</span>
-  </div>
-  <DataTable :columns="tableColumns">
-      <tr v-for="(row, i) in displayRows" :key="rowKey(row, i)" :class="{ 'row-error': row.entry.level === 'error' || row.entry.level === 'fatal', 'row-warn': row.entry.level === 'warn' }">
-        <td class="mono">{{ formatTime(row.entry.ts) }}</td>
-        <td v-if="useHomeUnion">
-          <WorkloadDeviceChip
-            :label="row.label"
-            :self="row.role === 'self'"
-            :reachable="row.reachable"
-          />
-        </td>
-        <td><span class="badge" :class="levelBadge(row.entry.level)">{{ row.entry.level }}</span></td>
-        <td><span class="badge" :class="catBadge(row.entry.cat)">{{ row.entry.cat }}</span></td>
-        <td>
-          <div style="font-weight:500">{{ row.entry.msg }}</div>
-          <div v-if="row.entry.err" style="color:var(--red);font-size:11px;margin-top:2px">{{ row.entry.err }}</div>
-        </td>
-        <td>
-          <button v-if="row.entry.vm" class="vm-link" @click="vmFilter = row.entry.vm">{{ vmName(row) }}</button>
-        </td>
-      </tr>
-  </DataTable>
+  <div class="term">
+    <div class="term-head">
+      <span class="ttl"><span class="ops-dot" :class="liveTail ? 'ok pulse' : 'off'"></span>{{ liveTail ? 'Live tail' : 'History' }}</span>
+      <span class="scope-note">{{ scopeNote }}</span>
+      <div class="rhs">
+        <button type="button" class="mini" @click="toggleLiveTail">{{ liveTail ? 'Pause' : 'Resume' }}</button>
+        <button type="button" class="mini" @click="clearStream">Clear</button>
+      </div>
+    </div>
+    <EmptyState v-if="displayRows.length === 0 && !pageLoading" icon="file" title="No log entries found" subtitle="Try adjusting the time range or search" />
+    <div v-else-if="pageLoading && displayRows.length === 0" class="empty">
+      <p>Loading logs...</p>
+    </div>
+    <div v-else class="stream">
+      <div
+        v-for="(row, i) in displayRows"
+        :key="rowKey(row, i)"
+        class="line"
+        :class="lineClass(row.entry.level)"
+      >
+        <span class="lt">{{ formatLogClock(row.entry.ts) }}</span>
+        <span class="lv" :class="levelClass(row.entry.level)">{{ row.entry.level.toUpperCase() }}</span>
+        <span class="lsrc">{{ row.entry.cat }}</span>
+        <span v-if="useHomeUnion" class="ldev">{{ row.role === 'self' ? `This ${DEVICE_LABEL}` : row.label }}</span>
+        <span class="lmsg">{{ row.entry.msg }}<template v-if="row.entry.err"> — {{ row.entry.err }}</template></span>
+        <span v-if="row.entry.vm" class="lvm">[{{ vmName(row) }}]</span>
+      </div>
+      <div v-if="liveTail" class="cursor-line">
+        <span class="lt">{{ cursorClock }}</span>
+        <span class="blink"></span>
+      </div>
+    </div>
   </div>
   </div>
   </div>
@@ -373,38 +334,12 @@ onUnmounted(() => {
 
 <style scoped>
 .log-toolbar {
-  height: auto;
-  min-height: 58px;
-  flex-wrap: wrap;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  height: 58px;
+  flex-wrap: nowrap;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .ops-toolbar.page-header {
   margin-bottom: 0;
-}
-.log-filters {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.row-error td { background: var(--red-muted); }
-.row-error td:first-child { box-shadow: inset 2px 0 0 var(--red); }
-.row-warn td { background: var(--log-warn-row); }
-.row-warn td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
-
-.vm-link {
-  background: none;
-  border: none;
-  color: var(--blue);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 0;
-  text-decoration: none;
-}
-.vm-link:hover {
-  text-decoration: underline;
 }
 </style>

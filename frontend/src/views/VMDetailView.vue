@@ -5,7 +5,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
-import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import api from '../api/client'
 import {
   canFetchDeviceWorkloads,
@@ -47,7 +46,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { usbCanPersist, usbNoSerialCopy } from '../composables/useUSBPicker'
-import { formatBytes } from '../utils/format'
+import { formatBytes, formatMemoryMB, formatPortForwards, formatShortDate } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
 import { architectureLabel } from '../utils/architectureDetails'
@@ -85,10 +84,9 @@ import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
-import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
+import { isAgentWorkload } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
-  startOnBootFooterFromWorkload,
   startOnBootLabel,
 } from '../utils/workloadStartOnBoot'
 import {
@@ -172,9 +170,8 @@ const vm = computed(() => {
 })
 
 const agentCage = computed(() => isAgentWorkload(vm.value))
-const grantCopy = computed(() => workloadGrantCopy(parseWorkloadClass(vm.value?.workloadClass ?? vm.value?.spec?.spec?.workloadClass)))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
-const startOnBootHint = computed(() => startOnBootFooterFromWorkload(vm.value))
+
 const ollamaStore = useOllamaStore()
 const codingAgent = computed(() => isCodingAgentSession(vm.value))
 const showAgentChat = computed(() => codingAgent.value && chatIsVisible(ollamaStore.anyReachable, ollamaStore.models.length))
@@ -673,8 +670,7 @@ async function stopWorkload(method: 'acpi' | 'force') {
   await store.stop(vmId.value, { method })
 }
 
-async function toggleStartOnBoot(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
+async function toggleStartOnBoot(checked: boolean) {
   try {
     await patchWorkload({ startOnBoot: checked })
   } catch (e: any) {
@@ -1266,6 +1262,35 @@ const healthBanner = computed(() => {
   }
 })
 
+const recentEvents = computed(() => {
+  const v = vm.value
+  if (!v) return []
+  const items: { when: string; what: string; bad: boolean; warn: boolean }[] = []
+  if (healthBanner.value) {
+    items.push({
+      when: formatShortDate(v.updatedAt),
+      what: healthBanner.value.title,
+      bad: true,
+      warn: false,
+    })
+  }
+  if (v.pendingChanges) {
+    items.push({
+      when: formatShortDate(v.updatedAt),
+      what: 'Configuration changed — restart pending',
+      bad: false,
+      warn: true,
+    })
+  }
+  items.push({
+    when: formatShortDate(v.createdAt),
+    what: `Workload created${toolbarSub.value.includes('·') ? ` on ${toolbarSub.value.split('·').slice(1).join('·').trim()}` : ''}`,
+    bad: false,
+    warn: false,
+  })
+  return items
+})
+
 </script>
 
 <template>
@@ -1302,12 +1327,6 @@ const healthBanner = computed(() => {
         :title="vm.status?.healthError || undefined"
       >{{ healthLabel(vmHealth(vm)) }}</span>
       <span class="ops-sub">{{ toolbarSub }}</span>
-      <span class="badge badge-gray" :title="grantCopy">{{ grantCopy }}</span>
-      <WorkloadDeviceChip
-        v-if="isMemberDetail && memberDevice"
-        :label="devicesStore.deviceLabel(memberDevice)"
-        :reachable="memberReachable"
-      />
       <div class="ops-actions">
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
@@ -1320,7 +1339,7 @@ const healthBanner = computed(() => {
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
         >VNC</AppButton>
-        <AppButton v-if="!isMemberDetail && (vm.state === 'stopped' || vm.state === 'error')" variant="danger" :disabled="!!actionLoading" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
+        <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="danger" :disabled="!!actionLoading || (isMemberDetail && !memberReachable)" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
       </div>
     </div>
     <div class="ops-body">
@@ -1392,6 +1411,7 @@ const healthBanner = computed(() => {
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
       <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
+      <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
@@ -1430,8 +1450,12 @@ const healthBanner = computed(() => {
         </div>
         <div class="detail-grid sheet-grid">
           <div class="detail-row">
+            <span class="detail-label">Device</span>
+            <span>{{ toolbarSub.includes('·') ? toolbarSub.split('·').slice(1).join('·').trim() : toolbarSub }}</span>
+          </div>
+          <div class="detail-row">
             <span class="detail-label">Type</span>
-            <span><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></span>
+            <span>{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span>
           </div>
           <div v-if="backend" class="detail-row">
             <span class="detail-label">Architecture</span>
@@ -1455,25 +1479,18 @@ const healthBanner = computed(() => {
           </div>
           <div class="detail-row">
             <span class="detail-label">Memory</span>
-            <span>{{ vm.memoryMB }} MB</span>
+            <span>{{ formatMemoryMB(vm.memoryMB) }}</span>
           </div>
           <div class="detail-row span-2">
             <span class="detail-label">Description</span>
             <span style="color:var(--text-secondary)">{{ vm.description || '-' }}</span>
           </div>
-          <div class="detail-row span-2">
+          <div class="detail-row">
             <span class="detail-label">{{ startOnBootLabel() }}</span>
             <span>
-              <label class="pairing-hint" style="display:flex;gap:8px;align-items:flex-start;text-align:left;margin:0">
-                <input
-                  type="checkbox"
-                  :checked="startOnBootOn"
-                  :disabled="controlDisabled"
-                  style="width:16px;height:16px;cursor:pointer;margin-top:2px"
-                  @change="toggleStartOnBoot"
-                />
-                <span style="color:var(--text-secondary)">{{ startOnBootHint }}</span>
-              </label>
+              <button type="button" class="mini" :disabled="controlDisabled" @click="toggleStartOnBoot(!startOnBootOn)">
+                {{ startOnBootOn ? 'On' : 'Off' }}
+              </button>
             </span>
           </div>
           <div class="detail-row">
@@ -1506,12 +1523,7 @@ const healthBanner = computed(() => {
           <div v-if="!currentNetwork || currentNetwork.mode === 'nat'" class="detail-row span-2">
             <span class="detail-label">Port Forwards</span>
             <span class="detail-editable">
-              <span v-if="vm.portForwards && vm.portForwards.length > 0" style="display:flex;flex-wrap:wrap;gap:4px">
-                <span v-for="(pf, i) in vm.portForwards" :key="i" class="badge badge-gray" style="font-variant-numeric:tabular-nums">
-                  {{ pf.protocol }}:{{ pf.hostPort }}&rarr;{{ pf.guestPort }}
-                </span>
-              </span>
-              <span v-else style="color:var(--text-dim)">None</span>
+              <span>{{ formatPortForwards(vm.portForwards) }}</span>
               <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor()">Edit</AppButton>
             </span>
           </div>
@@ -1578,8 +1590,19 @@ const healthBanner = computed(() => {
           </div>
           <div class="detail-row">
             <span class="detail-label">Created</span>
-            <span style="color:var(--text-secondary)">{{ new Date(vm.createdAt).toLocaleString() }}</span>
+            <span style="color:var(--text-secondary)">{{ formatShortDate(vm.createdAt) }}</span>
           </div>
+        </div>
+      </div>
+
+      <div class="events">
+        <div class="sheet-head"><h3>Recent events</h3></div>
+        <div v-for="(ev, i) in recentEvents" :key="i" class="ev">
+          <span class="when">{{ ev.when }}</span>
+          <span class="what" :class="{ bad: ev.bad }">
+            <span class="ops-dot" :class="ev.bad ? 'bad' : ev.warn ? 'warn' : 'off'"></span>
+            {{ ev.what }}
+          </span>
         </div>
       </div>
 
@@ -1895,10 +1918,10 @@ const healthBanner = computed(() => {
       :device="isMemberDetail ? memberDevice : undefined"
     />
     <LogsPanel
-      v-if="isMemberDetail && tab === 'logs'"
-      :key="`logs-${hostId}-${vmId}`"
+      v-if="tab === 'logs'"
+      :key="`logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
       :vm-id="vmId"
-      :device="memberDevice"
+      :device="isMemberDetail ? memberDevice : undefined"
     />
 
     <!-- Attach USB Device Modal -->

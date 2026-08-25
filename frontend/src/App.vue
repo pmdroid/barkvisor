@@ -72,6 +72,11 @@ watch(
 watch(() => route.path, () => { mobileMenuOpen.value = false })
 
 function isActive(path: string) {
+  if (path === '/vms') return route.path === '/vms' || /\/vms(\/|$)/.test(route.path)
+  if (path === '/devices') {
+    if (/\/vms(\/|$)/.test(route.path)) return false
+    return route.path.startsWith('/devices')
+  }
   return route.path.startsWith(path)
 }
 </script>
@@ -83,7 +88,7 @@ function isActive(path: string) {
   <div v-else class="layout">
     <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-header">
-        <img src="/onboarding-hero.png" class="sidebar-logo" alt="BarkVisor" />
+        <svg class="sidebar-logo" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect width="22" height="22" rx="4" fill="#0090f8"/><path d="M6.5 9v4M10 6.5v9M13.5 9.5v3M17 7.5v7" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg>
         <span class="sidebar-title">BarkVisor</span>
         <button class="mobile-menu-toggle" @click="mobileMenuOpen = !mobileMenuOpen" :aria-label="mobileMenuOpen ? 'Close menu' : 'Open menu'">
           <svg v-if="!mobileMenuOpen" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -95,7 +100,7 @@ function isActive(path: string) {
         </button>
       </div>
       <div class="sidebar-scope">
-        <label for="device-scope">{{ DEVICE_LABEL }}</label>
+        <label for="device-scope">{{ DEVICE_LABEL }} scope</label>
         <select
           id="device-scope"
           :value="deviceScope.selectedHostId"

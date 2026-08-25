@@ -576,7 +576,7 @@ async function saveKey() {
         :key="row.hostId || 'self'"
         type="button"
         class="pick"
-        :class="{ selected: selectedRow?.hostId === row.hostId, dimd: !row.deviceReachable }"
+        :class="{ selected: selectedRow?.hostId === row.hostId, dimd: !row.deviceReachable && selectedRow?.hostId !== row.hostId, bad: !row.deviceReachable && selectedRow?.hostId === row.hostId }"
         @click="selectDevice(row.hostId)"
       >
         <span class="pick-top">

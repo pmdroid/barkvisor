@@ -520,7 +520,24 @@ async function addRepo() {
   <div class="ops-page">
   <div class="ops-toolbar">
     <h1>Repositories</h1>
+    <span class="ops-sub">Template &amp; image catalog</span>
     <div class="ops-actions">
+      <input
+        v-if="activeTab === 'templates'"
+        v-model="templateSearch"
+        class="ops-search"
+        type="search"
+        placeholder="Search templates &amp; images"
+        style="width:200px"
+      />
+      <input
+        v-else
+        v-model="searchQuery"
+        class="ops-search"
+        type="search"
+        placeholder="Search templates &amp; images"
+        style="width:200px"
+      />
       <div class="repo-menu-wrap">
         <AppButton icon="settings" @click="showRepoSettings = !showRepoSettings">Manage</AppButton>
         <div v-if="showRepoSettings" class="repo-backdrop" @click="showRepoSettings = false"></div>
@@ -577,7 +594,7 @@ async function addRepo() {
         <option value="__all__">All Repos</option>
         <option v-for="r in activeRepos" :key="r.id" :value="r.id">{{ r.name }}</option>
       </AppSelect>
-      <input v-model="templateSearch" placeholder="Search templates..." style="flex:1;min-width:200px;font-size:13px;padding:7px 12px" />
+
       <TabGroup v-if="categoryTabs.length > 0" :model-value="activeCategory" :tabs="categoryTabs" @update:model-value="setCategory" />
       <span style="font-size:12px;color:var(--text-dim)">{{ filteredTemplates.length }} templates</span>
     </div>
@@ -589,13 +606,25 @@ async function addRepo() {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
       </div>
       <h2>Your catalog is empty</h2>
-      <p>Add a catalog repository and sync it to browse VM templates and cloud images you can deploy in one click.</p>
+      <p>Add a repository source to browse ready-made VM templates and images, then pull them onto any Device in your Home.</p>
       <div class="hero-row">
         <AppButton variant="primary" icon="settings" @click="showRepoSettings = true">Manage</AppButton>
       </div>
-      <div class="stat-row">
-        <div class="stat"><b>{{ templateTabCount }}</b><span>Templates</span></div>
-        <div class="stat"><b>{{ imageTabCount }}</b><span>Images</span></div>
+    </div>
+    <div v-if="showCatalogHero" class="stat-row">
+      <div class="stat">
+        <span class="big">{{ templateTabCount }}</span>
+        <div>
+          <div class="lbl">Templates</div>
+          <div class="sub">Ready-to-run VM definitions</div>
+        </div>
+      </div>
+      <div class="stat">
+        <span class="big">{{ imageTabCount }}</span>
+        <div>
+          <div class="lbl">Images</div>
+          <div class="sub">Cached install media on Devices</div>
+        </div>
       </div>
     </div>
 

@@ -16,9 +16,7 @@ import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice, 
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
-import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
-import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
@@ -34,15 +32,13 @@ import {
 import { canFetchDeviceWorkloads, deviceAboutPath, deviceCapabilitiesPath, deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { parseSystemAbout } from '../utils/systemAbout'
 import {
-  deviceResourcesLine,
-  deviceWorkloadLine,
   reachabilityHint,
   reachabilityLabel,
-  reachabilityPillClass,
 } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
-import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { healthLabel, vmHealth } from '../utils/workloadHealth'
+import { formatCores, formatMemoryMB, formatPortForwards } from '../utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
@@ -55,7 +51,6 @@ const toast = useToastStore()
 const hostId = computed(() => String(route.params.hostId ?? ''))
 const device = computed(() => devices.deviceByHostId(hostId.value))
 const reachLabel = computed(() => reachabilityLabel(device.value?.reachability))
-const reachPill = computed(() => reachabilityPillClass(device.value?.reachability))
 const reachHint = computed(() => (device.value ? reachabilityHint(device.value) : null))
 const title = computed(() => {
   if (!device.value) return hostId.value
@@ -90,8 +85,6 @@ const aboutReady = ref(false)
 const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
 const hostGPUGroups = computed(() => groupGpusByVendor(hostGPUs.value))
-const workloadLine = computed(() => (device.value ? deviceWorkloadLine(device.value) : ''))
-const resourcesLine = computed(() => (device.value ? deviceResourcesLine(device.value) : null))
 const failedVms = computed(() => vms.value.filter((vm) => vmHealth(vm) === 'failed'))
 
 function formatUptime(seconds: number | null | undefined): string {
@@ -112,18 +105,21 @@ const osFact = computed(() => {
 const roleFact = computed(() => (device.value?.role === 'self' ? `This ${DEVICE_LABEL}` : 'Member'))
 const cpuFact = computed(() => {
   const count = device.value?.resources?.cpuCount
-  return count == null ? '' : `${count} CPU`
-})
-const cpuFactSub = computed(() => {
+  if (count == null) return ''
   const load = device.value?.resources?.cpuLoadPercent
-  return load == null ? '' : `load ${load.toFixed(0)}%`
+  return load == null ? formatCores(count) : `${formatCores(count)} · ${load.toFixed(0)}% used`
 })
-const memoryFact = computed(() => (memoryTotalGB.value == null ? '' : `${memoryTotalGB.value.toFixed(0)} GB`))
-const memoryFactSub = computed(() => (latestMemoryGB.value == null ? '' : `${latestMemoryGB.value.toFixed(1)} GB in use`))
+const memoryFact = computed(() => {
+  const total = device.value?.resources?.memoryTotalMB
+  const used = device.value?.resources?.memoryUsedMB
+  if (total == null) return memoryTotalGB.value == null ? '' : `${memoryTotalGB.value.toFixed(0)} GB`
+  if (used == null) return formatMemoryMB(total)
+  return `${formatMemoryMB(total)} · ${formatMemoryMB(used)} used`
+})
 const addressFact = computed(() => {
   const host = device.value?.agentHost
   if (!host) return ''
-  return `${host}:${device.value?.agentPort}`
+  return host
 })
 const uptimeFact = computed(() => formatUptime(deviceAbout.value?.processUptimeSeconds))
 
@@ -369,20 +365,16 @@ async function doStop() {
   <div class="ops-page">
     <div class="ops-toolbar">
       <button class="back" type="button" @click="router.push('/devices')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5L3 6l4.5 4.5"/></svg>
         {{ DEVICE_LABEL }}s
       </button>
       <h1>{{ device ? title : hostId }}</h1>
+      <span v-if="device" :class="device.reachability === 'ok' ? 'pill-ok' : 'pill-bad'">{{ reachLabel }}</span>
       <span v-if="device" class="ops-sub">
-        <template v-if="device.role === 'self'">This {{ DEVICE_LABEL }} · </template>
         <template v-if="platformLabel">{{ platformLabel }} · </template>
-        {{ workloadLine }}
-        <template v-if="resourcesLine"> · {{ resourcesLine }}</template>
+        {{ roleFact }}
       </span>
       <div v-if="device" class="ops-actions">
-        <span class="status-pill" :class="reachPill">
-          {{ reachLabel }}
-        </span>
         <AppButton
           v-if="canFetchDeviceWorkloads(device)"
           variant="primary"
@@ -495,11 +487,11 @@ async function doStop() {
           </div>
           <div v-if="cpuFact" class="fact">
             <span class="k">CPU</span>
-            <span class="v">{{ cpuFact }}<span v-if="cpuFactSub" class="sub">{{ cpuFactSub }}</span></span>
+            <span class="v">{{ cpuFact }}</span>
           </div>
           <div v-if="memoryFact" class="fact">
             <span class="k">Memory</span>
-            <span class="v">{{ memoryFact }}<span v-if="memoryFactSub" class="sub">{{ memoryFactSub }}</span></span>
+            <span class="v">{{ memoryFact }}</span>
           </div>
           <div v-if="addressFact" class="fact">
             <span class="k">Address</span>
@@ -509,13 +501,16 @@ async function doStop() {
             <span class="k">Uptime</span>
             <span class="v">{{ uptimeFact }}</span>
           </div>
-          <div v-if="deviceAbout" class="fact">
+          <div class="fact">
             <span class="k">Virtualization</span>
-            <span class="v">{{ deviceAbout.accelerator }}</span>
+            <span class="v">
+              {{ deviceAbout?.accelerator || (device.features?.kvmDevice ? 'KVM' : '—') }}
+              <span v-if="device.features?.kvmDevice" class="ops-ok-text">available</span>
+            </span>
           </div>
           <div v-if="deviceAbout" class="fact">
             <span class="k">Agent</span>
-            <span class="v">{{ deviceAbout.version }}</span>
+            <span class="v">barkvisord {{ deviceAbout.version }}</span>
           </div>
         </div>
         <p v-if="!deviceAbout" class="gpu-card-status" style="padding:10px 14px;margin:0">Could not load this {{ DEVICE_LABEL.toLowerCase() }} version.</p>
@@ -555,63 +550,47 @@ async function doStop() {
         <p v-else-if="showLoadingWorkloads" class="list-loading">Loading workloads...</p>
 
         <div v-else-if="listSettled || vms.length > 0" class="sheet workloads-sheet">
-        <div class="sheet-head">Workloads <span style="font-variant-numeric:tabular-nums">{{ vms.length }}</span></div>
-        <DataTable
-          :columns="[
-            { key: 'name', label: 'Workload' },
-            { key: 'resources', label: 'Resources' },
-            { key: 'status', label: 'Status' },
-            { key: 'actions', label: '' },
-          ]"
-        >
-          <tr v-for="vm in vms" :key="vm.id" class="vm-row" @click="openWorkload(vm)">
+        <div class="sheet-head"><h3>Workloads</h3><span class="n">{{ vms.length }}</span></div>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>OS</th><th>CPU · Mem</th><th>Ports</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+          <tr v-for="vm in vms" :key="vm.id" class="vm-row" :class="{ failed: vmHealth(vm) === 'failed' }" @click="openWorkload(vm)">
             <td>
-              <div class="vm-name">{{ vm.name }}</div>
-              <div v-if="vm.description" class="vm-desc">{{ vm.description }}</div>
+              <div class="vm">{{ vm.name }}</div>
             </td>
-            <td class="vm-res">
-              {{ vm.cpuCount }} CPU ·
-              {{ vm.memoryMB >= 1024
-                ? (vm.memoryMB / 1024).toFixed(vm.memoryMB % 1024 === 0 ? 0 : 1) + ' GB'
-                : vm.memoryMB + ' MB' }}
-            </td>
+            <td>{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</td>
+            <td class="num">{{ formatCores(vm.cpuCount) }} · {{ formatMemoryMB(vm.memoryMB) }}</td>
+            <td class="ports">{{ formatPortForwards(vm.portForwards) }}</td>
             <td>
               <span
-                class="status-pill"
-                :class="healthPillClass(vmHealth(vm))"
+                class="state status-pill"
+                :class="vmHealth(vm) === 'failed' ? 'bad' : vmHealth(vm) === 'stopped' || vmHealth(vm) === 'unknown' ? 'off' : 'ok'"
                 :title="vm.status?.healthError || undefined"
               >{{ healthLabel(vmHealth(vm)) }}</span>
+              <div v-if="vm.status?.healthError" class="row-sub ops-bad-text">{{ vm.status.healthError }}</div>
             </td>
-            <td>
-              <div class="vm-actions" @click.stop>
-                <AppButton
-                  v-if="vm.state === 'stopped' || vm.state === 'error'"
-                  variant="primary"
-                  size="sm"
-                  :disabled="workloads.isActing(hostId, vm.id)"
-                  @click="doStart(vm.id)"
-                >
-                  {{ workloads.isActing(hostId, vm.id) ? 'Starting...' : 'Start' }}
-                </AppButton>
-                <template v-else-if="vm.state === 'running'">
-                  <AppButton
-                    variant="warning"
-                    size="sm"
-                    :disabled="restartLoading[vm.id] || workloads.isActing(hostId, vm.id)"
-                    @click="doRestart(vm.id)"
-                  >
-                    {{ restartLoading[vm.id] ? 'Restarting...' : 'Restart' }}
-                  </AppButton>
-                  <StopButtonGroup
-                    size="sm"
-                    :loading="workloads.isActing(hostId, vm.id)"
-                    @stop="requestStop(vm.id, $event)"
-                  />
-                </template>
-              </div>
+            <td class="acts" @click.stop>
+              <button
+                v-if="vm.state === 'stopped' || vm.state === 'error'"
+                type="button"
+                class="mini go"
+                :disabled="workloads.isActing(hostId, vm.id)"
+                @click="doStart(vm.id)"
+              >
+                {{ workloads.isActing(hostId, vm.id) ? 'Starting...' : 'Start' }}
+              </button>
+              <template v-else-if="vm.state === 'running'">
+                <button type="button" class="mini" :disabled="workloads.isActing(hostId, vm.id)" @click="requestStop(vm.id, 'acpi')">Stop</button>
+                <button type="button" class="mini" :disabled="restartLoading[vm.id] || workloads.isActing(hostId, vm.id)" @click="doRestart(vm.id)">
+                  {{ restartLoading[vm.id] ? 'Restarting...' : 'Restart' }}
+                </button>
+              </template>
             </td>
           </tr>
-        </DataTable>
+          </tbody>
+        </table>
         </div>
       </template>
     </template>

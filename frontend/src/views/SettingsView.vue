@@ -788,6 +788,15 @@ onUnmounted(() => {
   <div class="ops-toolbar">
     <h1>Settings</h1>
     <span v-if="homeToolbarSub" class="ops-sub">{{ homeToolbarSub }}</span>
+    <div class="ops-actions">
+      <AppButton
+        v-if="tab === 'home'"
+        variant="primary"
+        :loading="remoteAccessSaving || depotSaving"
+        :disabled="!remoteAccess || remoteAccessLoading"
+        @click="saveRemoteAccess(); saveDepotSettings()"
+      >Save changes</AppButton>
+    </div>
   </div>
   <div class="ops-body">
 
@@ -805,11 +814,11 @@ onUnmounted(() => {
   <div v-if="tab === 'home'">
     <div class="facts">
       <div class="fact">
-        <span class="k">Device name</span>
+        <span class="k">Device name<span>How this Device appears in the Home</span></span>
         <span class="v">{{ homeDeviceName }}</span>
       </div>
       <div class="fact">
-        <span class="k">Advertised hosts</span>
+        <span class="k">Advertised hosts<span>Addresses other Devices use to reach this one</span></span>
         <span class="v">
           <span v-if="advertisedHostChips.length" class="hosts">
             <span v-for="host in advertisedHostChips" :key="host" class="host">{{ host }}</span>
@@ -818,14 +827,14 @@ onUnmounted(() => {
         </span>
       </div>
       <div class="fact">
-        <span class="k">Role</span>
+        <span class="k">Role<span>What you can do on this Home</span></span>
         <span class="v role">
           <span class="role-tag">{{ roleTag }}</span>
           <span style="font-size:12px;color:var(--text-dim)">{{ roleNote }}</span>
         </span>
       </div>
       <div class="fact" style="border-bottom:0">
-        <span class="k">Add a {{ DEVICE_LABEL }}</span>
+        <span class="k">Add a {{ DEVICE_LABEL }}<span>Grow this Home</span></span>
         <span class="v pair-line">
           Pairing is how you add a {{ DEVICE_LABEL }}. <a @click="openPairingTab">Open Pairing →</a>
         </span>

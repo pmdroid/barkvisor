@@ -26,7 +26,7 @@ describe('Network Management', () => {
 
   it('lists the default NAT network', () => {
     cy.contains('.nrow', 'Default NAT').should('exist')
-    cy.contains('.nrow', 'Default NAT').find('.badge').contains('nat').should('exist')
+    cy.contains('.nrow', 'Default NAT').find('.badge, .tag').contains(/nat/i).should('exist')
     cy.contains('.nrow', 'Default NAT').click()
     cy.get('.inspect').contains('.chip', 'Default NAT').should('exist')
   })
