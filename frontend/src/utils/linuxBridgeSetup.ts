@@ -10,6 +10,21 @@ import {
 export const BRIDGE_MUTATION_ACTION_KEYS = ['setup', 'start', 'stop', 'remove'] as const
 export type BridgeMutationActionKey = (typeof BRIDGE_MUTATION_ACTION_KEYS)[number]
 
+/**
+ * Cached host-bridge facts belong to the Device (and guide mode) currently shown.
+ * Pass mode when switching Linux ↔ macOS so a shared snapshot cannot leak commands.
+ */
+export function readinessAppliesTo(
+  hostId: string,
+  snapshotHostId: string | null | undefined,
+  mode?: string,
+  snapshotMode?: string | null,
+): boolean {
+  if (snapshotHostId == null || snapshotHostId !== hostId) return false
+  if (mode != null && snapshotMode !== mode) return false
+  return true
+}
+
 /** Matches SocketVmnetDiscovery.installHint with one command per line. */
 export const SOCKET_VMNET_INSTALL_COMMANDS = [
   'brew install socket_vmnet',

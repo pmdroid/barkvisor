@@ -6,6 +6,7 @@ import {
   linuxBridgeStatusSummary,
   macosSocketVmnetSetupGroups,
   macosSocketVmnetStatusSummary,
+  readinessAppliesTo,
   SOCKET_VMNET_INSTALL_COMMANDS,
 } from './linuxBridgeSetup'
 
@@ -116,5 +117,22 @@ describe('macosSocketVmnetSetup', () => {
   test('missing facts keep a copyable guide', () => {
     expect(macosSocketVmnetStatusSummary(null)).toContain('socket_vmnet')
     expect(macosSocketVmnetStatusSummary(base({ ready: false }))).toContain('Homebrew')
+  })
+})
+
+describe('readinessAppliesTo', () => {
+  test('requires the snapshot Device, not a previous host', () => {
+    expect(readinessAppliesTo('mac-1', 'mac-1')).toBe(true)
+    expect(readinessAppliesTo('mac-1', 'linux-1')).toBe(false)
+    expect(readinessAppliesTo('mac-1', null)).toBe(false)
+    expect(readinessAppliesTo('mac-1', undefined)).toBe(false)
+    expect(readinessAppliesTo('', '')).toBe(true)
+  })
+
+  test('Linux ↔ macOS mode change drops the shared snapshot', () => {
+    expect(readinessAppliesTo('host-1', 'host-1', 'macos-guide', 'linux-guide')).toBe(false)
+    expect(readinessAppliesTo('host-1', 'host-1', 'linux-guide', 'macos-guide')).toBe(false)
+    expect(readinessAppliesTo('host-1', 'host-1', 'macos-guide', 'macos-guide')).toBe(true)
+    expect(readinessAppliesTo('host-1', 'linux-1', 'macos-guide', 'linux-guide')).toBe(false)
   })
 })

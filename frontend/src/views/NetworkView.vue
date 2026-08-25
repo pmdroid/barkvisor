@@ -33,6 +33,7 @@ import {
   linuxBridgeStatusSummary,
   macosSocketVmnetSetupGroups,
   macosSocketVmnetStatusSummary,
+  readinessAppliesTo,
 } from '../utils/linuxBridgeSetup'
 import { DEVICE_LABEL } from '../utils/terminology'
 
@@ -185,12 +186,27 @@ const canShowBridgeSetup = computed(() => {
 })
 const linuxReadiness = ref<HostBridgeReadiness | null>(null)
 const linuxReadinessHostId = ref<string | null>(null)
+const linuxReadinessMode = ref<string | null>(null)
 const linuxReadinessLoading = ref(false)
+/** Newest host-bridge-readiness request; stale completions must not write. */
+let readinessSeq = 0
+
+const appliedReadiness = computed(() => {
+  if (!readinessAppliesTo(
+    bridgeDevice.value?.hostId ?? '',
+    linuxReadinessHostId.value,
+    selectedBridgeMode.value,
+    linuxReadinessMode.value,
+  )) {
+    return null
+  }
+  return linuxReadiness.value
+})
 const linuxSetupGroups = computed(() =>
-  linuxReadiness.value ? linuxBridgeSetupGroups(linuxReadiness.value) : [],
+  appliedReadiness.value ? linuxBridgeSetupGroups(appliedReadiness.value) : [],
 )
-const macosSetupGroups = computed(() => macosSocketVmnetSetupGroups(linuxReadiness.value))
-const macosStatusSummary = computed(() => macosSocketVmnetStatusSummary(linuxReadiness.value))
+const macosSetupGroups = computed(() => macosSocketVmnetSetupGroups(appliedReadiness.value))
+const macosStatusSummary = computed(() => macosSocketVmnetStatusSummary(appliedReadiness.value))
 
 const bridgeDeviceOptions = computed(() =>
   devicesStore.devices
@@ -317,41 +333,54 @@ async function loadFormContext() {
   if (bridged.available) await fetchLocalBridges()
 }
 
+function discardReadinessForScope(hostId: string, mode: string): void {
+  if (readinessAppliesTo(hostId, linuxReadinessHostId.value, mode, linuxReadinessMode.value)) return
+  readinessSeq += 1
+  linuxReadiness.value = null
+  linuxReadinessHostId.value = hostId
+  linuxReadinessMode.value = mode
+}
+
 async function loadBridgeContext() {
   const device = bridgeDevice.value
-  const showGuide = selectedBridgeMode.value !== 'hidden'
+  const hostId = device?.hostId ?? ''
+  const mode = selectedBridgeMode.value
+  const showGuide = mode !== 'hidden'
+  discardReadinessForScope(hostId, mode)
+  if (showGuide) linuxReadinessLoading.value = true
   if (device && useHomeUnion.value) {
     await homeNets.fetchContext(device)
     if (showGuide) await fetchLinuxReadiness()
     return
   }
   await fetchLocalInterfaces()
-  if (bridged.available || selectedBridgeMode.value === 'macos-guide') await fetchLocalBridges()
+  if (bridged.available || mode === 'macos-guide') await fetchLocalBridges()
   if (showGuide) await fetchLinuxReadiness()
 }
 
 async function fetchLinuxReadiness() {
   const device = bridgeDevice.value
   const requestHost = device?.hostId ?? ''
+  const requestMode = selectedBridgeMode.value
+  discardReadinessForScope(requestHost, requestMode)
+  const seq = ++readinessSeq
   linuxReadinessLoading.value = true
-  if (linuxReadinessHostId.value !== requestHost) {
-    linuxReadiness.value = null
-    linuxReadinessHostId.value = requestHost
-  }
   try {
     const path =
       device && useHomeUnion.value
         ? deviceHostBridgeReadinessPath(device)
         : '/system/host-bridge-readiness'
     const { data } = await api.get<HostBridgeReadiness>(path)
-    if ((bridgeDevice.value?.hostId ?? '') !== requestHost) return
+    if (seq !== readinessSeq) return
     linuxReadiness.value = data
+    linuxReadinessHostId.value = requestHost
+    linuxReadinessMode.value = requestMode
   } catch {
-    if ((bridgeDevice.value?.hostId ?? '') !== requestHost) return
+    if (seq !== readinessSeq) return
     // Same Device: keep a prior successful snapshot. First miss stays null
     // so Bridge setup can show "Could not read" instead of a fake DTO.
   } finally {
-    linuxReadinessLoading.value = false
+    if (seq === readinessSeq) linuxReadinessLoading.value = false
   }
 }
 
@@ -388,7 +417,7 @@ watch(showBridges, (open) => {
   }
 })
 
-watch(bridgeHostId, () => {
+watch([bridgeHostId, selectedBridgeMode], () => {
   if (showBridges.value) void loadBridgeContext()
 })
 
@@ -577,10 +606,10 @@ async function doDeleteNetwork() {
     </div>
     <div v-if="selectedBridgeMode === 'linux-guide'" class="linux-bridge-guide">
       <p v-if="linuxReadinessLoading" style="color:var(--text-secondary);font-size:13px">Checking this Device…</p>
-      <template v-else-if="linuxReadiness">
-        <p style="font-size:13px;margin:0 0 12px">{{ linuxBridgeStatusSummary(linuxReadiness) }}</p>
-        <ul v-if="linuxReadiness.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
-          <li v-for="br in linuxReadiness.bridges" :key="br.name">
+      <template v-else-if="appliedReadiness">
+        <p style="font-size:13px;margin:0 0 12px">{{ linuxBridgeStatusSummary(appliedReadiness) }}</p>
+        <ul v-if="appliedReadiness.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in appliedReadiness.bridges" :key="br.name">
             <span class="mono">{{ br.name }}</span>
             <span v-if="br.enslaved.length" style="color:var(--text-secondary)">
               — {{ br.enslaved.join(', ') }}
@@ -592,7 +621,7 @@ async function doDeleteNetwork() {
           :groups="linuxSetupGroups"
           :initial-open="linuxSetupGroups[0]?.id ?? null"
         />
-        <p v-if="linuxReadiness.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
+        <p v-if="appliedReadiness.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
           Do not enslave the only uplink. Prefer NAT on this Device.
         </p>
       </template>
@@ -604,8 +633,8 @@ async function doDeleteNetwork() {
       <p v-if="linuxReadinessLoading" style="color:var(--text-secondary);font-size:13px">Checking this Device…</p>
       <template v-else>
         <p style="font-size:13px;margin:0 0 12px">{{ macosStatusSummary }}</p>
-        <ul v-if="linuxReadiness?.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
-          <li v-for="br in (linuxReadiness?.bridges ?? [])" :key="br.name">
+        <ul v-if="appliedReadiness?.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in (appliedReadiness?.bridges ?? [])" :key="br.name">
             <span class="mono">{{ br.name }}</span>
           </li>
         </ul>
