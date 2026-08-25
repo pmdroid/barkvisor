@@ -64,5 +64,12 @@ struct OllamaLibrarySearchTests {
         #expect(SSRFGuard.fetchRejection(for: other, allowedHosts: OllamaLibrarySearch.allowedHosts) != nil)
         let loopback = try #require(URL(string: "https://127.0.0.1/api/tags"))
         #expect(SSRFGuard.fetchRejection(for: loopback, allowedHosts: OllamaLibrarySearch.allowedHosts) != nil)
+        #expect(
+            SSRFGuard.shouldFollowRedirect(
+                to: OllamaLibrarySearch.upstreamURL,
+                allowedHosts: OllamaLibrarySearch.allowedHosts,
+            ),
+        )
+        #expect(!SSRFGuard.shouldFollowRedirect(to: other, allowedHosts: OllamaLibrarySearch.allowedHosts))
     }
 }

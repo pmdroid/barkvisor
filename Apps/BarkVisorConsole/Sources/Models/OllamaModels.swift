@@ -397,6 +397,12 @@ struct OllamaLibrarySearchResponse: Decodable, Equatable {
         let q = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return q.isEmpty ? nil : q
     }
+
+    static func accept(_ response: OllamaLibrarySearchResponse, currentQuery: String)
+        -> OllamaLibrarySearchResponse? {
+        guard let q = query(currentQuery), q == response.query else { return nil }
+        return response
+    }
 }
 
 struct OllamaPullBody: Encodable, Equatable {

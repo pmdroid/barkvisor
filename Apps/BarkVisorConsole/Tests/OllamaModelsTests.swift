@@ -145,6 +145,9 @@ struct OllamaModelsTests {
         let decoded = try decoder.decode(OllamaLibrarySearchResponse.self, from: json)
         #expect(decoded.results[0].pullName == "llama3.2")
         #expect(decoded.upstream == "https://ollama.com/api/tags")
+        #expect(OllamaLibrarySearchResponse.accept(decoded, currentQuery: "llama") != nil)
+        #expect(OllamaLibrarySearchResponse.accept(decoded, currentQuery: "phi") == nil)
+        #expect(OllamaLibrarySearchResponse.accept(decoded, currentQuery: " llama ") != nil)
     }
 
     @Test func `name filter is case insensitive and ignores blank query`() {

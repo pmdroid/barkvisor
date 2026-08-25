@@ -11,8 +11,8 @@ struct ModelsView: View {
     @State private var pullEvent: OllamaTaskEvent?
     @State private var nameQuery = ""
     @State private var libraryQuery = ""
-    @State private var libraryResults: [OllamaLibrarySearchResult] = []
-    @State private var librarySearched = false
+    @State private var libraryHits: OllamaLibrarySearchResponse?
+    @State private var librarySearchGen = 0
     @State private var librarySearching = false
     @State private var libraryError: String?
     @State private var startCandidate: OllamaCatalogModel?
@@ -84,18 +84,21 @@ struct ModelsView: View {
                         } else if let libraryError {
                             Text(libraryError)
                                 .foregroundStyle(.secondary)
-                        } else if librarySearched, libraryResults.isEmpty {
-                            Text("No library matches.")
-                                .foregroundStyle(.secondary)
-                        } else if librarySearched {
-                            ForEach(libraryResults) { row in
-                                HStack {
-                                    Text(row.name)
-                                    Spacer()
-                                    Button("Download") {
-                                        Task { await pullModel(name: row.pullName) }
+                        } else if let hits = libraryHits,
+                                  hits.query == OllamaLibrarySearchResponse.query(libraryQuery) {
+                            if hits.results.isEmpty {
+                                Text("No library matches.")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(hits.results) { row in
+                                    HStack {
+                                        Text(row.name)
+                                        Spacer()
+                                        Button("Download") {
+                                            Task { await pullModel(name: row.pullName) }
+                                        }
+                                        .disabled(row.pullName.isEmpty || pulling)
                                     }
-                                    .disabled(row.pullName.isEmpty || pulling)
                                 }
                             }
                         }
@@ -662,22 +665,28 @@ struct ModelsView: View {
     }
 
     private func searchLibrary() async {
+        let gen = librarySearchGen + 1
+        librarySearchGen = gen
         guard let q = OllamaLibrarySearchResponse.query(libraryQuery) else {
-            libraryResults = []
-            librarySearched = false
+            guard librarySearchGen == gen else { return }
+            libraryHits = nil
             libraryError = nil
             return
         }
         librarySearching = true
         libraryError = nil
-        defer { librarySearching = false }
+        defer {
+            if librarySearchGen == gen { librarySearching = false }
+        }
         do {
             let data = try await model.searchOllamaLibrary(q)
-            libraryResults = data.results
-            librarySearched = true
+            guard librarySearchGen == gen else { return }
+            guard let hits = OllamaLibrarySearchResponse.accept(data, currentQuery: libraryQuery)
+            else { return }
+            libraryHits = hits
         } catch {
-            libraryResults = []
-            librarySearched = true
+            guard librarySearchGen == gen else { return }
+            libraryHits = nil
             libraryError = error.localizedDescription
         }
     }

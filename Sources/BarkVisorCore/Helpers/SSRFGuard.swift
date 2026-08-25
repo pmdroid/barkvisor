@@ -168,20 +168,30 @@ public enum SSRFGuard {
 
     /// Whether a redirect hop may be fetched. Default URLSession follows blindly;
     /// Library downloads must re-run ``validate(url:)`` (scheme + DNS) on Location.
-    public static func shouldFollowRedirect(to url: URL) -> Bool {
-        fetchRejection(for: url) == nil
+    public static func shouldFollowRedirect(to url: URL, allowedHosts: Set<String>? = nil) -> Bool {
+        if let allowedHosts {
+            return fetchRejection(for: url, allowedHosts: allowedHosts) == nil
+        }
+        return fetchRejection(for: url) == nil
     }
 
     /// URLSession that only follows hops ``shouldFollowRedirect(to:)`` allows.
     /// HTTP(S) is handled by ``SSRFPinnedURLProtocol``, which connects to the
     /// address ``pinEndpoint`` approved and keeps Host / TLS SNI on the original name.
-    public static func urlSession(resourceTimeout: TimeInterval = 60) -> URLSession {
+    public static func urlSession(
+        resourceTimeout: TimeInterval = 60,
+        allowedHosts: Set<String>? = nil,
+    ) -> URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForResource = resourceTimeout
         config.timeoutIntervalForRequest = resourceTimeout
-        config.httpAdditionalHeaders = [
+        var headers: [AnyHashable: Any] = [
             SSRFPinnedURLProtocol.timeoutHeader: String(Int(resourceTimeout.rounded(.up))),
         ]
+        if let allowedHosts, !allowedHosts.isEmpty {
+            headers[SSRFPinnedURLProtocol.allowedHostsHeader] = allowedHosts.sorted().joined(separator: ",")
+        }
+        config.httpAdditionalHeaders = headers
         config.protocolClasses = [SSRFPinnedURLProtocol.self]
         return URLSession(
             configuration: config,
@@ -248,7 +258,13 @@ final class SSRFRedirectGate: NSObject, URLSessionTaskDelegate, @unchecked Senda
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void,
     ) {
-        guard let url = request.url, SSRFGuard.shouldFollowRedirect(to: url) else {
+        guard let url = request.url else {
+            completionHandler(nil)
+            return
+        }
+        let allowed = SSRFPinnedURLProtocol.allowedHosts(in: request)
+            ?? SSRFPinnedURLProtocol.allowedHosts(in: task.originalRequest)
+        guard SSRFGuard.shouldFollowRedirect(to: url, allowedHosts: allowed) else {
             completionHandler(nil)
             return
         }

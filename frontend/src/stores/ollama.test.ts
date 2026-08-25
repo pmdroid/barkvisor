@@ -82,7 +82,36 @@ describe('ollama store (PAS-269)', () => {
     const data = await store.searchLibrary('llama')
     expect(get.mock.calls[0]?.[0]).toBe('/home/ollama/library/search')
     expect(get.mock.calls[0]?.[1]).toEqual({ params: { q: 'llama' } })
-    expect(data.results[0]?.name).toBe('llama3.2')
+    expect(data?.results[0]?.name).toBe('llama3.2')
+  })
+
+  test('searchLibrary drops a superseded in-flight result', async () => {
+    let finishFirst: ((value: { data: { query: string; upstream: string; results: { name: string }[] } }) => void)
+      | undefined
+    let finishSecond: ((value: { data: { query: string; upstream: string; results: { name: string }[] } }) => void)
+      | undefined
+    const get = mock((_path: string, config?: { params?: { q?: string } }) => {
+      if (config?.params?.q === 'llama') {
+        return new Promise((resolve) => {
+          finishFirst = resolve
+        })
+      }
+      return new Promise((resolve) => {
+        finishSecond = resolve
+      })
+    })
+    api.get = get as typeof api.get
+    const store = useOllamaStore()
+    const first = store.searchLibrary('llama')
+    const second = store.searchLibrary('phi')
+    finishFirst?.({
+      data: { query: 'llama', upstream: 'https://ollama.com/api/tags', results: [{ name: 'llama3.2' }] },
+    })
+    finishSecond?.({
+      data: { query: 'phi', upstream: 'https://ollama.com/api/tags', results: [{ name: 'phi3' }] },
+    })
+    expect(await first).toBeNull()
+    expect((await second)?.results[0]?.name).toBe('phi3')
   })
 
   test('start omits hostId so Home picks the Device', async () => {

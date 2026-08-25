@@ -16,6 +16,7 @@ export const useOllamaStore = defineStore('ollama', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   let fetchSeq = 0
+  let searchSeq = 0
 
   const anyReachable = computed(() => catalog.value?.anyReachable === true)
   const models = computed(() => catalog.value?.models ?? [])
@@ -56,10 +57,12 @@ export const useOllamaStore = defineStore('ollama', () => {
     return data
   }
 
-  async function searchLibrary(q: string): Promise<OllamaLibrarySearchResponse> {
+  async function searchLibrary(q: string): Promise<OllamaLibrarySearchResponse | null> {
+    const seq = ++searchSeq
     const { data } = await api.get<OllamaLibrarySearchResponse>('/home/ollama/library/search', {
       params: { q },
     })
+    if (seq !== searchSeq) return null
     return data
   }
 

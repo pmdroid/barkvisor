@@ -94,8 +94,13 @@ struct HomeOllamaController: RouteCollection {
             throw BarkVisorError.badGateway(reason)
         }
         let data: Data
+        let session = SSRFGuard.urlSession(
+            resourceTimeout: 15,
+            allowedHosts: OllamaLibrarySearch.allowedHosts,
+        )
+        defer { session.invalidateAndCancel() }
         do {
-            let (body, response) = try await SSRFGuard.defaultSession.data(from: url)
+            let (body, response) = try await session.data(from: url)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200 ..< 300).contains(status) else {
                 throw BarkVisorError.badGateway("Ollama library is unreachable")

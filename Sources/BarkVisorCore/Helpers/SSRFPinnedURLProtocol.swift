@@ -11,6 +11,7 @@ import NIOHTTP1
 /// and shut down once at the end; per-hop re-pin does not recreate it.
 class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     static let timeoutHeader = "X-BarkVisor-SSRF-Timeout"
+    static let allowedHostsHeader = "X-BarkVisor-SSRF-Allowed-Hosts"
     private static let maxRedirects = 16
     private var work: Task<Void, Never>?
 
@@ -111,6 +112,16 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         )
     }
 
+    static func allowedHosts(in request: URLRequest?) -> Set<String>? {
+        guard let raw = request?.value(forHTTPHeaderField: allowedHostsHeader) else { return nil }
+        let hosts = Set(
+            raw.split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }.filter { !$0.isEmpty },
+        )
+        return hosts.isEmpty ? nil : hosts
+    }
+
     private func resourceTimeout(from request: URLRequest) -> TimeInterval {
         if let raw = request.value(forHTTPHeaderField: Self.timeoutHeader),
            let seconds = TimeInterval(raw), seconds > 0 {
@@ -132,7 +143,8 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         let nextURL = SSRFGuard.redirectTarget(
             statusCode: status, location: location, from: url,
         )
-        if let nextURL, SSRFGuard.shouldFollowRedirect(to: nextURL),
+        if let nextURL,
+           SSRFGuard.shouldFollowRedirect(to: nextURL, allowedHosts: Self.allowedHosts(in: request)),
            let nextPin = try? Self.pinEndpoint(url: nextURL) {
             for try await _ in body {
                 try Task.checkCancellation()

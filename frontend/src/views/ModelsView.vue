@@ -427,9 +427,13 @@ function pullPath(task: OllamaTaskAccepted): string {
   return ollamaPullTaskPath(task, devices.selfDevice?.hostId)
 }
 
+let librarySearchGen = 0
+
 async function searchLibrary() {
   const q = ollamaLibrarySearchQuery(libraryQuery.value)
+  const gen = ++librarySearchGen
   if (!q) {
+    if (gen !== librarySearchGen) return
     libraryResults.value = []
     librarySearched.value = false
     libraryError.value = null
@@ -439,14 +443,16 @@ async function searchLibrary() {
   libraryError.value = null
   try {
     const data = await store.searchLibrary(q)
+    if (gen !== librarySearchGen || !data) return
     libraryResults.value = data.results
     librarySearched.value = true
   } catch (e: unknown) {
+    if (gen !== librarySearchGen) return
     libraryResults.value = []
     librarySearched.value = true
     libraryError.value = apiErrorMessage(e, 'Ollama library is unreachable')
   } finally {
-    librarySearching.value = false
+    if (gen === librarySearchGen) librarySearching.value = false
   }
 }
 
