@@ -18,6 +18,34 @@ public enum LibrarySettings {
         url.standardizedFileURL.path == defaultDirectory.standardizedFileURL.path
     }
 
+    /// Capacity of the volume that contains `url`.
+    ///
+    /// `nil` when the path is missing or FileManager cannot read filesystem
+    /// attributes — never `(0, 0)` as a stand-in for unknown. Same
+    /// `.systemSize` / `.systemFreeSize` keys as host inventory data-dir storage.
+    public static func volumeUsage(at url: URL) -> (total: UInt64, free: UInt64)? {
+        let path = url.path
+        guard FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        guard let attrs = try? FileManager.default.attributesOfFileSystem(forPath: path) else {
+            return nil
+        }
+        guard let total = (attrs[.systemSize] as? NSNumber)?.uint64Value,
+              let free = (attrs[.systemFreeSize] as? NSNumber)?.uint64Value,
+              total > 0
+        else {
+            return nil
+        }
+        return (total, free)
+    }
+
+    /// `total - free` when both values are present and `total >= free`.
+    public static func usedBytes(total: UInt64?, free: UInt64?) -> UInt64? {
+        guard let total, let free, total >= free else { return nil }
+        return total - free
+    }
+
     /// Configured Library dir, or `{dataDir}/images` when unset/empty.
     /// Re-validates the stored path on every read (absolute, no comma).
     public static func resolvedDirectory(from db: Database) throws -> URL {
