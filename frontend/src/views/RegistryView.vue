@@ -368,15 +368,21 @@ const imagesEmptySubtitle = computed(() => {
   return undefined
 })
 
-const showCatalogHero = computed(() =>
-  activeTab.value === 'templates'
-  && !templateStore.loading
+const catalogEmpty = computed(() =>
+  !templateStore.loading
   && !homeLibrary.loading
-  && filteredTemplates.value.length === 0
-  && !templateSearch.value
-  && activeCategory.value === 'all'
-  && selectedRepoId.value === '__all__',
+  && !imagesLoading.value
+  && templateTabCount.value === 0
+  && imageTabCount.value === 0,
 )
+
+const catalogSearch = computed({
+  get: () => (activeTab.value === 'templates' ? templateSearch.value : searchQuery.value),
+  set: (value: string) => {
+    if (activeTab.value === 'templates') templateSearch.value = value
+    else searchQuery.value = value
+  },
+})
 
 watch([filterType, filterArch, searchQuery], () => { imagePage.value = 1 })
 
@@ -523,23 +529,14 @@ async function addRepo() {
     <span class="ops-sub">Template &amp; image catalog</span>
     <div class="ops-actions">
       <input
-        v-if="activeTab === 'templates'"
-        v-model="templateSearch"
-        class="ops-search"
-        type="search"
-        placeholder="Search templates &amp; images"
-        style="width:200px"
-      />
-      <input
-        v-else
-        v-model="searchQuery"
+        v-model="catalogSearch"
         class="ops-search"
         type="search"
         placeholder="Search templates &amp; images"
         style="width:200px"
       />
       <div class="repo-menu-wrap">
-        <AppButton icon="settings" @click="showRepoSettings = !showRepoSettings">Manage</AppButton>
+        <AppButton variant="primary" icon="settings" @click="showRepoSettings = !showRepoSettings">Manage</AppButton>
         <div v-if="showRepoSettings" class="repo-backdrop" @click="showRepoSettings = false"></div>
         <div v-if="showRepoSettings" class="repo-dropdown">
           <div class="repo-dropdown-head">Repositories</div>
@@ -570,8 +567,38 @@ async function addRepo() {
       </div>
     </div>
   </div>
-  <div class="ops-body">
+  <div class="ops-body" :class="{ catalog: catalogEmpty }">
 
+  <template v-if="catalogEmpty">
+    <div class="hero">
+      <div class="hero-icon">
+        <svg width="30" height="30" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M1.5 3.5a1 1 0 011-1h3L7 4h4.5a1 1 0 011 1v6a1 1 0 01-1 1h-9a1 1 0 01-1-1v-7.5z"/></svg>
+      </div>
+      <h2>Your catalog is empty</h2>
+      <p>Add a repository source to browse ready-made VM templates and images, then pull them onto any Device in your Home.</p>
+      <div class="hero-row">
+        <AppButton variant="primary" icon="settings" @click="showRepoSettings = true">Manage</AppButton>
+      </div>
+    </div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="big">0</span>
+        <div>
+          <div class="lbl">Templates</div>
+          <div class="sub">Ready-to-run VM definitions</div>
+        </div>
+      </div>
+      <div class="stat">
+        <span class="big">0</span>
+        <div>
+          <div class="lbl">Images</div>
+          <div class="sub">Cached install media on Devices</div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template v-else>
   <div class="tab-bar">
     <button
       type="button"
@@ -600,33 +627,6 @@ async function addRepo() {
     </div>
 
     <EmptyState v-if="templateStore.loading || homeLibrary.loading" title="Loading templates..." />
-
-    <div v-else-if="showCatalogHero" class="hero">
-      <div class="hero-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-      </div>
-      <h2>Your catalog is empty</h2>
-      <p>Add a repository source to browse ready-made VM templates and images, then pull them onto any Device in your Home.</p>
-      <div class="hero-row">
-        <AppButton variant="primary" icon="settings" @click="showRepoSettings = true">Manage</AppButton>
-      </div>
-    </div>
-    <div v-if="showCatalogHero" class="stat-row">
-      <div class="stat">
-        <span class="big">{{ templateTabCount }}</span>
-        <div>
-          <div class="lbl">Templates</div>
-          <div class="sub">Ready-to-run VM definitions</div>
-        </div>
-      </div>
-      <div class="stat">
-        <span class="big">{{ imageTabCount }}</span>
-        <div>
-          <div class="lbl">Images</div>
-          <div class="sub">Cached install media on Devices</div>
-        </div>
-      </div>
-    </div>
 
     <EmptyState
       v-else-if="filteredTemplates.length === 0"
@@ -787,6 +787,7 @@ async function addRepo() {
       </div>
     </div>
 
+  </template>
   </template>
 
   <!-- Add Repo Modal -->

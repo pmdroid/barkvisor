@@ -483,6 +483,18 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   overflow: hidden;
   padding: 14px 16px;
 }
+.ops-body.catalog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ops-body.catalog .hero {
+  min-height: 0;
+}
+.ops-body.catalog .stat-row {
+  flex-shrink: 0;
+  margin-top: 14px;
+}
 
 .ops-ticker {
   height: 30px;
