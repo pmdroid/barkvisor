@@ -20,6 +20,84 @@ struct OllamaModelsTests {
         #expect(object["hostId"] == "desk")
     }
 
+    @Test func `start uses locations not every reachable device`() {
+        let desk = OllamaModelLocation(hostId: "desk", displayName: "Desk", running: false, reachable: true)
+        let lab = OllamaModelLocation(hostId: "lab", displayName: "Lab", running: false, reachable: true)
+        let down = OllamaModelLocation(hostId: "down", displayName: "Garage", running: false, reachable: false)
+        let stale = OllamaModelLocation(hostId: "stale", displayName: "Attic", running: false, reachable: false)
+        let one = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [desk],
+        )
+        #expect(one.startLocations.map(\.hostId) == ["desk"])
+        #expect(one.soleStartHostId == "desk")
+        #expect(one.defaultStartHostId == "desk")
+        #expect(!one.startNeedsPicker)
+
+        let two = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [desk, lab],
+        )
+        #expect(two.startLocations.map(\.hostId) == ["desk", "lab"])
+        #expect(two.soleStartHostId == nil)
+        #expect(two.defaultStartHostId == "desk")
+        #expect(two.startNeedsPicker)
+        #expect(two.startLocations.map(\.title) == ["Desk", "Lab"])
+
+        let empty = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [],
+        )
+        #expect(empty.startLocations.isEmpty)
+        #expect(empty.soleStartHostId == nil)
+        #expect(empty.defaultStartHostId == nil)
+        #expect(!empty.startNeedsPicker)
+
+        let mixed = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [down, desk, stale],
+        )
+        #expect(mixed.startLocations.map(\.hostId) == ["desk", "down", "stale"])
+        #expect(mixed.soleStartHostId == "desk")
+        #expect(mixed.defaultStartHostId == "desk")
+        #expect(mixed.startNeedsPicker)
+
+        let onlyDown = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [down],
+        )
+        #expect(onlyDown.soleStartHostId == "down")
+        #expect(onlyDown.defaultStartHostId == nil)
+        #expect(!onlyDown.startNeedsPicker)
+
+        let allDown = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [down, stale],
+        )
+        #expect(allDown.startLocations.map(\.hostId) == ["down", "stale"])
+        #expect(allDown.soleStartHostId == nil)
+        #expect(allDown.defaultStartHostId == nil)
+        #expect(allDown.startNeedsPicker)
+    }
+
     @Test func `stop uses live running host not snapshot`() {
         let stale = OllamaCatalogModel(
             name: "llama3:latest",
@@ -119,6 +197,26 @@ struct OllamaModelsTests {
         #expect(fileURL.lastPathComponent == "ollama-ps.json")
         let fileText = try String(contentsOf: fileURL, encoding: .utf8)
         #expect(fileText == json)
+    }
+
+    @Test func `models view starts on sole location and picks among locations`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/ModelsView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("row.startNeedsPicker"))
+        #expect(source.contains("row.soleStartHostId"))
+        #expect(source.contains("row.defaultStartHostId"))
+        #expect(source.contains("row.startLocations"))
+        #expect(!source.contains("row.startLocations.first?.hostId"))
+        #expect(source.contains("startPickerDevices(for: row)"))
+        #expect(source.contains("OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)"))
+        #expect(!source.contains("OllamaReachableDevicePicker(hostId: $startHostId, devices: reachableDevices)"))
+        #expect(source.contains("allowAny: false"))
+        #expect(source.contains("(unreachable)"))
+        #expect(source.contains(".disabled(!device.reachable)"))
     }
 
     @Test func `models view shares export JSON`() throws {

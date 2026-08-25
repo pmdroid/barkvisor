@@ -48,7 +48,17 @@ import {
 } from '../utils/ollamaDeviceStats'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
-import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
+import {
+  ollamaDefaultStartHostId,
+  ollamaModelMatchesName,
+  ollamaPullPercent,
+  ollamaPullTaskPath,
+  ollamaRunningHostId,
+  ollamaSoleStartHostId,
+  ollamaStartBody,
+  ollamaStartLocations,
+  ollamaStartNeedsPicker,
+} from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { scopeOllamaModels, scopeRows } from '../utils/deviceScope'
 import { inferenceHowToFromOrigin, tailnetListenHost } from '../utils/inferenceApiHowTo'
@@ -118,6 +128,17 @@ const hostOptions = computed(() =>
       value: row.hostId,
       label: row.displayName?.trim() || row.hostId,
     })),
+)
+
+const startHostOptions = computed(() =>
+  ollamaStartLocations(startTarget.value).map((loc) => {
+    const name = loc.displayName?.trim() || loc.hostId
+    return {
+      value: loc.hostId,
+      label: loc.reachable ? name : `${name} (unreachable)`,
+      disabled: !loc.reachable,
+    }
+  }),
 )
 
 const filteredModels = computed(() =>
@@ -394,20 +415,23 @@ async function cancelPull() {
 }
 
 function requestStart(model: OllamaCatalogModel) {
-  startTarget.value = model
-  startHost.value = ''
+  if (starting.value) return
+  if (ollamaStartNeedsPicker(model)) {
+    startTarget.value = model
+    startHost.value = ollamaDefaultStartHostId(model) ?? ''
+    return
+  }
+  void startModelAt(model, ollamaSoleStartHostId(model))
 }
 
 function requestStop(model: OllamaCatalogModel) {
   stopTarget.value = model
 }
 
-async function startModel() {
-  const model = startTarget.value
-  if (!model) return
+async function startModelAt(model: OllamaCatalogModel, hostId?: string) {
   starting.value = true
   try {
-    const body = ollamaStartBody(model.name, startHost.value || undefined)
+    const body = ollamaStartBody(model.name, hostId)
     await store.start(body.name, body.hostId)
     toast.success(`Ollama loaded ${model.name}`)
     startTarget.value = null
@@ -417,6 +441,12 @@ async function startModel() {
   } finally {
     starting.value = false
   }
+}
+
+async function startModel() {
+  const model = startTarget.value
+  if (!model) return
+  await startModelAt(model, startHost.value || undefined)
 }
 
 async function stopModel() {
@@ -696,7 +726,7 @@ async function saveKey() {
             </span>
           </td>
           <td v-if="auth.isAdmin" style="text-align:right;white-space:nowrap">
-            <AppButton v-if="!model.running" size="sm" @click="requestStart(model)">Start</AppButton>
+            <AppButton v-if="!model.running" size="sm" :disabled="starting" @click="requestStart(model)">Start</AppButton>
             <AppButton v-else size="sm" @click="requestStop(model)">Stop</AppButton>
           </td>
         </tr>
@@ -736,13 +766,23 @@ async function saveKey() {
   <AppModal v-if="startTarget" :title="`Start ${startTarget.name}`" @close="!starting && (startTarget = null)">
     <div class="form-group" style="margin:0">
       <select v-model="startHost" style="min-width:160px">
-        <option value="">Any reachable {{ DEVICE_LABEL }}</option>
-        <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        <option
+          v-for="opt in startHostOptions"
+          :key="opt.value"
+          :value="opt.value"
+          :disabled="opt.disabled"
+        >{{ opt.label }}</option>
       </select>
     </div>
     <template #actions>
       <AppButton variant="ghost" :disabled="starting" @click="startTarget = null">Cancel</AppButton>
-      <AppButton variant="primary" :loading="starting" loading-text="Starting..." @click="startModel">Start</AppButton>
+      <AppButton
+        variant="primary"
+        :disabled="!startHost || startHostOptions.find((opt) => opt.value === startHost)?.disabled"
+        :loading="starting"
+        loading-text="Starting..."
+        @click="startModel"
+      >Start</AppButton>
     </template>
   </AppModal>
 

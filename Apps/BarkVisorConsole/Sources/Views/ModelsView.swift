@@ -328,8 +328,12 @@ struct ModelsView: View {
     }
 
     private func beginStart(_ row: OllamaCatalogModel) {
-        startHostId = ""
-        startCandidate = row
+        if row.startNeedsPicker {
+            startHostId = row.defaultStartHostId ?? ""
+            startCandidate = row
+            return
+        }
+        Task { await model.startOllama(row.name, hostId: row.soleStartHostId) }
     }
 
     private func stopLive(_ name: String) async {
@@ -343,7 +347,16 @@ struct ModelsView: View {
     private func startSheet(_ row: OllamaCatalogModel) -> some View {
         NavigationStack {
             Form {
-                OllamaReachableDevicePicker(hostId: $startHostId, devices: reachableDevices)
+                OllamaReachableDevicePicker(
+                    hostId: $startHostId,
+                    devices: startPickerDevices(for: row),
+                    allowAny: false,
+                )
+            }
+            .onChange(of: startHostId) { _, hostId in
+                if startPickerDevices(for: row).contains(where: { $0.hostId == hostId && !$0.reachable }) {
+                    startHostId = row.defaultStartHostId ?? ""
+                }
             }
             .navigationTitle("Start \(row.name)")
             .toolbar {
@@ -357,13 +370,34 @@ struct ModelsView: View {
                             startCandidate = nil
                         }
                     }
-                    .disabled(model.actionIDs.contains("ollama/\(row.name)"))
+                    .disabled(
+                        model.actionIDs.contains("ollama/\(row.name)")
+                            || startHostId.isEmpty
+                            || !startPickerDevices(for: row).contains { $0.hostId == startHostId && $0.reachable },
+                    )
                 }
             }
         }
         #if os(iOS)
         .presentationDetents([.medium])
         #endif
+    }
+
+    /// Start picker lists Devices that already have the model, not every reachable Device.
+    private func startPickerDevices(for row: OllamaCatalogModel) -> [OllamaDeviceStatus] {
+        row.startLocations.map { loc in
+            var device = catalog.devices.first { $0.hostId == loc.hostId }
+                ?? OllamaDeviceStatus(
+                    hostId: loc.hostId,
+                    displayName: loc.displayName,
+                    installed: true,
+                    reachable: loc.reachable,
+                    stale: false,
+                    installHint: "",
+                )
+            device.reachable = loc.reachable
+            return device
+        }
     }
 
     @ViewBuilder
@@ -586,7 +620,9 @@ private struct OllamaReachableDevicePicker: View {
                 Text("Any reachable \(Copy.device)").tag("")
             }
             ForEach(devices) { device in
-                Text(device.title).tag(device.hostId)
+                Text(device.reachable ? device.title : "\(device.title) (unreachable)")
+                    .tag(device.hostId)
+                    .disabled(!device.reachable)
             }
         }
     }
