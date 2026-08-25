@@ -6,6 +6,25 @@ import Testing
 struct APIDecodingTests {
     private let decoder = JSONDecoder()
 
+    @Test func `disk settings snapshot decodes directory`() throws {
+        let json = """
+        { "diskDirectory": "/var/lib/barkvisor/disks", "isDefault": true }
+        """.data(using: .utf8)!
+        let settings = try decoder.decode(DiskSettingsSnapshot.self, from: json)
+        #expect(settings.diskDirectory == "/var/lib/barkvisor/disks")
+        #expect(settings.isDefault)
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/SettingsView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("Default VM disk directory"))
+        #expect(source.contains("DiskDirectorySection"))
+        #expect(source.contains("refreshDiskSettings"))
+    }
+
     @Test func `remote access status decodes advertised hosts`() throws {
         let json = """
         {

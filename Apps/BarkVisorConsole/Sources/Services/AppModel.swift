@@ -145,6 +145,7 @@ final class AppModel {
     var ollamaRefreshing = false
     var ollamaSettings: OllamaSettingsSnapshot?
     var remoteAccess: RemoteAccessStatus?
+    var diskSettings: DiskSettingsSnapshot?
 
     var showsChat: Bool {
         ChatAvailability.visible(catalog: ollamaCatalog)
@@ -450,6 +451,28 @@ final class AppModel {
         } catch {
             ollamaSettings = nil
             handle(error)
+        }
+    }
+
+    func refreshDiskSettings() async {
+        do {
+            diskSettings = try await requireClient().diskSettings()
+        } catch {
+            diskSettings = nil
+            handle(error)
+        }
+    }
+
+    @discardableResult
+    func saveDiskSettings(_ directory: String) async -> Bool {
+        do {
+            diskSettings = try await requireClient().saveDiskSettings(
+                DiskSettingsUpdate(diskDirectory: directory),
+            )
+            return true
+        } catch {
+            handle(error)
+            return false
         }
     }
 
