@@ -39,6 +39,7 @@ import {
   DEFAULT_SETTINGS_TAB,
   isPairingTab,
   settingsTabFromQuery,
+  shouldRunPairingTick,
   type SettingsTab,
 } from '../utils/settingsTabs'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -109,8 +110,8 @@ function stopPairingTick() {
   pairingTick = null
 }
 
-watch([pairingOffer, loginOffer], ([pairing, login]) => {
-  if (pairing || login) startPairingTick()
+watch([tab, pairingOffer, loginOffer], ([currentTab, pairing, login]) => {
+  if (shouldRunPairingTick(currentTab, Boolean(pairing || login))) startPairingTick()
   else stopPairingTick()
 })
 

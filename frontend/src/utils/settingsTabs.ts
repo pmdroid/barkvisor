@@ -20,6 +20,14 @@ export function isPairingTab(tab: string | null | undefined): tab is 'pairing' {
   return tab === 'pairing'
 }
 
+/** 1s expiry tick only while Pairing is showing an offer. */
+export function shouldRunPairingTick(
+  tab: string | null | undefined,
+  hasOffer: boolean,
+): boolean {
+  return isPairingTab(tab) && hasOffer
+}
+
 type QueryTabValue = string | null | undefined | Array<string | null | undefined>
 type SettingsTabQuery = QueryTabValue | { tab?: QueryTabValue }
 

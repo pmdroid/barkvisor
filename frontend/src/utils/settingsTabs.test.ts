@@ -7,6 +7,7 @@ import {
   isPairingTab,
   SETTINGS_TABS,
   settingsTabFromQuery,
+  shouldRunPairingTick,
 } from './settingsTabs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -45,6 +46,20 @@ describe('settings tab query', () => {
     expect(isPairingTab(settingsTabFromQuery('apikeys'))).toBe(false)
     expect(isPairingTab(undefined)).toBe(false)
     expect(isPairingTab(null)).toBe(false)
+  })
+
+  test('pairing tick runs only on the pairing tab while an offer is showing', () => {
+    expect(shouldRunPairingTick('pairing', true)).toBe(true)
+    expect(shouldRunPairingTick('pairing', false)).toBe(false)
+    expect(shouldRunPairingTick('home', true)).toBe(false)
+    expect(shouldRunPairingTick('apikeys', true)).toBe(false)
+    expect(shouldRunPairingTick('library', false)).toBe(false)
+    expect(shouldRunPairingTick(undefined, true)).toBe(false)
+
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    expect(settings).toContain('shouldRunPairingTick')
+    expect(settings).toContain('watch([tab, pairingOffer, loginOffer]')
+    expect(settings).toContain('stopPairingTick')
   })
 
   test('Settings wires pairing as its own tab from ?tab=', () => {
