@@ -31,6 +31,7 @@ struct DeviceDetailTests {
         #expect(points.count == 2)
         #expect(points[0].cpuPercent == 12.4)
         #expect(points[0].memoryUsedGB == 8)
+        #expect(points[0].gpuPercent == nil)
         #expect(points[1].memoryUsedGB == 16)
         #expect(points[1].memoryTotalGB == 32)
     }
@@ -142,6 +143,24 @@ struct DeviceDetailTests {
         #expect(points.count == DeviceStatsHistory.maxPoints)
         #expect(points.first?.cpuPercent == 5)
         #expect(points.last?.cpuPercent == 64)
+    }
+
+    @Test func `stats history maps gpu percent without inventing zero`() throws {
+        let json = """
+        [
+          {
+            "timestamp": "2026-08-24T12:00:00Z",
+            "hostCpuPercent": 1,
+            "hostMemoryUsedMB": 1024,
+            "hostMemoryTotalMB": 8192,
+            "hostGpuPercent": 18.5
+          }
+        ]
+        """.data(using: .utf8)!
+        let samples = try decoder.decode([SystemStatsSample].self, from: json)
+        #expect(samples[0].hostGpuPercent == 18.5)
+        let points = DeviceStatsHistory.points(from: samples)
+        #expect(points[0].gpuPercent == 18.5)
     }
 
     private func snapshot(

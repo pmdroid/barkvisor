@@ -104,18 +104,22 @@ describe('ollama live Device stats', () => {
     expect(JSON.stringify(lines)).not.toContain('sizeVRAM')
   })
 
-  test('ModelsView uses Device history, GPU occupancy, and overflow Export JSON', () => {
+  test('ModelsView has no live Device stats; GPU lives on Device detail', () => {
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), '../views/ModelsView.vue'),
       'utf8',
     )
-    expect(src).toContain('deviceStatsHistoryPath(target)')
-    expect(src).toContain('deviceGpuDevicesPath(target)')
+    expect(src).not.toContain('deviceStatsHistoryPath')
+    expect(src).not.toContain('deviceGpuDevicesPath')
+    expect(src).not.toContain('ollamaStatsUnreachableCopy')
+    expect(src).not.toContain('latestGpuPercent')
+    expect(src).not.toContain('dash-stat-label">GPU')
+    expect(src).not.toContain('dash-stat-label">CPU')
+    expect(src).not.toContain('dash-stat-label">Memory')
+    expect(src).not.toContain('ollamaGpuOccupancyLines')
     expect(src).toContain('overflow-menu')
     expect(src).toContain('Export JSON')
     expect(src).toContain('downloadOllamaPsExport(store.models)')
-    expect(src).toContain('ollamaStatsUnreachableCopy')
-    expect(src).toContain('ollamaGpuOccupancyLines')
     expect(src).not.toMatch(/<AppButton[\s\S]*?>\s*Export JSON/)
   })
 

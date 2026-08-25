@@ -597,9 +597,24 @@ struct SystemStatsSample: Decodable, Hashable, Identifiable {
     var hostCpuPercent: Double
     var hostMemoryUsedMB: Int
     var hostMemoryTotalMB: Int
+    var hostGpuPercent: Double?
 
     var id: String {
         timestamp
+    }
+
+    init(
+        timestamp: String,
+        hostCpuPercent: Double,
+        hostMemoryUsedMB: Int,
+        hostMemoryTotalMB: Int,
+        hostGpuPercent: Double? = nil,
+    ) {
+        self.timestamp = timestamp
+        self.hostCpuPercent = hostCpuPercent
+        self.hostMemoryUsedMB = hostMemoryUsedMB
+        self.hostMemoryTotalMB = hostMemoryTotalMB
+        self.hostGpuPercent = hostGpuPercent
     }
 }
 
@@ -609,6 +624,23 @@ struct DeviceStatsChartPoint: Identifiable, Equatable {
     var cpuPercent: Double
     var memoryUsedGB: Double
     var memoryTotalGB: Double
+    var gpuPercent: Double?
+
+    init(
+        id: String,
+        date: Date,
+        cpuPercent: Double,
+        memoryUsedGB: Double,
+        memoryTotalGB: Double,
+        gpuPercent: Double? = nil,
+    ) {
+        self.id = id
+        self.date = date
+        self.cpuPercent = cpuPercent
+        self.memoryUsedGB = memoryUsedGB
+        self.memoryTotalGB = memoryTotalGB
+        self.gpuPercent = gpuPercent
+    }
 }
 
 enum DeviceStatsHistory {
@@ -644,6 +676,7 @@ enum DeviceStatsHistory {
                 cpuPercent: sample.hostCpuPercent,
                 memoryUsedGB: Double(sample.hostMemoryUsedMB) / 1_024,
                 memoryTotalGB: Double(sample.hostMemoryTotalMB) / 1_024,
+                gpuPercent: sample.hostGpuPercent,
             )
         }
     }

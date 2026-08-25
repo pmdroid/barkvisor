@@ -126,6 +126,30 @@ struct DeviceDetailView: View {
                     }
                     LabeledContent("Now", value: memoryNow)
                 }
+
+                Section("GPU") {
+                    if gpuPoints.count > 1 {
+                        Chart(gpuPoints) { point in
+                            LineMark(
+                                x: .value("Time", point.date),
+                                y: .value("GPU", point.gpuPercent ?? 0),
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Color.purple.opacity(0.8))
+                            AreaMark(
+                                x: .value("Time", point.date),
+                                y: .value("GPU", point.gpuPercent ?? 0),
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Color.purple.opacity(0.12))
+                        }
+                        .chartYScale(domain: 0 ... 100)
+                        .chartXAxis(.hidden)
+                        .frame(height: 140)
+                        .accessibilityLabel("GPU history")
+                    }
+                    LabeledContent("Now", value: gpuNow)
+                }
             }
         }
         .platformListStyle()
@@ -167,6 +191,17 @@ struct DeviceDetailView: View {
 
     private var memoryCeiling: Double {
         max(points.last?.memoryTotalGB ?? 1, 1)
+    }
+
+    private var gpuPoints: [DeviceStatsChartPoint] {
+        points.filter { $0.gpuPercent != nil }
+    }
+
+    private var gpuNow: String {
+        if let gpu = points.reversed().compactMap(\.gpuPercent).first {
+            return String(format: "%.0f%%", gpu)
+        }
+        return "—"
     }
 
     private func loadHistory() async {

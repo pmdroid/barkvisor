@@ -27,6 +27,7 @@ import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import {
   emptyDeviceStatsChartSeries,
+  latestGpuPercent,
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
@@ -100,6 +101,7 @@ function resetHistory() {
   history.cpu = empty.cpu
   history.memoryGB = empty.memoryGB
   history.memoryTotalGB = empty.memoryTotalGB
+  history.gpu = empty.gpu
 }
 
 function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
@@ -107,6 +109,7 @@ function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
   history.cpu = series.cpu
   history.memoryGB = series.memoryGB
   history.memoryTotalGB = series.memoryTotalGB
+  history.gpu = series.gpu
 }
 
 function makeSparkOpts(max?: number) {
@@ -151,6 +154,17 @@ const memSparkData = computed(() => ({
   }],
 }))
 
+const gpuSparkOpts = computed(() => makeSparkOpts(100))
+const gpuSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.gpu,
+    borderColor: 'rgba(168,85,247,0.55)',
+    backgroundColor: 'rgba(168,85,247,0.08)',
+    fill: true,
+  }],
+}))
+
 const latestCpu = computed(() => {
   if (history.cpu.length) return history.cpu[history.cpu.length - 1]
   return device.value?.resources?.cpuLoadPercent ?? null
@@ -165,6 +179,8 @@ const memoryTotalGB = computed(() => {
   const total = device.value?.resources?.memoryTotalMB
   return total != null ? total / 1024 : null
 })
+const latestGpu = computed(() => latestGpuPercent(history.gpu))
+const gpuSparkReady = computed(() => history.gpu.filter((value) => value != null).length > 1)
 
 async function refreshAbout(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
@@ -392,6 +408,18 @@ async function doStop() {
               <span v-if="memoryTotalGB != null" class="dash-stat-trend up">/ {{ memoryTotalGB.toFixed(0) }} GB</span>
             </div>
             <div class="dash-stat-label">Memory</div>
+          </div>
+        </div>
+        <div class="dash-stat" style="border-left: 3px solid #a855f7">
+          <div class="dash-stat-spark" v-if="gpuSparkReady">
+            <Line :data="gpuSparkData" :options="gpuSparkOpts" />
+          </div>
+          <div class="dash-stat-content">
+            <div class="dash-stat-top">
+              <span class="dash-stat-number">{{ latestGpu == null ? '—' : latestGpu.toFixed(0) + '%' }}</span>
+              <span class="dash-stat-trend up">device</span>
+            </div>
+            <div class="dash-stat-label">GPU</div>
           </div>
         </div>
       </div>
