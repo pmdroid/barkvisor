@@ -29,7 +29,7 @@ import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
-import { librarySpaceCopy } from '../utils/librarySpace'
+import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
   isCurrentPairingSeq,
@@ -441,6 +441,7 @@ async function saveLibrarySettings() {
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
     depotDraft.value = data.libraryDepotHostId ?? ''
+    bumpLibrarySettingsEpoch()
     toast.success('Library path saved')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
@@ -458,6 +459,7 @@ async function resetLibrarySettings() {
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
     depotDraft.value = data.libraryDepotHostId ?? ''
+    bumpLibrarySettingsEpoch()
     toast.success('Library path reset to the default')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))

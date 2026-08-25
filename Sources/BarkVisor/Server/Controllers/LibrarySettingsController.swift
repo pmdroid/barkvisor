@@ -12,6 +12,43 @@ struct LibrarySettingsResponse: Content {
     let freeBytes: UInt64?
     /// `totalBytes - freeBytes` when both are present.
     let usedBytes: UInt64?
+
+    enum CodingKeys: String, CodingKey {
+        case imageDirectory
+        case isDefault
+        case libraryDepotHostId
+        case totalBytes
+        case freeBytes
+        case usedBytes
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(imageDirectory, forKey: .imageDirectory)
+        try container.encode(isDefault, forKey: .isDefault)
+        if let libraryDepotHostId {
+            try container.encode(libraryDepotHostId, forKey: .libraryDepotHostId)
+        } else {
+            try container.encodeNil(forKey: .libraryDepotHostId)
+        }
+        // Always emit volume keys so clients can tell "unknown" from an omitted
+        // field. Unknown → JSON null, never 0.
+        if let totalBytes {
+            try container.encode(totalBytes, forKey: .totalBytes)
+        } else {
+            try container.encodeNil(forKey: .totalBytes)
+        }
+        if let freeBytes {
+            try container.encode(freeBytes, forKey: .freeBytes)
+        } else {
+            try container.encodeNil(forKey: .freeBytes)
+        }
+        if let usedBytes {
+            try container.encode(usedBytes, forKey: .usedBytes)
+        } else {
+            try container.encodeNil(forKey: .usedBytes)
+        }
+    }
 }
 
 struct LibrarySettingsRequest: Content {
