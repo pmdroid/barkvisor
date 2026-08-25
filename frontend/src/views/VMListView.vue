@@ -12,7 +12,7 @@ import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
 import type { SystemStats, GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
-import { filterRowsByHealth, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { filterRowsByHealth, healthLabel, healthPillClass, vmHealth, vmListEmptyKind } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
@@ -68,6 +68,16 @@ const homeRows = computed(() => {
 })
 
 const visibleRows = computed(() => filterRowsByHealth(homeRows.value, healthFilter.value))
+
+const listKind = computed(() =>
+  vmListEmptyKind(homeRows.value.length, visibleRows.value.length, healthFilter.value),
+)
+
+const filteredEmptySubtitle = computed(() => {
+  const filter = healthFilter.value
+  if (filter === 'all') return 'No matching VMs on Home.'
+  return `No ${healthLabel(filter)} VMs on Home.`
+})
 
 const healthStrip = computed(() => {
   const counts = healthSummary.value?.counts ?? {}
@@ -334,9 +344,16 @@ async function doStop() {
     </button>
   </div>
 
-  <EmptyState v-if="homeRows.length === 0 && !store.loading && !devicesStore.loading" icon="monitor" title="No virtual machines yet">
+  <EmptyState v-if="listKind === 'none' && !store.loading && !devicesStore.loading" icon="monitor" title="No virtual machines yet">
     <AppButton variant="primary" @click="showCreate = true">Create your first VM</AppButton>
   </EmptyState>
+
+  <EmptyState
+    v-else-if="listKind === 'filtered'"
+    icon="monitor"
+    title="No matching VMs"
+    :subtitle="filteredEmptySubtitle"
+  />
 
   <DataTable v-else :columns="[
     { key: 'name', label: 'Name' },

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applyVMStateEvent, filterRowsByHealth, healthFromState, healthLabel, vmHealth } from './workloadHealth'
+import { applyVMStateEvent, filterRowsByHealth, healthFromState, healthLabel, vmHealth, vmListEmptyKind } from './workloadHealth'
 import type { VM, VMRuntimeStatus } from '../api/types'
 
 function vm(partial: Partial<VM> & Pick<VM, 'state'>): VM {
@@ -164,5 +164,24 @@ describe('filterRowsByHealth', () => {
 
   test('a health key other than all keeps matching rows', () => {
     expect(filterRowsByHealth(rows, 'degraded').map((row) => row.vm.id)).toEqual(['deg'])
+  })
+})
+
+describe('vmListEmptyKind', () => {
+  test('none when Home has no VMs', () => {
+    expect(vmListEmptyKind(0, 0, 'all')).toBe('none')
+    expect(vmListEmptyKind(0, 0, 'failed')).toBe('none')
+    expect(vmListEmptyKind(3, 0, 'all')).toBe('none')
+  })
+
+  test('filtered when a health chip matches nothing', () => {
+    expect(vmListEmptyKind(3, 0, 'failed')).toBe('filtered')
+    expect(vmListEmptyKind(2, 0, 'running')).toBe('filtered')
+    expect(vmListEmptyKind(1, 0, 'stopped')).toBe('filtered')
+  })
+
+  test('table when there are matching rows', () => {
+    expect(vmListEmptyKind(3, 3, 'all')).toBe('table')
+    expect(vmListEmptyKind(3, 1, 'running')).toBe('table')
   })
 })

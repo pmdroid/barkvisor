@@ -65,6 +65,18 @@ export function filterRowsByHealth<T extends { vm: Pick<VM, 'health' | 'status' 
   return rows.filter((row) => vmHealth(row.vm) === health)
 }
 
+export type VmListEmptyKind = 'none' | 'filtered' | 'table'
+
+export function vmListEmptyKind(
+  homeCount: number,
+  visibleCount: number,
+  filter: WorkloadHealth | 'all',
+): VmListEmptyKind {
+  if (visibleCount > 0) return 'table'
+  if (homeCount > 0 && filter !== 'all') return 'filtered'
+  return 'none'
+}
+
 export function healthLabel(health: WorkloadHealth): string {
   switch (health) {
     case 'guest_ready':
