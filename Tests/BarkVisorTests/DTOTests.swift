@@ -250,6 +250,46 @@ struct DTOTests {
         #expect(dict["downloadPercent"] as? Int == 42)
     }
 
+    // MARK: - LibrarySettingsResponse
+
+    @Test func `library settings encodes missing volume as json null not omitted`() throws {
+        let response = LibrarySettingsResponse(
+            imageDirectory: "/tmp/images",
+            isDefault: false,
+            libraryDepotHostId: nil,
+            totalBytes: nil,
+            freeBytes: nil,
+            usedBytes: nil,
+        )
+        let object = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(response),
+        ) as? [String: Any]
+        #expect(object?["totalBytes"] is NSNull)
+        #expect(object?["freeBytes"] is NSNull)
+        #expect(object?["usedBytes"] is NSNull)
+        #expect(object?["libraryDepotHostId"] is NSNull)
+        #expect(object?["totalBytes"] as? Int == nil)
+        #expect((object?["totalBytes"] as? Int) != 0)
+    }
+
+    @Test func `library settings encodes volume bytes`() throws {
+        let response = LibrarySettingsResponse(
+            imageDirectory: "/tmp/images",
+            isDefault: true,
+            libraryDepotHostId: "depot-1",
+            totalBytes: 500,
+            freeBytes: 120,
+            usedBytes: 380,
+        )
+        let object = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(response),
+        ) as? [String: Any]
+        #expect(object?["totalBytes"] as? Int == 500)
+        #expect(object?["freeBytes"] as? Int == 120)
+        #expect(object?["usedBytes"] as? Int == 380)
+        #expect(object?["libraryDepotHostId"] as? String == "depot-1")
+    }
+
     // MARK: - TemplateResponse
 
     @Test func `template response from VM template`() {

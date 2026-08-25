@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
+import { onActivated, onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useImageStore } from '../stores/images'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
@@ -15,9 +16,12 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
+import api from '../api/client'
+import type { LibrarySettings } from '../api/types'
 import { formatBytes } from '../utils/format'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 import { imageProgressPercent } from '../utils/imageProgress'
+import { librarySpaceCopy, onLibrarySettingsChanged } from '../utils/librarySpace'
 import {
   detectImageArch,
   hostArchToImageArch,
@@ -30,6 +34,12 @@ const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeLibrary = useHomeLibraryStore()
+const route = useRoute()
+const librarySettings = ref<LibrarySettings | null>(null)
+const librarySpaceLoaded = ref(false)
+const librarySpaceLine = computed(() =>
+  librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes),
+)
 
 function imageRowsFromLibrary(images: HomeImage[]) {
   return images.flatMap((img) =>
@@ -56,6 +66,16 @@ const visibleImages = computed(() => {
   return store.images
 })
 
+async function fetchLibrarySpace() {
+  try {
+    const { data } = await api.get<LibrarySettings>('/system/library/settings')
+    librarySettings.value = data
+  } catch {
+    librarySettings.value = null
+  } finally {
+    librarySpaceLoaded.value = true
+  }
+}
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 
 const showDownload = ref(false)
@@ -135,6 +155,7 @@ function subscribeDownloading() {
 }
 
 let pollTimer: number
+let stopLibrarySettingsWatch: (() => void) | null = null
 
 function resetDownloadForm() {
   dlName.value = ''
@@ -231,6 +252,11 @@ onMounted(async () => {
   await caps.fetchCapabilities().catch(() => {})
   dlArch.value = defaultArch.value
   uploadArch.value = defaultArch.value
+  void fetchLibrarySpace()
+  stopLibrarySettingsWatch?.()
+  stopLibrarySettingsWatch = onLibrarySettingsChanged(() => {
+    void fetchLibrarySpace()
+  })
   await devicesStore.fetchHealth().catch(() => {})
   await Promise.all([
     store.fetchAll(),
@@ -247,7 +273,20 @@ onMounted(async () => {
   }, 5000)
 })
 
+onActivated(() => {
+  void fetchLibrarySpace()
+})
+
+watch(
+  () => route.name,
+  (name) => {
+    if (name === 'images') void fetchLibrarySpace()
+  },
+)
+
 onUnmounted(() => {
+  stopLibrarySettingsWatch?.()
+  stopLibrarySettingsWatch = null
   clearInterval(pollTimer)
   Object.values(progressStreams).forEach(s => s.stop())
 })
@@ -385,7 +424,18 @@ async function doDeleteImage() {
 
 <template>
   <div class="page-header">
-    <h1>Images</h1>
+    <div>
+      <h1>Images</h1>
+      <p v-if="librarySpaceLine" style="color:var(--text-secondary);font-size:13px;margin:4px 0 0 0">
+        {{ librarySpaceLine }}
+      </p>
+      <p
+        v-else-if="librarySpaceLoaded"
+        style="color:var(--text-dim);font-size:13px;margin:4px 0 0 0"
+      >
+        Capacity unavailable
+      </p>
+    </div>
     <div style="display:flex;gap:8px">
       <AppButton icon="upload" @click="openUpload">Upload Image</AppButton>
       <AppButton variant="primary" icon="download" @click="openDownload">Download Image</AppButton>
