@@ -39,36 +39,81 @@ export function ollamaStartLocations<T extends { hostId: string; reachable?: boo
   const locations = model?.locations ?? []
   const reachable: T[] = []
   const unreachable: T[] = []
+  const seen = new Set<string>()
   for (const loc of locations) {
+    if (seen.has(loc.hostId)) continue
+    seen.add(loc.hostId)
     if (loc.reachable) reachable.push(loc)
     else unreachable.push(loc)
   }
   return reachable.concat(unreachable)
 }
 
-/** hostId when exactly one reachable Device has the model, or the only location if it is down. */
-export function ollamaSoleStartHostId(model?: {
-  locations: { hostId: string; reachable?: boolean }[]
-} | null): string | undefined {
+/** Sidebar Device when it is one Device, not All. */
+export function ollamaStartScopeHostId(selectedHostId?: string | null): string | undefined {
+  const id = selectedHostId?.trim()
+  if (!id || id.toLowerCase() === 'all') return undefined
+  return id
+}
+
+/** Deduped locations, optionally intersected with the sidebar Device. */
+export function ollamaStartCandidates<T extends { hostId: string; reachable?: boolean }>(
+  model?: { locations: T[] } | null,
+  selectedHostId?: string | null,
+): T[] {
   const locations = ollamaStartLocations(model)
-  const reachable = locations.filter((loc) => loc.reachable)
+  const scoped = ollamaStartScopeHostId(selectedHostId)
+  if (!scoped) return locations
+  return locations.filter((loc) => loc.hostId === scoped)
+}
+
+export function ollamaStartReachableCandidates<T extends { hostId: string; reachable?: boolean }>(
+  model?: { locations: T[] } | null,
+  selectedHostId?: string | null,
+): T[] {
+  return ollamaStartCandidates(model, selectedHostId).filter((loc) => loc.reachable)
+}
+
+/** hostId when exactly one reachable Device has the model. */
+export function ollamaSoleStartHostId(
+  model?: { locations: { hostId: string; reachable?: boolean }[] } | null,
+  selectedHostId?: string | null,
+): string | undefined {
+  const reachable = ollamaStartReachableCandidates(model, selectedHostId)
   if (reachable.length === 1) return reachable[0].hostId
-  if (locations.length === 1) return locations[0].hostId
   return undefined
 }
 
 /** First reachable Device that has the model. Unreachable is never the default. */
-export function ollamaDefaultStartHostId(model?: {
-  locations: { hostId: string; reachable?: boolean }[]
-} | null): string | undefined {
-  return ollamaStartLocations(model).find((loc) => loc.reachable)?.hostId
+export function ollamaDefaultStartHostId(
+  model?: { locations: { hostId: string; reachable?: boolean }[] } | null,
+  selectedHostId?: string | null,
+): string | undefined {
+  return ollamaStartReachableCandidates(model, selectedHostId)[0]?.hostId
 }
 
-/** True when Start must pick among multiple Devices that have the model. */
-export function ollamaStartNeedsPicker(model?: {
-  locations: unknown[]
-} | null): boolean {
-  return (model?.locations.length ?? 0) > 1
+/** True when Start must pick among multiple reachable Devices that have the model. */
+export function ollamaStartNeedsPicker(
+  model?: { locations: { hostId: string; reachable?: boolean }[] } | null,
+  selectedHostId?: string | null,
+): boolean {
+  return ollamaStartReachableCandidates(model, selectedHostId).length > 1
+}
+
+export function ollamaStartCanStart(
+  model?: { locations: { hostId: string; reachable?: boolean }[] } | null,
+  selectedHostId?: string | null,
+): boolean {
+  return ollamaStartReachableCandidates(model, selectedHostId).length >= 1
+}
+
+export function ollamaStartDisabledReason(
+  model?: { locations: { hostId: string; reachable?: boolean }[] } | null,
+  selectedHostId?: string | null,
+): string | undefined {
+  if (ollamaStartCanStart(model, selectedHostId)) return undefined
+  if (ollamaStartScopeHostId(selectedHostId)) return 'Model is not on this Device'
+  return 'Model is on Devices that are unreachable'
 }
 
 /** Task progress is 0...1 from the backend. */

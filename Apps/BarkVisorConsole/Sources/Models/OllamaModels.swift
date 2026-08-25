@@ -48,25 +48,67 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
 
     /// Devices that already have this model's weights. Reachable first; unreachable stay listed.
     var startLocations: [OllamaModelLocation] {
-        locations.filter(\.reachable) + locations.filter { !$0.reachable }
+        var seen: Set<String> = []
+        var reachable: [OllamaModelLocation] = []
+        var unreachable: [OllamaModelLocation] = []
+        for loc in locations {
+            if seen.contains(loc.hostId) { continue }
+            seen.insert(loc.hostId)
+            if loc.reachable { reachable.append(loc) } else { unreachable.append(loc) }
+        }
+        return reachable + unreachable
     }
 
-    /// hostId when exactly one reachable Device has the model, or the only location if it is down.
+    func startCandidates(selectedHostId: String?) -> [OllamaModelLocation] {
+        let scoped = selectedHostId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if scoped.isEmpty || scoped.lowercased() == "all" { return startLocations }
+        return startLocations.filter { $0.hostId == scoped }
+    }
+
+    func startReachableCandidates(selectedHostId: String?) -> [OllamaModelLocation] {
+        startCandidates(selectedHostId: selectedHostId).filter(\.reachable)
+    }
+
+    /// hostId when exactly one reachable Device has the model.
     var soleStartHostId: String? {
-        let reachable = startLocations.filter(\.reachable)
+        soleStartHostId(selectedHostId: nil)
+    }
+
+    func soleStartHostId(selectedHostId: String?) -> String? {
+        let reachable = startReachableCandidates(selectedHostId: selectedHostId)
         if reachable.count == 1 { return reachable[0].hostId }
-        if startLocations.count == 1 { return startLocations[0].hostId }
         return nil
     }
 
     /// First reachable Device that has the model. Unreachable is never the default.
     var defaultStartHostId: String? {
-        startLocations.first(where: \.reachable)?.hostId
+        defaultStartHostId(selectedHostId: nil)
     }
 
-    /// True when Start must pick among multiple Devices that have the model.
+    func defaultStartHostId(selectedHostId: String?) -> String? {
+        startReachableCandidates(selectedHostId: selectedHostId).first?.hostId
+    }
+
+    /// True when Start must pick among multiple reachable Devices that have the model.
     var startNeedsPicker: Bool {
-        locations.count > 1
+        startNeedsPicker(selectedHostId: nil)
+    }
+
+    func startNeedsPicker(selectedHostId: String?) -> Bool {
+        startReachableCandidates(selectedHostId: selectedHostId).count > 1
+    }
+
+    func canStart(selectedHostId: String?) -> Bool {
+        !startReachableCandidates(selectedHostId: selectedHostId).isEmpty
+    }
+
+    func startDisabledReason(selectedHostId: String?) -> String? {
+        if canStart(selectedHostId: selectedHostId) { return nil }
+        let scoped = selectedHostId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !scoped.isEmpty, scoped.lowercased() != "all" {
+            return "Model is not on this Device"
+        }
+        return "Model is on Devices that are unreachable"
     }
 }
 

@@ -72,7 +72,8 @@ struct OllamaModelsTests {
         #expect(mixed.startLocations.map(\.hostId) == ["desk", "down", "stale"])
         #expect(mixed.soleStartHostId == "desk")
         #expect(mixed.defaultStartHostId == "desk")
-        #expect(mixed.startNeedsPicker)
+        #expect(!mixed.startNeedsPicker)
+        #expect(mixed.canStart(selectedHostId: nil))
 
         let onlyDown = OllamaCatalogModel(
             name: "llama3:latest",
@@ -81,9 +82,11 @@ struct OllamaModelsTests {
             running: false,
             locations: [down],
         )
-        #expect(onlyDown.soleStartHostId == "down")
+        #expect(onlyDown.soleStartHostId == nil)
         #expect(onlyDown.defaultStartHostId == nil)
         #expect(!onlyDown.startNeedsPicker)
+        #expect(!onlyDown.canStart(selectedHostId: nil))
+        #expect(onlyDown.startDisabledReason(selectedHostId: nil) == "Model is on Devices that are unreachable")
 
         let allDown = OllamaCatalogModel(
             name: "llama3:latest",
@@ -95,7 +98,23 @@ struct OllamaModelsTests {
         #expect(allDown.startLocations.map(\.hostId) == ["down", "stale"])
         #expect(allDown.soleStartHostId == nil)
         #expect(allDown.defaultStartHostId == nil)
-        #expect(allDown.startNeedsPicker)
+        #expect(!allDown.startNeedsPicker)
+        #expect(!allDown.canStart(selectedHostId: nil))
+
+        #expect(!two.startNeedsPicker(selectedHostId: "desk"))
+        #expect(two.soleStartHostId(selectedHostId: "desk") == "desk")
+        #expect(two.canStart(selectedHostId: "desk"))
+        #expect(!one.canStart(selectedHostId: "lab"))
+        #expect(one.startDisabledReason(selectedHostId: "lab") == "Model is not on this Device")
+        let dup = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [desk, desk],
+        )
+        #expect(dup.startLocations.map(\.hostId) == ["desk"])
+        #expect(!dup.startNeedsPicker)
     }
 
     @Test func `stop uses live running host not snapshot`() {
@@ -223,10 +242,10 @@ struct OllamaModelsTests {
                 .appendingPathComponent("Sources/Views/ModelsView.swift"),
             encoding: .utf8,
         )
-        #expect(source.contains("row.startNeedsPicker"))
-        #expect(source.contains("row.soleStartHostId"))
-        #expect(source.contains("row.defaultStartHostId"))
-        #expect(source.contains("row.startLocations"))
+        #expect(source.contains("startNeedsPicker(selectedHostId: scope)"))
+        #expect(source.contains("soleStartHostId(selectedHostId: scope)"))
+        #expect(source.contains("defaultStartHostId(selectedHostId: scope)"))
+        #expect(source.contains("startReachableCandidates"))
         #expect(!source.contains("row.startLocations.first?.hostId"))
         #expect(source.contains("startPickerDevices(for: row)"))
         #expect(source.contains("OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)"))

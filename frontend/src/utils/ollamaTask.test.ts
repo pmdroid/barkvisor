@@ -9,6 +9,9 @@ import {
   ollamaStartBody,
   ollamaStartLocations,
   ollamaStartNeedsPicker,
+  ollamaStartCanStart,
+  ollamaStartCandidates,
+  ollamaStartDisabledReason,
 } from './ollamaTask'
 
 describe('ollama pull/start helpers (PAS-269)', () => {
@@ -99,22 +102,49 @@ describe('ollama start locations', () => {
     expect(ollamaStartLocations(model).map((loc) => loc.hostId)).toEqual(['desk', 'down', 'stale'])
     expect(ollamaSoleStartHostId(model)).toBe('desk')
     expect(ollamaDefaultStartHostId(model)).toBe('desk')
-    expect(ollamaStartNeedsPicker(model)).toBe(true)
+    expect(ollamaStartNeedsPicker(model)).toBe(false)
+    expect(ollamaStartCanStart(model)).toBe(true)
   })
 
-  test('one unreachable location still starts there so the user sees the error', () => {
+  test('one unreachable location does not open a picker and cannot start', () => {
     const model = { locations: [down] }
     expect(ollamaStartLocations(model)).toEqual([down])
-    expect(ollamaSoleStartHostId(model)).toBe('down')
+    expect(ollamaSoleStartHostId(model)).toBeUndefined()
     expect(ollamaDefaultStartHostId(model)).toBeUndefined()
     expect(ollamaStartNeedsPicker(model)).toBe(false)
+    expect(ollamaStartCanStart(model)).toBe(false)
+    expect(ollamaStartDisabledReason(model)).toBe('Model is on Devices that are unreachable')
   })
 
-  test('multiple unreachable locations have no default host', () => {
+  test('multiple unreachable locations have no picker', () => {
     const model = { locations: [down, stale] }
     expect(ollamaStartLocations(model).map((loc) => loc.hostId)).toEqual(['down', 'stale'])
     expect(ollamaSoleStartHostId(model)).toBeUndefined()
     expect(ollamaDefaultStartHostId(model)).toBeUndefined()
-    expect(ollamaStartNeedsPicker(model)).toBe(true)
+    expect(ollamaStartNeedsPicker(model)).toBe(false)
+    expect(ollamaStartCanStart(model)).toBe(false)
+  })
+
+  test('sidebar Device that has the model skips the picker even if another Device also has it', () => {
+    const model = { locations: [desk, lab] }
+    expect(ollamaStartCandidates(model, 'desk').map((loc) => loc.hostId)).toEqual(['desk'])
+    expect(ollamaStartNeedsPicker(model, 'desk')).toBe(false)
+    expect(ollamaSoleStartHostId(model, 'desk')).toBe('desk')
+    expect(ollamaStartCanStart(model, 'desk')).toBe(true)
+    expect(ollamaStartNeedsPicker(model, 'all')).toBe(true)
+  })
+
+  test('sidebar Device that lacks the model disables Start', () => {
+    const model = { locations: [lab] }
+    expect(ollamaStartCanStart(model, 'desk')).toBe(false)
+    expect(ollamaStartDisabledReason(model, 'desk')).toBe('Model is not on this Device')
+    expect(ollamaStartNeedsPicker(model, 'desk')).toBe(false)
+  })
+
+  test('duplicate hostIds never trigger a picker', () => {
+    const model = { locations: [desk, { ...desk, displayName: 'Desk copy' }] }
+    expect(ollamaStartLocations(model)).toEqual([desk])
+    expect(ollamaStartNeedsPicker(model)).toBe(false)
+    expect(ollamaSoleStartHostId(model)).toBe('desk')
   })
 })
