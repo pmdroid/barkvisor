@@ -20,6 +20,44 @@ struct OllamaModelsTests {
         #expect(object["hostId"] == "desk")
     }
 
+    @Test func `start uses locations not every reachable device`() {
+        let desk = OllamaModelLocation(hostId: "desk", displayName: "Desk", running: false, reachable: true)
+        let lab = OllamaModelLocation(hostId: "lab", displayName: "Lab", running: false, reachable: true)
+        let one = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [desk],
+        )
+        #expect(one.startLocations.map(\.hostId) == ["desk"])
+        #expect(one.soleStartHostId == "desk")
+        #expect(!one.startNeedsPicker)
+
+        let two = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [desk, lab],
+        )
+        #expect(two.startLocations.map(\.hostId) == ["desk", "lab"])
+        #expect(two.soleStartHostId == nil)
+        #expect(two.startNeedsPicker)
+        #expect(two.startLocations.map(\.title) == ["Desk", "Lab"])
+
+        let empty = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [],
+        )
+        #expect(empty.startLocations.isEmpty)
+        #expect(empty.soleStartHostId == nil)
+        #expect(!empty.startNeedsPicker)
+    }
+
     @Test func `stop uses live running host not snapshot`() {
         let stale = OllamaCatalogModel(
             name: "llama3:latest",
@@ -119,6 +157,22 @@ struct OllamaModelsTests {
         #expect(fileURL.lastPathComponent == "ollama-ps.json")
         let fileText = try String(contentsOf: fileURL, encoding: .utf8)
         #expect(fileText == json)
+    }
+
+    @Test func `models view starts on sole location and picks among locations`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/ModelsView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("row.startNeedsPicker"))
+        #expect(source.contains("row.soleStartHostId"))
+        #expect(source.contains("row.startLocations"))
+        #expect(source.contains("startPickerDevices(for: row)"))
+        #expect(source.contains("OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)"))
+        #expect(!source.contains("OllamaReachableDevicePicker(hostId: $startHostId, devices: reachableDevices)"))
+        #expect(source.contains("allowAny: false"))
     }
 
     @Test func `models view shares export JSON`() throws {

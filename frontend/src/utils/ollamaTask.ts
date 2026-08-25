@@ -32,6 +32,28 @@ export function ollamaRunningHostId(model?: {
   return model.locations.find((loc) => loc.running)?.hostId
 }
 
+/** Locations that already have the model. Start can only run on these Devices. */
+export function ollamaStartLocations<T extends { hostId: string }>(
+  model?: { locations: T[] } | null,
+): T[] {
+  return model?.locations ?? []
+}
+
+/** hostId when exactly one Device has the model. */
+export function ollamaSoleStartHostId(model?: {
+  locations: { hostId: string }[]
+} | null): string | undefined {
+  const locations = ollamaStartLocations(model)
+  return locations.length === 1 ? locations[0].hostId : undefined
+}
+
+/** True when Start must pick among multiple Devices that have the model. */
+export function ollamaStartNeedsPicker(model?: {
+  locations: unknown[]
+} | null): boolean {
+  return (model?.locations.length ?? 0) > 1
+}
+
 /** Task progress is 0...1 from the backend. */
 export function ollamaPullPercent(progress: number | null | undefined): number | undefined {
   if (progress == null || Number.isNaN(progress)) return undefined

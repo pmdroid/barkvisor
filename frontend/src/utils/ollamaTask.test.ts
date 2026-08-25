@@ -4,7 +4,10 @@ import {
   ollamaPullPercent,
   ollamaPullTaskPath,
   ollamaRunningHostId,
+  ollamaSoleStartHostId,
   ollamaStartBody,
+  ollamaStartLocations,
+  ollamaStartNeedsPicker,
 } from './ollamaTask'
 
 describe('ollama pull/start helpers (PAS-269)', () => {
@@ -53,5 +56,34 @@ describe('ollama pull/start helpers (PAS-269)', () => {
   test('pull progress is a percent', () => {
     expect(ollamaPullPercent(0.42)).toBe(42)
     expect(ollamaPullPercent(null)).toBeUndefined()
+  })
+})
+
+describe('ollama start locations', () => {
+  const desk = { hostId: 'desk', displayName: 'Desk', running: false, reachable: true }
+  const lab = { hostId: 'lab', displayName: 'Lab', running: false, reachable: true }
+
+  test('one location starts without a picker', () => {
+    const model = { locations: [desk] }
+    expect(ollamaStartLocations(model)).toEqual([desk])
+    expect(ollamaSoleStartHostId(model)).toBe('desk')
+    expect(ollamaStartNeedsPicker(model)).toBe(false)
+  })
+
+  test('two locations need a picker of those Devices only', () => {
+    const model = { locations: [desk, lab] }
+    expect(ollamaStartLocations(model)).toEqual([desk, lab])
+    expect(ollamaSoleStartHostId(model)).toBeUndefined()
+    expect(ollamaStartNeedsPicker(model)).toBe(true)
+  })
+
+  test('empty locations have no sole host and no picker', () => {
+    const model = { locations: [] as typeof desk[] }
+    expect(ollamaStartLocations(model)).toEqual([])
+    expect(ollamaSoleStartHostId(model)).toBeUndefined()
+    expect(ollamaStartNeedsPicker(model)).toBe(false)
+    expect(ollamaStartLocations(undefined)).toEqual([])
+    expect(ollamaSoleStartHostId(undefined)).toBeUndefined()
+    expect(ollamaStartNeedsPicker(undefined)).toBe(false)
   })
 })

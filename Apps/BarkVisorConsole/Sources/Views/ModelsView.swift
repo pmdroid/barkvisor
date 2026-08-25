@@ -328,8 +328,12 @@ struct ModelsView: View {
     }
 
     private func beginStart(_ row: OllamaCatalogModel) {
-        startHostId = ""
-        startCandidate = row
+        if row.startNeedsPicker {
+            startHostId = row.startLocations.first?.hostId ?? ""
+            startCandidate = row
+            return
+        }
+        Task { await model.startOllama(row.name, hostId: row.soleStartHostId) }
     }
 
     private func stopLive(_ name: String) async {
@@ -343,7 +347,11 @@ struct ModelsView: View {
     private func startSheet(_ row: OllamaCatalogModel) -> some View {
         NavigationStack {
             Form {
-                OllamaReachableDevicePicker(hostId: $startHostId, devices: reachableDevices)
+                OllamaReachableDevicePicker(
+                    hostId: $startHostId,
+                    devices: startPickerDevices(for: row),
+                    allowAny: false,
+                )
             }
             .navigationTitle("Start \(row.name)")
             .toolbar {
@@ -357,13 +365,28 @@ struct ModelsView: View {
                             startCandidate = nil
                         }
                     }
-                    .disabled(model.actionIDs.contains("ollama/\(row.name)"))
+                    .disabled(model.actionIDs.contains("ollama/\(row.name)") || startHostId.isEmpty)
                 }
             }
         }
         #if os(iOS)
         .presentationDetents([.medium])
         #endif
+    }
+
+    /// Start picker lists Devices that already have the model, not every reachable Device.
+    private func startPickerDevices(for row: OllamaCatalogModel) -> [OllamaDeviceStatus] {
+        row.startLocations.map { loc in
+            catalog.devices.first { $0.hostId == loc.hostId }
+                ?? OllamaDeviceStatus(
+                    hostId: loc.hostId,
+                    displayName: loc.displayName,
+                    installed: true,
+                    reachable: loc.reachable,
+                    stale: false,
+                    installHint: "",
+                )
+        }
     }
 
     @ViewBuilder

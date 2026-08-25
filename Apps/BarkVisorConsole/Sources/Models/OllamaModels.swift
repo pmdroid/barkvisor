@@ -45,6 +45,22 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
     static func runningHostId(name: String, in models: [OllamaCatalogModel]) -> String? {
         models.first { $0.name == name }?.runningHostId
     }
+
+    /// Devices that already have this model's weights. Start can only run here.
+    var startLocations: [OllamaModelLocation] {
+        locations
+    }
+
+    /// hostId when exactly one Device has the model.
+    var soleStartHostId: String? {
+        guard startLocations.count == 1 else { return nil }
+        return startLocations[0].hostId
+    }
+
+    /// True when Start must pick among multiple Devices that have the model.
+    var startNeedsPicker: Bool {
+        startLocations.count > 1
+    }
 }
 
 struct OllamaModelLocation: Decodable, Equatable, Hashable {
@@ -54,6 +70,11 @@ struct OllamaModelLocation: Decodable, Equatable, Hashable {
     var reachable: Bool
     var size: Int64? = nil
     var sizeVRAM: Int64? = nil
+
+    var title: String {
+        let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? hostId : name
+    }
 }
 
 /// Point-in-time `/api/ps` fields already on the Home catalog. Same JSON as web Export JSON.
