@@ -114,6 +114,7 @@ struct HostGPUDeviceResponse: Content {
     let iommuGroup: String
     let vendorId: String
     let deviceId: String
+    let pciClass: String?
     let name: String
     let driver: String?
     let vfioBound: Bool

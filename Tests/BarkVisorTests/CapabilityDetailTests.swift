@@ -298,6 +298,15 @@ struct CapabilityDetailTests {
         #expect(PlatformCapabilities.Feature.usbPassthrough.errorCode == "usb_passthrough")
         #expect(PlatformCapabilities.Feature.managedBridgeDaemon.errorCode == "managed_bridge_daemon")
         #expect(PlatformCapabilities.Feature.gpuPassthrough.errorCode == "gpu_passthrough")
+        #expect(PlatformCapabilities.Feature.pciPassthrough.errorCode == "pci_passthrough")
+        #expect(
+            BarkVisorError.unsupportedFeature(.pciPassthrough).errorDescription
+                == GPUPassthroughService.pciPassthroughNotReadyMessage,
+        )
+        #expect(
+            BarkVisorError.unsupportedFeature(.pciPassthrough).errorDescription?
+                .localizedCaseInsensitiveContains("gpu") != true,
+        )
     }
 
     @Test func `requireBridgedNetworking matches capabilities product flag`() {

@@ -287,7 +287,9 @@ public enum CodingAgentImage {
         gpuDevices: [GPUPassthroughDevice]?,
     ) -> String? {
         guard isManagedUserData(userData) else { return nil }
-        return cloudInitInstanceID(vmID: vmID, gpuAttached: !(gpuDevices ?? []).isEmpty)
+        return cloudInitInstanceID(
+            vmID: vmID, gpuAttached: GPUPassthroughService.hasDisplayGPU(gpuDevices),
+        )
     }
 
     public static func applyingCreateDefaults(
@@ -299,7 +301,7 @@ public enum CodingAgentImage {
         guard matches(name: imageName, slug: imageSlug) else { return params }
         let klass = defaultWorkloadClass(explicit: params.workloadClass)
         let existing = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let gpuAttached = !(params.gpuDevices ?? []).isEmpty
+        let gpuAttached = GPUPassthroughService.hasDisplayGPU(params.gpuDevices)
         let userData: String
         if existing.isEmpty {
             let defaultURL = gpuAttached ? guestOllamaBaseURL : homeOllamaGrantURL

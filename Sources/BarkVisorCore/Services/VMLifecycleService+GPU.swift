@@ -8,7 +8,7 @@ extension VMLifecycleService {
         db: DatabasePool,
         hostDevices: [HostGPUDevice]? = nil,
     ) async throws -> VM {
-        try PlatformCapabilities.requireGPUPassthrough()
+        try PlatformCapabilities.requireVFIOPassthrough()
         let hosts = try listedGPUs(hostDevices: hostDevices)
         let host = try GPUPassthroughService.resolveAttachable(deviceId: deviceId, hostDevices: hosts)
         guard let vm = try await db.read({ db in try VM.fetchOne(db, key: vmID) }) else {
@@ -54,7 +54,7 @@ extension VMLifecycleService {
     ) throws -> [GPUPassthroughDevice]? {
         guard devices != nil else { return nil }
         if devices?.isEmpty == true { return [] }
-        try PlatformCapabilities.requireGPUPassthrough()
+        try PlatformCapabilities.requireVFIOPassthrough()
         let hosts = try listedGPUs(hostDevices: hostDevices)
         return try GPUPassthroughService.normalizeForPersist(devices, hostDevices: hosts)
     }
@@ -78,7 +78,7 @@ extension VMLifecycleService {
     static func syncCodingAgentCloudInitForGPU(vm: VM) throws {
         let stored = CloudInitService.storedUserData(vmID: vm.id)
         guard CodingAgentImage.isManagedUserData(stored) else { return }
-        let gpuAttached = !vm.decodedGPUDevices.isEmpty
+        let gpuAttached = GPUPassthroughService.hasDisplayGPU(vm.decodedGPUDevices)
         let userData = CodingAgentImage.userDataForGPU(
             gpuAttached: gpuAttached, existingUserData: stored,
         )
@@ -101,6 +101,6 @@ extension VMLifecycleService {
         hostDevices: [HostGPUDevice]?,
     ) throws -> [HostGPUDevice] {
         if let hostDevices { return hostDevices }
-        return GPUDeviceService.listDevices()
+        return GPUDeviceService.listPCIDevices()
     }
 }

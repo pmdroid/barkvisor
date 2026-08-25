@@ -732,6 +732,7 @@ struct GPUPassthroughDevice: Decodable, Hashable, Identifiable {
     var iommuGroup: String
     var vendorId: String
     var deviceId: String
+    var pciClass: String?
     var label: String?
     var groupAddresses: [String]?
 
@@ -749,6 +750,7 @@ struct HostGPUDevice: Decodable, Hashable, Identifiable {
     var iommuGroup: String
     var vendorId: String
     var deviceId: String
+    var pciClass: String?
     var name: String
     var driver: String?
     var vfioBound: Bool?
