@@ -14,12 +14,12 @@ import { useDiskStore } from '../stores/disks'
 import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
 import { scopeRows } from '../utils/deviceScope'
-import { formatTemperatureC } from '../utils/format'
+import { formatTemperatureC, formatVolumeUsed } from '../utils/format'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
-import { healthLabel, vmHealth } from '../utils/workloadHealth'
+import { opsStatusClass, opsStatusLabel, vmHealth } from '../utils/workloadHealth'
 
 const router = useRouter()
 const store = useVMStore()
@@ -76,18 +76,11 @@ const toolbarSub = computed(() => {
   return row ? devices.deviceLabel(row) : DEVICE_LABEL
 })
 
-function formatStorageSize(bytes: number): string {
-  const gb = bytes / 1073741824
-  if (gb >= 1024) return `${(gb / 1024).toFixed(1).replace(/\.0$/, '')} TB`
-  return `${gb.toFixed(gb >= 100 ? 0 : 1).replace(/\.0$/, '')} GB`
-}
-
 const selfTempLabel = computed(() => formatTemperatureC(stats.value?.metrics?.temperatureC))
 const selfStorageLabel = computed(() => {
   const summary = storageSummary.value
   if (!summary || !summary.volumeTotalBytes) return null
-  const used = summary.volumeTotalBytes - summary.volumeAvailableBytes
-  return `${formatStorageSize(used)} / ${formatStorageSize(summary.volumeTotalBytes)}`
+  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
 })
 
 type Chip = { key: string; label?: string; value: string }
@@ -174,10 +167,7 @@ function vmSpecs(vm: VM): string {
 }
 
 function vmStateClass(vm: VM): string {
-  const bucket = bucketOf(vm)
-  if (bucket === 'running') return 'ok'
-  if (bucket === 'failed') return 'bad'
-  return 'off'
+  return opsStatusClass(vmHealth(vm))
 }
 
 function vmError(vm: VM): string | null {
@@ -248,6 +238,7 @@ onUnmounted(() => clearInterval(pollTimer))
       <h1>Dashboard</h1>
       <span class="ops-sub">{{ toolbarSub }}</span>
       <div class="ops-actions">
+        <AppButton variant="ghost" icon="sliders" @click="router.push('/settings')">Customize</AppButton>
         <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
       </div>
     </div>
@@ -331,7 +322,7 @@ onUnmounted(() => clearInterval(pollTimer))
                 </div>
                 <div class="dash-card-foot">
                   <span class="dash-state" :class="vmStateClass(vm)">
-                    <span class="ops-dot" :class="vmStateClass(vm)"></span>{{ healthLabel(vmHealth(vm)) }}
+                    <span class="ops-dot" :class="vmStateClass(vm)"></span>{{ opsStatusLabel(vmHealth(vm)) }}
                   </span>
                   <button
                     v-if="col.key === 'failed'"

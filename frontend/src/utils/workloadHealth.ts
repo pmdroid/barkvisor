@@ -86,6 +86,18 @@ export function healthLabel(health: WorkloadHealth): string {
   }
 }
 
+export function opsStatusLabel(health: WorkloadHealth): string {
+  if (health === 'failed') return 'Failed'
+  if (health === 'stopped' || health === 'unknown') return 'Stopped'
+  return 'Running'
+}
+
+export function opsStatusClass(health: WorkloadHealth): 'ok' | 'bad' | 'off' {
+  if (health === 'failed') return 'bad'
+  if (health === 'stopped' || health === 'unknown') return 'off'
+  return 'ok'
+}
+
 export function healthPillClass(health: WorkloadHealth): string {
   if (health === 'guest_ready') return 'guest_ready'
   return health

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applyVMStateEvent, filterRowsByHealth, healthFromState, healthLabel, vmHealth, vmListEmptyKind } from './workloadHealth'
+import { applyVMStateEvent, filterRowsByHealth, healthFromState, healthLabel, opsStatusClass, opsStatusLabel, vmHealth, vmListEmptyKind } from './workloadHealth'
 import type { VM, VMRuntimeStatus } from '../api/types'
 
 function vm(partial: Partial<VM> & Pick<VM, 'state'>): VM {
@@ -141,6 +141,20 @@ describe('healthLabel', () => {
     expect(healthLabel('guest_ready')).toBe('Guest ready')
     expect(healthLabel('failed')).toBe('Failed')
     expect(vmHealth(vm({ state: 'running', health: 'guest_ready' }))).toBe('guest_ready')
+  })
+})
+
+describe('opsStatusLabel', () => {
+  test('ops console buckets guest_ready as Running', () => {
+    expect(opsStatusLabel('guest_ready')).toBe('Running')
+    expect(opsStatusLabel('running')).toBe('Running')
+    expect(opsStatusLabel('starting')).toBe('Running')
+    expect(opsStatusLabel('degraded')).toBe('Running')
+    expect(opsStatusLabel('failed')).toBe('Failed')
+    expect(opsStatusLabel('stopped')).toBe('Stopped')
+    expect(opsStatusClass('guest_ready')).toBe('ok')
+    expect(opsStatusClass('failed')).toBe('bad')
+    expect(opsStatusClass('stopped')).toBe('off')
   })
 })
 

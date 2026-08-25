@@ -121,12 +121,20 @@ describe('PAS-82 Home terminology', () => {
     expect(offenders).toEqual([])
   })
 
+  test('Dashboard board uses ops Running labels', () => {
+    const text = readFileSync(join(srcRoot, 'views/DashboardView.vue'), 'utf8')
+    expect(text).toContain('opsStatusLabel')
+    expect(text).toContain('Customize')
+    expect(text).not.toContain('healthLabel')
+  })
+
   test('Devices view is Home-scoped and reuses Settings pairing', () => {
     const text = readFileSync(join(srcRoot, 'views/DevicesView.vue'), 'utf8')
     expect(text).toContain('DEVICE_LABEL')
     expect(text).toContain('HOME_LABEL')
     expect(text).toContain('/settings?tab=pairing')
     expect(text).not.toContain('/api/pairing/join')
+    expect(text).not.toContain('max-width: 720px')
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
 
@@ -142,6 +150,9 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('deviceAbout.version')
     expect(text).toContain('CreateVMDrawer')
     expect(text).toContain('initial-host-id')
+    expect(text).toContain('Facts')
+    expect(text).not.toContain('vue-chartjs')
+    expect(text).not.toContain('GPU passthrough')
     expect(text).not.toContain('cluster')
     expect(text).not.toMatch(forbiddenTemplateRe)
     const card = readFileSync(join(srcRoot, 'components/DeviceCard.vue'), 'utf8')

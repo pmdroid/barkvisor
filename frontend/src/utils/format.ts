@@ -16,6 +16,17 @@ export function formatTemperatureC(celsius: number | null | undefined): string |
   return `${Math.round(celsius)}°C`
 }
 
+export function formatStorageSize(bytes: number): string {
+  const gb = bytes / 1073741824
+  if (gb >= 1024) return `${(gb / 1024).toFixed(1).replace(/\.0$/, '')} TB`
+  return `${gb.toFixed(gb >= 100 ? 0 : 1).replace(/\.0$/, '')} GB`
+}
+
+export function formatVolumeUsed(totalBytes: number, availableBytes: number): string {
+  const used = totalBytes - availableBytes
+  return `${formatStorageSize(used)} / ${formatStorageSize(totalBytes)}`
+}
+
 export function pct(used: number, total: number): number {
   if (!total) return 0
   return Math.round((used / total) * 100)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatCores, formatLogClock, formatMemoryMB, formatPortForwards, formatTemperatureC, parseLogDate } from './format'
+import { formatCores, formatLogClock, formatMemoryMB, formatPortForwards, formatStorageSize, formatTemperatureC, formatVolumeUsed, parseLogDate } from './format'
 
 describe('formatTemperatureC', () => {
   test('missing sensors are not rendered as 0°C', () => {
@@ -12,6 +12,20 @@ describe('formatTemperatureC', () => {
     expect(formatTemperatureC(0)).toBe('0°C')
     expect(formatTemperatureC(47.6)).toBe('48°C')
     expect(formatTemperatureC(31)).toBe('31°C')
+  })
+})
+
+describe('formatStorageSize', () => {
+  test('gigabytes and terabytes', () => {
+    expect(formatStorageSize(1073741824)).toBe('1 GB')
+    expect(formatStorageSize(240 * 1073741824)).toBe('240 GB')
+    expect(formatStorageSize(1099511627776)).toBe('1 TB')
+  })
+})
+
+describe('formatVolumeUsed', () => {
+  test('used over total', () => {
+    expect(formatVolumeUsed(1099511627776, 1099511627776 - 240 * 1073741824)).toBe('240 GB / 1 TB')
   })
 })
 

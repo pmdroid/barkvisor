@@ -1,18 +1,46 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import api from '../api/client'
+import type { SystemStats } from '../api/types'
 import DeviceCard from '../components/DeviceCard.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import { useDevicesStore } from '../stores/devices'
+import { useDiskStore } from '../stores/disks'
+import { formatTemperatureC, formatVolumeUsed } from '../utils/format'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 
 const router = useRouter()
 const devices = useDevicesStore()
+const diskStore = useDiskStore()
+const { summary: storageSummary } = storeToRefs(diskStore)
+const stats = ref<SystemStats | null>(null)
+
+const selfTempLabel = computed(() => formatTemperatureC(stats.value?.metrics?.temperatureC))
+const selfStorageLabel = computed(() => {
+  const summary = storageSummary.value
+  if (!summary || !summary.volumeTotalBytes) return null
+  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
+})
+
+async function fetchStats() {
+  try {
+    const { data } = await api.get('/system/stats')
+    stats.value = data
+  } catch {
+  }
+}
 
 let pollTimer: number
 onMounted(() => {
   devices.fetchHealth()
-  pollTimer = window.setInterval(() => { devices.fetchHealth() }, 5000)
+  void fetchStats()
+  void diskStore.fetchSummary().catch(() => {})
+  pollTimer = window.setInterval(() => {
+    devices.fetchHealth()
+    void fetchStats()
+  }, 5000)
 })
 onUnmounted(() => clearInterval(pollTimer))
 </script>
@@ -46,7 +74,13 @@ onUnmounted(() => clearInterval(pollTimer))
         Could not load {{ DEVICE_LABEL.toLowerCase() }} health. This {{ DEVICE_LABEL.toLowerCase() }} is still running.
       </p>
       <div v-if="devices.devices.length" class="dev-rows">
-        <DeviceCard v-for="row in devices.devices" :key="row.hostId" :device="row" />
+        <DeviceCard
+          v-for="row in devices.devices"
+          :key="row.hostId"
+          :device="row"
+          :temp-label="row.role === 'self' ? selfTempLabel : null"
+          :storage-label="row.role === 'self' ? selfStorageLabel : null"
+        />
       </div>
       <div v-else class="dev-empty">No {{ DEVICE_LABEL }}s in this {{ HOME_LABEL }} yet</div>
     </div>
@@ -60,10 +94,9 @@ onUnmounted(() => clearInterval(pollTimer))
   margin: 0 0 12px;
 }
 .dev-rows {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
   gap: 8px;
-  max-width: 720px;
 }
 .dev-empty {
   border: 1px dashed var(--line);
