@@ -1,8 +1,22 @@
 import { formatBytes } from './format'
 
+const librarySettingsListeners = new Set<() => void>()
+
+/** Notify Images (and other listeners) after a Library path save. */
+export function bumpLibrarySettingsEpoch() {
+  for (const listener of librarySettingsListeners) listener()
+}
+
+export function onLibrarySettingsChanged(listener: () => void): () => void {
+  librarySettingsListeners.add(listener)
+  return () => {
+    librarySettingsListeners.delete(listener)
+  }
+}
+
 /**
  * Humanized Library volume: "X GB free of Y GB".
- * Null when capacity is unknown — never "0 GB free of 0 GB".
+ * Null when capacity is unknown (missing key or JSON null) — never "0 GB free of 0 GB".
  */
 export function librarySpaceCopy(
   totalBytes: number | null | undefined,

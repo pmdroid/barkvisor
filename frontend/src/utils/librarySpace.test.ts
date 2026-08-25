@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { librarySpaceCopy } from './librarySpace'
+import {
+  bumpLibrarySettingsEpoch,
+  librarySpaceCopy,
+  onLibrarySettingsChanged,
+} from './librarySpace'
 
 describe('librarySpaceCopy', () => {
   test('humanizes free of total with formatBytes', () => {
@@ -24,5 +28,17 @@ describe('librarySpaceCopy', () => {
 
   test('a full volume with a known total is still shown', () => {
     expect(librarySpaceCopy(1e9, 0)).toBe('0 B free of 1.0 GB')
+  })
+
+  test('epoch notifies listeners so Images can refetch after a Library save', () => {
+    let n = 0
+    const stop = onLibrarySettingsChanged(() => {
+      n += 1
+    })
+    bumpLibrarySettingsEpoch()
+    expect(n).toBe(1)
+    stop()
+    bumpLibrarySettingsEpoch()
+    expect(n).toBe(1)
   })
 })

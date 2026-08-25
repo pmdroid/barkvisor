@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
+import { onActivated, onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useImageStore } from '../stores/images'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
@@ -20,7 +21,7 @@ import type { LibrarySettings } from '../api/types'
 import { formatBytes } from '../utils/format'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 import { imageProgressPercent } from '../utils/imageProgress'
-import { librarySpaceCopy } from '../utils/librarySpace'
+import { librarySpaceCopy, onLibrarySettingsChanged } from '../utils/librarySpace'
 import {
   detectImageArch,
   hostArchToImageArch,
@@ -33,6 +34,7 @@ const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeLibrary = useHomeLibraryStore()
+const route = useRoute()
 const librarySettings = ref<LibrarySettings | null>(null)
 const librarySpaceLoaded = ref(false)
 const librarySpaceLine = computed(() =>
@@ -64,6 +66,16 @@ const visibleImages = computed(() => {
   return store.images
 })
 
+async function fetchLibrarySpace() {
+  try {
+    const { data } = await api.get<LibrarySettings>('/system/library/settings')
+    librarySettings.value = data
+  } catch {
+    librarySettings.value = null
+  } finally {
+    librarySpaceLoaded.value = true
+  }
+}
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 
 const showDownload = ref(false)
@@ -143,6 +155,7 @@ function subscribeDownloading() {
 }
 
 let pollTimer: number
+let stopLibrarySettingsWatch: (() => void) | null = null
 
 function resetDownloadForm() {
   dlName.value = ''
@@ -239,6 +252,11 @@ onMounted(async () => {
   await caps.fetchCapabilities().catch(() => {})
   dlArch.value = defaultArch.value
   uploadArch.value = defaultArch.value
+  void fetchLibrarySpace()
+  stopLibrarySettingsWatch?.()
+  stopLibrarySettingsWatch = onLibrarySettingsChanged(() => {
+    void fetchLibrarySpace()
+  })
   await devicesStore.fetchHealth().catch(() => {})
   await Promise.all([
     store.fetchAll(),
@@ -253,17 +271,22 @@ onMounted(async () => {
       })
     }
   }, 5000)
-  try {
-    const { data } = await api.get<LibrarySettings>('/system/library/settings')
-    librarySettings.value = data
-  } catch {
-    librarySettings.value = null
-  } finally {
-    librarySpaceLoaded.value = true
-  }
 })
 
+onActivated(() => {
+  void fetchLibrarySpace()
+})
+
+watch(
+  () => route.name,
+  (name) => {
+    if (name === 'images') void fetchLibrarySpace()
+  },
+)
+
 onUnmounted(() => {
+  stopLibrarySettingsWatch?.()
+  stopLibrarySettingsWatch = null
   clearInterval(pollTimer)
   Object.values(progressStreams).forEach(s => s.stop())
 })
