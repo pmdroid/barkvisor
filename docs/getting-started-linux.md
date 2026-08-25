@@ -294,7 +294,25 @@ echo 'allow br0' | sudo tee /etc/qemu/bridge.conf
 sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper 2>/dev/null || true
 ```
 
-In the UI: **Networks** → **Bridge setup** shows whether this Device is ready and the copyable setup steps. Then create a **bridged** network with interface `br0`.
+In the UI: **Networks** → **Bridge setup** is **install guides only**. It does not Setup / Start / Stop / Remove a bridge. Copy the commands, then create a **bridged** network with interface `br0`. VM-on-bridge wiring is unchanged.
+
+---
+
+## GPU and PCI passthrough (optional)
+
+GPU attach needs IOMMU groups, vfio-pci, and KVM. macOS does not offer VFIO.
+
+- The GPU list labels **NVIDIA**, **Intel**, and **AMD**. Multiple cards per vendor stay separate rows.
+- Attach/detach a GPU like USB when the Device is ready. Occupancy is the host GPU driver.
+- Workload detail also has a **PCI** picker for non-GPU VFIO devices. The boot disk and the last remaining uplink are excluded.
+
+If passthrough is unavailable, the UI says why. Do not invent a macOS VFIO path.
+
+---
+
+## Host block devices (optional)
+
+Create Disk on Linux can attach a host block device as **raw**. BarkVisor refuses devices the host already uses (mounted filesystems, swap, the data-dir volume). macOS has no block-device option. See [Create a Workload](create-workload.md#disks).
 
 ---
 

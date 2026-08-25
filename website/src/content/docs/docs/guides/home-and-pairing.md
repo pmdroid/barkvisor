@@ -30,6 +30,8 @@ On a Device that already finished setup:
 
 The chosen address is the `host=` in that offer. Changing the address issues a new code and resets the expiry. The offer expires; Revoke it if unused.
 
+The same **Settings → Pairing** tab holds the **phone sign-in QR**. That is how the mobile app logs into this Home. It is not on Settings → Home.
+
 Join redeem is HTTP on `:7777`. Allowed addresses are RFC1918, IPv6 unique-local, and CGNAT `100.64.0.0/10`. Loopback, link-local, public IPs, and metadata (`169.254.169.254`, `100.100.100.200`) stay blocked. A name is resolved on the joining Device, not when the offer is issued.
 
 Older joiners that only accept RFC1918 still reject a `100.64/10` offer. Upgrade the joining Device, or pick a LAN IP both sides can reach.
@@ -68,10 +70,11 @@ See [Installation (Linux)](/docs/linux#api-only-device-no-spa).
 
 ## After Devices are paired
 
-- **Dashboard** — Device cards show reachability and Workload counts.
+- **Sidebar Device** — **All** shows the Home union. Pick one Device to filter Workloads, Library, Networks, and Logs to that machine. Logs can still refine inside the scope. Create VM has its own Device picker and is not locked to the sidebar.
+- **Dashboard** — Device cards show reachability and Workload counts. Optional widgets show/hide per browser; **Reset** restores the default set. This Device CPU/memory charts live on Device detail, not as Home-wide lists.
 - **Create VM** — pick any reachable Device. Recommended is a suggestion; you can place anyway. See [Create a Workload](/docs/guides/create-workload/).
-- **Library** — images live on each Device. You can point a Device at a custom Library directory and optionally designate a depot Device so others fetch images over the agent plane instead of the internet.
-- **Native console / phone** — allow Local Network so the app can reach the dashboard Device on `:7777`. It does not talk to members directly.
+- **Library** — images live on each Device. You can point a Device at a custom Library directory and optionally designate a depot Device so others fetch images over the agent plane instead of the internet. Used/free is that Library path’s volume (it can differ from the data dir). If capacity is unknown, the UI says so instead of showing zeros.
+- **Native console / phone** — allow Local Network so the app can reach the dashboard Device on `:7777`. It does not talk to members directly. Sign in from **Settings → Pairing**.
 
 ## Remote access (Tailscale)
 
@@ -95,5 +98,6 @@ If a Device is wiped, it is a new Device. Re-pair it with a fresh offer. Local W
 ## Related
 
 - [First launch](/docs/getting-started/first-launch/)
+- [Ollama](/docs/guides/ollama/)
 - [Create a Workload](/docs/guides/create-workload/)
 - [Changelog](/docs/changelog/)

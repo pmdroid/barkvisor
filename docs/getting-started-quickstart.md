@@ -9,6 +9,7 @@ connecting to it, and managing its lifecycle in BarkVisor.
   - **macOS:** `sudo launchctl list | grep barkvisor`
   - **Linux:** `systemctl status barkvisor.service` (or `swift run BarkVisorApp` in dev)
 - The server is listening on port 7777 (default).
+- Optional: pick **All** or one **Device** in the sidebar. List pages (Workloads, Library, Networks, Logs) follow that scope. Create VM still asks which Device should run the guest.
 - At least one OS image is available, or you are ready to download/upload one.
 - QEMU is available:
   - **macOS:** `brew install qemu swtpm socket_vmnet`
@@ -30,9 +31,9 @@ Architecture follows this **Device** (the machine running BarkVisor): `arm64` on
 1. Open the BarkVisor web UI at `http://localhost:7777`.
 2. Navigate to **Images** (or **Registry** if browsing repository catalogs).
 3. Browse the available repository images and click **Download**.
-4. BarkVisor streams the file from the source URL with a progress indicator
-   (SSE-based). If the download fails, it retries automatically up to 4
-   attempts with exponential backoff (2 s, 4 s, 8 s).
+4. BarkVisor streams the file from the source URL. Progress is a real percent
+   in the web UI and the Console (SSE). If the download fails, it retries
+   automatically up to 4 attempts with exponential backoff (2 s, 4 s, 8 s).
 5. Files ending in `.xz` or `.gz` are decompressed automatically after
    download using `xz` or `gunzip`.
 
@@ -148,8 +149,12 @@ fill-in-the-blank inputs.
 
 If the template's image is not yet downloaded locally, BarkVisor
 automatically starts the download and returns a `"downloading"` status.
-Monitor the image download progress on the Images page; once the image is
+Monitor the image download percent on the Images page; once the image is
 ready, deploy again.
+
+Used and free Library space is the **Library path** volume. That path can
+live on a different mount than the data dir, and a depot Device is named
+when the Library is not this machine. Unknown capacity is not shown as zeros.
 
 If the image is already available, the VM is created immediately through the
 same pipeline as the wizard (cloud-image mode with rendered user data).

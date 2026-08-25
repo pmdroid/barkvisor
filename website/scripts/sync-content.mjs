@@ -66,6 +66,11 @@ const map = {
     title: 'Home and pairing',
     description: 'Add a Device to a Home, join from setup or the CLI, and what pairing does not do.',
   },
+  'ollama.md': {
+    out: 'guides/ollama.md',
+    title: 'Ollama',
+    description: 'Install Ollama, pull models, Start on the Device that has the weights, search the library.',
+  },
   'create-workload.md': {
     out: 'guides/create-workload.md',
     title: 'Create a Workload',
@@ -99,6 +104,7 @@ function fixLinks(body) {
     .replace(/\]\(getting-started-troubleshooting\.md(#[^)]*)?\)/g, '](/docs/getting-started/troubleshooting/$1)')
     .replace(/\]\(product-terminology\.md(#[^)]*)?\)/g, '](/docs/concepts/terminology/$1)')
     .replace(/\]\(home-and-pairing\.md(#[^)]*)?\)/g, '](/docs/guides/home-and-pairing/$1)')
+    .replace(/\]\(ollama\.md(#[^)]*)?\)/g, '](/docs/guides/ollama/$1)')
     .replace(/\]\(create-workload\.md(#[^)]*)?\)/g, '](/docs/guides/create-workload/$1)')
     .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
     .replace(/\]\(roadmap\.md(#[^)]*)?\)/g, '](/docs/roadmap/$1)')
