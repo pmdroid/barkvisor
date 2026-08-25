@@ -30,7 +30,7 @@ public enum PlatformCapabilities {
         false
     }
 
-    /// Linux Manage Bridges shows host-bridge setup guidance (no mutation).
+    /// Linux Bridge setup shows host-bridge install guidance (no mutation).
     public static var supportsHostBridgeManagement: Bool {
         #if os(Linux)
             true

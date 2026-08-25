@@ -833,7 +833,7 @@ export interface SystemCapabilities {
   supportsBridgedNetworking: boolean
   /** Install/start/stop privileged bridge daemons (macOS only). */
   supportsManagedBridgeDaemon: boolean
-  /** Linux Manage Bridges shows host-bridge setup guidance (no mutation). */
+  /** Linux Bridge setup shows host-bridge install guidance (no mutation). */
   supportsHostBridgeManagement?: boolean
   supportsUSBPassthrough: boolean
   supportsInAppUpdate: boolean

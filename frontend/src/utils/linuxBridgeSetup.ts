@@ -6,6 +6,16 @@ import {
   HOST_BRIDGE_SUGGESTED,
 } from './hostBridgeFacts'
 
+/** Host-mutating action keys the Networks UI must never render. */
+export const BRIDGE_MUTATION_ACTION_KEYS = ['setup', 'start', 'stop', 'remove'] as const
+export type BridgeMutationActionKey = (typeof BRIDGE_MUTATION_ACTION_KEYS)[number]
+
+/** Matches SocketVmnetDiscovery.installHint with one command per line. */
+export const SOCKET_VMNET_INSTALL_COMMANDS = [
+  'brew install socket_vmnet',
+  'sudo brew services start socket_vmnet',
+].join('\n')
+
 /** Copyable Linux host-bridge steps (PAS-222). Prefer remediations from HostBridgeFacts. */
 export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommandGroup[] {
   if (ready.remediations && ready.remediations.length > 0) {
@@ -73,4 +83,38 @@ export function linuxBridgeStatusSummary(ready: HostBridgeReadiness): string {
     return 'This Device has a single uplink. Do not enslave it into a bridge (you can lose SSH). Prefer NAT, or add another NIC first.'
   }
   return 'This Device is not ready for Bridged networks yet. Run the steps below, then Re-check.'
+}
+
+/** Copyable macOS socket_vmnet steps. Prefer remediations from HostBridgeFacts. */
+export function macosSocketVmnetSetupGroups(
+  ready?: HostBridgeReadiness | null,
+): GuestCommandGroup[] {
+  if (ready?.remediations && ready.remediations.length > 0) {
+    return ready.remediations.map((step) => ({
+      id: step.id,
+      label: step.label,
+      commands: step.commands,
+    }))
+  }
+  if (ready?.ready) return []
+  return [
+    {
+      id: 'homebrew-socket-vmnet',
+      label: 'Install and start socket_vmnet',
+      commands: SOCKET_VMNET_INSTALL_COMMANDS,
+    },
+  ]
+}
+
+export function macosSocketVmnetStatusSummary(
+  ready?: HostBridgeReadiness | null,
+): string {
+  if (!ready) {
+    return 'Could not read socket_vmnet status on this Device. Run the steps below, then Re-check.'
+  }
+  if (ready.ready) {
+    const names = ready.bridges.map((b) => b.name).join(', ')
+    return `This Device is ready for Bridged networks (${names || 'socket_vmnet'}).`
+  }
+  return 'This Device is not ready for Bridged networks yet. Install socket_vmnet with Homebrew, then Re-check.'
 }
