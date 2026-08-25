@@ -374,6 +374,37 @@ struct OllamaSettingsUpdate: Encodable, Equatable {
     }
 }
 
+struct OllamaLibrarySearchResult: Decodable, Identifiable, Equatable {
+    var name: String
+    var description: String?
+    var size: Int64?
+
+    var id: String {
+        name
+    }
+
+    var pullName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct OllamaLibrarySearchResponse: Decodable, Equatable {
+    var query: String
+    var upstream: String
+    var results: [OllamaLibrarySearchResult]
+
+    static func query(_ raw: String) -> String? {
+        let q = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return q.isEmpty ? nil : q
+    }
+
+    static func accept(_ response: OllamaLibrarySearchResponse, currentQuery: String)
+        -> OllamaLibrarySearchResponse? {
+        guard let q = query(currentQuery), q == response.query else { return nil }
+        return response
+    }
+}
+
 struct OllamaPullBody: Encodable, Equatable {
     var name: String
     var hostId: String?

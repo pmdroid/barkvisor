@@ -217,6 +217,18 @@ struct SSRFProtectionTests {
         #expect(SSRFGuard.fetchRejection(for: ftp) != nil)
     }
 
+    @Test func `fetchRejection host allowlist is ollama.com only`() throws {
+        let allowed: Set = ["ollama.com"]
+        let ok = try #require(URL(string: "https://ollama.com/api/tags"))
+        #expect(SSRFGuard.fetchRejection(for: ok, allowedHosts: allowed) == nil)
+        let other = try #require(URL(string: "https://example.com/api/tags"))
+        #expect(SSRFGuard.fetchRejection(for: other, allowedHosts: allowed) != nil)
+        let privateURL = try #require(URL(string: "http://127.0.0.1/api/tags"))
+        #expect(SSRFGuard.fetchRejection(for: privateURL, allowedHosts: allowed) != nil)
+        #expect(SSRFGuard.shouldFollowRedirect(to: ok, allowedHosts: allowed))
+        #expect(!SSRFGuard.shouldFollowRedirect(to: other, allowedHosts: allowed))
+    }
+
     @Test func `redirectTarget refuses private and file hops`() throws {
         let from = try #require(URL(string: "https://cdn.example/a.img"))
         let relative = SSRFGuard.redirectTarget(statusCode: 302, location: "/b.img", from: from)
@@ -410,6 +422,52 @@ struct SSRFProtectionTests {
         #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains("127.0.0.1") })
         #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
         #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+    }
+
+    @Test func `allowed host session does not follow redirect off allowlist`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let portBox = HopPortBox()
+        let allowedHost = "ssrf-allow.test"
+        let otherHost = "example.com"
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/public") {
+                return (302, ["Location": "http://\(otherHost):\(portBox.port)/secret"], "")
+            }
+            if path.hasPrefix("/secret") {
+                return (200, [:], "leaked")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+        portBox.port = server.port
+        SSRFPinnedURLProtocol.pinEndpointOverride = { url in
+            guard let requestHost = url.host, requestHost == allowedHost || requestHost == otherHost
+            else {
+                throw SSRFPinError.rejected("test pin refused \(url.absoluteString)")
+            }
+            return PinnedEndpoint(
+                originalHost: requestHost,
+                connectIP: "127.0.0.1",
+                port: url.port ?? 80,
+                usesTLS: false,
+            )
+        }
+
+        let start = try #require(URL(string: "http://\(allowedHost):\(server.port)/public"))
+        let session = SSRFGuard.urlSession(resourceTimeout: 5, allowedHosts: [allowedHost])
+        defer { session.invalidateAndCancel() }
+
+        let request = SSRFGuard.request(url: start, timeout: 5, allowedHosts: [allowedHost])
+        #expect(SSRFPinnedURLProtocol.allowedHosts(in: request) == [allowedHost])
+        let (data, response) = try await session.data(for: request)
+        await waitForHopShutdown()
+        let http = try #require(response as? HTTPURLResponse)
+        #expect(http.statusCode == 302)
+        #expect(String(data: data, encoding: .utf8) != "leaked")
+        #expect(server.hitCount() == 1)
+        #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains(otherHost) })
     }
 
     @Test func `failed HTTPClient shutdown is not counted`() {

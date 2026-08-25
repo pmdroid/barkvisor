@@ -110,6 +110,9 @@ final class SSRFPinnedHopClient: @unchecked Sendable {
         for (name, value) in request.allHTTPHeaderFields ?? [:] {
             if name.caseInsensitiveCompare("Host") == .orderedSame { continue }
             if name.caseInsensitiveCompare(SSRFPinnedURLProtocol.timeoutHeader) == .orderedSame { continue }
+            if name.caseInsensitiveCompare(SSRFPinnedURLProtocol.allowedHostsHeader) == .orderedSame {
+                continue
+            }
             headers.replaceOrAdd(name: name, value: value)
         }
         if let body = request.httpBody {

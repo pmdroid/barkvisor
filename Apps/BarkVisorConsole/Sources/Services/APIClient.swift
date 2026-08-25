@@ -340,6 +340,13 @@ struct APIClient {
         try await get("/api/home/ollama/models")
     }
 
+    func ollamaLibrarySearch(q: String) async throws -> OllamaLibrarySearchResponse {
+        try await get(
+            "/api/home/ollama/library/search",
+            query: [URLQueryItem(name: "q", value: q)],
+        )
+    }
+
     func pullOllama(name: String, hostId: String?) async throws -> OllamaTaskAccepted {
         try await post("/api/home/ollama/pull", body: OllamaPullBody(name: name, hostId: hostId))
     }

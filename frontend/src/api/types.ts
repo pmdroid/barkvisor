@@ -759,6 +759,18 @@ export interface OllamaTaskAccepted {
   hostId: string
 }
 
+export interface OllamaLibrarySearchResult {
+  name: string
+  description?: string | null
+  size?: number | null
+}
+
+export interface OllamaLibrarySearchResponse {
+  query: string
+  upstream: string
+  results: OllamaLibrarySearchResult[]
+}
+
 export interface SSHKey {
   id: string
   name: string

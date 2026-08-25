@@ -40,6 +40,16 @@ struct OllamaAuthPolicyTests {
             !OllamaAuthPolicy.allows(principal: .inferenceKey, method: "POST", path: "/api/ollama/pull"),
         )
         #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "GET", path: "/api/home/ollama/library/search",
+            ),
+        )
+        #expect(
+            OllamaAuthPolicy.allows(
+                principal: .session, method: "GET", path: "/api/home/ollama/library/search",
+            ),
+        )
+        #expect(
             !OllamaAuthPolicy.allows(principal: .inferenceKey, method: "GET", path: "/api/ollama/settings"),
         )
         #expect(
