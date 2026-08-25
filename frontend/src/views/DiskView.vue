@@ -12,6 +12,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceDisksStore, type HomeDiskRow } from '../stores/deviceDisks'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDiskStore } from '../stores/disks'
@@ -22,6 +23,7 @@ import { guestResizeCommands } from '../utils/guestAgentInstall'
 import { formatBytes } from '../utils/format'
 import { canCallDeviceAPI, isSelfDevice } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
+import { scopeRows } from '../utils/deviceScope'
 import { openWorkloadRow, workloadDetailPath } from '../utils/workloadDetail'
 import { storeToRefs } from 'pinia'
 
@@ -30,6 +32,7 @@ const toast = useToastStore()
 const vmStore = useVMStore()
 const diskStore = useDiskStore()
 const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const homeDisks = useDeviceDisksStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const { disks, usages: diskUsages, summary: storageSummary } = storeToRefs(diskStore)
@@ -54,14 +57,16 @@ const deleting = ref(false)
 const useHomeUnion = computed(() => devicesStore.devices.length > 0)
 
 const homeRows = computed<HomeDiskRow[]>(() => {
-  if (useHomeUnion.value) return homeDisks.homeRows(devicesStore.devices)
-  return disks.value.map((disk) => ({
-    disk,
-    hostId: devicesStore.selfDevice?.hostId || '',
-    label: '',
-    role: 'self',
-    reachable: true,
-  }))
+  const rows = useHomeUnion.value
+    ? homeDisks.homeRows(devicesStore.devices)
+    : disks.value.map((disk) => ({
+        disk,
+        hostId: devicesStore.selfDevice?.hostId || '',
+        label: '',
+        role: 'self',
+        reachable: true,
+      }))
+  return scopeRows(rows, deviceScope.selectedHostId)
 })
 
 const pageLoading = computed(() => {
@@ -84,15 +89,18 @@ type SummaryCard = {
 }
 
 const summaryCards = computed<SummaryCard[]>(() => {
-  if (useHomeUnion.value) return homeDisks.homeSummaries(devicesStore.devices)
-  if (!storageSummary.value) return []
-  return [{
-    hostId: devicesStore.selfDevice?.hostId || '',
-    label: '',
-    role: 'self',
-    reachable: true,
-    summary: storageSummary.value,
-  }]
+  const cards = useHomeUnion.value
+    ? homeDisks.homeSummaries(devicesStore.devices)
+    : storageSummary.value
+      ? [{
+          hostId: devicesStore.selfDevice?.hostId || '',
+          label: '',
+          role: 'self',
+          reachable: true,
+          summary: storageSummary.value,
+        }]
+      : []
+  return scopeRows(cards, deviceScope.selectedHostId)
 })
 
 const formDevice = computed(() => {
@@ -101,7 +109,7 @@ const formDevice = computed(() => {
 })
 
 const formDeviceOptions = computed(() =>
-  devicesStore.devices.map((device) => ({
+  scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
     label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
     disabled: !canCallDeviceAPI(device),
@@ -117,6 +125,7 @@ function canMutate(row: HomeDiskRow): boolean {
 }
 
 function defaultFormHostId(): string {
+  if (!deviceScope.isAll) return deviceScope.selectedHostId
   return devicesStore.selfDevice?.hostId
     || devicesStore.devices.find((device) => canCallDeviceAPI(device))?.hostId
     || ''

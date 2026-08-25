@@ -90,6 +90,7 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
 <style scoped>
 .device-card-link {
   display: block;
+  min-width: 0;
   color: inherit;
   text-decoration: none;
 }
@@ -102,6 +103,8 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
   border: 1px solid var(--border-glass);
   border-radius: var(--radius);
   padding: 16px 18px;
+  min-width: 0;
+  overflow: hidden;
 }
 .device-card.unreachable {
   border-color: rgba(248, 113, 113, 0.35);
@@ -113,6 +116,7 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .device-card h3 {
@@ -120,6 +124,7 @@ const healthKeys: WorkloadHealth[] = ['running', 'starting', 'degraded', 'failed
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 .device-card-meta {
   display: flex;

@@ -12,6 +12,7 @@ import { useTaskPoller } from '../composables/useTaskPoller'
 import { useDeviceLogsStore, LOG_HISTORY_LIMIT, LOG_TAIL_CAP, type HomeLogRow } from '../stores/deviceLogs'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useLogStore } from '../stores/logs'
 import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
@@ -19,11 +20,13 @@ import { requestDiagnosticsBundle, saveBlob } from '../utils/diagnosticsBundle'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
+import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 
 const store = useLogStore()
 const homeLogs = useDeviceLogsStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const vmStore = useVMStore()
 const toast = useToastStore()
 const diagnosticsPoller = useTaskPoller()
@@ -90,7 +93,7 @@ const tableColumns = computed(() => {
 })
 
 const deviceOptions = computed(() =>
-  devicesStore.devices.map((device) => ({
+  scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
     label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
   })),
@@ -100,7 +103,7 @@ const vmOptions = computed(() => {
   if (!useHomeUnion.value) return vmStore.vms.map((vm) => ({ id: vm.id, name: vm.name }))
   const seen = new Set<string>()
   const options: { id: string; name: string }[] = []
-  for (const row of homeWorkloads.homeRows(devicesStore.devices)) {
+  for (const row of scopeRows(homeWorkloads.homeRows(devicesStore.devices), deviceScope.selectedHostId)) {
     if (seen.has(row.vm.id)) continue
     seen.add(row.vm.id)
     options.push({ id: row.vm.id, name: row.vm.name })
@@ -111,21 +114,27 @@ const vmOptions = computed(() => {
 const displayRows = computed<HomeLogRow[]>(() => {
   const limit = liveTail.value ? LOG_TAIL_CAP : LOG_HISTORY_LIMIT
   if (useHomeUnion.value) {
-    return homeLogs.homeRows(devicesStore.devices, limit, {
-      hostId: deviceFilter.value || undefined,
-      vm: vmFilter.value || undefined,
-    })
+    return scopeRows(
+      homeLogs.homeRows(devicesStore.devices, limit, {
+        hostId: deviceFilter.value || undefined,
+        vm: vmFilter.value || undefined,
+      }),
+      deviceScope.selectedHostId,
+    )
   }
   const entries = vmFilter.value
     ? store.entries.filter((item) => item.vm === vmFilter.value)
     : store.entries
-  return entries.map((item) => ({
-    entry: item,
-    hostId: devicesStore.selfDevice?.hostId || '',
-    label: '',
-    role: 'self',
-    reachable: true,
-  }))
+  return scopeRows(
+    entries.map((item) => ({
+      entry: item,
+      hostId: devicesStore.selfDevice?.hostId || '',
+      label: '',
+      role: 'self',
+      reachable: true,
+    })),
+    deviceScope.selectedHostId,
+  )
 })
 
 const pageLoading = computed(() => {
@@ -229,6 +238,15 @@ async function downloadDiagnostics() {
     diagnosticsBusy.value = false
   }
 }
+
+watch(
+  () => deviceScope.selectedHostId,
+  (selected) => {
+    if (!deviceFilter.value) return
+    if (isDeviceScopeAll(selected)) return
+    if (deviceFilter.value !== selected) deviceFilter.value = ''
+  },
+)
 
 watch([category, level, timeRange], () => {
   if (!liveTail.value) void refresh()
