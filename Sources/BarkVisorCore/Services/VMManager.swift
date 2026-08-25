@@ -197,6 +197,9 @@ public actor VMManager: VMStateQuerying {
 
         // Fail fast if hostfwd ports are already bound (another VM, or orphaned QEMU).
         try Self.assertHostPortsAvailable(for: loaded.vm)
+        try BlockDeviceService.requireHostDeviceReadWrite(
+            paths: [loaded.disk.path] + loaded.additionalDisks.map(\.path),
+        )
 
         // Update state to starting and clear pending changes
         try await updateState(vmID: vmID, state: "starting")

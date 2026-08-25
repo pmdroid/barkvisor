@@ -268,7 +268,7 @@ public enum QEMUBuilder {
         args += specResourceArgs(spec)
         args += try firmwareArgs(spec: spec, vmID: vmID, vmType: guestType)
         args += ["-device", "qemu-xhci"]
-        args += bootDiskArgs(disk: disk, windows: windows, diskFirst: diskFirst)
+        args += try bootDiskArgs(disk: disk, windows: windows, diskFirst: diskFirst)
         args += try isoArgs(isos: ctx.isos, windows: windows, diskFirst: diskFirst)
         args += try cloudInitArgs(spec: spec)
         args += try sharedFolderArgs(spec: spec)
@@ -349,7 +349,8 @@ public enum QEMUBuilder {
         DiskSettings.isHostDevicePath(path) ? "none" : "writeback"
     }
 
-    private static func bootDiskArgs(disk: Disk, windows: Bool, diskFirst: Bool) -> [String] {
+    private static func bootDiskArgs(disk: Disk, windows: Bool, diskFirst: Bool) throws -> [String] {
+        try BlockDeviceService.requireHostDeviceReadWrite(paths: [disk.path])
         let diskBootIndex = diskFirst ? 0 : 1
         let driveArgs = [
             "-drive",
@@ -425,11 +426,18 @@ public enum QEMUBuilder {
         return (args, exe, swtpmArgs, tpmStateDir)
     }
 
-    private static func additionalDiskArgs(_ disks: [Disk]) throws -> [String] {
+    package static func additionalDiskArgs(
+        _ disks: [Disk],
+        openReadWrite: ((String) throws -> Void)? = nil,
+    ) throws -> [String] {
         var args: [String] = []
         for (i, extraDisk) in disks.enumerated() {
             let sanitizedPath = try sanitizeQEMUArg(extraDisk.path, label: "Additional disk path")
             let sanitizedFormat = try sanitizeQEMUArg(extraDisk.format, label: "Additional disk format")
+            try BlockDeviceService.requireHostDeviceReadWrite(
+                paths: [sanitizedPath],
+                openReadWrite: openReadWrite,
+            )
             args += [
                 "-drive",
                 "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=\(diskCacheMode(path: sanitizedPath)),id=\(QEMUDeviceNames.extraDrive(i))",
