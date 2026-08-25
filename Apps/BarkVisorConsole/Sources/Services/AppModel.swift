@@ -492,6 +492,10 @@ final class AppModel {
         try await requireClient().pullOllama(name: name, hostId: hostId)
     }
 
+    func searchOllamaLibrary(_ q: String) async throws -> OllamaLibrarySearchResponse {
+        try await requireClient().ollamaLibrarySearch(q: q)
+    }
+
     func ollamaTask(_ task: OllamaTaskAccepted) async throws -> OllamaTaskEvent {
         try await requireClient().ollamaTask(task, selfHostId: devices.first(where: \.isSelf)?.hostId)
     }

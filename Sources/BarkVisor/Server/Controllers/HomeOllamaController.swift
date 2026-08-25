@@ -1,5 +1,8 @@
 import BarkVisorCore
 import Foundation
+#if canImport(FoundationNetworking)
+    import FoundationNetworking
+#endif
 import GRDB
 import JWTKit
 import Vapor
@@ -48,6 +51,7 @@ struct HomeOllamaController: RouteCollection {
         let home = routes.grouped("api", "home", "ollama")
         home.get("status", use: status)
         home.get("models", use: models)
+        home.get("library", "search", use: librarySearch)
         home.post("pull", use: pull)
         home.post("start", use: start)
         home.post("stop", use: stop)
@@ -75,6 +79,43 @@ struct HomeOllamaController: RouteCollection {
     @Sendable
     func models(req: Vapor.Request) async throws -> OllamaHomeCatalog {
         try await status(req: req)
+    }
+
+    @Sendable
+    func librarySearch(req: Vapor.Request) async throws -> OllamaLibrarySearch.Response {
+        _ = try req.requireUser
+        let query = (try? req.query.get(String.self, at: "q")) ?? ""
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return OllamaLibrarySearch.Response(query: "", results: [])
+        }
+        let url = OllamaLibrarySearch.upstreamURL
+        if let reason = SSRFGuard.fetchRejection(for: url, allowedHosts: OllamaLibrarySearch.allowedHosts) {
+            throw BarkVisorError.badGateway(reason)
+        }
+        let data: Data
+        do {
+            let (body, response) = try await SSRFGuard.defaultSession.data(from: url)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200 ..< 300).contains(status) else {
+                throw BarkVisorError.badGateway("Ollama library is unreachable")
+            }
+            data = body
+        } catch let error as BarkVisorError {
+            throw error
+        } catch {
+            throw BarkVisorError.badGateway("Ollama library is unreachable")
+        }
+        let models: [OllamaLibrarySearch.Model]
+        do {
+            models = try OllamaLibrarySearch.models(from: data)
+        } catch {
+            throw BarkVisorError.badGateway("Ollama library is unreachable")
+        }
+        return OllamaLibrarySearch.Response(
+            query: trimmed,
+            results: OllamaLibrarySearch.map(query: trimmed, models: models),
+        )
     }
 
     @Sendable

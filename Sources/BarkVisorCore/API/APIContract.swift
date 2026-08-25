@@ -142,6 +142,7 @@ public enum APIContract {
         Route(method: "POST", path: "/api/ollama/v1/chat/completions", stability: .evolving),
         Route(method: "GET", path: "/api/home/ollama/status", stability: .evolving),
         Route(method: "GET", path: "/api/home/ollama/models", stability: .evolving),
+        Route(method: "GET", path: "/api/home/ollama/library/search", stability: .evolving),
         Route(method: "POST", path: "/api/home/ollama/pull", stability: .evolving),
         // Body { name, hostId? }. Same shape as /api/ollama/start. Do not add fields.
         Route(method: "POST", path: "/api/home/ollama/start", stability: .evolving),

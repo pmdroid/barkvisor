@@ -1827,6 +1827,40 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/home/ollama/library/search:
+    get:
+      tags: [evolving]
+      operationId: getHomeOllamaLibrarySearch
+      x-barkvisor-stability: evolving
+      summary: Search the Ollama library through Home
+      description: >
+        Proxies GET https://ollama.com/api/tags (popular library list; upstream
+        ignores ?q=) and filters names with `q`. No durable JSON search exists on
+        ollama.com; HTML search is not scraped. Empty `q` returns no results
+        without fetching. Host allowlist is ollama.com; SSRFGuard validates the
+        fetch. Upstream failure is 502.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Filtered library results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaLibrarySearchResponse"
+        "502":
+          description: ollama.com is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/home/ollama/pull:
     post:
       tags: [evolving]
@@ -2075,6 +2109,36 @@ components:
         apiKeyMasked:
           type: string
           description: Bullets when an effective key is present (stored or inherited). Never the raw key or a suffix.
+
+    OllamaLibrarySearchResult:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        size:
+          type: integer
+          format: int64
+          nullable: true
+
+    OllamaLibrarySearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, upstream, results]
+      properties:
+        query:
+          type: string
+        upstream:
+          type: string
+          description: Documented fetch URL, currently https://ollama.com/api/tags
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/OllamaLibrarySearchResult"
 
     OllamaSettingsSnapshot:
       type: object

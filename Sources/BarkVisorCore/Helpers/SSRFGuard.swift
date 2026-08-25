@@ -109,6 +109,20 @@ public enum SSRFGuard {
         return validate(url: url)
     }
 
+    public static func fetchRejection(for url: URL, allowedHosts: Set<String>) -> String? {
+        if let reason = fetchRejection(for: url) {
+            return reason
+        }
+        let host = url.host?.lowercased() ?? ""
+        if host.isEmpty {
+            return "URL has no host"
+        }
+        if !allowedHosts.contains(host) {
+            return "URL host '\(host)' is not allowed"
+        }
+        return nil
+    }
+
     /// Resolve once and pick a single public IP for the TCP connect.
     /// TLS SNI and the HTTP Host header stay on `originalHost`.
     public static func pinEndpoint(url: URL, resolvedIPs: [String]? = nil) throws -> PinnedEndpoint {

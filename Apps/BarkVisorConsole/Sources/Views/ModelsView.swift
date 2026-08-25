@@ -10,6 +10,11 @@ struct ModelsView: View {
     @State private var pullTask: OllamaTaskAccepted?
     @State private var pullEvent: OllamaTaskEvent?
     @State private var nameQuery = ""
+    @State private var libraryQuery = ""
+    @State private var libraryResults: [OllamaLibrarySearchResult] = []
+    @State private var librarySearched = false
+    @State private var librarySearching = false
+    @State private var libraryError: String?
     @State private var startCandidate: OllamaCatalogModel?
     @State private var startHostId = ""
     @State private var stopCandidate: OllamaCatalogModel?
@@ -45,7 +50,7 @@ struct ModelsView: View {
                 List {
                     howToSection
                     liveStatsSection
-                    Section("Pull a model") {
+                    Section("Pull by name") {
                         TextField("llama3", text: $pullName)
                         OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)
                         if pulling {
@@ -63,6 +68,36 @@ struct ModelsView: View {
                                 Task { await pullModel() }
                             }
                             .disabled(pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    Section("Library search") {
+                        TextField("Search the Ollama library", text: $libraryQuery)
+                        Button("Search") {
+                            Task { await searchLibrary() }
+                        }
+                        .disabled(OllamaLibrarySearchResponse.query(libraryQuery) == nil || librarySearching)
+                        if OllamaLibrarySearchResponse.query(libraryQuery) == nil {
+                            Text("Enter a name to search the Ollama library.")
+                                .foregroundStyle(.secondary)
+                        } else if librarySearching {
+                            ProgressView("Searching…")
+                        } else if let libraryError {
+                            Text(libraryError)
+                                .foregroundStyle(.secondary)
+                        } else if librarySearched, libraryResults.isEmpty {
+                            Text("No library matches.")
+                                .foregroundStyle(.secondary)
+                        } else if librarySearched {
+                            ForEach(libraryResults) { row in
+                                HStack {
+                                    Text(row.name)
+                                    Spacer()
+                                    Button("Download") {
+                                        Task { await pullModel(name: row.pullName) }
+                                    }
+                                    .disabled(row.pullName.isEmpty || pulling)
+                                }
+                            }
                         }
                     }
                     Section("Models") {
@@ -83,7 +118,7 @@ struct ModelsView: View {
                     }
                 }
                 .platformListStyle()
-                .searchable(text: $nameQuery, prompt: "Search models")
+                .searchable(text: $nameQuery, prompt: "Filter pulled models")
             }
         }
         .navigationTitle("Ollama")
@@ -169,7 +204,6 @@ struct ModelsView: View {
         catalog.devices.filter { !$0.installHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
-    @ViewBuilder
     private var installSection: some View {
         Section {
             ContentUnavailableView(
@@ -627,8 +661,29 @@ struct ModelsView: View {
         return "Pulling…"
     }
 
-    private func pullModel() async {
-        let name = pullName.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func searchLibrary() async {
+        guard let q = OllamaLibrarySearchResponse.query(libraryQuery) else {
+            libraryResults = []
+            librarySearched = false
+            libraryError = nil
+            return
+        }
+        librarySearching = true
+        libraryError = nil
+        defer { librarySearching = false }
+        do {
+            let data = try await model.searchOllamaLibrary(q)
+            libraryResults = data.results
+            librarySearched = true
+        } catch {
+            libraryResults = []
+            librarySearched = true
+            libraryError = error.localizedDescription
+        }
+    }
+
+    private func pullModel(name requested: String? = nil) async {
+        let name = (requested ?? pullName).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         pulling = true
         defer {
@@ -643,7 +698,9 @@ struct ModelsView: View {
                 pullEvent = event
                 if event.isTerminal {
                     if event.status == "completed" {
-                        pullName = ""
+                        if pullName.trimmingCharacters(in: .whitespacesAndNewlines) == name {
+                            pullName = ""
+                        }
                         await model.refreshOllama()
                     } else if event.status == "cancelled" {
                         model.banner = "Ollama pull cancelled"

@@ -4,6 +4,7 @@ import api from '../api/client'
 import type {
   OllamaHomeCatalog,
   OllamaHostSettings,
+  OllamaLibrarySearchResponse,
   OllamaSettingsSnapshot,
   OllamaSettingsUpdate,
   OllamaTaskAccepted,
@@ -55,6 +56,13 @@ export const useOllamaStore = defineStore('ollama', () => {
     return data
   }
 
+  async function searchLibrary(q: string): Promise<OllamaLibrarySearchResponse> {
+    const { data } = await api.get<OllamaLibrarySearchResponse>('/home/ollama/library/search', {
+      params: { q },
+    })
+    return data
+  }
+
   async function start(name: string, hostId?: string): Promise<void> {
     await api.post('/home/ollama/start', hostId ? { name, hostId } : { name })
   }
@@ -79,6 +87,7 @@ export const useOllamaStore = defineStore('ollama', () => {
     fetchCatalog,
     fetchSettings,
     hostSettings,
+    searchLibrary,
     pull,
     start,
     stop,

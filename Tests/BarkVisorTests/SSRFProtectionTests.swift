@@ -217,6 +217,16 @@ struct SSRFProtectionTests {
         #expect(SSRFGuard.fetchRejection(for: ftp) != nil)
     }
 
+    @Test func `fetchRejection host allowlist is ollama.com only`() throws {
+        let allowed: Set = ["ollama.com"]
+        let ok = try #require(URL(string: "https://ollama.com/api/tags"))
+        #expect(SSRFGuard.fetchRejection(for: ok, allowedHosts: allowed) == nil)
+        let other = try #require(URL(string: "https://example.com/api/tags"))
+        #expect(SSRFGuard.fetchRejection(for: other, allowedHosts: allowed) != nil)
+        let privateURL = try #require(URL(string: "http://127.0.0.1/api/tags"))
+        #expect(SSRFGuard.fetchRejection(for: privateURL, allowedHosts: allowed) != nil)
+    }
+
     @Test func `redirectTarget refuses private and file hops`() throws {
         let from = try #require(URL(string: "https://cdn.example/a.img"))
         let relative = SSRFGuard.redirectTarget(statusCode: 302, location: "/b.img", from: from)

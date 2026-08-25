@@ -67,6 +67,24 @@ describe('ollama store (PAS-269)', () => {
     expect(store.models).toEqual([])
   })
 
+  test('searchLibrary hits the daemon search endpoint', async () => {
+    const get = mock(() =>
+      Promise.resolve({
+        data: {
+          query: 'llama',
+          upstream: 'https://ollama.com/api/tags',
+          results: [{ name: 'llama3.2' }],
+        },
+      }),
+    )
+    api.get = get as typeof api.get
+    const store = useOllamaStore()
+    const data = await store.searchLibrary('llama')
+    expect(get.mock.calls[0]?.[0]).toBe('/home/ollama/library/search')
+    expect(get.mock.calls[0]?.[1]).toEqual({ params: { q: 'llama' } })
+    expect(data.results[0]?.name).toBe('llama3.2')
+  })
+
   test('start omits hostId so Home picks the Device', async () => {
     const post = mock(() => Promise.resolve({ data: {} }))
     api.post = post as typeof api.post
@@ -118,6 +136,12 @@ describe('ollama store (PAS-269)', () => {
     expect(src).toContain('ollamaStatsUnreachableCopy')
     expect(src).not.toMatch(/<AppButton[\s\S]*?>\s*Export JSON/)
     expect(src).toContain('ollamaSettingsKeyBody')
+    expect(src).toContain('Library search')
+    expect(src).toContain('Filter catalog')
+    expect(src).toContain('Filter pulled models...')
+    expect(src).toContain("placeholder=\"Search the Ollama library...\"")
+    expect(src).toContain('pullModel(ollamaLibraryResultName(row))')
+    expect(src).not.toContain('placeholder="Search models..."')
     expect(src).not.toContain('apiKey: apiKeyDraft.value')
     expect(src).toContain(':disabled="!keyBody"')
   })
