@@ -19,6 +19,8 @@ brew services start ollama
 
 When Ollama comes up, the page switches to the model list without a full reload.
 
+Live Device stats (CPU, memory, GPU busy percent) are on Device detail, not this page. Occupancy / passthrough is a different number.
+
 ## Catalog vs library search
 
 **Filter catalog** matches names already pulled on the Home. That is not a library search.

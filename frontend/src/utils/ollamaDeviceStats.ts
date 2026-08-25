@@ -10,7 +10,7 @@ export { mapStatsHistorySamples, shouldFetchDeviceStatsHistory } from './deviceS
 export const OLLAMA_GPU_EMPTY_COPY = `This ${DEVICE_LABEL} has no GPU.`
 
 export function ollamaStatsUnreachableCopy(): string {
-  return `This ${DEVICE_LABEL.toLowerCase()} did not answer. CPU, memory, and GPU are unknown.`
+  return `This ${DEVICE_LABEL.toLowerCase()} did not answer. GPU is unknown.`
 }
 
 type RunningLocation = { hostId: string; running: boolean; reachable?: boolean }
