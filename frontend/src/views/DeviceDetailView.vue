@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Line } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+} from 'chart.js'
 import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
-import type { HomeDeviceHealthSnapshot, SystemAbout, SystemStats } from '../api/types'
+import type { HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -12,7 +21,13 @@ import { useDeviceDisksStore } from '../stores/deviceDisks'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
-import { canFetchDeviceWorkloads, deviceAboutPath, devicePath } from '../utils/homeDeviceApi'
+import {
+  emptyDeviceStatsChartSeries,
+  latestGpuPercent,
+  mapStatsHistorySamples,
+  shouldFetchDeviceStatsHistory,
+} from '../utils/deviceStatsHistory'
+import { canFetchDeviceWorkloads, deviceAboutPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { parseSystemAbout } from '../utils/systemAbout'
 import {
   reachabilityHint,
@@ -23,6 +38,8 @@ import { openWorkloadRow } from '../utils/workloadDetail'
 import { opsStatusClass, opsStatusLabel, vmHealth } from '../utils/workloadHealth'
 import { formatCores, formatMemoryMB, formatPortForwards, formatTemperatureC, formatVolumeUsed } from '../utils/format'
 import { acceleratorLabel, listBackendBadge, vmBackend } from '../utils/workloadBackend'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
 const route = useRoute()
 const router = useRouter()
@@ -110,6 +127,96 @@ const virtFact = computed(() => {
 })
 const virtAvailable = computed(() => Boolean(device.value?.features?.kvmDevice || deviceAbout.value?.accelerator))
 
+const history = reactive(emptyDeviceStatsChartSeries())
+
+function resetHistory() {
+  const empty = emptyDeviceStatsChartSeries()
+  history.labels = empty.labels
+  history.cpu = empty.cpu
+  history.memoryGB = empty.memoryGB
+  history.memoryTotalGB = empty.memoryTotalGB
+  history.gpu = empty.gpu
+}
+
+function applyHistory(series: ReturnType<typeof mapStatsHistorySamples>) {
+  history.labels = series.labels
+  history.cpu = series.cpu
+  history.memoryGB = series.memoryGB
+  history.memoryTotalGB = series.memoryTotalGB
+  history.gpu = series.gpu
+}
+
+function makeSparkOpts(max?: number) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false as const,
+    scales: {
+      x: { display: false },
+      y: { display: false, beginAtZero: true, max },
+    },
+    plugins: { tooltip: { enabled: false }, legend: { display: false } },
+    elements: {
+      point: { radius: 0 },
+      line: { tension: 0.4, borderWidth: 1.5 },
+    },
+  }
+}
+
+const cpuSparkOpts = computed(() => makeSparkOpts(100))
+const memSparkOpts = computed(() =>
+  makeSparkOpts(history.memoryTotalGB != null ? Math.ceil(history.memoryTotalGB) : undefined),
+)
+const gpuSparkOpts = computed(() => makeSparkOpts(100))
+
+const cpuSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.cpu,
+    borderColor: 'rgba(0,144,248,0.5)',
+    backgroundColor: 'rgba(0,144,248,0.06)',
+    fill: true,
+  }],
+}))
+
+const memSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.memoryGB,
+    borderColor: 'rgba(52,211,153,0.5)',
+    backgroundColor: 'rgba(52,211,153,0.06)',
+    fill: true,
+  }],
+}))
+
+const gpuSparkData = computed(() => ({
+  labels: history.labels,
+  datasets: [{
+    data: history.gpu,
+    borderColor: 'rgba(168,85,247,0.55)',
+    backgroundColor: 'rgba(168,85,247,0.08)',
+    fill: true,
+  }],
+}))
+
+const latestCpu = computed(() => {
+  if (history.cpu.length) return history.cpu[history.cpu.length - 1]
+  if (deviceStats.value) return deviceStats.value.hostCpuPercent
+  return device.value?.resources?.cpuLoadPercent ?? null
+})
+const latestMemoryGB = computed(() => {
+  if (history.memoryGB.length) return history.memoryGB[history.memoryGB.length - 1]
+  const used = deviceStats.value?.hostMemoryUsedMB ?? device.value?.resources?.memoryUsedMB
+  return used != null ? used / 1024 : null
+})
+const memoryTotalGB = computed(() => {
+  if (history.memoryTotalGB != null) return history.memoryTotalGB
+  const total = deviceStats.value?.hostMemoryTotalMB ?? device.value?.resources?.memoryTotalMB
+  return total != null ? total / 1024 : null
+})
+const latestGpu = computed(() => latestGpuPercent(history.gpu))
+const gpuSparkReady = computed(() => history.gpu.filter((value) => value != null).length > 1)
+
 function failedBannerSub(): string {
   if (failedVms.value.length === 1) {
     const vm = failedVms.value[0]!
@@ -158,6 +265,21 @@ async function refreshStats(row: HomeDeviceHealthSnapshot | null = device.value)
   }
 }
 
+async function refreshHistory(row: HomeDeviceHealthSnapshot | null = device.value) {
+  if (!row || !shouldFetchDeviceStatsHistory(row)) {
+    resetHistory()
+    return
+  }
+  const host = row.hostId
+  try {
+    const { data } = await api.get<SystemStatsSample[]>(deviceStatsHistoryPath(row))
+    if (hostId.value !== host) return
+    applyHistory(mapStatsHistorySamples(Array.isArray(data) ? data : []))
+  } catch {
+    if (hostId.value !== host) return
+  }
+}
+
 function clearHostTransientState() {
   stopConfirm.value = null
   for (const id of Object.keys(restartLoading)) {
@@ -170,6 +292,7 @@ async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value
   await workloads.fetchFor(row)
   await refreshAbout(row)
   await refreshStats(row)
+  await refreshHistory(row)
   if (canFetchDeviceWorkloads(row)) {
     await disks.fetchSummary(row)
   }
@@ -194,6 +317,7 @@ onUnmounted(() => {
 })
 watch(hostId, () => {
   clearHostTransientState()
+  resetHistory()
   deviceAbout.value = null
   deviceStats.value = null
   void refresh()
@@ -322,6 +446,48 @@ async function doStop() {
         >
           {{ workloads.isActing(hostId, failedVms[0]!.id) ? 'Starting...' : `Start ${failedVms[0]!.name}` }}
         </button>
+      </div>
+
+      <div v-if="shouldFetchDeviceStatsHistory(device)" class="stat-grid">
+        <div class="dash-stat cpu">
+          <div v-if="history.cpu.length > 1" class="dash-stat-spark">
+            <Line :data="cpuSparkData" :options="cpuSparkOpts" />
+          </div>
+          <div class="dash-stat-content">
+            <div class="dash-stat-top">
+              <span class="dash-stat-number">{{ latestCpu == null ? '—' : latestCpu.toFixed(0) + '%' }}</span>
+              <span class="dash-stat-trend" :class="latestCpu != null && latestCpu > 80 ? 'warn' : 'up'">device</span>
+            </div>
+            <div class="dash-stat-label">CPU</div>
+          </div>
+        </div>
+        <div class="dash-stat mem">
+          <div v-if="history.memoryGB.length > 1" class="dash-stat-spark">
+            <Line :data="memSparkData" :options="memSparkOpts" />
+          </div>
+          <div class="dash-stat-content">
+            <div class="dash-stat-top">
+              <span class="dash-stat-number">
+                <template v-if="latestMemoryGB == null">—</template>
+                <template v-else>{{ latestMemoryGB.toFixed(1) }} <small>GB</small></template>
+              </span>
+              <span v-if="memoryTotalGB != null" class="dash-stat-trend up">/ {{ memoryTotalGB.toFixed(0) }} GB</span>
+            </div>
+            <div class="dash-stat-label">Memory</div>
+          </div>
+        </div>
+        <div class="dash-stat gpu">
+          <div v-if="gpuSparkReady" class="dash-stat-spark">
+            <Line :data="gpuSparkData" :options="gpuSparkOpts" />
+          </div>
+          <div class="dash-stat-content">
+            <div class="dash-stat-top">
+              <span class="dash-stat-number">{{ latestGpu == null ? '—' : latestGpu.toFixed(0) + '%' }}</span>
+              <span class="dash-stat-trend up">device</span>
+            </div>
+            <div class="dash-stat-label">GPU</div>
+          </div>
+        </div>
       </div>
 
       <div class="sheet about-sheet">
@@ -458,6 +624,82 @@ async function doStop() {
 </template>
 
 <style scoped>
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.dash-stat {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 0;
+  min-height: 96px;
+  border-left: 3px solid var(--accent);
+}
+.dash-stat.mem { border-left-color: var(--green); }
+.dash-stat.gpu { border-left-color: #a855f7; }
+.dash-stat-spark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.dash-stat-spark :deep(*) {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+.dash-stat-content {
+  position: relative;
+  z-index: 1;
+  padding: 14px;
+}
+.dash-stat-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dash-stat-number {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.dash-stat-number small {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.dash-stat-trend {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 3px 8px;
+  border-radius: 2px;
+}
+.dash-stat-trend.up {
+  color: var(--green);
+  background: var(--green-muted);
+}
+.dash-stat-trend.warn {
+  color: var(--amber);
+  background: var(--amber-muted);
+}
+.dash-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 .list-error,
 .list-loading,
 .missing p {
@@ -489,5 +731,8 @@ async function doStop() {
 .mono {
   font-family: var(--font-mono);
   font-size: 12px;
+}
+@media (max-width: 768px) {
+  .stat-grid { grid-template-columns: 1fr; }
 }
 </style>

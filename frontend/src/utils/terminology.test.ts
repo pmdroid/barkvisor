@@ -151,7 +151,7 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('CreateVMDrawer')
     expect(text).toContain('initial-host-id')
     expect(text).toContain('Facts')
-    expect(text).not.toContain('vue-chartjs')
+    expect(text).toContain('deviceStatsHistoryPath')
     expect(text).not.toContain('GPU passthrough')
     expect(text).not.toContain('cluster')
     expect(text).not.toMatch(forbiddenTemplateRe)
