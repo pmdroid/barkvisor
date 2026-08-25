@@ -9,10 +9,12 @@ import {
   OLLAMA_MAC_INSTALL_HINT,
   OLLAMA_MAC_START_COMMAND,
   ollamaCatalogInstallHint,
+  ollamaInstallDevices,
   ollamaInstallHint,
   ollamaInstallOs,
   ollamaInstallOsLabel,
   ollamaInstallOses,
+  ollamaInstallSkipDevice,
   ollamaInstallSteps,
   shouldShowOllamaInstall,
 } from './ollamaInstall'
@@ -102,6 +104,44 @@ describe('Ollama install UI', () => {
     expect(shouldShowOllamaInstall({ loading: false, catalog: { anyReachable: true }, anyReachable: true })).toBe(
       false,
     )
+    expect(
+      shouldShowOllamaInstall({
+        loading: false,
+        catalog: { anyReachable: false },
+        anyReachable: false,
+        devices: [
+          { hostId: 'agentbox', displayName: 'AgentBox' },
+          { hostId: 'mini', displayName: 'Mac mini' },
+        ],
+      }),
+    ).toBe(false)
+    expect(
+      shouldShowOllamaInstall({
+        loading: false,
+        catalog: { anyReachable: false },
+        anyReachable: false,
+        devices: [
+          { hostId: 'agentbox', displayName: 'AgentBox' },
+          { hostId: 'desk', displayName: 'Desk' },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test('AgentBox and Mac mini are not Ollama install targets', () => {
+    expect(ollamaInstallSkipDevice('agentbox')).toBe(true)
+    expect(ollamaInstallSkipDevice('AgentBox')).toBe(true)
+    expect(ollamaInstallSkipDevice('Mac mini')).toBe(true)
+    expect(ollamaInstallSkipDevice('macmini')).toBe(true)
+    expect(ollamaInstallSkipDevice('mac-mini')).toBe(true)
+    expect(ollamaInstallSkipDevice('Desk')).toBe(false)
+    expect(
+      ollamaInstallDevices([
+        { hostId: 'agentbox', displayName: 'AgentBox' },
+        { hostId: 'desk', displayName: 'Desk' },
+        { hostId: 'mini', displayName: 'Mac mini' },
+      ]).map((row) => row.hostId),
+    ).toEqual(['desk'])
   })
 
   test('ModelsView ships a multi-step install panel and Recheck', () => {
@@ -112,11 +152,18 @@ describe('Ollama install UI', () => {
     expect(src).toContain('Recheck')
     expect(src).toContain('recheckOllama')
     expect(src).toContain('showOllamaInstall')
-    expect(src).toContain('v-else-if="store.anyReachable"')
+    expect(src).toContain('showOllamaCatalog')
+    expect(src).toContain('v-else-if="showOllamaCatalog"')
+    expect(src).not.toContain('v-else-if="store.anyReachable"')
     expect(src).toContain('store.fetchCatalog()')
     expect(src).not.toContain(':subtitle="store.devices[0]?.installHint')
     expect(src).not.toContain('location.reload')
     expect(src).toContain('Ollama is not reachable')
+    expect(src).toContain('<details class="card howto-collapse"')
+    expect(src).not.toContain('<details class="card howto-collapse" open')
+    expect(src).toContain('Use this API')
+    expect(src).not.toContain('dash-stat-label">GPU')
+    expect(src).toContain('ollamaInstallDevices')
   })
 
   test('App.vue shows Ollama for admin or inference when Ollama is down', () => {
@@ -138,6 +185,10 @@ describe('Ollama install UI', () => {
     expect(src).toContain('rechecking = true')
     expect(src).toContain('model.ollamaRefreshing')
     expect(src).not.toContain('description: Text(catalog.devices.first?.installHint')
+    expect(src).toContain('DisclosureGroup("Use this API"')
+    expect(src).toContain('OllamaInstall.shouldShowInstall')
+    expect(src).toContain('OllamaInstall.installDevices')
+    expect(src).not.toContain('LabeledContent("GPU"')
     const recheckIdx = src.indexOf('rechecking = true')
     const taskIdx = src.indexOf('await model.refreshOllamaCatalog()')
     expect(recheckIdx).toBeGreaterThan(0)

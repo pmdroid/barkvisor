@@ -6,7 +6,7 @@ The **Ollama** nav item stays visible for admin and inference even when no Devic
 
 ## Install (when Ollama is down)
 
-The page shows a multi-step panel and **Recheck**. Commands match the in-app copy.
+The page shows a multi-step panel and **Recheck**. Commands match the in-app copy. AgentBox and Mac mini are not install targets.
 
 **macOS**
 
@@ -43,6 +43,8 @@ A pulled model can only run on a Device that already has it.
 **Stop** uses the Device that is running the model and does not ask.
 
 ## Use this API
+
+The card is collapsed until opened.
 
 OpenAI-compatible completions on this Home:
 

@@ -84,7 +84,25 @@ export function shouldShowOllamaInstall(input: {
   loading: boolean
   catalog: unknown | null
   anyReachable: boolean
+  devices?: readonly { hostId?: string | null; displayName?: string | null }[]
 }): boolean {
   if (input.loading || input.catalog == null) return false
-  return !input.anyReachable
+  if (input.anyReachable) return false
+  const devices = input.devices ?? []
+  if (devices.length > 0 && ollamaInstallDevices(devices).length === 0) return false
+  return true
+}
+
+/** AgentBox / Mac mini are not Ollama install targets. */
+export function ollamaInstallSkipDevice(name?: string | null): boolean {
+  const key = (name ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+  return key === 'agentbox' || key === 'macmini'
+}
+
+export function ollamaInstallDevices<T extends { hostId?: string | null; displayName?: string | null }>(
+  devices: readonly T[],
+): T[] {
+  return devices.filter(
+    (row) => !ollamaInstallSkipDevice(row.displayName) && !ollamaInstallSkipDevice(row.hostId),
+  )
 }

@@ -25,6 +25,7 @@ import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
 import {
   ollamaCatalogInstallHint,
+  ollamaInstallDevices,
   ollamaInstallOsLabel,
   ollamaInstallOses,
   ollamaInstallSteps,
@@ -105,26 +106,33 @@ const showOllamaInstall = computed(() =>
     loading: store.loading,
     catalog: store.catalog,
     anyReachable: store.anyReachable,
+    devices: store.devices,
   }),
 )
+
+const showOllamaCatalog = computed(
+  () => store.anyReachable || (!store.loading && store.catalog != null && !showOllamaInstall.value),
+)
+
+const installDevices = computed(() => ollamaInstallDevices(store.devices))
 
 const installOses = computed(() => {
   const platforms = [
     devices.selfDevice?.platform?.os,
-    ...store.devices.map((row) => devices.deviceByHostId(row.hostId)?.platform?.os),
+    ...installDevices.value.map((row) => devices.deviceByHostId(row.hostId)?.platform?.os),
   ]
   return ollamaInstallOses({
-    installHints: store.devices.map((row) => row.installHint),
+    installHints: installDevices.value.map((row) => row.installHint),
     platformOs: platforms.find((os) => os?.trim()) ?? null,
   })
 })
 
 const installHint = computed(() =>
-  ollamaCatalogInstallHint(store.devices, installOses.value[0] ?? 'macos'),
+  ollamaCatalogInstallHint(installDevices.value, installOses.value[0] ?? 'macos'),
 )
 
 const deviceInstallLines = computed(() =>
-  store.devices.filter((row) => row.installHint?.trim()),
+  installDevices.value.filter((row) => row.installHint?.trim()),
 )
 
 const installStepsByOs = computed(() =>
@@ -486,8 +494,8 @@ async function saveKey() {
     </details>
   </div>
 
-  <div class="card" style="margin-bottom:16px">
-    <h2 style="margin-top:0">Use this API</h2>
+  <details class="card howto-collapse" style="margin-bottom:16px">
+    <summary class="howto-summary">Use this API</summary>
     <p style="color:var(--text-secondary);font-size:13px">
       OpenAI-compatible completions on this {{ HOME_LABEL }}:
       <code>{{ howTo.lanCompletionsURL }}</code>.
@@ -528,7 +536,7 @@ async function saveKey() {
         {{ copied === 'cage' ? 'Copied' : 'Copy cage env' }}
       </AppButton>
     </div>
-  </div>
+  </details>
 
   <div v-if="showOllamaInstall" class="card ollama-install">
     <h2 style="margin-top:0">Ollama is not reachable</h2>
@@ -564,7 +572,7 @@ async function saveKey() {
     </AppButton>
   </div>
 
-  <template v-else-if="store.anyReachable">
+  <template v-else-if="showOllamaCatalog">
     <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
         <label>Pull by name</label>
@@ -757,6 +765,26 @@ async function saveKey() {
 </template>
 
 <style scoped>
+.howto-collapse {
+  padding: 16px 20px;
+}
+.howto-summary {
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  list-style: none;
+}
+.howto-summary::-webkit-details-marker {
+  display: none;
+}
+.howto-summary::before {
+  content: '▸ ';
+  font-weight: 500;
+  color: var(--text-dim);
+}
+details.howto-collapse[open] > .howto-summary::before {
+  content: '▾ ';
+}
 .howto-pre {
   font-family: var(--font-mono);
   font-size: 12px;
