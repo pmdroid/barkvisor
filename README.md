@@ -195,11 +195,14 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 - [Installation (macOS)](docs/getting-started-installation.md) — System requirements, `.pkg` install, SSH install, data directory
 - [Installation (Linux)](docs/getting-started-linux.md) — System requirements, `.deb` / `.rpm` / tarball, systemd, data directory
-- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, bridge helper (macOS) vs host bridge (Linux)
+- [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, socket_vmnet (macOS) vs host bridge (Linux)
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
+- [Home and pairing](docs/home-and-pairing.md) — Add a Device from Settings → Pairing
+- [Ollama](docs/ollama.md) — Install, pull, Start, library search
+- [Create a Workload](docs/create-workload.md) — Place a VM; Linux disks, GPU, PCI
 - [Development Setup](docs/getting-started-development.md) — Build from source, dev workflow, testing
 - [Building Releases](docs/getting-started-building-releases.md) — macOS release script + Linux package builds
-- [Troubleshooting](docs/getting-started-troubleshooting.md) — Common issues and solutions
+- [Troubleshooting](docs/getting-started-troubleshooting.md) — Leftover helper XPC, disk-full, QEMU paths
 
 ## License
 
