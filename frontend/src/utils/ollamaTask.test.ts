@@ -4,6 +4,7 @@ import {
   ollamaPullPercent,
   ollamaPullTaskPath,
   ollamaRunningHostId,
+  ollamaDefaultStartHostId,
   ollamaSoleStartHostId,
   ollamaStartBody,
   ollamaStartLocations,
@@ -62,11 +63,14 @@ describe('ollama pull/start helpers (PAS-269)', () => {
 describe('ollama start locations', () => {
   const desk = { hostId: 'desk', displayName: 'Desk', running: false, reachable: true }
   const lab = { hostId: 'lab', displayName: 'Lab', running: false, reachable: true }
+  const down = { hostId: 'down', displayName: 'Garage', running: false, reachable: false }
+  const stale = { hostId: 'stale', displayName: 'Attic', running: false, reachable: false }
 
   test('one location starts without a picker', () => {
     const model = { locations: [desk] }
     expect(ollamaStartLocations(model)).toEqual([desk])
     expect(ollamaSoleStartHostId(model)).toBe('desk')
+    expect(ollamaDefaultStartHostId(model)).toBe('desk')
     expect(ollamaStartNeedsPicker(model)).toBe(false)
   })
 
@@ -74,6 +78,7 @@ describe('ollama start locations', () => {
     const model = { locations: [desk, lab] }
     expect(ollamaStartLocations(model)).toEqual([desk, lab])
     expect(ollamaSoleStartHostId(model)).toBeUndefined()
+    expect(ollamaDefaultStartHostId(model)).toBe('desk')
     expect(ollamaStartNeedsPicker(model)).toBe(true)
   })
 
@@ -81,9 +86,35 @@ describe('ollama start locations', () => {
     const model = { locations: [] as typeof desk[] }
     expect(ollamaStartLocations(model)).toEqual([])
     expect(ollamaSoleStartHostId(model)).toBeUndefined()
+    expect(ollamaDefaultStartHostId(model)).toBeUndefined()
     expect(ollamaStartNeedsPicker(model)).toBe(false)
     expect(ollamaStartLocations(undefined)).toEqual([])
     expect(ollamaSoleStartHostId(undefined)).toBeUndefined()
+    expect(ollamaDefaultStartHostId(undefined)).toBeUndefined()
     expect(ollamaStartNeedsPicker(undefined)).toBe(false)
+  })
+
+  test('prefers a reachable location over an earlier unreachable one', () => {
+    const model = { locations: [down, desk, stale] }
+    expect(ollamaStartLocations(model).map((loc) => loc.hostId)).toEqual(['desk', 'down', 'stale'])
+    expect(ollamaSoleStartHostId(model)).toBe('desk')
+    expect(ollamaDefaultStartHostId(model)).toBe('desk')
+    expect(ollamaStartNeedsPicker(model)).toBe(true)
+  })
+
+  test('one unreachable location still starts there so the user sees the error', () => {
+    const model = { locations: [down] }
+    expect(ollamaStartLocations(model)).toEqual([down])
+    expect(ollamaSoleStartHostId(model)).toBe('down')
+    expect(ollamaDefaultStartHostId(model)).toBeUndefined()
+    expect(ollamaStartNeedsPicker(model)).toBe(false)
+  })
+
+  test('multiple unreachable locations have no default host', () => {
+    const model = { locations: [down, stale] }
+    expect(ollamaStartLocations(model).map((loc) => loc.hostId)).toEqual(['down', 'stale'])
+    expect(ollamaSoleStartHostId(model)).toBeUndefined()
+    expect(ollamaDefaultStartHostId(model)).toBeUndefined()
+    expect(ollamaStartNeedsPicker(model)).toBe(true)
   })
 })

@@ -48,6 +48,7 @@ import {
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import {
+  ollamaDefaultStartHostId,
   ollamaModelMatchesName,
   ollamaPullPercent,
   ollamaPullTaskPath,
@@ -127,10 +128,14 @@ const hostOptions = computed(() =>
 )
 
 const startHostOptions = computed(() =>
-  ollamaStartLocations(startTarget.value).map((loc) => ({
-    value: loc.hostId,
-    label: loc.displayName?.trim() || loc.hostId,
-  })),
+  ollamaStartLocations(startTarget.value).map((loc) => {
+    const name = loc.displayName?.trim() || loc.hostId
+    return {
+      value: loc.hostId,
+      label: loc.reachable ? name : `${name} (unreachable)`,
+      disabled: !loc.reachable,
+    }
+  }),
 )
 
 const filteredModels = computed(() =>
@@ -397,7 +402,7 @@ function requestStart(model: OllamaCatalogModel) {
   if (starting.value) return
   if (ollamaStartNeedsPicker(model)) {
     startTarget.value = model
-    startHost.value = ollamaStartLocations(model)[0]?.hostId ?? ''
+    startHost.value = ollamaDefaultStartHostId(model) ?? ''
     return
   }
   void startModelAt(model, ollamaSoleStartHostId(model))
@@ -745,12 +750,23 @@ async function saveKey() {
   <AppModal v-if="startTarget" :title="`Start ${startTarget.name}`" @close="!starting && (startTarget = null)">
     <div class="form-group" style="margin:0">
       <select v-model="startHost" style="min-width:160px">
-        <option v-for="opt in startHostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        <option
+          v-for="opt in startHostOptions"
+          :key="opt.value"
+          :value="opt.value"
+          :disabled="opt.disabled"
+        >{{ opt.label }}</option>
       </select>
     </div>
     <template #actions>
       <AppButton variant="ghost" :disabled="starting" @click="startTarget = null">Cancel</AppButton>
-      <AppButton variant="primary" :disabled="!startHost" :loading="starting" loading-text="Starting..." @click="startModel">Start</AppButton>
+      <AppButton
+        variant="primary"
+        :disabled="!startHost || startHostOptions.find((opt) => opt.value === startHost)?.disabled"
+        :loading="starting"
+        loading-text="Starting..."
+        @click="startModel"
+      >Start</AppButton>
     </template>
   </AppModal>
 
