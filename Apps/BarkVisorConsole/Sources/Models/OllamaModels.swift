@@ -181,6 +181,80 @@ struct OllamaDeviceStatus: Decodable, Identifiable, Equatable, Hashable {
     }
 }
 
+/// Install copy matching OllamaDetect.installHint. Do not invent a second glossary.
+enum OllamaInstall {
+    struct Step: Equatable, Identifiable {
+        var title: String
+        var command: String?
+        var href: String?
+
+        var id: String {
+            "\(title)|\(command ?? "")|\(href ?? "")"
+        }
+    }
+
+    static let macHint = "Install Ollama with Homebrew: brew install ollama"
+    static let linuxHint =
+        "Ollama is optional. Install the distro package or see https://ollama.com/download"
+    static let downloadURL = "https://ollama.com/download"
+    static let macInstallCommand = "brew install ollama"
+    static let macStartCommand = "brew services start ollama"
+
+    static func hint(os: String) -> String {
+        os.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "linux"
+            ? linuxHint : macHint
+    }
+
+    static func os(platformOs: String?, installHint: String?) -> String {
+        let normalized = platformOs?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if normalized == "linux" { return "linux" }
+        if normalized == "macos" || normalized == "darwin" || normalized == "mac" { return "macos" }
+        let hint = installHint?.lowercased() ?? ""
+        if hint.contains("distro") || hint.contains("ollama.com/download") { return "linux" }
+        return "macos"
+    }
+
+    static func osLabel(_ os: String) -> String {
+        os.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "linux" ? "Linux" : "macOS"
+    }
+
+    /// Prefer catalog Device hints, then platform, then both so mixed Homes still see commands.
+    static func oses(installHints: [String], platformOs: String?) -> [String] {
+        var found = Set<String>()
+        for hint in installHints where !hint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            found.insert(os(platformOs: nil, installHint: hint))
+        }
+        if found.isEmpty, let platformOs, !platformOs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            found.insert(os(platformOs: platformOs, installHint: nil))
+        }
+        if found.isEmpty { return ["macos", "linux"] }
+        return ["macos", "linux"].filter { found.contains($0) }
+    }
+
+    static func steps(os: String) -> [Step] {
+        if os.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "linux" {
+            return [Step(title: linuxHint, href: downloadURL)]
+        }
+        return [
+            Step(title: macHint, command: macInstallCommand),
+            Step(title: "Start Ollama", command: macStartCommand),
+        ]
+    }
+
+    static func catalogHint(devices: [OllamaDeviceStatus], os: String) -> String {
+        for row in devices {
+            let hint = row.installHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !hint.isEmpty { return hint }
+        }
+        return hint(os: os)
+    }
+
+    /// Recheck is ignored while a prior Recheck or refreshOllama is already in flight.
+    static func canRecheck(rechecking: Bool, refreshInFlight: Bool) -> Bool {
+        !rechecking && !refreshInFlight
+    }
+}
+
 enum OllamaDeviceStats {
     static let gpuEmptyCopy = "This Device has no GPU."
 

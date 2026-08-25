@@ -46,6 +46,13 @@ import {
   ollamaStatsUnreachableCopy,
   shouldFetchOllamaDeviceStats,
 } from '../utils/ollamaDeviceStats'
+import {
+  ollamaCatalogInstallHint,
+  ollamaInstallOsLabel,
+  ollamaInstallOses,
+  ollamaInstallSteps,
+  shouldShowOllamaInstall,
+} from '../utils/ollamaInstall'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import {
@@ -99,6 +106,7 @@ let mintAttempted = false
 const statsHost = ref('')
 const hostGPUs = ref<HostGPUDevice[] | null>(null)
 const history = reactive(emptyDeviceStatsChartSeries())
+const rechecking = ref(false)
 
 const howTo = computed(() =>
   inferenceHowToFromOrigin(window.location.origin, {
@@ -108,6 +116,51 @@ const howTo = computed(() =>
     grantPlaintext: mintedKey.value || null,
   }),
 )
+
+const showOllamaInstall = computed(() =>
+  shouldShowOllamaInstall({
+    loading: store.loading,
+    catalog: store.catalog,
+    anyReachable: store.anyReachable,
+  }),
+)
+
+const installOses = computed(() => {
+  const platforms = [
+    devices.selfDevice?.platform?.os,
+    ...store.devices.map((row) => devices.deviceByHostId(row.hostId)?.platform?.os),
+  ]
+  return ollamaInstallOses({
+    installHints: store.devices.map((row) => row.installHint),
+    platformOs: platforms.find((os) => os?.trim()) ?? null,
+  })
+})
+
+const installHint = computed(() =>
+  ollamaCatalogInstallHint(store.devices, installOses.value[0] ?? 'macos'),
+)
+
+const deviceInstallLines = computed(() =>
+  store.devices.filter((row) => row.installHint?.trim()),
+)
+
+const installStepsByOs = computed(() =>
+  installOses.value.map((os) => ({
+    os,
+    label: ollamaInstallOsLabel(os),
+    steps: ollamaInstallSteps(os),
+  })),
+)
+
+async function recheckOllama() {
+  if (rechecking.value) return
+  rechecking.value = true
+  try {
+    await store.fetchCatalog()
+  } finally {
+    rechecking.value = false
+  }
+}
 
 async function copySnippet(key: string, text: string) {
   try {
@@ -597,14 +650,41 @@ async function saveKey() {
     </div>
   </div>
 
-  <EmptyState
-    v-if="!store.anyReachable && !store.loading"
-    icon="monitor"
-    title="Ollama is not reachable"
-    :subtitle="store.devices[0]?.installHint || 'Install Ollama on a Device to manage models here.'"
-  />
+  <div v-if="showOllamaInstall" class="card ollama-install">
+    <h2 style="margin-top:0">Ollama is not reachable</h2>
+    <ul v-if="deviceInstallLines.length" class="install-devices">
+      <li v-for="row in deviceInstallLines" :key="row.hostId">
+        <strong>{{ row.displayName?.trim() || row.hostId }}</strong>
+        — {{ row.installHint }}
+      </li>
+    </ul>
+    <p v-else class="install-hint">{{ installHint }}</p>
+    <div v-for="group in installStepsByOs" :key="group.os" class="install-os-group">
+      <h3 class="install-os">{{ group.label }}</h3>
+      <ol class="install-steps">
+        <li v-for="(step, index) in group.steps" :key="group.os + index">
+          <div>{{ step.title }}</div>
+          <div v-if="step.command" class="form-group" style="margin:8px 0 0">
+            <pre class="howto-pre">{{ step.command }}</pre>
+            <AppButton size="sm" @click="copySnippet('install-' + group.os + index, step.command)">
+              {{ copied === 'install-' + group.os + index ? 'Copied' : 'Copy' }}
+            </AppButton>
+          </div>
+          <div v-if="step.href" class="form-group" style="margin:8px 0 0">
+            <a class="install-link" :href="step.href" target="_blank" rel="noopener noreferrer">{{ step.href }}</a>
+            <AppButton size="sm" @click="copySnippet('install-href-' + group.os + index, step.href)">
+              {{ copied === 'install-href-' + group.os + index ? 'Copied' : 'Copy' }}
+            </AppButton>
+          </div>
+        </li>
+      </ol>
+    </div>
+    <AppButton variant="primary" :loading="rechecking" loading-text="Checking..." @click="recheckOllama">
+      Recheck
+    </AppButton>
+  </div>
 
-  <template v-else>
+  <template v-else-if="store.anyReachable">
     <div class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0 0 12px">
         <label>{{ DEVICE_LABEL }}</label>
@@ -810,6 +890,37 @@ async function saveKey() {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 6px 0 8px;
+}
+.install-hint,
+.install-devices {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.install-devices {
+  padding-left: 18px;
+}
+.install-os-group + .install-os-group {
+  margin-top: 8px;
+}
+.install-os {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.install-steps {
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+.install-steps li {
+  margin-bottom: 12px;
+}
+.install-link {
+  display: inline-block;
+  margin: 0 8px 8px 0;
+  color: var(--accent);
+  font-size: 13px;
 }
 .overflow-menu {
   position: relative;

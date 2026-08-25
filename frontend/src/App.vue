@@ -103,7 +103,7 @@ function isActive(path: string) {
           </svg>
           <span class="nav-label">Virtual Machines</span>
         </router-link>
-        <router-link v-if="auth.isInference || ollama.anyReachable" to="/models" :class="{ active: isActive('/models') }">
+        <router-link v-if="auth.isAdmin || auth.isInference" to="/models" :class="{ active: isActive('/models') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/>
           </svg>
