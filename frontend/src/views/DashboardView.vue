@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
+import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDiskStore } from '../stores/disks'
@@ -17,6 +17,7 @@ import {
   DASHBOARD_WIDGET_LABELS,
   DASHBOARD_WIDGETS_STORAGE_KEY,
   DEFAULT_WIDGETS,
+  THIS_DEVICE_WIDGETS,
   isThisDeviceWidget,
   isWidgetVisible,
   parseDashboardLayout,
@@ -103,7 +104,7 @@ const showThisDeviceStats = computed(() => {
   return Boolean(selfId && deviceScope.selectedHostId === selfId)
 })
 const anyThisDeviceWidget = computed(() =>
-  showThisDeviceStats.value && (['cpu', 'memory', 'storage', 'temperature'] as const).some((id) => widgetOn(id)),
+  showThisDeviceStats.value && THIS_DEVICE_WIDGETS.some((id) => widgetOn(id)),
 )
 const thisDeviceScope = computed(() => `This ${DEVICE_LABEL}`)
 const homeWidgetScope = computed(() => {
@@ -231,14 +232,18 @@ async function refreshHomeWorkloads() {
   await homeWorkloads.fetchHomeAll(list)
 }
 
+watch(anyThisDeviceWidget, (show) => {
+  if (!show) return
+  if (history.timestamps.length === 0) fetchHistory()
+  fetchStats()
+}, { immediate: true })
+
 onMounted(() => {
   void refreshHomeWorkloads()
-  fetchHistory()
-  fetchStats()
   fetchStorage()
   fetchHealthSummary()
   pollTimer = window.setInterval(() => {
-    fetchStats()
+    if (anyThisDeviceWidget.value) fetchStats()
     fetchHealthSummary()
     void refreshHomeWorkloads()
   }, 5000)

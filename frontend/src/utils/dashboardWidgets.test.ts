@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   DASHBOARD_WIDGETS_STORAGE_KEY,
   DEFAULT_WIDGETS,
+  THIS_DEVICE_WIDGETS,
   isThisDeviceWidget,
   isWidgetVisible,
   parseDashboardLayout,
@@ -27,10 +28,8 @@ describe('dashboard widgets defaults', () => {
   })
 
   test('this-Device widgets are the local host stats', () => {
-    expect(isThisDeviceWidget('cpu')).toBe(true)
-    expect(isThisDeviceWidget('memory')).toBe(true)
-    expect(isThisDeviceWidget('storage')).toBe(true)
-    expect(isThisDeviceWidget('temperature')).toBe(true)
+    expect(THIS_DEVICE_WIDGETS).toEqual(['cpu', 'memory', 'storage', 'temperature'])
+    for (const id of THIS_DEVICE_WIDGETS) expect(isThisDeviceWidget(id)).toBe(true)
     expect(isThisDeviceWidget('devices')).toBe(false)
     expect(isThisDeviceWidget('health')).toBe(false)
     expect(isThisDeviceWidget('recent')).toBe(false)

@@ -22,20 +22,24 @@ export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetId, string> = {
   recent: 'Recent Machines',
 }
 
-const WIDGET_IDS = new Set<string>(DEFAULT_WIDGETS)
-const THIS_DEVICE_WIDGETS: ReadonlySet<DashboardWidgetId> = new Set([
+export const THIS_DEVICE_WIDGETS = [
   'cpu',
   'memory',
   'storage',
   'temperature',
-])
+] as const satisfies readonly DashboardWidgetId[]
+
+export type ThisDeviceWidgetId = (typeof THIS_DEVICE_WIDGETS)[number]
+
+const WIDGET_IDS = new Set<string>(DEFAULT_WIDGETS)
+const THIS_DEVICE_WIDGET_IDS = new Set<string>(THIS_DEVICE_WIDGETS)
 
 export function isDashboardWidgetId(value: string): value is DashboardWidgetId {
   return WIDGET_IDS.has(value)
 }
 
-export function isThisDeviceWidget(id: DashboardWidgetId): boolean {
-  return THIS_DEVICE_WIDGETS.has(id)
+export function isThisDeviceWidget(id: DashboardWidgetId): id is ThisDeviceWidgetId {
+  return THIS_DEVICE_WIDGET_IDS.has(id)
 }
 
 export function resetDashboardLayout(): DashboardWidgetId[] {
