@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 struct ModelsView: View {
@@ -22,8 +21,6 @@ struct ModelsView: View {
     @State private var keyHostId = ""
     @State private var keyDraft = ""
     @State private var keySaving = false
-    @State private var statsHostId = ""
-    @State private var points: [DeviceStatsChartPoint] = []
     @State private var mintedKey: String?
     @State private var mintAttempted = false
     @State private var rechecking = false
@@ -47,7 +44,6 @@ struct ModelsView: View {
             } else {
                 List {
                     howToSection
-                    liveStatsSection
                     Section("Pull by name") {
                         TextField("llama3", text: $pullName)
                         OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)
@@ -140,16 +136,10 @@ struct ModelsView: View {
         }
         .refreshable {
             await model.refreshOllama()
-            await loadLiveStats()
         }
         .task {
             await model.refreshOllama()
             await mintHowToKeyIfNeeded()
-            syncStatsHost()
-            await loadLiveStats()
-        }
-        .task(id: "\(statsHostId)-\(fetchLiveStats)") {
-            await loadLiveStats()
         }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
             startSheet(row)
@@ -504,96 +494,6 @@ struct ModelsView: View {
             device.reachable = loc.reachable
             return device
         }
-    }
-
-    @ViewBuilder
-    private var liveStatsSection: some View {
-        Section {
-            Picker(Copy.device, selection: $statsHostId) {
-                ForEach(statsPickerDevices) { device in
-                    Text(device.reachable ? device.title : "\(device.title) (unreachable)").tag(device.hostId)
-                }
-            }
-            if !fetchLiveStats {
-                Text(OllamaDeviceStats.unreachableCopy)
-                    .foregroundStyle(.secondary)
-                LabeledContent("GPU", value: "unknown")
-            } else {
-                if gpuPoints.count > 1 {
-                    Chart(gpuPoints) { point in
-                        LineMark(
-                            x: .value("Time", point.date),
-                            y: .value("GPU", point.gpuPercent ?? 0),
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.purple.opacity(0.8))
-                        AreaMark(
-                            x: .value("Time", point.date),
-                            y: .value("GPU", point.gpuPercent ?? 0),
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.purple.opacity(0.12))
-                    }
-                    .chartYScale(domain: 0 ... 100)
-                    .chartXAxis(.hidden)
-                    .frame(height: 140)
-                    .accessibilityLabel("GPU history")
-                }
-                LabeledContent("GPU", value: gpuNow)
-            }
-        } header: {
-            Text("GPU")
-        }
-    }
-
-    private var statsPickerDevices: [OllamaDeviceStatus] {
-        catalog.devices.filter { $0.reachable || $0.hostId == statsHostId }
-    }
-
-    private var selectedCatalogDevice: OllamaDeviceStatus? {
-        catalog.devices.first { $0.hostId == statsHostId }
-    }
-
-    private var statsHealth: HomeDeviceHealthSnapshot? {
-        OllamaDeviceStats.healthTarget(
-            hostId: statsHostId,
-            catalog: catalog.devices,
-            devices: model.devices,
-        )
-    }
-
-    private var fetchLiveStats: Bool {
-        OllamaDeviceStats.shouldFetch(catalogDevice: selectedCatalogDevice, health: statsHealth)
-    }
-
-    private var gpuPoints: [DeviceStatsChartPoint] {
-        points.filter { $0.gpuPercent != nil }
-    }
-
-    private var gpuNow: String {
-        if let gpu = points.reversed().compactMap(\.gpuPercent).first {
-            return String(format: "%.0f%%", gpu)
-        }
-        return "—"
-    }
-
-    private func syncStatsHost() {
-        if statsHostId.isEmpty || !catalog.devices.contains(where: { $0.hostId == statsHostId }) {
-            statsHostId = OllamaDeviceStats.defaultHostId(models: catalog.models, devices: catalog.devices)
-        }
-    }
-
-    private func loadLiveStats() async {
-        syncStatsHost()
-        let requestedHost = statsHostId
-        guard fetchLiveStats, let target = statsHealth else {
-            guard !Task.isCancelled, statsHostId == requestedHost else { return }
-            points = []
-            return
-        }
-        let nextPoints = await DeviceStatsHistory.points(from: model.statsHistory(on: target))
-        guard !Task.isCancelled, statsHostId == requestedHost else { return }
-        points = nextPoints
     }
 
     private var pullFraction: Double? {

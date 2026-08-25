@@ -19,7 +19,7 @@ brew services start ollama
 
 When Ollama comes up, the page switches to the model list without a full reload.
 
-Live stats on this page are **GPU busy percent** for the Device (unknown when the probe is missing). CPU and memory charts stay on Device detail. Occupancy / passthrough is a different number.
+Live Device stats (CPU, memory, GPU busy percent) are on Device detail, not this page. Occupancy / passthrough is a different number.
 
 ## Catalog vs library search
 
