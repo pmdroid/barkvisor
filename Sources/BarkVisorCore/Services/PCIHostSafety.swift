@@ -17,7 +17,9 @@ public struct PCIHostSafety: Equatable, Sendable {
 
     public static let empty = PCIHostSafety()
 
-    public var onlyUplinkAddresses: Set<String> { uplinkAddresses }
+    public var onlyUplinkAddresses: Set<String> {
+        uplinkAddresses
+    }
 
     public func blocks(_ address: String, groupAddresses: [String]) -> String? {
         let addrs = Set([GPUPassthroughService.normalizePCIAddress(address)] + groupAddresses.map {
