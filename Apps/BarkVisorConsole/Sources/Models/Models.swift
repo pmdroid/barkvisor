@@ -1024,6 +1024,15 @@ struct RemoteAccessWireGuard: Decodable, Hashable {
     var configured: Bool
 }
 
+struct DiskSettingsSnapshot: Decodable, Equatable {
+    var diskDirectory: String
+    var isDefault: Bool
+}
+
+struct DiskSettingsUpdate: Encodable {
+    var diskDirectory: String
+}
+
 struct RemoteAccessStatus: Decodable, Hashable {
     var tailscale: RemoteAccessTailnet
     var wireguard: RemoteAccessWireGuard

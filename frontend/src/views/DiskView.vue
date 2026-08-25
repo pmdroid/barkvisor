@@ -60,10 +60,6 @@ const showCreatePicker = ref(false)
 const loading = ref(false)
 const error = ref('')
 
-const diskSettings = ref<DiskSettings | null>(null)
-const diskDirectoryDraft = ref('')
-const diskDirSaving = ref(false)
-const showDiskDirPicker = ref(false)
 const formDiskDirectory = ref('')
 const formContextSeq = ref(0)
 const directoryEdited = ref(false)
@@ -180,41 +176,6 @@ function isBlockDisk(row: HomeDiskRow): boolean {
 function mutateApiTarget(device: HomeDeviceHealthSnapshot | null) {
   if (useHomeUnion.value && device) return device
   return devicesStore.selfDevice ?? { hostId: devicesStore.selfDevice?.hostId || '', role: 'self' }
-}
-
-async function loadSelfDiskSettings() {
-  const device = devicesStore.selfDevice
-  const path = device ? deviceDiskSettingsPath(device) : '/system/disk/settings'
-  try {
-    const { data } = await api.get<DiskSettings>(path)
-    diskSettings.value = data
-    diskDirectoryDraft.value = data.diskDirectory
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e, 'Could not load disk directory'))
-  }
-}
-
-async function saveSelfDiskSettings() {
-  diskDirSaving.value = true
-  try {
-    const device = devicesStore.selfDevice
-    const path = device ? deviceDiskSettingsPath(device) : '/system/disk/settings'
-    const { data } = await api.put<DiskSettings>(path, {
-      diskDirectory: diskDirectoryDraft.value,
-    })
-    diskSettings.value = data
-    diskDirectoryDraft.value = data.diskDirectory
-    toast.success('Disk directory saved')
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e, 'Could not save disk directory'))
-  } finally {
-    diskDirSaving.value = false
-  }
-}
-
-async function resetSelfDiskSettings() {
-  diskDirectoryDraft.value = ''
-  await saveSelfDiskSettings()
 }
 
 async function loadFormDiskContext() {
@@ -335,7 +296,6 @@ async function refreshHomeDisks() {
 onMounted(() => {
   void caps.fetchCapabilities()
   void refreshHomeDisks()
-  void loadSelfDiskSettings()
 })
 
 watch(formHostId, () => {
@@ -486,32 +446,10 @@ async function resizeDisk() {
     <h1>Disks</h1>
     <AppButton variant="primary" icon="plus" @click="openCreate">Create Disk</AppButton>
   </div>
-
-  <div class="storage-summary" style="padding:16px 20px">
-    <div class="form-group" style="margin:0;max-width:720px">
-      <label>Default VM disk directory</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input
-          v-model="diskDirectoryDraft"
-          :disabled="diskDirSaving"
-          placeholder="/var/lib/barkvisor/disks"
-          style="flex:1"
-        />
-        <AppButton size="sm" :disabled="diskDirSaving" @click="showDiskDirPicker = true">Browse</AppButton>
-        <AppButton size="sm" variant="primary" :disabled="diskDirSaving" :loading="diskDirSaving" @click="saveSelfDiskSettings">Save</AppButton>
-        <AppButton size="sm" :disabled="diskDirSaving || diskSettings?.isDefault" @click="resetSelfDiskSettings">Reset</AppButton>
-      </div>
-      <p style="color:var(--text-dim);font-size:12px;margin:8px 0 0 0">
-        New disks on this {{ DEVICE_LABEL }} go here unless Create Disk picks another folder.
-      </p>
-    </div>
-  </div>
-  <FolderPicker
-    v-if="showDiskDirPicker"
-    :model-value="diskDirectoryDraft"
-    @update:model-value="diskDirectoryDraft = $event"
-    @close="showDiskDirPicker = false"
-  />
+  <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px">
+    Default directory for new disks is in
+    <router-link to="/settings?tab=disks">Settings → Disks</router-link>.
+  </p>
 
   <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
     {{ loadErrors[0] }}

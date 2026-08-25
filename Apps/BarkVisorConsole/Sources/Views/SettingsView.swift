@@ -28,6 +28,7 @@ struct SettingsView: View {
             if model.client != nil {
                 APIKeysSection()
                 RemoteAccessSection()
+                DiskDirectorySection()
             }
 
             #if os(macOS)
@@ -87,6 +88,53 @@ struct SettingsView: View {
             NSPasteboard.general.setString(text, forType: .string)
         }
     #endif
+}
+
+private struct DiskDirectorySection: View {
+    @Environment(AppModel.self) private var model
+    @State private var draft = ""
+    @State private var saving = false
+
+    var body: some View {
+        Section {
+            Text("New disks on this \(Copy.device) go here unless Create Disk picks another folder.")
+                .foregroundStyle(.secondary)
+            TextField("Default VM disk directory", text: $draft)
+                .disabled(saving)
+            #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            #endif
+            if let settings = model.diskSettings {
+                Text(settings.isDefault ? "Using the default path on this Device." : "Using a custom disk directory.")
+                    .foregroundStyle(.secondary)
+            }
+            Button("Save") {
+                Task {
+                    saving = true
+                    _ = await model.saveDiskSettings(draft)
+                    if let settings = model.diskSettings { draft = settings.diskDirectory }
+                    saving = false
+                }
+            }
+            .disabled(saving)
+            Button("Reset to default") {
+                Task {
+                    saving = true
+                    _ = await model.saveDiskSettings("")
+                    if let settings = model.diskSettings { draft = settings.diskDirectory }
+                    saving = false
+                }
+            }
+            .disabled(saving || model.diskSettings?.isDefault != false)
+        } header: {
+            Text("Disks")
+        }
+        .task {
+            await model.refreshDiskSettings()
+            draft = model.diskSettings?.diskDirectory ?? ""
+        }
+    }
 }
 
 private struct RemoteAccessSection: View {

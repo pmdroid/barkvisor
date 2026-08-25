@@ -3,6 +3,7 @@ export const SETTINGS_TABS = [
   'home',
   'pairing',
   'library',
+  'disks',
   'apikeys',
   'sshkeys',
   'audit',

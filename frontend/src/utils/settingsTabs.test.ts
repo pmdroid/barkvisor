@@ -16,11 +16,13 @@ describe('settings tab query', () => {
   test('maps query tab values including pairing', () => {
     expect(SETTINGS_TABS).toContain('pairing')
     expect(SETTINGS_TABS).toContain('home')
+    expect(SETTINGS_TABS).toContain('disks')
     expect(DEFAULT_SETTINGS_TAB).toBe('apikeys')
 
     expect(settingsTabFromQuery('pairing')).toBe('pairing')
     expect(settingsTabFromQuery('home')).toBe('home')
     expect(settingsTabFromQuery('library')).toBe('library')
+    expect(settingsTabFromQuery('disks')).toBe('disks')
     expect(settingsTabFromQuery('apikeys')).toBe('apikeys')
     expect(settingsTabFromQuery('sshkeys')).toBe('sshkeys')
     expect(settingsTabFromQuery('audit')).toBe('audit')
@@ -96,5 +98,17 @@ describe('settings tab query', () => {
     const devices = readFileSync(join(here, '../views/DevicesView.vue'), 'utf8')
     expect(devices).toContain('/settings?tab=pairing')
     expect(devices).not.toContain('/settings?tab=home')
+  })
+
+  test('Default VM disk directory lives on Settings Disks, not the Disks list', () => {
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    const disks = readFileSync(join(here, '../views/DiskView.vue'), 'utf8')
+    expect(settings).toContain("tab === 'disks'")
+    expect(settings).toContain('openDisksTab')
+    expect(settings).toContain('Default VM disk directory')
+    expect(settings).toContain('/system/disk/settings')
+    expect(disks).not.toContain('Default VM disk directory')
+    expect(disks).toContain('/settings?tab=disks')
+    expect(disks).toContain('Create Disk')
   })
 })
