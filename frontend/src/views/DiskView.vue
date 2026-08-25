@@ -65,6 +65,9 @@ const diskDirectoryDraft = ref('')
 const diskDirSaving = ref(false)
 const showDiskDirPicker = ref(false)
 const formDiskDirectory = ref('')
+const formContextSeq = ref(0)
+const directoryEdited = ref(false)
+const directoryForHostId = ref('')
 
 const resizingRow = ref<HomeDiskRow | null>(null)
 const resizeSizeGB = ref(0)
@@ -215,32 +218,51 @@ async function resetSelfDiskSettings() {
 }
 
 async function loadFormDiskContext() {
+  const seq = ++formContextSeq.value
   const device = formDevice.value
+  const hostId = device?.hostId || ''
+  blockDevices.value = []
   if (homeUnionDeviceBlocked(device)) {
+    if (seq !== formContextSeq.value) return
     formDiskDirectory.value = ''
-    blockDevices.value = []
+    newDirectory.value = ''
     return
   }
   const target = mutateApiTarget(device)
   try {
     const { data } = await api.get<DiskSettings>(deviceDiskSettingsPath(target))
+    if (seq !== formContextSeq.value) return
     formDiskDirectory.value = data.diskDirectory
-    if (!newDirectory.value) newDirectory.value = data.diskDirectory
+    if (!directoryEdited.value || directoryForHostId.value !== hostId) {
+      newDirectory.value = data.diskDirectory
+      directoryForHostId.value = hostId
+      directoryEdited.value = false
+    }
   } catch {
+    if (seq !== formContextSeq.value) return
     formDiskDirectory.value = ''
   }
   if (formIsLinux()) {
     try {
       const { data } = await api.get<HostBlockDevice[]>(deviceBlockDevicesPath(target))
+      if (seq !== formContextSeq.value) return
       blockDevices.value = data
     } catch {
+      if (seq !== formContextSeq.value) return
       blockDevices.value = []
     }
   } else {
+    if (seq !== formContextSeq.value) return
     blockDevices.value = []
     useBlockDevice.value = false
     blockDevicePath.value = ''
   }
+}
+
+function markDirectoryEdited(value: string) {
+  newDirectory.value = value
+  directoryEdited.value = true
+  directoryForHostId.value = formDevice.value?.hostId || ''
 }
 
 const blockDeviceOptions = computed(() =>
@@ -317,14 +339,24 @@ onMounted(() => {
 })
 
 watch(formHostId, () => {
+  directoryEdited.value = false
   if (showCreate.value) void loadFormDiskContext()
 })
 
+watch(showCreate, (open) => {
+  if (!open) formContextSeq.value += 1
+})
+
 function resetForm() {
+  formContextSeq.value += 1
   newName.value = ''
   newSizeGB.value = 10
   newFormat.value = 'qcow2'
-  newDirectory.value = diskSettings.value?.diskDirectory || formDiskDirectory.value || ''
+  newDirectory.value = ''
+  directoryEdited.value = false
+  directoryForHostId.value = ''
+  formDiskDirectory.value = ''
+  blockDevices.value = []
   useBlockDevice.value = false
   blockDevicePath.value = ''
   showBlockConfirm.value = false
@@ -335,9 +367,7 @@ function resetForm() {
 function openCreate() {
   resetForm()
   showCreate.value = true
-  void loadFormDiskContext().then(() => {
-    if (!newDirectory.value) newDirectory.value = formDiskDirectory.value
-  })
+  void loadFormDiskContext()
 }
 
 function createBody(): DiskWriteBody | null {
@@ -614,7 +644,12 @@ async function resizeDisk() {
         <div class="form-group">
           <label>Location</label>
           <div style="display:flex;gap:8px;align-items:center">
-            <input v-model="newDirectory" :placeholder="formDiskDirectory || 'Default disk directory'" style="flex:1" />
+            <input
+              :value="newDirectory"
+              :placeholder="formDiskDirectory || 'Default disk directory'"
+              style="flex:1"
+              @input="markDirectoryEdited(($event.target as HTMLInputElement).value)"
+            />
             <AppButton v-if="!useHomeUnion || isSelfDevice(formDevice || { hostId: '', role: 'self' })" size="sm" @click="showCreatePicker = true">Browse</AppButton>
           </div>
         </div>
@@ -670,7 +705,7 @@ async function resizeDisk() {
   <FolderPicker
     v-if="showCreatePicker"
     :model-value="newDirectory"
-    @update:model-value="newDirectory = $event"
+    @update:model-value="markDirectoryEdited($event)"
     @close="showCreatePicker = false"
   />
 

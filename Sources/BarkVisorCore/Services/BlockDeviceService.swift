@@ -33,9 +33,11 @@ public enum BlockDeviceService {
     ) -> [HostBlockDevice] {
         #if os(Linux)
             let mounts = (try? String(contentsOfFile: "/proc/mounts", encoding: .utf8)) ?? ""
+            let swaps = (try? String(contentsOfFile: "/proc/swaps", encoding: .utf8)) ?? ""
             return listSysfsDevices(
                 root: sysBlockRoot,
                 mounts: mounts,
+                swaps: swaps,
                 fileManager: fileManager,
             )
         #else
@@ -47,12 +49,12 @@ public enum BlockDeviceService {
     public static func listSysfsDevices(
         root: URL,
         mounts: String = "",
+        swaps: String = "",
         fileManager: FileManager = .default,
     ) -> [HostBlockDevice] {
         guard let names = try? fileManager.contentsOfDirectory(atPath: root.path) else {
             return []
         }
-        let rootDisk = rootDiskName(from: mounts)
         var devices: [HostBlockDevice] = []
         for name in names.sorted() {
             if shouldSkip(name) { continue }
@@ -65,24 +67,49 @@ public enum BlockDeviceService {
             let sizeBytes = sysfsSizeBytes(at: dir, fileManager: fileManager) ?? 0
             let model = sysfsText(at: dir.appendingPathComponent("device/model"), fileManager: fileManager)
             let path = "/dev/\(name)"
-            var attachable = true
-            var reason: String?
-            if let rootDisk, name == rootDisk {
-                attachable = false
-                reason = "Host root disk"
-            }
+            let reason = hostUseReason(path: path, mounts: mounts, swaps: swaps)
             devices.append(
                 HostBlockDevice(
                     path: path,
                     name: name,
                     sizeBytes: sizeBytes,
                     model: model,
-                    attachable: attachable,
+                    attachable: reason == nil,
                     excludedReason: reason,
                 ),
             )
         }
         return devices
+    }
+
+    /// Why this `/dev` node must not be passed through: mounted, swap, or the host root disk.
+    public static func hostUseReason(path: String, mounts: String, swaps: String = "") -> String? {
+        let node = URL(fileURLWithPath: path).lastPathComponent
+        guard !node.isEmpty else { return nil }
+        let whole = wholeDiskName(from: node)
+        if let root = rootDiskName(from: mounts), whole == root {
+            return "Host root disk"
+        }
+        let used = usedDeviceNames(from: mounts).union(usedDeviceNames(from: swaps))
+        if used.contains(node) {
+            return "Device is mounted on the host"
+        }
+        if used.contains(where: { wholeDiskName(from: $0) == whole }) {
+            return "Device is in use by the host"
+        }
+        return nil
+    }
+
+    public static func usedDeviceNames(from text: String) -> Set<String> {
+        var names = Set<String>()
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            for token in line.split(separator: " ", omittingEmptySubsequences: true) {
+                let source = String(token)
+                guard source.hasPrefix("/dev/") else { continue }
+                names.insert(String(source.dropFirst(5)))
+            }
+        }
+        return names
     }
 
     public static func isBlockDevice(

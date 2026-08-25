@@ -133,4 +133,25 @@ final class DiskSettingsTests {
         let gone = try await dbPool.read { db in try Disk.fetchOne(db, key: "disk-dev") }
         #expect(gone == nil)
     }
+
+    @Test func `deleteDisk unlinks a file created in a directory override`() async throws {
+        let dir = tmpDir.appendingPathComponent("override-disks")
+        let disk = try await DiskService.createDisk(
+            name: "override",
+            sizeGB: 1,
+            format: "qcow2",
+            directory: dir.path,
+            db: dbPool,
+            createBlank: { path, _, _ in
+                try FileManager.default.createDirectory(
+                    at: path.deletingLastPathComponent(), withIntermediateDirectories: true,
+                )
+                try Data("qcow".utf8).write(to: path)
+            },
+        )
+        #expect(FileManager.default.fileExists(atPath: disk.path))
+        let cache = DiskInfoCache(dbPool: dbPool)
+        _ = try await DiskService.deleteDisk(id: disk.id, diskInfoCache: cache, db: dbPool)
+        #expect(!FileManager.default.fileExists(atPath: disk.path))
+    }
 }

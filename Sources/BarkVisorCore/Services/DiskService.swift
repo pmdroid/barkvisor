@@ -256,6 +256,8 @@ public enum DiskService {
         db: DatabasePool,
         fileManager: FileManager = .default,
         allowBlockDevices: Bool? = nil,
+        mounts: String? = nil,
+        swaps: String? = nil,
         createBlank: ((URL, Int, String) throws -> Void)? = nil,
     ) async throws -> Disk {
         if let blockDevice {
@@ -266,6 +268,8 @@ public enum DiskService {
                 db: db,
                 fileManager: fileManager,
                 allowBlockDevices: allowBlockDevices,
+                mounts: mounts,
+                swaps: swaps,
             )
         }
 
@@ -297,6 +301,7 @@ public enum DiskService {
         )
         do {
             try await db.write { db in
+                try DiskSettings.recordPreviousDirectory(dir, db: db)
                 try disk.insert(db)
             }
         } catch {
@@ -313,6 +318,8 @@ public enum DiskService {
         db: DatabasePool,
         fileManager: FileManager,
         allowBlockDevices: Bool?,
+        mounts: String?,
+        swaps: String?,
     ) async throws -> Disk {
         if let directory, !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw BarkVisorError.badRequest("directory cannot be combined with blockDevice")
@@ -345,9 +352,10 @@ public enum DiskService {
             throw BarkVisorError.badRequest("Could not determine size of block device \(path)")
         }
 
-        let existing = try await db.read { db in try Disk.fetchAll(db) }
-        if existing.contains(where: { $0.path == path }) {
-            throw BarkVisorError.conflict("Block device is already attached as a disk")
+        let mountsText = mounts ?? linuxProcFile("/proc/mounts")
+        let swapsText = swaps ?? linuxProcFile("/proc/swaps")
+        if let reason = BlockDeviceService.hostUseReason(path: path, mounts: mountsText, swaps: swapsText) {
+            throw BarkVisorError.badRequest(reason)
         }
 
         let id = UUID().uuidString
@@ -357,10 +365,28 @@ public enum DiskService {
             format: "raw", vmId: nil, autoCreated: false,
             status: "ready", createdAt: iso8601.string(from: Date()),
         )
-        try await db.write { db in
-            try disk.insert(db)
+        do {
+            try await db.write { db in
+                if try Disk.filter(Column("path") == path).fetchOne(db) != nil {
+                    throw BarkVisorError.conflict("Block device is already attached as a disk")
+                }
+                try disk.insert(db)
+            }
+        } catch let error as BarkVisorError {
+            throw error
+        } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
+            throw BarkVisorError.conflict("Block device is already attached as a disk")
         }
         return disk
+    }
+
+    private static func linuxProcFile(_ path: String) -> String {
+        #if os(Linux)
+            (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        #else
+            _ = path
+            return ""
+        #endif
     }
 
     private static func resolvedCreateDirectory(_ directory: String?, db: DatabasePool) async throws
@@ -381,25 +407,34 @@ public enum DiskService {
         db: DatabasePool,
     ) async throws -> StorageSummary {
         let disks = try await db.read { db in try Disk.fetchAll(db) }
+        let volumeFS = fileSystemNumber(of: Config.dataDir.path)
         var totalVirtual: Int64 = 0
         var totalActual: Int64 = 0
         for disk in disks {
             if DiskSettings.isHostDevicePath(disk.path) {
                 totalVirtual += disk.sizeBytes
-                totalActual += disk.sizeBytes
                 continue
             }
+            let virtualSize: Int64
+            let actualSize: Int64
             if let cached = await diskInfoCache.get(disk.id) {
-                totalVirtual += cached.virtualSize
-                totalActual += cached.actualSize
+                virtualSize = cached.virtualSize
+                actualSize = cached.actualSize
             } else if FileManager.default.fileExists(atPath: disk.path) {
                 do {
                     let info = try getImageInfo(path: disk.path)
-                    totalVirtual += info.virtualSize
-                    totalActual += info.actualSize
+                    virtualSize = info.virtualSize
+                    actualSize = info.actualSize
                 } catch {
                     Log.server.warning("Failed to get image info for disk \(disk.id): \(error)")
+                    continue
                 }
+            } else {
+                continue
+            }
+            totalVirtual += virtualSize
+            if fileSystemNumber(of: disk.path) == volumeFS {
+                totalActual += actualSize
             }
         }
 
@@ -490,6 +525,11 @@ public enum DiskService {
         guard deleted else { throw BarkVisorError.notFound() }
         await diskInfoCache.invalidate(id)
         return disk
+    }
+
+    private static func fileSystemNumber(of path: String) -> NSNumber? {
+        let attrs = try? FileManager.default.attributesOfFileSystem(forPath: path)
+        return attrs?[.systemNumber] as? NSNumber
     }
 
     private static func resolveQEMUImg() throws -> URL {

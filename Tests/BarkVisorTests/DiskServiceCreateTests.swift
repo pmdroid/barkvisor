@@ -43,6 +43,8 @@ final class DiskServiceCreateTests {
         blockDevice: String? = nil,
         fileManager: FileManager = .default,
         allowBlockDevices: Bool? = nil,
+        mounts: String? = nil,
+        swaps: String? = nil,
     ) async throws {
         do {
             _ = try await DiskService.createDisk(
@@ -54,6 +56,8 @@ final class DiskServiceCreateTests {
                 db: dbPool,
                 fileManager: fileManager,
                 allowBlockDevices: allowBlockDevices,
+                mounts: mounts,
+                swaps: swaps,
                 createBlank: { _, _, _ in
                     Issue.record("qemu-img must not run")
                 },
@@ -152,6 +156,7 @@ final class DiskServiceCreateTests {
             db: dbPool,
             fileManager: fm,
             allowBlockDevices: true,
+            mounts: "",
             createBlank: { _, _, _ in qemuCalled = true },
         )
         #expect(!qemuCalled)
@@ -176,5 +181,75 @@ final class DiskServiceCreateTests {
             blockDevice: file.path,
             allowBlockDevices: true,
         )
+    }
+
+    @Test func `createDisk rejects a mounted block device`() async throws {
+        let fm = StubBlockFileManager()
+        fm.blockPaths = ["/dev/sdb"]
+        fm.sizes = ["/dev/sdb": 10_737_418_240]
+        try await expectCreateFails(
+            format: "raw",
+            blockDevice: "/dev/sdb",
+            fileManager: fm,
+            allowBlockDevices: true,
+            mounts: "/dev/sdb1 /mnt/data ext4 rw 0 0\n",
+        )
+    }
+
+    @Test func `createDisk conflicts when the block path is already attached`() async throws {
+        let fm = StubBlockFileManager()
+        fm.blockPaths = ["/dev/sdb"]
+        fm.sizes = ["/dev/sdb": 1_024]
+        _ = try await DiskService.createDisk(
+            name: "first",
+            sizeGB: 1,
+            format: "raw",
+            blockDevice: "/dev/sdb",
+            db: dbPool,
+            fileManager: fm,
+            allowBlockDevices: true,
+            mounts: "",
+            createBlank: { _, _, _ in Issue.record("qemu-img must not run") },
+        )
+        do {
+            _ = try await DiskService.createDisk(
+                name: "second",
+                sizeGB: 1,
+                format: "raw",
+                blockDevice: "/dev/sdb",
+                db: dbPool,
+                fileManager: fm,
+                allowBlockDevices: true,
+                mounts: "",
+                createBlank: { _, _, _ in Issue.record("qemu-img must not run") },
+            )
+            Issue.record("expected createDisk to throw")
+        } catch BarkVisorError.conflict {
+        } catch {
+            Issue.record("expected conflict, got \(error)")
+        }
+        let count = try await dbPool.read { db in try Disk.fetchCount(db) }
+        #expect(count == 1)
+    }
+
+    @Test func `storageSummary excludes host device bytes from volume usage`() async throws {
+        try await dbPool.write { db in
+            try Disk(
+                id: "raw-dev",
+                name: "passthrough",
+                path: "/dev/sdb",
+                sizeBytes: 1_099_511_627_776,
+                format: "raw",
+                vmId: nil,
+                autoCreated: false,
+                status: "ready",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        let cache = DiskInfoCache(dbPool: dbPool)
+        let summary = try await DiskService.storageSummary(diskInfoCache: cache, db: dbPool)
+        #expect(summary.diskCount == 1)
+        #expect(summary.totalVirtual == 1_099_511_627_776)
+        #expect(summary.totalActual == 0)
     }
 }

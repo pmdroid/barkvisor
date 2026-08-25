@@ -32,6 +32,23 @@ struct BlockDeviceServiceTests {
         #expect(BlockDeviceService.rootDiskName(from: mounts) == "nvme0n1")
     }
 
+    @Test func `host use reason rejects root mounted and swap devices`() {
+        let mounts = """
+        /dev/nvme0n1p2 / ext4 rw 0 0
+        /dev/sdb1 /mnt/data ext4 rw 0 0
+        """
+        let swaps = """
+        Filename Type Size Used Priority
+        /dev/sdc1 partition 1 0 -2
+        """
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/nvme0n1", mounts: mounts) == "Host root disk")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/nvme0n1p2", mounts: mounts) == "Host root disk")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdb1", mounts: mounts) == "Device is mounted on the host")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdb", mounts: mounts) == "Device is in use by the host")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdc", mounts: mounts, swaps: swaps) == "Device is in use by the host")
+        #expect(BlockDeviceService.hostUseReason(path: "/dev/sdd", mounts: mounts, swaps: swaps) == nil)
+    }
+
     @Test func `sysfs listing skips loop and marks the root disk`() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -65,6 +82,14 @@ struct BlockDeviceServiceTests {
         let sdb = try #require(devices.first { $0.name == "sdb" })
         #expect(sdb.attachable)
         #expect(devices.contains { $0.name == "loop0" } == false)
+
+        let mounted = BlockDeviceService.listSysfsDevices(
+            root: root,
+            mounts: "/dev/sda2 / ext4 rw 0 0\n/dev/sdb1 /mnt/data ext4 rw 0 0\n",
+        )
+        let mountedSdb = try #require(mounted.first { $0.name == "sdb" })
+        #expect(!mountedSdb.attachable)
+        #expect(mountedSdb.excludedReason == "Device is in use by the host")
     }
 
     @Test func `listDevices is empty on macOS`() {
