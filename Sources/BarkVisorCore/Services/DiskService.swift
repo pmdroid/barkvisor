@@ -258,6 +258,7 @@ public enum DiskService {
         allowBlockDevices: Bool? = nil,
         mounts: String? = nil,
         swaps: String? = nil,
+        openReadWrite: ((String) throws -> Void)? = nil,
         createBlank: ((URL, Int, String) throws -> Void)? = nil,
     ) async throws -> Disk {
         if let blockDevice {
@@ -270,6 +271,7 @@ public enum DiskService {
                 allowBlockDevices: allowBlockDevices,
                 mounts: mounts,
                 swaps: swaps,
+                openReadWrite: openReadWrite,
             )
         }
 
@@ -320,6 +322,7 @@ public enum DiskService {
         allowBlockDevices: Bool?,
         mounts: String?,
         swaps: String?,
+        openReadWrite: ((String) throws -> Void)?,
     ) async throws -> Disk {
         if let directory, !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw BarkVisorError.badRequest("directory cannot be combined with blockDevice")
@@ -357,6 +360,7 @@ public enum DiskService {
         if let reason = BlockDeviceService.hostUseReason(path: path, mounts: mountsText, swaps: swapsText) {
             throw BarkVisorError.badRequest(reason)
         }
+        try BlockDeviceService.requireReadWrite(path: path, openReadWrite: openReadWrite)
 
         let id = UUID().uuidString
         let disk = Disk(

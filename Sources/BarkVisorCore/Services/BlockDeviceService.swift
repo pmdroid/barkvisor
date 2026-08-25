@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 
 public struct HostBlockDevice: Codable, Equatable, Sendable {
     public let path: String
@@ -80,6 +85,47 @@ public enum BlockDeviceService {
             )
         }
         return devices
+    }
+
+    public static func readWriteDeniedCopy(path: String) -> String {
+        "Cannot open '\(path)' for read/write. The BarkVisor user needs the disk group (or a udev ACL)."
+    }
+
+    public static func readWriteDeniedReason(
+        path: String,
+        openReadWrite: ((String) throws -> Void)? = nil,
+    ) -> String? {
+        do {
+            if let openReadWrite {
+                try openReadWrite(path)
+            } else {
+                try openPathReadWrite(path)
+            }
+            return nil
+        } catch {
+            if isPermissionDenied(error) {
+                return readWriteDeniedCopy(path: path)
+            }
+            return "Cannot open '\(path)' for read/write."
+        }
+    }
+
+    public static func requireReadWrite(
+        path: String,
+        openReadWrite: ((String) throws -> Void)? = nil,
+    ) throws {
+        if let reason = readWriteDeniedReason(path: path, openReadWrite: openReadWrite) {
+            throw BarkVisorError.badRequest(reason)
+        }
+    }
+
+    public static func requireHostDeviceReadWrite(
+        paths: [String],
+        openReadWrite: ((String) throws -> Void)? = nil,
+    ) throws {
+        for path in paths where DiskSettings.isHostDevicePath(path) {
+            try requireReadWrite(path: path, openReadWrite: openReadWrite)
+        }
     }
 
     /// Why this `/dev` node must not be passed through: mounted, swap, or the host root disk.
@@ -179,5 +225,38 @@ public enum BlockDeviceService {
         guard let raw = try? String(contentsOfFile: url.path, encoding: .utf8) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    package static func openPathReadWrite(_ path: String) throws {
+        #if canImport(Darwin)
+            let fd = path.withCString { Darwin.open($0, O_RDWR) }
+        #elseif canImport(Glibc)
+            let fd = path.withCString { Glibc.open($0, O_RDWR) }
+        #else
+            let handle = try FileHandle(forUpdating: URL(fileURLWithPath: path))
+            try handle.close()
+            return
+        #endif
+        if fd < 0 {
+            let code = errno
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+        }
+        #if canImport(Darwin)
+            _ = Darwin.close(fd)
+        #elseif canImport(Glibc)
+            _ = Glibc.close(fd)
+        #endif
+    }
+
+    private static func isPermissionDenied(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == NSPOSIXErrorDomain {
+            return ns.code == Int(EACCES) || ns.code == Int(EPERM)
+        }
+        if ns.domain == NSCocoaErrorDomain {
+            return ns.code == NSFileReadNoPermissionError
+                || ns.code == NSFileWriteNoPermissionError
+        }
+        return false
     }
 }
