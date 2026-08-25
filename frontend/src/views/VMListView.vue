@@ -12,7 +12,7 @@ import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
 import type { SystemStats, GuestInfo, PortForwardRule, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
-import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { filterRowsByHealth, healthLabel, healthPillClass, vmHealth, vmListEmptyKind } from '../utils/workloadHealth'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 import { storeToRefs } from 'pinia'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
@@ -55,14 +55,6 @@ const guestInfoMap = reactive<Record<string, GuestInfo>>({})
 const actionLoading = reactive<Record<string, boolean>>({})
 const copied = reactive<Record<string, boolean>>({})
 
-const healthFilters: Array<{ key: WorkloadHealth | 'all'; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'running', label: 'Running' },
-  { key: 'failed', label: 'Failed' },
-  { key: 'degraded', label: 'Degraded' },
-  { key: 'stopped', label: 'Stopped' },
-]
-
 const homeRows = computed(() => {
   const devices = devicesStore.devices
   if (devices.length > 0) return homeWorkloads.homeRows(devices)
@@ -75,9 +67,16 @@ const homeRows = computed(() => {
   }))
 })
 
-const visibleRows = computed(() => {
-  if (healthFilter.value === 'all') return homeRows.value
-  return homeRows.value.filter((row) => vmHealth(row.vm) === healthFilter.value)
+const visibleRows = computed(() => filterRowsByHealth(homeRows.value, healthFilter.value))
+
+const listKind = computed(() =>
+  vmListEmptyKind(homeRows.value.length, visibleRows.value.length, healthFilter.value),
+)
+
+const filteredEmptySubtitle = computed(() => {
+  const filter = healthFilter.value
+  if (filter === 'all') return 'No matching VMs on Home.'
+  return `No ${healthLabel(filter)} VMs on Home.`
 })
 
 const healthStrip = computed(() => {
@@ -345,20 +344,16 @@ async function doStop() {
     </button>
   </div>
 
-  <div v-if="homeRows.length > 0" class="health-filters">
-    <button
-      v-for="f in healthFilters"
-      :key="f.key"
-      type="button"
-      class="health-filter"
-      :class="{ active: healthFilter === f.key }"
-      @click="healthFilter = f.key"
-    >{{ f.label }}</button>
-  </div>
-
-  <EmptyState v-if="homeRows.length === 0 && !store.loading && !devicesStore.loading" icon="monitor" title="No virtual machines yet">
+  <EmptyState v-if="listKind === 'none' && !store.loading && !devicesStore.loading" icon="monitor" title="No virtual machines yet">
     <AppButton variant="primary" @click="showCreate = true">Create your first VM</AppButton>
   </EmptyState>
+
+  <EmptyState
+    v-else-if="listKind === 'filtered'"
+    icon="monitor"
+    title="No matching VMs"
+    :subtitle="filteredEmptySubtitle"
+  />
 
   <DataTable v-else :columns="[
     { key: 'name', label: 'Name' },
@@ -601,26 +596,6 @@ async function doStop() {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-.health-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-.health-filter {
-  padding: 4px 10px;
-  border: 1px solid var(--border-glass);
-  background: transparent;
-  color: var(--text-dim);
-  border-radius: 2px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.health-filter.active {
-  background: var(--bg-card);
-  color: var(--text);
-  border-color: var(--accent);
 }
 
 @media (max-width: 1024px) {
