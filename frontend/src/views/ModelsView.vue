@@ -51,6 +51,7 @@ import {
   ollamaInstallOsLabel,
   ollamaInstallOses,
   ollamaInstallSteps,
+  shouldShowOllamaInstall,
 } from '../utils/ollamaInstall'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
@@ -116,8 +117,12 @@ const howTo = computed(() =>
   }),
 )
 
-const showOllamaInstall = computed(
-  () => !store.anyReachable && (store.catalog != null || !store.loading || rechecking.value),
+const showOllamaInstall = computed(() =>
+  shouldShowOllamaInstall({
+    loading: store.loading,
+    catalog: store.catalog,
+    anyReachable: store.anyReachable,
+  }),
 )
 
 const installOses = computed(() => {
@@ -679,7 +684,7 @@ async function saveKey() {
     </AppButton>
   </div>
 
-  <template v-else>
+  <template v-else-if="store.anyReachable">
     <div class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0 0 12px">
         <label>{{ DEVICE_LABEL }}</label>

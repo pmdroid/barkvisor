@@ -202,14 +202,22 @@ struct ModelsView: View {
                 }
             }
             Button("Recheck") {
+                guard OllamaInstall.canRecheck(
+                    rechecking: rechecking,
+                    refreshInFlight: model.ollamaRefreshing,
+                ) else { return }
+                rechecking = true
                 Task {
-                    guard !rechecking else { return }
-                    rechecking = true
                     await model.refreshOllamaCatalog()
                     rechecking = false
                 }
             }
-            .disabled(rechecking)
+            .disabled(
+                !OllamaInstall.canRecheck(
+                    rechecking: rechecking,
+                    refreshInFlight: model.ollamaRefreshing,
+                ),
+            )
         }
     }
 

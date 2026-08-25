@@ -248,6 +248,11 @@ enum OllamaInstall {
         }
         return hint(os: os)
     }
+
+    /// Recheck is ignored while a prior Recheck or refreshOllama is already in flight.
+    static func canRecheck(rechecking: Bool, refreshInFlight: Bool) -> Bool {
+        !rechecking && !refreshInFlight
+    }
 }
 
 enum OllamaDeviceStats {

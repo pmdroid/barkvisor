@@ -14,6 +14,7 @@ import {
   ollamaInstallOsLabel,
   ollamaInstallOses,
   ollamaInstallSteps,
+  shouldShowOllamaInstall,
 } from './ollamaInstall'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -89,13 +90,29 @@ describe('ollama install copy', () => {
 })
 
 describe('Ollama install UI', () => {
+  test('install panel waits for catalog load and hides while loading', () => {
+    expect(shouldShowOllamaInstall({ loading: false, catalog: null, anyReachable: false })).toBe(false)
+    expect(shouldShowOllamaInstall({ loading: true, catalog: null, anyReachable: false })).toBe(false)
+    expect(shouldShowOllamaInstall({ loading: true, catalog: { anyReachable: false }, anyReachable: false })).toBe(
+      false,
+    )
+    expect(shouldShowOllamaInstall({ loading: false, catalog: { anyReachable: false }, anyReachable: false })).toBe(
+      true,
+    )
+    expect(shouldShowOllamaInstall({ loading: false, catalog: { anyReachable: true }, anyReachable: true })).toBe(
+      false,
+    )
+  })
+
   test('ModelsView ships a multi-step install panel and Recheck', () => {
     const src = readFileSync(join(here, '../views/ModelsView.vue'), 'utf8')
     expect(src).toContain('ollamaInstallSteps')
     expect(src).toContain('ollamaCatalogInstallHint')
+    expect(src).toContain('shouldShowOllamaInstall')
     expect(src).toContain('Recheck')
     expect(src).toContain('recheckOllama')
     expect(src).toContain('showOllamaInstall')
+    expect(src).toContain('v-else-if="store.anyReachable"')
     expect(src).toContain('store.fetchCatalog()')
     expect(src).not.toContain(':subtitle="store.devices[0]?.installHint')
     expect(src).not.toContain('location.reload')
@@ -117,6 +134,13 @@ describe('Ollama install UI', () => {
     expect(src).toContain('OllamaInstall.steps')
     expect(src).toContain('Recheck')
     expect(src).toContain('refreshOllamaCatalog')
+    expect(src).toContain('OllamaInstall.canRecheck')
+    expect(src).toContain('rechecking = true')
+    expect(src).toContain('model.ollamaRefreshing')
     expect(src).not.toContain('description: Text(catalog.devices.first?.installHint')
+    const recheckIdx = src.indexOf('rechecking = true')
+    const taskIdx = src.indexOf('await model.refreshOllamaCatalog()')
+    expect(recheckIdx).toBeGreaterThan(0)
+    expect(taskIdx).toBeGreaterThan(recheckIdx)
   })
 })

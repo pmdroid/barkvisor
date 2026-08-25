@@ -450,6 +450,9 @@ struct OllamaModelsTests {
         #expect(OllamaInstall.os(platformOs: nil, installHint: OllamaInstall.linuxHint) == "linux")
         #expect(OllamaInstall.oses(installHints: [], platformOs: nil) == ["macos", "linux"])
         #expect(OllamaInstall.oses(installHints: [OllamaInstall.linuxHint], platformOs: "macOS") == ["linux"])
+        #expect(OllamaInstall.canRecheck(rechecking: false, refreshInFlight: false))
+        #expect(!OllamaInstall.canRecheck(rechecking: true, refreshInFlight: false))
+        #expect(!OllamaInstall.canRecheck(rechecking: false, refreshInFlight: true))
         #expect(
             OllamaInstall.catalogHint(
                 devices: [
@@ -477,7 +480,16 @@ struct OllamaModelsTests {
         #expect(source.contains("OllamaInstall.steps"))
         #expect(source.contains("Recheck"))
         #expect(source.contains("refreshOllamaCatalog"))
+        #expect(source.contains("OllamaInstall.canRecheck"))
+        #expect(source.contains("model.ollamaRefreshing"))
         #expect(!source.contains("description: Text(catalog.devices.first?.installHint"))
         #expect(source.contains("installSection"))
+        if let flag = source.range(of: "rechecking = true"),
+           let task = source.range(of: "await model.refreshOllamaCatalog()")
+        {
+            #expect(flag.lowerBound < task.lowerBound)
+        } else {
+            Issue.record("Recheck must set rechecking before refreshOllamaCatalog")
+        }
     }
 }

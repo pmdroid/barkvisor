@@ -78,3 +78,13 @@ export function ollamaCatalogInstallHint(
 export function ollamaInstallOsLabel(os: string): string {
   return os.trim().toLowerCase() === 'linux' ? 'Linux' : 'macOS'
 }
+
+/** Hide until a catalog fetch finished. First paint is loading=false and catalog=null. */
+export function shouldShowOllamaInstall(input: {
+  loading: boolean
+  catalog: unknown | null
+  anyReachable: boolean
+}): boolean {
+  if (input.loading || input.catalog == null) return false
+  return !input.anyReachable
+}
