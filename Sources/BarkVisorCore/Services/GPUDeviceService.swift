@@ -115,10 +115,8 @@ public enum GPUDeviceService {
     ) -> HostGPUDevice {
         let vfioBound = row.driver == "vfio-pci"
         let display = VFIOProbe.isDisplayClass(row.pciClass)
-        let hostDriver = display
-            ? GPUPassthroughService.isHostGPUDriver(row.driver)
-            : !(row.driver ?? "").isEmpty
-        let inUseByHost = !vfioBound && hostDriver
+        let inUseByHost =
+            display && !vfioBound && GPUPassthroughService.isHostGPUDriver(row.driver)
         var attachable = iommuReady
         var reason: String?
         if !iommuReady {
@@ -133,9 +131,7 @@ public enum GPUDeviceService {
             attachable = false
             reason = blocked
         } else if inUseByHost {
-            reason = display
-                ? GPUPassthroughService.hostGuestExclusiveMessage
-                : GPUPassthroughService.hostPCIExclusiveMessage
+            reason = GPUPassthroughService.hostGuestExclusiveMessage
         }
         return HostGPUDevice(
             pciAddress: row.pciAddress,

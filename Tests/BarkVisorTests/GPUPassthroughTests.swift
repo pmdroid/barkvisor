@@ -65,8 +65,8 @@ struct GPUPassthroughTests {
         #expect(nic?.pciClass == "020000")
         #expect(nic?.name.contains("Network") == true)
         #expect(nic?.attachable == true)
-        #expect(nic?.inUseByHost == true)
-        #expect(nic?.excludedReason == GPUPassthroughService.hostPCIExclusiveMessage)
+        #expect(nic?.inUseByHost == false)
+        #expect(nic?.excludedReason == nil)
     }
 
     @Test func `host occupancy is the gpu driver not an ollama probe`() {
@@ -511,6 +511,7 @@ struct GPUPassthroughTests {
         #expect(nic?.attachable == false)
         #expect(nic?.excludedReason == GPUPassthroughService.onlyUplinkExclusionReason)
         #expect(extra?.attachable == true)
+        #expect(extra?.inUseByHost == false)
         #expect(bridge?.attachable == false)
         #expect(bridge?.excludedReason == GPUPassthroughService.pciBridgeExclusionReason)
     }
