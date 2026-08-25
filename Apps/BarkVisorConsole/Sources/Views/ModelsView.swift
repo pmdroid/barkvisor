@@ -23,6 +23,7 @@ struct ModelsView: View {
     @State private var gpusLoaded = false
     @State private var mintedKey: String?
     @State private var mintAttempted = false
+    @State private var rechecking = false
 
     var body: some View {
         Group {
@@ -37,13 +38,7 @@ struct ModelsView: View {
             } else if !catalog.anyReachable {
                 List {
                     howToSection
-                    Section {
-                        ContentUnavailableView(
-                            "Ollama is not reachable",
-                            systemImage: "cube",
-                            description: Text(catalog.devices.first?.installHint ?? "Install Ollama on a Device."),
-                        )
-                    }
+                    installSection
                 }
                 .platformListStyle()
             } else {
@@ -156,6 +151,66 @@ struct ModelsView: View {
             advertiseHost: model.remoteAccess?.advertiseUrl,
             tailnetHost: InferenceAPIHowTo.tailnetListenHost(model.remoteAccess?.tailscale),
         )
+    }
+
+    private var installOses: [String] {
+        OllamaInstall.oses(
+            installHints: catalog.devices.map(\.installHint),
+            platformOs: model.selectedDevice?.platform?.os
+                ?? model.devices.first(where: \.isSelf)?.platform?.os,
+        )
+    }
+
+    private var installHint: String {
+        OllamaInstall.catalogHint(devices: catalog.devices, os: installOses.first ?? "macos")
+    }
+
+    private var deviceInstallLines: [OllamaDeviceStatus] {
+        catalog.devices.filter { !$0.installHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    @ViewBuilder
+    private var installSection: some View {
+        Section {
+            ContentUnavailableView(
+                "Ollama is not reachable",
+                systemImage: "cube",
+            )
+            if deviceInstallLines.isEmpty {
+                Text(installHint)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(deviceInstallLines) { device in
+                    Text("\(device.title) — \(device.installHint)")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            ForEach(installOses, id: \.self) { os in
+                Text(OllamaInstall.osLabel(os))
+                    .font(.subheadline.weight(.semibold))
+                ForEach(OllamaInstall.steps(os: os)) { step in
+                    if let command = step.command {
+                        CopyableSnippet(title: step.title, text: command)
+                    } else if let href = step.href {
+                        CopyableSnippet(title: step.title, text: href)
+                        if let url = URL(string: href) {
+                            Link(href, destination: url)
+                        }
+                    } else {
+                        Text(step.title)
+                    }
+                }
+            }
+            Button("Recheck") {
+                Task {
+                    guard !rechecking else { return }
+                    rechecking = true
+                    await model.refreshOllamaCatalog()
+                    rechecking = false
+                }
+            }
+            .disabled(rechecking)
+        }
     }
 
     private var howToSection: some View {
