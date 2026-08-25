@@ -15,6 +15,9 @@ case "$1" in
     fi
     if getent group disk >/dev/null 2>&1; then
       usermod -aG disk barkvisor 2>/dev/null || true
+      mkdir -p /etc/systemd/system/barkvisor.service.d
+      printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+        >/etc/systemd/system/barkvisor.service.d/disk.conf
     fi
     install -d -o barkvisor -g barkvisor -m 0755 "$DATA_DIR" "$RUN_DIR"
     if command -v systemctl >/dev/null 2>&1; then
@@ -23,6 +26,8 @@ case "$1" in
       if [ -z "${BARKVISOR_SKIP_ENABLE:-}" ]; then
         systemctl enable barkvisor.service >/dev/null 2>&1 || true
       fi
+      # Pick up disk/kvm groups on upgrade; no-op if the unit is not running.
+      systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
     fi
     ;;
 esac

@@ -135,12 +135,17 @@ fi
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: create system user barkvisor if missing"
   echo "DRY_RUN: usermod -aG kvm barkvisor (if group exists)"
-  echo "DRY_RUN: usermod -aG disk barkvisor (if group exists)"
+  echo "DRY_RUN: usermod -aG disk barkvisor and write service.d/disk.conf (if group exists)"
   echo "DRY_RUN: chown barkvisor:barkvisor $DATA_DIR $RUN_DIR"
 else
   id barkvisor &>/dev/null || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin barkvisor
   getent group kvm &>/dev/null && usermod -aG kvm barkvisor || true
-  getent group disk &>/dev/null && usermod -aG disk barkvisor || true
+  if getent group disk &>/dev/null; then
+    usermod -aG disk barkvisor || true
+    mkdir -p /etc/systemd/system/barkvisor.service.d
+    printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+      >/etc/systemd/system/barkvisor.service.d/disk.conf
+  fi
   chown -R barkvisor:barkvisor "$DATA_DIR" "$RUN_DIR"
   if [[ -d "$SHARE_DST" ]]; then
     chown -R root:root "$SHARE_DST"
@@ -190,7 +195,9 @@ if [[ "$DRY_RUN" == "1" ]]; then
   fi
 else
   systemctl daemon-reload
-  if [[ "$SKIP_START" != "1" ]]; then
+  if systemctl is-active --quiet barkvisor.service; then
+    systemctl try-restart barkvisor.service || true
+  elif [[ "$SKIP_START" != "1" ]]; then
     systemctl enable --now barkvisor.service
     systemctl --no-pager --full status barkvisor.service || true
   else
