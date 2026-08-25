@@ -88,7 +88,10 @@ public enum GPUDeviceService {
             let safety = PCIHostSafety.live(
                 networkPCIAddresses: network, fileManager: fileManager,
             )
-            return rows.map { project($0, iommuReady: iommuReady, safety: safety) }
+            let occupied = hostOccupiedAddresses(rows)
+            return rows.map {
+                project($0, iommuReady: iommuReady, safety: safety, groupHostOccupied: occupied)
+            }
         #else
             _ = fileManager
             return []
@@ -103,22 +106,40 @@ public enum GPUDeviceService {
         let facts = VFIOProbe.collect(from: paths, fileManager: fileManager)
         guard facts.iommuEnabled else { return [] }
         let iommuReady = VFIOProbe.vfioSupported(os: "Linux", facts: facts) && facts.kvmDevice
-        return VFIOProbe.listPCIDevices(from: paths, fileManager: fileManager).map { row in
-            project(row, iommuReady: iommuReady, safety: safety)
+        let rows = VFIOProbe.listPCIDevices(from: paths, fileManager: fileManager)
+        let occupied = hostOccupiedAddresses(rows)
+        return rows.map {
+            project($0, iommuReady: iommuReady, safety: safety, groupHostOccupied: occupied)
         }
+    }
+
+    public static func hostOccupiedAddresses(_ rows: [VFIODisplayDevice]) -> Set<String> {
+        var occupied = Set<String>()
+        for row in rows {
+            let display = VFIOProbe.isDisplayClass(row.pciClass)
+            let vfioBound = row.driver == "vfio-pci"
+            guard display, !vfioBound, GPUPassthroughService.isHostGPUDriver(row.driver) else {
+                continue
+            }
+            occupied.insert(GPUPassthroughService.normalizePCIAddress(row.pciAddress))
+            occupied.formUnion(
+                row.groupAddresses.map { GPUPassthroughService.normalizePCIAddress($0) },
+            )
+        }
+        return occupied
     }
 
     public static func project(
         _ row: VFIODisplayDevice,
         iommuReady: Bool,
         safety: PCIHostSafety = .empty,
+        groupHostOccupied: Set<String> = [],
     ) -> HostGPUDevice {
         let vfioBound = row.driver == "vfio-pci"
         let display = VFIOProbe.isDisplayClass(row.pciClass)
-        let hostDriver = display
-            ? GPUPassthroughService.isHostGPUDriver(row.driver)
-            : !(row.driver ?? "").isEmpty
-        let inUseByHost = !vfioBound && hostDriver
+        let inUseByHost =
+            groupHostOccupied.contains(GPUPassthroughService.normalizePCIAddress(row.pciAddress))
+                || (display && !vfioBound && GPUPassthroughService.isHostGPUDriver(row.driver))
         var attachable = iommuReady
         var reason: String?
         if !iommuReady {
@@ -133,9 +154,7 @@ public enum GPUDeviceService {
             attachable = false
             reason = blocked
         } else if inUseByHost {
-            reason = display
-                ? GPUPassthroughService.hostGuestExclusiveMessage
-                : GPUPassthroughService.hostPCIExclusiveMessage
+            reason = GPUPassthroughService.hostGuestExclusiveMessage
         }
         return HostGPUDevice(
             pciAddress: row.pciAddress,

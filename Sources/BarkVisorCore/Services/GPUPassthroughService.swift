@@ -13,9 +13,6 @@ public enum GPUPassthroughService {
     public static let hostGuestExclusiveMessage =
         "This GPU is bound to a host driver. Attaching it takes the card from the host. The same card cannot be host and guest."
 
-    public static let hostPCIExclusiveMessage =
-        "This PCI device is bound to a host driver. Attaching it takes the device from the host."
-
     public static let bootDiskExclusionReason =
         "This is the host boot disk. Passing it through would remove the Device's system disk."
 
