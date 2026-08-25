@@ -341,7 +341,10 @@ struct ModelsView: View {
                     .disabled(model.actionIDs.contains("ollama/\(row.name)"))
             } else {
                 Button("Start") { beginStart(row) }
-                    .disabled(model.actionIDs.contains("ollama/\(row.name)"))
+                    .disabled(
+                        model.actionIDs.contains("ollama/\(row.name)")
+                            || !row.canStart(selectedHostId: model.selectedDevice?.hostId),
+                    )
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -428,12 +431,17 @@ struct ModelsView: View {
     }
 
     private func beginStart(_ row: OllamaCatalogModel) {
-        if row.startNeedsPicker {
-            startHostId = row.defaultStartHostId ?? ""
+        let scope = model.selectedDevice?.hostId
+        if !row.canStart(selectedHostId: scope) {
+            model.banner = row.startDisabledReason(selectedHostId: scope)
+            return
+        }
+        if row.startNeedsPicker(selectedHostId: scope) {
+            startHostId = row.defaultStartHostId(selectedHostId: scope) ?? ""
             startCandidate = row
             return
         }
-        Task { await model.startOllama(row.name, hostId: row.soleStartHostId) }
+        Task { await model.startOllama(row.name, hostId: row.soleStartHostId(selectedHostId: scope)) }
     }
 
     private func stopLive(_ name: String) async {
@@ -485,7 +493,7 @@ struct ModelsView: View {
 
     /// Start picker lists Devices that already have the model, not every reachable Device.
     private func startPickerDevices(for row: OllamaCatalogModel) -> [OllamaDeviceStatus] {
-        row.startLocations.map { loc in
+        row.startReachableCandidates(selectedHostId: model.selectedDevice?.hostId).map { loc in
             var device = catalog.devices.first { $0.hostId == loc.hostId }
                 ?? OllamaDeviceStatus(
                     hostId: loc.hostId,
