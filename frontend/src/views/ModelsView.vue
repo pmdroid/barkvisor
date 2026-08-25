@@ -16,6 +16,7 @@ import type {
   APIKeyResponse,
   HostGPUDevice,
   OllamaCatalogModel,
+  OllamaLibrarySearchResult,
   OllamaTaskAccepted,
   RemoteAccessStatus,
   SystemStatsSample,
@@ -56,6 +57,10 @@ import {
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import {
+  ollamaLibraryResultName,
+  ollamaLibrarySearchQuery,
+} from '../utils/ollamaLibrary'
+import {
   ollamaDefaultStartHostId,
   ollamaModelMatchesName,
   ollamaPullPercent,
@@ -93,6 +98,11 @@ const apiKeyDraft = ref('')
 const keyHost = ref('')
 const keySaving = ref(false)
 const nameQuery = ref('')
+const libraryQuery = ref('')
+const libraryResults = ref<OllamaLibrarySearchResult[]>([])
+const librarySearched = ref(false)
+const librarySearching = ref(false)
+const libraryError = ref<string | null>(null)
 const startTarget = ref<OllamaCatalogModel | null>(null)
 const startHost = ref('')
 const starting = ref(false)
@@ -417,8 +427,37 @@ function pullPath(task: OllamaTaskAccepted): string {
   return ollamaPullTaskPath(task, devices.selfDevice?.hostId)
 }
 
-async function pullModel() {
-  const name = pullName.value.trim()
+let librarySearchGen = 0
+
+async function searchLibrary() {
+  const q = ollamaLibrarySearchQuery(libraryQuery.value)
+  const gen = ++librarySearchGen
+  if (!q) {
+    if (gen !== librarySearchGen) return
+    libraryResults.value = []
+    librarySearched.value = false
+    libraryError.value = null
+    return
+  }
+  librarySearching.value = true
+  libraryError.value = null
+  try {
+    const data = await store.searchLibrary(q)
+    if (gen !== librarySearchGen || !data) return
+    libraryResults.value = data.results
+    librarySearched.value = true
+  } catch (e: unknown) {
+    if (gen !== librarySearchGen) return
+    libraryResults.value = []
+    librarySearched.value = true
+    libraryError.value = apiErrorMessage(e, 'Ollama library is unreachable')
+  } finally {
+    if (gen === librarySearchGen) librarySearching.value = false
+  }
+}
+
+async function pullModel(nameOverride?: string) {
+  const name = (nameOverride ?? pullName.value).trim()
   if (!name) return
   pulling.value = true
   cancelledByUser.value = false
@@ -439,7 +478,7 @@ async function pullModel() {
         }
       },
     })
-    if (event.status === 'completed') pullName.value = ''
+    if (event.status === 'completed' && pullName.value.trim() === name) pullName.value = ''
   } catch (e: unknown) {
     if (cancelledByUser.value) {
       toast.success('Ollama pull cancelled')
@@ -743,14 +782,14 @@ async function saveKey() {
 
     <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
-        <label>Pull a model</label>
+        <label>Pull by name</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <input v-model="pullName" placeholder="llama3" style="flex:1;min-width:160px" />
           <select v-model="pullHost" style="min-width:160px">
             <option value="">Any reachable {{ DEVICE_LABEL }}</option>
             <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
-          <AppButton variant="primary" :disabled="!pullName.trim() || pulling" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel">
+          <AppButton variant="primary" :disabled="!pullName.trim() || pulling" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
             Pull
           </AppButton>
           <AppButton v-if="pulling" variant="ghost" :loading="cancelling" loading-text="Cancelling..." @click="cancelPull">
@@ -767,6 +806,53 @@ async function saveKey() {
       </div>
     </div>
 
+    <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
+      <div class="form-group" style="margin:0">
+        <label>Library search</label>
+        <p class="stats-unknown" style="margin:0 0 8px">Search popular models on ollama.com. Catalog filter below only matches models already pulled.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input
+            v-model="libraryQuery"
+            placeholder="Search the Ollama library..."
+            style="flex:1;min-width:160px"
+            @keydown.enter.prevent="searchLibrary"
+          />
+          <AppButton
+            variant="primary"
+            :disabled="!ollamaLibrarySearchQuery(libraryQuery) || librarySearching"
+            :loading="librarySearching"
+            loading-text="Searching..."
+            @click="searchLibrary"
+          >
+            Search
+          </AppButton>
+        </div>
+        <p v-if="!ollamaLibrarySearchQuery(libraryQuery)" class="stats-unknown" style="margin:8px 0 0">
+          Enter a name to search the Ollama library.
+        </p>
+        <p v-else-if="librarySearching" class="stats-unknown" style="margin:8px 0 0">Searching the Ollama library…</p>
+        <p v-else-if="libraryError" class="stats-unknown" style="margin:8px 0 0">{{ libraryError }}</p>
+        <p v-else-if="librarySearched && libraryResults.length === 0" class="stats-unknown" style="margin:8px 0 0">
+          No library matches for “{{ libraryQuery.trim() }}”.
+        </p>
+        <ul v-else-if="libraryResults.length" class="library-results">
+          <li v-for="row in libraryResults" :key="row.name">
+            <span>
+              <strong>{{ row.name }}</strong>
+              <span v-if="row.size" class="stats-unknown"> · {{ formatBytes(row.size) }}</span>
+            </span>
+            <AppButton
+              size="sm"
+              :disabled="!ollamaLibraryResultName(row) || pulling"
+              @click="pullModel(ollamaLibraryResultName(row))"
+            >
+              Download
+            </AppButton>
+          </li>
+        </ul>
+      </div>
+    </div>
+
     <EmptyState
       v-if="store.models.length === 0 && !store.loading"
       icon="monitor"
@@ -776,7 +862,8 @@ async function saveKey() {
 
     <template v-else>
       <div class="form-group" style="margin-bottom:12px">
-        <input v-model="nameQuery" placeholder="Search models..." style="width:100%;max-width:360px" />
+        <label>Filter catalog</label>
+        <input v-model="nameQuery" placeholder="Filter pulled models..." style="width:100%;max-width:360px" />
       </div>
 
       <EmptyState
@@ -969,6 +1056,19 @@ async function saveKey() {
 }
 .overflow-menu-panel button:not(:disabled):hover {
   background: var(--bg-hover);
+}
+.library-results {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.library-results li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-glass);
 }
 .stats-unknown {
   margin: 0;

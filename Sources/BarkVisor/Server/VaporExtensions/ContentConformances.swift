@@ -51,6 +51,8 @@ extension HomePlacementReason: Content {}
 extension OllamaDeviceSnapshot: Content {}
 extension OllamaDeviceStatus: Content {}
 extension OllamaHomeCatalog: Content {}
+extension OllamaLibrarySearch.Response: Content {}
+extension OllamaLibrarySearch.Result: Content {}
 extension OllamaHostSettings: Content {}
 extension OllamaSettingsSnapshot: Content {}
 extension OllamaSettingsUpdate: Content {}

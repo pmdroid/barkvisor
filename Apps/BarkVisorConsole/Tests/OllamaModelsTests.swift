@@ -133,6 +133,23 @@ struct OllamaModelsTests {
         #expect(OllamaCatalogModel.runningHostId(name: "missing", in: [live]) == nil)
     }
 
+    @Test func `library query and result name`() throws {
+        #expect(OllamaLibrarySearchResponse.query("") == nil)
+        #expect(OllamaLibrarySearchResponse.query("  ") == nil)
+        #expect(OllamaLibrarySearchResponse.query(" llama3 ") == "llama3")
+        let json = Data(
+            """
+            {"query":"llama","upstream":"https://ollama.com/api/tags","results":[{"name":" llama3.2 "}]}
+            """.utf8,
+        )
+        let decoded = try decoder.decode(OllamaLibrarySearchResponse.self, from: json)
+        #expect(decoded.results[0].pullName == "llama3.2")
+        #expect(decoded.upstream == "https://ollama.com/api/tags")
+        #expect(OllamaLibrarySearchResponse.accept(decoded, currentQuery: "llama") != nil)
+        #expect(OllamaLibrarySearchResponse.accept(decoded, currentQuery: "phi") == nil)
+        #expect(OllamaLibrarySearchResponse.accept(decoded, currentQuery: " llama ") != nil)
+    }
+
     @Test func `name filter is case insensitive and ignores blank query`() {
         let row = OllamaCatalogModel(
             name: "llama3:latest",
