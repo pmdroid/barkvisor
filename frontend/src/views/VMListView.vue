@@ -6,6 +6,7 @@ import { useVMStore } from '../stores/vms'
 import { useToastStore } from '../stores/toast'
 import { useNetworkStore } from '../stores/networks'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDeviceNetworksStore } from '../stores/deviceNetworks'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
@@ -23,6 +24,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
 import { pct } from '../utils/format'
+import { scopeRows } from '../utils/deviceScope'
 import { DEVICE_CPU_LABEL, DEVICE_MEMORY_LABEL } from '../utils/terminology'
 import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
 import {
@@ -41,6 +43,7 @@ import {
 const store = useVMStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const toast = useToastStore()
 const networkStore = useNetworkStore()
 const deviceNetworks = useDeviceNetworksStore()
@@ -65,14 +68,16 @@ const healthFilters: Array<{ key: WorkloadHealth | 'all'; label: string }> = [
 
 const homeRows = computed(() => {
   const devices = devicesStore.devices
-  if (devices.length > 0) return homeWorkloads.homeRows(devices)
-  return store.vms.map((vm) => ({
-    vm,
-    hostId: devicesStore.selfDevice?.hostId || '',
-    label: '',
-    role: 'self',
-    reachable: true,
-  }))
+  const rows = devices.length > 0
+    ? homeWorkloads.homeRows(devices)
+    : store.vms.map((vm) => ({
+        vm,
+        hostId: devicesStore.selfDevice?.hostId || '',
+        label: '',
+        role: 'self',
+        reachable: true,
+      }))
+  return scopeRows(rows, deviceScope.selectedHostId)
 })
 
 const visibleRows = computed(() => {
@@ -491,7 +496,12 @@ async function doStop() {
     @cancel="stopConfirm = null"
   />
 
-  <CreateVMDrawer v-if="showCreate" @close="showCreate = false" @created="showCreate = false; refreshHomeWorkloads(); fetchStats()" />
+  <CreateVMDrawer
+    v-if="showCreate"
+    :initial-host-id="deviceScope.isAll ? undefined : deviceScope.selectedHostId"
+    @close="showCreate = false"
+    @created="showCreate = false; refreshHomeWorkloads(); fetchStats()"
+  />
 </template>
 
 <style scoped>

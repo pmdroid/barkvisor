@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import AppButton from '../components/ui/AppButton.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -13,6 +14,7 @@ import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
 import { formatTemperatureC } from '../utils/format'
+import { scopeRows } from '../utils/deviceScope'
 import { hasKnownHealthCounts, homeWorkloadsRunningLine, resolveHealthCounts } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
@@ -37,6 +39,7 @@ const router = useRouter()
 const store = useVMStore()
 const diskStore = useDiskStore()
 const devices = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const homeWorkloads = useDeviceWorkloadsStore()
 const { disks, summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
@@ -47,31 +50,51 @@ const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[]
   memory: [],
 })
 
+const scopedDevices = computed(() => scopeRows(devices.devices, deviceScope.selectedHostId))
+const showThisDeviceStats = computed(() => {
+  if (deviceScope.isAll) return true
+  const selfId = devices.selfDevice?.hostId
+  return Boolean(selfId && deviceScope.selectedHostId === selfId)
+})
+
 const runningVMs = computed(() => store.vms.filter(v => v.state === 'running').length)
 
 const healthStrip = computed(() => {
-  const counts = resolveHealthCounts(devices.totals?.healthCounts, healthSummary.value?.counts)
+  const preferred = deviceScope.isAll
+    ? devices.totals?.healthCounts
+    : scopedDevices.value[0]?.healthCounts
+  const fallback = deviceScope.isAll ? healthSummary.value?.counts : undefined
+  const counts = resolveHealthCounts(preferred, fallback)
   return (['running', 'starting', 'degraded', 'failed', 'stopped'] as WorkloadHealth[])
     .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
 })
 
 const failedCount = computed(() => {
+  if (!deviceScope.isAll) return scopedDevices.value[0]?.healthCounts?.failed ?? 0
   const counts = devices.totals?.healthCounts
   if (hasKnownHealthCounts(counts)) return counts.failed ?? 0
   return healthSummary.value?.counts?.failed ?? 0
 })
 
 const homeRunningCount = computed(() => {
+  if (!deviceScope.isAll) return scopedDevices.value[0]?.healthCounts?.running ?? 0
   const counts = devices.totals?.healthCounts
   if (hasKnownHealthCounts(counts)) return counts.running ?? 0
   return runningVMs.value
 })
 
-const homeWorkloadsLine = computed(() =>
-  homeWorkloadsRunningLine(devices.totals, homeRunningCount.value),
-)
+const homeWorkloadsLine = computed(() => {
+  if (!deviceScope.isAll) {
+    const row = scopedDevices.value[0]
+    if (row?.workloadCount == null) return null
+    return homeWorkloadsRunningLine({ workloadCount: row.workloadCount }, homeRunningCount.value)
+  }
+  return homeWorkloadsRunningLine(devices.totals, homeRunningCount.value)
+})
 
-const homeRows = computed(() => homeWorkloads.homeRows(devices.devices))
+const homeRows = computed(() =>
+  scopeRows(homeWorkloads.homeRows(devices.devices), deviceScope.selectedHostId),
+)
 
 const recentVMs = computed(() =>
   [...homeRows.value]
@@ -213,7 +236,13 @@ const memSparkData = computed(() => ({
       <div>
         <h1>Dashboard</h1>
         <p class="welcome-sub">
-          <template v-if="devices.totals">
+          <template v-if="!deviceScope.isAll && scopedDevices[0]">
+            {{ devices.deviceLabel(scopedDevices[0]) }}
+            <template v-if="homeWorkloadsLine">
+              · {{ homeWorkloadsLine }}
+            </template>
+          </template>
+          <template v-else-if="devices.totals">
             {{ devices.totals.devices }} {{ devices.totals.devices === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's' }}
             <template v-if="homeWorkloadsLine">
               · {{ homeWorkloadsLine }}
@@ -231,13 +260,13 @@ const memSparkData = computed(() => ({
       <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
     </div>
 
-    <div v-if="devices.devices.length" class="section device-home">
+    <div v-if="scopedDevices.length" class="section device-home">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <h2>{{ HOME_LABEL }}</h2>
         <AppButton size="sm" @click="router.push('/devices')">View all</AppButton>
       </div>
       <div class="device-grid">
-        <DeviceCard v-for="row in devices.devices" :key="row.hostId" :device="row" />
+        <DeviceCard v-for="row in scopedDevices" :key="row.hostId" :device="row" />
       </div>
     </div>
 
@@ -248,8 +277,8 @@ const memSparkData = computed(() => ({
       </div>
     </div>
 
-    <!-- Host Stats -->
-    <div class="stat-grid" v-if="stats">
+    <!-- Host Stats (this Device only; hidden when another Device is scoped) -->
+    <div class="stat-grid" v-if="stats && showThisDeviceStats">
       <div class="dash-stat" style="border-left: 3px solid var(--accent)">
         <div class="dash-stat-spark" v-if="history.cpu.length > 1">
           <Line :data="cpuSparkData" :options="cpuSparkOpts" />
@@ -365,6 +394,7 @@ const memSparkData = computed(() => ({
 
 <style scoped>
 .dashboard {
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -373,6 +403,8 @@ const memSparkData = computed(() => ({
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 32px;
 }
 .welcome h1 {
@@ -418,6 +450,7 @@ const memSparkData = computed(() => ({
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 40px;
+  min-width: 0;
 }
 .dash-stat {
   position: relative;
@@ -426,6 +459,8 @@ const memSparkData = computed(() => ({
   border: 1px solid var(--border-glass);
   border-radius: var(--radius);
   overflow: hidden;
+  min-width: 0;
+  min-height: 120px;
 }
 .dash-stat-spark {
   position: absolute;
@@ -433,7 +468,9 @@ const memSparkData = computed(() => ({
   pointer-events: none;
   opacity: 0.7;
 }
-.dash-stat-spark canvas {
+.dash-stat-spark :deep(*) {
+  position: absolute;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
 }
@@ -446,6 +483,8 @@ const memSparkData = computed(() => ({
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .dash-stat-number {
@@ -512,8 +551,11 @@ const memSparkData = computed(() => ({
 }
 .device-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 16px;
+}
+.device-grid > * {
+  min-width: 0;
 }
 
 @media (max-width: 1024px) {

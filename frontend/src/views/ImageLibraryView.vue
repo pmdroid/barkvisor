@@ -3,6 +3,8 @@ import { apiErrorMessage } from '../api/errors'
 import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
 import { useImageStore } from '../stores/images'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -13,6 +15,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { formatBytes } from '../utils/format'
+import { scopeRows } from '../utils/deviceScope'
 import {
   detectImageArch,
   hostArchToImageArch,
@@ -22,6 +25,18 @@ import {
 
 const store = useImageStore()
 const caps = useCapabilitiesStore()
+const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
+
+const visibleImages = computed(() =>
+  scopeRows(
+    store.images.map((image) => ({
+      image,
+      hostId: devicesStore.selfDevice?.hostId || '',
+    })),
+    deviceScope.selectedHostId,
+  ).map((row) => row.image),
+)
 
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 
@@ -332,10 +347,10 @@ async function doDeleteImage() {
     </div>
   </div>
 
-  <EmptyState v-if="store.images.length === 0 && !store.loading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+  <EmptyState v-if="visibleImages.length === 0 && !store.loading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
 
   <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'type', label: 'Type' }, { key: 'arch', label: 'Arch' }, { key: 'size', label: 'Size' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]">
-        <tr v-for="img in store.images" :key="img.id">
+        <tr v-for="img in visibleImages" :key="img.id">
           <td>
             <div style="font-weight:500">{{ img.name }}</div>
             <ProgressBar v-if="downloadProgress[img.id]" :percent="downloadProgress[img.id].percent ?? 0" style="margin-top:4px">

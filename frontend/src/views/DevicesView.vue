@@ -53,10 +53,16 @@ onUnmounted(() => clearInterval(pollTimer))
 </template>
 
 <style scoped>
+.devices-page {
+  min-width: 0;
+  max-width: 100%;
+}
 .welcome {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 32px;
 }
 .welcome h1 {
@@ -76,8 +82,11 @@ onUnmounted(() => clearInterval(pollTimer))
 }
 .device-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 16px;
+}
+.device-grid > * {
+  min-width: 0;
 }
 
 @media (max-width: 768px) {

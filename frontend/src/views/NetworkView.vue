@@ -16,6 +16,7 @@ import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceNetworksStore, type HomeNetworkRow, type NetworkWriteBody } from '../stores/deviceNetworks'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
@@ -34,10 +35,12 @@ import {
   linuxBridgeStatusSummary,
 } from '../utils/linuxBridgeSetup'
 import { DEVICE_LABEL } from '../utils/terminology'
+import { scopeRows } from '../utils/deviceScope'
 
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const homeNets = useDeviceNetworksStore()
 const networkStore = useNetworkStore()
 const bridged = useFeature('bridgedNetworking')
@@ -67,14 +70,16 @@ const deleting = ref(false)
 const useHomeUnion = computed(() => devicesStore.devices.length > 0)
 
 const homeRows = computed<HomeNetworkRow[]>(() => {
-  if (useHomeUnion.value) return homeNets.homeRows(devicesStore.devices)
-  return networks.value.map((network) => ({
-    network,
-    hostId: devicesStore.selfDevice?.hostId || '',
-    label: '',
-    role: 'self',
-    reachable: true,
-  }))
+  const rows = useHomeUnion.value
+    ? homeNets.homeRows(devicesStore.devices)
+    : networks.value.map((network) => ({
+        network,
+        hostId: devicesStore.selfDevice?.hostId || '',
+        label: '',
+        role: 'self',
+        reachable: true,
+      }))
+  return scopeRows(rows, deviceScope.selectedHostId)
 })
 
 const pageLoading = computed(() => {
@@ -121,7 +126,7 @@ const formBridgedExplanation = computed(() => {
 })
 
 const formDeviceOptions = computed(() =>
-  devicesStore.devices.map((device) => ({
+  scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
     label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
     disabled: !canCallDeviceAPI(device) || Boolean(editingId.value),
@@ -189,7 +194,7 @@ const linuxSetupGroups = computed(() =>
 )
 
 const bridgeDeviceOptions = computed(() =>
-  devicesStore.devices
+  scopeRows(devicesStore.devices, deviceScope.selectedHostId)
     .filter((device) => canCallDeviceAPI(device))
     .map((device) => ({
       value: device.hostId,
@@ -206,6 +211,7 @@ function canMutate(row: HomeNetworkRow): boolean {
 }
 
 function defaultFormHostId(): string {
+  if (!deviceScope.isAll) return deviceScope.selectedHostId
   return devicesStore.selfDevice?.hostId
     || devicesStore.devices.find((device) => canCallDeviceAPI(device))?.hostId
     || ''

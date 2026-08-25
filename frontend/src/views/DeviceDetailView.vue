@@ -532,6 +532,10 @@ async function doStop() {
 </template>
 
 <style scoped>
+.device-detail {
+  min-width: 0;
+  max-width: 100%;
+}
 .back-link {
   background: none;
   border: 0;
@@ -546,12 +550,15 @@ async function doStop() {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 20px;
+  min-width: 0;
 }
 .detail-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .detail-header h1 {
@@ -596,9 +603,10 @@ async function doStop() {
 }
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 16px;
   margin-bottom: 20px;
+  min-width: 0;
 }
 .dash-stat {
   position: relative;
@@ -607,6 +615,7 @@ async function doStop() {
   border: 1px solid var(--border-glass);
   border-radius: var(--radius);
   overflow: hidden;
+  min-width: 0;
   min-height: 120px;
 }
 .dash-stat-spark {
@@ -615,7 +624,9 @@ async function doStop() {
   pointer-events: none;
   opacity: 0.7;
 }
-.dash-stat-spark canvas {
+.dash-stat-spark :deep(*) {
+  position: absolute;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
 }
@@ -628,6 +639,8 @@ async function doStop() {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .dash-stat-number {
@@ -697,12 +710,15 @@ async function doStop() {
   margin: 8px 0 0;
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 .about-rows > div {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 13px;
+  min-width: 0;
 }
 .about-rows dt {
   color: var(--text-secondary);
@@ -710,6 +726,7 @@ async function doStop() {
 .about-rows dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 .gpu-card {
   margin: 0 0 20px;
@@ -717,6 +734,8 @@ async function doStop() {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-elevated, var(--bg-hover));
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .gpu-card-title {
   font-size: 13px;
@@ -747,6 +766,11 @@ async function doStop() {
   font-size: 13px;
   font-weight: 700;
   color: var(--red);
+}
+
+@media (max-width: 1024px) {
+  .detail-header h1,
+  .missing h1 { font-size: 24px; }
 }
 
 @media (max-width: 768px) {

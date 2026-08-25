@@ -8,6 +8,7 @@ import { useImageStore } from '../stores/images'
 import { useToastStore } from '../stores/toast'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useHomeLibraryStore, type HomeTemplate } from '../stores/homeLibrary'
 import TemplateDeployDrawer from '../components/TemplateDeployDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -24,6 +25,7 @@ import { formatBytes } from '../utils/format'
 import { normalizeImageArch } from '../utils/imageArch'
 import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
 import { catalogDownloadBlockedReason, deviceForCatalogImage } from '../utils/libraryDownloadTarget'
+import { scopeLibraryItems } from '../utils/deviceScope'
 import { findCatalogImageOnDevice } from '../utils/libraryCatalogDownload'
 import api from '../api/client'
 import type { LibrarySettings, VMTemplate, RepositoryImage, Image } from '../api/types'
@@ -35,6 +37,7 @@ const imageStore = useImageStore()
 const toast = useToastStore()
 const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const homeLibrary = useHomeLibraryStore()
 const libraryDepotHostId = ref<string | null>(null)
 
@@ -106,12 +109,14 @@ const iconMap: Record<string, string> = {
 }
 
 const libraryTemplates = computed<HomeTemplate[]>(() => {
-  if (homeLibrary.templates.length > 0) return homeLibrary.templates
-  return templateStore.templates.map((t) => ({
-    ...t,
-    sourceHostIds: [],
-    copies: [],
-  }))
+  const rows: HomeTemplate[] = homeLibrary.templates.length > 0
+    ? homeLibrary.templates
+    : templateStore.templates.map((t) => ({
+        ...t,
+        sourceHostIds: [],
+        copies: [],
+      }))
+  return scopeLibraryItems(rows, deviceScope.selectedHostId)
 })
 
 /** Home Library union — templates stay visible even if this Device cannot run them. */

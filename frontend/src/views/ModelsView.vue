@@ -37,6 +37,7 @@ import {
 import { formatBytes } from '../utils/format'
 import { deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import {
   defaultOllamaStatsHostId,
   ollamaGpuEmptyCopy,
@@ -49,6 +50,7 @@ import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
 import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
 import { ollamaModelMatchesName, ollamaPullPercent, ollamaPullTaskPath, ollamaRunningHostId, ollamaStartBody } from '../utils/ollamaTask'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
+import { scopeOllamaModels, scopeRows } from '../utils/deviceScope'
 import { inferenceHowToFromOrigin, tailnetListenHost } from '../utils/inferenceApiHowTo'
 import {
   inferenceHowToMintBanner,
@@ -61,6 +63,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 const auth = useAuthStore()
 const store = useOllamaStore()
 const devices = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const toast = useToastStore()
 const poller = useTaskPoller()
 const pullName = ref('')
@@ -109,7 +112,7 @@ async function copySnippet(key: string, text: string) {
 }
 
 const hostOptions = computed(() =>
-  store.devices
+  scopeRows(store.devices, deviceScope.selectedHostId)
     .filter((row) => row.reachable)
     .map((row) => ({
       value: row.hostId,
@@ -118,7 +121,10 @@ const hostOptions = computed(() =>
 )
 
 const filteredModels = computed(() =>
-  store.models.filter((row) => ollamaModelMatchesName(row.name, nameQuery.value)),
+  scopeOllamaModels(
+    store.models.filter((row) => ollamaModelMatchesName(row.name, nameQuery.value)),
+    deviceScope.selectedHostId,
+  ),
 )
 
 const selectedKeyHost = computed(() => keyHost.value || hostOptions.value[0]?.value || '')
@@ -129,7 +135,7 @@ const keyBody = computed(() => ollamaSettingsKeyBody(selectedKeyHost.value, apiK
 
 const statsHostOptions = computed(() => {
   const selected = statsHost.value
-  return store.devices
+  return scopeRows(store.devices, deviceScope.selectedHostId)
     .filter((row) => row.reachable || row.hostId === selected)
     .map((row) => ({
       value: row.hostId,
@@ -295,8 +301,12 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [store.models, store.devices] as const,
+  () => [store.models, store.devices, deviceScope.selectedHostId] as const,
   () => {
+    if (!deviceScope.isAll) {
+      statsHost.value = deviceScope.selectedHostId
+      return
+    }
     const current = statsHost.value
     if (!current || !store.devices.some((row) => row.hostId === current)) {
       statsHost.value = defaultOllamaStatsHostId(store.models, store.devices)
@@ -811,9 +821,10 @@ async function saveKey() {
 }
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 16px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 .dash-stat {
   position: relative;
@@ -821,6 +832,7 @@ async function saveKey() {
   border: 1px solid var(--border-glass);
   border-radius: var(--radius);
   overflow: hidden;
+  min-width: 0;
   min-height: 120px;
 }
 .dash-stat-spark {
@@ -829,7 +841,9 @@ async function saveKey() {
   pointer-events: none;
   opacity: 0.7;
 }
-.dash-stat-spark canvas {
+.dash-stat-spark :deep(*) {
+  position: absolute;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
 }
@@ -842,6 +856,8 @@ async function saveKey() {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .dash-stat-number {
