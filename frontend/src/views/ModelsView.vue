@@ -303,13 +303,19 @@ onUnmounted(() => {
 watch(
   () => [store.models, store.devices, deviceScope.selectedHostId] as const,
   () => {
+    const valid = new Set(hostOptions.value.map((opt) => opt.value))
+    const scopedHost = !deviceScope.isAll && valid.has(deviceScope.selectedHostId)
+      ? deviceScope.selectedHostId
+      : ''
     if (!deviceScope.isAll) {
       statsHost.value = deviceScope.selectedHostId
-      return
-    }
-    const current = statsHost.value
-    if (!current || !store.devices.some((row) => row.hostId === current)) {
+    } else if (!statsHost.value || !store.devices.some((row) => row.hostId === statsHost.value)) {
       statsHost.value = defaultOllamaStatsHostId(store.models, store.devices)
+    }
+    if (pullHost.value && !valid.has(pullHost.value)) pullHost.value = scopedHost
+    if (startHost.value && !valid.has(startHost.value)) startHost.value = scopedHost
+    if (keyHost.value && !valid.has(keyHost.value)) {
+      keyHost.value = scopedHost || hostOptions.value[0]?.value || ''
     }
   },
   { immediate: true, deep: true },

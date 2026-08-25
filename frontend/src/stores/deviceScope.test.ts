@@ -66,4 +66,28 @@ describe('deviceScope store', () => {
     expect(store.selectedHostId).toBe('studio')
     expect(store.isAll).toBe(false)
   })
+
+  test('if selected is not in the Device list, select all', () => {
+    const store = useDeviceScopeStore()
+    store.select('gone')
+    store.forgetUnknownHost(['desk', 'studio'])
+    expect(store.selectedHostId).toBe(DEVICE_SCOPE_ALL)
+    expect(store.isAll).toBe(true)
+    expect(localStorage.getItem(DEVICE_SCOPE_STORAGE_KEY)).toBe(DEVICE_SCOPE_ALL)
+  })
+
+  test('keeps a selected hostId that is still in the list', () => {
+    const store = useDeviceScopeStore()
+    store.select('desk')
+    store.forgetUnknownHost(['desk', 'studio'])
+    expect(store.selectedHostId).toBe('desk')
+    expect(store.isAll).toBe(false)
+  })
+
+  test('does not clear scope while the Device list is empty', () => {
+    const store = useDeviceScopeStore()
+    store.select('desk')
+    store.forgetUnknownHost([])
+    expect(store.selectedHostId).toBe('desk')
+  })
 })

@@ -33,9 +33,16 @@ export const useDeviceScopeStore = defineStore('deviceScope', () => {
     writeStoredScope(next)
   }
 
+  function forgetUnknownHost(hostIds: readonly string[]): void {
+    if (isDeviceScopeAll(selectedHostId.value)) return
+    if (hostIds.length === 0) return
+    if (!hostIds.includes(selectedHostId.value)) select(DEVICE_SCOPE_ALL)
+  }
+
   return {
     selectedHostId,
     isAll,
     select,
+    forgetUnknownHost,
   }
 })

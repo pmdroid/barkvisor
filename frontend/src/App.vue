@@ -35,6 +35,12 @@ watch(
     }
   },
 )
+watch(
+  () => devices.devices.map((row) => row.hostId),
+  (hostIds) => {
+    deviceScope.forgetUnknownHost(hostIds)
+  },
+)
 
 // Close mobile menu on navigation
 watch(() => route.path, () => { mobileMenuOpen.value = false })

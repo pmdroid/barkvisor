@@ -20,7 +20,7 @@ import { requestDiagnosticsBundle, saveBlob } from '../utils/diagnosticsBundle'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
-import { scopeRows } from '../utils/deviceScope'
+import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 
 const store = useLogStore()
 const homeLogs = useDeviceLogsStore()
@@ -238,6 +238,15 @@ async function downloadDiagnostics() {
     diagnosticsBusy.value = false
   }
 }
+
+watch(
+  () => deviceScope.selectedHostId,
+  (selected) => {
+    if (!deviceFilter.value) return
+    if (isDeviceScopeAll(selected)) return
+    if (deviceFilter.value !== selected) deviceFilter.value = ''
+  },
+)
 
 watch([category, level, timeRange], () => {
   if (!liveTail.value) void refresh()

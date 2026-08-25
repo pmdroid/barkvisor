@@ -5,6 +5,7 @@ import { useImageStore } from '../stores/images'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
+import { useHomeLibraryStore, type HomeImage } from '../stores/homeLibrary'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -15,7 +16,7 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { formatBytes } from '../utils/format'
-import { scopeRows } from '../utils/deviceScope'
+import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 import {
   detectImageArch,
   hostArchToImageArch,
@@ -27,16 +28,32 @@ const store = useImageStore()
 const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
+const homeLibrary = useHomeLibraryStore()
 
-const visibleImages = computed(() =>
-  scopeRows(
-    store.images.map((image) => ({
-      image,
-      hostId: devicesStore.selfDevice?.hostId || '',
+function imageRowsFromLibrary(images: HomeImage[]) {
+  return images.flatMap((img) =>
+    img.copies.map((copy) => ({
+      ...img,
+      id: copy.imageId,
+      status: copy.status,
+      hostId: copy.hostId,
     })),
-    deviceScope.selectedHostId,
-  ).map((row) => row.image),
-)
+  )
+}
+
+const visibleImages = computed(() => {
+  if (homeLibrary.images.length > 0) {
+    return scopeRows(imageRowsFromLibrary(homeLibrary.images), deviceScope.selectedHostId)
+  }
+  if (
+    !isDeviceScopeAll(deviceScope.selectedHostId)
+    && devicesStore.selfDevice
+    && deviceScope.selectedHostId !== devicesStore.selfDevice.hostId
+  ) {
+    return []
+  }
+  return store.images
+})
 
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 
@@ -87,12 +104,14 @@ function subscribeDownloading() {
           delete progressStreams[img.id]
           delete downloadProgress[img.id]
           store.fetchAll()
+          void homeLibrary.fetchImages(devicesStore.devices)
         },
         onError: () => {
           stream.stop()
           delete progressStreams[img.id]
           delete downloadProgress[img.id]
           store.fetchAll()
+          void homeLibrary.fetchImages(devicesStore.devices)
         },
       })
     }
@@ -196,11 +215,18 @@ onMounted(async () => {
   await caps.fetchCapabilities().catch(() => {})
   dlArch.value = defaultArch.value
   uploadArch.value = defaultArch.value
-  await store.fetchAll()
+  await devicesStore.fetchHealth().catch(() => {})
+  await Promise.all([
+    store.fetchAll(),
+    homeLibrary.fetchImages(devicesStore.devices),
+  ])
   subscribeDownloading()
   pollTimer = window.setInterval(() => {
     if (store.images.some(i => i.status === 'downloading' || i.status === 'uploading' || i.status === 'decompressing')) {
-      store.fetchAll().then(() => subscribeDownloading())
+      store.fetchAll().then(() => {
+        subscribeDownloading()
+        void homeLibrary.fetchImages(devicesStore.devices)
+      })
     }
   }, 5000)
 })
@@ -227,6 +253,7 @@ async function startDownload() {
     showDownload.value = false
     resetDownloadForm()
     await store.fetchAll()
+    await homeLibrary.fetchImages(devicesStore.devices)
     setTimeout(subscribeDownloading, 500)
   } catch (e: any) {
     dlError.value = apiErrorMessage(e)
@@ -301,6 +328,7 @@ function startUpload() {
       showUpload.value = false
       resetUploadForm()
       store.fetchAll()
+      void homeLibrary.fetchImages(devicesStore.devices)
     },
   })
 
@@ -330,6 +358,7 @@ async function doDeleteImage() {
   deleting.value = true
   try {
     await store.remove(id)
+    await homeLibrary.fetchImages(devicesStore.devices)
   } finally {
     deleting.value = false
     confirmTarget.value = null
@@ -347,10 +376,10 @@ async function doDeleteImage() {
     </div>
   </div>
 
-  <EmptyState v-if="visibleImages.length === 0 && !store.loading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+  <EmptyState v-if="visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
 
   <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'type', label: 'Type' }, { key: 'arch', label: 'Arch' }, { key: 'size', label: 'Size' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]">
-        <tr v-for="img in visibleImages" :key="img.id">
+        <tr v-for="img in visibleImages" :key="'hostId' in img ? `${img.hostId}:${img.id}` : img.id">
           <td>
             <div style="font-weight:500">{{ img.name }}</div>
             <ProgressBar v-if="downloadProgress[img.id]" :percent="downloadProgress[img.id].percent ?? 0" style="margin-top:4px">

@@ -20,6 +20,11 @@ describe('parseDeviceScope', () => {
     expect(parseDeviceScope('desk')).toBe('desk')
     expect(parseDeviceScope(' peer-1 ')).toBe('peer-1')
   })
+
+  test('an unknown or stale hostId is still the raw id', () => {
+    expect(parseDeviceScope('gone-device')).toBe('gone-device')
+    expect(parseDeviceScope('stale-host')).toBe('stale-host')
+  })
 })
 
 describe('scopeRows', () => {
