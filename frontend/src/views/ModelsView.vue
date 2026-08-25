@@ -582,7 +582,7 @@ async function saveKey() {
             <option value="">Any reachable {{ DEVICE_LABEL }}</option>
             <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
-          <AppButton variant="primary" :disabled="!pullName.trim() || pulling" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
+          <AppButton variant="primary" :disabled="!pullName.trim() || pulling || !store.anyReachable" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
             Pull
           </AppButton>
           <AppButton v-if="pulling" variant="ghost" :loading="cancelling" loading-text="Cancelling..." @click="cancelPull">
@@ -636,7 +636,7 @@ async function saveKey() {
             </span>
             <AppButton
               size="sm"
-              :disabled="!ollamaLibraryResultName(row) || pulling"
+              :disabled="!ollamaLibraryResultName(row) || pulling || !store.anyReachable"
               @click="pullModel(ollamaLibraryResultName(row))"
             >
               Download

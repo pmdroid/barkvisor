@@ -541,6 +541,7 @@ struct OllamaModelsTests {
         #expect(source.contains("OllamaInstall.shouldShowInstall"))
         #expect(source.contains("OllamaInstall.installDevices"))
         #expect(!source.contains("Section(\"Use this API\")"))
+        #expect(source.contains("reachableDevices.isEmpty"))
         if let flag = source.range(of: "rechecking = true"),
            let task = source.range(of: "await model.refreshOllamaCatalog()")
         {

@@ -164,6 +164,8 @@ describe('Ollama install UI', () => {
     expect(src).toContain('Use this API')
     expect(src).not.toContain('dash-stat-label">GPU')
     expect(src).toContain('ollamaInstallDevices')
+    expect(src).toContain('!pullName.trim() || pulling || !store.anyReachable')
+    expect(src).toContain('!ollamaLibraryResultName(row) || pulling || !store.anyReachable')
   })
 
   test('App.vue shows Ollama for admin or inference when Ollama is down', () => {
@@ -189,6 +191,7 @@ describe('Ollama install UI', () => {
     expect(src).toContain('OllamaInstall.shouldShowInstall')
     expect(src).toContain('OllamaInstall.installDevices')
     expect(src).not.toContain('LabeledContent("GPU"')
+    expect(src).toContain('reachableDevices.isEmpty')
     const recheckIdx = src.indexOf('rechecking = true')
     const taskIdx = src.indexOf('await model.refreshOllamaCatalog()')
     expect(recheckIdx).toBeGreaterThan(0)

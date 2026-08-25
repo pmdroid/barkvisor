@@ -66,7 +66,10 @@ struct ModelsView: View {
                             Button("Pull") {
                                 Task { await pullModel() }
                             }
-                            .disabled(pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(
+                                pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || reachableDevices.isEmpty,
+                            )
                         }
                     }
                     Section("Library search") {
@@ -96,7 +99,7 @@ struct ModelsView: View {
                                         Button("Download") {
                                             Task { await pullModel(name: row.pullName) }
                                         }
-                                        .disabled(row.pullName.isEmpty || pulling)
+                                        .disabled(row.pullName.isEmpty || pulling || reachableDevices.isEmpty)
                                     }
                                 }
                             }
