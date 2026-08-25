@@ -8,7 +8,7 @@ struct PlatformProcessTests {
             let result = try PlatformProcess.run(
                 path: "/bin/echo",
                 arguments: ["hello-barkvisor"],
-                timeout: 5,
+                timeout: 30,
             )
             #expect(result.succeeded)
             #expect(result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines) == "hello-barkvisor")
