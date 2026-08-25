@@ -65,3 +65,13 @@ mkdir -p \
 chown -R "$BARKVISOR_USER:$BARKVISOR_USER" "$DATA_DIR" "$LOG_DIR" "$RUN_DIR"
 chmod 0755 "$DATA_DIR" "$LOG_DIR"
 chmod 0700 "$RUN_DIR"
+
+# Drop leftover privileged helper from older installs (PAS-294).
+# A loaded leftover reconnects ~15s and logs XPC invalidation to Device stderr.
+launchctl bootout system/dev.barkvisor.helper 2>/dev/null || true
+rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
+rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
+rm -f /usr/local/libexec/dev.barkvisor.helper
+rm -f /usr/local/libexec/barkvisor/dev.barkvisor.helper
+rm -f /usr/local/libexec/BarkVisorHelper
+rm -f /usr/local/libexec/barkvisor/BarkVisorHelper

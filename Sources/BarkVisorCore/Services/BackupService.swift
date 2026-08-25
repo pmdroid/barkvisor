@@ -58,6 +58,9 @@ public enum BackupService {
             Log.server.info("Database backup created: \(filename) (\(size) bytes)")
             return BackupInfo(name: filename, sizeBytes: size, createdAt: iso8601.string(from: Date()))
         } catch {
+            if LogService.isSQLiteFullError(error) {
+                _ = pruneOldestBackupsKeepingNewest(1, in: dir)
+            }
             Log.server.error("Database backup failed: \(error)")
             return nil
         }
@@ -105,6 +108,33 @@ public enum BackupService {
                 Log.server.info("Pruned old backup: \(filename)")
             }
         }
+    }
+
+    /// Drop extra SQLite backups, keeping the newest `keep` files. Silent so SQLITE_FULL reclaim cannot log-loop.
+    @discardableResult
+    public static func pruneOldestBackupsKeepingNewest(
+        _ keep: Int,
+        in dir: URL? = nil,
+        fileManager: FileManager = .default,
+    ) -> [String] {
+        let keepCount = max(keep, 1)
+        let dir = dir ?? Config.backupDir
+        guard let files = try? fileManager.contentsOfDirectory(atPath: dir.path) else { return [] }
+        let backups =
+            files
+                .filter { $0.hasSuffix(".sqlite") && ($0.hasPrefix("db-") || $0.hasPrefix("pre-restore-")) }
+        guard backups.count > keepCount else { return [] }
+        let ranked = backups.sorted { lhs, rhs in
+            let lDate = backupRecency(filename: lhs, in: dir, fileManager: fileManager)
+            let rDate = backupRecency(filename: rhs, in: dir, fileManager: fileManager)
+            if lDate != rDate { return lDate < rDate }
+            return lhs < rhs
+        }
+        let toDelete = Array(ranked.dropLast(keepCount))
+        for filename in toDelete {
+            try? fileManager.removeItem(at: dir.appendingPathComponent(filename))
+        }
+        return toDelete
     }
 
     // MARK: - Restore
@@ -200,7 +230,35 @@ public enum BackupService {
 
     /// Parse the timestamp from a backup filename into a Date
     private static func parseTimestamp(from filename: String) -> Date? {
-        guard let ts = extractTimestamp(from: filename) else { return nil }
-        return iso8601.date(from: ts)
+        var raw = filename
+        for prefix in ["pre-restore-", "db-"] where raw.hasPrefix(prefix) {
+            raw = String(raw.dropFirst(prefix.count))
+            break
+        }
+        if raw.hasSuffix(".sqlite") { raw = String(raw.dropLast(7)) }
+        let pieces = raw.split(separator: "T", maxSplits: 1)
+        let iso: String
+        if pieces.count == 2 {
+            iso = "\(pieces[0])T\(String(pieces[1]).replacingOccurrences(of: "-", with: ":"))"
+        } else if let ts = extractTimestamp(from: filename) {
+            iso = ts
+        } else {
+            return nil
+        }
+        return iso8601.date(from: iso)
+    }
+
+    /// Filename timestamp first (db- vs pre-restore- must not win lexicographically), then mtime.
+    private static func backupRecency(
+        filename: String,
+        in dir: URL,
+        fileManager: FileManager,
+    ) -> Date {
+        if let ts = parseTimestamp(from: filename) {
+            return ts
+        }
+        let path = dir.appendingPathComponent(filename).path
+        return (try? fileManager.attributesOfItem(atPath: path)[.modificationDate] as? Date)
+            ?? .distantPast
     }
 }
