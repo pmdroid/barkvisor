@@ -12,7 +12,10 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
+import api from '../api/client'
+import type { LibrarySettings } from '../api/types'
 import { formatBytes } from '../utils/format'
+import { librarySpaceCopy } from '../utils/librarySpace'
 import {
   detectImageArch,
   hostArchToImageArch,
@@ -22,6 +25,11 @@ import {
 
 const store = useImageStore()
 const caps = useCapabilitiesStore()
+const librarySettings = ref<LibrarySettings | null>(null)
+const librarySpaceLoaded = ref(false)
+const librarySpaceLine = computed(() =>
+  librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes),
+)
 
 const defaultArch = computed<ImageArch>(() => hostArchToImageArch(caps.hostArch))
 
@@ -188,6 +196,14 @@ onMounted(async () => {
       store.fetchAll().then(() => subscribeDownloading())
     }
   }, 5000)
+  try {
+    const { data } = await api.get<LibrarySettings>('/system/library/settings')
+    librarySettings.value = data
+  } catch {
+    librarySettings.value = null
+  } finally {
+    librarySpaceLoaded.value = true
+  }
 })
 
 onUnmounted(() => {
@@ -325,7 +341,18 @@ async function doDeleteImage() {
 
 <template>
   <div class="page-header">
-    <h1>Images</h1>
+    <div>
+      <h1>Images</h1>
+      <p v-if="librarySpaceLine" style="color:var(--text-secondary);font-size:13px;margin:4px 0 0 0">
+        {{ librarySpaceLine }}
+      </p>
+      <p
+        v-else-if="librarySpaceLoaded"
+        style="color:var(--text-dim);font-size:13px;margin:4px 0 0 0"
+      >
+        Capacity unavailable
+      </p>
+    </div>
     <div style="display:flex;gap:8px">
       <AppButton icon="upload" @click="openUpload">Upload Image</AppButton>
       <AppButton variant="primary" icon="download" @click="openDownload">Download Image</AppButton>

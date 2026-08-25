@@ -790,6 +790,11 @@ export interface LibrarySettings {
   imageDirectory: string
   isDefault: boolean
   libraryDepotHostId: string | null
+  /** Volume that contains imageDirectory. Null when unreadable — never 0 as a stand-in. */
+  totalBytes?: number | null
+  freeBytes?: number | null
+  /** totalBytes minus freeBytes when both are present. */
+  usedBytes?: number | null
 }
 
 /** Supported guest type from GET /api/system/capabilities (stable persisted IDs). */

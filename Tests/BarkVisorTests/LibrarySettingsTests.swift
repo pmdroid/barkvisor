@@ -82,6 +82,37 @@ final class LibrarySettingsTests {
         #expect(LibrarySettings.isDefault(resolved))
     }
 
+    // MARK: - Volume usage
+
+    @Test func `volume usage on tmp dir returns positive total and free`() throws {
+        let usage = LibrarySettings.volumeUsage(at: tmpDir)
+        #expect(usage != nil)
+        let total = try #require(usage?.total)
+        let free = try #require(usage?.free)
+        #expect(total > 0)
+        #expect(free > 0)
+        #expect(free <= total)
+        #expect(LibrarySettings.usedBytes(total: total, free: free) == total - free)
+    }
+
+    @Test func `volume usage on missing path returns nil not zeros`() {
+        let missing = tmpDir.appendingPathComponent("missing-\(UUID().uuidString)")
+        #expect(LibrarySettings.volumeUsage(at: missing) == nil)
+        #expect(LibrarySettings.usedBytes(total: nil, free: nil) == nil)
+        #expect(LibrarySettings.usedBytes(total: 10, free: 20) == nil)
+    }
+
+    @Test func `volume usage is the containing volume not the directory size`() throws {
+        let child = tmpDir.appendingPathComponent("child")
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        let parent = try #require(LibrarySettings.volumeUsage(at: tmpDir))
+        let nested = try #require(LibrarySettings.volumeUsage(at: child))
+        #expect(parent.total == nested.total)
+        #expect(parent.total > 0)
+        #expect(parent.free > 0)
+        #expect(nested.free > 0)
+    }
+
     // MARK: - Validation
 
     @Test func `empty path resets to default`() throws {

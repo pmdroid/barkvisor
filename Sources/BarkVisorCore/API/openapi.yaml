@@ -1017,7 +1017,7 @@ paths:
       tags: [evolving]
       operationId: getLibrarySettings
       x-barkvisor-stability: evolving
-      summary: Library directory used for new image downloads
+      summary: Library directory and volume used/free for new image downloads
       responses:
         "200":
           content:
@@ -3276,7 +3276,7 @@ components:
     LibrarySettings:
       type: object
       additionalProperties: false
-      required: [imageDirectory, isDefault, libraryDepotHostId]
+      required: [imageDirectory, isDefault, libraryDepotHostId, totalBytes, freeBytes, usedBytes]
       properties:
         imageDirectory:
           type: string
@@ -3288,6 +3288,21 @@ components:
           type: string
           nullable: true
           description: Paired Device to fetch missing Library images from first
+        totalBytes:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Size of the volume that contains imageDirectory; null when unreadable (never 0 as a stand-in)
+        freeBytes:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Free bytes on that volume; null when unreadable (never 0 as a stand-in)
+        usedBytes:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: totalBytes minus freeBytes when both are present
 
     LibrarySettingsRequest:
       type: object

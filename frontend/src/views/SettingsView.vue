@@ -27,7 +27,9 @@ import {
 import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
+import { isSelfDevice } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
+import { librarySpaceCopy } from '../utils/librarySpace'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
   isCurrentPairingSeq,
@@ -325,6 +327,9 @@ const librarySettings = ref<LibrarySettings>({
   imageDirectory: '',
   isDefault: true,
   libraryDepotHostId: null,
+  totalBytes: null,
+  freeBytes: null,
+  usedBytes: null,
 })
 const libraryDraft = ref('')
 const libraryLoading = ref(false)
@@ -385,6 +390,20 @@ async function saveRemoteAccess() {
     remoteAccessSaving.value = false
   }
 }
+
+const librarySpaceLine = computed(() =>
+  librarySpaceCopy(librarySettings.value.totalBytes, librarySettings.value.freeBytes),
+)
+
+/** Depot is another Device — show its id without inventing that Device's capacity. */
+const libraryDepotNote = computed(() => {
+  const id = librarySettings.value.libraryDepotHostId?.trim()
+  if (!id) return null
+  const device = devicesStore.devices.find((d) => d.hostId === id)
+  if (device && isSelfDevice(device)) return null
+  const label = device ? deviceDisplayLabel(device) : id
+  return `Library depot is ${label}. That ${DEVICE_LABEL}’s volume is not shown here.`
+})
 
 const depotOptions = computed(() => {
   const none = { value: '', label: 'None — download from the internet' }
@@ -1144,6 +1163,24 @@ onUnmounted(() => {
       <p style="color:var(--text-tertiary);font-size:12px;margin:8px 0 0 0">
         {{ librarySettings.isDefault ? 'Using the default path on this Device.' : 'Using a custom Library path.' }}
         Absolute path required. Must be writable by the daemon and must not contain a comma.
+      </p>
+      <p
+        v-if="librarySpaceLine"
+        style="color:var(--text-secondary);font-size:13px;margin:8px 0 0 0"
+      >
+        {{ librarySpaceLine }}
+      </p>
+      <p
+        v-else-if="!libraryLoading"
+        style="color:var(--text-dim);font-size:13px;margin:8px 0 0 0"
+      >
+        Capacity unavailable
+      </p>
+      <p
+        v-if="libraryDepotNote"
+        style="color:var(--text-tertiary);font-size:12px;margin:8px 0 0 0"
+      >
+        {{ libraryDepotNote }}
       </p>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
