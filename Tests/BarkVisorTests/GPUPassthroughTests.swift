@@ -60,13 +60,21 @@ struct GPUPassthroughTests {
         #expect(listed[0].pciClass == "030000")
 
         let pci = GPUDeviceService.listPCIDevices(from: paths)
-        #expect(pci.contains { $0.pciAddress == "0000:01:00.0" && $0.pciClass == "030000" })
+        let gpu = pci.first { $0.pciAddress == "0000:01:00.0" }
+        let audio = pci.first { $0.pciAddress == "0000:01:00.1" }
         let nic = pci.first { $0.pciAddress == "0000:03:00.0" }
+        #expect(gpu?.pciClass == "030000")
+        #expect(gpu?.inUseByHost == true)
+        #expect(gpu?.excludedReason == GPUPassthroughService.hostGuestExclusiveMessage)
+        #expect(audio?.pciClass == "040300")
+        #expect(audio?.inUseByHost == true)
+        #expect(audio?.attachable == true)
+        #expect(audio?.excludedReason == GPUPassthroughService.hostGuestExclusiveMessage)
         #expect(nic?.pciClass == "020000")
         #expect(nic?.name.contains("Network") == true)
         #expect(nic?.attachable == true)
-        #expect(nic?.inUseByHost == true)
-        #expect(nic?.excludedReason == GPUPassthroughService.hostPCIExclusiveMessage)
+        #expect(nic?.inUseByHost == false)
+        #expect(nic?.excludedReason == nil)
     }
 
     @Test func `host occupancy is the gpu driver not an ollama probe`() {
@@ -511,6 +519,7 @@ struct GPUPassthroughTests {
         #expect(nic?.attachable == false)
         #expect(nic?.excludedReason == GPUPassthroughService.onlyUplinkExclusionReason)
         #expect(extra?.attachable == true)
+        #expect(extra?.inUseByHost == false)
         #expect(bridge?.attachable == false)
         #expect(bridge?.excludedReason == GPUPassthroughService.pciBridgeExclusionReason)
     }

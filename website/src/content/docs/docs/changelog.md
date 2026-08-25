@@ -8,6 +8,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Linux Create Disk and Workload start fail closed when this Device cannot open a host block device for read/write. The error names the path and that the BarkVisor user needs the disk group (or a udev ACL). QEMU is not started with that `-drive`.
+- PCI picker occupancy is GPU host driver / Workload claim, not every bound kernel module.
 - Sidebar **All** vs one **Device** scopes Home lists (Workloads, Library, Networks, Logs). Logs can still refine inside that scope. Dashboard widgets show/hide locally; **Reset** restores defaults. This Device CPU/memory charts stay on Device detail — they are not Home-wide lists.
 - Ollama: when Ollama is down, the page shows install steps (macOS Homebrew `brew install ollama` / `brew services start ollama`; Linux distro package plus https://ollama.com/download) and Recheck. Nav stays visible for admin and inference. Start uses Devices that already have the weights (no picker for one reachable location; sidebar Device skips the picker). Search the Ollama library and Download from a result; pull-by-name remains and still picks a landing Device. Completions stay on Home `:7777/v1`, not Device `:11434`.
 - Device stats history includes **GPU** busy percent (`hostGpuPercent`) on Mac (IOAccelerator) and Linux (`gpu_busy_percent` / i915 RC6). Device detail shows CPU, memory, and GPU. Ollama has no live Device stats. Occupancy / passthrough is unchanged; i915 is not unbound.
