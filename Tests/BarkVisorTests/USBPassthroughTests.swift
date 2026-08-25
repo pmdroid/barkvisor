@@ -3,6 +3,8 @@ import GRDB
 import Testing
 @testable import BarkVisorCore
 
+// Listing + persist cases grew this suite past the 700-line type-body error.
+// swiftlint:disable type_body_length
 struct USBPassthroughTests {
     @Test func `stable id prefers serial over bus address`() {
         let withSerial = USBDeviceIdentity.make(
@@ -1031,3 +1033,5 @@ final class USBClaimWriteTests {
         }
     }
 }
+
+// swiftlint:enable type_body_length
