@@ -10,6 +10,9 @@ import {
   gpuHostOccupancyLabel,
   gpuPassthroughExplanation,
   gpuPassthroughSupported,
+  gpuVendorGroupKey,
+  gpuVendorLabel,
+  groupGpusByVendor,
 } from './gpuPassthrough'
 
 describe('gpuPassthrough copy (PAS-275)', () => {
@@ -110,5 +113,37 @@ describe('gpuPassthrough copy (PAS-275)', () => {
   test('single-GPU display warning is loud copy', () => {
     expect(GPU_SINGLE_DISPLAY_WARNING).toContain('one GPU')
     expect(GPU_SINGLE_DISPLAY_WARNING).toContain('host display')
+  })
+})
+
+describe('gpu vendor labels', () => {
+  test('maps PCI vendor ids to NVIDIA Intel AMD Other', () => {
+    expect(gpuVendorLabel('10de')).toBe('NVIDIA')
+    expect(gpuVendorLabel('8086')).toBe('Intel')
+    expect(gpuVendorLabel('1002')).toBe('AMD')
+    expect(gpuVendorLabel('1234')).toBe('Other')
+    expect(gpuVendorLabel('0x10de')).toBe('NVIDIA')
+    expect(gpuVendorGroupKey('10de')).toBe('NVIDIA')
+    expect(gpuVendorGroupKey('8086')).toBe('Intel')
+    expect(gpuVendorGroupKey('1002')).toBe('AMD')
+    expect(gpuVendorGroupKey('abcd')).toBe('Other')
+  })
+
+  test('keeps two NVIDIA cards distinct by PCI address', () => {
+    const grouped = groupGpusByVendor([
+      { pciAddress: '0000:01:00.0', vendorId: '10de' },
+      { pciAddress: '0000:00:02.0', vendorId: '8086' },
+      { pciAddress: '0000:81:00.0', vendorId: '10de' },
+      { pciAddress: '0000:03:00.0', vendorId: '1002' },
+      { pciAddress: '0000:04:00.0', vendorId: '1234' },
+    ])
+    expect(grouped.map((group) => group.label)).toEqual(['NVIDIA', 'Intel', 'AMD', 'Other'])
+    const nvidia = grouped.find((group) => group.label === 'NVIDIA')
+    expect(nvidia?.devices.map((gpu) => gpu.pciAddress)).toEqual([
+      '0000:01:00.0',
+      '0000:81:00.0',
+    ])
+    expect(nvidia?.devices).toHaveLength(2)
+    expect(grouped.flatMap((group) => group.devices)).toHaveLength(5)
   })
 })
