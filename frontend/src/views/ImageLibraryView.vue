@@ -17,6 +17,7 @@ import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { formatBytes } from '../utils/format'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
+import { imageProgressPercent } from '../utils/imageProgress'
 import {
   detectImageArch,
   hostArchToImageArch,
@@ -82,18 +83,30 @@ const fileInputRef = ref<HTMLInputElement>()
 let currentUpload: tus.Upload | null = null
 
 // Download progress tracking via ticketed SSE
-const downloadProgress = reactive<Record<string, { percent: number; bytesReceived: number; totalBytes: number | null; status: string }>>({})
+const downloadProgress = reactive<Record<string, { percent: number | null; bytesReceived: number; totalBytes: number | null; status: string }>>({})
 const progressStreams: Record<string, ReturnType<typeof useImageProgress>> = {}
 
+function isTransferringStatus(status: string | undefined) {
+  return status === 'downloading' || status === 'decompressing'
+}
+
 function subscribeDownloading() {
+  for (const id of Object.keys(progressStreams)) {
+    const img = store.images.find(i => i.id === id)
+    if (!img || !isTransferringStatus(img.status)) {
+      progressStreams[id]?.stop()
+      delete progressStreams[id]
+      delete downloadProgress[id]
+    }
+  }
   for (const img of store.images) {
-    if ((img.status === 'downloading' || img.status === 'decompressing') && !progressStreams[img.id]) {
+    if (isTransferringStatus(img.status) && !progressStreams[img.id]) {
       const stream = useImageProgress()
       progressStreams[img.id] = stream
       stream.start(img.id, {
         onProgress: (data) => {
           downloadProgress[img.id] = {
-            percent: data.percent ?? 0,
+            percent: imageProgressPercent(data),
             bytesReceived: data.bytesReceived ?? 0,
             totalBytes: data.totalBytes ?? null,
             status: data.status ?? 'downloading',
@@ -110,7 +123,7 @@ function subscribeDownloading() {
           stream.stop()
           delete progressStreams[img.id]
           delete downloadProgress[img.id]
-          store.fetchAll()
+          store.fetchAll().then(() => subscribeDownloading())
           void homeLibrary.fetchImages(devicesStore.devices)
         },
       })
@@ -382,8 +395,17 @@ async function doDeleteImage() {
         <tr v-for="img in visibleImages" :key="'hostId' in img ? `${img.hostId}:${img.id}` : img.id">
           <td>
             <div style="font-weight:500">{{ img.name }}</div>
-            <ProgressBar v-if="downloadProgress[img.id]" :percent="downloadProgress[img.id].percent ?? 0" style="margin-top:4px">
+            <ProgressBar
+              v-if="downloadProgress[img.id]"
+              :percent="downloadProgress[img.id].percent ?? 0"
+              :indeterminate="downloadProgress[img.id].percent == null"
+              style="margin-top:4px"
+            >
               <template v-if="downloadProgress[img.id].status === 'decompressing'">Decompressing...</template>
+              <template v-else-if="downloadProgress[img.id].percent == null">
+                {{ formatBytes(downloadProgress[img.id].bytesReceived) }}
+                <template v-if="downloadProgress[img.id].totalBytes"> / {{ formatBytes(downloadProgress[img.id].totalBytes) }}</template>
+              </template>
               <template v-else>
                 {{ downloadProgress[img.id].percent }}% &middot;
                 {{ formatBytes(downloadProgress[img.id].bytesReceived) }}

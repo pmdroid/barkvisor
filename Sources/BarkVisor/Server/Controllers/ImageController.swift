@@ -17,8 +17,10 @@ struct ImageResponse: Content {
     let sha256: String?
     let createdAt: String
     let updatedAt: String
+    /// Live 0...100 while transferring. Nil when total size is unknown or idle.
+    let downloadPercent: Int?
 
-    init(from image: VMImage) {
+    init(from image: VMImage, downloadPercent: Int? = nil) {
         self.id = image.id
         self.name = image.name
         self.imageType = image.imageType
@@ -30,6 +32,7 @@ struct ImageResponse: Content {
         self.sha256 = image.sha256
         self.createdAt = image.createdAt
         self.updatedAt = image.updatedAt
+        self.downloadPercent = downloadPercent
     }
 }
 
@@ -78,7 +81,7 @@ struct ImageController: RouteCollection {
         let images = try await req.db.read { db in
             try VMImage.limit(limit, offset: offset).fetchAll(db)
         }
-        return images.map { ImageResponse(from: $0) }
+        return await responses(images)
     }
 
     @Sendable
@@ -92,7 +95,7 @@ struct ImageController: RouteCollection {
         else {
             throw Abort(.notFound)
         }
-        return ImageResponse(from: image)
+        return await response(image)
     }
 
     @Sendable
@@ -120,7 +123,7 @@ struct ImageController: RouteCollection {
             ImageDownloadRequest(name: body.name, url: body.url, imageType: body.imageType, arch: body.arch),
             downloader: downloader, db: req.db,
         )
-        return ImageResponse(from: image)
+        return await response(image)
     }
 
     // MARK: - SSE Progress
@@ -139,7 +142,29 @@ struct ImageController: RouteCollection {
         }
 
         let stream = await downloader.progressStream(imageID: id)
-        return SSEResponse.stream(from: stream)
+        return SSEResponse.stream(from: stream, keepaliveSeconds: 15)
+    }
+
+    private func responses(_ images: [VMImage]) async -> [ImageResponse] {
+        var result: [ImageResponse] = []
+        result.reserveCapacity(images.count)
+        for image in images {
+            await result.append(response(image))
+        }
+        return result
+    }
+
+    private func response(_ image: VMImage) async -> ImageResponse {
+        await ImageResponse(from: image, downloadPercent: downloadPercent(for: image))
+    }
+
+    private func downloadPercent(for image: VMImage) async -> Int? {
+        switch image.status {
+        case "downloading", "decompressing", "uploading":
+            return await downloader.lastProgress(imageID: image.id)?.percent
+        default:
+            return nil
+        }
     }
 
     // MARK: - Tus Protocol

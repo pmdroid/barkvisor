@@ -1208,7 +1208,7 @@ final class AppModel {
         }
     }
 
-    private func refreshLibraryImages() async {
+    func refreshLibraryImages() async {
         guard let client else { return }
         if let next = await optional({ try await client.images(on: libraryDevice) }) {
             images = next

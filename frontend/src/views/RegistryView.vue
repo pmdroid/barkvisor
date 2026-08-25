@@ -22,6 +22,7 @@ import AppModal from '../components/ui/AppModal.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import { formatBytes } from '../utils/format'
+import { imageProgressPercent } from '../utils/imageProgress'
 import { normalizeImageArch } from '../utils/imageArch'
 import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
 import { catalogDownloadBlockedReason, deviceForCatalogImage } from '../utils/libraryDownloadTarget'
@@ -202,7 +203,7 @@ function templateSources(t: HomeTemplate): string {
 }
 
 // === Repositories / Images ===
-const dlProgress = reactive<Record<string, { percent: number; bytesReceived: number; totalBytes: number | null; status?: string }>>({})
+const dlProgress = reactive<Record<string, { percent: number | null; bytesReceived: number; totalBytes: number | null; status?: string }>>({})
 const progressStreams: Record<string, ReturnType<typeof useImageProgress>> = {}
 let pollTimer: number
 
@@ -246,7 +247,7 @@ onMounted(async () => {
   subscribeDownloading()
   pollTimer = window.setInterval(() => {
     if (imageStore.images.some(i => i.status === 'downloading' || i.status === 'decompressing')) {
-      imageStore.fetchAll()
+      imageStore.fetchAll().then(() => subscribeDownloading())
     }
   }, 5000)
 })
@@ -257,6 +258,14 @@ onUnmounted(() => {
 })
 
 function subscribeDownloading() {
+  for (const id of Object.keys(progressStreams)) {
+    const img = imageStore.images.find(i => i.id === id)
+    if (!img || (img.status !== 'downloading' && img.status !== 'decompressing')) {
+      progressStreams[id]?.stop()
+      delete progressStreams[id]
+      delete dlProgress[id]
+    }
+  }
   for (const img of imageStore.images) {
     if ((img.status === 'downloading' || img.status === 'decompressing') && !progressStreams[img.id]) {
       const stream = useImageProgress()
@@ -264,7 +273,7 @@ function subscribeDownloading() {
       stream.start(img.id, {
         onProgress: (data) => {
           dlProgress[img.id] = {
-            percent: data.percent ?? 0,
+            percent: imageProgressPercent(data),
             bytesReceived: data.bytesReceived ?? 0,
             totalBytes: data.totalBytes ?? null,
             status: data.status,
@@ -279,8 +288,7 @@ function subscribeDownloading() {
         onError: () => {
           stream.stop()
           delete progressStreams[img.id]
-          delete dlProgress[img.id]
-          imageStore.fetchAll()
+          imageStore.fetchAll().then(() => subscribeDownloading())
         },
       })
     }
@@ -650,8 +658,17 @@ async function addRepo() {
                 <div style="font-weight:500">{{ img.name }}</div>
                 <div v-if="img.description && !localImageProgress(img) && !downloading.has(img.id)" style="font-size:12px;color:var(--text-dim);margin-top:2px">{{ img.description }}</div>
                 <ProgressBar v-if="downloading.has(img.id) && !localImageProgress(img)" indeterminate style="margin-top:6px">Starting download...</ProgressBar>
-                <ProgressBar v-else-if="localImageProgress(img)" :percent="localImageProgress(img)!.percent ?? 0" style="margin-top:6px">
+                <ProgressBar
+                  v-else-if="localImageProgress(img)"
+                  :percent="localImageProgress(img)!.percent ?? 0"
+                  :indeterminate="localImageProgress(img)!.percent == null"
+                  style="margin-top:6px"
+                >
                   <template v-if="localImageProgress(img)!.status === 'decompressing'">Decompressing...</template>
+                  <template v-else-if="localImageProgress(img)!.percent == null">
+                    {{ formatBytes(localImageProgress(img)!.bytesReceived) }}
+                    <template v-if="localImageProgress(img)!.totalBytes"> / {{ formatBytes(localImageProgress(img)!.totalBytes) }}</template>
+                  </template>
                   <template v-else>
                     {{ localImageProgress(img)!.percent }}% &middot;
                     {{ formatBytes(localImageProgress(img)!.bytesReceived) }}

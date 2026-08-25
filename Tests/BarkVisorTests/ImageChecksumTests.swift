@@ -278,6 +278,63 @@ final class ImageChecksumTests {
         }
     #endif
 
+    @Test func `progress stream replays last event to late subscribers`() async {
+        let imageID = "img-replay"
+        await downloader.publish(
+            ImageProgressEvent(
+                id: imageID, status: "downloading",
+                bytesReceived: 50, totalBytes: 100,
+                percent: 50, error: nil,
+            ),
+        )
+        #expect(await downloader.lastProgress(imageID: imageID)?.percent == 50)
+
+        let stream = await downloader.progressStream(imageID: imageID)
+        var iterator = stream.makeAsyncIterator()
+        let first = await iterator.next()
+        #expect(first?.status == "downloading")
+        #expect(first?.percent == 50)
+
+        await downloader.publish(
+            ImageProgressEvent(
+                id: imageID, status: "ready",
+                bytesReceived: 100, totalBytes: 100,
+                percent: 100, error: nil,
+            ),
+        )
+        let second = await iterator.next()
+        #expect(second?.status == "ready")
+        #expect(second?.percent == 100)
+
+        let late = await downloader.progressStream(imageID: imageID)
+        var lateIterator = late.makeAsyncIterator()
+        let replayed = await lateIterator.next()
+        #expect(replayed?.status == "ready")
+        #expect(replayed?.percent == 100)
+        let ended = await lateIterator.next()
+        #expect(ended == nil)
+    }
+
+    @Test func `progress percent is clamped to 0 through 100`() async {
+        let imageID = "img-clamp"
+        await downloader.publish(
+            ImageProgressEvent(
+                id: imageID, status: "downloading",
+                bytesReceived: 200, totalBytes: 100,
+                percent: 150, error: nil,
+            ),
+        )
+        #expect(await downloader.lastProgress(imageID: imageID)?.percent == 100)
+        await downloader.publish(
+            ImageProgressEvent(
+                id: imageID, status: "downloading",
+                bytesReceived: 0, totalBytes: 100,
+                percent: -4, error: nil,
+            ),
+        )
+        #expect(await downloader.lastProgress(imageID: imageID)?.percent == 0)
+    }
+
     @Test func `file checksum helper hashes stored bytes`() throws {
         let file = tmpDir.appendingPathComponent("hash-me.bin")
         let content = Data("stored library bytes".utf8)

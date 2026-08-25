@@ -62,8 +62,12 @@ export function useTicketedEventSource() {
     try {
       ticket = await getWSTicket(vmID)
     } catch (e) {
+      if (stopped || gen !== generation) return
+      if (options.reconnect === false) {
+        options.onError?.(e)
+        return
+      }
       scheduleReconnect(gen)
-      options.onError?.(e)
       return
     }
     if (stopped || gen !== generation) return

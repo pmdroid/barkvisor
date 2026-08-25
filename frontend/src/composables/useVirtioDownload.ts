@@ -8,6 +8,7 @@ import {
   isSelfDevice,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
+import { imageProgressPercent } from '../utils/imageProgress'
 import { useImageProgress } from './useTicketedEventSource'
 import { useTaskPoller } from './useTaskPoller'
 
@@ -85,7 +86,8 @@ export function useVirtioDownload(opts: {
 
       virtioProgress.start(data.imageId, {
         onProgress: (msg) => {
-          virtioWinProgress.value = msg.percent ?? 0
+          const percent = imageProgressPercent(msg)
+          if (percent != null) virtioWinProgress.value = percent
           virtioWinStatus.value = msg.status ?? 'downloading'
         },
         onReady: () => {

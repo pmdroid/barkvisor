@@ -63,6 +63,9 @@ public protocol ImageProgressPublishing: Actor {
 public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private var tasks: [String: Task<Void, Never>] = [:]
     private var continuations: [String: [UUID: AsyncStream<ImageProgressEvent>.Continuation]] = [:]
+    /// Last event per image so SSE subscribers that join after `start` still
+    /// see in-flight percent (and `ready` / `error` after the download ends).
+    private var lastEvents: [String: ImageProgressEvent] = [:]
     private var libraryPollers: [String: Task<Void, Never>] = [:]
     private let dbPool: () -> GRDB.DatabasePool
 
@@ -80,6 +83,16 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     public func start(
         imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum? = nil,
     ) {
+        // Seed last-event so GET /images and late SSE subscribers do not replay
+        // a previous ready/error from a retried row.
+        emit(
+            imageID: imageID,
+            event: ImageProgressEvent(
+                id: imageID, status: "downloading",
+                bytesReceived: 0, totalBytes: nil,
+                percent: nil, error: nil,
+            ),
+        )
         let task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -260,7 +273,7 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
                         status: "downloading",
                         bytesReceived: received,
                         totalBytes: total < 0 ? nil : total,
-                        percent: total > 0 ? Int((Double(received) / Double(total)) * 100) : nil,
+                        percent: Self.clampedPercent(received: received, total: total),
                         error: nil,
                     )
                     emit(imageID: imageID, event: event)
@@ -325,13 +338,39 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
         }
     }
 
+    public func lastProgress(imageID: String) -> ImageProgressEvent? {
+        lastEvents[imageID]
+    }
+
     public func progressStream(imageID: String) -> AsyncStream<ImageProgressEvent> {
         let id = UUID()
-        startLibraryPollIfNeeded(imageID)
+        if !Self.isTerminal(lastEvents[imageID]?.status) {
+            startLibraryPollIfNeeded(imageID)
+        }
         return AsyncStream { continuation in
-            continuations[imageID, default: [:]][id] = continuation
+            let register = Task { [weak self] in
+                await self?.addContinuation(imageID: imageID, id: id, continuation: continuation)
+            }
             continuation.onTermination = { _ in
-                Task { await self.removeContinuation(imageID: imageID, id: id) }
+                register.cancel()
+                Task { [weak self] in
+                    await self?.removeContinuation(imageID: imageID, id: id)
+                }
+            }
+        }
+    }
+
+    private func addContinuation(
+        imageID: String,
+        id: UUID,
+        continuation: AsyncStream<ImageProgressEvent>.Continuation,
+    ) {
+        guard !Task.isCancelled else { return }
+        continuations[imageID, default: [:]][id] = continuation
+        if let last = lastEvents[imageID] {
+            continuation.yield(last)
+            if Self.isTerminal(last.status) {
+                continuation.finish()
             }
         }
     }
@@ -388,10 +427,37 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     }
 
     private func emit(imageID: String, event: ImageProgressEvent) {
+        let event = Self.normalized(event)
+        lastEvents[imageID] = event
         guard let conts = continuations[imageID] else { return }
         for cont in conts.values {
             cont.yield(event)
         }
+    }
+
+    /// Display percent is 0...100. Nil when total size is unknown.
+    private static func clampedPercent(received: Int64, total: Int64) -> Int? {
+        guard total > 0 else { return nil }
+        let value = Int((Double(received) / Double(total)) * 100)
+        return min(100, max(0, value))
+    }
+
+    private static func normalized(_ event: ImageProgressEvent) -> ImageProgressEvent {
+        guard let percent = event.percent else { return event }
+        let clamped = min(100, max(0, percent))
+        guard clamped != percent else { return event }
+        return ImageProgressEvent(
+            id: event.id,
+            status: event.status,
+            bytesReceived: event.bytesReceived,
+            totalBytes: event.totalBytes,
+            percent: clamped,
+            error: event.error,
+        )
+    }
+
+    private static func isTerminal(_ status: String?) -> Bool {
+        status == "ready" || status == "error"
     }
 
     private func finish(imageID: String) {
