@@ -278,7 +278,7 @@ final class ImageChecksumTests {
         }
     #endif
 
-    @Test func `progress stream replays last event to late subscribers`() async {
+    @Test func `progress stream replays last event to late subscribers`() async throws {
         let imageID = "img-replay"
         await downloader.publish(
             ImageProgressEvent(
@@ -305,7 +305,17 @@ final class ImageChecksumTests {
         let second = await iterator.next()
         #expect(second?.status == "ready")
         #expect(second?.percent == 100)
+        #expect(await downloader.lastProgress(imageID: imageID)?.status == nil)
 
+        let now = iso8601.string(from: Date())
+        try await dbPool.write { db in
+            let image = VMImage(
+                id: imageID, name: "Replay", imageType: "iso", arch: "arm64",
+                path: nil, sizeBytes: 100, status: "ready", error: nil,
+                sourceUrl: nil, createdAt: now, updatedAt: now,
+            )
+            try image.insert(db)
+        }
         let late = await downloader.progressStream(imageID: imageID)
         var lateIterator = late.makeAsyncIterator()
         let replayed = await lateIterator.next()
@@ -313,6 +323,29 @@ final class ImageChecksumTests {
         #expect(replayed?.percent == 100)
         let ended = await lateIterator.next()
         #expect(ended == nil)
+    }
+
+    @Test func `cancel and finish drop last progress so deleted ids do not leak`() async {
+        let imageID = "img-leak"
+        await downloader.publish(
+            ImageProgressEvent(
+                id: imageID, status: "downloading",
+                bytesReceived: 10, totalBytes: 100,
+                percent: 10, error: nil,
+            ),
+        )
+        #expect(await downloader.lastProgress(imageID: imageID)?.percent == 10)
+        await downloader.cancel(imageID: imageID)
+        #expect(await downloader.lastProgress(imageID: imageID)?.status == nil)
+
+        await downloader.publish(
+            ImageProgressEvent(
+                id: imageID, status: "error",
+                bytesReceived: 0, totalBytes: nil,
+                percent: nil, error: "boom",
+            ),
+        )
+        #expect(await downloader.lastProgress(imageID: imageID)?.status == nil)
     }
 
     @Test func `progress percent is clamped to 0 through 100`() async {

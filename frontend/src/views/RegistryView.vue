@@ -271,6 +271,9 @@ function subscribeDownloading() {
       const stream = useImageProgress()
       progressStreams[img.id] = stream
       stream.start(img.id, {
+        onOpen: () => {
+          delete dlProgress[img.id]
+        },
         onProgress: (data) => {
           dlProgress[img.id] = {
             percent: imageProgressPercent(data),

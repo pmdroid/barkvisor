@@ -46,7 +46,7 @@ import {
   scorePlacement,
 } from '../utils/placement'
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
-import { imageProgressPercent } from '../utils/imageProgress'
+import { imageProgressPercent, imageRowDownloadPercent } from '../utils/imageProgress'
 import { natWebUILinks, templateDeclaresSshKeys } from '../utils/templateDeploy'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
@@ -382,6 +382,20 @@ function buildRequest(): DeployTemplateRequest {
   }
 }
 
+function applyImageRowProgress(data: { status?: string; downloadPercent?: number | null }) {
+  if (data.status === 'decompressing' || data.status === 'verifying') {
+    downloadPercent.value = null
+    downloadStatus.value = data.status === 'decompressing'
+      ? 'Decompressing image...'
+      : 'Verifying image...'
+    return
+  }
+  downloadPercent.value = imageRowDownloadPercent(data)
+  downloadStatus.value = downloadPercent.value != null
+    ? `Downloading image... ${downloadPercent.value}%`
+    : 'Downloading image on the picked Device...'
+}
+
 async function pollRemoteImage(imageId: string) {
   const device = selectedDevice.value
   if (!device || drawerClosed) return
@@ -402,6 +416,7 @@ async function pollRemoteImage(imageId: string) {
         phase.value = 'form'
         return
       }
+      applyImageRowProgress(data)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
     if (drawerClosed) return
@@ -457,6 +472,7 @@ function watchDownload(imageId: string) {
           finishError(data.error || 'Image download failed')
           return
         }
+        applyImageRowProgress(data)
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
       finishError('Timed out waiting for the Device image download')

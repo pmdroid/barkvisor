@@ -201,6 +201,12 @@ struct LibraryCatalogTests {
         #expect(CatalogDownloadState.starting.buttonTitle == "Starting")
     }
 
+    @Test func libraryImagesFetchIgnoresStalePolls() {
+        #expect(LibraryImagesFetch.shouldApply(request: 2, current: 2))
+        #expect(!LibraryImagesFetch.shouldApply(request: 1, current: 2))
+        #expect(!LibraryImagesFetch.shouldApply(request: 3, current: 2))
+    }
+
     @Test func libraryImageDecodesDownloadPercentForDeterminateProgress() throws {
         let json = Data("""
         {

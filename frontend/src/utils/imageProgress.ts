@@ -14,3 +14,11 @@ export function imageProgressPercent(
   if (typeof raw !== 'number' || Number.isNaN(raw)) return null
   return Math.round(Math.min(100, Math.max(0, raw)))
 }
+
+/** GET /images row: `downloadPercent` is already 0-100 or null. */
+export function imageRowDownloadPercent(
+  image: { downloadPercent?: number | null; status?: string } | null | undefined,
+): number | null {
+  if (image?.status === 'decompressing' || image?.status === 'verifying') return null
+  return imageProgressPercent({ percent: image?.downloadPercent })
+}

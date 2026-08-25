@@ -6,9 +6,9 @@ enum LibraryCatalog {
     static let failedCatalogCopy = "Couldn't load catalog images. Pull to refresh."
 
     #if os(iOS)
-    static let preferSelfDevice = true
+        static let preferSelfDevice = true
     #else
-    static let preferSelfDevice = false
+        static let preferSelfDevice = false
     #endif
 
     static func targetDevice(
@@ -96,10 +96,19 @@ enum LibraryCatalog {
     }
 }
 
+/// Ignore a GET /images body from an older poll after a newer one started.
+enum LibraryImagesFetch {
+    static func shouldApply(request: Int, current: Int) -> Bool {
+        request == current
+    }
+}
+
 struct CatalogGroup: Identifiable, Hashable {
     var repo: ImageRepository
     var images: [CatalogImage]
-    var id: String { repo.id }
+    var id: String {
+        repo.id
+    }
 }
 
 enum CatalogRepoLoad: Equatable {

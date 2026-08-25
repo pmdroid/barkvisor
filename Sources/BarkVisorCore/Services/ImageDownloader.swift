@@ -364,7 +364,7 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
         imageID: String,
         id: UUID,
         continuation: AsyncStream<ImageProgressEvent>.Continuation,
-    ) {
+    ) async {
         guard !Task.isCancelled else { return }
         continuations[imageID, default: [:]][id] = continuation
         if let last = lastEvents[imageID] {
@@ -372,7 +372,37 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
             if Self.isTerminal(last.status) {
                 continuation.finish()
             }
+            return
         }
+        // finish() drops lastEvents. Snapshot the Library row so a subscriber
+        // after ready/error still settles without leaking in-memory events.
+        if let snapshot = await libraryTerminalEvent(imageID) {
+            continuation.yield(snapshot)
+            continuation.finish()
+        }
+    }
+
+    private func libraryTerminalEvent(_ imageID: String) async -> ImageProgressEvent? {
+        let image = try? await dbPool().read { db in
+            try VMImage.fetchOne(db, key: imageID)
+        }
+        guard let image else { return nil }
+        if image.status == "ready" {
+            return ImageProgressEvent(
+                id: imageID, status: "ready",
+                bytesReceived: image.sizeBytes ?? 0,
+                totalBytes: image.sizeBytes,
+                percent: 100, error: nil,
+            )
+        }
+        if image.status == "error" {
+            return ImageProgressEvent(
+                id: imageID, status: "error",
+                bytesReceived: 0, totalBytes: nil,
+                percent: nil, error: image.error,
+            )
+        }
+        return nil
     }
 
     /// Depot copies write SQLite only. Poll the Library row so SSE/deploy
@@ -461,6 +491,7 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     }
 
     private func finish(imageID: String) {
+        lastEvents.removeValue(forKey: imageID)
         tasks.removeValue(forKey: imageID)
         libraryPollers.removeValue(forKey: imageID)?.cancel()
         if let conts = continuations.removeValue(forKey: imageID) {

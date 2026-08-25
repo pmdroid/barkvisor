@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { imageProgressPercent } from './imageProgress'
+import { imageProgressPercent, imageRowDownloadPercent } from './imageProgress'
 
 describe('imageProgressPercent', () => {
   test('nullish or non-numeric percent is indeterminate', () => {
@@ -24,5 +24,13 @@ describe('imageProgressPercent', () => {
   test('clamps out of range values', () => {
     expect(imageProgressPercent({ percent: -5 })).toBe(0)
     expect(imageProgressPercent({ percent: 150 })).toBe(100)
+  })
+})
+
+describe('imageRowDownloadPercent', () => {
+  test('reads GET /images downloadPercent', () => {
+    expect(imageRowDownloadPercent({ status: 'downloading', downloadPercent: 37 })).toBe(37)
+    expect(imageRowDownloadPercent({ status: 'downloading' })).toBe(null)
+    expect(imageRowDownloadPercent({ status: 'decompressing', downloadPercent: 100 })).toBe(null)
   })
 })
