@@ -574,11 +574,53 @@ struct APIDecodingTests {
         #expect(busy.occupancyCopy == "In use by host")
     }
 
+    @Test func `host usb device attach requires persistable serial`() throws {
+        let serialJSON = """
+        {
+          "id": "0x1234:0x5678:ZX9",
+          "vendorId": "0x1234",
+          "productId": "0x5678",
+          "name": "Probe",
+          "manufacturer": "Acme",
+          "serialNumber": "ZX9",
+          "bus": 3,
+          "address": 2,
+          "idUnstable": false,
+          "attachable": true,
+          "claimedByVMId": null,
+          "claimedByVMName": null
+        }
+        """.data(using: .utf8)!
+        let serial = try decoder.decode(HostUSBDevice.self, from: serialJSON)
+        #expect(serial.canAttach)
+        #expect(serial.occupancyCopy == nil)
+
+        let busJSON = """
+        {
+          "id": "bus:001.002",
+          "vendorId": "0x1234",
+          "productId": "0x5678",
+          "name": "Stick",
+          "manufacturer": null,
+          "serialNumber": null,
+          "idUnstable": true,
+          "attachable": true,
+          "claimedByVMId": null,
+          "claimedByVMName": null
+        }
+        """.data(using: .utf8)!
+        let bus = try decoder.decode(HostUSBDevice.self, from: busJSON)
+        #expect(!bus.canAttach)
+        #expect(bus.occupancyCopy == USBPassthroughCopy.noSerial)
+    }
+
     @Test func `gpu detach is only allowed when the workload is stopped`() {
         #expect(!workload(id: "vm-1", name: "gpu").canDetachGPU)
         #expect(!workload(id: "vm-1", name: "gpu", state: "starting").canDetachGPU)
         #expect(workload(id: "vm-1", name: "gpu", state: "stopped").canDetachGPU)
         #expect(workload(id: "vm-1", name: "gpu", state: "error").canDetachGPU)
+        #expect(!workload(id: "vm-1", name: "usb").canDetachUSB)
+        #expect(workload(id: "vm-1", name: "usb", state: "stopped").canDetachUSB)
     }
 
     @Test func `gpu passthrough copy prefers server remediation`() {

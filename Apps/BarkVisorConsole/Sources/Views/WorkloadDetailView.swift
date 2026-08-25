@@ -15,6 +15,7 @@ struct WorkloadDetailView: View {
     @State private var selectedISOID = ""
     @State private var deviceCaps: SystemCapabilities?
     @State private var hostGPUs: [HostGPUDevice] = []
+    @State private var hostUSBs: [HostUSBDevice] = []
 
     var body: some View {
         List {
@@ -129,6 +130,10 @@ struct WorkloadDetailView: View {
             }
 
             isoSection
+
+            if !codingAgent {
+                usbSection
+            }
 
             Section("GPU passthrough") {
                 if let caps = deviceCaps ?? model.capabilities {
@@ -281,10 +286,12 @@ struct WorkloadDetailView: View {
                 guard device.isReachable else {
                     deviceCaps = nil
                     hostGPUs = []
+                    hostUSBs = []
                     return
                 }
                 deviceCaps = await model.capabilities(for: device)
                 await refreshGPUs()
+                await refreshUSBs()
             }
             .task(id: GuestInfoRefresh.taskID(
                 deviceID: deviceID,
@@ -367,6 +374,55 @@ struct WorkloadDetailView: View {
 
     private func refreshGPUs() async {
         hostGPUs = await model.gpuDevices(on: device)
+    }
+
+    private func refreshUSBs() async {
+        hostUSBs = await model.usbDevices(on: device)
+    }
+
+    private var usbSection: some View {
+        Section("USB") {
+            if let attached = workload.usbDevices, !attached.isEmpty {
+                ForEach(attached) { usb in
+                    LabeledContent(usb.displayName, value: usb.id)
+                    if workload.canDetachUSB {
+                        Button("Detach \(usb.displayName)", role: .destructive) {
+                            Task {
+                                await model.detachUSB(usb.id, from: workload, on: device)
+                                await refreshUSBs()
+                            }
+                        }
+                        .disabled(busy)
+                    } else {
+                        Text("Stop the Workload to detach.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if (deviceCaps ?? model.capabilities)?.usbPassthroughSupported == true {
+                ForEach(hostUSBs.filter { host in
+                    !(workload.usbDevices ?? []).contains(where: { $0.id == host.id })
+                }) { usb in
+                    LabeledContent(usb.name, value: usb.id)
+                    if let occupancy = usb.occupancyCopy {
+                        Text(occupancy)
+                            .foregroundStyle(.secondary)
+                    }
+                    if workload.canStart {
+                        Button("Attach \(usb.name)") {
+                            Task {
+                                await model.attachUSB(usb.id, to: workload, on: device)
+                                await refreshUSBs()
+                            }
+                        }
+                        .disabled(busy || !usb.canAttach)
+                    } else {
+                        Text("Stop the Workload to attach.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
     }
 
     private var deviceLibrary: [LibraryImage] {

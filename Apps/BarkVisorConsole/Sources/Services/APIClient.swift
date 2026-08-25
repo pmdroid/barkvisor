@@ -291,6 +291,23 @@ struct APIClient {
         try await get(scoped("/system/gpu-devices", on: device))
     }
 
+    func usbDevices(on device: HomeDeviceHealthSnapshot?) async throws -> [HostUSBDevice] {
+        try await get(scoped("/system/usb-devices", on: device))
+    }
+
+    func attachUSB(_ id: String, deviceId: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
+        try await post(scoped("/vms/\(id)/usb", on: device), body: GPUAttachBody(deviceId: deviceId))
+    }
+
+    func detachUSB(_ id: String, deviceId: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
+        try await send(
+            method: "DELETE",
+            path: scoped("/vms/\(id)/usb/\(deviceId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? deviceId)", on: device),
+            body: nil as EmptyJSON?,
+            as: Workload.self,
+        )
+    }
+
     func attachGPU(_ id: String, pciAddress: String, on device: HomeDeviceHealthSnapshot?) async throws -> Workload {
         try await post(scoped("/vms/\(id)/gpu", on: device), body: GPUAttachBody(deviceId: pciAddress))
     }

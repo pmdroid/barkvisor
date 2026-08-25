@@ -4,6 +4,7 @@ import CapabilityGate from '../ui/CapabilityGate.vue'
 import UnsupportedHint from '../ui/UnsupportedHint.vue'
 import type { Network, PortForwardRule, HostUSBDevice, USBPassthroughDevice } from '../../api/types'
 import { useFeature } from '../../composables/useFeature'
+import { usbCanPersist, usbNoSerialCopy } from '../../composables/useUSBPicker'
 
 const usb = useFeature('usbPassthrough')
 const bridged = useFeature('bridgedNetworking')
@@ -180,15 +181,15 @@ const emit = defineEmits<{
               <tr
                 v-for="dev in hostUSBDevices"
                 :key="dev.id || `${dev.vendorId}:${dev.productId}:${dev.serialNumber || ''}`"
-                :style="dev.claimedByVMId || dev.attachable === false ? 'opacity:0.5' : 'cursor:pointer'"
-                @click="!dev.claimedByVMId && dev.attachable !== false && emit('toggleUSBDevice', dev)"
+                :style="!usbCanPersist(dev) ? 'opacity:0.5' : 'cursor:pointer'"
+                @click="usbCanPersist(dev) && emit('toggleUSBDevice', dev)"
               >
                 <td style="width:32px;text-align:center">
                   <input
                     type="checkbox"
                     :checked="isUSBSelected(dev)"
-                    :disabled="!!dev.claimedByVMId || dev.attachable === false"
-                    @click.stop="!dev.claimedByVMId && dev.attachable !== false && emit('toggleUSBDevice', dev)"
+                    :disabled="!usbCanPersist(dev)"
+                    @click.stop="usbCanPersist(dev) && emit('toggleUSBDevice', dev)"
                   />
                 </td>
                 <td>
@@ -196,7 +197,7 @@ const emit = defineEmits<{
                   <div v-if="dev.manufacturer" style="font-size:11px;color:var(--text-dim)">{{ dev.manufacturer }}</div>
                   <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
                   <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
-                  <div v-else-if="dev.idUnstable" style="font-size:11px;color:var(--text-dim)">ID may change if the device is replugged</div>
+                  <div v-else-if="!usbCanPersist(dev)" style="font-size:11px;color:var(--text-dim)">{{ usbNoSerialCopy }}</div>
                 </td>
                 <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:10px">{{ dev.id || `${dev.vendorId}:${dev.productId}` }}</span></td>
               </tr>
