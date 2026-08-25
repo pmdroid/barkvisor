@@ -24,6 +24,7 @@ struct ModelsView: View {
     @State private var mintedKey: String?
     @State private var mintAttempted = false
     @State private var rechecking = false
+    @State private var howToOpen = false
 
     var body: some View {
         Group {
@@ -35,7 +36,11 @@ struct ModelsView: View {
                     }
                 }
                 .platformListStyle()
-            } else if !catalog.anyReachable {
+            } else if OllamaInstall.shouldShowInstall(
+                loaded: model.ollamaLoaded,
+                anyReachable: catalog.anyReachable,
+                devices: catalog.devices,
+            ) {
                 List {
                     howToSection
                     installSection
@@ -61,7 +66,10 @@ struct ModelsView: View {
                             Button("Pull") {
                                 Task { await pullModel() }
                             }
-                            .disabled(pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(
+                                pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || reachableDevices.isEmpty,
+                            )
                         }
                     }
                     Section("Library search") {
@@ -91,7 +99,7 @@ struct ModelsView: View {
                                         Button("Download") {
                                             Task { await pullModel(name: row.pullName) }
                                         }
-                                        .disabled(row.pullName.isEmpty || pulling)
+                                        .disabled(row.pullName.isEmpty || pulling || reachableDevices.isEmpty)
                                     }
                                 }
                             }
@@ -181,18 +189,22 @@ struct ModelsView: View {
 
     private var installOses: [String] {
         OllamaInstall.oses(
-            installHints: catalog.devices.map(\.installHint),
+            installHints: installDevices.map(\.installHint),
             platformOs: model.selectedDevice?.platform?.os
                 ?? model.devices.first(where: \.isSelf)?.platform?.os,
         )
     }
 
     private var installHint: String {
-        OllamaInstall.catalogHint(devices: catalog.devices, os: installOses.first ?? "macos")
+        OllamaInstall.catalogHint(devices: installDevices, os: installOses.first ?? "macos")
+    }
+
+    private var installDevices: [OllamaDeviceStatus] {
+        OllamaInstall.installDevices(catalog.devices)
     }
 
     private var deviceInstallLines: [OllamaDeviceStatus] {
-        catalog.devices.filter { !$0.installHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        installDevices.filter { !$0.installHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private var installSection: some View {
@@ -247,23 +259,25 @@ struct ModelsView: View {
     }
 
     private var howToSection: some View {
-        Section("Use this API") {
-            Text(
-                "OpenAI-compatible completions on this \(Copy.home): \(howTo.lanCompletionsURL). Send Authorization: Bearer with an inference key. That is not Device :11434.",
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            CopyableSnippet(title: "curl", text: howTo.curl)
-            CopyableSnippet(title: "Environment", text: howTo.env)
-            if let mintedKey {
-                CopyableSnippet(title: "API key (shown once)", text: mintedKey)
+        Section {
+            DisclosureGroup("Use this API", isExpanded: $howToOpen) {
+                Text(
+                    "OpenAI-compatible completions on this \(Copy.home): \(howTo.lanCompletionsURL). Send Authorization: Bearer with an inference key. That is not Device :11434.",
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                CopyableSnippet(title: "curl", text: howTo.curl)
+                CopyableSnippet(title: "Environment", text: howTo.env)
+                if let mintedKey {
+                    CopyableSnippet(title: "API key (shown once)", text: mintedKey)
+                }
+                Text(
+                    "From inside a Workload, Device Ollama is \(howTo.cageBaseURL) (PAS-268 guestfwd). \(howTo.cageDnsLine)",
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                CopyableSnippet(title: "Cage environment", text: howTo.cageEnv)
             }
-            Text(
-                "From inside a Workload, Device Ollama is \(howTo.cageBaseURL) (PAS-268 guestfwd). \(howTo.cageDnsLine)",
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            CopyableSnippet(title: "Cage environment", text: howTo.cageEnv)
         }
     }
 
