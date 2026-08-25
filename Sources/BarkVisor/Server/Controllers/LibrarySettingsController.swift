@@ -7,6 +7,11 @@ struct LibrarySettingsResponse: Content {
     let imageDirectory: String
     let isDefault: Bool
     let libraryDepotHostId: String?
+    /// Volume that contains `imageDirectory`. Nil when unreadable — never 0 as a stand-in.
+    let totalBytes: UInt64?
+    let freeBytes: UInt64?
+    /// `totalBytes - freeBytes` when both are present.
+    let usedBytes: UInt64?
 }
 
 struct LibrarySettingsRequest: Content {
@@ -16,6 +21,12 @@ struct LibrarySettingsRequest: Content {
 
 /// GET/PUT `/api/system/library/settings` — same stack as update settings
 /// (`app_settings` + JWT). Not UserDefaults (`backupDirectory` is broken on Linux).
+///
+/// GET reports **this Device's** Library volume (`totalBytes` / `freeBytes` /
+/// `usedBytes` for `imageDirectory`). The Library depot is another Device; its
+/// volume is not included. Home proxy
+/// `GET /api/home/devices/{id}/v1/system/library/settings` can read a member's
+/// own Library when that Device is reachable — do not invent 0,0 if it is not.
 struct LibrarySettingsController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let library = routes.grouped("api", "system", "library")
@@ -31,10 +42,16 @@ struct LibrarySettingsController: RouteCollection {
         let depotHostId = try await req.db.read { db in
             try LibrarySettings.resolvedDepotHostId(from: db)
         }
+        let usage = LibrarySettings.volumeUsage(at: dir)
+        let totalBytes = usage?.total
+        let freeBytes = usage?.free
         return LibrarySettingsResponse(
             imageDirectory: dir.path,
             isDefault: LibrarySettings.isDefault(dir),
             libraryDepotHostId: depotHostId,
+            totalBytes: totalBytes,
+            freeBytes: freeBytes,
+            usedBytes: LibrarySettings.usedBytes(total: totalBytes, free: freeBytes),
         )
     }
 
