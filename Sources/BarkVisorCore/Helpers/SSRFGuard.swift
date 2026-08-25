@@ -178,6 +178,25 @@ public enum SSRFGuard {
     /// URLSession that only follows hops ``shouldFollowRedirect(to:)`` allows.
     /// HTTP(S) is handled by ``SSRFPinnedURLProtocol``, which connects to the
     /// address ``pinEndpoint`` approved and keeps Host / TLS SNI on the original name.
+    public static func request(
+        url: URL,
+        timeout: TimeInterval = 60,
+        allowedHosts: Set<String>? = nil,
+    ) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.setValue(
+            String(Int(timeout.rounded(.up))),
+            forHTTPHeaderField: SSRFPinnedURLProtocol.timeoutHeader,
+        )
+        if let allowedHosts, !allowedHosts.isEmpty {
+            request.setValue(
+                allowedHosts.sorted().joined(separator: ","),
+                forHTTPHeaderField: SSRFPinnedURLProtocol.allowedHostsHeader,
+            )
+        }
+        return request
+    }
+
     public static func urlSession(
         resourceTimeout: TimeInterval = 60,
         allowedHosts: Set<String>? = nil,
@@ -193,9 +212,16 @@ public enum SSRFGuard {
         }
         config.httpAdditionalHeaders = headers
         config.protocolClasses = [SSRFPinnedURLProtocol.self]
+        let gate: SSRFRedirectGate
+        if let allowedHosts, !allowedHosts.isEmpty {
+            gate = SSRFRedirectGate(allowedHosts: allowedHosts)
+            config.urlCache = SSRFSessionPin(gate: gate)
+        } else {
+            gate = .shared
+        }
         return URLSession(
             configuration: config,
-            delegate: SSRFRedirectGate.shared,
+            delegate: gate,
             delegateQueue: nil,
         )
     }
@@ -247,9 +273,23 @@ public enum SSRFPinError: Error, Equatable, LocalizedError {
     }
 }
 
-/// Refuses redirect hops that fail ``SSRFGuard.validate(url:)`` (private DNS, bad scheme).
-final class SSRFRedirectGate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    static let shared = SSRFRedirectGate()
+final class SSRFSessionPin: URLCache, @unchecked Sendable {
+    let gate: SSRFRedirectGate
+
+    init(gate: SSRFRedirectGate) {
+        self.gate = gate
+        super.init(memoryCapacity: 0, diskCapacity: 0, diskPath: nil)
+    }
+}
+
+final class SSRFRedirectGate: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = SSRFRedirectGate(allowedHosts: nil)
+    let allowedHosts: Set<String>?
+
+    init(allowedHosts: Set<String>?) {
+        self.allowedHosts = allowedHosts
+        super.init()
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -258,16 +298,18 @@ final class SSRFRedirectGate: NSObject, URLSessionTaskDelegate, @unchecked Senda
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void,
     ) {
-        guard let url = request.url else {
-            completionHandler(nil)
-            return
-        }
-        let allowed = SSRFPinnedURLProtocol.allowedHosts(in: request)
+        completionHandler(followRedirect(task: task, newRequest: request))
+    }
+
+    func followRedirect(task: URLSessionTask, newRequest request: URLRequest) -> URLRequest? {
+        guard let url = request.url else { return nil }
+        let allowed = allowedHosts
+            ?? SSRFPinnedURLProtocol.allowedHosts(in: request)
             ?? SSRFPinnedURLProtocol.allowedHosts(in: task.originalRequest)
+            ?? SSRFPinnedURLProtocol.allowedHosts(in: task.currentRequest)
         guard SSRFGuard.shouldFollowRedirect(to: url, allowedHosts: allowed) else {
-            completionHandler(nil)
-            return
+            return nil
         }
-        completionHandler(request)
+        return request
     }
 }

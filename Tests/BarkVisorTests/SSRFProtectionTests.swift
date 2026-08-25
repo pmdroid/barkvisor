@@ -459,7 +459,9 @@ struct SSRFProtectionTests {
         let session = SSRFGuard.urlSession(resourceTimeout: 5, allowedHosts: [allowedHost])
         defer { session.invalidateAndCancel() }
 
-        let (data, response) = try await session.data(from: start)
+        let request = SSRFGuard.request(url: start, timeout: 5, allowedHosts: [allowedHost])
+        #expect(SSRFPinnedURLProtocol.allowedHosts(in: request) == [allowedHost])
+        let (data, response) = try await session.data(for: request)
         await waitForHopShutdown()
         let http = try #require(response as? HTTPURLResponse)
         #expect(http.statusCode == 302)

@@ -26,7 +26,11 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
+        var req = request
+        if let raw = headerValue(allowedHostsHeader, in: request) {
+            req.setValue(raw, forHTTPHeaderField: allowedHostsHeader)
+        }
+        return req
     }
 
     override func startLoading() {
@@ -47,6 +51,10 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         do {
+            if let allowed = Self.allowedHosts(in: request),
+               let reason = SSRFGuard.fetchRejection(for: url, allowedHosts: allowed) {
+                throw SSRFPinError.rejected(reason)
+            }
             let pin = try Self.pinEndpoint(url: url)
             try Task.checkCancellation()
             try await fetch(request: request, url: url, pin: pin)
@@ -113,7 +121,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     static func allowedHosts(in request: URLRequest?) -> Set<String>? {
-        guard let raw = request?.value(forHTTPHeaderField: allowedHostsHeader) else { return nil }
+        guard let request, let raw = headerValue(allowedHostsHeader, in: request) else { return nil }
         let hosts = Set(
             raw.split(separator: ",").map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -122,8 +130,23 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         return hosts.isEmpty ? nil : hosts
     }
 
+    static func headerValue(_ name: String, in request: URLRequest) -> String? {
+        if let value = request.value(forHTTPHeaderField: name), !value.isEmpty {
+            return value
+        }
+        for (key, value) in request.allHTTPHeaderFields ?? [:] {
+            if key.caseInsensitiveCompare(name) == .orderedSame, !value.isEmpty {
+                return value
+            }
+        }
+        if let stored = property(forKey: name, in: request) as? String, !stored.isEmpty {
+            return stored
+        }
+        return nil
+    }
+
     private func resourceTimeout(from request: URLRequest) -> TimeInterval {
-        if let raw = request.value(forHTTPHeaderField: Self.timeoutHeader),
+        if let raw = Self.headerValue(Self.timeoutHeader, in: request),
            let seconds = TimeInterval(raw), seconds > 0 {
             return seconds
         }
@@ -143,8 +166,9 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         let nextURL = SSRFGuard.redirectTarget(
             statusCode: status, location: location, from: url,
         )
+        let allowed = Self.allowedHosts(in: request)
         if let nextURL,
-           SSRFGuard.shouldFollowRedirect(to: nextURL, allowedHosts: Self.allowedHosts(in: request)),
+           SSRFGuard.shouldFollowRedirect(to: nextURL, allowedHosts: allowed),
            let nextPin = try? Self.pinEndpoint(url: nextURL) {
             for try await _ in body {
                 try Task.checkCancellation()
@@ -152,8 +176,10 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
             return RedirectHop(url: nextURL, status: status, pin: nextPin)
         }
 
+        let dropLocation = nextURL != nil
         var headerFields: [String: String] = [:]
         for header in head.headers {
+            if dropLocation, header.name.lowercased() == "location" { continue }
             headerFields[header.name] = header.value
         }
         guard let httpResponse = HTTPURLResponse(
