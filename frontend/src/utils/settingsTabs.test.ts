@@ -1,0 +1,85 @@
+import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  DEFAULT_SETTINGS_TAB,
+  isPairingTab,
+  SETTINGS_TABS,
+  settingsTabFromQuery,
+} from './settingsTabs'
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+describe('settings tab query', () => {
+  test('maps query tab values including pairing', () => {
+    expect(SETTINGS_TABS).toContain('pairing')
+    expect(SETTINGS_TABS).toContain('home')
+    expect(DEFAULT_SETTINGS_TAB).toBe('apikeys')
+
+    expect(settingsTabFromQuery('pairing')).toBe('pairing')
+    expect(settingsTabFromQuery('home')).toBe('home')
+    expect(settingsTabFromQuery('library')).toBe('library')
+    expect(settingsTabFromQuery('apikeys')).toBe('apikeys')
+    expect(settingsTabFromQuery('sshkeys')).toBe('sshkeys')
+    expect(settingsTabFromQuery('audit')).toBe('audit')
+
+    expect(settingsTabFromQuery({ tab: 'pairing' })).toBe('pairing')
+    expect(settingsTabFromQuery({ tab: 'home' })).toBe('home')
+    expect(settingsTabFromQuery({ tab: ['pairing'] })).toBe('pairing')
+    expect(settingsTabFromQuery({ tab: ['home', 'pairing'] })).toBe('home')
+
+    expect(settingsTabFromQuery(undefined)).toBeUndefined()
+    expect(settingsTabFromQuery(null)).toBeUndefined()
+    expect(settingsTabFromQuery('')).toBeUndefined()
+    expect(settingsTabFromQuery('unknown')).toBeUndefined()
+    expect(settingsTabFromQuery({ tab: 'bogus' })).toBeUndefined()
+    expect(settingsTabFromQuery({})).toBeUndefined()
+    expect(settingsTabFromQuery({ tab: ['nope'] })).toBeUndefined()
+
+    expect(isPairingTab('pairing')).toBe(true)
+    expect(isPairingTab(settingsTabFromQuery('pairing'))).toBe(true)
+    expect(isPairingTab(settingsTabFromQuery({ tab: 'pairing' }))).toBe(true)
+    expect(isPairingTab('home')).toBe(false)
+    expect(isPairingTab(settingsTabFromQuery('home'))).toBe(false)
+    expect(isPairingTab(settingsTabFromQuery('apikeys'))).toBe(false)
+    expect(isPairingTab(undefined)).toBe(false)
+    expect(isPairingTab(null)).toBe(false)
+  })
+
+  test('Settings wires pairing as its own tab from ?tab=', () => {
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    expect(settings).toContain('settingsTabFromQuery')
+    expect(settings).toContain('isPairingTab')
+    expect(settings).toContain('openPairingTab')
+    expect(settings).toContain('v-if="isPairingTab(tab)"')
+    expect(settings).toContain("tab === 'home'")
+    expect(settings).toContain('Phone sign-in')
+    expect(settings).toContain('PairingQr')
+    expect(settings).toContain('issueLoginOffer')
+    expect(settings).toContain('Re-pair this {{ DEVICE_LABEL }}')
+    expect(settings).toContain('Advertise URL')
+    expect(settings).toContain('Save Library depot')
+    expect(settings).toContain('openPairingTab')
+    const homeStart = settings.indexOf('v-if="tab === \'home\'"')
+    const pairingStart = settings.indexOf('v-if="isPairingTab(tab)"')
+    const homeBlock = settings.slice(homeStart, pairingStart > homeStart ? pairingStart : undefined)
+    expect(homeStart).toBeGreaterThan(-1)
+    expect(pairingStart).toBeGreaterThan(-1)
+    expect(homeBlock).toContain('Advertise URL')
+    expect(homeBlock).toContain('Save Library depot')
+    expect(homeBlock).toContain('openPairingTab')
+    expect(homeBlock).not.toContain('PairingQr')
+    expect(homeBlock).not.toContain('Phone sign-in')
+    expect(homeBlock).not.toContain('Re-pair this')
+    expect(homeBlock).not.toContain('Show sign-in QR')
+    const pairingBlock = settings.slice(pairingStart)
+    expect(pairingBlock).toContain('PairingQr')
+    expect(pairingBlock).toContain('Phone sign-in')
+    expect(pairingBlock).toContain('Re-pair this {{ DEVICE_LABEL }}')
+
+    const devices = readFileSync(join(here, '../views/DevicesView.vue'), 'utf8')
+    expect(devices).toContain('/settings?tab=pairing')
+    expect(devices).not.toContain('/settings?tab=home')
+  })
+})

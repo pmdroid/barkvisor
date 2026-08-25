@@ -37,7 +37,7 @@ onUnmounted(() => clearInterval(pollTimer))
           </template>
         </p>
       </div>
-      <AppButton variant="primary" icon="plus" @click="router.push('/settings?tab=home')">
+      <AppButton variant="primary" icon="plus" @click="router.push('/settings?tab=pairing')">
         Add a {{ DEVICE_LABEL }}
       </AppButton>
     </div>

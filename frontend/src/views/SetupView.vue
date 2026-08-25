@@ -298,7 +298,7 @@ async function finishSetup() {
         <h2>Join an existing {{ HOME_LABEL }}</h2>
         <ol class="pairing-steps">
           <li>
-            On the other {{ DEVICE_LABEL }}, open Settings → Home → Add a {{ DEVICE_LABEL }},
+            On the other {{ DEVICE_LABEL }}, open Settings → Pairing → Add a {{ DEVICE_LABEL }},
             pick the address this {{ DEVICE_LABEL }} can reach, and copy the full
             <code>barkvisor://</code> offer.
           </li>
