@@ -14,7 +14,8 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 <CardGrid>
   <LinkCard title="Quickstart" href="/docs/getting-started/quickstart/" description="Create your first VM — works the same on macOS and Linux (arm64 / x86_64)." />
   <LinkCard title="First launch" href="/docs/getting-started/first-launch/" description="Setup wizard and admin account — same flow on macOS and Linux." />
-  <LinkCard title="Home and pairing" href="/docs/guides/home-and-pairing/" description="Add a Device to a Home, join from setup or barkvisor join." />
+  <LinkCard title="Home and pairing" href="/docs/guides/home-and-pairing/" description="Add a Device from Settings → Pairing; join from setup or barkvisor join." />
+  <LinkCard title="Ollama" href="/docs/guides/ollama/" description="Install Ollama, pull, Start on the Device that has the weights, search the library." />
   <LinkCard title="Create a Workload" href="/docs/guides/create-workload/" description="Place a VM on this Device or another reachable Device." />
   <LinkCard title="Changelog" href="/docs/changelog/" description="What shipped for Home, pairing, Library, and Create VM." />
   <LinkCard title="Roadmap" href="/docs/roadmap/" description="What we want to build next: HA, quorum, Ceph, live migration, apps." />
@@ -28,7 +29,7 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 
 | Platform | Packaging | Acceleration | Bridged networking |
 |----------|-----------|--------------|--------------------|
-| **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | socket_vmnet + privileged helper |
+| **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | Homebrew `socket_vmnet` (BarkVisor does not start it) |
 | **Linux** | `.deb` / `.rpm` / tarball | KVM (or TCG) | host bridge + `qemu-bridge-helper` |
 
 Same product on both: daemon + SPA, NAT, bridge, USB, images, cloud-init, console/VNC. Host differences (accel, packaging) are by design.

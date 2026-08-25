@@ -202,7 +202,15 @@ The default service socket is `/opt/homebrew/var/run/socket_vmnet` (Intel Homebr
 - Confirm the socket file exists
 - NAT Workloads do not need this service
 
-A leftover `dev.barkvisor.helper` from older installs is unused. Boot it out and delete the plist/binary if present.
+A leftover `dev.barkvisor.helper` from older installs is unused. Logs that repeat `BarkVisorHelper: XPC connection invalidated` mean that old helper is still trying to reconnect — not an in-tree XPC client. Homebrew/pkg postinstall boots leftover helpers out. You can also:
+
+```sh
+sudo launchctl bootout system/dev.barkvisor.helper
+sudo rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
+sudo rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
+```
+
+NAT Workloads do not need `socket_vmnet`.
 
 ### Linux: host bridge
 
@@ -257,13 +265,13 @@ codesign -d --entitlements - /path/to/qemu-system-aarch64
 
 If macOS blocks the BarkVisor `.pkg` installer, go to **System Settings > Privacy & Security** and click "Open Anyway". For properly notarized builds (created with `--require-notarize`), Gatekeeper should not intervene.
 
-### XPC team ID mismatch
+### SQLite “database or disk is full”
 
-In release builds, the build script injects the real `APPLE_TEAM_ID` into the helper protocol source before compiling. If the team ID in the main app does not match the team ID in the helper, XPC connections will be rejected by macOS. This typically happens when:
+Logs with SQLite error-code **13** (`database or disk is full`) mean the **data dir** volume is out of space. LogService prunes logs (and extra DB backups) on those writes, skips the insert, and warns once. Free space on the data directory (not necessarily the Library path). Then restart is not required once writes succeed again.
 
-- The build was not done with `build-release.sh` (the team ID stays as `DEVELOPMENT`)
-- The helper and main app were signed with different identities
-- The helper was replaced without rebuilding the main app
+### Leftover helper vs current networking
+
+Current macOS bridged/vmnet uses Homebrew `socket_vmnet`. BarkVisor does not ship a privileged XPC helper. An **XPC team ID mismatch** message from old docs applied to `dev.barkvisor.helper`, which this tree no longer builds. Ignore it, or remove the leftover helper as above.
 
 ## Performance
 

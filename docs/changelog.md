@@ -6,6 +6,10 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Sidebar **All** vs one **Device** scopes Home lists (Workloads, Library, Networks, Logs). Logs can still refine inside that scope. Dashboard widgets show/hide locally; **Reset** restores defaults. This Device CPU/memory charts stay on Device detail — they are not Home-wide lists.
+- Ollama: when Ollama is down, the page shows install steps (macOS Homebrew `brew install ollama` / `brew services start ollama`; Linux distro package plus https://ollama.com/download) and Recheck. Nav stays visible for admin and inference. Start uses Devices that already have the weights (no picker for one reachable location; sidebar Device skips the picker). Search the Ollama library and Download from a result; pull-by-name remains and still picks a landing Device. Completions stay on Home `:7777/v1`, not Device `:11434`.
+- Library used/free is the Library path volume (not always the data dir). A depot Device is named; unknown capacity is not shown as zeros. Create Disk can override the default directory; Linux can attach a host block device as raw (macOS has no block-device option). Image download progress is a real percent in web and Console.
+- Linux GPU list labels NVIDIA / Intel / AMD and can show several cards per vendor. Workload detail has a PCI picker for VFIO beyond GPUs (boot disk and last uplink excluded). Hidden on macOS.
 - Settings: pairing offer and phone sign-in QR live on **Settings → Pairing** (`?tab=pairing`). Home keeps remote access, advertise URL, and Library depot.
 - Networks **Bridge setup** is install guides only: Linux keeps the qemu-bridge-helper / host-bridge checklist; macOS shows copyable `socket_vmnet` Homebrew commands. Setup / Start / Stop / Remove no longer change the host. Daemon endpoints stay; VM-on-bridge wiring is unchanged.
 - Logs: SQLITE_FULL no longer tight-loops Device stderr. Prune logs (and extra DB backups) on disk-full writes, skip the insert, and warn once. Homebrew/pkg postinstall boots out leftover privileged helper files so they cannot reconnect every 15s.
@@ -34,7 +38,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ### Home of more than one Device
 
-- Pair another Device from **Settings → Home → Add a Device**. Pick a LAN IPv4, IPv6 unique-local, or DNS name for `host=` in the offer, then scan the QR or paste the full `barkvisor://pair/v1?…` in setup, or run `barkvisor join --code` on an API-only host. Changing the address re-issues the URI and the QR. A rejected address (localhost, public, metadata) returns 400 and drops the previous pairing code.
+- Pair another Device from **Settings → Pairing → Add a Device**. Pick a LAN IPv4, IPv6 unique-local, or DNS name for `host=` in the offer, then scan the QR or paste the full `barkvisor://pair/v1?…` in setup, or run `barkvisor join --code` on an API-only host. Changing the address re-issues the URI and the QR. A rejected address (localhost, public, metadata) returns 400 and drops the previous pairing code.
 - Join allow-list now includes CGNAT `100.64.0.0/10` (still blocks `100.100.100.200`, loopback, link-local, public, and metadata). An older joiner still rejects those offers — upgrade it or pick a LAN IP.
 - Optional `BARKVISOR_JOIN_CODE` on first boot. Join is always console-local on that Device.
 - Devices share one Home login. The dashboard lists every Device and health.

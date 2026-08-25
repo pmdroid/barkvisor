@@ -17,7 +17,7 @@ When BarkVisor starts for the first time:
 
 Open your browser and navigate to `http://localhost:7777` (or `http://<host-ip>:7777`). Since no admin account exists yet, the UI presents a setup wizard.
 
-Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, an extra optional step configures the managed bridge helper; on Linux that step is skipped.
+Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, bridged/vmnet is Homebrew `socket_vmnet` (install it yourself; BarkVisor does not start that daemon). Linux uses a host bridge. NAT works without either.
 
 ### 1. Welcome
 
