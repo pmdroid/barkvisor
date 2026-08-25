@@ -1,5 +1,57 @@
 import type { CapabilityDetail, CurrentHostCapabilities } from '../api/types'
 
+/** PCI vendor labels for display-class GPUs. Unknown ids are Other, not GPU. */
+export type GpuVendorLabel = 'NVIDIA' | 'Intel' | 'AMD' | 'Other'
+
+export type GpuVendorGroup<T extends { vendorId: string } = { vendorId: string }> = {
+  key: GpuVendorLabel
+  label: GpuVendorLabel
+  devices: T[]
+}
+
+const GPU_VENDOR_GROUP_ORDER: readonly GpuVendorLabel[] = ['NVIDIA', 'Intel', 'AMD', 'Other']
+
+/** Match GPUPassthroughService.normalizeHexId. */
+function normalizeVendorId(raw: string): string {
+  let value = raw.trim().toLowerCase()
+  if (value.startsWith('0x')) value = value.slice(2)
+  return value
+}
+
+export function gpuVendorLabel(vendorId: string): GpuVendorLabel {
+  switch (normalizeVendorId(vendorId)) {
+    case '10de':
+      return 'NVIDIA'
+    case '8086':
+      return 'Intel'
+    case '1002':
+      return 'AMD'
+    default:
+      return 'Other'
+  }
+}
+
+export function gpuVendorGroupKey(vendorId: string): GpuVendorLabel {
+  return gpuVendorLabel(vendorId)
+}
+
+/** Group display GPUs by vendor. Same-vendor cards stay distinct; no vendor dedupe. */
+export function groupGpusByVendor<T extends { vendorId: string }>(
+  gpus: readonly T[],
+): GpuVendorGroup<T>[] {
+  const buckets = new Map<GpuVendorLabel, T[]>()
+  for (const gpu of gpus) {
+    const key = gpuVendorGroupKey(gpu.vendorId)
+    const list = buckets.get(key)
+    if (list) list.push(gpu)
+    else buckets.set(key, [gpu])
+  }
+  return GPU_VENDOR_GROUP_ORDER.flatMap((key) => {
+    const devices = buckets.get(key)
+    return devices?.length ? [{ key, label: key, devices }] : []
+  })
+}
+
 /** Guest-local Ollama when a GPU is attached. Host Ollama is not used for that card. */
 export const GUEST_OLLAMA_PATH = 'http://127.0.0.1:11434/v1'
 

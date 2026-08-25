@@ -24,7 +24,7 @@ import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported } from '../utils/gpuPassthrough'
+import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import {
   emptyDeviceStatsChartSeries,
   mapStatsHistorySamples,
@@ -88,6 +88,7 @@ const aboutReady = ref(false)
 
 const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
+const hostGPUGroups = computed(() => groupGpusByVendor(hostGPUs.value))
 const workloadLine = computed(() => (device.value ? deviceWorkloadLine(device.value) : ''))
 const resourcesLine = computed(() => (device.value ? deviceResourcesLine(device.value) : null))
 
@@ -423,15 +424,20 @@ async function doStop() {
         <p class="gpu-card-status">{{ gpuReady ? 'This Device reports IOMMU, vfio-pci, and KVM.' : 'Not available on this Device.' }}</p>
         <UnsupportedHint :text="gpuExplanation" />
         <p v-if="gpuReady && hostGPUs.length === 1" class="gpu-warning" role="alert">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
-        <ul v-if="hostGPUs.length" class="gpu-list">
-          <li v-for="gpu in hostGPUs" :key="gpu.pciAddress">
-            <span class="gpu-name">{{ gpu.name }}</span>
-            <span class="gpu-meta">{{ gpu.pciAddress }} · IOMMU {{ gpu.iommuGroup }}</span>
-            <span class="gpu-meta">Group mates: {{ gpuGroupMatesLabel(gpu.pciAddress, gpu.groupAddresses) }}</span>
-            <span v-if="gpu.claimedByVMName" class="gpu-busy">Attached to {{ gpu.claimedByVMName }}</span>
-            <span v-else-if="gpu.inUseByHost" class="gpu-busy">{{ gpuHostOccupancyLabel(true) }}</span>
-          </li>
-        </ul>
+        <div v-if="hostGPUs.length" class="gpu-list">
+          <section v-for="group in hostGPUGroups" :key="group.key" class="gpu-vendor-group">
+            <h3 class="gpu-vendor">{{ group.label }}</h3>
+            <ul>
+              <li v-for="gpu in group.devices" :key="gpu.pciAddress">
+                <span class="gpu-name">{{ gpu.name }}</span>
+                <span class="gpu-meta">{{ gpu.pciAddress }} · IOMMU {{ gpu.iommuGroup }}</span>
+                <span class="gpu-meta">Group mates: {{ gpuGroupMatesLabel(gpu.pciAddress, gpu.groupAddresses) }}</span>
+                <span v-if="gpu.claimedByVMName" class="gpu-busy">Attached to {{ gpu.claimedByVMName }}</span>
+                <span v-else-if="gpu.inUseByHost" class="gpu-busy">{{ gpuHostOccupancyLabel(true) }}</span>
+              </li>
+            </ul>
+          </section>
+        </div>
         <p v-if="gpuReady" class="gpu-card-status">Guest Ollama path: {{ GUEST_OLLAMA_PATH }}</p>
       </div>
 
@@ -728,8 +734,24 @@ async function doStop() {
   color: var(--text-secondary);
 }
 .gpu-list {
-  list-style: none;
   margin: 10px 0 0;
+}
+.gpu-vendor-group {
+  margin: 0 0 8px;
+}
+.gpu-vendor-group:last-child {
+  margin-bottom: 0;
+}
+.gpu-vendor {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.gpu-list ul {
+  list-style: none;
+  margin: 0;
   padding: 0;
 }
 .gpu-list li {
