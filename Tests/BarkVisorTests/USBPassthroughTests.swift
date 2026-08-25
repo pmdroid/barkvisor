@@ -141,6 +141,47 @@ struct USBPassthroughTests {
         #expect(withSerial?.id == "0x1234:0x5678:ZX9")
     }
 
+    @Test func `empty sysfs listing falls back to enriched lsusb`() throws {
+        let empty = FileManager.default.temporaryDirectory
+            .appendingPathComponent("usb-sysfs-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: empty) }
+
+        let line = "Bus 003 Device 002: ID 1234:5678 Acme Probe"
+        let fromEmpty = USBDeviceService.listLinuxDevices(sysfsRoot: empty, lsusbLines: [line])
+        #expect(fromEmpty.count == 1)
+        #expect(fromEmpty.first?.id == "bus:003.002")
+        #expect(fromEmpty.first?.serialNumber == nil)
+
+        let missing = empty.appendingPathComponent("no-such-sysfs")
+        let fromMissing = USBDeviceService.listLinuxDevices(sysfsRoot: missing, lsusbLines: [line])
+        #expect(fromMissing.count == 1)
+        #expect(fromMissing.first?.id == "bus:003.002")
+
+        let withSerial = FileManager.default.temporaryDirectory
+            .appendingPathComponent("usb-sysfs-lsusb-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: withSerial, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: withSerial) }
+        try writeSysfsDevice(
+            at: withSerial.appendingPathComponent("3-2"),
+            vendor: "1234",
+            product: "5678",
+            bus: "3",
+            address: "2",
+            serial: "ZX9",
+            productName: "Probe",
+            manufacturer: "Acme",
+            interfaceClass: "03",
+        )
+        let enriched = USBDeviceService.listLinuxDevices(
+            sysfsRoot: withSerial,
+            lsusbLines: [line, "Bus 001 Device 004: ID 046d:c52b Logitech Receiver"],
+        )
+        #expect(enriched.count == 1)
+        #expect(enriched.first?.id == "0x1234:0x5678:ZX9")
+        #expect(enriched.first?.serialNumber == "ZX9")
+    }
+
     @Test func `claim map uses serial so two identical vid pid stay distinct`() {
         let hostA = HostUSBDevice(
             vendorId: "0x046d", productId: "0xc52b", name: "Receiver",

@@ -377,7 +377,11 @@ struct WorkloadDetailView: View {
     }
 
     private func refreshUSBs() async {
-        hostUSBs = await model.usbDevices(on: device)
+        let target = device
+        let hostId = target.hostId
+        let rows = await model.usbDevices(on: target)
+        guard !Task.isCancelled, device.hostId == hostId else { return }
+        hostUSBs = rows
     }
 
     private var usbSection: some View {

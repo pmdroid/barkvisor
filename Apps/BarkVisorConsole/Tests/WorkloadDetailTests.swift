@@ -266,6 +266,23 @@ struct WorkloadDetailTests {
         #expect(!WorkloadRestart.isEnabled(device: studio, busy: true))
     }
 
+    @Test func `usb refresh drops cancelled or stale Device rows`() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/WorkloadDetailView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("private func refreshUSBs() async"))
+        #expect(source.contains("let target = device"))
+        #expect(source.contains("let hostId = target.hostId"))
+        #expect(source.contains("usbDevices(on: target)"))
+        #expect(source.contains("guard !Task.isCancelled, device.hostId == hostId else { return }"))
+        #expect(source.contains("hostUSBs = rows"))
+        #expect(!source.contains("hostUSBs = await model.usbDevices(on: device)"))
+    }
+
     @Test func `restart path uses local api or home proxy`() throws {
         let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")))
         let studio = snapshot(hostId: "self", role: "self", title: "Studio")

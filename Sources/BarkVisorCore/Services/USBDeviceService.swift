@@ -234,16 +234,35 @@ public enum USBDeviceService {
         return false
     }
 
+    public static func listLinuxDevices(sysfsRoot: URL, lsusbLines: [String]) -> [HostUSBDevice] {
+        let fromSys = listSysfsDevices(root: sysfsRoot)
+        if !fromSys.isEmpty { return fromSys }
+        return listedFromLsusb(lsusbLines, sysfsRoot: sysfsRoot)
+    }
+
+    private static func listedFromLsusb(_ lines: [String], sysfsRoot: URL) -> [HostUSBDevice] {
+        var devices: [HostUSBDevice] = []
+        var seen = Set<String>()
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, let parsed = parseLsusbLine(trimmed) else { continue }
+            let dev = withSysfsIdentity(parsed, root: sysfsRoot)
+            if seen.insert(dev.id).inserted {
+                devices.append(dev)
+            }
+        }
+        return devices
+    }
+
     #if os(Linux)
         private static func listDevicesLinux() throws -> [HostUSBDevice] {
             let sysRoot = URL(fileURLWithPath: "/sys/bus/usb/devices")
-            if FileManager.default.fileExists(atPath: sysRoot.path) {
-                return listSysfsDevices(root: sysRoot)
-            }
-            return listDevicesLsusb(sysfsRoot: sysRoot)
+            let fromSys = listSysfsDevices(root: sysRoot)
+            if !fromSys.isEmpty { return fromSys }
+            return listedFromLsusb(lsusbStdoutLines(), sysfsRoot: sysRoot)
         }
 
-        private static func listDevicesLsusb(sysfsRoot: URL) -> [HostUSBDevice] {
+        private static func lsusbStdoutLines() -> [String] {
             let lsusbPaths = ["/usr/bin/lsusb", "/bin/lsusb"]
             guard let exe = lsusbPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
             else {
@@ -256,17 +275,7 @@ public enum USBDeviceService {
             guard result.succeeded else { return [] }
             let text = result.stdoutString
             guard !text.isEmpty else { return [] }
-
-            var devices: [HostUSBDevice] = []
-            var seen = Set<String>()
-            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-                guard let parsed = parseLsusbLine(String(line)) else { continue }
-                let dev = withSysfsIdentity(parsed, root: sysfsRoot)
-                if seen.insert(dev.id).inserted {
-                    devices.append(dev)
-                }
-            }
-            return devices
+            return text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
         }
     #endif
 
