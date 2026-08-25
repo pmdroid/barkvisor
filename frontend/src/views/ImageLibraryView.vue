@@ -525,8 +525,24 @@ async function doDeleteImage() {
 
   <!-- Upload Modal -->
   <div v-if="showUpload" class="modal-overlay" @click.self="!uploading && (showUpload = false)">
-    <div class="modal">
-      <h2>Upload Image</h2>
+    <div class="split-frame">
+      <aside class="split-rail">
+        <h3>Image</h3>
+        <div class="split-s on">
+          <span class="wizard-dot active">1</span>
+          <div><div class="t">File</div><div class="d">Local upload</div></div>
+        </div>
+        <div class="split-s">
+          <span class="wizard-dot">2</span>
+          <div><div class="t">Identity</div><div class="d">Type · arch</div></div>
+        </div>
+      </aside>
+      <section class="split-stage">
+        <div class="split-head">
+          <h2>Upload Image</h2>
+          <p>The file lands in this Device’s Library.</p>
+        </div>
+        <div class="split-body">
       <div class="form-group">
         <label>File</label>
         <div
@@ -576,19 +592,36 @@ async function doDeleteImage() {
       </div>
 
       <FormError v-if="uploadError" :message="uploadError" />
-      <div class="modal-actions">
+        </div>
+        <div class="split-foot">
         <AppButton @click="uploading ? cancelUpload() : (showUpload = false)">
           {{ uploading ? 'Cancel Upload' : 'Cancel' }}
         </AppButton>
         <AppButton v-if="!uploading" variant="primary" @click="startUpload">Upload</AppButton>
-      </div>
+        </div>
+      </section>
     </div>
   </div>
 
-  <!-- Download Modal -->
   <div v-if="showDownload" class="modal-overlay" @click.self="showDownload = false">
-    <div class="modal">
-      <h2>Download Image</h2>
+    <div class="split-frame">
+      <aside class="split-rail">
+        <h3>Image</h3>
+        <div class="split-s on">
+          <span class="wizard-dot active">1</span>
+          <div><div class="t">Source</div><div class="d">URL</div></div>
+        </div>
+        <div class="split-s">
+          <span class="wizard-dot">2</span>
+          <div><div class="t">Identity</div><div class="d">Type · arch</div></div>
+        </div>
+      </aside>
+      <section class="split-stage">
+        <div class="split-head">
+          <h2>Download Image</h2>
+          <p>Lands in this Device’s Library.</p>
+        </div>
+        <div class="split-body">
       <div class="form-group">
         <label>Name</label>
         <input v-model="dlName" placeholder="Ubuntu 24.04 Server" />
@@ -615,10 +648,12 @@ async function doDeleteImage() {
         </div>
       </div>
       <FormError v-if="dlError" :message="dlError" />
-      <div class="modal-actions">
+        </div>
+        <div class="split-foot">
         <AppButton @click="showDownload = false">Cancel</AppButton>
         <AppButton variant="primary" :disabled="dlLoading" :loading="dlLoading" loading-text="Starting..." @click="startDownload">Download</AppButton>
-      </div>
+        </div>
+      </section>
     </div>
   </div>
 

@@ -897,7 +897,23 @@ async function doDeleteNetwork() {
   </AppModal>
 
   <!-- Create/Edit Network Modal -->
-  <AppModal v-if="showCreate" :title="(editingId ? 'Edit' : 'Create') + ' Network'" @close="showCreate = false">
+  <AppModal
+    v-if="showCreate"
+    :title="(editingId ? 'Edit' : 'Create') + ' Network'"
+    subtitle="NAT is outbound only. Bridge gives each Workload a LAN address."
+    rail-title="Network"
+    @close="showCreate = false"
+  >
+    <template #rail>
+      <div class="split-s on">
+        <span class="wizard-dot active">1</span>
+        <div><div class="t">Mode</div><div class="d">NAT / Bridge</div></div>
+      </div>
+      <div class="split-s">
+        <span class="wizard-dot">2</span>
+        <div><div class="t">Addressing</div><div class="d">DNS · DHCP</div></div>
+      </div>
+    </template>
     <div v-if="formDeviceOptions.length > 0" class="form-group">
       <label>{{ DEVICE_LABEL }}</label>
       <AppSelect v-model="formHostId" :options="formDeviceOptions" :disabled="Boolean(editingId)" />

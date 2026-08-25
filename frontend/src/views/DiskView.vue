@@ -544,8 +544,24 @@ async function resizeDisk() {
   </div>
 
   <div v-if="showCreate" class="modal-overlay" @click.self="showCreate = false">
-    <div class="modal">
-      <h2>Create Disk</h2>
+    <div class="split-frame">
+      <aside class="split-rail">
+        <h3>Disk</h3>
+        <div class="split-s on">
+          <span class="wizard-dot active">1</span>
+          <div><div class="t">File</div><div class="d">Name · size</div></div>
+        </div>
+        <div class="split-s">
+          <span class="wizard-dot">2</span>
+          <div><div class="t">Location</div><div class="d">Directory</div></div>
+        </div>
+      </aside>
+      <section class="split-stage">
+        <div class="split-head">
+          <h2>Create Disk</h2>
+          <p>qcow2 is sparse. Raw is fully allocated.</p>
+        </div>
+        <div class="split-body">
       <div v-if="formDeviceOptions.length > 0" class="form-group">
         <label>{{ DEVICE_LABEL }}</label>
         <AppSelect v-model="formHostId" :options="formDeviceOptions" />
@@ -585,10 +601,12 @@ async function resizeDisk() {
         </div>
       </template>
       <FormError v-if="error" :message="error" />
-      <div class="modal-actions">
+        </div>
+        <div class="split-foot">
         <AppButton @click="showCreate = false">Cancel</AppButton>
         <AppButton variant="primary" :disabled="loading" @click="createDisk">{{ loading ? 'Creating...' : 'Create' }}</AppButton>
-      </div>
+        </div>
+      </section>
     </div>
   </div>
 

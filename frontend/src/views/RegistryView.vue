@@ -791,7 +791,23 @@ async function addRepo() {
   </template>
 
   <!-- Add Repo Modal -->
-  <AppModal v-if="showAddRepo" title="Add Repository" @close="showAddRepo = false">
+  <AppModal
+    v-if="showAddRepo"
+    title="Add Repository"
+    subtitle="A catalog URL your Home can sync."
+    rail-title="Source"
+    @close="showAddRepo = false"
+  >
+    <template #rail>
+      <div class="split-s on">
+        <span class="wizard-dot active">1</span>
+        <div><div class="t">Kind</div><div class="d">Templates / images</div></div>
+      </div>
+      <div class="split-s">
+        <span class="wizard-dot">2</span>
+        <div><div class="t">URL</div><div class="d">Catalog JSON</div></div>
+      </div>
+    </template>
     <div class="form-group">
       <label>Type</label>
       <div class="type-toggle">

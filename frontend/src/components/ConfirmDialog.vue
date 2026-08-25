@@ -11,18 +11,33 @@ const emit = defineEmits(['confirm', 'cancel'])
 
 <template>
   <div class="modal-overlay" @click.self="!loading && emit('cancel')">
-    <div class="modal" style="max-width:400px">
-      <h2>{{ title }}</h2>
-      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;line-height:1.5">{{ message }}</p>
-      <div class="modal-actions">
-        <button class="btn-ghost" :disabled="loading" @click="emit('cancel')">Cancel</button>
-        <button
-          class="btn-primary"
-          :style="danger ? 'background:var(--red);border-color:var(--red)' : ''"
-          :disabled="loading"
-          @click="emit('confirm')"
-        >{{ loading ? (confirmLabel || 'Confirm') + '...' : (confirmLabel || 'Confirm') }}</button>
-      </div>
+    <div class="split-frame split-narrow">
+      <section class="split-stage">
+        <div class="split-head">
+          <h2>{{ title }}</h2>
+        </div>
+        <div class="split-body">
+          <p class="split-warn">{{ message }}</p>
+        </div>
+        <div class="split-foot">
+          <button class="btn-ghost" :disabled="loading" @click="emit('cancel')">Cancel</button>
+          <button
+            :class="danger ? 'btn-danger' : 'btn-primary'"
+            :disabled="loading"
+            @click="emit('confirm')"
+          >{{ loading ? (confirmLabel || 'Confirm') + '...' : (confirmLabel || 'Confirm') }}</button>
+        </div>
+      </section>
     </div>
   </div>
 </template>
+
+<style scoped>
+.split-warn {
+  color: var(--amber);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 0;
+  margin: 0;
+}
+</style>
