@@ -133,7 +133,8 @@
               "groupAddresses": {
                 "type": "array",
                 "items": { "type": "string" }
-              }
+              },
+              "pciClass": { "type": ["string", "null"] }
             }
           }
         },

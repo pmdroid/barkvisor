@@ -77,11 +77,13 @@ import {
   memberNetworkForDetail,
   networksInventoryFetchPath,
   gpuInventoryFetchPath,
+  pciInventoryFetchPath,
   usbInventoryFetchPath,
 } from '../utils/editHome'
 import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
+import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
 import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
@@ -247,6 +249,9 @@ const usbLoading = ref(false)
 const hostGPUDevices = ref<HostGPUDevice[]>([])
 const showAttachGPU = ref(false)
 const gpuLoading = ref(false)
+const hostPCIDevices = ref<HostGPUDevice[]>([])
+const showAttachPCI = ref(false)
+const pciLoading = ref(false)
 
 const memberDisks = ref<Disk[]>([])
 const memberDiskUsages = ref<Record<string, DiskUsage>>({})
@@ -278,9 +283,13 @@ const gpuCaps = computed(() => (
 ))
 const gpuReady = computed(() => gpuPassthroughSupported(gpuCaps.value))
 const gpuExplanation = computed(() => gpuPassthroughExplanation(gpuCaps.value))
+const pciReady = computed(() => pciPassthroughSupported(gpuCaps.value))
 const singleGPUDisplay = computed(() => hostGPUDevices.value.length === 1)
 const hostGPUGroups = computed(() => groupGpusByVendor(hostGPUDevices.value))
-const attachedGPUGroups = computed(() => groupGpusByVendor(vm.value?.gpuDevices || []))
+const attachedDisplayGPUs = computed(() => (vm.value?.gpuDevices || []).filter((dev) => isDisplayPassthrough(dev.pciClass)))
+const attachedGPUGroups = computed(() => groupGpusByVendor(attachedDisplayGPUs.value))
+const attachedPCIDevices = computed(() => (vm.value?.gpuDevices || []).filter((dev) => !isDisplayPassthrough(dev.pciClass)))
+const hostPCIPickerDevices = computed(() => hostPCIDevices.value.filter((dev) => !isDisplayPciClass(dev.pciClass)))
 const editCpuMax = computed(() => {
   if (isMemberDetail.value) {
     const n = memberCaps.value?.hostCpuCount
@@ -346,6 +355,7 @@ function resetMemberInventory() {
   memberCaps.value = null
   hostUSBDevices.value = []
   hostGPUDevices.value = []
+  hostPCIDevices.value = []
 }
 
 async function fetchMemberInventory() {
@@ -810,6 +820,66 @@ async function gpuDetach(dev: GPUPassthroughDevice) {
     }
   } catch (e: any) { toast.error(apiErrorMessage(e)) }
   finally { gpuLoading.value = false }
+}
+
+async function fetchPCIDevices() {
+  if (isMemberDetail.value) {
+    const path = pciInventoryFetchPath(memberDevice.value)
+    if (!path) { hostPCIDevices.value = []; return }
+    try {
+      const { data } = await api.get<HostGPUDevice[]>(path)
+      hostPCIDevices.value = Array.isArray(data) ? data : []
+    } catch { hostPCIDevices.value = [] }
+    return
+  }
+  try {
+    const { data } = await api.get('/system/pci-devices')
+    hostPCIDevices.value = data
+  } catch { hostPCIDevices.value = [] }
+}
+
+async function pciAttach(dev: HostGPUDevice) {
+  pciLoading.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.attachGPU(device, vmId.value, dev.pciAddress)
+    } else {
+      await store.attachGPU(vmId.value, dev.pciAddress)
+      await store.fetchOne(vmId.value)
+    }
+    await fetchPCIDevices()
+    showAttachPCI.value = false
+    const label = dev.name || dev.pciAddress
+    if (vm.value?.state === 'running') {
+      toast.show(`PCI device "${label}" added — restart the VM to apply.`, { type: 'info' })
+    } else {
+      toast.success(`PCI device "${label}" attached`)
+    }
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
+  finally { pciLoading.value = false }
+}
+
+async function pciDetach(dev: GPUPassthroughDevice) {
+  pciLoading.value = true
+  try {
+    if (isMemberDetail.value) {
+      const device = memberDevice.value
+      if (!device || !canFetchDeviceWorkloads(device)) return
+      await homeWorkloads.detachGPU(device, vmId.value, dev.pciAddress)
+    } else {
+      await store.detachGPU(vmId.value, dev.pciAddress)
+      await store.fetchOne(vmId.value)
+    }
+    await fetchPCIDevices()
+    if (vm.value?.state === 'running') {
+      toast.show('PCI device removed — restart the VM to apply.', { type: 'info' })
+    } else {
+      toast.success('PCI device detached')
+    }
+  } catch (e: any) { toast.error(apiErrorMessage(e)) }
+  finally { pciLoading.value = false }
 }
 
 let pollInterval: number | undefined
@@ -1707,9 +1777,46 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               </td>
             </tr>
           </template>
-          <tr v-if="!(vm.gpuDevices || []).length">
+          <tr v-if="!attachedDisplayGPUs.length">
             <td colspan="3">
               <EmptyState title="No GPU attached" subtitle="Pass through a PCI GPU. Guest Ollama uses the card at 127.0.0.1:11434." />
+            </td>
+          </tr>
+        </DataTable>
+      </div>
+
+      <div v-if="pciReady" style="margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h2 style="font-size:16px;font-weight:700">PCI devices</h2>
+          <AppButton
+            size="sm"
+            icon="plus"
+            :disabled="isMemberDetail && !memberReachable"
+            @click="showAttachPCI = true; fetchPCIDevices()"
+          >Attach PCI device</AppButton>
+        </div>
+        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px">
+          Pass through a NIC, NVMe, or other PCIe device with vfio-pci. The host boot disk and only uplink cannot be attached.
+        </p>
+        <DataTable :columns="[{ key: 'pci', label: 'Device' }, { key: 'class', label: 'Class' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
+          <tr v-for="dev in attachedPCIDevices" :key="dev.pciAddress">
+            <td>
+              <div style="font-weight:500">{{ dev.label || dev.pciAddress }}</div>
+              <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }} {{ dev.vendorId }}:{{ dev.deviceId }}</div>
+            </td>
+            <td><span class="badge badge-gray">{{ pciClassLabel(dev.pciClass || '') }}</span></td>
+            <td>
+              <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
+              <div style="font-size:11px;color:var(--text-dim)">Group mates: {{ gpuGroupMatesLabel(dev.pciAddress, dev.groupAddresses) }}</div>
+            </td>
+            <td style="text-align:right">
+              <span v-if="!gpuDetachAllowed(vm?.state)" style="font-size:12px;color:var(--text-dim)">Stop the Workload to detach</span>
+              <AppButton v-else size="sm" variant="danger" :disabled="pciLoading || (isMemberDetail && !memberReachable)" @click="pciDetach(dev)">Detach</AppButton>
+            </td>
+          </tr>
+          <tr v-if="!attachedPCIDevices.length">
+            <td colspan="4">
+              <EmptyState title="No PCI device attached" subtitle="Pass through a host NIC, NVMe, or other PCIe function." />
             </td>
           </tr>
         </DataTable>
@@ -1822,6 +1929,43 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
         <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">GPU changes require a VM restart. Guest Ollama is {{ GUEST_OLLAMA_PATH }}.</p>
         <div class="modal-actions">
           <AppButton @click="showAttachGPU = false">Close</AppButton>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="pciReady && showAttachPCI" class="modal-overlay" @click.self="showAttachPCI = false">
+      <div class="modal">
+        <h2>Attach PCI device</h2>
+        <EmptyState v-if="hostPCIPickerDevices.length === 0" :title="isMemberDetail ? 'No PCI devices in an IOMMU group on that Device.' : 'No PCI devices in an IOMMU group on this Device.'" />
+        <DataTable v-else :columns="[{ key: 'pci', label: 'Device' }, { key: 'class', label: 'Class' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
+          <tr
+            v-for="dev in hostPCIPickerDevices"
+            :key="dev.pciAddress"
+            :style="dev.claimedByVMId || dev.attachable === false ? 'opacity:0.5' : ''"
+          >
+            <td>
+              <div style="font-weight:500">{{ dev.name }}</div>
+              <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }} {{ dev.vendorId }}:{{ dev.deviceId }}</div>
+              <div v-if="dev.claimedByVMId" style="font-size:11px;color:var(--red)">In use by {{ dev.claimedByVMName }}</div>
+              <div v-else-if="dev.attachable === false" style="font-size:11px;color:var(--text-dim)">{{ dev.excludedReason }}</div>
+              <div v-else-if="dev.inUseByHost" style="font-size:11px;color:var(--red)">{{ gpuHostOccupancyLabel(true) }}</div>
+            </td>
+            <td><span class="badge badge-gray">{{ pciClassLabel(dev.pciClass || '') }}</span></td>
+            <td>
+              <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
+              <div style="font-size:11px;color:var(--text-dim)">Group mates: {{ gpuGroupMatesLabel(dev.pciAddress, dev.groupAddresses) }}</div>
+            </td>
+            <td style="text-align:right">
+              <span v-if="dev.claimedByVMId" style="font-size:12px;color:var(--text-dim)">In use</span>
+              <span v-else-if="dev.attachable === false" style="font-size:12px;color:var(--text-dim)">Unavailable</span>
+              <span v-else-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to attach</span>
+              <AppButton v-else variant="primary" size="sm" :disabled="pciLoading" @click="pciAttach(dev)">Attach</AppButton>
+            </td>
+          </tr>
+        </DataTable>
+        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">PCI changes require a VM restart. The host boot disk and only uplink stay on the Device.</p>
+        <div class="modal-actions">
+          <AppButton @click="showAttachPCI = false">Close</AppButton>
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ struct SystemHostController: RouteCollection {
         system.get("usb", use: listUSBDevices)
         system.get("gpu-devices", use: listGPUDevices)
         system.get("gpu", use: listGPUDevices)
+        system.get("pci-devices", use: listPCIDevices)
     }
 
     @Sendable
@@ -126,33 +127,43 @@ struct SystemHostController: RouteCollection {
     func listGPUDevices(req: Vapor.Request) async throws -> [HostGPUDeviceResponse] {
         let hostDevices = GPUDeviceService.listDevices()
         let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
-        return hostDevices.map { dev in
-            let claim = GPUPassthroughService.claimedBy(host: dev, vms: allVMs)
-            var attachable = dev.attachable && claim == nil
-            var reason = dev.excludedReason
-            if claim != nil {
-                attachable = false
-                reason = reason ?? "GPU is attached to \(claim?.name ?? "another Workload")"
-            }
-            return HostGPUDeviceResponse(
-                id: dev.id,
-                pciAddress: dev.pciAddress,
-                iommuGroup: dev.iommuGroup,
-                vendorId: dev.vendorId,
-                deviceId: dev.deviceId,
-                name: dev.name,
-                driver: dev.driver,
-                vfioBound: dev.vfioBound,
-                inUseByHost: dev.inUseByHost,
-                attachable: attachable,
-                excludedReason: reason,
-                groupAddresses: dev.groupAddresses,
-                guestOllamaPath: dev.guestOllamaPath,
-                busy: claim != nil || dev.inUseByHost,
-                attachedToVmId: claim?.id,
-                claimedByVMId: claim?.id,
-                claimedByVMName: claim?.name,
-            )
+        return hostDevices.map { hostDeviceResponse(dev: $0, vms: allVMs) }
+    }
+
+    @Sendable
+    func listPCIDevices(req: Vapor.Request) async throws -> [HostGPUDeviceResponse] {
+        let hostDevices = GPUDeviceService.listPCIDevices()
+        let allVMs = try await req.db.read { db in try VM.fetchAll(db) }
+        return hostDevices.map { hostDeviceResponse(dev: $0, vms: allVMs) }
+    }
+
+    private func hostDeviceResponse(dev: HostGPUDevice, vms: [VM]) -> HostGPUDeviceResponse {
+        let claim = GPUPassthroughService.claimedBy(host: dev, vms: vms)
+        var attachable = dev.attachable && claim == nil
+        var reason = dev.excludedReason
+        if claim != nil {
+            attachable = false
+            reason = reason ?? "PCI device is attached to \(claim?.name ?? "another Workload")"
         }
+        return HostGPUDeviceResponse(
+            id: dev.id,
+            pciAddress: dev.pciAddress,
+            iommuGroup: dev.iommuGroup,
+            vendorId: dev.vendorId,
+            deviceId: dev.deviceId,
+            pciClass: dev.pciClass,
+            name: dev.name,
+            driver: dev.driver,
+            vfioBound: dev.vfioBound,
+            inUseByHost: dev.inUseByHost,
+            attachable: attachable,
+            excludedReason: reason,
+            groupAddresses: dev.groupAddresses,
+            guestOllamaPath: dev.guestOllamaPath,
+            busy: claim != nil || dev.inUseByHost,
+            attachedToVmId: claim?.id,
+            claimedByVMId: claim?.id,
+            claimedByVMName: claim?.name,
+        )
     }
 }

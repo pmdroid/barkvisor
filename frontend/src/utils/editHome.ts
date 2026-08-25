@@ -9,6 +9,7 @@ import {
   deviceGpuDevicesPath,
   deviceLogsPath,
   deviceNetworksPath,
+  devicePciDevicesPath,
   deviceUsbDevicesPath,
   deviceVmMetricsPath,
   isSelfDevice,
@@ -21,6 +22,7 @@ export {
   deviceLogsPath,
   deviceNetworksPath,
   deviceGpuDevicesPath,
+  devicePciDevicesPath,
   deviceUsbDevicesPath,
   deviceVmGpuDevicePath,
   deviceVmGpuPath,
@@ -68,6 +70,13 @@ export function gpuInventoryFetchPath(
 ): string | null {
   if (!device || !canEditMemberHardware(device)) return null
   return deviceGpuDevicesPath(device)
+}
+
+export function pciInventoryFetchPath(
+  device: DeviceApiTarget | null | undefined,
+): string | null {
+  if (!device || !canEditMemberHardware(device)) return null
+  return devicePciDevicesPath(device)
 }
 
 export function disksInventoryFetchPath(

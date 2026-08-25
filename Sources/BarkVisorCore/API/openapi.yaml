@@ -981,6 +981,23 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/pci-devices:
+    get:
+      tags: [evolving]
+      operationId: listPCIDevices
+      x-barkvisor-stability: evolving
+      summary: Host PCI devices in IOMMU groups (Linux VFIO)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostGPUDevice"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/usb:
     get:
       tags: [evolving]
@@ -3091,6 +3108,9 @@ components:
           type: array
           items:
             type: string
+        pciClass:
+          type: string
+          nullable: true
 
     AttachGPURequest:
       type: object
@@ -3114,6 +3134,9 @@ components:
           type: string
         deviceId:
           type: string
+        pciClass:
+          type: string
+          nullable: true
         name:
           type: string
         driver:
