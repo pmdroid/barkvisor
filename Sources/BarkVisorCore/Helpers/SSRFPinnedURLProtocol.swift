@@ -14,6 +14,8 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     static let allowedHostsHeader = "X-BarkVisor-SSRF-Allowed-Hosts"
     private static let maxRedirects = 16
     private var work: Task<Void, Never>?
+    private let finishLock = NSLock()
+    private var didFinish = false
 
     override class func canInit(with request: URLRequest) -> Bool {
         guard let scheme = request.url?.scheme?.lowercased() else { return false }
@@ -210,11 +212,21 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func notifyFinish() {
-        client?.urlProtocolDidFinishLoading(self)
+        finishOnce { client?.urlProtocolDidFinishLoading(self) }
     }
 
     private func fail(_ error: Error) {
-        client?.urlProtocol(self, didFailWithError: error)
+        finishOnce { client?.urlProtocol(self, didFailWithError: error) }
+    }
+
+    /// URLSession.async `data(from:)` resumes once. stopLoading after a pin reject
+    /// would otherwise fail again (Linux FoundationNetworking: continuation misuse / SIGILL).
+    private func finishOnce(_ body: () -> Void) {
+        finishLock.lock()
+        defer { finishLock.unlock() }
+        guard !didFinish else { return }
+        didFinish = true
+        body()
     }
 }
 
