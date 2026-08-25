@@ -291,6 +291,7 @@ function subscribeDownloading() {
         onError: () => {
           stream.stop()
           delete progressStreams[img.id]
+          delete dlProgress[img.id]
           imageStore.fetchAll().then(() => subscribeDownloading())
         },
       })
