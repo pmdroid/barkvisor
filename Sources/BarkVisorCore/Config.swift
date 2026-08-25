@@ -400,14 +400,22 @@ public enum Config {
         try LibrarySettings.resolvedDirectory(from: db)
     }
 
+    public static var disksDir: URL {
+        DiskSettings.defaultDirectory
+    }
+
+    public static func disksDir(from db: Database) throws -> URL {
+        try DiskSettings.resolvedDirectory(from: db)
+    }
+
     // MARK: - Directories
 
-    public static func ensureDirectories(imagesDir: URL? = nil) throws {
+    public static func ensureDirectories(imagesDir: URL? = nil, disksDir: URL? = nil) throws {
         let fm = FileManager.default
         var dirs = [
             dataDir,
             Self.imagesDir,
-            dataDir.appendingPathComponent("disks"),
+            Self.disksDir,
             dataDir.appendingPathComponent("cloud-init"),
             dataDir.appendingPathComponent("efivars"),
             dataDir.appendingPathComponent("monitor"),
@@ -421,6 +429,12 @@ public enum Config {
         if let imagesDir {
             let custom = imagesDir.standardizedFileURL
             if custom.path != Self.imagesDir.standardizedFileURL.path {
+                dirs.append(custom)
+            }
+        }
+        if let disksDir {
+            let custom = disksDir.standardizedFileURL
+            if custom.path != Self.disksDir.standardizedFileURL.path {
                 dirs.append(custom)
             }
         }

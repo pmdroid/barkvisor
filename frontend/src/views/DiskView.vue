@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '../api/errors'
-import { computed, onMounted, ref } from 'vue'
+import api from '../api/client'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { HomeDeviceHealthSnapshot, StorageSummary } from '../api/types'
+import type { DiskSettings, HomeDeviceHealthSnapshot, HostBlockDevice, StorageSummary } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import FolderPicker from '../components/FolderPicker.vue'
 import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
@@ -11,9 +13,10 @@ import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import FormError from '../components/ui/FormError.vue'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
+import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
-import { useDeviceDisksStore, type HomeDiskRow } from '../stores/deviceDisks'
+import { useDeviceDisksStore, type DiskWriteBody, type HomeDiskRow } from '../stores/deviceDisks'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDiskStore } from '../stores/disks'
 import { useToastStore } from '../stores/toast'
@@ -21,7 +24,12 @@ import { useVMStore } from '../stores/vms'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { guestResizeCommands } from '../utils/guestAgentInstall'
 import { formatBytes } from '../utils/format'
-import { canCallDeviceAPI, isSelfDevice } from '../utils/homeDeviceApi'
+import {
+  canCallDeviceAPI,
+  deviceBlockDevicesPath,
+  deviceDiskSettingsPath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { scopeRows } from '../utils/deviceScope'
 import { openWorkloadRow, workloadDetailPath } from '../utils/workloadDetail'
@@ -35,6 +43,7 @@ const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeDisks = useDeviceDisksStore()
 const homeWorkloads = useDeviceWorkloadsStore()
+const caps = useCapabilitiesStore()
 const { disks, usages: diskUsages, summary: storageSummary } = storeToRefs(diskStore)
 
 const showCreate = ref(false)
@@ -42,8 +51,20 @@ const formHostId = ref('')
 const newName = ref('')
 const newSizeGB = ref(10)
 const newFormat = ref('qcow2')
+const newDirectory = ref('')
+const useBlockDevice = ref(false)
+const blockDevicePath = ref('')
+const blockDevices = ref<HostBlockDevice[]>([])
+const showBlockConfirm = ref(false)
+const showCreatePicker = ref(false)
 const loading = ref(false)
 const error = ref('')
+
+const diskSettings = ref<DiskSettings | null>(null)
+const diskDirectoryDraft = ref('')
+const diskDirSaving = ref(false)
+const showDiskDirPicker = ref(false)
+const formDiskDirectory = ref('')
 
 const resizingRow = ref<HomeDiskRow | null>(null)
 const resizeSizeGB = ref(0)
@@ -51,7 +72,7 @@ const resizeLoading = ref(false)
 const resizeError = ref('')
 const resizeDone = ref(false)
 
-const deleteTarget = ref<{ id: string; name: string; hostId: string } | null>(null)
+const deleteTarget = ref<{ id: string; name: string; hostId: string; path: string } | null>(null)
 const deleting = ref(false)
 
 const useHomeUnion = computed(() => devicesStore.devices.length > 0)
@@ -140,6 +161,100 @@ function homeUnionDeviceBlocked(device: HomeDeviceHealthSnapshot | null): boolea
   return useHomeUnion.value && (!device || !canCallDeviceAPI(device))
 }
 
+function isLinuxOs(os: string | null | undefined): boolean {
+  return (os || '').toLowerCase() === 'linux'
+}
+
+function formIsLinux(): boolean {
+  const device = formDevice.value
+  return isLinuxOs(device?.platform?.os || (!useHomeUnion.value ? caps.platform : ''))
+}
+
+function isBlockDisk(row: HomeDiskRow): boolean {
+  return row.disk.path.startsWith('/dev/')
+}
+
+function mutateApiTarget(device: HomeDeviceHealthSnapshot | null) {
+  if (useHomeUnion.value && device) return device
+  return devicesStore.selfDevice ?? { hostId: devicesStore.selfDevice?.hostId || '', role: 'self' }
+}
+
+async function loadSelfDiskSettings() {
+  const device = devicesStore.selfDevice
+  const path = device ? deviceDiskSettingsPath(device) : '/system/disk/settings'
+  try {
+    const { data } = await api.get<DiskSettings>(path)
+    diskSettings.value = data
+    diskDirectoryDraft.value = data.diskDirectory
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not load disk directory'))
+  }
+}
+
+async function saveSelfDiskSettings() {
+  diskDirSaving.value = true
+  try {
+    const device = devicesStore.selfDevice
+    const path = device ? deviceDiskSettingsPath(device) : '/system/disk/settings'
+    const { data } = await api.put<DiskSettings>(path, {
+      diskDirectory: diskDirectoryDraft.value,
+    })
+    diskSettings.value = data
+    diskDirectoryDraft.value = data.diskDirectory
+    toast.success('Disk directory saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not save disk directory'))
+  } finally {
+    diskDirSaving.value = false
+  }
+}
+
+async function resetSelfDiskSettings() {
+  diskDirectoryDraft.value = ''
+  await saveSelfDiskSettings()
+}
+
+async function loadFormDiskContext() {
+  const device = formDevice.value
+  if (homeUnionDeviceBlocked(device)) {
+    formDiskDirectory.value = ''
+    blockDevices.value = []
+    return
+  }
+  const target = mutateApiTarget(device)
+  try {
+    const { data } = await api.get<DiskSettings>(deviceDiskSettingsPath(target))
+    formDiskDirectory.value = data.diskDirectory
+    if (!newDirectory.value) newDirectory.value = data.diskDirectory
+  } catch {
+    formDiskDirectory.value = ''
+  }
+  if (formIsLinux()) {
+    try {
+      const { data } = await api.get<HostBlockDevice[]>(deviceBlockDevicesPath(target))
+      blockDevices.value = data
+    } catch {
+      blockDevices.value = []
+    }
+  } else {
+    blockDevices.value = []
+    useBlockDevice.value = false
+    blockDevicePath.value = ''
+  }
+}
+
+const blockDeviceOptions = computed(() =>
+  blockDevices.value.map((dev) => ({
+    value: dev.path,
+    label: `${dev.path}${dev.model ? ` — ${dev.model}` : ''} (${formatBytes(dev.sizeBytes)})${dev.attachable ? '' : ` — ${dev.excludedReason || 'unavailable'}`}`,
+    disabled: !dev.attachable,
+  })),
+)
+
+const selectedBlockDevice = computed(() =>
+  blockDevices.value.find((dev) => dev.path === blockDevicePath.value) ?? null,
+)
+
 function usageFor(row: HomeDiskRow) {
   if (useHomeUnion.value) return homeDisks.usageFor(row.hostId, row.disk.id)
   return diskUsages.value[row.disk.id]
@@ -196,13 +311,23 @@ async function refreshHomeDisks() {
 }
 
 onMounted(() => {
+  void caps.fetchCapabilities()
   void refreshHomeDisks()
+  void loadSelfDiskSettings()
+})
+
+watch(formHostId, () => {
+  if (showCreate.value) void loadFormDiskContext()
 })
 
 function resetForm() {
   newName.value = ''
   newSizeGB.value = 10
   newFormat.value = 'qcow2'
+  newDirectory.value = diskSettings.value?.diskDirectory || formDiskDirectory.value || ''
+  useBlockDevice.value = false
+  blockDevicePath.value = ''
+  showBlockConfirm.value = false
   error.value = ''
   formHostId.value = defaultFormHostId()
 }
@@ -210,11 +335,39 @@ function resetForm() {
 function openCreate() {
   resetForm()
   showCreate.value = true
+  void loadFormDiskContext().then(() => {
+    if (!newDirectory.value) newDirectory.value = formDiskDirectory.value
+  })
 }
 
-async function createDisk() {
+function createBody(): DiskWriteBody | null {
+  if (!newName.value.trim()) { error.value = 'Name required'; return null }
+  if (useBlockDevice.value) {
+    if (!blockDevicePath.value) { error.value = 'Select a host block device'; return null }
+    if (selectedBlockDevice.value && !selectedBlockDevice.value.attachable) {
+      error.value = selectedBlockDevice.value.excludedReason || 'Block device is not attachable'
+      return null
+    }
+    return { name: newName.value.trim(), blockDevice: blockDevicePath.value }
+  }
+  const body: DiskWriteBody = {
+    name: newName.value.trim(),
+    sizeGB: newSizeGB.value,
+    format: newFormat.value,
+  }
+  const dir = newDirectory.value.trim()
+  if (dir && dir !== formDiskDirectory.value) body.directory = dir
+  return body
+}
+
+async function submitCreate() {
   error.value = ''
-  if (!newName.value.trim()) { error.value = 'Name required'; return }
+  const body = createBody()
+  if (!body) return
+  if (body.blockDevice && !showBlockConfirm.value) {
+    showBlockConfirm.value = true
+    return
+  }
   const device = formDevice.value
   if (homeUnionDeviceBlocked(device)) {
     error.value = 'Device is unreachable. Workloads on this Device keep running locally.'
@@ -222,11 +375,6 @@ async function createDisk() {
   }
   loading.value = true
   try {
-    const body = {
-      name: newName.value.trim(),
-      sizeGB: newSizeGB.value,
-      format: newFormat.value,
-    }
     if (useHomeUnion.value && device) {
       await homeDisks.create(device, body)
     } else {
@@ -234,13 +382,18 @@ async function createDisk() {
       await diskStore.fetchAll({ withUsage: true })
     }
     showCreate.value = false
+    showBlockConfirm.value = false
     resetForm()
   } catch (e: unknown) { error.value = apiErrorMessage(e) }
   finally { loading.value = false }
 }
 
+async function createDisk() {
+  await submitCreate()
+}
+
 function deleteDisk(row: HomeDiskRow) {
-  deleteTarget.value = { id: row.disk.id, name: row.disk.name, hostId: row.hostId }
+  deleteTarget.value = { id: row.disk.id, name: row.disk.name, hostId: row.hostId, path: row.disk.path }
 }
 
 async function doDeleteDisk() {
@@ -304,6 +457,32 @@ async function resizeDisk() {
     <AppButton variant="primary" icon="plus" @click="openCreate">Create Disk</AppButton>
   </div>
 
+  <div class="storage-summary" style="padding:16px 20px">
+    <div class="form-group" style="margin:0;max-width:720px">
+      <label>Default VM disk directory</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input
+          v-model="diskDirectoryDraft"
+          :disabled="diskDirSaving"
+          placeholder="/var/lib/barkvisor/disks"
+          style="flex:1"
+        />
+        <AppButton size="sm" :disabled="diskDirSaving" @click="showDiskDirPicker = true">Browse</AppButton>
+        <AppButton size="sm" variant="primary" :disabled="diskDirSaving" :loading="diskDirSaving" @click="saveSelfDiskSettings">Save</AppButton>
+        <AppButton size="sm" :disabled="diskDirSaving || diskSettings?.isDefault" @click="resetSelfDiskSettings">Reset</AppButton>
+      </div>
+      <p style="color:var(--text-dim);font-size:12px;margin:8px 0 0 0">
+        New disks on this {{ DEVICE_LABEL }} go here unless Create Disk picks another folder.
+      </p>
+    </div>
+  </div>
+  <FolderPicker
+    v-if="showDiskDirPicker"
+    :model-value="diskDirectoryDraft"
+    @update:model-value="diskDirectoryDraft = $event"
+    @close="showDiskDirPicker = false"
+  />
+
   <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
     {{ loadErrors[0] }}
   </p>
@@ -353,6 +532,7 @@ async function resizeDisk() {
   <DataTable v-else-if="homeRows.length > 0" :columns="[
     { key: 'name', label: 'Name' },
     { key: 'device', label: 'Device' },
+    { key: 'path', label: 'Path' },
     { key: 'format', label: 'Format' },
     { key: 'provisioned', label: 'Provisioned' },
     { key: 'used', label: 'Used on Disk' },
@@ -368,6 +548,7 @@ async function resizeDisk() {
           :reachable="row.reachable"
         />
       </td>
+      <td class="mono" :title="row.disk.path" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.disk.path }}</td>
       <td><span class="badge badge-gray">{{ row.disk.format }}</span></td>
       <td class="mono">{{ formatBytes(row.disk.sizeBytes) }}</td>
       <td class="mono">
@@ -395,7 +576,7 @@ async function resizeDisk() {
       </td>
       <td style="text-align:right">
         <div v-if="canMutate(row)" style="display:flex;gap:4px;justify-content:flex-end">
-          <AppButton size="sm" @click="openResize(row)">Resize</AppButton>
+          <AppButton v-if="!isBlockDisk(row)" size="sm" @click="openResize(row)">Resize</AppButton>
           <AppButton v-if="!row.disk.vmId" size="sm" @click="deleteDisk(row)">Delete</AppButton>
         </div>
       </td>
@@ -410,14 +591,34 @@ async function resizeDisk() {
         <AppSelect v-model="formHostId" :options="formDeviceOptions" />
       </div>
       <div class="form-group"><label>Name</label><input v-model="newName" placeholder="data-disk" /></div>
-      <div class="form-group"><label>Size (GB)</label><input v-model.number="newSizeGB" type="number" min="1" /></div>
-      <div class="form-group">
-        <label>Format</label>
-        <AppSelect v-model="newFormat">
-          <option value="qcow2">QCOW2 (sparse, supports snapshots)</option>
-          <option value="raw">Raw (best I/O performance, full allocation)</option>
-        </AppSelect>
+      <label v-if="formIsLinux()" class="form-group" style="display:flex;gap:8px;align-items:center">
+        <input v-model="useBlockDevice" type="checkbox" style="width:16px;height:16px" />
+        Use host block device
+      </label>
+      <div v-if="useBlockDevice && formIsLinux()" class="form-group">
+        <label>Block device</label>
+        <AppSelect v-model="blockDevicePath" :options="blockDeviceOptions" placeholder="Select a device" />
+        <p style="color:var(--text-dim);font-size:12px;margin:8px 0 0 0">
+          Attaches the device as a raw disk. The host must not be using it.
+        </p>
       </div>
+      <template v-else>
+        <div class="form-group"><label>Size (GB)</label><input v-model.number="newSizeGB" type="number" min="1" /></div>
+        <div class="form-group">
+          <label>Format</label>
+          <AppSelect v-model="newFormat">
+            <option value="qcow2">QCOW2 (sparse, supports snapshots)</option>
+            <option value="raw">Raw (best I/O performance, full allocation)</option>
+          </AppSelect>
+        </div>
+        <div class="form-group">
+          <label>Location</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input v-model="newDirectory" :placeholder="formDiskDirectory || 'Default disk directory'" style="flex:1" />
+            <AppButton v-if="!useHomeUnion || isSelfDevice(formDevice || { hostId: '', role: 'self' })" size="sm" @click="showCreatePicker = true">Browse</AppButton>
+          </div>
+        </div>
+      </template>
       <FormError v-if="error" :message="error" />
       <div class="modal-actions">
         <AppButton @click="showCreate = false">Cancel</AppButton>
@@ -466,15 +667,33 @@ async function resizeDisk() {
     </div>
   </div>
 
+  <FolderPicker
+    v-if="showCreatePicker"
+    :model-value="newDirectory"
+    @update:model-value="newDirectory = $event"
+    @close="showCreatePicker = false"
+  />
+
+  <ConfirmDialog
+    v-if="showBlockConfirm"
+    title="Attach host block device"
+    :message="`Pass ${blockDevicePath} through to a VM as a raw disk? The host must not be using this device. BarkVisor will not format or wipe it.`"
+    confirm-label="Attach"
+    :danger="true"
+    :loading="loading"
+    @confirm="submitCreate"
+    @cancel="showBlockConfirm = false"
+  />
+
   <ConfirmDialog
     v-if="deleteTarget"
     title="Delete Disk"
-    :message="`Delete disk &quot;${deleteTarget.name}&quot;? The disk file will be permanently removed.`"
+    :message="deleteTarget.path.startsWith('/dev/') ? `Remove disk &quot;${deleteTarget.name}&quot;? The host block device is not wiped.` : `Delete disk &quot;${deleteTarget.name}&quot;? The disk file will be permanently removed.`"
     confirm-label="Delete"
     :danger="true"
     :loading="deleting"
-    @confirm="doDeleteDisk"
     @cancel="deleteTarget = null"
+    @confirm="doDeleteDisk"
   />
 </template>
 

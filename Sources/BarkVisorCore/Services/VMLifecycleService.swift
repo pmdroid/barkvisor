@@ -54,8 +54,15 @@ public enum VMLifecycleService {
         try await insertVMAndDisk(vm: vm, disk: bootDisk.newDisk, cloudInitPath: cloudInitPath, db: db)
 
         if bootDisk.isCloudImageMode {
+            let destPath = bootDisk.newDisk.map { URL(fileURLWithPath: $0.path) }
+                ?? DiskSettings.fileURL(
+                    id: bootDisk.diskID,
+                    format: "qcow2",
+                    directory: DiskSettings.defaultDirectory,
+                )
             let taskID = try await submitProvisioningTask(
                 vmID: vmID, params: params, diskID: bootDisk.diskID,
+                destPath: destPath,
                 cloudImagePath: bootDisk.cloudImagePath ?? "", db: db, backgroundTasks: backgroundTasks,
             )
             return .provisioning(taskID: taskID, vm: vm)
@@ -293,7 +300,8 @@ extension VMLifecycleService {
         }
 
         let id = UUID().uuidString
-        let diskPath = Config.dataDir.appendingPathComponent("disks/\(id).qcow2")
+        let disksDir = try await db.read { try DiskSettings.resolvedDirectory(from: $0) }
+        let diskPath = DiskSettings.fileURL(id: id, format: "qcow2", directory: disksDir)
         let estimatedSize = Int64(params.diskSizeGB ?? 20) * 1_024 * 1_024 * 1_024
 
         let disk = Disk(
@@ -336,7 +344,8 @@ extension VMLifecycleService {
         }
 
         let id = UUID().uuidString
-        let diskPath = Config.dataDir.appendingPathComponent("disks/\(id).qcow2")
+        let disksDir = try await db.read { try DiskSettings.resolvedDirectory(from: $0) }
+        let diskPath = DiskSettings.fileURL(id: id, format: "qcow2", directory: disksDir)
         try DiskService.createBlank(path: diskPath, sizeGB: diskSizeGB)
         let diskSize = Int64(diskSizeGB) * 1_024 * 1_024 * 1_024
 
@@ -461,7 +470,7 @@ extension VMLifecycleService {
             }
         } catch {
             Log.vm.error("VM creation failed during DB insert: \(error)")
-            if let disk {
+            if let disk, !DiskSettings.isHostDevicePath(disk.path) {
                 try? FileManager.default.removeItem(atPath: disk.path)
             }
             if let ciPath = cloudInitPath {
@@ -476,13 +485,14 @@ extension VMLifecycleService {
         vmID: String,
         params: CreateVMParams,
         diskID: String,
+        destPath: URL,
         cloudImagePath: String,
         db: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
     ) async throws -> String {
         let taskID = "disk-clone:\(vmID)"
         let capturedDiskSizeGB = params.diskSizeGB
-        let diskPath = Config.dataDir.appendingPathComponent("disks/\(diskID).qcow2")
+        let diskPath = destPath
         let sshKeys = params.cloudInit?.sshAuthorizedKeys?.filter { !$0.isEmpty } ?? []
         let userData = params.cloudInit?.userData?.trimmingCharacters(in: .whitespacesAndNewlines)
         let vmName = params.name
