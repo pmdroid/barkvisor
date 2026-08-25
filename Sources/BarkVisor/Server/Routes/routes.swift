@@ -113,6 +113,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
     try protected.register(collection: SystemBridgeController())
     try protected.register(collection: SystemVirtioWinController(imageDownloader: deps.imageDownloader))
     try protected.register(collection: LibrarySettingsController())
+    try protected.register(collection: DiskSettingsController())
     try protected.register(collection: RemoteAccessController())
 
     try protected.register(

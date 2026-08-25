@@ -345,11 +345,15 @@ public enum QEMUBuilder {
         ]
     }
 
+    package static func diskCacheMode(path: String) -> String {
+        DiskSettings.isHostDevicePath(path) ? "none" : "writeback"
+    }
+
     private static func bootDiskArgs(disk: Disk, windows: Bool, diskFirst: Bool) -> [String] {
         let diskBootIndex = diskFirst ? 0 : 1
         let driveArgs = [
             "-drive",
-            "file=\(disk.path),format=\(disk.format),if=none,id=\(QEMUDeviceNames.bootDrive),cache=writeback",
+            "file=\(disk.path),format=\(disk.format),if=none,id=\(QEMUDeviceNames.bootDrive),cache=\(diskCacheMode(path: disk.path))",
         ]
         let boot = QEMUDeviceNames.bootDrive
         let deviceType = windows ? "nvme,drive=\(boot),serial=boot" : "virtio-blk-pci,drive=\(boot)"
@@ -428,7 +432,7 @@ public enum QEMUBuilder {
             let sanitizedFormat = try sanitizeQEMUArg(extraDisk.format, label: "Additional disk format")
             args += [
                 "-drive",
-                "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=writeback,id=\(QEMUDeviceNames.extraDrive(i))",
+                "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=\(diskCacheMode(path: sanitizedPath)),id=\(QEMUDeviceNames.extraDrive(i))",
             ]
         }
         return args

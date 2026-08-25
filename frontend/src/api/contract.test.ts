@@ -59,6 +59,8 @@ describe('API contract (PAS-78)', () => {
       '/api/system/gpu-devices',
       '/api/system/pci-devices',
       '/api/system/library/settings',
+      '/api/system/disk/settings',
+      '/api/system/block-devices',
       '/api/system/remote-access',
       '/api/home/settings/remote-access',
       '/api/vms/{id}/usb',

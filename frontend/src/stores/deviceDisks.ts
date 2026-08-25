@@ -18,8 +18,10 @@ import { asArray, createHomeInventory, homeUnionRows, pickHostValue } from './ho
 
 export type DiskWriteBody = {
   name: string
-  sizeGB: number
-  format: string
+  sizeGB?: number
+  format?: string
+  directory?: string
+  blockDevice?: string
 }
 
 export type HomeDiskRow = {

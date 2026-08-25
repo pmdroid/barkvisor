@@ -36,6 +36,11 @@ struct ConfigTests {
         #expect(LibrarySettings.defaultDirectory.path == Config.imagesDir.path)
     }
 
+    @Test func `default disks dir is under data dir`() {
+        #expect(Config.disksDir.path == Config.dataDir.appendingPathComponent("disks").path)
+        #expect(DiskSettings.defaultDirectory.path == Config.disksDir.path)
+    }
+
     @Test func `backup retention days default`() {
         let days = Config.backupRetentionDays
         #expect(days > 0)
