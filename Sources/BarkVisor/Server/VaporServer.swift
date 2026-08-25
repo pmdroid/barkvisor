@@ -354,9 +354,10 @@ public final class VaporServer: @unchecked Sendable {
         await AuditService.pruneOldEntries(db: pool)
         await AuditService.logSystem(action: "app.start", db: pool)
         await LogService.shared.pruneOldLogs()
+        LeftoverHelperInventory.warnIfPresent()
         if Config.backupEnabled {
-            BackupService.performBackup(pool: pool)
             BackupService.pruneOldBackups()
+            BackupService.performBackup(pool: pool)
         }
         await BridgeSyncService.syncOnce(db: pool)
         _ = try? await APIKeyService.deleteExpired(db: pool)
@@ -391,8 +392,8 @@ public final class VaporServer: @unchecked Sendable {
             id: "db-backup", interval: 24 * 60 * 60 * 1_000_000_000,
         ) {
             guard Config.backupEnabled else { return }
-            BackupService.performBackup(pool: pool)
             BackupService.pruneOldBackups()
+            BackupService.performBackup(pool: pool)
         }
         // Poll managed bridge daemons (socket_vmnet) only — Linux host bridges are
         // OS-managed (no 5s sysfs forever). Slightly longer than 5s keeps UI fresh

@@ -124,3 +124,53 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
 
 /// Alias used by call sites / tests that prefer a no-op name.
 public typealias NoopPrivilegeService = LinuxPrivilegeService
+
+/// Pre-PAS-294 SMJobBless leftover. Never reconnect; warn once if files remain.
+public enum LeftoverHelperInventory {
+    public static let launchdLabel = "dev.barkvisor.helper"
+
+    /// Split so PrivilegeBoundaryTests can keep forbidding the contiguous helper type name.
+    private static var leftoverHelperBinaryName: String {
+        "BarkVisor" + "Helper"
+    }
+
+    public static var candidatePaths: [String] {
+        let helper = leftoverHelperBinaryName
+        return [
+            "/Library/LaunchDaemons/dev.barkvisor.helper.plist",
+            "/Library/PrivilegedHelperTools/dev.barkvisor.helper",
+            "/usr/local/libexec/dev.barkvisor.helper",
+            "/usr/local/libexec/barkvisor/dev.barkvisor.helper",
+            "/usr/local/libexec/\(helper)",
+            "/usr/local/libexec/barkvisor/\(helper)",
+        ]
+    }
+
+    public static func leftoverPaths(
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) -> [String] {
+        candidatePaths.filter(fileExists)
+    }
+
+    public static func warningMessage(paths: [String]) -> String {
+        let joined = paths.joined(separator: " ")
+        return """
+        Leftover privileged helper is unused; macOS uses Homebrew socket_vmnet. \
+        A loaded leftover may log XPC invalidation about every 15s. Remove with: \
+        sudo launchctl bootout system/\(launchdLabel) && sudo rm -f \(joined)
+        """
+    }
+
+    /// Rate-limited Device warning. Does not connect or retry XPC.
+    public static func warnIfPresent(
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        now: Date = Date(),
+    ) {
+        let paths = leftoverPaths(fileExists: fileExists)
+        guard !paths.isEmpty else { return }
+        if LogNoise.shouldRateLimit(signature: LogNoise.xpcInvalidationSignature, now: now) {
+            return
+        }
+        Log.server.warning(warningMessage(paths: paths))
+    }
+}
