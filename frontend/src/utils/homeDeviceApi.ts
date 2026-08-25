@@ -195,6 +195,14 @@ export function deviceDiskSummaryPath(device: DeviceApiTarget): string {
   return `${deviceDisksPath(device)}/summary`
 }
 
+export function deviceDiskSettingsPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/disk/settings')
+}
+
+export function deviceBlockDevicesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/block-devices')
+}
+
 export function deviceNetworksPath(device: DeviceApiTarget): string {
   return devicePath(device, '/networks')
 }

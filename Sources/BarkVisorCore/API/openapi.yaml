@@ -1046,6 +1046,57 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/disk/settings:
+    get:
+      tags: [evolving]
+      operationId: getDiskSettings
+      x-barkvisor-stability: evolving
+      summary: Default directory used for new VM disk files
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiskSettings"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: updateDiskSettings
+      x-barkvisor-stability: evolving
+      summary: Set the default VM disk directory (new files only; existing disks are not migrated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiskSettingsRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiskSettings"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/block-devices:
+    get:
+      tags: [evolving]
+      operationId: listBlockDevices
+      x-barkvisor-stability: evolving
+      summary: Linux host block devices that can be attached as raw VM disks. Empty on macOS.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostBlockDevice"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/remote-access:
     get:
       tags: [evolving]
@@ -2825,14 +2876,21 @@ components:
 
     CreateDiskRequest:
       type: object
-      required: [name, sizeGB]
+      required: [name]
       properties:
         name:
           type: string
         sizeGB:
           type: integer
+          description: Required for file-backed disks. Ignored when blockDevice is set.
         format:
           type: string
+        directory:
+          type: string
+          description: Absolute directory for this disk file. Defaults to the configured disk directory.
+        blockDevice:
+          type: string
+          description: Linux host block device path such as /dev/sdb. Rejected on macOS.
 
     ResizeDiskRequest:
       type: object
@@ -3301,6 +3359,48 @@ components:
           type: string
           nullable: true
           description: Paired Device host id, or empty to clear (internet only)
+
+    DiskSettings:
+      type: object
+      additionalProperties: false
+      required: [diskDirectory, isDefault]
+      properties:
+        diskDirectory:
+          type: string
+          description: Resolved directory used for new VM disk files
+        isDefault:
+          type: boolean
+          description: True when the path is the default `{dataDir}/disks`
+
+    DiskSettingsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        diskDirectory:
+          type: string
+          nullable: true
+          description: Absolute writable path, or empty to reset to `{dataDir}/disks`
+
+    HostBlockDevice:
+      type: object
+      additionalProperties: false
+      required: [path, name, sizeBytes, attachable]
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        model:
+          type: string
+          nullable: true
+        attachable:
+          type: boolean
+        excludedReason:
+          type: string
+          nullable: true
 
     TailnetInfo:
       type: object

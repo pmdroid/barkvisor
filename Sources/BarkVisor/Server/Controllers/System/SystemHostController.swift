@@ -13,6 +13,7 @@ struct SystemHostController: RouteCollection {
         system.get("usb", use: listUSBDevices)
         system.get("gpu-devices", use: listGPUDevices)
         system.get("gpu", use: listGPUDevices)
+        system.get("block-devices", use: listBlockDevices)
     }
 
     @Sendable
@@ -29,10 +30,13 @@ struct SystemHostController: RouteCollection {
         // Resolve symlinks and canonicalize to prevent traversal via symlinks or ../
         let resolvedPath = (rawPath as NSString).resolvingSymlinksInPath
 
-        let libraryRoot = try await req.db.read { db in
-            try LibrarySettings.resolvedDirectory(from: db).path
+        let extraRoots = try await req.db.read { db in
+            [
+                try LibrarySettings.resolvedDirectory(from: db).path,
+                try DiskSettings.resolvedDirectory(from: db).path,
+            ]
         }
-        guard DirectoryBrowser.isAllowed(resolvedPath, extraRoots: [libraryRoot]) else {
+        guard DirectoryBrowser.isAllowed(resolvedPath, extraRoots: extraRoots) else {
             throw Abort(.forbidden, reason: "Access denied: path is outside allowed directories")
         }
 
@@ -48,7 +52,7 @@ struct SystemHostController: RouteCollection {
         // Parent directory (only if still within allowed roots)
         if resolvedPath != "/" {
             let parent = (resolvedPath as NSString).deletingLastPathComponent
-            if DirectoryBrowser.isAllowed(parent, extraRoots: [libraryRoot]) {
+            if DirectoryBrowser.isAllowed(parent, extraRoots: extraRoots) {
                 entries.append(BrowseEntry(name: "..", path: parent, isDirectory: true))
             }
         }
@@ -116,6 +120,24 @@ struct SystemHostController: RouteCollection {
                 attachedToVmId: claim?.id,
                 claimedByVMId: claim?.id,
                 claimedByVMName: claim?.name,
+            )
+        }
+    }
+
+    @Sendable
+    func listBlockDevices(req: Vapor.Request) async throws -> [HostBlockDeviceResponse] {
+        let hostDevices = BlockDeviceService.listDevices()
+        let disks = try await req.db.read { db in try Disk.fetchAll(db) }
+        let claimed = Set(disks.map(\.path))
+        return hostDevices.map { dev in
+            let busy = claimed.contains(dev.path)
+            return HostBlockDeviceResponse(
+                path: dev.path,
+                name: dev.name,
+                sizeBytes: dev.sizeBytes,
+                model: dev.model,
+                attachable: dev.attachable && !busy,
+                excludedReason: busy ? "Already attached as a VM disk" : dev.excludedReason,
             )
         }
     }

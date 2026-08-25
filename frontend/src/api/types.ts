@@ -294,6 +294,20 @@ export interface Disk {
   createdAt: string
 }
 
+export interface DiskSettings {
+  diskDirectory: string
+  isDefault: boolean
+}
+
+export interface HostBlockDevice {
+  path: string
+  name: string
+  sizeBytes: number
+  model?: string | null
+  attachable: boolean
+  excludedReason?: string | null
+}
+
 export interface DiskUsage {
   virtualSizeBytes: number
   actualSizeBytes: number
