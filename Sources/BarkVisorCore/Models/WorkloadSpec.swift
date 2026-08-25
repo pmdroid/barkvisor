@@ -265,6 +265,7 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
     public var deviceId: String
     public var label: String?
     public var groupAddresses: [String]
+    public var pciClass: String?
 
     public init(
         pciAddress: String,
@@ -273,6 +274,7 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
         deviceId: String,
         label: String? = nil,
         groupAddresses: [String] = [],
+        pciClass: String? = nil,
     ) {
         let stored = GPUPassthroughDevice(
             pciAddress: pciAddress,
@@ -281,6 +283,7 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
             deviceId: deviceId,
             label: label,
             groupAddresses: groupAddresses,
+            pciClass: pciClass,
         )
         self.pciAddress = stored.pciAddress
         self.iommuGroup = stored.iommuGroup
@@ -288,10 +291,11 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
         self.deviceId = stored.deviceId
         self.label = stored.label
         self.groupAddresses = stored.groupAddresses
+        self.pciClass = stored.pciClass
     }
 
     enum CodingKeys: String, CodingKey {
-        case pciAddress, iommuGroup, vendorId, deviceId, label, groupAddresses
+        case pciAddress, iommuGroup, vendorId, deviceId, label, groupAddresses, pciClass
     }
 
     public init(from decoder: Decoder) throws {
@@ -303,6 +307,7 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
             deviceId: c.decode(String.self, forKey: .deviceId),
             label: c.decodeIfPresent(String.self, forKey: .label),
             groupAddresses: c.decodeIfPresent([String].self, forKey: .groupAddresses) ?? [],
+            pciClass: c.decodeIfPresent(String.self, forKey: .pciClass),
         )
         pciAddress = stored.pciAddress
         iommuGroup = stored.iommuGroup
@@ -310,6 +315,7 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
         deviceId = stored.deviceId
         label = stored.label
         groupAddresses = stored.groupAddresses
+        pciClass = stored.pciClass
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -320,6 +326,7 @@ public struct WorkloadGPUDevice: Codable, Equatable, Sendable {
         try c.encode(deviceId, forKey: .deviceId)
         try c.encodeIfPresent(label, forKey: .label)
         try c.encode(groupAddresses, forKey: .groupAddresses)
+        try c.encodeIfPresent(pciClass, forKey: .pciClass)
     }
 }
 

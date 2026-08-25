@@ -165,6 +165,15 @@ public enum PlatformCapabilities {
         }
     }
 
+    /// Throw when Linux VFIO PCI passthrough (any class) is not ready.
+    public static func requireVFIOPassthrough() throws {
+        let facts = VFIOProbe.live()
+        guard VFIOProbe.vfioSupported(os: PlatformHost.platformName, facts: facts), facts.kvmDevice
+        else {
+            throw BarkVisorError.unsupportedFeature(.gpuPassthrough)
+        }
+    }
+
     /// Whether a guest/workload arch label is compatible with this host.
     ///
     /// Labels are normalized the same way as ``hostArch`` (`arm64` / `x86_64`).

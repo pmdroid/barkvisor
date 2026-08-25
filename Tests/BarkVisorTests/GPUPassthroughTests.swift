@@ -44,6 +44,10 @@ struct GPUPassthroughTests {
             vfioDevice: vfioDev.path,
             kvmDevice: kvm.path,
         )
+        try writePCIDevice(
+            groups: groups, group: "21", bdf: "0000:03:00.0", pciClass: "0x020000\n",
+            vendor: "0x8086\n", device: "0x15f3\n", driver: "igc",
+        )
         let listed = GPUDeviceService.listDevices(from: paths)
         #expect(listed.count == 1)
         #expect(listed[0].pciAddress == "0000:01:00.0")
@@ -53,6 +57,16 @@ struct GPUPassthroughTests {
         #expect(listed[0].guestOllamaPath == GPUPassthroughService.guestOllamaPath)
         #expect(listed[0].inUseByHost)
         #expect(listed[0].excludedReason == GPUPassthroughService.hostGuestExclusiveMessage)
+        #expect(listed[0].pciClass == "030000")
+
+        let pci = GPUDeviceService.listPCIDevices(from: paths)
+        #expect(pci.contains { $0.pciAddress == "0000:01:00.0" && $0.pciClass == "030000" })
+        let nic = pci.first { $0.pciAddress == "0000:03:00.0" }
+        #expect(nic?.pciClass == "020000")
+        #expect(nic?.name.contains("Network") == true)
+        #expect(nic?.attachable == true)
+        #expect(nic?.inUseByHost == true)
+        #expect(nic?.excludedReason == GPUPassthroughService.hostPCIExclusiveMessage)
     }
 
     @Test func `host occupancy is the gpu driver not an ollama probe`() {
@@ -124,6 +138,7 @@ struct GPUPassthroughTests {
             kvmDevice: root.appendingPathComponent("kvm").path,
         )
         #expect(GPUDeviceService.listDevices(from: paths).isEmpty)
+        #expect(GPUDeviceService.listPCIDevices(from: paths).isEmpty)
     }
 
     @Test func `qemu vfio args cover the iommu group`() throws {
@@ -138,6 +153,18 @@ struct GPUPassthroughTests {
         #expect(args == [
             "-device", "vfio-pci,host=0000:01:00.0,id=vfio-pt-0",
             "-device", "vfio-pci,host=0000:01:00.1,id=vfio-pt-1",
+        ])
+        let nic = WorkloadGPUDevice(
+            pciAddress: "0000:03:00.0",
+            iommuGroup: "21",
+            vendorId: "8086",
+            deviceId: "15f3",
+            groupAddresses: ["0000:03:00.0"],
+            pciClass: "020000",
+        )
+        let nicArgs = try QEMUBuilder.vfioPCIArgs(gpu: [nic], bind: false)
+        #expect(nicArgs == [
+            "-device", "vfio-pci,host=0000:03:00.0,id=vfio-pt-0",
         ])
     }
 
@@ -165,6 +192,7 @@ struct GPUPassthroughTests {
                 Issue.record("expected unsupportedFeature, got \(String(describing: err))")
             }
             #expect(GPUDeviceService.listDevices().isEmpty)
+            #expect(GPUDeviceService.listPCIDevices().isEmpty)
         #endif
     }
 
@@ -402,6 +430,119 @@ struct GPUPassthroughTests {
         GPUPassthroughService.releaseVFIO([stored], paths: paths, sysfs: fake.sysfs)
         #expect(fake.driver[gpu] != "vfio-pci")
         #expect(fake.driver[audio] != "vfio-pci")
+    }
+
+    @Test func `pci class labels and display detection`() {
+        #expect(GPUPassthroughService.pciClassLabel("0x020000") == "Network")
+        #expect(GPUPassthroughService.pciClassLabel("010802") == "Mass storage")
+        #expect(GPUPassthroughService.pciClassLabel("030000") == "Display")
+        #expect(GPUPassthroughService.pciClassLabel("") == "PCI")
+        let gpu = GPUPassthroughDevice(
+            pciAddress: "0000:01:00.0", iommuGroup: "1", vendorId: "10de", deviceId: "1234",
+        )
+        let nic = GPUPassthroughDevice(
+            pciAddress: "0000:03:00.0", iommuGroup: "2", vendorId: "8086", deviceId: "15f3",
+            pciClass: "020000",
+        )
+        #expect(GPUPassthroughService.isDisplayDevice(gpu))
+        #expect(!GPUPassthroughService.isDisplayDevice(nic))
+        #expect(GPUPassthroughService.hasDisplayGPU([nic, gpu]))
+        #expect(!GPUPassthroughService.hasDisplayGPU([nic]))
+    }
+
+    @Test func `boot disk and only uplink are not attachable`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "pci-safety-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let groups = root.appendingPathComponent("iommu_groups")
+        try writePCIDevice(
+            groups: groups, group: "4", bdf: "0000:04:00.0", pciClass: "0x010802\n",
+            vendor: "0x144d\n", device: "0xa808\n", driver: "nvme",
+        )
+        try writePCIDevice(
+            groups: groups, group: "5", bdf: "0000:05:00.0", pciClass: "0x020000\n",
+            vendor: "0x8086\n", device: "0x15f3\n", driver: "igc",
+        )
+        try writePCIDevice(
+            groups: groups, group: "6", bdf: "0000:00:01.0", pciClass: "0x060400\n",
+            vendor: "0x8086\n", device: "0x1234\n", driver: nil,
+        )
+        let vfioPci = root.appendingPathComponent("vfio-pci")
+        try FileManager.default.createDirectory(at: vfioPci, withIntermediateDirectories: true)
+        let vfioDev = root.appendingPathComponent("vfio")
+        try Data().write(to: vfioDev)
+        let kvm = root.appendingPathComponent("kvm")
+        try Data().write(to: kvm)
+        let paths = VFIOProbePaths(
+            iommuGroups: groups.path,
+            vfioPciDriver: vfioPci.path,
+            vfioModule: root.appendingPathComponent("missing-module").path,
+            vfioDevice: vfioDev.path,
+            kvmDevice: kvm.path,
+        )
+        let safety = PCIHostSafety(
+            bootDiskAddresses: ["0000:04:00.0"],
+            onlyUplinkAddresses: ["0000:05:00.0"],
+            uplinkAddresses: ["0000:05:00.0"],
+        )
+        let pci = GPUDeviceService.listPCIDevices(from: paths, safety: safety)
+        let nvme = pci.first { $0.pciAddress == "0000:04:00.0" }
+        let nic = pci.first { $0.pciAddress == "0000:05:00.0" }
+        let bridge = pci.first { $0.pciAddress == "0000:00:01.0" }
+        #expect(nvme?.attachable == false)
+        #expect(nvme?.excludedReason == GPUPassthroughService.bootDiskExclusionReason)
+        #expect(nic?.attachable == false)
+        #expect(nic?.excludedReason == GPUPassthroughService.onlyUplinkExclusionReason)
+        #expect(bridge?.attachable == false)
+        #expect(bridge?.excludedReason == GPUPassthroughService.pciBridgeExclusionReason)
+    }
+
+    @Test func `pci host safety parses boot disk and default route`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "pci-sysfs-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sysBlock = root.appendingPathComponent("block")
+        let nvme = sysBlock.appendingPathComponent("nvme0n1")
+        try FileManager.default.createDirectory(at: sysBlock, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            atPath: nvme.path,
+            withDestinationPath: "../../devices/pci0000:00/0000:00:1d.0/0000:04:00.0/nvme/nvme0/nvme0n1",
+        )
+        let sysNet = root.appendingPathComponent("net")
+        let eth = sysNet.appendingPathComponent("eth0")
+        try FileManager.default.createDirectory(at: eth, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            atPath: eth.appendingPathComponent("device").path,
+            withDestinationPath: "../../../0000:05:00.0",
+        )
+        let mounts = "/dev/nvme0n1p2 / ext4 rw,relatime 0 0\n"
+        let routes = """
+        Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
+        eth0 00000000 0100A8C0 0003 0 0 100 00000000 0 0 0
+        """
+        #expect(PCIHostSafety.rootMountSource(fromMounts: mounts) == "/dev/nvme0n1p2")
+        #expect(PCIHostSafety.diskName(fromDevicePath: "/dev/nvme0n1p2") == "nvme0n1")
+        #expect(PCIHostSafety.pciAddress(inSysfsPath: "0000:04:00.0/nvme/nvme0/nvme0n1") == "0000:04:00.0")
+        #expect(
+            PCIHostSafety.pciAddress(
+                inSysfsPath: "../../devices/pci0000:00/0000:00:1d.0/0000:04:00.0/nvme/nvme0/nvme0n1",
+            ) == "0000:04:00.0",
+        )
+        let facts = PCIHostSafety.from(
+            mounts: mounts,
+            routes: routes,
+            sysBlockRoot: sysBlock.path,
+            sysNetRoot: sysNet.path,
+            networkPCIAddresses: ["0000:05:00.0"],
+        )
+        #expect(facts.bootDiskAddresses.contains("0000:04:00.0"))
+        #expect(facts.onlyUplinkAddresses.contains("0000:05:00.0"))
     }
 
     @Test func `host ollama grant is skipped when a gpu is attached`() {

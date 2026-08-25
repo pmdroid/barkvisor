@@ -182,7 +182,7 @@ extension VMLifecycleService {
         }
 
         if let gpu = params.gpuDevices, !gpu.isEmpty {
-            try PlatformCapabilities.requireGPUPassthrough()
+            try PlatformCapabilities.requireVFIOPassthrough()
             let normalized = try persistableGPUDevices(gpu)
             try await db.read { db in
                 try assertGPUUnclaimed(normalized ?? gpu, db: db)

@@ -563,11 +563,11 @@ public enum QEMUBuilder {
 
     private static func gpuPassthroughArgs(spec: WorkloadSpec) throws -> [String] {
         guard !spec.spec.gpu.isEmpty else { return [] }
-        try PlatformCapabilities.requireGPUPassthrough()
+        try PlatformCapabilities.requireVFIOPassthrough()
         return try vfioPCIArgs(gpu: spec.spec.gpu, bind: true)
     }
 
-    /// `-device vfio-pci,host=BDF` for the GPU and the rest of its IOMMU group.
+    /// `-device vfio-pci,host=BDF` for the PCI device and the rest of its IOMMU group.
     public static func vfioPCIArgs(
         gpu: [WorkloadGPUDevice],
         bind: Bool,

@@ -6,6 +6,7 @@ public struct GPUPassthroughDevice: Codable, Equatable, Sendable {
     public let iommuGroup: String
     public let vendorId: String
     public let deviceId: String
+    public let pciClass: String?
     public let label: String?
     public let groupAddresses: [String]
 
@@ -16,12 +17,14 @@ public struct GPUPassthroughDevice: Codable, Equatable, Sendable {
         deviceId: String,
         label: String? = nil,
         groupAddresses: [String] = [],
+        pciClass: String? = nil,
     ) {
         let address = GPUPassthroughService.normalizePCIAddress(pciAddress)
         self.pciAddress = address
         self.iommuGroup = iommuGroup
         self.vendorId = GPUPassthroughService.normalizeHexId(vendorId)
         self.deviceId = GPUPassthroughService.normalizeHexId(deviceId)
+        self.pciClass = GPUPassthroughService.normalizePCIClass(pciClass)
         self.label = label
         let group = groupAddresses.map { GPUPassthroughService.normalizePCIAddress($0) }
         self.groupAddresses = group.isEmpty ? [address] : group

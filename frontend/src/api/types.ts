@@ -330,6 +330,7 @@ export interface GPUPassthroughDevice {
   iommuGroup: string
   vendorId: string
   deviceId: string
+  pciClass?: string | null
   label?: string | null
   groupAddresses?: string[]
 }
@@ -340,6 +341,7 @@ export interface HostGPUDevice {
   iommuGroup: string
   vendorId: string
   deviceId: string
+  pciClass?: string | null
   name: string
   driver?: string | null
   vfioBound?: boolean
