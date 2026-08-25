@@ -13,6 +13,17 @@ import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
 import api from '../api/client'
 import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
+import {
+  DASHBOARD_WIDGET_LABELS,
+  DASHBOARD_WIDGETS_STORAGE_KEY,
+  DEFAULT_WIDGETS,
+  isThisDeviceWidget,
+  isWidgetVisible,
+  parseDashboardLayout,
+  resetDashboardLayout,
+  toggleWidget,
+  type DashboardWidgetId,
+} from '../utils/dashboardWidgets'
 import { formatTemperatureC } from '../utils/format'
 import { scopeRows } from '../utils/deviceScope'
 import { hasKnownHealthCounts, homeWorkloadsRunningLine, resolveHealthCounts } from '../utils/homeDeviceHealth'
@@ -44,11 +55,46 @@ const homeWorkloads = useDeviceWorkloadsStore()
 const { disks, summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
 const healthSummary = ref<WorkloadHealthSummary | null>(null)
+const customizeOpen = ref(false)
 const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[] }>({
   timestamps: [],
   cpu: [],
   memory: [],
 })
+
+function loadLayout(): DashboardWidgetId[] {
+  try {
+    return parseDashboardLayout(localStorage.getItem(DASHBOARD_WIDGETS_STORAGE_KEY))
+  } catch {
+    return resetDashboardLayout()
+  }
+}
+
+const layout = ref<DashboardWidgetId[]>(loadLayout())
+
+function persistLayout(next: DashboardWidgetId[]) {
+  layout.value = next
+  try {
+    if (next.length === DEFAULT_WIDGETS.length && DEFAULT_WIDGETS.every((id, i) => id === next[i])) {
+      localStorage.removeItem(DASHBOARD_WIDGETS_STORAGE_KEY)
+    } else {
+      localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(next))
+    }
+  } catch {
+  }
+}
+
+function widgetOn(id: DashboardWidgetId): boolean {
+  return isWidgetVisible(layout.value, id)
+}
+
+function onToggleWidget(id: DashboardWidgetId) {
+  persistLayout(toggleWidget(layout.value, id))
+}
+
+function onResetWidgets() {
+  persistLayout(resetDashboardLayout())
+}
 
 const scopedDevices = computed(() => scopeRows(devices.devices, deviceScope.selectedHostId))
 const showThisDeviceStats = computed(() => {
@@ -56,6 +102,20 @@ const showThisDeviceStats = computed(() => {
   const selfId = devices.selfDevice?.hostId
   return Boolean(selfId && deviceScope.selectedHostId === selfId)
 })
+const anyThisDeviceWidget = computed(() =>
+  showThisDeviceStats.value && (['cpu', 'memory', 'storage', 'temperature'] as const).some((id) => widgetOn(id)),
+)
+const thisDeviceScope = computed(() => `This ${DEVICE_LABEL}`)
+const homeWidgetScope = computed(() => {
+  if (deviceScope.isAll) return HOME_LABEL
+  const row = scopedDevices.value[0]
+  return row ? devices.deviceLabel(row) : DEVICE_LABEL
+})
+
+function widgetScopeLabel(id: DashboardWidgetId): string {
+  if (isThisDeviceWidget(id)) return thisDeviceScope.value
+  return homeWidgetScope.value
+}
 
 const runningVMs = computed(() => store.vms.filter(v => v.state === 'running').length)
 
@@ -257,12 +317,36 @@ const memSparkData = computed(() => ({
           <span v-if="failedCount > 0"> · {{ failedCount }} failed</span>
         </p>
       </div>
-      <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
+      <div class="welcome-actions">
+        <AppButton size="sm" @click="customizeOpen = !customizeOpen">Customize</AppButton>
+        <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
+      </div>
     </div>
 
-    <div v-if="scopedDevices.length" class="section device-home">
+    <div v-if="customizeOpen" class="widget-panel">
+      <div class="widget-panel-head">
+        <span>Widgets</span>
+        <AppButton size="sm" @click="onResetWidgets">Reset</AppButton>
+      </div>
+      <div class="widget-checks">
+        <label v-for="id in DEFAULT_WIDGETS" :key="id" class="widget-check">
+          <input
+            type="checkbox"
+            :checked="widgetOn(id)"
+            @change="onToggleWidget(id)"
+          >
+          <span>{{ DASHBOARD_WIDGET_LABELS[id] }}</span>
+          <span class="widget-scope">{{ widgetScopeLabel(id) }}</span>
+        </label>
+      </div>
+    </div>
+
+    <div v-if="widgetOn('devices') && scopedDevices.length" class="section device-home">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h2>{{ HOME_LABEL }}</h2>
+        <h2>
+          {{ DEVICE_LABEL }}s
+          <span class="widget-scope">{{ homeWidgetScope }}</span>
+        </h2>
         <AppButton size="sm" @click="router.push('/devices')">View all</AppButton>
       </div>
       <div class="device-grid">
@@ -270,7 +354,8 @@ const memSparkData = computed(() => ({
       </div>
     </div>
 
-    <div v-if="healthSummary || devices.totals" class="health-strip">
+    <div v-if="widgetOn('health') && (healthSummary || devices.totals)" class="health-strip">
+      <span class="widget-scope health-scope">{{ homeWidgetScope }}</span>
       <div v-for="row in healthStrip" :key="row.key" class="health-chip" :class="row.key">
         <span class="health-chip-count">{{ row.count }}</span>
         <span class="health-chip-label">{{ row.label }}</span>
@@ -278,15 +363,15 @@ const memSparkData = computed(() => ({
     </div>
 
     <!-- Host Stats (this Device only; hidden when another Device is scoped) -->
-    <div class="stat-grid" v-if="stats && showThisDeviceStats">
-      <div class="dash-stat" style="border-left: 3px solid var(--accent)">
+    <div class="stat-grid" v-if="stats && anyThisDeviceWidget">
+      <div v-if="widgetOn('cpu')" class="dash-stat" style="border-left: 3px solid var(--accent)">
         <div class="dash-stat-spark" v-if="history.cpu.length > 1">
           <Line :data="cpuSparkData" :options="cpuSparkOpts" />
         </div>
         <div class="dash-stat-content">
           <div class="dash-stat-top">
             <span class="dash-stat-number">{{ stats.hostCpuPercent.toFixed(0) }}%</span>
-            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">device</span>
+            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">{{ thisDeviceScope }}</span>
           </div>
           <div class="dash-stat-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
@@ -295,7 +380,7 @@ const memSparkData = computed(() => ({
         </div>
       </div>
 
-      <div class="dash-stat" style="border-left: 3px solid var(--green)">
+      <div v-if="widgetOn('memory')" class="dash-stat" style="border-left: 3px solid var(--green)">
         <div class="dash-stat-spark" v-if="history.memory.length > 1">
           <Line :data="memSparkData" :options="memSparkOpts" />
         </div>
@@ -307,11 +392,12 @@ const memSparkData = computed(() => ({
           <div class="dash-stat-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19v-8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8"/><path d="M6 19h12"/><path d="M10 5h4v4h-4z"/></svg>
             Memory
+            <span class="widget-scope">{{ thisDeviceScope }}</span>
           </div>
         </div>
       </div>
 
-      <div class="dash-stat" style="border-left: 3px solid var(--blue)">
+      <div v-if="widgetOn('storage')" class="dash-stat" style="border-left: 3px solid var(--blue)">
         <div class="dash-stat-content">
           <div class="dash-stat-top">
             <span class="dash-stat-number">{{ totalDiskGB }} <small>GB</small></span>
@@ -320,31 +406,36 @@ const memSparkData = computed(() => ({
           <div class="dash-stat-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>
             Storage
+            <span class="widget-scope">{{ thisDeviceScope }}</span>
           </div>
           <div class="dash-stat-bar" v-if="storageSummary"><div class="dash-stat-bar-fill" :style="{ width: Math.min(storageSummary.totalActualBytes / storageSummary.volumeTotalBytes * 100, 100) + '%', background: 'var(--blue)' }" /></div>
         </div>
       </div>
 
-      <div class="dash-stat" style="border-left: 3px solid var(--amber)">
+      <div v-if="widgetOn('temperature')" class="dash-stat" style="border-left: 3px solid var(--amber)">
         <div class="dash-stat-content">
           <div class="dash-stat-top">
             <span class="dash-stat-number">{{ formatTemperatureC(stats.metrics?.temperatureC) ?? '—' }}</span>
             <span class="dash-stat-trend" :class="stats.metrics?.temperatureC == null ? '' : 'up'">
-              {{ stats.metrics?.temperatureC == null ? 'unavailable' : 'device' }}
+              {{ stats.metrics?.temperatureC == null ? 'unavailable' : thisDeviceScope }}
             </span>
           </div>
           <div class="dash-stat-label">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
             Temperature
+            <span class="widget-scope">{{ thisDeviceScope }}</span>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Recent VMs -->
-    <div class="section" v-if="recentVMs.length > 0">
+    <div class="section" v-if="widgetOn('recent') && recentVMs.length > 0">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <h2>Recent Machines</h2>
+        <h2>
+          Recent Machines
+          <span class="widget-scope">{{ homeWidgetScope }}</span>
+        </h2>
         <AppButton size="sm" @click="router.push('/vms')">View all</AppButton>
       </div>
       <DataTable :columns="[
@@ -416,6 +507,64 @@ const memSparkData = computed(() => ({
   color: var(--text-dim);
   font-size: 13px;
   margin-top: 4px;
+}
+.welcome-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.widget-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: -16px 0 28px;
+}
+.widget-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.widget-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.widget-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.widget-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  box-shadow: none;
+}
+.widget-scope {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+}
+h2 .widget-scope {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.health-scope {
+  align-self: center;
+  margin-right: 4px;
 }
 .health-strip {
   display: flex;
