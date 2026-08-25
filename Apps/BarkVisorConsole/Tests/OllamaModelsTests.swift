@@ -432,4 +432,64 @@ struct OllamaModelsTests {
         #expect(event.percent == 42)
         #expect(event.isTerminal == false)
     }
+
+    @Test func `install steps match ollama detect copy`() {
+        let mac = OllamaInstall.steps(os: "macos")
+        #expect(mac.count == 2)
+        #expect(mac[0].command == "brew install ollama")
+        #expect(mac[1].command == "brew services start ollama")
+        #expect(mac[0].title.contains("brew install ollama"))
+        #expect(OllamaInstall.hint(os: "macos") == "Install Ollama with Homebrew: brew install ollama")
+
+        let linux = OllamaInstall.steps(os: "linux")
+        #expect(linux.contains { $0.href == "https://ollama.com/download" })
+        #expect(linux[0].title.lowercased().contains("optional"))
+        #expect(linux[0].title.contains("distro package"))
+        #expect(OllamaInstall.hint(os: "linux").contains("https://ollama.com/download"))
+        #expect(OllamaInstall.os(platformOs: "Linux", installHint: nil) == "linux")
+        #expect(OllamaInstall.os(platformOs: nil, installHint: OllamaInstall.linuxHint) == "linux")
+        #expect(OllamaInstall.oses(installHints: [], platformOs: nil) == ["macos", "linux"])
+        #expect(OllamaInstall.oses(installHints: [OllamaInstall.linuxHint], platformOs: "macOS") == ["linux"])
+        #expect(OllamaInstall.canRecheck(rechecking: false, refreshInFlight: false))
+        #expect(!OllamaInstall.canRecheck(rechecking: true, refreshInFlight: false))
+        #expect(!OllamaInstall.canRecheck(rechecking: false, refreshInFlight: true))
+        #expect(
+            OllamaInstall.catalogHint(
+                devices: [
+                    OllamaDeviceStatus(
+                        hostId: "desk",
+                        displayName: "Desk",
+                        installed: false,
+                        reachable: false,
+                        stale: false,
+                        installHint: "brew install ollama",
+                    ),
+                ],
+                os: "linux",
+            ) == "brew install ollama",
+        )
+    }
+
+    @Test func `models view shows install steps not a one line hint`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/ModelsView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("OllamaInstall.steps"))
+        #expect(source.contains("Recheck"))
+        #expect(source.contains("refreshOllamaCatalog"))
+        #expect(source.contains("OllamaInstall.canRecheck"))
+        #expect(source.contains("model.ollamaRefreshing"))
+        #expect(!source.contains("description: Text(catalog.devices.first?.installHint"))
+        #expect(source.contains("installSection"))
+        if let flag = source.range(of: "rechecking = true"),
+           let task = source.range(of: "await model.refreshOllamaCatalog()")
+        {
+            #expect(flag.lowerBound < task.lowerBound)
+        } else {
+            Issue.record("Recheck must set rechecking before refreshOllamaCatalog")
+        }
+    }
 }

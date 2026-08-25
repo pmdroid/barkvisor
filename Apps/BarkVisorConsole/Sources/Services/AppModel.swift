@@ -142,6 +142,7 @@ final class AppModel {
     var homeLoaded = false
     var ollamaCatalog: OllamaHomeCatalog?
     var ollamaLoaded = false
+    var ollamaRefreshing = false
     var ollamaSettings: OllamaSettingsSnapshot?
     var remoteAccess: RemoteAccessStatus?
 
@@ -395,7 +396,10 @@ final class AppModel {
     }
 
     func refreshOllama() async {
+        guard !ollamaRefreshing else { return }
+        ollamaRefreshing = true
         ollamaLoaded = false
+        defer { ollamaRefreshing = false }
         do {
             ollamaCatalog = try await requireClient().ollamaCatalog()
             ollamaLoaded = true
@@ -1047,10 +1051,14 @@ final class AppModel {
         homeLoaded = false
         ollamaCatalog = nil
         ollamaSettings = nil
+        ollamaRefreshing = false
         remoteAccess = nil
     }
 
     func refreshOllamaCatalog() async {
+        guard !ollamaRefreshing else { return }
+        ollamaRefreshing = true
+        defer { ollamaRefreshing = false }
         guard let client else { return }
         if let catalog = await optional({ try await client.ollamaCatalog() }) {
             ollamaCatalog = catalog
