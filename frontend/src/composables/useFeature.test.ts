@@ -1,7 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
 import { useCapabilitiesStore } from '../stores/capabilities'
-import { networksUsableOnHost, useFeature } from './useFeature'
+import {
+  BRIDGE_MUTATION_ACTION_KEYS,
+  bridgeGuideActionKeys,
+  bridgeManagementMode,
+  networksUsableOnHost,
+  useFeature,
+} from './useFeature'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 const originalFetch = globalThis.fetch
 
@@ -99,5 +110,65 @@ describe('useFeature (PAS-38)', () => {
     ]
     expect(networksUsableOnHost(nets, true).map((n) => n.id)).toEqual(['n1', 'n2'])
     expect(networksUsableOnHost(nets, false).map((n) => n.id)).toEqual(['n1'])
+  })
+
+  test('bridgeManagementMode is linux-guide, macos-guide, or hidden', () => {
+    expect(bridgeManagementMode({
+      platform: 'Linux',
+      supportsHostBridgeManagement: true,
+    })).toBe('linux-guide')
+    expect(bridgeManagementMode({ platform: 'linux' })).toBe('linux-guide')
+    expect(bridgeManagementMode({
+      platform: 'macOS',
+      supportsManagedBridgeDaemon: false,
+    })).toBe('macos-guide')
+    expect(bridgeManagementMode({
+      platform: 'darwin',
+      supportsManagedBridgeDaemon: true,
+    })).toBe('macos-guide')
+    expect(bridgeManagementMode({ supportsManagedBridgeDaemon: true })).toBe('macos-guide')
+    expect(bridgeManagementMode({})).toBe('hidden')
+    expect(bridgeManagementMode({ platform: '', supportsHostBridgeManagement: false })).toBe('hidden')
+  })
+
+  test('macos-guide has no setup/start/stop/remove action keys', () => {
+    expect(bridgeGuideActionKeys('macos-guide')).toEqual([])
+    expect(bridgeGuideActionKeys('linux-guide')).toEqual([])
+    expect(bridgeGuideActionKeys('hidden')).toEqual([])
+    for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
+      expect(bridgeGuideActionKeys('macos-guide')).not.toContain(action)
+      expect(bridgeGuideActionKeys('linux-guide')).not.toContain(action)
+    }
+  })
+
+  test('NetworkView renders guides and does not invoke bridge mutations', () => {
+    const src = readFileSync(join(here, '../views/NetworkView.vue'), 'utf8')
+    expect(src).toContain('bridgeManagementMode')
+    expect(src).toContain('macosSocketVmnetSetupGroups')
+    expect(src).toContain('linuxBridgeSetupGroups')
+    expect(src).toContain('GuestCommandAccordion')
+    expect(src).toContain('Bridge setup')
+    expect(src).toContain('readinessAppliesTo')
+    expect(src).toContain('appliedReadiness')
+    expect(src).toContain('readinessSeq')
+    expect(src).toContain('seq !== readinessSeq')
+    expect(src).toContain('discardReadinessForScope')
+    expect(src).not.toContain('setupBridge')
+    expect(src).not.toContain('startBridge')
+    expect(src).not.toContain('stopBridge')
+    expect(src).not.toContain('removeBridge')
+    expect(src).not.toContain('setupBridgeInline')
+    expect(src).not.toContain('canManageBridges')
+    expect(src).not.toContain('deviceBridgesPath')
+    expect(src).not.toContain('api.post')
+    expect(src).not.toContain('api.delete')
+    expect(src).not.toContain('@click="setupBridge')
+    expect(src).not.toContain('@click="startBridge')
+    expect(src).not.toContain('@click="stopBridge')
+    expect(src).not.toContain('@click="removeBridge')
+    expect(src).not.toContain('>Setup</AppButton>')
+    expect(src).not.toContain('>Start</AppButton>')
+    expect(src).not.toContain('>Stop</AppButton>')
+    expect(src).not.toContain('>Remove</AppButton>')
   })
 })

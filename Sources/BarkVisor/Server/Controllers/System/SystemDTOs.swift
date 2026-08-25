@@ -76,7 +76,7 @@ struct SystemCapabilitiesResponse: Content {
     let supportsBridgedNetworking: Bool
     /// Install/start/stop privileged bridge daemons (macOS socket_vmnet helper only).
     let supportsManagedBridgeDaemon: Bool
-    /// Linux Manage Bridges shows host-bridge setup guidance (no mutation).
+    /// Linux Bridge setup shows host-bridge install guidance (no mutation).
     let supportsHostBridgeManagement: Bool
     let supportsUSBPassthrough: Bool
     let supportsInAppUpdate: Bool

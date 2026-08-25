@@ -294,7 +294,7 @@ echo 'allow br0' | sudo tee /etc/qemu/bridge.conf
 sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper 2>/dev/null || true
 ```
 
-In the UI: **Networks** → **Manage Bridges** shows whether this Device is ready and the copyable setup steps. Then create a **bridged** network with interface `br0`.
+In the UI: **Networks** → **Bridge setup** shows whether this Device is ready and the copyable setup steps. Then create a **bridged** network with interface `br0`.
 
 ---
 

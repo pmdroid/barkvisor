@@ -1,6 +1,6 @@
 import Foundation
 
-/// Live host-bridge snapshot for Manage Bridges (PAS-222 wire).
+/// Live host-bridge snapshot for Bridge setup (PAS-222 wire).
 /// Detection only — never mutates the host. Assembled by `HostBridgeFactsService`.
 public struct HostBridgeSnapshot: Codable, Sendable, Equatable {
     public var name: String
