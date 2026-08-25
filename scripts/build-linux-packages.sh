@@ -166,10 +166,17 @@ if ! getent passwd barkvisor >/dev/null 2>&1; then
     || useradd --system --home /var/lib/barkvisor --shell /bin/false barkvisor
 fi
 getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor || true
+if getent group disk >/dev/null 2>&1; then
+  usermod -aG disk barkvisor || true
+  mkdir -p /etc/systemd/system/barkvisor.service.d
+  printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+    >/etc/systemd/system/barkvisor.service.d/disk.conf
+fi
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   systemctl enable barkvisor.service
+  systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
   echo "Start with: systemctl start barkvisor.service"
 fi
 echo "Installed. UI: http://$(hostname -I 2>/dev/null | awk '{print $1}'):7777"
