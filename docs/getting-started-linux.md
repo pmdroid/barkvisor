@@ -150,7 +150,7 @@ barkvisor join --code 'barkvisor://pair/v1?…'
 
 Or set `BARKVISOR_JOIN_CODE` in `/etc/barkvisor/barkvisor.env` before first boot. If the other Device is unreachable, this Device still starts and keeps local SQLite.
 
-Paste the full pairing offer (`barkvisor://pair/v1?…`) issued on the other Device (Settings → Home → Add a Device). The short code alone is not enough.
+Paste the full pairing offer (`barkvisor://pair/v1?…`) issued on the other Device (Settings → Pairing → Add a Device). The short code alone is not enough.
 
 Then manage Workloads from the other Device’s SPA. See [Home and pairing](home-and-pairing.md), [Product terminology](product-terminology.md), and [First launch](getting-started-first-launch.md).
 

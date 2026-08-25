@@ -22,7 +22,7 @@ Pairing does **not** move QEMU, share disks, or elect a controller. Each Device 
 On a Device that already finished setup:
 
 1. Open the dashboard (`http://<this-device>:7777`).
-2. Go to **Settings → Home → Add a Device**.
+2. Go to **Settings → Pairing → Add a Device**.
 3. Pick the address the new Device can reach: a listed LAN IPv4 or IPv6 unique-local, or **Other / DNS name…** for a name the joiner can resolve.
 4. Scan the QR, or copy the **full** pairing offer (`barkvisor://pair/v1?…`). The short printed code alone is not enough. Changing the address re-issues both the URI and the QR.
 

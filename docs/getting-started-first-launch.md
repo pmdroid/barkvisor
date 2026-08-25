@@ -23,7 +23,7 @@ Screenshots below were captured from a first-run setup on **Linux** (OrbStack). 
 
 ![Setup welcome screen](/docs/onboarding/setup-welcome.png)
 
-Choose **Set up this Device** to create a new Home on this machine, or **Join an existing Home** if another Device already issued a pairing code (Settings → Home → Add a Device). Paste the full pairing code (`barkvisor://pair/v1?…`) — the short code alone is not enough. This Device still runs if the other Device is later unreachable.
+Choose **Set up this Device** to create a new Home on this machine, or **Join an existing Home** if another Device already issued a pairing code (Settings → Pairing → Add a Device). Paste the full pairing code (`barkvisor://pair/v1?…`) — the short code alone is not enough. This Device still runs if the other Device is later unreachable.
 
 On an **API-only Device** (no SPA), join from that host instead of the wizard:
 

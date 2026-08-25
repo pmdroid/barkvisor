@@ -42,7 +42,7 @@ struct Join: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Join a Home from this Device.",
         discussion: """
-        1. On the other Device, Settings → Home → Add a Device, pick the \
+        1. On the other Device, Settings → Pairing → Add a Device, pick the \
         address this Device can reach, and copy the full barkvisor:// offer.
         2. Run this command with that offer (not the short printed code).
         3. This posts to http://127.0.0.1:7777/api/pairing/join on this Device.

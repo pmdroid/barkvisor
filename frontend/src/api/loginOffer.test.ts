@@ -25,7 +25,7 @@ describe('PAS-242 phone sign-in offer', () => {
     expect(settings).toContain('Phone sign-in')
     expect(settings).toContain('advertisedHostForOffer')
     expect(settings).toContain('customHost.value')
-    expect(settings).toContain('watch([pairingOffer, loginOffer]')
+    expect(settings).toContain('watch([tab, pairingOffer, loginOffer]')
     expect(settings).toContain('pairingExpiryLabel(loginOffer.expiresAt, pairingNow)')
     expect(settings).toContain('loginOfferSeq')
     expect(settings).toContain('if (seq !== loginOfferSeq.value) return')
