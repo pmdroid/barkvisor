@@ -9,7 +9,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 ## Unreleased
 
 - Default VM disk directory is **Settings → Disks** (`?tab=disks`). The Disks list still creates disks and can pick a folder per disk.
-- Linux Create Disk and Workload start fail closed when this Device cannot open a host block device for read/write. The error names the path and that the BarkVisor user needs the disk group (or a udev ACL). QEMU is not started with that `-drive`.
+- Linux Create Disk and Workload start fail closed when this Device cannot open a host block device for read/write. The error names the path and that the BarkVisor user needs the disk group (or a udev ACL). QEMU is not started with that `-drive`. When group **disk** exists, postinst adds the service user to it, writes `barkvisor.service.d/disk.conf` (`SupplementaryGroups=disk`), and `try-restart`s a running unit so upgrades pick up `/dev/sdX`. A host without group disk still starts.
 - PCI picker occupancy is GPU host driver / Workload claim, not every bound kernel module.
 - USB attach persists serial, never a `bus:` address. A stick with no serial cannot persist (web and Console Attach is off). Listing keeps the sysfs serial when falling back to lsusb. QEMU still uses `hostbus`/`hostaddr` after that serial match.
 - Sidebar **All** vs one **Device** scopes Home lists (Workloads, Library, Networks, Logs). Logs can still refine inside that scope. Dashboard widgets show/hide locally; **Reset** restores defaults. This Device CPU/memory charts stay on Device detail — they are not Home-wide lists.

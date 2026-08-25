@@ -2,9 +2,16 @@ post_install() {
   getent passwd barkvisor >/dev/null 2>&1 || \
     useradd --system --home /var/lib/barkvisor --shell /usr/bin/nologin barkvisor
   getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor 2>/dev/null || true
+  if getent group disk >/dev/null 2>&1; then
+    usermod -aG disk barkvisor 2>/dev/null || true
+    mkdir -p /etc/systemd/system/barkvisor.service.d
+    printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+      >/etc/systemd/system/barkvisor.service.d/disk.conf
+  fi
   install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable barkvisor.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
 }
 
 post_upgrade() {
