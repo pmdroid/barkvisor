@@ -1,9 +1,8 @@
 import Foundation
 
-/// Host PCI addresses that must not be stolen for VFIO (boot disk / only uplink).
+/// Host PCI addresses that must not be stolen for VFIO (boot disk / remaining uplink).
 public struct PCIHostSafety: Equatable, Sendable {
     public var bootDiskAddresses: Set<String>
-    public var onlyUplinkAddresses: Set<String>
     public var uplinkAddresses: Set<String>
 
     public init(
@@ -12,11 +11,13 @@ public struct PCIHostSafety: Equatable, Sendable {
         uplinkAddresses: Set<String> = [],
     ) {
         self.bootDiskAddresses = bootDiskAddresses
-        self.onlyUplinkAddresses = onlyUplinkAddresses
-        self.uplinkAddresses = uplinkAddresses
+        // `onlyUplinkAddresses` is the legacy single-BDF field; merge into all uplinks.
+        self.uplinkAddresses = uplinkAddresses.union(onlyUplinkAddresses)
     }
 
     public static let empty = PCIHostSafety()
+
+    public var onlyUplinkAddresses: Set<String> { uplinkAddresses }
 
     public func blocks(_ address: String, groupAddresses: [String]) -> String? {
         let addrs = Set([GPUPassthroughService.normalizePCIAddress(address)] + groupAddresses.map {
@@ -25,7 +26,9 @@ public struct PCIHostSafety: Equatable, Sendable {
         if !addrs.isDisjoint(with: bootDiskAddresses) {
             return GPUPassthroughService.bootDiskExclusionReason
         }
-        if !addrs.isDisjoint(with: onlyUplinkAddresses) {
+        // vfio-pci binds the whole IOMMU group. If that group holds every remaining
+        // host uplink, the Device would lose network.
+        if !uplinkAddresses.isEmpty, uplinkAddresses.isSubset(of: addrs) {
             return GPUPassthroughService.onlyUplinkExclusionReason
         }
         return nil
@@ -64,18 +67,15 @@ public struct PCIHostSafety: Equatable, Sendable {
         networkPCIAddresses: Set<String>,
         fileManager: FileManager = .default,
     ) -> PCIHostSafety {
+        _ = networkPCIAddresses
         let boot = bootDiskPCIAddresses(
             mounts: mounts, sysBlockRoot: sysBlockRoot, fileManager: fileManager,
         )
         let uplink = defaultRoutePCIAddresses(
             routes: routes, sysNetRoot: sysNetRoot, fileManager: fileManager,
         )
-        let network = Set(networkPCIAddresses.map { GPUPassthroughService.normalizePCIAddress($0) })
-        let extras = network.subtracting(uplink)
-        let onlyUplink = extras.isEmpty ? uplink : []
         return PCIHostSafety(
             bootDiskAddresses: boot,
-            onlyUplinkAddresses: onlyUplink,
             uplinkAddresses: uplink,
         )
     }

@@ -141,9 +141,11 @@ struct SystemHostController: RouteCollection {
         let claim = GPUPassthroughService.claimedBy(host: dev, vms: vms)
         var attachable = dev.attachable && claim == nil
         var reason = dev.excludedReason
-        if claim != nil {
+        if let claim {
             attachable = false
-            reason = reason ?? "PCI device is attached to \(claim?.name ?? "another Workload")"
+            reason = reason ?? GPUPassthroughService.claimedMessage(
+                workloadName: claim.name, host: dev,
+            )
         }
         return HostGPUDeviceResponse(
             id: dev.id,

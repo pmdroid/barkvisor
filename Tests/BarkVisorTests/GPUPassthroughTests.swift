@@ -193,6 +193,15 @@ struct GPUPassthroughTests {
             }
             #expect(GPUDeviceService.listDevices().isEmpty)
             #expect(GPUDeviceService.listPCIDevices().isEmpty)
+            let pciErr = #expect(throws: BarkVisorError.self) {
+                try PlatformCapabilities.requireVFIOPassthrough()
+            }
+            if case let .unsupportedFeature(feature) = pciErr {
+                #expect(feature == .pciPassthrough)
+                #expect(pciErr?.errorDescription == GPUPassthroughService.pciPassthroughNotReadyMessage)
+            } else {
+                Issue.record("expected unsupportedFeature pciPassthrough, got \(String(describing: pciErr))")
+            }
         #endif
     }
 
@@ -470,6 +479,10 @@ struct GPUPassthroughTests {
             groups: groups, group: "6", bdf: "0000:00:01.0", pciClass: "0x060400\n",
             vendor: "0x8086\n", device: "0x1234\n", driver: nil,
         )
+        try writePCIDevice(
+            groups: groups, group: "7", bdf: "0000:06:00.0", pciClass: "0x020000\n",
+            vendor: "0x8086\n", device: "0x15f4\n", driver: "igc",
+        )
         let vfioPci = root.appendingPathComponent("vfio-pci")
         try FileManager.default.createDirectory(at: vfioPci, withIntermediateDirectories: true)
         let vfioDev = root.appendingPathComponent("vfio")
@@ -491,11 +504,13 @@ struct GPUPassthroughTests {
         let pci = GPUDeviceService.listPCIDevices(from: paths, safety: safety)
         let nvme = pci.first { $0.pciAddress == "0000:04:00.0" }
         let nic = pci.first { $0.pciAddress == "0000:05:00.0" }
+        let extra = pci.first { $0.pciAddress == "0000:06:00.0" }
         let bridge = pci.first { $0.pciAddress == "0000:00:01.0" }
         #expect(nvme?.attachable == false)
         #expect(nvme?.excludedReason == GPUPassthroughService.bootDiskExclusionReason)
         #expect(nic?.attachable == false)
         #expect(nic?.excludedReason == GPUPassthroughService.onlyUplinkExclusionReason)
+        #expect(extra?.attachable == true)
         #expect(bridge?.attachable == false)
         #expect(bridge?.excludedReason == GPUPassthroughService.pciBridgeExclusionReason)
     }
@@ -543,6 +558,74 @@ struct GPUPassthroughTests {
         )
         #expect(facts.bootDiskAddresses.contains("0000:04:00.0"))
         #expect(facts.onlyUplinkAddresses.contains("0000:05:00.0"))
+        #expect(facts.uplinkAddresses.contains("0000:05:00.0"))
+        #expect(
+            facts.blocks("0000:05:00.0", groupAddresses: ["0000:05:00.0"])
+                == GPUPassthroughService.onlyUplinkExclusionReason,
+        )
+        // A second NIC in another group does not make the remaining uplink attachable.
+        let twoNics = PCIHostSafety.from(
+            mounts: mounts,
+            routes: routes,
+            sysBlockRoot: sysBlock.path,
+            sysNetRoot: sysNet.path,
+            networkPCIAddresses: ["0000:05:00.0", "0000:06:00.0"],
+        )
+        #expect(
+            twoNics.blocks("0000:05:00.0", groupAddresses: ["0000:05:00.0"])
+                == GPUPassthroughService.onlyUplinkExclusionReason,
+        )
+        #expect(twoNics.blocks("0000:06:00.0", groupAddresses: ["0000:06:00.0"]) == nil)
+        // Two uplinks in one IOMMU group: attaching either (or a mate) drops the Device network.
+        let bonded = PCIHostSafety(uplinkAddresses: ["0000:05:00.0", "0000:06:00.0"])
+        #expect(
+            bonded.blocks("0000:05:00.0", groupAddresses: ["0000:05:00.0", "0000:06:00.0"])
+                == GPUPassthroughService.onlyUplinkExclusionReason,
+        )
+        #expect(
+            bonded.blocks("0000:06:00.0", groupAddresses: ["0000:05:00.0", "0000:06:00.0"])
+                == GPUPassthroughService.onlyUplinkExclusionReason,
+        )
+        #expect(bonded.blocks("0000:05:00.0", groupAddresses: ["0000:05:00.0"]) == nil)
+    }
+
+    @Test func `claimed copy matches GPU vs PCI`() {
+        let gpu = HostGPUDevice(
+            pciAddress: "0000:01:00.0",
+            iommuGroup: "14",
+            vendorId: "10de",
+            deviceId: "2684",
+            name: "NVIDIA",
+            driver: "nvidia",
+            vfioBound: false,
+            inUseByHost: true,
+            attachable: true,
+            excludedReason: nil,
+            groupAddresses: ["0000:01:00.0"],
+            pciClass: "030000",
+        )
+        let nic = HostGPUDevice(
+            pciAddress: "0000:05:00.0",
+            iommuGroup: "21",
+            vendorId: "8086",
+            deviceId: "15f3",
+            name: "Network",
+            driver: "igc",
+            vfioBound: false,
+            inUseByHost: true,
+            attachable: true,
+            excludedReason: nil,
+            groupAddresses: ["0000:05:00.0"],
+            pciClass: "020000",
+        )
+        #expect(
+            GPUPassthroughService.claimedMessage(workloadName: "coder", host: gpu)
+                == "GPU is attached to coder",
+        )
+        #expect(
+            GPUPassthroughService.claimedMessage(workloadName: "coder", host: nic)
+                == "PCI device is attached to coder",
+        )
     }
 
     @Test func `host ollama grant is skipped when a gpu is attached`() {

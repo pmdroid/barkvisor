@@ -123,7 +123,9 @@ public enum GPUDeviceService {
         var reason: String?
         if !iommuReady {
             attachable = false
-            reason = GPUPassthroughService.iommuNotReadyMessage
+            reason = display
+                ? GPUPassthroughService.iommuNotReadyMessage
+                : GPUPassthroughService.pciPassthroughNotReadyMessage
         } else if VFIOProbe.isBridgeClass(row.pciClass) {
             attachable = false
             reason = GPUPassthroughService.pciBridgeExclusionReason

@@ -1796,7 +1796,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
           >Attach PCI device</AppButton>
         </div>
         <p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px">
-          Pass through a NIC, NVMe, or other PCIe device with vfio-pci. The host boot disk and only uplink cannot be attached.
+          Pass through a NIC, NVMe, or other PCIe device with vfio-pci. The host boot disk and any remaining uplink cannot be attached.
         </p>
         <DataTable :columns="[{ key: 'pci', label: 'Device' }, { key: 'class', label: 'Class' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
           <tr v-for="dev in attachedPCIDevices" :key="dev.pciAddress">
@@ -1963,7 +1963,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
             </td>
           </tr>
         </DataTable>
-        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">PCI changes require a VM restart. The host boot disk and only uplink stay on the Device.</p>
+        <p style="margin-top:16px;font-size:12px;color:var(--text-dim)">PCI changes require a VM restart. The host boot disk and remaining uplink stay on the Device.</p>
         <div class="modal-actions">
           <AppButton @click="showAttachPCI = false">Close</AppButton>
         </div>

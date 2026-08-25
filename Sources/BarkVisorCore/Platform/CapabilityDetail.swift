@@ -174,6 +174,8 @@ public enum CapabilityDetailBuilder {
             return inAppUpdate(os: os, supported: false).remediation ?? ""
         case .gpuPassthrough:
             return GPUPassthroughService.iommuNotReadyMessage
+        case .pciPassthrough:
+            return GPUPassthroughService.pciPassthroughNotReadyMessage
         }
     }
 

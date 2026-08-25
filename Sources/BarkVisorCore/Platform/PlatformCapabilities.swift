@@ -110,6 +110,7 @@ public enum PlatformCapabilities {
         case usbPassthrough
         case inAppUpdate
         case gpuPassthrough
+        case pciPassthrough
 
         /// Snake_case API error `code` (ErrorMiddleware envelope).
         public var errorCode: String {
@@ -119,6 +120,7 @@ public enum PlatformCapabilities {
             case .usbPassthrough: return "usb_passthrough"
             case .inAppUpdate: return "in_app_update"
             case .gpuPassthrough: return "gpu_passthrough"
+            case .pciPassthrough: return "pci_passthrough"
             }
         }
     }
@@ -170,7 +172,7 @@ public enum PlatformCapabilities {
         let facts = VFIOProbe.live()
         guard VFIOProbe.vfioSupported(os: PlatformHost.platformName, facts: facts), facts.kvmDevice
         else {
-            throw BarkVisorError.unsupportedFeature(.gpuPassthrough)
+            throw BarkVisorError.unsupportedFeature(.pciPassthrough)
         }
     }
 

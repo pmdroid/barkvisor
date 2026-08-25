@@ -7,6 +7,9 @@ public enum GPUPassthroughService {
     public static let iommuNotReadyMessage =
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
 
+    public static let pciPassthroughNotReadyMessage =
+        "PCI passthrough needs IOMMU, vfio-pci, and KVM. This Device is not ready."
+
     public static let hostGuestExclusiveMessage =
         "This GPU is bound to a host driver. Attaching it takes the card from the host. The same card cannot be host and guest."
 
@@ -17,7 +20,7 @@ public enum GPUPassthroughService {
         "This is the host boot disk. Passing it through would remove the Device's system disk."
 
     public static let onlyUplinkExclusionReason =
-        "This is the only host uplink. Passing it through would disconnect the Device."
+        "Passing this through would take the Device's remaining uplink."
 
     public static let pciBridgeExclusionReason =
         "PCI bridges cannot be passed through."
@@ -200,10 +203,24 @@ public enum GPUPassthroughService {
         let host = try resolve(deviceId: deviceId, hostDevices: hostDevices)
         guard host.attachable else {
             throw BarkVisorError.forbidden(
-                host.excludedReason ?? iommuNotReadyMessage,
+                host.excludedReason ?? notReadyMessage(for: host),
             )
         }
         return host
+    }
+
+    public static func isDisplayHost(_ host: HostGPUDevice) -> Bool {
+        guard let pciClass = host.pciClass else { return true }
+        return VFIOProbe.isDisplayClass(pciClass)
+    }
+
+    public static func notReadyMessage(for host: HostGPUDevice) -> String {
+        isDisplayHost(host) ? iommuNotReadyMessage : pciPassthroughNotReadyMessage
+    }
+
+    public static func claimedMessage(workloadName: String, host: HostGPUDevice) -> String {
+        let kind = isDisplayHost(host) ? "GPU" : "PCI device"
+        return "\(kind) is attached to \(workloadName)"
     }
 
     public static func claimedBy(
@@ -230,7 +247,7 @@ public enum GPUPassthroughService {
             let host = hostDevices.first { matches(device, host: $0) }
                 ?? syntheticHost(device)
             if let claim = claimedBy(host: host, vms: vms, excludingVMId: excludingVMId) {
-                throw BarkVisorError.conflict("PCI device is attached to \(claim.name)")
+                throw BarkVisorError.conflict(claimedMessage(workloadName: claim.name, host: host))
             }
         }
     }
