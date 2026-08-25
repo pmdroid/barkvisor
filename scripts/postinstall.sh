@@ -70,6 +70,10 @@ done
 launchctl bootout system/dev.barkvisor.helper 2>/dev/null || true
 rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
 rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
+rm -f /usr/local/libexec/dev.barkvisor.helper
+rm -f /usr/local/libexec/barkvisor/dev.barkvisor.helper
+rm -f /usr/local/libexec/BarkVisorHelper
+rm -f /usr/local/libexec/barkvisor/BarkVisorHelper
 
 # --- (Re)load LaunchDaemons ---
 launchctl bootout system/dev.barkvisor 2>/dev/null || true

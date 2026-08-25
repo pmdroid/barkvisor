@@ -58,6 +58,9 @@ public enum BackupService {
             Log.server.info("Database backup created: \(filename) (\(size) bytes)")
             return BackupInfo(name: filename, sizeBytes: size, createdAt: iso8601.string(from: Date()))
         } catch {
+            if LogService.isSQLiteFullError(error) {
+                _ = pruneOldestBackupsKeepingNewest(1, in: dir)
+            }
             Log.server.error("Database backup failed: \(error)")
             return nil
         }
@@ -105,6 +108,28 @@ public enum BackupService {
                 Log.server.info("Pruned old backup: \(filename)")
             }
         }
+    }
+
+    /// Drop extra SQLite backups, keeping the newest `keep` files. Silent so SQLITE_FULL reclaim cannot log-loop.
+    @discardableResult
+    public static func pruneOldestBackupsKeepingNewest(
+        _ keep: Int,
+        in dir: URL? = nil,
+        fileManager: FileManager = .default,
+    ) -> [String] {
+        let keepCount = max(keep, 1)
+        let dir = dir ?? Config.backupDir
+        guard let files = try? fileManager.contentsOfDirectory(atPath: dir.path) else { return [] }
+        let backups =
+            files
+                .filter { $0.hasSuffix(".sqlite") && ($0.hasPrefix("db-") || $0.hasPrefix("pre-restore-")) }
+                .sorted()
+        guard backups.count > keepCount else { return [] }
+        let toDelete = Array(backups.dropLast(keepCount))
+        for filename in toDelete {
+            try? fileManager.removeItem(at: dir.appendingPathComponent(filename))
+        }
+        return toDelete
     }
 
     // MARK: - Restore

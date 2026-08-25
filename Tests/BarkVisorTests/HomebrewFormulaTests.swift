@@ -86,8 +86,6 @@ struct HomebrewFormulaTests {
         #expect(script.contains("/var/lib/barkvisor"))
         #expect(script.contains("/var/run/barkvisor"))
         #expect(script.contains("/var/log/barkvisor"))
-        #expect(!script.contains("dev.barkvisor.helper"))
-        #expect(!script.contains("PrivilegedHelperTools"))
         #expect(!script.contains("launchctl bootstrap"))
 
         let formula = try read("packaging/homebrew/barkvisor.rb")
@@ -112,6 +110,17 @@ struct HomebrewFormulaTests {
         #expect(!formula.contains("PrivilegedHelperTools"))
         #expect(!formula.contains("MachServices"))
         #expect(formula.contains("PAS-292"))
+    }
+
+    @Test func `postinstall drops leftover privileged helper`() throws {
+        let script = try read("packaging/homebrew/postinstall.sh")
+        #expect(script.contains("launchctl bootout system/dev.barkvisor.helper"))
+        #expect(script.contains("/Library/LaunchDaemons/dev.barkvisor.helper.plist"))
+        #expect(script.contains("/Library/PrivilegedHelperTools/dev.barkvisor.helper"))
+        #expect(script.contains("/usr/local/libexec/dev.barkvisor.helper"))
+        #expect(!script.contains("launchctl bootstrap"))
+        let formula = try read("packaging/homebrew/barkvisor.rb")
+        #expect(!formula.contains("dev.barkvisor.helper"))
     }
 
     private enum HomebrewFormulaTestError: Error {

@@ -66,13 +66,20 @@ public struct LogEntry: Codable, Sendable {
 public actor LogService {
     public static let shared = LogService()
 
+    public static let defaultMaxRows = 50_000
+    public static let diskFullKeepRows = 5_000
+    public nonisolated static let pruneLogsSQL = """
+    DELETE FROM logs WHERE id NOT IN (
+        SELECT id FROM logs ORDER BY ts DESC LIMIT ?
+    )
+    """
+
     private var dbPool: DatabasePool?
     private let minLevel: LogLevel
     private let encoder = JSONEncoder()
     private var tailContinuations: [UUID: AsyncStream<LogEntry>.Continuation] = [:]
-
-    /// Maximum number of log rows to keep in the database
-    private let maxRows = 50_000
+    private var skipDatabaseInserts = false
+    private var reclaimingDisk = false
 
     /// SwiftLog logger for forwarding errors to Sentry
     nonisolated(unsafe) static var swiftLogger: Logging.Logger?
@@ -134,8 +141,8 @@ public actor LogService {
             detail: detail,
         )
 
-        // Write to DB
-        if let dbPool {
+        // Write to DB — skip inserts while SQLITE_FULL reclaim is in flight.
+        if let dbPool, !skipDatabaseInserts {
             let detailJSON: String? = detail.flatMap {
                 try? String(data: encoder.encode($0), encoding: .utf8)
             }
@@ -154,7 +161,7 @@ public actor LogService {
                         )
                     }
                 } catch {
-                    Self.platformLog("LogService DB write failed: \(error.localizedDescription)")
+                    await self.handleWriteFailure(error)
                 }
             }
         }
@@ -295,23 +302,61 @@ public actor LogService {
 
     // MARK: - Pruning
 
-    public func pruneOldLogs() async {
+    public func pruneOldLogs(keepRows: Int = LogService.defaultMaxRows) async {
         guard let dbPool else { return }
         do {
             try await dbPool.write { db in
-                let count = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM logs") ?? 0
-                if count > self.maxRows {
-                    try db.execute(
-                        sql: """
-                            DELETE FROM logs WHERE id NOT IN (
-                                SELECT id FROM logs ORDER BY ts DESC LIMIT ?
-                            )
-                        """, arguments: [self.maxRows],
-                    )
-                }
+                try Self.pruneLogs(in: db, keepRows: keepRows)
             }
         } catch {
-            Self.platformLog("LogService prune failed: \(error.localizedDescription)")
+            if !LogNoise.shouldRateLimit(signature: "logservice.prune") {
+                Self.platformLog("LogService prune failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func handleWriteFailure(_ error: Error) async {
+        if Self.isSQLiteFullError(error) {
+            await reclaimAfterDiskFull()
+            return
+        }
+        if !LogNoise.shouldRateLimit(signature: "logservice.db-write") {
+            Self.platformLog("LogService DB write failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func reclaimAfterDiskFull() async {
+        guard !reclaimingDisk else { return }
+        reclaimingDisk = true
+        skipDatabaseInserts = true
+        defer {
+            reclaimingDisk = false
+            skipDatabaseInserts = false
+        }
+        await pruneOldLogs(keepRows: Self.diskFullKeepRows)
+        _ = BackupService.pruneOldestBackupsKeepingNewest(1)
+        emitDiskFullWarning()
+    }
+
+    private func emitDiskFullWarning() {
+        if LogNoise.shouldRateLimit(signature: LogNoise.sqliteFullSignature) {
+            return
+        }
+        let msg =
+            "Log database or disk is full; pruned logs and skipped inserts. Free space under \(Config.dataDir.path)."
+        Self.platformLog(msg, level: .warn)
+        let entry = LogEntry(
+            ts: iso8601.string(from: Date()),
+            level: .warn,
+            cat: .server,
+            msg: msg,
+            vm: nil,
+            req: nil,
+            err: "SQLITE_FULL",
+            detail: nil,
+        )
+        for (_, cont) in tailContinuations {
+            cont.yield(entry)
         }
     }
 
@@ -327,4 +372,34 @@ public actor LogService {
 
 extension LogLevel {
     static let allValues: [LogLevel] = [.debug, .info, .warn, .error, .fatal]
+}
+
+extension LogService {
+    /// SQLITE_FULL (13) and host ENOSPC copy from GRDB / sqlite / the OS.
+    public nonisolated static func isSQLiteFullError(message: String) -> Bool {
+        let t = message.lowercased()
+        if t.contains("database or disk is full") { return true }
+        if t.contains("sqlite_full") { return true }
+        if t.contains("no space left") { return true }
+        if t.contains("enospc") { return true }
+        if t.contains("error-code=13") { return true }
+        if t.contains("error code: 13") { return true }
+        if t.contains("sqlite error 13") { return true }
+        return false
+    }
+
+    public nonisolated static func isSQLiteFullError(_ error: Error) -> Bool {
+        if let dbError = error as? DatabaseError, dbError.resultCode == .SQLITE_FULL {
+            return true
+        }
+        return isSQLiteFullError(message: error.localizedDescription)
+    }
+
+    /// Keep the newest `keepRows` log rows. No-op when already at or under the cap.
+    public nonisolated static func pruneLogs(in db: GRDB.Database, keepRows: Int) throws {
+        guard keepRows > 0 else { return }
+        let count = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM logs") ?? 0
+        guard count > keepRows else { return }
+        try db.execute(sql: pruneLogsSQL, arguments: [keepRows])
+    }
 }

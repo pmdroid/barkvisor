@@ -1,11 +1,15 @@
 import Foundation
 import Testing
+@testable import BarkVisorCore
 
 /// PAS-294: privileged XPC helper is gone. Fail if it is reintroduced.
 struct PrivilegeBoundaryTests {
     @Test func `helper XPC types are not referenced in Sources`() throws {
         let sourcesRoot = try Self.packageSourcesRoot()
-        let violations = try Self.scan(in: sourcesRoot, needles: ["HelperXPCClient", "BarkVisorHelper"])
+        let violations = try Self.scan(
+            in: sourcesRoot,
+            needles: ["HelperXPCClient", "BarkVisorHelper", "XPC connection invalidated"],
+        )
 
         #expect(
             violations.isEmpty,
@@ -16,6 +20,18 @@ struct PrivilegeBoundaryTests {
             \(violations.joined(separator: "\n"))
             """,
         )
+    }
+
+    @Test func `leftover helper inventory lists launchd and libexec without reconnect`() {
+        let paths = LeftoverHelperInventory.candidatePaths
+        #expect(paths.contains("/Library/LaunchDaemons/dev.barkvisor.helper.plist"))
+        #expect(paths.contains("/Library/PrivilegedHelperTools/dev.barkvisor.helper"))
+        #expect(paths.contains("/usr/local/libexec/dev.barkvisor.helper"))
+        let present = LeftoverHelperInventory.leftoverPaths(fileExists: { $0.hasSuffix(".plist") })
+        #expect(present == ["/Library/LaunchDaemons/dev.barkvisor.helper.plist"])
+        let warning = LeftoverHelperInventory.warningMessage(paths: present)
+        #expect(warning.contains("launchctl bootout"))
+        #expect(!warning.contains("HelperXPCClient"))
     }
 
     // MARK: - Filesystem scan
