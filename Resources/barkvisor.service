@@ -36,8 +36,9 @@ RuntimeDirectoryPreserve=yes
 # blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
 # Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.
 NoNewPrivileges=false
-# Ensure /dev/kvm access when the barkvisor user is in group kvm (postinst adds it).
-SupplementaryGroups=kvm
+# kvm = /dev/kvm. disk = raw host block devices (/dev/sdX). systemd replaces
+# the user's supplementary groups with this list (usermod alone is not enough).
+SupplementaryGroups=kvm disk
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true

@@ -78,12 +78,16 @@ struct DaemonRestartIsolationTests {
         #expect(text.contains("BARKVISOR_SOCKET_DIR=/var/run/barkvisor"))
         #expect(text.contains("RuntimeDirectory=barkvisor"))
         #expect(text.contains("RuntimeDirectoryPreserve=yes"))
+        #expect(text.contains("SupplementaryGroups=kvm disk"))
         #expect(!text.contains("KillMode=control-group"))
         let packaged = try Self.readRepoFile("packaging/linux/barkvisor.service")
         #expect(packaged.contains("KillMode=process"))
         #expect(packaged.contains("BARKVISOR_SOCKET_DIR=/var/run/barkvisor"))
         #expect(packaged.contains("RuntimeDirectory=barkvisor"))
         #expect(packaged.contains("RuntimeDirectoryPreserve=yes"))
+        #expect(packaged.contains("SupplementaryGroups=kvm disk"))
+        let postinst = try Self.readRepoFile("packaging/linux/debian/postinst")
+        #expect(postinst.contains("usermod -aG disk barkvisor"))
     }
 
     @Test func `pid file parses qemu and swtpm lines`() {

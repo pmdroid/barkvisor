@@ -13,6 +13,9 @@ case "$1" in
     if getent group kvm >/dev/null 2>&1; then
       usermod -aG kvm barkvisor 2>/dev/null || true
     fi
+    if getent group disk >/dev/null 2>&1; then
+      usermod -aG disk barkvisor 2>/dev/null || true
+    fi
     install -d -o barkvisor -g barkvisor -m 0755 "$DATA_DIR" "$RUN_DIR"
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload || true

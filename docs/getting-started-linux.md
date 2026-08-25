@@ -38,11 +38,12 @@ Optional for Windows guests with TPM: install your distro’s **`swtpm`** packag
 
 Optional for off-LAN access: install **Tailscale** (`tailscaled`) from your distro or [tailscale.com/download](https://tailscale.com/download). BarkVisor detects it and can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
 
-KVM group membership (after the package creates the `barkvisor` user):
+KVM and raw-disk group membership (after the package creates the `barkvisor` user). systemd `SupplementaryGroups` is `kvm disk`; usermod alone does not keep other groups.
 
 ```sh
-ls -l /dev/kvm
-sudo usermod -aG kvm barkvisor
+ls -l /dev/kvm /dev/sda
+sudo usermod -aG kvm,disk barkvisor
+sudo systemctl daemon-reload
 sudo systemctl restart barkvisor.service
 ```
 
@@ -312,7 +313,7 @@ If passthrough is unavailable, the UI says why. Do not invent a macOS VFIO path.
 
 ## Host block devices (optional)
 
-Create Disk on Linux can attach a host block device as **raw**. BarkVisor refuses devices the host already uses (mounted filesystems, swap, the data-dir volume). macOS has no block-device option. See [Create a Workload](create-workload.md#disks).
+Create Disk on Linux can attach a host block device as **raw**. BarkVisor refuses devices the host already uses (mounted filesystems, swap, the data-dir volume). The `barkvisor` service user needs the **disk** group (`/dev/sdX` is `root:disk`). The systemd unit lists `SupplementaryGroups=kvm disk` because that setting replaces, rather than adds to, groups from `usermod`. Restart the service after changing groups. macOS has no block-device option. See [Create a Workload](create-workload.md#disks).
 
 ---
 

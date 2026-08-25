@@ -135,10 +135,12 @@ fi
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: create system user barkvisor if missing"
   echo "DRY_RUN: usermod -aG kvm barkvisor (if group exists)"
+  echo "DRY_RUN: usermod -aG disk barkvisor (if group exists)"
   echo "DRY_RUN: chown barkvisor:barkvisor $DATA_DIR $RUN_DIR"
 else
   id barkvisor &>/dev/null || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin barkvisor
   getent group kvm &>/dev/null && usermod -aG kvm barkvisor || true
+  getent group disk &>/dev/null && usermod -aG disk barkvisor || true
   chown -R barkvisor:barkvisor "$DATA_DIR" "$RUN_DIR"
   if [[ -d "$SHARE_DST" ]]; then
     chown -R root:root "$SHARE_DST"

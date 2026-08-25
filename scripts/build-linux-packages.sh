@@ -166,6 +166,7 @@ if ! getent passwd barkvisor >/dev/null 2>&1; then
     || useradd --system --home /var/lib/barkvisor --shell /bin/false barkvisor
 fi
 getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor || true
+getent group disk >/dev/null 2>&1 && usermod -aG disk barkvisor || true
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
