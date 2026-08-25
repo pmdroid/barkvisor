@@ -228,9 +228,32 @@ function rowKey(row: HomeNetworkRow): string {
   return `${row.hostId}:${row.network.id}`
 }
 
+type PendingBridge = { key: string; hostId: string; label: string; role: string }
+
+const pendingBridges = computed<PendingBridge[]>(() => {
+  const devices = scopeRows(devicesStore.devices, deviceScope.selectedHostId)
+  const items: PendingBridge[] = []
+  for (const device of devices) {
+    const capsFor = deviceCapsFor(device.hostId)
+    if (!capsFor.supportsBridgedNetworking) continue
+    const hasBridge = homeNets.networksFor(device.hostId).some((net) => net.mode === 'bridged')
+    if (hasBridge) continue
+    items.push({
+      key: `pending:${device.hostId}`,
+      hostId: device.hostId,
+      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+      role: isSelfDevice(device) ? 'self' : 'member',
+    })
+  }
+  return items
+})
+
 const selectedKey = ref('')
 const selectedRow = computed(() =>
   homeRows.value.find((row) => rowKey(row) === selectedKey.value) ?? null,
+)
+const selectedPending = computed(() =>
+  pendingBridges.value.find((item) => item.key === selectedKey.value) ?? null,
 )
 
 watch([homeRows, pendingBridges], ([rows, pending]) => {
@@ -354,30 +377,6 @@ function workloadDot(row: ReturnType<typeof attachedWorkloads>[number]): string 
   if (health === 'stopped' || health === 'unknown') return 'off'
   return 'ok'
 }
-
-type PendingBridge = { key: string; hostId: string; label: string; role: string }
-
-const pendingBridges = computed<PendingBridge[]>(() => {
-  const devices = scopeRows(devicesStore.devices, deviceScope.selectedHostId)
-  const items: PendingBridge[] = []
-  for (const device of devices) {
-    const capsFor = deviceCapsFor(device.hostId)
-    if (!capsFor.supportsBridgedNetworking) continue
-    const hasBridge = homeNets.networksFor(device.hostId).some((net) => net.mode === 'bridged')
-    if (hasBridge) continue
-    items.push({
-      key: `pending:${device.hostId}`,
-      hostId: device.hostId,
-      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
-      role: isSelfDevice(device) ? 'self' : 'member',
-    })
-  }
-  return items
-})
-
-const selectedPending = computed(() =>
-  pendingBridges.value.find((item) => item.key === selectedKey.value) ?? null,
-)
 
 function modeLabel(mode: string): string {
   const row = formNetworkModes.value.find((m) => m.mode === mode)
