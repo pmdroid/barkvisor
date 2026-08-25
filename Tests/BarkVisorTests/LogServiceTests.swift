@@ -224,4 +224,70 @@ struct LogServiceTests {
         let remaining = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
         #expect(remaining == ["db-2026-01-03T00-00-00Z.sqlite"])
     }
+
+    @Test func `disk full backup prune uses name timestamp not lex order`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("backup-prune-lex-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Lexicographically `db-` < `pre-restore-`, but the restore copy is older.
+        let older = "pre-restore-2026-01-01T00-00-00Z.sqlite"
+        let newer = "db-2026-08-15T12-00-00Z.sqlite"
+        #expect(newer < older)
+        try Data().write(to: dir.appendingPathComponent(older))
+        try Data().write(to: dir.appendingPathComponent(newer))
+        let deleted = BackupService.pruneOldestBackupsKeepingNewest(1, in: dir)
+        #expect(deleted == [older])
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(remaining == [newer])
+    }
+
+    @Test func `log noise window drops oldest signature at cap`() {
+        #expect(LogNoiseWindow.maxSignatures == 64)
+        let store = LogNoiseWindow()
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        let interval: TimeInterval = 3_600
+        for i in 0 ..< LogNoiseWindow.maxSignatures {
+            #expect(
+                LogNoise.shouldRateLimit(
+                    signature: "sig-\(i)",
+                    now: t0.addingTimeInterval(TimeInterval(i)),
+                    interval: interval,
+                    store: store,
+                ) == false,
+            )
+        }
+        #expect(
+            LogNoise.shouldRateLimit(
+                signature: "sig-0",
+                now: t0.addingTimeInterval(1),
+                interval: interval,
+                store: store,
+            ) == true,
+        )
+        #expect(
+            LogNoise.shouldRateLimit(
+                signature: "overflow",
+                now: t0.addingTimeInterval(TimeInterval(LogNoiseWindow.maxSignatures)),
+                interval: interval,
+                store: store,
+            ) == false,
+        )
+        #expect(
+            LogNoise.shouldRateLimit(
+                signature: "sig-1",
+                now: t0.addingTimeInterval(TimeInterval(LogNoiseWindow.maxSignatures) + 1),
+                interval: interval,
+                store: store,
+            ) == true,
+        )
+        #expect(
+            LogNoise.shouldRateLimit(
+                signature: "sig-0",
+                now: t0.addingTimeInterval(TimeInterval(LogNoiseWindow.maxSignatures) + 1),
+                interval: interval,
+                store: store,
+            ) == false,
+        )
+    }
 }
