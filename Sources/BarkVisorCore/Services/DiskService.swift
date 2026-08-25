@@ -471,7 +471,7 @@ public enum DiskService {
             try LibrarySettings.isManagedStoragePath(disk.path, db: db)
                 || DiskSettings.isManagedStoragePath(disk.path, db: db)
         }
-        if managed && !DiskSettings.isHostDevicePath(disk.path) {
+        if managed, !DiskSettings.isHostDevicePath(disk.path) {
             do {
                 try FileManager.default.removeItem(atPath: resolvedPath)
             } catch let fileError {

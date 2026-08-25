@@ -45,9 +45,9 @@ public final class VaporServer: @unchecked Sendable {
         let database = try openDatabase()
         app.database = database
         let (libraryDir, disksDir) = try await database.pool.read { db in
-            (
-                try LibrarySettings.resolvedDirectory(from: db),
-                try DiskSettings.resolvedDirectory(from: db),
+            try (
+                LibrarySettings.resolvedDirectory(from: db),
+                DiskSettings.resolvedDirectory(from: db),
             )
         }
         try Config.ensureDirectories(imagesDir: libraryDir, disksDir: disksDir)

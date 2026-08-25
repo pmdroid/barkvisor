@@ -58,7 +58,7 @@ struct BlockDeviceServiceTests {
         #expect(devices.count == 2)
         let sda = try #require(devices.first { $0.name == "sda" })
         #expect(sda.path == "/dev/sda")
-        #expect(sda.sizeBytes == 1953525168 * 512)
+        #expect(sda.sizeBytes == 1_953_525_168 * 512)
         #expect(sda.model == "Samsung SSD")
         #expect(!sda.attachable)
         #expect(sda.excludedReason == "Host root disk")

@@ -59,8 +59,7 @@ final class DiskServiceCreateTests {
                 },
             )
             Issue.record("expected createDisk to throw")
-        } catch is BarkVisorError {
-        }
+        } catch is BarkVisorError {}
         let count = try await dbPool.read { db in try Disk.fetchCount(db) }
         #expect(count == 0)
     }

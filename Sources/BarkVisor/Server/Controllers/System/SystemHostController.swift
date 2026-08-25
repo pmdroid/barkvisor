@@ -32,9 +32,9 @@ struct SystemHostController: RouteCollection {
         let resolvedPath = (rawPath as NSString).resolvingSymlinksInPath
 
         let extraRoots = try await req.db.read { db in
-            [
-                try LibrarySettings.resolvedDirectory(from: db).path,
-                try DiskSettings.resolvedDirectory(from: db).path,
+            try [
+                LibrarySettings.resolvedDirectory(from: db).path,
+                DiskSettings.resolvedDirectory(from: db).path,
             ]
         }
         guard DirectoryBrowser.isAllowed(resolvedPath, extraRoots: extraRoots) else {
