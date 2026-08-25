@@ -125,7 +125,7 @@ describe('PAS-82 Home terminology', () => {
     const text = readFileSync(join(srcRoot, 'views/DevicesView.vue'), 'utf8')
     expect(text).toContain('DEVICE_LABEL')
     expect(text).toContain('HOME_LABEL')
-    expect(text).toContain('/settings?tab=home')
+    expect(text).toContain('/settings?tab=pairing')
     expect(text).not.toContain('/api/pairing/join')
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
