@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { computed, ref } from 'vue'
 import api from '../api/client'
 import type { HostUSBDevice } from '../api/types'
-import { usbDeviceKey, useUSBPicker } from './useUSBPicker'
+import { usbCanPersist, usbDeviceKey, usbNoSerialCopy, useUSBPicker } from './useUSBPicker'
 
 const originalGet = api.get
 
@@ -33,23 +33,45 @@ describe('useUSBPicker (PAS-240)', () => {
     expect(usbDeviceKey({ vendorId: '046d', productId: 'c52b' })).toBe('046d:c52b')
   })
 
+  test('usbCanPersist requires a serial and skips claimed or excluded rows', () => {
+    expect(usbCanPersist({
+      serialNumber: 'ZX9',
+      idUnstable: false,
+    })).toBe(true)
+    expect(usbCanPersist({
+      serialNumber: null,
+      idUnstable: true,
+    })).toBe(false)
+    expect(usbCanPersist({
+      serialNumber: 'ZX9',
+      claimedByVMId: 'vm-1',
+    })).toBe(false)
+    expect(usbCanPersist({
+      serialNumber: 'ZX9',
+      attachable: false,
+    })).toBe(false)
+    expect(usbNoSerialCopy).toBe('No serial, cannot persist.')
+  })
+
   test('toggle adds and removes an attachable Device USB; claimed rows stay out', () => {
     const picker = useUSBPicker({
       selectedHostId: ref('desk'),
       selectedDevice: computed(() => ({ hostId: 'desk', role: 'self' })),
     })
     const mouse = hostUSB({
-      id: 'mouse-1',
+      id: '0x046d:0xc52b:SN',
       vendorId: '046d',
       productId: 'c52b',
       name: 'Mouse',
       productName: 'MX',
+      serialNumber: 'SN',
     })
     const claimed = hostUSB({
       id: 'claimed-1',
       vendorId: '0781',
       productId: '5581',
       name: 'Stick',
+      serialNumber: 'DISK',
       claimedByVMId: 'vm-1',
       claimedByVMName: 'other',
     })
@@ -60,9 +82,17 @@ describe('useUSBPicker (PAS-240)', () => {
       name: 'Hub',
       attachable: false,
     })
+    const noSerial = hostUSB({
+      id: 'bus:001.002',
+      vendorId: '1234',
+      productId: '5678',
+      name: 'Stick',
+      idUnstable: true,
+    })
 
     picker.toggleUSBDevice(claimed)
     picker.toggleUSBDevice(blocked)
+    picker.toggleUSBDevice(noSerial)
     expect(picker.selectedUSBDevices.value).toEqual([])
 
     picker.toggleUSBDevice(mouse)
@@ -71,8 +101,8 @@ describe('useUSBPicker (PAS-240)', () => {
       vendorId: '046d',
       productId: 'c52b',
       label: 'MX',
-      serialNumber: null,
-      deviceId: 'mouse-1',
+      serialNumber: 'SN',
+      deviceId: '0x046d:0xc52b:SN',
     }])
 
     picker.toggleUSBDevice(mouse)

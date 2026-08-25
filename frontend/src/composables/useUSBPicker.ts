@@ -3,6 +3,8 @@ import api from '../api/client'
 import type { HostUSBDevice, USBPassthroughDevice } from '../api/types'
 import { devicePath, type DeviceApiTarget } from '../utils/homeDeviceApi'
 
+export const usbNoSerialCopy = 'No serial, cannot persist.'
+
 export function usbDeviceKey(dev: {
   deviceId?: string | null
   vendorId: string
@@ -13,6 +15,17 @@ export function usbDeviceKey(dev: {
   if ('id' in dev && dev.id) return dev.id
   return dev.deviceId
     || (dev.serialNumber ? `${dev.vendorId}:${dev.productId}:${dev.serialNumber}` : `${dev.vendorId}:${dev.productId}`)
+}
+
+export function usbCanPersist(dev: {
+  serialNumber?: string | null
+  idUnstable?: boolean
+  attachable?: boolean
+  claimedByVMId?: string | null
+}) {
+  if (dev.attachable === false || dev.claimedByVMId) return false
+  if (dev.idUnstable && !dev.serialNumber) return false
+  return Boolean(dev.serialNumber)
 }
 
 export function useUSBPicker(opts: {
@@ -39,7 +52,7 @@ export function useUSBPicker(opts: {
   }
 
   function toggleUSBDevice(dev: HostUSBDevice) {
-    if (dev.attachable === false || dev.claimedByVMId) return
+    if (!usbCanPersist(dev)) return
     const key = usbDeviceKey(dev)
     const idx = selectedUSBDevices.value.findIndex((d) => usbDeviceKey(d) === key)
     if (idx >= 0) {
@@ -79,5 +92,7 @@ export function useUSBPicker(opts: {
     removeUSBDevice,
     clearUSBSelection,
     usbDeviceKey,
+    usbCanPersist,
+    usbNoSerialCopy,
   }
 }

@@ -83,9 +83,7 @@ public enum USBPassthroughService {
     }
 
     public static func missingSerialIdentityError(_ id: String) -> BarkVisorError {
-        .conflict(
-            "USB device \(id) has no serial; refusing vendor/product attach",
-        )
+        .conflict("USB device \(id) has no serial; cannot persist.")
     }
 
     public static func resolve(
@@ -96,8 +94,8 @@ public enum USBPassthroughService {
         guard let parsed = USBDeviceIdentity.parse(trimmed) else {
             throw BarkVisorError.badRequest("Invalid USB device id")
         }
-        if USBDeviceIdentity.isBusAddressId(trimmed) || (parsed.serial == nil && parsed.bus != nil) {
-            throw busAddressIdentityError(trimmed)
+        if USBDeviceIdentity.isBusAddressId(trimmed) {
+            return try resolveLiveBus(parsed, rawId: trimmed, hostDevices: hostDevices)
         }
         if parsed.serial == nil {
             throw missingSerialIdentityError(trimmed)
@@ -123,6 +121,29 @@ public enum USBPassthroughService {
             throw BarkVisorError.badRequest(
                 host.excludedReason ?? USBDeviceIdentity.massStorageExclusionReason,
             )
+        }
+        return host
+    }
+
+    private static func resolveLiveBus(
+        _ parsed: USBDeviceIdentity.Ref,
+        rawId: String,
+        hostDevices: [HostUSBDevice],
+    ) throws -> HostUSBDevice {
+        guard let bus = parsed.bus, let address = parsed.address else {
+            throw BarkVisorError.badRequest("Invalid USB device id")
+        }
+        let live = hostDevices.filter { $0.bus == bus && $0.address == address }
+        if live.count > 1 {
+            throw BarkVisorError.conflict(
+                "USB device id \(rawId) matches multiple host devices; unplug extras or attach by serial",
+            )
+        }
+        guard let host = live.first else {
+            throw BarkVisorError.notFound("USB device \(rawId) is not connected")
+        }
+        guard USBDeviceIdentity.normalizedSerial(host.serialNumber) != nil else {
+            throw missingSerialIdentityError(rawId)
         }
         return host
     }
@@ -231,7 +252,14 @@ public enum USBPassthroughService {
         hostDevices: [HostUSBDevice],
     ) throws -> USBPassthroughDevice {
         if let deviceId = device.deviceId, USBDeviceIdentity.isBusAddressId(deviceId) {
-            throw busAddressIdentityError(deviceId)
+            let host = try resolveAttachable(deviceId: deviceId, hostDevices: hostDevices)
+            return USBPassthroughDevice(
+                vendorId: host.vendorId,
+                productId: host.productId,
+                label: device.label ?? host.name,
+                serialNumber: host.serialNumber,
+                deviceId: host.id,
+            )
         }
 
         if let deviceId = device.deviceId, let parsed = USBDeviceIdentity.parse(deviceId),

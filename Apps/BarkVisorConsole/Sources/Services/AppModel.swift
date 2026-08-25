@@ -588,6 +588,16 @@ final class AppModel {
         }
     }
 
+    func usbDevices(on device: HomeDeviceHealthSnapshot) async -> [HostUSBDevice] {
+        guard device.isReachable else { return [] }
+        do {
+            return try await requireClient().usbDevices(on: device)
+        } catch {
+            handle(error)
+            return []
+        }
+    }
+
     func statsHistory(on device: HomeDeviceHealthSnapshot) async -> [SystemStatsSample] {
         guard DeviceStatsHistory.shouldFetch(device) else { return [] }
         do {
@@ -607,6 +617,18 @@ final class AppModel {
     func detachGPU(_ pciAddress: String, from workload: Workload, on device: HomeDeviceHealthSnapshot) async {
         await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
             _ = try await client.detachGPU(workload.id, pciAddress: pciAddress, on: resolved)
+        }
+    }
+
+    func attachUSB(_ deviceId: String, to workload: Workload, on device: HomeDeviceHealthSnapshot) async {
+        await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
+            _ = try await client.attachUSB(workload.id, deviceId: deviceId, on: resolved)
+        }
+    }
+
+    func detachUSB(_ deviceId: String, from workload: Workload, on device: HomeDeviceHealthSnapshot) async {
+        await mutate(actionID(for: workload, explicit: device), on: device) { client, resolved in
+            _ = try await client.detachUSB(workload.id, deviceId: deviceId, on: resolved)
         }
     }
 

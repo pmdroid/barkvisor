@@ -293,6 +293,7 @@ struct Workload: Decodable, Identifiable, Hashable {
     var portForwards: [GuestPortForward]?
     var startOnBoot: Bool? = nil
     var gpuDevices: [GPUPassthroughDevice]?
+    var usbDevices: [USBPassthroughDevice]? = nil
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -308,6 +309,9 @@ struct Workload: Decodable, Identifiable, Hashable {
     }
     /// vfio-pci is bound at start, not hot-plugged.
     var canDetachGPU: Bool {
+        canStart
+    }
+    var canDetachUSB: Bool {
         canStart
     }
     var canStop: Bool {
@@ -715,12 +719,18 @@ struct CapabilityDetail: Decodable, Equatable {
 
 struct SystemCapabilities: Decodable, Equatable {
     var platform: String
+    var supportsUSBPassthrough: Bool?
     var supportsGPUPassthrough: Bool?
     var supportsVFIO: Bool?
     var details: [CapabilityDetail]?
 
     func detail(code: String) -> CapabilityDetail? {
         details?.first { $0.code == code }
+    }
+
+    var usbPassthroughSupported: Bool {
+        if supportsUSBPassthrough == true { return true }
+        return detail(code: "usbPassthrough")?.supported == true
     }
 
     var gpuPassthroughSupported: Bool {
@@ -761,6 +771,62 @@ enum GPUPassthroughCopy {
             return "GPU passthrough is not available on macOS. Use a Linux Device with IOMMU, vfio-pci, and KVM."
         }
         return iommuNotReady
+    }
+}
+
+enum USBPassthroughCopy {
+    static let noSerial = "No serial, cannot persist."
+}
+
+struct USBPassthroughDevice: Decodable, Hashable, Identifiable {
+    var vendorId: String
+    var productId: String
+    var label: String?
+    var serialNumber: String?
+    var deviceId: String?
+
+    var id: String {
+        deviceId ?? "\(vendorId):\(productId)"
+    }
+
+    var displayName: String {
+        if let label, !label.isEmpty { return label }
+        return id
+    }
+}
+
+struct HostUSBDevice: Decodable, Hashable, Identifiable {
+    var id: String
+    var vendorId: String
+    var productId: String
+    var name: String
+    var manufacturer: String?
+    var serialNumber: String?
+    var bus: Int?
+    var address: Int?
+    var idUnstable: Bool?
+    var attachable: Bool?
+    var excludedReason: String?
+    var claimedByVMId: String?
+    var claimedByVMName: String?
+
+    var canAttach: Bool {
+        attachable != false
+            && claimedByVMId == nil
+            && serialNumber?.isEmpty == false
+    }
+
+    var occupancyCopy: String? {
+        if let claimedByVMName, !claimedByVMName.isEmpty {
+            return "Attached to \(claimedByVMName)"
+        }
+        if attachable == false {
+            return excludedReason
+        }
+        if idUnstable == true || serialNumber == nil || serialNumber?.isEmpty == true {
+            return USBPassthroughCopy.noSerial
+        }
+        return nil
     }
 }
 
