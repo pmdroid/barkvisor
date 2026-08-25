@@ -562,7 +562,22 @@ onUnmounted(() => clearInterval(pollTimer))
 
 @media (max-width: 900px) {
   .dash-devices,
-  .dash-detail { width: 100%; }
-  .dash-board { grid-template-columns: 1fr; }
+  .dash-detail {
+    width: 100%;
+    flex-shrink: 0;
+    min-height: auto;
+  }
+  .dash-dev-list { overflow: visible; }
+  .dash-board {
+    grid-template-columns: 1fr;
+    flex: none;
+    min-height: auto;
+  }
+  .dash-detail-head { flex-direction: column; }
+  .dash-chips {
+    margin-left: 0;
+    max-width: none;
+    justify-content: flex-start;
+  }
 }
 </style>

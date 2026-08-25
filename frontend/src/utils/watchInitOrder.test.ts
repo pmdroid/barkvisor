@@ -50,6 +50,17 @@ const skip = new Set([
   'route', 'props', 'window', 'document',
 ])
 
+describe('ops console mobile chrome', () => {
+  test('phone breakpoint overlays the menu and stacks split chrome', () => {
+    const css = readFileSync(join(srcRoot, 'style.css'), 'utf8')
+    expect(css).toMatch(/@media \(max-width: 768px\)/)
+    expect(css).toMatch(/\.sidebar\.mobile-open\s*\{[^}]*position:\s*fixed/)
+    expect(css).toMatch(/\.split-frame\s*\{[^}]*flex-direction:\s*column/)
+    expect(css).toMatch(/\.ops-toolbar\s*\{[^}]*flex-wrap:\s*wrap/)
+    expect(css).toMatch(/\.list-col,\s*\.convos\s*\{[^}]*max-height:\s*40vh/)
+  })
+})
+
 describe('watch sources are initialized first', () => {
   test('no watch() reads a later const/let', () => {
     const offenders: string[] = []
