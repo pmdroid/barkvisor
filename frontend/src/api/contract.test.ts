@@ -57,6 +57,7 @@ describe('API contract (PAS-78)', () => {
       '/api/workloadspec.schema.json',
       '/api/system/usb-devices',
       '/api/system/gpu-devices',
+      '/api/system/pci-devices',
       '/api/system/library/settings',
       '/api/system/remote-access',
       '/api/home/settings/remote-access',

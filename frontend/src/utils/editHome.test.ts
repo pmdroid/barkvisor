@@ -20,6 +20,7 @@ import {
   memberNetworkForDetail,
   metricsHistoryFetchPath,
   networksInventoryFetchPath,
+  pciInventoryFetchPath,
   shouldPollDeviceControl,
   usbInventoryFetchPath,
 } from './editHome'
@@ -65,6 +66,10 @@ describe('editHome (PAS-203)', () => {
     expect(metricsHistoryFetchPath(down, 'vm-9', 'running')).toBeNull()
     expect(metricsHistoryFetchPath(member, 'vm-9', 'stopped')).toBeNull()
     expect(usbInventoryFetchPath(down)).toBeNull()
+    expect(pciInventoryFetchPath(down)).toBeNull()
+    expect(pciInventoryFetchPath(member)).toBe(
+      '/home/devices/peer%2F1/v1/system/pci-devices',
+    )
     expect(disksInventoryFetchPath(down)).toBeNull()
     expect(networksInventoryFetchPath(down)).toBeNull()
     expect(logsHistoryFetchPath(member)).toBe('/home/devices/peer%2F1/v1/logs')
@@ -130,6 +135,9 @@ describe('editHome (PAS-203)', () => {
     expect(detail).toContain('homeWorkloads.attachGPU')
     expect(detail).toContain('homeWorkloads.detachGPU')
     expect(detail).toContain('gpuInventoryFetchPath')
+    expect(detail).toContain('pciInventoryFetchPath')
+    expect(detail).toContain("api.get('/system/pci-devices')")
+    expect(detail).toContain('homeWorkloads.attachGPU')
     expect(detail).toContain("tab === 'console' && showMemberConnect")
     expect(detail).toContain("tab === 'vnc' && showMemberConnect")
     expect(detail).toContain('usbInventoryFetchPath(memberDevice.value)')

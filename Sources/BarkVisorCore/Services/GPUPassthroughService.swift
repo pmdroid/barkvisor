@@ -7,8 +7,23 @@ public enum GPUPassthroughService {
     public static let iommuNotReadyMessage =
         "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
 
+    public static let pciPassthroughNotReadyMessage =
+        "PCI passthrough needs IOMMU, vfio-pci, and KVM. This Device is not ready."
+
     public static let hostGuestExclusiveMessage =
         "This GPU is bound to a host driver. Attaching it takes the card from the host. The same card cannot be host and guest."
+
+    public static let hostPCIExclusiveMessage =
+        "This PCI device is bound to a host driver. Attaching it takes the device from the host."
+
+    public static let bootDiskExclusionReason =
+        "This is the host boot disk. Passing it through would remove the Device's system disk."
+
+    public static let onlyUplinkExclusionReason =
+        "Passing this through would take the Device's remaining uplink."
+
+    public static let pciBridgeExclusionReason =
+        "PCI bridges cannot be passed through."
 
     public static let hostGPUDrivers: Set<String> = [
         "nvidia", "nvidia_drm", "nvidiafb", "amdgpu", "i915", "nouveau", "xe",
@@ -58,6 +73,40 @@ public enum GPUPassthroughService {
         return value
     }
 
+    public static func normalizePCIClass(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let hex = VFIOProbe.normalizedPCIClass(raw)
+        return hex.isEmpty ? nil : hex
+    }
+
+    public static func pciClassLabel(_ raw: String) -> String {
+        switch VFIOProbe.pciBaseClass(raw) {
+        case "01": return "Mass storage"
+        case "02": return "Network"
+        case "03": return "Display"
+        case "04": return "Multimedia"
+        case "05": return "Memory"
+        case "06": return "Bridge"
+        case "07": return "Communication"
+        case "08": return "System"
+        case "0c": return "Serial bus"
+        case "0d": return "Wireless"
+        case "12": return "Processing accelerator"
+        default:
+            let base = VFIOProbe.pciBaseClass(raw)
+            return base.isEmpty ? "PCI" : "Class \(base)"
+        }
+    }
+
+    public static func isDisplayDevice(_ device: GPUPassthroughDevice) -> Bool {
+        guard let pciClass = device.pciClass else { return true }
+        return VFIOProbe.isDisplayClass(pciClass)
+    }
+
+    public static func hasDisplayGPU(_ devices: [GPUPassthroughDevice]?) -> Bool {
+        (devices ?? []).contains(where: isDisplayDevice)
+    }
+
     public static func displayName(vendorId: String, deviceId: String, driver: String?) -> String {
         let vendor = normalizeHexId(vendorId)
         let vendorName = switch vendor {
@@ -70,6 +119,26 @@ public enum GPUPassthroughService {
         return "\(vendorName) \(normalizeHexId(deviceId))\(extra)"
     }
 
+    public static func pciDeviceName(
+        vendorId: String,
+        deviceId: String,
+        pciClass: String?,
+        driver: String?,
+    ) -> String {
+        if let pciClass, VFIOProbe.isDisplayClass(pciClass) {
+            return displayName(vendorId: vendorId, deviceId: deviceId, driver: driver)
+        }
+        let classLabel = pciClassLabel(pciClass ?? "")
+        let vendor = switch normalizeHexId(vendorId) {
+        case "10de": "NVIDIA"
+        case "1002": "AMD"
+        case "8086": "Intel"
+        default: normalizeHexId(vendorId).isEmpty ? "PCI" : normalizeHexId(vendorId)
+        }
+        let extra = driver.map { " (\($0))" } ?? ""
+        return "\(classLabel) \(vendor) \(normalizeHexId(deviceId))\(extra)"
+    }
+
     public static func passthrough(from host: HostGPUDevice) -> GPUPassthroughDevice {
         GPUPassthroughDevice(
             pciAddress: host.pciAddress,
@@ -78,6 +147,7 @@ public enum GPUPassthroughService {
             deviceId: host.deviceId,
             label: host.name,
             groupAddresses: host.groupAddresses,
+            pciClass: host.pciClass,
         )
     }
 
@@ -89,6 +159,7 @@ public enum GPUPassthroughService {
             deviceId: device.deviceId,
             label: device.label,
             groupAddresses: device.groupAddresses,
+            pciClass: device.pciClass,
         )
     }
 
@@ -100,6 +171,7 @@ public enum GPUPassthroughService {
             deviceId: spec.deviceId,
             label: spec.label,
             groupAddresses: spec.groupAddresses,
+            pciClass: spec.pciClass,
         )
     }
 
@@ -116,12 +188,12 @@ public enum GPUPassthroughService {
     ) throws -> HostGPUDevice {
         let trimmed = normalizePCIAddress(deviceId)
         guard isPCIAddress(trimmed) else {
-            throw BarkVisorError.badRequest("Invalid GPU PCI address")
+            throw BarkVisorError.badRequest("Invalid PCI address")
         }
         if let found = hostDevices.first(where: { $0.pciAddress == trimmed }) {
             return found
         }
-        throw BarkVisorError.notFound("GPU \(trimmed) is not in an IOMMU group")
+        throw BarkVisorError.notFound("PCI device \(trimmed) is not in an IOMMU group")
     }
 
     public static func resolveAttachable(
@@ -131,10 +203,24 @@ public enum GPUPassthroughService {
         let host = try resolve(deviceId: deviceId, hostDevices: hostDevices)
         guard host.attachable else {
             throw BarkVisorError.forbidden(
-                host.excludedReason ?? iommuNotReadyMessage,
+                host.excludedReason ?? notReadyMessage(for: host),
             )
         }
         return host
+    }
+
+    public static func isDisplayHost(_ host: HostGPUDevice) -> Bool {
+        guard let pciClass = host.pciClass else { return true }
+        return VFIOProbe.isDisplayClass(pciClass)
+    }
+
+    public static func notReadyMessage(for host: HostGPUDevice) -> String {
+        isDisplayHost(host) ? iommuNotReadyMessage : pciPassthroughNotReadyMessage
+    }
+
+    public static func claimedMessage(workloadName: String, host: HostGPUDevice) -> String {
+        let kind = isDisplayHost(host) ? "GPU" : "PCI device"
+        return "\(kind) is attached to \(workloadName)"
     }
 
     public static func claimedBy(
@@ -161,7 +247,7 @@ public enum GPUPassthroughService {
             let host = hostDevices.first { matches(device, host: $0) }
                 ?? syntheticHost(device)
             if let claim = claimedBy(host: host, vms: vms, excludingVMId: excludingVMId) {
-                throw BarkVisorError.conflict("GPU is attached to \(claim.name)")
+                throw BarkVisorError.conflict(claimedMessage(workloadName: claim.name, host: host))
             }
         }
     }
@@ -193,7 +279,7 @@ public enum GPUPassthroughService {
             let host = try resolveAttachable(deviceId: device.pciAddress, hostDevices: hostDevices)
             let stored = passthrough(from: host)
             if result.contains(where: { $0.pciAddress == stored.pciAddress }) {
-                throw BarkVisorError.badRequest("Duplicate GPU \(stored.pciAddress)")
+                throw BarkVisorError.badRequest("Duplicate PCI device \(stored.pciAddress)")
             }
             if result.contains(where: { $0.iommuGroup == stored.iommuGroup }) {
                 throw BarkVisorError.badRequest(
@@ -213,7 +299,7 @@ public enum GPUPassthroughService {
             for addr in addrs {
                 let normalized = normalizePCIAddress(addr)
                 guard isPCIAddress(normalized) else {
-                    throw BarkVisorError.badRequest("Invalid GPU PCI address \(addr)")
+                    throw BarkVisorError.badRequest("Invalid PCI address \(addr)")
                 }
                 if seen.insert(normalized).inserted {
                     ordered.append(normalized)
@@ -251,6 +337,7 @@ public enum GPUPassthroughService {
             attachable: true,
             excludedReason: nil,
             groupAddresses: device.groupAddresses,
+            pciClass: device.pciClass,
         )
     }
 }

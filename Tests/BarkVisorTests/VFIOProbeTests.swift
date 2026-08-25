@@ -119,6 +119,39 @@ struct VFIOProbeTests {
         #expect(VFIOProbe.isDisplayClass("038000"))
         #expect(!VFIOProbe.isDisplayClass("0x020000"))
         #expect(!VFIOProbe.isDisplayClass(""))
+        #expect(VFIOProbe.isNetworkClass("0x020000"))
+        #expect(VFIOProbe.isMassStorageClass("0x010802"))
+        #expect(VFIOProbe.isBridgeClass("0x060400"))
+        #expect(VFIOProbe.pciBaseClass("0x020000") == "02")
+        #expect(VFIOProbe.normalizedPCIClass("0x030000\n") == "030000")
+    }
+
+    @Test func `list pci devices includes non-display class`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "vfio-pci-list-\(UUID().uuidString)",
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let groups = root.appendingPathComponent("iommu_groups")
+        try writePCIDevice(
+            groups: groups, group: "0", bdf: "0000:00:02.0", pciClass: "0x030000\n",
+        )
+        try writePCIDevice(
+            groups: groups, group: "1", bdf: "0000:03:00.0", pciClass: "0x020000\n",
+        )
+        let paths = VFIOProbePaths(
+            iommuGroups: groups.path,
+            vfioPciDriver: root.appendingPathComponent("vfio-pci").path,
+            vfioModule: root.appendingPathComponent("module").path,
+            vfioDevice: root.appendingPathComponent("vfio").path,
+            kvmDevice: root.appendingPathComponent("kvm").path,
+        )
+        let all = VFIOProbe.listPCIDevices(from: paths)
+        #expect(all.map(\.pciAddress) == ["0000:00:02.0", "0000:03:00.0"])
+        #expect(all.first(where: { $0.pciAddress == "0000:03:00.0" })?.pciClass == "020000")
+        let display = VFIOProbe.listDisplayDevices(from: paths)
+        #expect(display.map(\.pciAddress) == ["0000:00:02.0"])
     }
 
     @Test func `inventory omits vfioProbe on old json`() throws {

@@ -590,7 +590,7 @@ extension VMLifecycleService {
             try PlatformCapabilities.requireUSBPassthrough()
         }
         if let gpu = params.gpuDevices, !gpu.isEmpty {
-            try PlatformCapabilities.requireGPUPassthrough()
+            try PlatformCapabilities.requireVFIOPassthrough()
         }
     }
 

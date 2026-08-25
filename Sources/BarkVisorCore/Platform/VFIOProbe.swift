@@ -31,12 +31,13 @@ public struct VFIOProbePaths: Sendable, Equatable {
     )
 }
 
-/// One display-class PCI function and the rest of its IOMMU group (PAS-275).
+/// One PCI function in an IOMMU group (display-class or generic).
 public struct VFIODisplayDevice: Sendable, Equatable {
     public var pciAddress: String
     public var iommuGroup: String
     public var vendorId: String
     public var deviceId: String
+    public var pciClass: String
     public var driver: String?
     public var groupAddresses: [String]
 
@@ -45,6 +46,7 @@ public struct VFIODisplayDevice: Sendable, Equatable {
         iommuGroup: String,
         vendorId: String,
         deviceId: String,
+        pciClass: String = "030000",
         driver: String?,
         groupAddresses: [String],
     ) {
@@ -52,6 +54,7 @@ public struct VFIODisplayDevice: Sendable, Equatable {
         self.iommuGroup = iommuGroup
         self.vendorId = vendorId
         self.deviceId = deviceId
+        self.pciClass = VFIOProbe.normalizedPCIClass(pciClass)
         self.driver = driver
         self.groupAddresses = groupAddresses
     }
@@ -210,6 +213,14 @@ public enum VFIOProbe {
         from paths: VFIOProbePaths,
         fileManager: FileManager = .default,
     ) -> [VFIODisplayDevice] {
+        listPCIDevices(from: paths, fileManager: fileManager).filter { isDisplayClass($0.pciClass) }
+    }
+
+    /// IOMMU-group PCI functions with no display-class filter.
+    public static func listPCIDevices(
+        from paths: VFIOProbePaths,
+        fileManager: FileManager = .default,
+    ) -> [VFIODisplayDevice] {
         let groups = iommuGroups(at: paths.iommuGroups, fileManager: fileManager)
         var result: [VFIODisplayDevice] = []
         for group in groups {
@@ -217,10 +228,10 @@ public enum VFIOProbe {
                 GPUPassthroughService.isPCIAddress($0)
             }.sorted()
             for device in group.deviceDirs {
-                let classURL = device.appendingPathComponent("class")
-                guard let classRaw = try? String(contentsOf: classURL, encoding: .utf8),
-                      isDisplayClass(classRaw)
-                else { continue }
+                guard GPUPassthroughService.isPCIAddress(device.lastPathComponent) else { continue }
+                let classRaw = (try? String(
+                    contentsOf: device.appendingPathComponent("class"), encoding: .utf8,
+                )) ?? ""
                 let vendor = readHex(device.appendingPathComponent("vendor"))
                 let product = readHex(device.appendingPathComponent("device"))
                 let driver = readDriver(at: device, fileManager: fileManager)
@@ -230,6 +241,7 @@ public enum VFIOProbe {
                         iommuGroup: group.id,
                         vendorId: vendor,
                         deviceId: product,
+                        pciClass: normalizedPCIClass(classRaw),
                         driver: driver,
                         groupAddresses: addresses.map { GPUPassthroughService.normalizePCIAddress($0) },
                     ),
@@ -289,12 +301,35 @@ public enum VFIOProbe {
         return count
     }
 
-    /// PCI base class 0x03 is display (VGA / 3D / other).
-    public static func isDisplayClass(_ raw: String) -> Bool {
+    /// PCI class code as lowercase hex without a `0x` prefix (`030000`).
+    public static func normalizedPCIClass(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let hex = trimmed.hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
-        guard hex.count >= 2 else { return false }
-        return hex.prefix(2) == "03"
+        return hex.filter(\.isHexDigit)
+    }
+
+    /// First byte of the PCI class code (`03` display, `02` network, `01` storage).
+    public static func pciBaseClass(_ raw: String) -> String {
+        let hex = normalizedPCIClass(raw)
+        guard hex.count >= 2 else { return "" }
+        return String(hex.prefix(2))
+    }
+
+    /// PCI base class 0x03 is display (VGA / 3D / other).
+    public static func isDisplayClass(_ raw: String) -> Bool {
+        pciBaseClass(raw) == "03"
+    }
+
+    public static func isNetworkClass(_ raw: String) -> Bool {
+        pciBaseClass(raw) == "02"
+    }
+
+    public static func isMassStorageClass(_ raw: String) -> Bool {
+        pciBaseClass(raw) == "01"
+    }
+
+    public static func isBridgeClass(_ raw: String) -> Bool {
+        pciBaseClass(raw) == "06"
     }
 
     private static func readHex(_ url: URL) -> String {
