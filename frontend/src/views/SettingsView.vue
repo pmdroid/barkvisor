@@ -3,7 +3,14 @@ import { apiErrorMessage } from '../api/errors'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/client'
-import type { APIKeyResponse, AuditEntry, LibrarySettings, RemoteAccessStatus, SSHKey } from '../api/types'
+import type {
+  APIKeyResponse,
+  AuditEntry,
+  DiskSettings,
+  LibrarySettings,
+  RemoteAccessStatus,
+  SSHKey,
+} from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import {
@@ -27,7 +34,7 @@ import {
 import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
-import { isSelfDevice } from '../utils/homeDeviceApi'
+import { deviceDiskSettingsPath, isSelfDevice } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
@@ -323,6 +330,11 @@ function openLibraryTab() {
   devicesStore.fetchHealth()
 }
 
+function openDisksTab() {
+  tab.value = 'disks'
+  fetchDiskSettings()
+}
+
 const devicesStore = useDevicesStore()
 const librarySettings = ref<LibrarySettings>({
   imageDirectory: '',
@@ -338,6 +350,12 @@ const librarySaving = ref(false)
 const showLibraryPicker = ref(false)
 const depotDraft = ref('')
 const depotSaving = ref(false)
+
+const diskSettings = ref<DiskSettings | null>(null)
+const diskDirectoryDraft = ref('')
+const diskDirLoading = ref(false)
+const diskDirSaving = ref(false)
+const showDiskDirPicker = ref(false)
 
 const remoteAccess = ref<RemoteAccessStatus | null>(null)
 const remoteAccessLoading = ref(false)
@@ -467,6 +485,45 @@ async function resetLibrarySettings() {
   } finally {
     librarySaving.value = false
   }
+}
+
+function selfDiskSettingsPath() {
+  const device = devicesStore.selfDevice
+  return device ? deviceDiskSettingsPath(device) : '/system/disk/settings'
+}
+
+async function fetchDiskSettings() {
+  diskDirLoading.value = true
+  try {
+    const { data } = await api.get<DiskSettings>(selfDiskSettingsPath())
+    diskSettings.value = data
+    diskDirectoryDraft.value = data.diskDirectory
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not load disk directory'))
+  } finally {
+    diskDirLoading.value = false
+  }
+}
+
+async function saveDiskSettings() {
+  diskDirSaving.value = true
+  try {
+    const { data } = await api.put<DiskSettings>(selfDiskSettingsPath(), {
+      diskDirectory: diskDirectoryDraft.value,
+    })
+    diskSettings.value = data
+    diskDirectoryDraft.value = data.diskDirectory
+    toast.success('Disk directory saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not save disk directory'))
+  } finally {
+    diskDirSaving.value = false
+  }
+}
+
+async function resetDiskSettings() {
+  diskDirectoryDraft.value = ''
+  await saveDiskSettings()
 }
 
 async function saveDepotSettings() {
@@ -684,6 +741,10 @@ function applySettingsTab(next: SettingsTab) {
     openLibraryTab()
     return
   }
+  if (next === 'disks') {
+    openDisksTab()
+    return
+  }
   if (next === 'sshkeys') {
     tab.value = 'sshkeys'
     sshKeyStore.fetchAll()
@@ -717,6 +778,7 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'home' }" @click="openHomeTab">{{ HOME_LABEL }}</button>
     <button :class="{ active: isPairingTab(tab) }" @click="openPairingTab">Pairing</button>
     <button :class="{ active: tab === 'library' }" @click="openLibraryTab">Library</button>
+    <button :class="{ active: tab === 'disks' }" @click="openDisksTab">Disks</button>
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
@@ -1208,6 +1270,53 @@ onUnmounted(() => {
       :model-value="libraryDraft"
       @update:model-value="libraryDraft = $event"
       @close="showLibraryPicker = false"
+    />
+  </div>
+
+  <div v-if="tab === 'disks'">
+    <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0">
+      New disks on this {{ DEVICE_LABEL }} go here unless Create Disk picks another folder.
+    </p>
+    <div class="form-group" style="max-width:640px">
+      <label>Default VM disk directory</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input
+          v-model="diskDirectoryDraft"
+          :disabled="diskDirLoading || diskDirSaving"
+          placeholder="/var/lib/barkvisor/disks"
+          style="flex:1"
+        />
+        <AppButton size="sm" :disabled="diskDirLoading || diskDirSaving" @click="showDiskDirPicker = true">
+          Browse
+        </AppButton>
+      </div>
+      <p style="color:var(--text-tertiary);font-size:12px;margin:8px 0 0 0">
+        {{ diskSettings?.isDefault ? 'Using the default path on this Device.' : 'Using a custom disk directory.' }}
+        Absolute path required. Must be writable by the daemon and must not contain a comma.
+      </p>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <AppButton
+        variant="primary"
+        :loading="diskDirSaving"
+        loading-text="Saving..."
+        :disabled="diskDirLoading"
+        @click="saveDiskSettings"
+      >
+        Save
+      </AppButton>
+      <AppButton
+        :disabled="diskDirLoading || diskDirSaving || diskSettings?.isDefault"
+        @click="resetDiskSettings"
+      >
+        Reset to default
+      </AppButton>
+    </div>
+    <FolderPicker
+      v-if="showDiskDirPicker"
+      :model-value="diskDirectoryDraft"
+      @update:model-value="diskDirectoryDraft = $event"
+      @close="showDiskDirPicker = false"
     />
   </div>
 

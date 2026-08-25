@@ -375,6 +375,14 @@ struct APIClient {
         try await send(method: "PUT", path: "/api/ollama/settings", body: body, as: OllamaSettingsSnapshot.self)
     }
 
+    func diskSettings() async throws -> DiskSettingsSnapshot {
+        try await get("/api/system/disk/settings")
+    }
+
+    func saveDiskSettings(_ body: DiskSettingsUpdate) async throws -> DiskSettingsSnapshot {
+        try await send(method: "PUT", path: "/api/system/disk/settings", body: body, as: DiskSettingsSnapshot.self)
+    }
+
     func streamChatCompletions(
         model: String,
         messages: [ChatWireMessage],

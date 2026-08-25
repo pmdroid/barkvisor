@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Default VM disk directory is **Settings → Disks** (`?tab=disks`). The Disks list still creates disks and can pick a folder per disk.
 - Linux Create Disk and Workload start fail closed when this Device cannot open a host block device for read/write. The error names the path and that the BarkVisor user needs the disk group (or a udev ACL). QEMU is not started with that `-drive`.
 - PCI picker occupancy is GPU host driver / Workload claim, not every bound kernel module.
 - Sidebar **All** vs one **Device** scopes Home lists (Workloads, Library, Networks, Logs). Logs can still refine inside that scope. Dashboard widgets show/hide locally; **Reset** restores defaults. This Device CPU/memory charts stay on Device detail — they are not Home-wide lists.
