@@ -115,6 +115,21 @@ struct OllamaModelsTests {
         )
         #expect(dup.startLocations.map(\.hostId) == ["desk"])
         #expect(!dup.startNeedsPicker)
+
+        let downThenUp = OllamaCatalogModel(
+            name: "llama3:latest",
+            digest: nil,
+            size: nil,
+            running: false,
+            locations: [
+                OllamaModelLocation(hostId: "desk", displayName: "Desk", running: false, reachable: false),
+                desk,
+            ],
+        )
+        #expect(downThenUp.startLocations.map(\.hostId) == ["desk"])
+        #expect(downThenUp.canStart(selectedHostId: nil))
+        #expect(downThenUp.soleStartHostId == "desk")
+        #expect(onlyDown.startDisabledReason(selectedHostId: "down") == "Model is on this Device but unreachable")
     }
 
     @Test func `stop uses live running host not snapshot`() {

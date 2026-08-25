@@ -37,12 +37,14 @@ export function ollamaStartLocations<T extends { hostId: string; reachable?: boo
   model?: { locations: T[] } | null,
 ): T[] {
   const locations = model?.locations ?? []
+  const byHost = new Map<string, T>()
+  for (const loc of locations) {
+    const prev = byHost.get(loc.hostId)
+    if (!prev || (!prev.reachable && loc.reachable)) byHost.set(loc.hostId, loc)
+  }
   const reachable: T[] = []
   const unreachable: T[] = []
-  const seen = new Set<string>()
-  for (const loc of locations) {
-    if (seen.has(loc.hostId)) continue
-    seen.add(loc.hostId)
+  for (const loc of byHost.values()) {
     if (loc.reachable) reachable.push(loc)
     else unreachable.push(loc)
   }
@@ -112,7 +114,13 @@ export function ollamaStartDisabledReason(
   selectedHostId?: string | null,
 ): string | undefined {
   if (ollamaStartCanStart(model, selectedHostId)) return undefined
-  if (ollamaStartScopeHostId(selectedHostId)) return 'Model is not on this Device'
+  const candidates = ollamaStartCandidates(model, selectedHostId)
+  if (ollamaStartScopeHostId(selectedHostId) && candidates.length === 0) {
+    return 'Model is not on this Device'
+  }
+  if (ollamaStartScopeHostId(selectedHostId)) {
+    return 'Model is on this Device but unreachable'
+  }
   return 'Model is on Devices that are unreachable'
 }
 

@@ -206,6 +206,17 @@ const startHostOptions = computed(() =>
   }),
 )
 
+const startHostIsCandidate = computed(() =>
+  startHostOptions.value.some((opt) => opt.value === startHost.value),
+)
+
+watch(startHostOptions, (opts) => {
+  if (!startTarget.value) return
+  if (!opts.some((opt) => opt.value === startHost.value)) {
+    startHost.value = opts[0]?.value ?? ''
+  }
+})
+
 const filteredModels = computed(() =>
   scopeOllamaModels(
     store.models.filter((row) => ollamaModelMatchesName(row.name, nameQuery.value)),
@@ -542,7 +553,11 @@ async function startModelAt(model: OllamaCatalogModel, hostId?: string) {
 async function startModel() {
   const model = startTarget.value
   if (!model) return
-  await startModelAt(model, startHost.value || undefined)
+  if (!startHostIsCandidate.value) {
+    toast.error(ollamaStartDisabledReason(model, deviceScope.selectedHostId) ?? 'Pick a Device that has this model')
+    return
+  }
+  await startModelAt(model, startHost.value)
 }
 
 async function stopModel() {
@@ -955,7 +970,7 @@ async function saveKey() {
       <AppButton variant="ghost" :disabled="starting" @click="startTarget = null">Cancel</AppButton>
       <AppButton
         variant="primary"
-        :disabled="!startHost || startHostOptions.find((opt) => opt.value === startHost)?.disabled"
+        :disabled="!startHostIsCandidate || starting"
         :loading="starting"
         loading-text="Starting..."
         @click="startModel"

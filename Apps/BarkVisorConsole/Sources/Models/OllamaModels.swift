@@ -48,12 +48,20 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
 
     /// Devices that already have this model's weights. Reachable first; unreachable stay listed.
     var startLocations: [OllamaModelLocation] {
-        var seen: Set<String> = []
+        var byHost: [String: OllamaModelLocation] = [:]
+        var order: [String] = []
+        for loc in locations {
+            if let prev = byHost[loc.hostId] {
+                if !prev.reachable, loc.reachable { byHost[loc.hostId] = loc }
+            } else {
+                byHost[loc.hostId] = loc
+                order.append(loc.hostId)
+            }
+        }
         var reachable: [OllamaModelLocation] = []
         var unreachable: [OllamaModelLocation] = []
-        for loc in locations {
-            if seen.contains(loc.hostId) { continue }
-            seen.insert(loc.hostId)
+        for hostId in order {
+            guard let loc = byHost[hostId] else { continue }
             if loc.reachable { reachable.append(loc) } else { unreachable.append(loc) }
         }
         return reachable + unreachable
@@ -105,8 +113,13 @@ struct OllamaCatalogModel: Decodable, Identifiable, Equatable, Hashable {
     func startDisabledReason(selectedHostId: String?) -> String? {
         if canStart(selectedHostId: selectedHostId) { return nil }
         let scoped = selectedHostId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !scoped.isEmpty, scoped.lowercased() != "all" {
+        let hasScope = !scoped.isEmpty && scoped.lowercased() != "all"
+        let candidates = startCandidates(selectedHostId: selectedHostId)
+        if hasScope, candidates.isEmpty {
             return "Model is not on this Device"
+        }
+        if hasScope {
+            return "Model is on this Device but unreachable"
         }
         return "Model is on Devices that are unreachable"
     }

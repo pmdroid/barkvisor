@@ -147,4 +147,18 @@ describe('ollama start locations', () => {
     expect(ollamaStartNeedsPicker(model)).toBe(false)
     expect(ollamaSoleStartHostId(model)).toBe('desk')
   })
+
+  test('duplicate hostId keeps the reachable copy', () => {
+    const downDesk = { hostId: 'desk', displayName: 'Desk', running: false, reachable: false }
+    const model = { locations: [downDesk, desk] }
+    expect(ollamaStartLocations(model)).toEqual([desk])
+    expect(ollamaStartCanStart(model)).toBe(true)
+    expect(ollamaSoleStartHostId(model)).toBe('desk')
+  })
+
+  test('scoped unreachable Device has a distinct reason', () => {
+    const model = { locations: [down] }
+    expect(ollamaStartDisabledReason(model, 'down')).toBe('Model is on this Device but unreachable')
+    expect(ollamaStartDisabledReason(model, 'desk')).toBe('Model is not on this Device')
+  })
 })
