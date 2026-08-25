@@ -46,6 +46,7 @@ import {
   scorePlacement,
 } from '../utils/placement'
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
+import { imageProgressPercent, imageRowDownloadPercent } from '../utils/imageProgress'
 import { natWebUILinks, templateDeclaresSshKeys } from '../utils/templateDeploy'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
@@ -325,7 +326,7 @@ const loading = ref(false)
 
 // Download progress state
 const phase = ref<'form' | 'downloading' | 'deploying' | 'done'>('form')
-const downloadPercent = ref(0)
+const downloadPercent = ref<number | null>(0)
 const downloadStatus = ref('')
 const imageProgress = useImageProgress()
 let drawerClosed = false
@@ -381,11 +382,25 @@ function buildRequest(): DeployTemplateRequest {
   }
 }
 
+function applyImageRowProgress(data: { status?: string; downloadPercent?: number | null }) {
+  if (data.status === 'decompressing' || data.status === 'verifying') {
+    downloadPercent.value = null
+    downloadStatus.value = data.status === 'decompressing'
+      ? 'Decompressing image...'
+      : 'Verifying image...'
+    return
+  }
+  downloadPercent.value = imageRowDownloadPercent(data)
+  downloadStatus.value = downloadPercent.value != null
+    ? `Downloading image... ${downloadPercent.value}%`
+    : 'Downloading image on the picked Device...'
+}
+
 async function pollRemoteImage(imageId: string) {
   const device = selectedDevice.value
   if (!device || drawerClosed) return
   phase.value = 'downloading'
-  downloadPercent.value = 0
+  downloadPercent.value = null
   downloadStatus.value = 'Downloading image on the picked Device...'
   try {
     for (let i = 0; i < 600; i++) {
@@ -401,6 +416,7 @@ async function pollRemoteImage(imageId: string) {
         phase.value = 'form'
         return
       }
+      applyImageRowProgress(data)
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
     if (drawerClosed) return
@@ -420,7 +436,7 @@ function watchDownload(imageId: string) {
     return
   }
   phase.value = 'downloading'
-  downloadPercent.value = 0
+  downloadPercent.value = null
   downloadStatus.value = 'Starting download...'
 
   let settled = false
@@ -456,6 +472,7 @@ function watchDownload(imageId: string) {
           finishError(data.error || 'Image download failed')
           return
         }
+        applyImageRowProgress(data)
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
       finishError('Timed out waiting for the Device image download')
@@ -467,7 +484,7 @@ function watchDownload(imageId: string) {
   imageProgress.start(imageId, {
     onProgress: (data) => {
       if (data.status === 'downloading') {
-        downloadPercent.value = data.percent ?? 0
+        downloadPercent.value = imageProgressPercent(data)
         const mb = Math.round((data.bytesReceived || 0) / 1024 / 1024)
         const totalMb = data.totalBytes ? Math.round(data.totalBytes / 1024 / 1024) : null
         downloadStatus.value = totalMb
@@ -475,7 +492,7 @@ function watchDownload(imageId: string) {
           : `Downloading image... ${mb} MB`
       } else if (data.status === 'decompressing') {
         downloadStatus.value = 'Decompressing image...'
-        downloadPercent.value = 100
+        downloadPercent.value = null
       }
     },
     onReady: () => {
@@ -663,10 +680,10 @@ async function submit() {
         </div>
         <div class="progress-bar-track">
           <div class="progress-bar-fill"
-            :style="{ width: phase === 'deploying' ? '100%' : downloadPercent + '%' }"
-            :class="{ indeterminate: phase === 'deploying' }" />
+            :style="{ width: phase === 'deploying' || downloadPercent == null ? '100%' : downloadPercent + '%' }"
+            :class="{ indeterminate: phase === 'deploying' || (phase === 'downloading' && downloadPercent == null) }" />
         </div>
-        <div v-if="phase === 'downloading'" style="text-align:center;margin-top:8px;font-size:12px;color:var(--text-dim)">
+        <div v-if="phase === 'downloading' && downloadPercent != null" style="text-align:center;margin-top:8px;font-size:12px;color:var(--text-dim)">
           {{ downloadPercent }}%
         </div>
         <div v-if="error" class="error-box" style="margin-top:16px">{{ error }}</div>

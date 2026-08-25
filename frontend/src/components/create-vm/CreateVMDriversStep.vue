@@ -2,7 +2,7 @@
 defineProps<{
   virtioWinAvailable: boolean
   virtioWinDownloading: boolean
-  virtioWinProgress: number
+  virtioWinProgress: number | null
   virtioWinStatus: string
   virtioWinError: string
 }>()
@@ -29,10 +29,14 @@ const emit = defineEmits<{
       <div style="width:100%">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px">
           <span>{{ virtioWinStatus === 'decompressing' ? 'Decompressing...' : 'Downloading VirtIO drivers...' }}</span>
-          <span>{{ Math.round(virtioWinProgress) }}%</span>
+          <span v-if="virtioWinProgress != null">{{ Math.round(virtioWinProgress) }}%</span>
         </div>
         <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: virtioWinProgress + '%' }"></div>
+          <div
+            class="progress-fill"
+            :class="{ indeterminate: virtioWinProgress == null }"
+            :style="virtioWinProgress != null ? { width: virtioWinProgress + '%' } : undefined"
+          ></div>
         </div>
       </div>
     </div>
@@ -86,5 +90,15 @@ const emit = defineEmits<{
   background: var(--accent);
   border-radius: 3px;
   transition: width 0.3s ease;
+}
+.progress-fill.indeterminate {
+  width: 100%;
+  animation: virtio-progress-indeterminate 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+  background-size: 200% 100%;
+}
+@keyframes virtio-progress-indeterminate {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

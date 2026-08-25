@@ -8,6 +8,7 @@ import {
   isSelfDevice,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
+import { imageProgressPercent } from '../utils/imageProgress'
 import { useImageProgress } from './useTicketedEventSource'
 import { useTaskPoller } from './useTaskPoller'
 
@@ -21,7 +22,7 @@ export function useVirtioDownload(opts: {
   const virtioWinAvailable = ref(false)
   const virtioWinImageId = ref<string | null>(null)
   const virtioWinDownloading = ref(false)
-  const virtioWinProgress = ref(0)
+  const virtioWinProgress = ref<number | null>(null)
   const virtioWinStatus = ref<string>('')
   const virtioWinError = ref('')
 
@@ -49,7 +50,7 @@ export function useVirtioDownload(opts: {
   async function startVirtioWinDownload() {
     virtioWinError.value = ''
     virtioWinDownloading.value = true
-    virtioWinProgress.value = 0
+    virtioWinProgress.value = null
     virtioWinStatus.value = 'downloading'
     virtioProgress.stop()
 
@@ -85,7 +86,7 @@ export function useVirtioDownload(opts: {
 
       virtioProgress.start(data.imageId, {
         onProgress: (msg) => {
-          virtioWinProgress.value = msg.percent ?? 0
+          virtioWinProgress.value = imageProgressPercent(msg)
           virtioWinStatus.value = msg.status ?? 'downloading'
         },
         onReady: () => {

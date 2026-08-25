@@ -232,6 +232,22 @@ struct DTOTests {
         #expect(response.status == "error")
         #expect(response.error == "Download failed")
         #expect(response.sizeBytes == nil)
+        #expect(response.downloadPercent == nil)
+    }
+
+    @Test func `image response encodes in-flight download percent`() throws {
+        let image = VMImage(
+            id: "img-3", name: "Ubuntu", imageType: "iso", arch: "arm64",
+            path: nil, sizeBytes: nil,
+            status: "downloading", error: nil,
+            sourceUrl: "https://example.com/ubuntu.iso",
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
+        let response = ImageResponse(from: image, downloadPercent: 42)
+        #expect(response.downloadPercent == 42)
+        let data = try JSONEncoder().encode(response)
+        let dict = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["downloadPercent"] as? Int == 42)
     }
 
     // MARK: - TemplateResponse

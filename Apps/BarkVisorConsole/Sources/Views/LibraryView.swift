@@ -42,6 +42,14 @@ struct LibraryView: View {
         .platformListStyle()
         .refreshable { await model.refreshLibrary() }
         .task { await model.refreshLibrary() }
+        .task(id: libraryTransferIDs) {
+            guard !libraryTransferIDs.isEmpty else { return }
+            while !Task.isCancelled, model.images.contains(where: \.isTransferring) {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                await model.refreshLibraryImages()
+            }
+        }
         .createWorkloadEntry(
             allowsDevicePicker: false,
             images: model.images,
@@ -59,6 +67,10 @@ struct LibraryView: View {
         }
         return "Downloads land on the selected \(Copy.device.lowercased())."
     }
+
+    private var libraryTransferIDs: String {
+        model.images.filter(\.isTransferring).map(\.id).sorted().joined(separator: ",")
+    }
 }
 
 private struct LibraryImageRow: View {
@@ -67,8 +79,13 @@ private struct LibraryImageRow: View {
     var body: some View {
         LabeledContent {
             if image.isTransferring {
-                ProgressView()
-                    .controlSize(.small)
+                if let progress = image.transferProgress {
+                    ProgressView(value: progress)
+                        .controlSize(.small)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
             Text(image.status)
                 .foregroundStyle(Color.status(image.status))
@@ -96,8 +113,13 @@ private struct CatalogImageRow: View {
     var body: some View {
         LabeledContent {
             if state.isBusy {
-                ProgressView()
-                    .controlSize(.small)
+                if let progress = LibraryCatalog.libraryImage(for: image, in: model.images)?.transferProgress {
+                    ProgressView(value: progress)
+                        .controlSize(.small)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
             Button(state.buttonTitle) {
                 Task { await model.downloadCatalogImage(image) }

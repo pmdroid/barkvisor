@@ -62,8 +62,12 @@ export function useTicketedEventSource() {
     try {
       ticket = await getWSTicket(vmID)
     } catch (e) {
+      if (stopped || gen !== generation) return
+      if (options.reconnect === false) {
+        options.onError?.(e)
+        return
+      }
       scheduleReconnect(gen)
-      options.onError?.(e)
       return
     }
     if (stopped || gen !== generation) return
@@ -160,12 +164,14 @@ export function useImageProgress() {
       onProgress?: (data: ImageProgressEvent) => void
       onReady?: (data: ImageProgressEvent) => void
       onError?: (data: ImageProgressEvent | undefined) => void
+      onOpen?: () => void
     },
   ) {
     stream.start({
       url: (ticket) => `/api/images/${imageId}/progress?ticket=${ticket}`,
       reconnect: true,
       maxAttempts: 15,
+      onOpen: () => handlers.onOpen?.(),
       onMessage: (event) => {
         let data: ImageProgressEvent
         try {
