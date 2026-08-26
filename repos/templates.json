@@ -8,7 +8,10 @@
       "category": "general",
       "icon": "terminal",
       "imageSlug": "ubuntu-24.04-arm64",
-      "architectures": ["arm64", "x86_64"],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
       "imageByArch": {
         "arm64": "ubuntu-24.04-arm64",
         "x86_64": "ubuntu-24.04-x86_64"
@@ -53,7 +56,10 @@
       "category": "networking",
       "icon": "shield",
       "imageSlug": "ubuntu-24.04-arm64",
-      "architectures": ["arm64", "x86_64"],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
       "imageByArch": {
         "arm64": "ubuntu-24.04-arm64",
         "x86_64": "ubuntu-24.04-x86_64"
@@ -69,10 +75,16 @@
           "guestPort": 80,
           "httpPath": "/admin/login"
         },
-        { "protocol": "udp", "hostPort": 53, "guestPort": 53 }
+        {
+          "protocol": "udp",
+          "hostPort": 53,
+          "guestPort": 53
+        }
       ],
       "networkMode": "bridged",
-      "requiredFeatures": ["bridgedNetworking"],
+      "requiredFeatures": [
+        "bridgedNetworking"
+      ],
       "inputs": [
         {
           "id": "username",
@@ -107,7 +119,10 @@
       "category": "general",
       "icon": "terminal",
       "imageSlug": "debian-12-arm64",
-      "architectures": ["arm64", "x86_64"],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
       "imageByArch": {
         "arm64": "debian-12-arm64",
         "x86_64": "debian-12-x86_64"
@@ -152,7 +167,10 @@
       "category": "general",
       "icon": "terminal",
       "imageSlug": "rocky-9-arm64",
-      "architectures": ["arm64", "x86_64"],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
       "imageByArch": {
         "arm64": "rocky-9-arm64",
         "x86_64": "rocky-9-x86_64"
@@ -196,11 +214,14 @@
       "description": "Official HAOS for this host. UEFI guest; web UI on port 8123.",
       "category": "smart-home",
       "icon": "home",
-      "imageSlug": "haos-18.1-x86_64",
-      "architectures": ["arm64", "x86_64"],
+      "imageSlug": "haos-18.2-x86_64",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
       "imageByArch": {
-        "arm64": "haos-18.1-arm64",
-        "x86_64": "haos-18.1-x86_64"
+        "arm64": "haos-18.2-arm64",
+        "x86_64": "haos-18.2-x86_64"
       },
       "cpuCount": 2,
       "memoryMB": 2048,
@@ -257,6 +278,752 @@
         }
       ],
       "userDataTemplate": "barkvisor_allow_host_ollama: true\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - git\n  - curl\n  - jq\n  - openssl\n  - ca-certificates\n  - qemu-guest-agent\nwrite_files:\n  - path: /usr/local/bin/barkvisor-onyx-setup\n    permissions: '0755'\n    content: |\n      #!/bin/bash\n      set -euo pipefail\n      install -d -m 0755 /opt/onyx /var/lib/barkvisor /etc/onyx\n      if [ ! -d /opt/onyx/.git ]; then\n        git clone --depth 1 --branch v4.6.2 https://github.com/onyx-dot-app/onyx.git /opt/onyx\n      fi\n      COMPOSE=/opt/onyx/deployment/docker_compose\n      if [ ! -f /etc/onyx/user-auth-secret ]; then\n        openssl rand -hex 32 > /etc/onyx/user-auth-secret\n        chmod 600 /etc/onyx/user-auth-secret\n      fi\n      if [ ! -f /etc/onyx/postgres-password ]; then\n        openssl rand -hex 16 > /etc/onyx/postgres-password\n        chmod 600 /etc/onyx/postgres-password\n      fi\n      SECRET=$(cat /etc/onyx/user-auth-secret)\n      PGPASS=$(cat /etc/onyx/postgres-password)\n      printf '%s\\n' \\\n        \"IMAGE_TAG=v4.6.2\" \\\n        \"USER_AUTH_SECRET=$SECRET\" \\\n        \"POSTGRES_USER=postgres\" \\\n        \"POSTGRES_PASSWORD=$PGPASS\" \\\n        \"AUTH_TYPE=basic\" \\\n        \"DISABLE_VECTOR_DB=true\" \\\n        \"FILE_STORE_BACKEND=postgres\" \\\n        \"CACHE_BACKEND=postgres\" \\\n        \"AUTH_BACKEND=postgres\" \\\n        \"COMPOSE_PROFILES=\" \\\n        \"WEB_DOMAIN=http://127.0.0.1\" \\\n        \"DISABLE_TELEMETRY=true\" \\\n        > \"$COMPOSE/.env\"\n      usermod -aG docker ubuntu || true\n      systemctl enable --now docker\n      cd \"$COMPOSE\"\n      docker compose -f docker-compose.yml -f docker-compose.onyx-lite.yml up -d\n      /usr/local/bin/barkvisor-onyx-seed || true\n  - path: /usr/local/bin/barkvisor-onyx-seed\n    permissions: '0755'\n    content: |\n      #!/bin/bash\n      set -euo pipefail\n      OLLAMA={{ollama_url}}\n      BASE=http://127.0.0.1\n      for _ in $(seq 1 90); do\n        if curl -fsS \"$BASE/api/health\" >/dev/null 2>&1; then\n          break\n        fi\n        sleep 5\n      done\n      MODELS=$(curl -fsS \"$OLLAMA/api/tags\" | jq -c '[.models[]?.name] // []' || echo '[]')\n      CONFIGS=$(echo \"$MODELS\" | jq -c '[.[] | {name: ., is_visible: true}]')\n      BODY=$(jq -n --arg base \"$OLLAMA\" --argjson models \"$CONFIGS\" \\\n        '{name:\"Home Ollama\",provider:\"ollama\",api_base:$base,is_public:true,model_configurations:$models}')\n      curl -fsS -X PUT \"$BASE/api/admin/llm/provider?is_creation=true\" \\\n        -H 'Content-Type: application/json' -d \"$BODY\" || true\n  - path: /etc/systemd/system/barkvisor-onyx.service\n    permissions: '0644'\n    content: |\n      [Unit]\n      Description=Onyx Lite\n      After=docker.service network-online.target\n      Wants=network-online.target docker.service\n      Requires=docker.service\n\n      [Service]\n      Type=oneshot\n      RemainAfterExit=yes\n      WorkingDirectory=/opt/onyx/deployment/docker_compose\n      ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.onyx-lite.yml up -d\n      ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.onyx-lite.yml down\n      TimeoutStartSec=0\n\n      [Install]\n      WantedBy=multi-user.target\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - [ bash, /usr/local/bin/barkvisor-onyx-setup ]\n  - systemctl enable barkvisor-onyx\n"
+    },
+    {
+      "slug": "debian-13-cloud",
+      "name": "Debian 13",
+      "description": "Debian Trixie cloud image with cloud-init.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "debian-13-arm64",
+        "x86_64": "debian-13-x86_64"
+      },
+      "imageSlug": "debian-13-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 512,
+      "diskSizeGB": 16,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "debian",
+          "required": true,
+          "placeholder": "debian"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "ubuntu-26-cloud",
+      "name": "Ubuntu 26.04 LTS",
+      "description": "Minimal Ubuntu 26.04 cloud image with cloud-init.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-26.04-arm64",
+        "x86_64": "ubuntu-26.04-x86_64"
+      },
+      "imageSlug": "ubuntu-26.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 512,
+      "diskSizeGB": 16,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "ubuntu",
+          "required": true,
+          "placeholder": "ubuntu"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "fedora-cloud",
+      "name": "Fedora 44",
+      "description": "Fedora Cloud base with cloud-init.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "fedora-44-arm64",
+        "x86_64": "fedora-44-x86_64"
+      },
+      "imageSlug": "fedora-44-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "fedora",
+          "required": true,
+          "placeholder": "fedora"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "alpine-cloud",
+      "name": "Alpine Linux",
+      "description": "Alpine 3.24 UEFI cloud-init guest.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "alpine-3.24-cloud-arm64",
+        "x86_64": "alpine-3.24-cloud-x86_64"
+      },
+      "imageSlug": "alpine-3.24-cloud-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "minMemoryMB": 256,
+      "diskSizeGB": 8,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "alpine",
+          "required": true,
+          "placeholder": "alpine"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "rocky-10-cloud",
+      "name": "Rocky Linux 10",
+      "description": "Rocky Linux 10 generic cloud image with cloud-init.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "rocky-10-arm64",
+        "x86_64": "rocky-10-x86_64"
+      },
+      "imageSlug": "rocky-10-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "rocky",
+          "required": true,
+          "placeholder": "rocky"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "alma-10-cloud",
+      "name": "AlmaLinux 10",
+      "description": "AlmaLinux 10 generic cloud image with cloud-init.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "alma-10-arm64",
+        "x86_64": "alma-10-x86_64"
+      },
+      "imageSlug": "alma-10-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "alma",
+          "required": true,
+          "placeholder": "alma"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "leap-cloud",
+      "name": "openSUSE Leap 16",
+      "description": "openSUSE Leap 16 minimal cloud VM with cloud-init.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "leap-16-arm64",
+        "x86_64": "leap-16-x86_64"
+      },
+      "imageSlug": "leap-16-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "opensuse",
+          "required": true,
+          "placeholder": "opensuse"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+    },
+    {
+      "slug": "freebsd-cloud",
+      "name": "FreeBSD 15.1",
+      "description": "FreeBSD 15.1 cloud-init UFS guest.",
+      "category": "general",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "freebsd-15.1-arm64",
+        "x86_64": "freebsd-15.1-x86_64"
+      },
+      "imageSlug": "freebsd-15.1-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "username",
+          "label": "Username",
+          "type": "text",
+          "default": "freebsd",
+          "required": true,
+          "placeholder": "freebsd"
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": "Choose a strong password",
+          "minLength": 8
+        },
+        {
+          "id": "ssh_keys",
+          "label": "SSH Public Keys",
+          "type": "textarea",
+          "required": false,
+          "placeholder": "ssh-ed25519 AAAA... (one per line)"
+        }
+      ],
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/sh\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\n"
+    },
+    {
+      "slug": "openwrt",
+      "name": "OpenWrt",
+      "description": "OpenWrt 25.12 EFI disk. First boot is the LuCI wizard on port 80.",
+      "category": "networking",
+      "icon": "shield",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "openwrt-25.12-arm64",
+        "x86_64": "openwrt-25.12-x86_64"
+      },
+      "imageSlug": "openwrt-25.12-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "minMemoryMB": 256,
+      "diskSizeGB": 4,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 80,
+          "guestPort": 80,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": ""
+    },
+    {
+      "slug": "nixos",
+      "name": "NixOS",
+      "description": "NixOS 25.11 minimal installer ISO. Finish install in the console.",
+      "category": "infrastructure",
+      "icon": "terminal",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "nixos-25.11-arm64",
+        "x86_64": "nixos-25.11-x86_64"
+      },
+      "imageSlug": "nixos-25.11-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 32,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": ""
+    },
+    {
+      "slug": "talos",
+      "name": "Talos Linux",
+      "description": "Talos 1.13 metal ISO. Apply a machine config after boot.",
+      "category": "infrastructure",
+      "icon": "container",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "talos-1.13-arm64",
+        "x86_64": "talos-1.13-x86_64"
+      },
+      "imageSlug": "talos-1.13-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 32,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": ""
+    },
+    {
+      "slug": "adguard-home",
+      "name": "AdGuard Home",
+      "description": "Network-wide DNS ad blocker. Web UI on port 80, DNS on 53.",
+      "category": "networking",
+      "icon": "shield",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "minMemoryMB": 512,
+      "diskSizeGB": 8,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 80,
+          "guestPort": 80,
+          "httpPath": "/"
+        },
+        {
+          "protocol": "udp",
+          "hostPort": 53,
+          "guestPort": 53
+        },
+        {
+          "protocol": "tcp",
+          "hostPort": 53,
+          "guestPort": 53
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        adguard:\n          image: adguard/adguardhome:v0.107.79\n          container_name: adguard\n          restart: unless-stopped\n          ports:\n            - 53:53/tcp\n            - 53:53/udp\n            - 80:80/tcp\n            - 3000:3000/tcp\n          volumes:\n            - /opt/adguard/work:/opt/adguardhome/work\n            - /opt/adguard/conf:/opt/adguardhome/conf\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "nextcloud",
+      "name": "Nextcloud",
+      "description": "Self-hosted files and calendar. Web UI on port 80.",
+      "category": "cloud-storage",
+      "icon": "cloud",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 2048,
+      "diskSizeGB": 32,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 80,
+          "guestPort": 80,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        db:\n          image: postgres:16-alpine\n          restart: unless-stopped\n          environment:\n            POSTGRES_PASSWORD: nextcloud\n            POSTGRES_DB: nextcloud\n            POSTGRES_USER: nextcloud\n          volumes:\n            - /opt/nextcloud/db:/var/lib/postgresql/data\n        app:\n          image: nextcloud:31-apache\n          restart: unless-stopped\n          ports:\n            - 80:80\n          environment:\n            POSTGRES_HOST: db\n            POSTGRES_DB: nextcloud\n            POSTGRES_USER: nextcloud\n            POSTGRES_PASSWORD: nextcloud\n          volumes:\n            - /opt/nextcloud/html:/var/www/html\n          depends_on:\n            - db\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "immich",
+      "name": "Immich",
+      "description": "Photo backup. Web UI on port 2283. First boot pulls several images.",
+      "category": "cloud-storage",
+      "icon": "cloud",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 4,
+      "memoryMB": 4096,
+      "minMemoryMB": 2048,
+      "diskSizeGB": 64,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 2283,
+          "guestPort": 2283,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        redis:\n          image: redis:7-alpine\n          restart: unless-stopped\n        database:\n          image: tensorchord/pgvecto-rs:pg16-v0.3.0\n          restart: unless-stopped\n          environment:\n            POSTGRES_PASSWORD: postgres\n            POSTGRES_USER: postgres\n            POSTGRES_DB: immich\n          volumes:\n            - /opt/immich/pg:/var/lib/postgresql/data\n        server:\n          image: ghcr.io/immich-app/immich-server:v3.1.0\n          restart: unless-stopped\n          ports:\n            - 2283:2283\n          environment:\n            DB_HOSTNAME: database\n            DB_USERNAME: postgres\n            DB_PASSWORD: postgres\n            DB_DATABASE_NAME: immich\n            REDIS_HOSTNAME: redis\n          volumes:\n            - /opt/immich/upload:/usr/src/app/upload\n          depends_on:\n            - redis\n            - database\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "jellyfin",
+      "name": "Jellyfin",
+      "description": "Media server. Web UI on port 8096.",
+      "category": "general",
+      "icon": "home",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 32,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 8096,
+          "guestPort": 8096,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        jellyfin:\n          image: jellyfin/jellyfin:10.10.7\n          restart: unless-stopped\n          ports:\n            - 8096:8096\n          volumes:\n            - /opt/jellyfin/config:/config\n            - /opt/jellyfin/cache:/cache\n            - /opt/jellyfin/media:/media\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "vaultwarden",
+      "name": "Vaultwarden",
+      "description": "Bitwarden-compatible password manager. Web UI on port 80.",
+      "category": "cloud-storage",
+      "icon": "shield",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "minMemoryMB": 512,
+      "diskSizeGB": 8,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 80,
+          "guestPort": 80,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        vaultwarden:\n          image: vaultwarden/server:1.37.2\n          restart: unless-stopped\n          ports:\n            - 80:80\n          environment:\n            ROCKET_PORT: 80\n          volumes:\n            - /opt/vaultwarden/data:/data\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "forgejo",
+      "name": "Forgejo",
+      "description": "Self-hosted git. Web UI on port 3000.",
+      "category": "development",
+      "icon": "code",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 20,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 3000,
+          "guestPort": 3000,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        forgejo:\n          image: codeberg.org/forgejo/forgejo:12\n          restart: unless-stopped\n          ports:\n            - 3000:3000\n          environment:\n            USER_UID: 1000\n            USER_GID: 1000\n            FORGEJO__server__DOMAIN: 127.0.0.1\n            FORGEJO__server__HTTP_PORT: 3000\n          volumes:\n            - /opt/forgejo:/data\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "docker-host",
+      "name": "Docker Host",
+      "description": "Ubuntu 24.04 with Docker Engine ready. No extra services.",
+      "category": "infrastructure",
+      "icon": "container",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 2,
+      "memoryMB": 2048,
+      "minMemoryMB": 1024,
+      "diskSizeGB": 32,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n"
+    },
+    {
+      "slug": "ollama",
+      "name": "Ollama",
+      "description": "In-guest Ollama API on port 11434. Attach a GPU after create if you have one.",
+      "category": "general",
+      "icon": "cloud",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 4,
+      "memoryMB": 8192,
+      "minMemoryMB": 4096,
+      "diskSizeGB": 32,
+      "portForwards": [
+        {
+          "protocol": "tcp",
+          "hostPort": 11434,
+          "guestPort": 11434,
+          "httpPath": "/"
+        }
+      ],
+      "networkMode": "nat",
+      "inputs": [],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - docker-compose-v2\n  - qemu-guest-agent\n  - curl\nwrite_files:\n  - path: /opt/app/docker-compose.yml\n    permissions: '0644'\n    content: |\n      services:\n        ollama:\n          image: ollama/ollama:0.11.10\n          restart: unless-stopped\n          ports:\n            - 11434:11434\n          volumes:\n            - /opt/ollama:/root/.ollama\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - systemctl enable --now docker\n  - docker compose -f /opt/app/docker-compose.yml up -d\n"
+    },
+    {
+      "slug": "tailscale",
+      "name": "Tailscale",
+      "description": "Ubuntu 24.04 joined to your tailnet. Paste an auth key.",
+      "category": "networking",
+      "icon": "shield",
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "imageByArch": {
+        "arm64": "ubuntu-24.04-arm64",
+        "x86_64": "ubuntu-24.04-x86_64"
+      },
+      "imageSlug": "ubuntu-24.04-arm64",
+      "cpuCount": 1,
+      "memoryMB": 512,
+      "minMemoryMB": 512,
+      "diskSizeGB": 8,
+      "portForwards": [],
+      "networkMode": "nat",
+      "inputs": [
+        {
+          "id": "authkey",
+          "label": "Tailscale auth key",
+          "type": "password",
+          "required": true,
+          "placeholder": "tskey-auth-..."
+        }
+      ],
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - qemu-guest-agent\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - curl -fsSL https://tailscale.com/install.sh | sh\n  - tailscale up --auth-key={{authkey}} --ssh --accept-routes\n"
     }
   ]
 }
