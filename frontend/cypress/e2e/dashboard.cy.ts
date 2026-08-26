@@ -28,7 +28,7 @@ describe('Dashboard', () => {
     cy.contains('button', 'Customize').click()
     cy.get('.dash-drawer').should('have.class', 'open')
     cy.contains('Customize Home').should('exist')
-    cy.contains('This Device').should('exist')
+    cy.contains('This Device').should('not.exist')
   })
 
   it('Create VM button navigates to /vms', () => {

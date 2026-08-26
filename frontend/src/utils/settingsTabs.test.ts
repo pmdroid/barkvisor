@@ -123,5 +123,7 @@ describe('settings tab query', () => {
     expect(disks).not.toContain('Default VM disk directory')
     expect(disks).toContain('/settings?tab=disks')
     expect(disks).toContain('Create Disk')
+    expect(disks).not.toContain('<label>Location</label>')
+    expect(disks).not.toContain('showCreatePicker')
   })
 })

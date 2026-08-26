@@ -18,7 +18,6 @@ describe('dashboard layout defaults', () => {
       'running',
       'stopped',
       'failed',
-      'meters',
       'devices',
     ])
     expect(DASHBOARD_WIDGETS_STORAGE_KEY).toBe('barkvisor.dashboardWidgets')
@@ -26,7 +25,7 @@ describe('dashboard layout defaults', () => {
     expect(resetDashboardLayout()).not.toBe(DEFAULT_LAYOUT)
     expect(isModuleOn(DEFAULT_LAYOUT, 'attention')).toBe(true)
     expect(isModuleOn(DEFAULT_LAYOUT, 'failed')).toBe(false)
-    expect(isModuleOn(DEFAULT_LAYOUT, 'meters')).toBe(true)
+    expect(isModuleOn(DEFAULT_LAYOUT, 'devices')).toBe(true)
   })
 })
 
@@ -43,13 +42,12 @@ describe('parseDashboardLayout', () => {
     const parsed = parseDashboardLayout(
       JSON.stringify([
         { id: 'running', on: true },
-        { id: 'meters', on: false },
+        { id: 'meters', on: true },
         { id: 'bogus', on: true },
       ]),
     )
     expect(parsed.map((row) => row.id)).toEqual([
       'running',
-      'meters',
       'attention',
       'needs',
       'stopped',
@@ -57,8 +55,8 @@ describe('parseDashboardLayout', () => {
       'devices',
     ])
     expect(isModuleOn(parsed, 'running')).toBe(true)
-    expect(isModuleOn(parsed, 'meters')).toBe(false)
     expect(isModuleOn(parsed, 'devices')).toBe(true)
+    expect(parsed.map((row) => row.id as string)).not.toContain('meters')
   })
 })
 
