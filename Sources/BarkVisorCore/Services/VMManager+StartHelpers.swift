@@ -201,7 +201,11 @@ extension VMManager {
         let vmIDCopy = vmID
         process.terminationHandler = { [weak self] proc in
             Task { [weak self] in
-                await self?.handleTermination(vmID: vmIDCopy, status: proc.terminationStatus)
+                await self?.handleTermination(
+                    vmID: vmIDCopy,
+                    status: proc.terminationStatus,
+                    pid: proc.processIdentifier,
+                )
             }
         }
 

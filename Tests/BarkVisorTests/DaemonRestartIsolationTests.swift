@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import BarkVisorCore
 
@@ -140,6 +141,203 @@ struct DaemonRestartIsolationTests {
         #expect(homebrew.contains("AbandonProcessGroup"))
         #expect(homebrew.contains("<true/>"))
     }
+
+    @Test func `adopt persists running state and rewrites the pidfile`() async throws {
+        let (pool, vmID) = try await Self.makeVMWithPool(state: "error")
+        let manager = VMManager(dbPool: pool)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let argv = try #require(QEMUArgv(arguments: Self.fixtureArgv(vmID: vmID)))
+        let previous = VMPidFile(qemuPid: 1, swtpmPid: 2, codingAgentHostPort: 24_981)
+
+        try await manager.adoptRunningProcess(vmID: vmID, pid: pid, argv: argv, previousPids: previous)
+        defer { Task { await CodingAgentSessionStore.shared.remove(vmID: vmID) } }
+
+        #expect(await manager.isRunning(vmID))
+        #expect(await manager.healthError(for: vmID) == nil)
+        let state = try await pool.read { db in
+            try String.fetchOne(db, sql: "SELECT state FROM vms WHERE id = ?", arguments: [vmID])
+        }
+        #expect(state == "running")
+        let pidsDir = await manager.pidsDir
+        let rewritten = VMManager.readPidFile(pidsDir: pidsDir, vmID: vmID)
+        #expect(rewritten?.qemuPid == pid)
+        #expect(rewritten?.codingAgentHostPort == 24_981)
+    }
+
+    @Test func `preflight adopts a self holder from injected processes`() async throws {
+        let (pool, vmID) = try await Self.makeVMWithPool(state: "stopped")
+        let manager = VMManager(dbPool: pool)
+        let pid = ProcessInfo.processInfo.processIdentifier
+
+        let adopted = try await manager.adoptExistingQEMUOrConflict(
+            vmID: vmID,
+            vmName: "test-raw",
+            diskPaths: ["/var/lib/barkvisor/disks/\(vmID).qcow2"],
+            processes: [Self.selfHolderEntry(vmID: vmID, pid: pid)],
+        )
+
+        #expect(adopted)
+        #expect(await manager.isRunning(vmID))
+        let state = try await pool.read { db in
+            try String.fetchOne(db, sql: "SELECT state FROM vms WHERE id = ?", arguments: [vmID])
+        }
+        #expect(state == "running")
+    }
+
+    @Test func `preflight throws conflict naming foreign holder`() async throws {
+        let pool = try Self.makePool()
+        let manager = VMManager(dbPool: pool)
+        let vmID = UUID().uuidString.uppercased()
+        let lockedDisk = "/var/lib/barkvisor/disks/85E9313A-17B3-406B-9056-2818AE6AC177.qcow2"
+
+        do {
+            try await manager.adoptExistingQEMUOrConflict(
+                vmID: vmID,
+                vmName: "test-raw",
+                diskPaths: [lockedDisk],
+                processes: [Self.foreignHolderEntry],
+            )
+            Issue.record("expected conflict")
+        } catch let error as BarkVisorError {
+            guard case let .conflict(message) = error else {
+                Issue.record("unexpected error: \(error)")
+                return
+            }
+            #expect(message.contains("202"))
+            #expect(message.contains("test-raw"))
+        }
+    }
+
+    @Test func `preflight does not adopt a live non qemu pidfile`() async throws {
+        let (pool, vmID) = try await Self.makeVMWithPool(state: "stopped")
+        let manager = VMManager(dbPool: pool)
+        let pidsDir = await manager.pidsDir
+        try FileManager.default.createDirectory(at: pidsDir, withIntermediateDirectories: true)
+        let live = ProcessInfo.processInfo.processIdentifier
+        try VMPidFile(qemuPid: live, swtpmPid: nil).serialized()
+            .write(to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8)
+
+        let adopted = try await manager.adoptExistingQEMUOrConflict(
+            vmID: vmID,
+            vmName: "test-raw",
+            diskPaths: ["/var/lib/barkvisor/disks/\(vmID).qcow2"],
+            processes: [],
+        )
+        #expect(!adopted)
+        #expect(await manager.isRunning(vmID) == false)
+    }
+
+    @Test func `preflight proceeds to spawn when no holder exists`() async throws {
+        let pool = try Self.makePool()
+        let manager = VMManager(dbPool: pool)
+        let unrelated: QEMUArgv.ProcessEntry = (
+            pid: 404,
+            arguments: [
+                "/usr/bin/qemu-system-x86_64",
+                "-uuid", "EEEEEEEE-0000-0000-0000-000000000000",
+                "-drive", "file=/var/lib/barkvisor/disks/some-other-disk.qcow2,format=qcow2",
+            ],
+        )
+        let adopted = try await manager.adoptExistingQEMUOrConflict(
+            vmID: UUID().uuidString.uppercased(),
+            vmName: "test-raw",
+            diskPaths: ["/var/lib/barkvisor/disks/mine.qcow2"],
+            processes: [unrelated],
+        )
+        #expect(!adopted)
+    }
+
+    private static func makePool() throws -> DatabasePool {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("barkvisor-lock-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        return pool
+    }
+
+    private static func makeVMWithPool(state: String) async throws -> (DatabasePool, String) {
+        let pool = try makePool()
+        let vmID = UUID().uuidString.uppercased()
+        let diskID = UUID().uuidString
+        let now = ISO8601DateFormatter().string(from: Date())
+        try await pool.write { db in
+            try Disk(
+                id: diskID,
+                name: "boot",
+                path: "/var/lib/barkvisor/disks/\(vmID).qcow2",
+                sizeBytes: 1_024,
+                format: "qcow2",
+                vmId: vmID,
+                autoCreated: false,
+                status: "ready",
+                createdAt: now,
+            ).insert(db)
+            try VM(
+                id: vmID,
+                name: "test-raw",
+                vmType: GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch),
+                state: state,
+                cpuCount: 1,
+                memoryMb: 512,
+                bootDiskId: diskID,
+                isoIds: nil,
+                networkId: nil,
+                cloudInitPath: nil,
+                description: nil,
+                bootOrder: "c",
+                displayResolution: nil,
+                additionalDiskIds: nil,
+                uefi: false,
+                tpmEnabled: false,
+                macAddress: nil,
+                sharedPaths: nil,
+                portForwards: nil,
+                usbDevices: nil,
+                autoCreated: false,
+                pendingChanges: false,
+                createdAt: now,
+                updatedAt: now,
+            ).insert(db)
+        }
+        return (pool, vmID)
+    }
+
+    private static func fixtureArgv(vmID: String) -> [String] {
+        [
+            "/usr/bin/qemu-system-x86_64",
+            "-name", "test-raw",
+            "-uuid", vmID,
+            "-drive", "file=/var/lib/barkvisor/disks/\(vmID).qcow2,format=qcow2,id=boot0",
+            "-chardev", "socket,id=serial0,path=/tmp/barkvisor-test-ser.sock,server=on,wait=off",
+            "-vnc", "unix:/tmp/barkvisor-test-vnc.sock,lossy=on",
+            "-qmp", "unix:/tmp/barkvisor-test-qmp.sock,server,nowait",
+            "-qmp", "unix:/tmp/barkvisor-test-evt.sock,server,nowait",
+        ]
+    }
+
+    private static func selfHolderEntry(vmID: String, pid: Int32) -> QEMUArgv.ProcessEntry {
+        (
+            pid: pid,
+            arguments: [
+                "/usr/bin/qemu-system-x86_64",
+                "-name", "test-raw",
+                "-uuid", vmID,
+                "-drive", "file=/var/lib/barkvisor/disks/\(vmID).qcow2,format=qcow2",
+            ],
+        )
+    }
+
+    private static let foreignHolderEntry: QEMUArgv.ProcessEntry = (
+        pid: 202,
+        arguments: [
+            "/usr/bin/qemu-system-x86_64",
+            "-name", "test-raw",
+            "-uuid", "6FB33A30-F139-4DE5-80EB-1DA1883696B1",
+            "-drive",
+            "file=/var/lib/barkvisor/disks/85E9313A-17B3-406B-9056-2818AE6AC177.qcow2,format=qcow2",
+        ],
+    )
 
     private static func readRepoFile(_ relative: String) throws -> String {
         var url = URL(fileURLWithPath: #filePath)
