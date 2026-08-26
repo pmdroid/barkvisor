@@ -102,7 +102,6 @@ public struct OllamaDeviceSnapshot: Codable, Sendable, Equatable {
     public var memoryTotalMB: Int?
     public var memoryUsedMB: Int?
     public var cpuLoadPercent: Double?
-    public var backend: String?
 
     public init(
         hostId: String,
@@ -116,7 +115,6 @@ public struct OllamaDeviceSnapshot: Codable, Sendable, Equatable {
         memoryTotalMB: Int? = nil,
         memoryUsedMB: Int? = nil,
         cpuLoadPercent: Double? = nil,
-        backend: String? = nil,
     ) {
         self.hostId = hostId
         self.displayName = displayName
@@ -129,7 +127,6 @@ public struct OllamaDeviceSnapshot: Codable, Sendable, Equatable {
         self.memoryTotalMB = memoryTotalMB
         self.memoryUsedMB = memoryUsedMB
         self.cpuLoadPercent = cpuLoadPercent
-        self.backend = backend
     }
 }
 
@@ -348,20 +345,12 @@ public struct OllamaHostSettings: Codable, Sendable, Equatable {
     public var endpoint: String
     public var hasApiKey: Bool
     public var apiKeyMasked: String?
-    public var backend: String?
 
-    public init(
-        hostId: String,
-        endpoint: String,
-        hasApiKey: Bool,
-        apiKeyMasked: String? = nil,
-        backend: String? = nil,
-    ) {
+    public init(hostId: String, endpoint: String, hasApiKey: Bool, apiKeyMasked: String? = nil) {
         self.hostId = hostId
         self.endpoint = endpoint
         self.hasApiKey = hasApiKey
         self.apiKeyMasked = apiKeyMasked
-        self.backend = backend
     }
 }
 
@@ -383,18 +372,11 @@ public struct OllamaSettingsUpdate: Codable, Sendable, Equatable {
     public var hostId: String
     public var endpoint: String?
     public var apiKey: String?
-    public var backend: String?
 
-    public init(
-        hostId: String,
-        endpoint: String? = nil,
-        apiKey: String? = nil,
-        backend: String? = nil,
-    ) {
+    public init(hostId: String, endpoint: String? = nil, apiKey: String? = nil) {
         self.hostId = hostId
         self.endpoint = endpoint
         self.apiKey = apiKey
-        self.backend = backend
     }
 }
 
