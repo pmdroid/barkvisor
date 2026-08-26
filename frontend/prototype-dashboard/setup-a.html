@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BarkVisor — Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: rgba(255,255,255,.03);
+    --line: rgba(255,255,255,.07);
+    --text: #e4e4e2;
+    --dim: #6e6e6c;
+    --accent: #0090f8;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --radius: 2px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .card {
+    width: 440px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 40px 40px 32px;
+  }
+
+  /* Brand */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .brand svg { display: block; }
+  .brand span { font-weight: 700; font-size: 16px; letter-spacing: .01em; }
+
+  /* Step indicator */
+  .steps {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 36px;
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 56px;
+  }
+  .step .dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--dim);
+    background: transparent;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .step .label {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--dim);
+    letter-spacing: .02em;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .step.active .dot {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,144,248,.12);
+  }
+  .step.active .label { color: var(--text); }
+  .step.done .dot {
+    border-color: var(--green);
+    background: rgba(52,211,153,.1);
+    color: var(--green);
+  }
+  .step.done .label { color: var(--dim); }
+  .connector {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--line);
+    margin-top: 11px;
+    min-width: 12px;
+  }
+  .connector.done { background: rgba(52,211,153,.4); }
+
+  /* Step content */
+  .pane { display: none; }
+  .pane.current { display: block; }
+
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin-bottom: 6px;
+  }
+  .sub {
+    color: var(--dim);
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+
+  /* Choice cards (welcome) */
+  .choice {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    color: var(--text);
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  .choice:hover { border-color: rgba(0,144,248,.5); background: rgba(0,144,248,.04); }
+  .choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .choice .t { font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+  .choice .d { color: var(--dim); font-size: 12.5px; }
+
+  /* Form */
+  .field { margin-bottom: 18px; }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--dim);
+    margin-bottom: 6px;
+    letter-spacing: .02em;
+  }
+  input[type="text"], input[type="password"], textarea {
+    width: 100%;
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 9px 12px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,144,248,.15);
+  }
+  input::placeholder, textarea::placeholder { color: var(--dim); }
+  textarea { resize: vertical; min-height: 96px; font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
+  .hint { font-size: 11.5px; color: var(--dim); margin-top: 5px; }
+  .hint.err { color: var(--red); }
+  .hint.ok { color: var(--green); }
+
+  /* Progress */
+  .progress {
+    height: 3px;
+    background: var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 20px 0 10px;
+    display: none;
+  }
+  .progress.on { display: block; }
+  .progress .bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width .2s linear;
+  }
+  .sync-status { font-size: 12.5px; color: var(--dim); min-height: 19px; }
+  .sync-status.ok { color: var(--green); }
+
+  /* Success mark */
+  .check-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+  .check {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid rgba(52,211,153,.4);
+    background: rgba(52,211,153,.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--green);
+    font-size: 20px;
+  }
+
+  /* Actions */
+  .actions {
+    display: flex;
+    align-items: center;
+    margin-top: 32px;
+    gap: 12px;
+  }
+  .actions .spacer { flex: 1; }
+  .btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--radius);
+    padding: 9px 18px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s, opacity .15s;
+  }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: #1a9df9; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--dim);
+  }
+  .btn-ghost:hover { color: var(--text); }
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text);
+  }
+  .btn-outline:hover { border-color: rgba(255,255,255,.2); }
+
+  .center { text-align: center; }
+  .center .sub { margin-bottom: 24px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 22 22"><rect width="22" height="22" rx="4" fill="#0090f8"/><path d="M6.5 9v4M10 6.5v9M13.5 9.5v3M17 7.5v7" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg>
+    <span>BarkVisor</span>
+  </div>
+
+  <div class="steps" id="steps"></div>
+
+  <!-- CREATE PATH -->
+
+  <div class="pane" data-pane="welcome">
+    <h1>Welcome to BarkVisor</h1>
+    <p class="sub">Set up this Device as a new Home, or join one that already exists.</p>
+    <button class="choice" data-go="account">
+      <div class="t">Set up this Device</div>
+      <div class="d">Create a new Home with this machine as its first Device.</div>
+    </button>
+    <button class="choice" data-go="join">
+      <div class="t">Join an existing Home</div>
+      <div class="d">Pair this Device with a Home using an offer from another Device.</div>
+    </button>
+  </div>
+
+  <div class="pane" data-pane="account">
+    <h1>Create Admin Account</h1>
+    <p class="sub">This account administers every Device in your Home.</p>
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="admin" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="Minimum 10 characters">
+      <div class="hint" id="pw-hint">Minimum 10 characters.</div>
+    </div>
+    <div class="field">
+      <label for="confirm">Confirm password</label>
+      <input type="password" id="confirm" placeholder="Repeat password">
+      <div class="hint" id="cf-hint"></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" data-go="welcome">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="account-next" disabled>Continue</button>
+    </div>
+  </div>
+
+  <div class="pane" data-pane="catalog">
+    <h1>Image Catalog</h1>
+    <p class="sub">Sync the OS image and template catalog so you can create virtual machines right away.</p>
+    <button class="btn btn-outline" id="sync-btn" style="width:100%">Sync catalog</button>
+    <div class="progress" id="progress"><div class="bar" id="bar"></div></div>
+    <div class="sync-status" id="sync-status"></div>
+    <div class="actions">
+      <button class="btn btn-ghost" data-go="account">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" data-go="done" id="skip-btn">Skip</button>
+      <button class="btn btn-primary" id="catalog-next" data-go="done" disabled>Continue</button>
+    </div>
+  </div>
+
+  <div class="pane" data-pane="done">
+    <div class="center">
+      <div class="check-wrap"><div class="check">&#10003;</div></div>
+      <h1>All Set!</h1>
+      <p class="sub">Your Home is ready. This Device is set up and the admin account is active.</p>
+      <button class="btn btn-primary" style="width:100%">Launch Dashboard</button>
+    </div>
+  </div>
+
+  <!-- JOIN PATH -->
+
+  <div class="pane" data-pane="join">
+    <h1>Join an existing Home</h1>
+    <p class="sub">Paste the pairing offer generated on a Device that already belongs to your Home.</p>
+    <div class="field">
+      <label for="offer">Pairing offer</label>
+      <textarea id="offer" placeholder="barkvisor://pair/v1/…" spellcheck="false"></textarea>
+      <div class="hint" id="offer-hint">Starts with barkvisor://pair/v1/</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" data-go="welcome">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="join-btn" disabled>Join Home</button>
+    </div>
+  </div>
+
+  <div class="pane" data-pane="joined">
+    <div class="center">
+      <div class="check-wrap"><div class="check">&#10003;</div></div>
+      <h1>Joined your Home</h1>
+      <p class="sub">This Device is now paired. Sign in with your Home's admin account to continue.</p>
+      <button class="btn btn-primary" style="width:100%">Launch Dashboard</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const FLOWS = {
+  create: ['welcome', 'account', 'catalog', 'done'],
+  join:   ['welcome', 'join', 'joined']
+};
+const LABELS = {
+  welcome: 'Welcome', account: 'Account', catalog: 'Catalog', done: 'Done',
+  join: 'Pair', joined: 'Done'
+};
+
+let flow = null;
+let current = 'welcome';
+
+const stepsEl = document.getElementById('steps');
+
+function renderSteps() {
+  const seq = flow ? FLOWS[flow] : ['welcome'];
+  const idx = seq.indexOf(current);
+  stepsEl.innerHTML = '';
+  seq.forEach((id, i) => {
+    const s = document.createElement('div');
+    s.className = 'step' + (i < idx ? ' done' : i === idx ? ' active' : '');
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.textContent = i < idx ? '\u2713' : (i + 1);
+    const lab = document.createElement('div');
+    lab.className = 'label';
+    lab.textContent = LABELS[id];
+    s.appendChild(dot); s.appendChild(lab);
+    stepsEl.appendChild(s);
+    if (i < seq.length - 1) {
+      const c = document.createElement('div');
+      c.className = 'connector' + (i < idx ? ' done' : '');
+      stepsEl.appendChild(c);
+    }
+  });
+}
+
+function show(id) {
+  if (id === 'account' || id === 'catalog' || id === 'done') flow = 'create';
+  if (id === 'join' || id === 'joined') flow = 'join';
+  if (id === 'welcome') flow = null;
+  current = id;
+  document.querySelectorAll('.pane').forEach(p =>
+    p.classList.toggle('current', p.dataset.pane === id));
+  renderSteps();
+  const pane = document.querySelector(`.pane[data-pane="${id}"]`);
+  const first = pane.querySelector('input, textarea, .choice, .btn-primary');
+  if (first) first.focus();
+}
+
+document.querySelectorAll('[data-go]').forEach(el =>
+  el.addEventListener('click', () => show(el.dataset.go)));
+
+/* Account validation */
+const pw = document.getElementById('password');
+const cf = document.getElementById('confirm');
+const un = document.getElementById('username');
+const nextBtn = document.getElementById('account-next');
+const pwHint = document.getElementById('pw-hint');
+const cfHint = document.getElementById('cf-hint');
+
+function validateAccount() {
+  const pwOk = pw.value.length >= 10;
+  const cfOk = pwOk && cf.value === pw.value;
+  pwHint.textContent = pw.value && !pwOk ? 'Too short — minimum 10 characters.' : 'Minimum 10 characters.';
+  pwHint.className = 'hint' + (pw.value && !pwOk ? ' err' : '');
+  cfHint.textContent = cf.value ? (cfOk ? 'Passwords match.' : 'Passwords do not match.') : '';
+  cfHint.className = 'hint' + (cf.value ? (cfOk ? ' ok' : ' err') : '');
+  nextBtn.disabled = !(un.value.trim() && pwOk && cfOk);
+}
+[pw, cf, un].forEach(el => el.addEventListener('input', validateAccount));
+nextBtn.addEventListener('click', () => show('catalog'));
+
+/* Catalog sync simulation */
+const syncBtn = document.getElementById('sync-btn');
+const bar = document.getElementById('bar');
+const progress = document.getElementById('progress');
+const status = document.getElementById('sync-status');
+const catNext = document.getElementById('catalog-next');
+const skipBtn = document.getElementById('skip-btn');
+let syncing = false;
+
+syncBtn.addEventListener('click', () => {
+  if (syncing) return;
+  syncing = true;
+  syncBtn.disabled = true;
+  syncBtn.style.opacity = '.4';
+  progress.classList.add('on');
+  status.className = 'sync-status';
+  status.textContent = 'Syncing catalog…';
+  let p = 0;
+  const tick = setInterval(() => {
+    p = Math.min(100, p + Math.random() * 14);
+    bar.style.width = p + '%';
+    if (p >= 100) {
+      clearInterval(tick);
+      status.textContent = '24 images and 9 templates synced.';
+      status.className = 'sync-status ok';
+      catNext.disabled = false;
+      skipBtn.style.display = 'none';
+      syncing = false;
+    }
+  }, 160);
+});
+
+/* Join validation */
+const offer = document.getElementById('offer');
+const joinBtn = document.getElementById('join-btn');
+const offerHint = document.getElementById('offer-hint');
+
+offer.addEventListener('input', () => {
+  const v = offer.value.trim();
+  const ok = v.startsWith('barkvisor://pair/v1/') && v.length > 24;
+  joinBtn.disabled = !ok;
+  offerHint.textContent = !v ? 'Starts with barkvisor://pair/v1/'
+    : ok ? 'Offer looks valid.' : 'Not a valid pairing offer.';
+  offerHint.className = 'hint' + (!v ? '' : ok ? ' ok' : ' err');
+});
+joinBtn.addEventListener('click', () => show('joined'));
+
+show('welcome');
+</script>
+</body>
+</html>
