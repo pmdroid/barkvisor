@@ -149,20 +149,43 @@ bun run dev
 ```
 
 Vite starts on `http://localhost:5173` and proxies all `/api` requests
-(including WebSocket upgrades) to the backend at `http://localhost:7777`:
+(including WebSocket upgrades) to the backend at `http://localhost:7777`.
+Set `VITE_API_TARGET` to proxy to a different daemon port:
 
-```ts
-// vite.config.ts
-server: {
-  port: 5173,
-  proxy: {
-    '/api': {
-      target: 'http://localhost:7777',
-      changeOrigin: true,
-      ws: true,
-    },
-  },
-}
+```sh
+VITE_API_TARGET=http://127.0.0.1:50123 bun run dev
+```
+
+## Throwaway instances (agent-friendly)
+
+`scripts/dev-instance.sh` boots a detached BarkVisor daemon with a fresh,
+empty data directory on random free ports, provisions the admin account
+headlessly, and prints one JSON line an agent can consume directly
+(`mise run instance-start` works too):
+
+```sh
+scripts/dev-instance.sh start --seed
+```
+
+```json
+{"name":"default","url":"http://127.0.0.1:50190","port":50190,"pid":1234,
+ "dataDir":"/var/folders/…/barkvisor-dev-default.XXXX","adminUser":"admin",
+ "adminPass":"dev-instance-pass","seeded":true}
+```
+
+- `--data-dir PATH` keeps state at a path you choose instead of a temp dir;
+  custom paths are never deleted by `stop`.
+- `--seed` fills networks, disks, an API key, and an SSH key through the real
+  API so pages have content (no QEMU involved).
+- Logs go to stderr; stdout stays pure JSON.
+
+Drive the instance with the returned URL + admin credentials or the cached
+token (`scripts/dev-instance.sh token`), then clean up:
+
+```sh
+scripts/dev-instance.sh stop              # kills daemon, removes temp data dir
+scripts/dev-instance.sh list | clean      # inventory / stop everything
+scripts/dev-instance.sh self-test         # start → provision → seed → assert → stop
 ```
 
 ## Environment Variables
