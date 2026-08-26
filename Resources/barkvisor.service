@@ -4,6 +4,7 @@ Documentation=https://github.com/pmdroid/barkvisor
 Documentation=file:///usr/local/share/barkvisor
 After=network-online.target
 Wants=network-online.target
+Conflicts=barkvisor-agent.service
 
 [Service]
 Type=simple

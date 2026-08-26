@@ -18,12 +18,17 @@ nonisolated(unsafe) var signalPipeFDs: [Int32] = [0, 0]
 
 @main
 struct BarkVisorCLI: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "barkvisor",
-        abstract: "BarkVisor Device daemon",
-        subcommands: [Serve.self, Join.self],
-        defaultSubcommand: Serve.self,
-    )
+    static let configuration: CommandConfiguration = {
+        let role = DaemonRole.from(executablePath: ProcessInfo.processInfo.arguments[0])
+        return CommandConfiguration(
+            commandName: role.commandName,
+            abstract: role.serveFrontend
+                ? "BarkVisor Device daemon"
+                : "BarkVisor Device daemon (API-only, no SPA)",
+            subcommands: [Serve.self, Join.self],
+            defaultSubcommand: Serve.self,
+        )
+    }()
 }
 
 struct Serve: AsyncParsableCommand {

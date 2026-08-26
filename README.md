@@ -54,6 +54,7 @@ Install a **prebuilt** `.deb` / `.rpm` / tarball from [Releases](https://github.
 sudo dpkg -i barkvisor_*_amd64.deb
 sudo systemctl enable --now barkvisor.service
 # → http://localhost:7777
+# API-only Device: enable barkvisor-agent.service instead (do not run both)
 ```
 
 ## Quick Start

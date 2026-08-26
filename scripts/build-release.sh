@@ -624,6 +624,8 @@ else
     log "Code signing SKIPPED (--no-sign)"
 fi
 
+ln -sfn barkvisor "$STAGE_BIN/barkvisor-agent"
+
 # =============================================================================
 # Step 11: Create standalone archive
 # =============================================================================
@@ -766,6 +768,7 @@ fi
 echo ""
 log "Install layout:"
 log_sub "/usr/local/bin/barkvisor                          (server daemon)"
+log_sub "/usr/local/bin/barkvisor-agent                    (API-only Device; symlink)"
 log_sub "/usr/local/libexec/barkvisor/                     (xz, mkisofs; QEMU from Homebrew)"
 log_sub "/usr/local/lib/barkvisor/                         (shared libraries)"
 log_sub "/usr/local/share/barkvisor/                       (frontend, firmware)"

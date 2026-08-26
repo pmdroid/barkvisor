@@ -217,7 +217,7 @@ public final class VaporServer: @unchecked Sendable {
         // Outermost after CORS so error responses also carry the version header.
         app.middleware.use(APIVersionMiddleware(), at: .beginning)
 
-        let distPath = Self.findFrontendDist()
+        let distPath = Config.serveFrontend ? Self.findFrontendDist() : nil
         if let distPath {
             app.middleware.use(SPAFallbackMiddleware(indexPath: distPath + "/index.html"))
             app.middleware.use(

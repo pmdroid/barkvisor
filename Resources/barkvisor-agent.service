@@ -1,0 +1,37 @@
+[Unit]
+Description=BarkVisor API-only Device daemon
+Documentation=https://github.com/pmdroid/barkvisor
+Documentation=file:///usr/local/share/barkvisor
+After=network-online.target
+Wants=network-online.target
+Conflicts=barkvisor.service
+
+[Service]
+Type=simple
+User=barkvisor
+Group=barkvisor
+WorkingDirectory=/var/lib/barkvisor
+Environment=HOME=/var/lib/barkvisor
+Environment=BARKVISOR_DATA_DIR=/var/lib/barkvisor
+Environment=BARKVISOR_SOCKET_DIR=/var/run/barkvisor
+Environment=BARKVISOR_PORT=7777
+Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/compat
+EnvironmentFile=-/etc/barkvisor/barkvisor.env
+ExecStart=/usr/local/bin/barkvisor-agent
+Restart=on-failure
+RestartSec=3
+KillMode=process
+RuntimeDirectory=barkvisor
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=false
+SupplementaryGroups=kvm
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor
+ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

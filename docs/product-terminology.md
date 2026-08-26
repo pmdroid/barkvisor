@@ -10,7 +10,7 @@ A single-device install is a **Home of one**. More Devices join that Home later;
 |------|---------------------|-------------------------|
 | **Home** | A person’s set of Devices (one or more) | `/api/home/devices` registry + `/api/home/devices/health` + member proxy |
 | **Device** | The Mac, PC, or board running this BarkVisor daemon | Inventory JSON keeps `hostId`, `hostname`, and host metrics |
-| **Agent** | The daemon role on a Device | `/api/agent/*`, `BarkVisorApp` process |
+| **Agent** | The daemon role on a Device | `/api/agent/*`, `barkvisor` or `barkvisor-agent` |
 | **Workload** | A VM (later: app) running on a Device | `VM`, `WorkloadSpec` |
 | **Library** | Images and templates you can deploy | Image / template repositories |
 | **Node** | **Do not use** in product copy | — |
@@ -29,7 +29,7 @@ USB **device** still means a peripheral. A BarkVisor **Device** is the computer.
 - Say **Home** when you mean the person’s set of Devices. One Device is already a Home.
 - Networks live at **Networks** (`/networks`), not Settings → Network.
 - First-run setup is `SetupView` (`/setup`). Do not add a second overlay wizard.
-- Joining an existing Home is a branch of that same `SetupView`, using `/api/pairing/join`. On an API-only Device (no SPA), `barkvisor join --code` posts the same offer to that console-local endpoint. Add a Device and the phone sign-in QR live on **Settings → Pairing** (`/api/pairing/codes`). **Settings → Home** is remote access and advertise URL — not the pairing QR. Catalog Download (Library depot) lives on **Settings → Library**.
+- Joining an existing Home is a branch of that same `SetupView`, using `/api/pairing/join`. On an API-only Device (no SPA), `barkvisor-agent join --code` (or `barkvisor join --code`) posts the same offer to that console-local endpoint. Add a Device and the phone sign-in QR live on **Settings → Pairing** (`/api/pairing/codes`). **Settings → Home** is remote access and advertise URL — not the pairing QR. Catalog Download (Library depot) lives on **Settings → Library**.
 - The sidebar **Device** picker is **All** (Home union) or one Device. List pages filter to that scope. Create VM still has its own placement picker.
 
 ## Related

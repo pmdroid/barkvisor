@@ -1,9 +1,9 @@
 [Unit]
-Description=BarkVisor QEMU management daemon
+Description=BarkVisor API-only Device daemon
 Documentation=https://github.com/pmdroid/barkvisor
 After=network-online.target
 Wants=network-online.target
-Conflicts=barkvisor-agent.service
+Conflicts=barkvisor.service
 
 [Service]
 Type=simple
@@ -16,25 +16,14 @@ Environment=BARKVISOR_SOCKET_DIR=/var/run/barkvisor
 Environment=BARKVISOR_PORT=7777
 Environment=LD_LIBRARY_PATH=/usr/local/lib/barkvisor/swift:/usr/local/lib/barkvisor/compat
 EnvironmentFile=-/etc/barkvisor/barkvisor.env
-ExecStart=/usr/local/bin/barkvisor
+ExecStart=/usr/local/bin/barkvisor-agent
 Restart=on-failure
 RestartSec=3
-# Only signal the daemon. Default control-group would SIGTERM QEMU children
-# on restart and stop Workloads (PAS-223). detachAll + reconnectOrCleanup
-# reattach after the new PID is up.
 KillMode=process
-# Recreate /run/barkvisor after reboot (/run is tmpfs). Preserve=yes keeps
-# QEMU sockets across daemon restart so reconnectOrCleanup can reattach.
 RuntimeDirectory=barkvisor
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
-# QEMU bridged networking launches setuid qemu-bridge-helper. NoNewPrivileges=true
-# blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
-# Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.
 NoNewPrivileges=false
-# kvm = /dev/kvm. Raw /dev/sdX needs group disk; postinst writes
-# barkvisor.service.d/disk.conf when that group exists so a host without
-# disk still starts. systemd replaces usermod groups with this list.
 SupplementaryGroups=kvm
 PrivateTmp=true
 ProtectSystem=strict
