@@ -1586,6 +1586,25 @@ paths:
         "200":
           description: text/event-stream
 
+  /api/vms/{id}/events:
+    get:
+      tags: [vms]
+      operationId: listVMEvents
+      summary: Lifecycle events for one VM (started, stopped, crashed, restarted)
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "200":
+          description: audit events filtered to this VM
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEntry"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/auth/ws-ticket:
     post:
       tags: [out-of-band]
