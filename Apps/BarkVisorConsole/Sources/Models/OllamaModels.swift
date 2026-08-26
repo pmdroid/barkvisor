@@ -408,9 +408,14 @@ struct OllamaHostSettings: Decodable, Equatable, Identifiable {
     var endpoint: String
     var hasApiKey: Bool
     var apiKeyMasked: String?
+    var backend: String?
 
     var id: String {
         hostId
+    }
+
+    var backendKind: String {
+        UnslothInstall.parse(backend)
     }
 }
 
@@ -426,6 +431,7 @@ struct OllamaSettingsUpdate: Encodable, Equatable {
     var hostId: String
     var endpoint: String?
     var apiKey: String?
+    var backend: String?
 
     /// PUT body for a new key. Nil when host or draft is blank so JSON omits
     /// `apiKey`. A present empty string would clear the stored key.
@@ -434,6 +440,12 @@ struct OllamaSettingsUpdate: Encodable, Equatable {
         let apiKey = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !hostId.isEmpty, !apiKey.isEmpty else { return nil }
         return OllamaSettingsUpdate(hostId: hostId, apiKey: apiKey)
+    }
+
+    static func saveBackend(hostId: String, backend: String) -> OllamaSettingsUpdate? {
+        let hostId = hostId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !hostId.isEmpty else { return nil }
+        return OllamaSettingsUpdate(hostId: hostId, backend: UnslothInstall.parse(backend))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -445,12 +457,31 @@ struct OllamaSettingsUpdate: Encodable, Equatable {
         if let apiKey {
             try container.encode(apiKey, forKey: .apiKey)
         }
+        if let backend {
+            try container.encode(backend, forKey: .backend)
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
         case hostId
         case endpoint
         case apiKey
+        case backend
+    }
+}
+
+enum UnslothInstall {
+    static let installHint = "Install Unsloth with: curl -fsSL https://unsloth.ai/install.sh | sh"
+    static let installCommand = "curl -fsSL https://unsloth.ai/install.sh | sh"
+    static let stageDirectory = "unsloth/models"
+
+    static func parse(_ raw: String?) -> String {
+        raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "unsloth"
+            ? "unsloth" : "ollama"
+    }
+
+    static func stageHint(deviceLabel: String) -> String {
+        "Put GGUF weights in this \(deviceLabel)'s BarkVisor data dir under \(stageDirectory)"
     }
 }
 

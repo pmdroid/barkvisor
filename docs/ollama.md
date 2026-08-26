@@ -4,6 +4,20 @@ Ollama is optional. BarkVisor talks to it on each **Device**. Completions go thr
 
 The **Ollama** nav item stays visible for admin and inference even when no Device can reach Ollama.
 
+## Backend per Device: Ollama or Unsloth
+
+Each Device runs one inference backend: **Ollama** (default) or **Unsloth**. Unsloth is optional and exclusive per Device. Admins pick the backend on the Models page, next to the per-Device API key (`PUT /api/home/ollama/settings` with `{ hostId, backend }`). A missing value reads as Ollama.
+
+Install Unsloth on the Device (matches the in-app copy):
+
+```sh
+curl -fsSL https://unsloth.ai/install.sh | sh
+```
+
+Unsloth has no pull: stage GGUF weights in that Device's BarkVisor data dir under `unsloth/models`. With the sidebar scoped to an Unsloth Device, the Models page hides **Pull by name** and the Ollama library search and shows the install and staging steps plus Recheck instead. The pull Device picker never offers Unsloth Devices. Start/Stop still apply to models already served there.
+
+Clients do not change: completions still go through **Home** `:7777/v1/chat/completions` with an inference key. That stays true when a Device is switched to Unsloth.
+
 ## Install (when Ollama is down)
 
 The page shows a multi-step panel and **Recheck**. Commands match the in-app copy. AgentBox and Mac mini are not install targets.

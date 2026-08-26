@@ -743,6 +743,7 @@ export interface OllamaHostSettings {
   endpoint: string
   hasApiKey: boolean
   apiKeyMasked?: string | null
+  backend?: string | null
 }
 
 export interface OllamaSettingsSnapshot {
@@ -753,6 +754,7 @@ export interface OllamaSettingsUpdate {
   hostId: string
   endpoint?: string
   apiKey?: string
+  backend?: string
 }
 
 export interface OllamaTaskAccepted {

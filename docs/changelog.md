@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Models page (web and Console): admins pick each Device's inference backend — **Ollama** (default) or **Unsloth** (`PUT /api/home/ollama/settings` with `{ hostId, backend }`). With the sidebar scoped to an Unsloth Device, pull by name and the Ollama library hide and the page shows the Unsloth install command plus staging copy (GGUF weights in the Device data dir under `unsloth/models`); pull stays Ollama-only and the pull Device picker skips Unsloth Devices. Start/Stop and the Home `:7777/v1` completions how-to are unchanged.
 - Linux Create Disk and Workload start fail closed when this Device cannot open a host block device for read/write. The error names the path and that the BarkVisor user needs the disk group (or a udev ACL). QEMU is not started with that `-drive`.
 - PCI picker occupancy is GPU host driver / Workload claim, not every bound kernel module.
 - Sidebar **All** vs one **Device** scopes Home lists (Workloads, Library, Networks, Logs). Logs can still refine inside that scope. Dashboard widgets show/hide locally; **Reset** restores defaults. This Device CPU/memory charts stay on Device detail — they are not Home-wide lists.

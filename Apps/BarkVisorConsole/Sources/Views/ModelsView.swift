@@ -21,6 +21,10 @@ struct ModelsView: View {
     @State private var keyHostId = ""
     @State private var keyDraft = ""
     @State private var keySaving = false
+    @State private var backendSheet = false
+    @State private var backendHostId = ""
+    @State private var backendPick = "ollama"
+    @State private var backendSaving = false
     @State private var mintedKey: String?
     @State private var mintAttempted = false
     @State private var rechecking = false
@@ -49,61 +53,11 @@ struct ModelsView: View {
             } else {
                 List {
                     howToSection
-                    Section("Pull by name") {
-                        TextField("llama3", text: $pullName)
-                        OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)
-                        if pulling {
-                            if let fraction = pullFraction {
-                                ProgressView(value: fraction) { Text(pullLabel) }
-                            } else {
-                                ProgressView(pullLabel)
-                            }
-                            Button("Cancel", role: .cancel) {
-                                Task { await cancelPull() }
-                            }
-                            .disabled(cancelling)
-                        } else {
-                            Button("Pull") {
-                                Task { await pullModel() }
-                            }
-                            .disabled(
-                                pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    || reachableDevices.isEmpty,
-                            )
-                        }
-                    }
-                    Section("Library search") {
-                        TextField("Search the Ollama library", text: $libraryQuery)
-                        Button("Search") {
-                            Task { await searchLibrary() }
-                        }
-                        .disabled(OllamaLibrarySearchResponse.query(libraryQuery) == nil || librarySearching)
-                        if OllamaLibrarySearchResponse.query(libraryQuery) == nil {
-                            Text("Enter a name to search the Ollama library.")
-                                .foregroundStyle(.secondary)
-                        } else if librarySearching {
-                            ProgressView("Searching…")
-                        } else if let libraryError {
-                            Text(libraryError)
-                                .foregroundStyle(.secondary)
-                        } else if let hits = libraryHits,
-                                  hits.query == OllamaLibrarySearchResponse.query(libraryQuery) {
-                            if hits.results.isEmpty {
-                                Text("No library matches.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(hits.results) { row in
-                                    HStack {
-                                        Text(row.name)
-                                        Spacer()
-                                        Button("Download") {
-                                            Task { await pullModel(name: row.pullName) }
-                                        }
-                                        .disabled(row.pullName.isEmpty || pulling || reachableDevices.isEmpty)
-                                    }
-                                }
-                            }
-                        }
+                    if scopedIsUnsloth {
+                        unslothScopedSection
+                    } else {
+                        pullSection
+                        librarySection
                     }
                     Section("Models") {
                         if catalog.models.isEmpty {
@@ -120,6 +74,7 @@ struct ModelsView: View {
                     }
                     if model.ollamaSettings != nil {
                         keySection
+                        backendSection
                     }
                 }
                 .platformListStyle()
@@ -154,6 +109,9 @@ struct ModelsView: View {
         }
         .sheet(isPresented: $keySheet, onDismiss: { keyDraft = "" }) {
             keyEditor
+        }
+        .sheet(isPresented: $backendSheet, onDismiss: { backendHostId = "" }) {
+            backendEditor
         }
         .confirmationDialog(
             "Stop model",
@@ -238,23 +196,104 @@ struct ModelsView: View {
                     }
                 }
             }
-            Button("Recheck") {
-                guard OllamaInstall.canRecheck(
-                    rechecking: rechecking,
-                    refreshInFlight: model.ollamaRefreshing,
-                ) else { return }
-                rechecking = true
-                Task {
-                    await model.refreshOllamaCatalog()
-                    rechecking = false
+            recheckButton
+        }
+    }
+
+    private var recheckButton: some View {
+        Button("Recheck") {
+            guard OllamaInstall.canRecheck(
+                rechecking: rechecking,
+                refreshInFlight: model.ollamaRefreshing,
+            ) else { return }
+            rechecking = true
+            Task {
+                await model.refreshOllamaCatalog()
+                rechecking = false
+            }
+        }
+        .disabled(
+            !OllamaInstall.canRecheck(
+                rechecking: rechecking,
+                refreshInFlight: model.ollamaRefreshing,
+            ),
+        )
+    }
+
+    private var pullSection: some View {
+        Section("Pull by name") {
+            TextField("llama3", text: $pullName)
+            OllamaReachableDevicePicker(hostId: $pullHostId, devices: pullDevices)
+            if pulling {
+                if let fraction = pullFraction {
+                    ProgressView(value: fraction) { Text(pullLabel) }
+                } else {
+                    ProgressView(pullLabel)
+                }
+                Button("Cancel", role: .cancel) {
+                    Task { await cancelPull() }
+                }
+                .disabled(cancelling)
+            } else {
+                Button("Pull") {
+                    Task { await pullModel() }
+                }
+                .disabled(
+                    pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || pullDevices.isEmpty,
+                )
+            }
+        }
+    }
+
+    private var librarySection: some View {
+        Section("Library search") {
+            TextField("Search the Ollama library", text: $libraryQuery)
+            Button("Search") {
+                Task { await searchLibrary() }
+            }
+            .disabled(OllamaLibrarySearchResponse.query(libraryQuery) == nil || librarySearching)
+            if OllamaLibrarySearchResponse.query(libraryQuery) == nil {
+                Text("Enter a name to search the Ollama library.")
+                    .foregroundStyle(.secondary)
+            } else if librarySearching {
+                ProgressView("Searching…")
+            } else if let libraryError {
+                Text(libraryError)
+                    .foregroundStyle(.secondary)
+            } else if let hits = libraryHits,
+                      hits.query == OllamaLibrarySearchResponse.query(libraryQuery) {
+                if hits.results.isEmpty {
+                    Text("No library matches.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(hits.results) { row in
+                        HStack {
+                            Text(row.name)
+                            Spacer()
+                            Button("Download") {
+                                Task { await pullModel(name: row.pullName) }
+                            }
+                            .disabled(row.pullName.isEmpty || pulling || pullDevices.isEmpty)
+                        }
+                    }
                 }
             }
-            .disabled(
-                !OllamaInstall.canRecheck(
-                    rechecking: rechecking,
-                    refreshInFlight: model.ollamaRefreshing,
-                ),
-            )
+        }
+    }
+
+    private var unslothScopedSection: some View {
+        Section {
+            if !scopedDeviceInstalled {
+                CopyableSnippet(title: UnslothInstall.installHint, text: UnslothInstall.installCommand)
+            }
+            Text(UnslothInstall.stageHint(deviceLabel: Copy.device))
+                .foregroundStyle(.secondary)
+            recheckButton
+        } header: {
+            Text("Unsloth")
+        } footer: {
+            Text("Pull by name and the Ollama library are Ollama-only.")
         }
     }
 
@@ -314,6 +353,22 @@ struct ModelsView: View {
 
     private var reachableDevices: [OllamaDeviceStatus] {
         catalog.devices.filter(\.reachable)
+    }
+
+    private var pullDevices: [OllamaDeviceStatus] {
+        reachableDevices.filter { device in
+            UnslothInstall.parse(model.ollamaSettings?.host(device.hostId)?.backend) == "ollama"
+        }
+    }
+
+    private var scopedIsUnsloth: Bool {
+        guard let hostId = model.selectedDevice?.hostId else { return false }
+        return UnslothInstall.parse(model.ollamaSettings?.host(hostId)?.backend) == "unsloth"
+    }
+
+    private var scopedDeviceInstalled: Bool {
+        guard let hostId = model.selectedDevice?.hostId else { return true }
+        return catalog.devices.first { $0.hostId == hostId }?.installed ?? true
     }
 
     private var visibleModels: [OllamaCatalogModel] {
@@ -391,6 +446,73 @@ struct ModelsView: View {
         return "No upstream key stored for this \(Copy.device)."
     }
 
+    private func storedBackend(for hostId: String?) -> String {
+        UnslothInstall.parse(model.ollamaSettings?.host(hostId ?? "")?.backend)
+    }
+
+    private var backendSection: some View {
+        Section {
+            Button("Change backend") {
+                backendHostId = reachableDevices.first?.hostId ?? ""
+                backendPick = storedBackend(for: backendHostId)
+                backendSheet = true
+            }
+            .disabled(reachableDevices.isEmpty)
+            Text(backendStatusLine)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("Backend")
+        } footer: {
+            Text("Per \(Copy.device). Unsloth serves staged weights; pull stays Ollama-only.")
+        }
+    }
+
+    private var backendStatusLine: String {
+        let hostId = backendHostId.isEmpty ? reachableDevices.first?.hostId : backendHostId
+        return storedBackend(for: hostId) == "unsloth"
+            ? "Unsloth serves staged weights on this \(Copy.device)."
+            : "Ollama serves this \(Copy.device)."
+    }
+
+    private var backendEditor: some View {
+        NavigationStack {
+            Form {
+                OllamaReachableDevicePicker(
+                    hostId: $backendHostId,
+                    devices: reachableDevices,
+                    allowAny: false,
+                )
+                Picker("Backend", selection: $backendPick) {
+                    Text("Ollama").tag("ollama")
+                    Text("Unsloth").tag("unsloth")
+                }
+                Text(UnslothInstall.stageHint(deviceLabel: Copy.device))
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: backendHostId) { _, hostId in
+                backendPick = storedBackend(for: hostId)
+            }
+            .navigationTitle("Backend")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { backendSheet = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task { await saveBackend() }
+                    }
+                    .disabled(
+                        OllamaSettingsUpdate.saveBackend(hostId: backendHostId, backend: backendPick) == nil
+                            || backendSaving,
+                    )
+                }
+            }
+        }
+        #if os(iOS)
+        .presentationDetents([.medium])
+        #endif
+    }
+
     private var keyEditor: some View {
         NavigationStack {
             Form {
@@ -429,6 +551,17 @@ struct ModelsView: View {
         if saved {
             keyDraft = ""
             keySheet = false
+        }
+    }
+
+    private func saveBackend() async {
+        guard let body = OllamaSettingsUpdate.saveBackend(hostId: backendHostId, backend: backendPick) else { return }
+        backendSaving = true
+        defer { backendSaving = false }
+        let saved = await model.saveOllamaSettings(body)
+        if saved {
+            backendSheet = false
+            await model.refreshOllama()
         }
     }
 

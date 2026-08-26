@@ -32,7 +32,12 @@ import {
   shouldShowOllamaInstall,
 } from '../utils/ollamaInstall'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
-import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
+import {
+  ollamaSettingsBackendBody,
+  ollamaSettingsKeyBody,
+  parseInferenceBackend,
+} from '../utils/ollamaSettings'
+import { unslothInstallSteps } from '../utils/unslothInstall'
 import {
   ollamaLibraryResultName,
   ollamaLibrarySearchQuery,
@@ -74,6 +79,8 @@ const cancelledByUser = ref(false)
 const apiKeyDraft = ref('')
 const keyHost = ref('')
 const keySaving = ref(false)
+const backendDraft = ref('ollama')
+const backendSaving = ref(false)
 const nameQuery = ref('')
 const libraryQuery = ref('')
 const libraryResults = ref<OllamaLibrarySearchResult[]>([])
@@ -174,6 +181,16 @@ const hostOptions = computed(() =>
     })),
 )
 
+const pullHostOptions = computed(() =>
+  scopeRows(store.devices, deviceScope.selectedHostId)
+    .filter((row) => row.reachable)
+    .filter((row) => parseInferenceBackend(store.hostSettings(row.hostId)?.backend) === 'ollama')
+    .map((row) => ({
+      value: row.hostId,
+      label: row.displayName?.trim() || row.hostId,
+    })),
+)
+
 const startHostOptions = computed(() =>
   ollamaStartReachableCandidates(startTarget.value, deviceScope.selectedHostId).map((loc) => {
     const name = loc.displayName?.trim() || loc.hostId
@@ -207,6 +224,31 @@ const selectedKeyHost = computed(() => keyHost.value || hostOptions.value[0]?.va
 const selectedHostSettings = computed(() =>
   selectedKeyHost.value ? store.hostSettings(selectedKeyHost.value) : null,
 )
+const currentBackend = computed(() => parseInferenceBackend(selectedHostSettings.value?.backend))
+const backendBody = computed(() =>
+  ollamaSettingsBackendBody(selectedKeyHost.value, backendDraft.value),
+)
+
+watch(
+  () => [selectedKeyHost.value, selectedHostSettings.value?.backend] as const,
+  () => {
+    backendDraft.value = currentBackend.value
+  },
+  { immediate: true },
+)
+
+const scopedHostId = computed(() => (deviceScope.isAll ? '' : deviceScope.selectedHostId))
+const scopedDevice = computed(
+  () =>
+    store.devices.find((row) => row.hostId === scopedHostId.value) ??
+    null,
+)
+const scopedBackendIsUnsloth = computed(
+  () =>
+    !!scopedHostId.value &&
+    parseInferenceBackend(store.hostSettings(scopedHostId.value)?.backend) === 'unsloth',
+)
+const unslothSteps = computed(() => unslothInstallSteps(scopedDevice.value?.installed === true))
 const keyBody = computed(() => ollamaSettingsKeyBody(selectedKeyHost.value, apiKeyDraft.value))
 
 const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
@@ -245,10 +287,11 @@ watch(
   () => [store.models, store.devices, deviceScope.selectedHostId] as const,
   () => {
     const valid = new Set(hostOptions.value.map((opt) => opt.value))
+    const pullValid = new Set(pullHostOptions.value.map((opt) => opt.value))
     const scopedHost = !deviceScope.isAll && valid.has(deviceScope.selectedHostId)
       ? deviceScope.selectedHostId
       : ''
-    if (pullHost.value && !valid.has(pullHost.value)) pullHost.value = scopedHost
+    if (pullHost.value && !pullValid.has(pullHost.value)) pullHost.value = scopedHost
     if (startHost.value && !valid.has(startHost.value)) startHost.value = scopedHost
     if (keyHost.value && !valid.has(keyHost.value)) {
       keyHost.value = scopedHost || hostOptions.value[0]?.value || ''
@@ -470,6 +513,21 @@ async function saveKey() {
     keySaving.value = false
   }
 }
+
+async function saveBackend() {
+  const body = backendBody.value
+  if (!body) return
+  backendSaving.value = true
+  try {
+    await store.saveSettings(body)
+    await store.fetchCatalog()
+    toast.success('Inference backend saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    backendSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -573,14 +631,14 @@ async function saveKey() {
   </div>
 
   <template v-else-if="showOllamaCatalog">
-    <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
+    <div v-if="auth.isAdmin && !scopedBackendIsUnsloth" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
         <label>Pull by name</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <input v-model="pullName" placeholder="llama3" style="flex:1;min-width:160px" />
           <select v-model="pullHost" style="min-width:160px">
             <option value="">Any reachable {{ DEVICE_LABEL }}</option>
-            <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            <option v-for="opt in pullHostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
           <AppButton variant="primary" :disabled="!pullName.trim() || pulling || !store.anyReachable" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
             Pull
@@ -599,7 +657,31 @@ async function saveKey() {
       </div>
     </div>
 
-    <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
+    <div v-if="auth.isAdmin && scopedBackendIsUnsloth" class="card" style="margin-bottom:16px">
+      <div class="form-group" style="margin:0">
+        <label>Unsloth</label>
+        <p class="stats-unknown" style="margin:0">
+          {{ scopedDevice?.displayName?.trim() || scopedHostId }} serves weights staged on the
+          {{ DEVICE_LABEL }}. Pull by name and the Ollama library do not apply here.
+        </p>
+        <ol class="install-steps" style="margin-top:8px">
+          <li v-for="(step, index) in unslothSteps" :key="'unsloth-' + index">
+            <div>{{ step.title }}</div>
+            <div v-if="step.command" class="form-group" style="margin:8px 0 0">
+              <pre class="howto-pre">{{ step.command }}</pre>
+              <AppButton size="sm" @click="copySnippet('unsloth-' + index, step.command)">
+                {{ copied === 'unsloth-' + index ? 'Copied' : 'Copy' }}
+              </AppButton>
+            </div>
+          </li>
+        </ol>
+        <AppButton variant="primary" :loading="rechecking" loading-text="Checking..." @click="recheckOllama">
+          Recheck
+        </AppButton>
+      </div>
+    </div>
+
+    <div v-if="auth.isAdmin && !scopedBackendIsUnsloth" class="card" style="margin-bottom:16px">
       <div class="form-group" style="margin:0">
         <label>Library search</label>
         <p class="stats-unknown" style="margin:0 0 8px">Search popular models on ollama.com. Catalog filter below only matches models already pulled.</p>
@@ -719,6 +801,24 @@ async function saveKey() {
         >
           <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label>Backend</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select v-model="backendDraft" style="min-width:160px" :disabled="!selectedKeyHost">
+            <option value="ollama">Ollama</option>
+            <option value="unsloth">Unsloth</option>
+          </select>
+          <AppButton
+            variant="primary"
+            :disabled="!backendBody"
+            :loading="backendSaving"
+            loading-text="Saving..."
+            @click="saveBackend"
+          >
+            Save backend
+          </AppButton>
+        </div>
       </div>
       <div class="form-group">
         <input v-model="apiKeyDraft" type="password" placeholder="OLLAMA_API_KEY" :disabled="!selectedKeyHost" />

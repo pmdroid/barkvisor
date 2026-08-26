@@ -13,3 +13,18 @@ export function ollamaSettingsKeyBody(
   if (!host || !apiKey) return null
   return { hostId: host, apiKey }
 }
+
+export type InferenceBackendName = 'ollama' | 'unsloth'
+
+export function parseInferenceBackend(raw?: string | null): InferenceBackendName {
+  return (raw ?? '').trim().toLowerCase() === 'unsloth' ? 'unsloth' : 'ollama'
+}
+
+export function ollamaSettingsBackendBody(
+  hostId: string,
+  backend: string,
+): OllamaSettingsUpdate | null {
+  const host = hostId.trim()
+  if (!host) return null
+  return { hostId: host, backend: parseInferenceBackend(backend) }
+}

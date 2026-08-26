@@ -263,7 +263,7 @@ struct OllamaModelsTests {
         #expect(source.contains("startReachableCandidates"))
         #expect(!source.contains("row.startLocations.first?.hostId"))
         #expect(source.contains("startPickerDevices(for: row)"))
-        #expect(source.contains("OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)"))
+        #expect(source.contains("OllamaReachableDevicePicker(hostId: $pullHostId, devices: pullDevices)"))
         #expect(!source.contains("OllamaReachableDevicePicker(hostId: $startHostId, devices: reachableDevices)"))
         #expect(source.contains("allowAny: false"))
         #expect(source.contains("(unreachable)"))
@@ -345,6 +345,85 @@ struct OllamaModelsTests {
         let cleared = try encoder.encode(OllamaSettingsUpdate(hostId: "desk", apiKey: ""))
         let clearedObject = try decoder.decode([String: String].self, from: cleared)
         #expect(clearedObject["apiKey"] == "")
+    }
+
+    @Test func `settings snapshot decodes backend and encodes backend PUT`() throws {
+        let withBackend = try decoder.decode(
+            OllamaSettingsSnapshot.self,
+            from: Data(
+                """
+                {"hosts":[{"hostId":"desk","endpoint":"http://127.0.0.1:11434","hasApiKey":false,"backend":"unsloth"}]}
+                """.utf8,
+            ),
+        )
+        #expect(withBackend.host("desk")?.backend == "unsloth")
+        #expect(withBackend.host("desk")?.backendKind == "unsloth")
+
+        let withoutBackend = try decoder.decode(
+            OllamaSettingsSnapshot.self,
+            from: Data(
+                """
+                {"hosts":[{"hostId":"desk","endpoint":"http://127.0.0.1:11434","hasApiKey":false}]}
+                """.utf8,
+            ),
+        )
+        #expect(withoutBackend.host("desk")?.backend == nil)
+        #expect(withoutBackend.host("desk")?.backendKind == "ollama")
+
+        let put = try encoder.encode(OllamaSettingsUpdate(hostId: "desk", backend: "unsloth"))
+        let object = try decoder.decode([String: String].self, from: put)
+        #expect(object["hostId"] == "desk")
+        #expect(object["backend"] == "unsloth")
+        #expect(object["apiKey"] == nil)
+
+        let keyOnly = try encoder.encode(OllamaSettingsUpdate(hostId: "desk", apiKey: "secret"))
+        let keyObject = try decoder.decode([String: String].self, from: keyOnly)
+        #expect(keyObject["backend"] == nil)
+
+        #expect(OllamaSettingsUpdate.saveBackend(hostId: "", backend: "unsloth") == nil)
+        #expect(OllamaSettingsUpdate.saveBackend(hostId: "  ", backend: "unsloth") == nil)
+        #expect(
+            OllamaSettingsUpdate.saveBackend(hostId: " desk ", backend: " Unsloth ")
+                == OllamaSettingsUpdate(hostId: "desk", backend: "unsloth"),
+        )
+        #expect(
+            OllamaSettingsUpdate.saveBackend(hostId: "desk", backend: "")
+                == OllamaSettingsUpdate(hostId: "desk", backend: "ollama"),
+        )
+        #expect(
+            OllamaSettingsUpdate.saveBackend(hostId: "desk", backend: "vLLM")
+                == OllamaSettingsUpdate(hostId: "desk", backend: "ollama"),
+        )
+    }
+
+    @Test func `models view hides pull and library for unsloth device and offers backend picker`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/ModelsView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("scopedIsUnsloth"))
+        #expect(source.contains("unslothScopedSection"))
+        #expect(source.contains("Pull by name and the Ollama library are Ollama-only."))
+        #expect(source.contains("pullSection"))
+        #expect(source.contains("librarySection"))
+        #expect(source.contains("UnslothInstall.parse"))
+        #expect(source.contains("devices: pullDevices"))
+        #expect(!source.contains("OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)"))
+        #expect(source.contains("Text(\"Ollama\").tag(\"ollama\")"))
+        #expect(source.contains("Text(\"Unsloth\").tag(\"unsloth\")"))
+        #expect(source.contains("OllamaSettingsUpdate.saveBackend(hostId: backendHostId, backend: backendPick)"))
+        #expect(source.contains("Change backend"))
+
+        let modelsSource = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Models/OllamaModels.swift"),
+            encoding: .utf8,
+        )
+        #expect(modelsSource.contains(UnslothInstall.installHint))
+        #expect(modelsSource.contains(UnslothInstall.installCommand))
+        #expect(modelsSource.contains("static func saveBackend(hostId:"))
     }
 
     @Test func `live stats defaults to running device and skips unreachable`() {

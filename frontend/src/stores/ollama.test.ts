@@ -174,6 +174,11 @@ describe('ollama store (PAS-269)', () => {
     expect(src).not.toContain('placeholder="Search models..."')
     expect(src).not.toContain('apiKey: apiKeyDraft.value')
     expect(src).toContain(':disabled="!keyBody"')
+    expect(src).toContain('ollamaSettingsBackendBody')
+    expect(src).toContain('parseInferenceBackend')
+    expect(src).toContain('unslothInstallSteps')
+    expect(src).toContain('scopedBackendIsUnsloth')
+    expect(src).toContain('opt in pullHostOptions')
   })
 
   test('a failed fetch hides Models', async () => {
