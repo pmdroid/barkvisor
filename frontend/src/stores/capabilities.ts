@@ -44,6 +44,10 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     const n = currentHost.value.hostCpuCount
     return typeof n === 'number' && n >= 1 ? n : defaultCapabilities.hostCpuCount!
   })
+  const maxMemoryMB = computed(() => {
+    const n = currentHost.value.maxMemoryMB
+    return typeof n === 'number' && n >= 128 ? n : undefined
+  })
   const guestTypes = computed(() => currentHost.value.guestTypes ?? [])
   const details = computed(() => currentHost.value.details ?? [])
   const networkModes = computed(() => currentHost.value.networkModes ?? defaultCapabilities.networkModes!)
@@ -157,6 +161,7 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
     accelerator,
     hostArch,
     hostCpuCount,
+    maxMemoryMB,
     guestTypes,
     details,
     networkModes,

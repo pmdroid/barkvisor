@@ -887,6 +887,8 @@ export interface SystemCapabilities {
   hostArch: 'arm64' | 'x86_64' | string
   /** Online logical CPUs on the host (max vCPUs per VM). */
   hostCpuCount?: number
+  /** Physical memory on the host in MB (max memoryMB per VM). */
+  maxMemoryMB?: number
   /**
    * Guest profiles this host can run natively (PAS-48).
    * Filtered to host arch — not the full static GuestProfiles table.

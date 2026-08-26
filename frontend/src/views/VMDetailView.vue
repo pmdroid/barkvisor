@@ -297,6 +297,13 @@ const editCpuMax = computed(() => {
   }
   return caps.hostCpuCount
 })
+const editMemoryMax = computed(() => {
+  if (isMemberDetail.value) {
+    const n = memberCaps.value?.maxMemoryMB
+    return typeof n === 'number' && n >= 128 ? n : undefined
+  }
+  return caps.maxMemoryMB
+})
 
 // Port forwards
 const showPortForwardEditor = ref(false)
@@ -2098,8 +2105,8 @@ onMounted(fetchVMEvents)
       />
     </div>
     <div class="form-group">
-      <label>Memory (MB)</label>
-      <input v-model.number="editDraft.memoryMB" type="number" min="128" step="128" />
+      <label>Memory (MB)<template v-if="editMemoryMax"> (max {{ editMemoryMax }})</template></label>
+      <input v-model.number="editDraft.memoryMB" type="number" min="128" step="128" :max="editMemoryMax" />
     </div>
     <div class="form-group">
       <label>Boot Order</label>

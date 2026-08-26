@@ -3397,6 +3397,7 @@ components:
         - accelerator
         - hostArch
         - hostCpuCount
+        - maxMemoryMB
         - guestTypes
       properties:
         platform:
@@ -3424,6 +3425,8 @@ components:
         hostArch:
           type: string
         hostCpuCount:
+          type: integer
+        maxMemoryMB:
           type: integer
         guestTypes:
           type: array

@@ -128,7 +128,12 @@ struct CreateVMRequest: Content, Validatable {
             is: .range(1 ... PlatformHost.cpuCount),
             required: false,
         )
-        validations.add("memoryMB", as: Int.self, is: .range(128 ... 1_048_576), required: false)
+        validations.add(
+            "memoryMB",
+            as: Int.self,
+            is: .range(128 ... PlatformHost.physicalMemoryMB),
+            required: false,
+        )
     }
 }
 
@@ -161,7 +166,12 @@ struct UpdateVMRequest: Content, Validatable {
             is: .nil || .range(1 ... PlatformHost.cpuCount),
             required: false,
         )
-        validations.add("memoryMB", as: Int?.self, is: .nil || .range(128 ... 1_048_576), required: false)
+        validations.add(
+            "memoryMB",
+            as: Int?.self,
+            is: .nil || .range(128 ... PlatformHost.physicalMemoryMB),
+            required: false,
+        )
     }
 }
 
