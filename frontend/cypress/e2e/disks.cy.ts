@@ -122,13 +122,12 @@ describe('Disk Management', () => {
     cy.get('.modal-overlay').should('not.exist')
   })
 
-  it('Create Disk Browse opens the folder picker', () => {
+  it('Create Disk does not ask for a folder', () => {
     cy.contains('button', 'Create Disk').click()
-    cy.contains('button', 'Browse').click()
-    cy.contains('h2', 'Select Folder').should('be.visible')
-    cy.get('.folder-item').should('have.length.gte', 1)
-    cy.contains('h2', 'Select Folder').parents('.split-frame').contains('button', 'Cancel').click()
-    cy.contains('h2', 'Select Folder').should('not.exist')
+    cy.get('.split-frame').should('be.visible')
+    cy.get('.split-frame').contains('Location').should('not.exist')
+    cy.get('.split-frame').contains('Browse').should('not.exist')
+    cy.get('.split-frame').contains('button', 'Cancel').click()
   })
 
   it('creates a new QCOW2 disk', () => {

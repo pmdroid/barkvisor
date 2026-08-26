@@ -1318,7 +1318,7 @@ onUnmounted(() => {
 
   <div v-if="tab === 'disks'">
     <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0">
-      New disks on this {{ DEVICE_LABEL }} go here unless Create Disk picks another folder.
+      New disks go here.
     </p>
     <div class="form-group" style="max-width:640px">
       <label>Default VM disk directory</label>
