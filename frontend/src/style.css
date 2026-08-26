@@ -87,6 +87,8 @@
   --main-gradient-2: rgba(184,184,180,0.04);
   --line: rgba(255,255,255,0.07);
   --panel: rgba(255,255,255,0.03);
+  --control-h: 32px;
+  --control-h-sm: 32px;
 }
 
 /* ── Light Theme ── */
@@ -191,13 +193,39 @@ button {
   font-family: inherit;
   font-size: 12.5px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   padding: 7px 14px;
   font-weight: 600;
   transition: border-color 0.12s, background 0.12s, color 0.12s;
   letter-spacing: 0;
 }
 button:disabled { opacity: 0.4; pointer-events: none; }
+
+.app-btn,
+.btn-primary,
+.btn-ghost,
+.btn-danger,
+.btn-warning {
+  box-sizing: border-box;
+  height: var(--control-h);
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-sm {
+  height: var(--control-h-sm);
+  padding: 0 12px;
+  font-size: 12.5px;
+  border-radius: var(--radius);
+}
 
 .btn-primary {
   background: var(--accent);
@@ -209,7 +237,7 @@ button:disabled { opacity: 0.4; pointer-events: none; }
 .btn-danger {
   background: transparent;
   color: var(--red);
-  border: 1px solid rgba(248,113,113,0.45);
+  border-color: rgba(248,113,113,0.45);
 }
 .btn-danger:hover {
   background: rgba(248,113,113,0.12);
@@ -218,14 +246,13 @@ button:disabled { opacity: 0.4; pointer-events: none; }
 .btn-ghost {
   background: transparent;
   color: var(--text-dim);
-  border: 1px solid var(--line);
+  border-color: var(--line);
 }
 .btn-ghost:hover {
   background: var(--bg-hover);
   color: var(--text);
   border-color: var(--border);
 }
-.btn-sm { padding: 5px 14px; font-size: 12px; border-radius: var(--radius-xs); }
 .btn-warning {
   background: rgba(251, 191, 36, 0.15);
   color: #fbbf24;
@@ -334,10 +361,14 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 .sidebar-scope select {
   width: 100%;
-  height: auto;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-weight: 500;
+  height: var(--control-h);
+  box-sizing: border-box;
+  padding: 0 28px 0 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-input);
 }
 
 .sidebar-nav {
@@ -491,6 +522,13 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.ops-actions .app-btn,
+.ops-actions .ops-search,
+.ops-actions .app-select,
+.ops-actions .app-select select {
+  height: var(--control-h);
+  flex-shrink: 0;
 }
 .ops-body {
   flex: 1;
@@ -912,6 +950,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+.form-group > .app-select {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.form-group > select {
+  box-sizing: border-box;
+  height: var(--control-h);
+  padding: 0 28px 0 10px;
 }
 
 /* ── Modals ── */
@@ -1413,11 +1461,13 @@ tbody tr:last-child td { border-bottom: none; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  box-sizing: border-box;
+  height: var(--control-h);
+  padding: 0 12px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
   background: transparent;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text-dim);
   cursor: pointer;
@@ -1699,13 +1749,15 @@ tr.pending td:first-child { box-shadow: none; }
 
 .ops-search {
   appearance: none;
+  box-sizing: border-box;
+  height: var(--control-h);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text);
-  background: rgba(255,255,255,0.04) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 14 14'%3E%3Ccircle cx='6' cy='6' r='4.5' fill='none' stroke='%236e6e6c' stroke-width='1.5'/%3E%3Cpath d='M9.5 9.5L13 13' stroke='%236e6e6c' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat 9px center;
+  background: var(--bg-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 14 14'%3E%3Ccircle cx='6' cy='6' r='4.5' fill='none' stroke='%236e6e6c' stroke-width='1.5'/%3E%3Cpath d='M9.5 9.5L13 13' stroke='%236e6e6c' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat 9px center;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 6px 10px 6px 28px;
+  padding: 0 10px 0 28px;
   width: 170px;
 }
 .ops-search::placeholder { color: var(--text-dim); }

@@ -35,27 +35,26 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 <style scoped>
 .app-select {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  min-width: 140px;
+  vertical-align: middle;
 }
 
 .app-select select {
   appearance: none;
   -webkit-appearance: none;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius-sm);
-  height: 38px;
-  padding: 0 34px 0 14px;
+  box-sizing: border-box;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  height: var(--control-h);
+  padding: 0 28px 0 10px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text-secondary);
+  color: var(--text);
   cursor: pointer;
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-shine);
-  transition: all 0.15s;
   width: 100%;
 }
 
@@ -66,7 +65,7 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 
 .app-select select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-muted), var(--glass-shine);
+  box-shadow: 0 0 0 2px var(--accent-muted);
   outline: none;
 }
 
@@ -76,10 +75,10 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 }
 
 .app-select-sm select {
-  height: 28px;
+  height: var(--control-h-sm);
   padding: 0 28px 0 10px;
-  font-size: 12px;
-  border-radius: var(--radius-xs);
+  font-size: 12.5px;
+  border-radius: var(--radius);
 }
 
 .app-select-chevron {

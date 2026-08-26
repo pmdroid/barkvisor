@@ -12,6 +12,7 @@ import type {
 } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
+import AppSelect from '../components/ui/AppSelect.vue'
 import AppModal from '../components/ui/AppModal.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -487,9 +488,8 @@ async function stopModel() {
   }
 }
 
-function onKeyHost(event: Event) {
-  const target = event.target as HTMLSelectElement
-  keyHost.value = target.value
+function onKeyHost(value: string) {
+  keyHost.value = value
 }
 
 function exportPs() {
@@ -681,10 +681,10 @@ async function saveKey() {
         <label>Pull by name</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <input v-model="pullName" placeholder="llama3" style="flex:1;min-width:160px" />
-          <select v-model="pullHost" style="min-width:160px">
+          <AppSelect v-model="pullHost" style="min-width:160px">
             <option value="">Any reachable {{ DEVICE_LABEL }}</option>
             <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
+          </AppSelect>
           <AppButton variant="primary" :disabled="!pullName.trim() || pulling || !store.anyReachable" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
             Pull
           </AppButton>
@@ -806,14 +806,14 @@ async function saveKey() {
       </p>
       <div class="form-group">
         <label>{{ DEVICE_LABEL }}</label>
-        <select
-          :value="selectedKeyHost"
+        <AppSelect
+          :model-value="selectedKeyHost"
           style="min-width:160px"
           :disabled="hostOptions.length === 0"
-          @change="onKeyHost"
+          @update:model-value="onKeyHost"
         >
           <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-        </select>
+        </AppSelect>
       </div>
       <div class="form-group">
         <input v-model="apiKeyDraft" type="password" placeholder="OLLAMA_API_KEY" :disabled="!selectedKeyHost" />
@@ -827,14 +827,7 @@ async function saveKey() {
 
   <AppModal v-if="startTarget" :title="`Start ${startTarget.name}`" @close="!starting && (startTarget = null)">
     <div class="form-group" style="margin:0">
-      <select v-model="startHost" style="min-width:160px">
-        <option
-          v-for="opt in startHostOptions"
-          :key="opt.value"
-          :value="opt.value"
-          :disabled="opt.disabled"
-        >{{ opt.label }}</option>
-      </select>
+      <AppSelect v-model="startHost" style="min-width:160px" :options="startHostOptions" />
     </div>
     <template #actions>
       <AppButton variant="ghost" :disabled="starting" @click="startTarget = null">Cancel</AppButton>
@@ -900,14 +893,18 @@ details.howto-collapse[open] > .howto-summary::before {
 }
 .overflow-menu summary {
   list-style: none;
+  box-sizing: border-box;
+  height: var(--control-h);
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 13px;
+  color: var(--text-dim);
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  background: var(--bg-card);
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
 }
 .overflow-menu summary::-webkit-details-marker {
   display: none;
