@@ -23,7 +23,7 @@ struct OllamaController: RouteCollection {
     var backgroundTasks: BackgroundTaskManager
     var hostId: String
     var dataDir: URL
-    var makeClient: (@Sendable (DatabasePool) async throws -> OllamaClient)?
+    var makeBackend: (@Sendable (DatabasePool) async throws -> any InferenceBackend)?
     var detect: (@Sendable () -> OllamaDetectResult)?
     var resources: (@Sendable () -> ResourcesInfo)?
     var displayName: String
@@ -33,7 +33,7 @@ struct OllamaController: RouteCollection {
         hostId: String = Config.hostId,
         dataDir: URL = Config.dataDir,
         displayName: String = ProcessInfo.processInfo.hostName,
-        makeClient: (@Sendable (DatabasePool) async throws -> OllamaClient)? = nil,
+        makeBackend: (@Sendable (DatabasePool) async throws -> any InferenceBackend)? = nil,
         detect: (@Sendable () -> OllamaDetectResult)? = nil,
         resources: (@Sendable () -> ResourcesInfo)? = nil,
     ) {
@@ -41,7 +41,7 @@ struct OllamaController: RouteCollection {
         self.hostId = hostId
         self.dataDir = dataDir
         self.displayName = displayName
-        self.makeClient = makeClient
+        self.makeBackend = makeBackend
         self.detect = detect
         self.resources = resources
     }
@@ -100,14 +100,14 @@ struct OllamaController: RouteCollection {
     func pull(body: OllamaPullRequest, db: DatabasePool) async throws -> OllamaTaskAccepted {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
-        let client = try await resolvedClient(db: db)
-        guard await client.versionReachable() else {
+        let backend = try await resolvedBackend(db: db)
+        guard await backend.isReachable() else {
             throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
         }
         let taskID = UUID().uuidString
         let tasks = backgroundTasks
         await tasks.submit(taskID, kind: .ollamaPull) {
-            for try await event in client.pull(name: name) {
+            for try await event in backend.pull(name: name) {
                 try Task.checkCancellation()
                 if let fraction = event.fraction {
                     await tasks.reportProgress(taskID, progress: fraction)
@@ -128,7 +128,8 @@ struct OllamaController: RouteCollection {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
         let snap = try await currentSnapshot(db: db)
-        guard snap.reachable else {
+        let backend = try await resolvedBackend(db: db)
+        guard await backend.isReachable() else {
             throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
         }
         let model = snap.models.first { OllamaModelName.matches(name, available: $0.name) }
@@ -140,8 +141,7 @@ struct OllamaController: RouteCollection {
         guard fit.ok else {
             throw BarkVisorError.preconditionFailed(fit.reason ?? "Model does not fit in memory")
         }
-        let client = try await resolvedClient(db: db)
-        try await client.load(model: model?.name ?? name)
+        try await backend.start(model: model?.name ?? name)
         return .noContent
     }
 
@@ -154,11 +154,11 @@ struct OllamaController: RouteCollection {
     func stop(body: OllamaModelActionRequest, db: DatabasePool) async throws -> HTTPStatus {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
-        let client = try await resolvedClient(db: db)
-        guard await client.versionReachable() else {
+        let backend = try await resolvedBackend(db: db)
+        guard await backend.isReachable() else {
             throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
         }
-        try await client.unload(model: name)
+        try await backend.stop(model: name)
         return .noContent
     }
 
@@ -173,11 +173,11 @@ struct OllamaController: RouteCollection {
 
     func complete(body: Data, db: DatabasePool) async throws -> Response {
         _ = try OllamaLocalProbe.modelName(fromChatBody: body)
-        let client = try await resolvedClient(db: db)
+        let backend = try await resolvedBackend(db: db)
         if OllamaLocalProbe.wantsStream(fromChatBody: body) {
-            return try await OllamaChatProxy.stream(client.chatCompletionsStream(body: body))
+            return try await OllamaChatProxy.stream(backend.chatCompletionsStream(body: body))
         }
-        let upstream = try await client.chatCompletions(body: body)
+        let upstream = try await backend.chatCompletions(body: body)
         return OllamaChatHTTP.response(
             status: upstream.status,
             headers: upstream.headers,
@@ -200,11 +200,15 @@ struct OllamaController: RouteCollection {
         )
     }
 
-    private func resolvedClient(db: DatabasePool) async throws -> OllamaClient {
-        if let makeClient {
-            return try await makeClient(db)
+    private func resolvedBackend(db: DatabasePool) async throws -> any InferenceBackend {
+        if let makeBackend {
+            return try await makeBackend(db)
         }
-        return try await db.read { db in
+        return try await OllamaInferenceBackend(client: resolvedClient(db: db))
+    }
+
+    private func resolvedClient(db: DatabasePool) async throws -> OllamaClient {
+        try await db.read { db in
             try OllamaSettings.client(hostId: hostId, from: db)
         }
     }
