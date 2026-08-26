@@ -23,7 +23,7 @@ function pick(option: DevicePickOption) {
   <div class="device-picker">
     <label class="device-picker-label">{{ DEVICE_LABEL }}</label>
     <p class="device-picker-hint">
-      Recommended {{ DEVICE_LABEL }} is a suggestion. Architecture mismatches can still be placed; the image must already be in that {{ DEVICE_LABEL }}'s Library.
+      Recommended {{ DEVICE_LABEL }} is a suggestion. Architecture mismatches cannot be placed. Missing images are copied from the Library depot on create.
     </p>
     <div class="device-picker-list" role="radiogroup" :aria-label="DEVICE_LABEL">
       <button
@@ -55,7 +55,9 @@ function pick(option: DevicePickOption) {
         </div>
         <p v-if="!option.compatible && option.reasons.length" class="device-picker-reason">
           {{ option.reasons[0] }}
-          <span v-if="option.reachable && option.placeAnyway"> You can still place here.</span>
+        </p>
+        <p v-else-if="option.willCopy" class="device-picker-reason">
+          Will copy to this {{ DEVICE_LABEL }} on create.
         </p>
         <p v-else-if="option.recommended && option.recommendReasons?.length" class="device-picker-reason recommend">
           {{ option.recommendReasons[0] }}
