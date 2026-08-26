@@ -58,7 +58,7 @@ try {
   await page.waitForSelector('.shell', { timeout: 15000 })
   await shot('01-welcome')
 
-  await page.click('button:has-text("Set up this")')
+  await page.click('button:has-text("Continue")')
   await page.waitForSelector('h1:has-text("Create Admin Account")', { timeout: 10000 })
   await page.fill('input[placeholder="admin"]', user)
   await page.fill('input[placeholder="Minimum 10 characters"]', pass)
