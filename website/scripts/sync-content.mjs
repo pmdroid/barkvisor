@@ -76,6 +76,107 @@ const map = {
     title: 'Create a Workload',
     description: 'Create a VM on this Device or another paired Device from the Home dashboard.',
   },
+  'using-overview.md': {
+    out: 'using/index.md',
+    title: 'Using the web UI',
+    description:
+      'Run BarkVisor, sign in, and a map of every menu point in the console.',
+  },
+  'using-dashboard.md': {
+    out: 'using/dashboard.md',
+    title: 'Dashboard',
+    description: 'The triage inbox for your Home — incidents, feed columns, and vitals.',
+  },
+  'using-devices.md': {
+    out: 'using/devices.md',
+    title: 'Devices',
+    description: 'Every machine in your Home: health cards, facts, and its Workloads.',
+  },
+  'using-vms.md': {
+    out: 'using/vms.md',
+    title: 'Virtual Machines',
+    description: 'All Workloads in the Home with health filters and quick actions.',
+  },
+  'using-vm-details.md': {
+    out: 'using/vm-details.md',
+    title: 'Workload details',
+    description: 'Actions and tabs for one VM: overview, console, VNC, metrics, logs.',
+  },
+  'using-ollama.md': {
+    out: 'using/ollama.md',
+    title: 'Ollama',
+    description: 'Model runtime status per Device, pulling models, and API access.',
+  },
+  'using-chat.md': {
+    out: 'using/chat.md',
+    title: 'Chat',
+    description: 'Talk to models served by Ollama on your Devices.',
+  },
+  'using-images.md': {
+    out: 'using/images.md',
+    title: 'Images',
+    description: 'The OS image library on this Device — upload, download, free space.',
+  },
+  'using-disks.md': {
+    out: 'using/disks.md',
+    title: 'Disks',
+    description: 'Create, resize, attach, and delete virtual disks across the Home.',
+  },
+  'using-networks.md': {
+    out: 'using/networks.md',
+    title: 'Networks',
+    description: 'NAT, bridged, and isolated networks plus host bridge setup.',
+  },
+  'using-repositories.md': {
+    out: 'using/repositories.md',
+    title: 'Repositories',
+    description: 'Template and image catalogs you sync into the Library.',
+  },
+  'using-logs.md': {
+    out: 'using/logs.md',
+    title: 'Logs',
+    description: 'Searchable log stream across Devices with live tail and diagnostics.',
+  },
+  'using-settings.md': {
+    out: 'using/settings/index.md',
+    title: 'Settings',
+    description: 'The seven Settings tabs and what each one controls.',
+  },
+  'settings-home.md': {
+    out: 'using/settings/home.md',
+    title: 'Settings: Home',
+    description: 'Device facts, remote access, Tailscale detection, and advertise URL.',
+  },
+  'settings-pairing.md': {
+    out: 'using/settings/pairing.md',
+    title: 'Settings: Pairing',
+    description: 'Pairing QR to add Devices, phone sign-in QR, and re-pairing.',
+  },
+  'settings-library.md': {
+    out: 'using/settings/library.md',
+    title: 'Settings: Library',
+    description: 'Library path, capacity, reset, and the depot Device.',
+  },
+  'settings-disks.md': {
+    out: 'using/settings/disks.md',
+    title: 'Settings: Disks',
+    description: 'Default VM disk directory for new disks on this Device.',
+  },
+  'settings-api-keys.md': {
+    out: 'using/settings/api-keys.md',
+    title: 'Settings: API Keys',
+    description: 'Create, show-once, and revoke inference or full API keys.',
+  },
+  'settings-ssh-keys.md': {
+    out: 'using/settings/ssh-keys.md',
+    title: 'Settings: SSH Keys',
+    description: 'Public keys injected into guests, defaults, and deletion.',
+  },
+  'settings-audit-log.md': {
+    out: 'using/settings/audit-log.md',
+    title: 'Settings: Audit Log',
+    description: 'Who changed what, when, and how they authenticated.',
+  },
   'changelog.md': {
     out: 'changelog.md',
     title: 'Changelog',
@@ -106,6 +207,27 @@ function fixLinks(body) {
     .replace(/\]\(home-and-pairing\.md(#[^)]*)?\)/g, '](/docs/guides/home-and-pairing/$1)')
     .replace(/\]\(ollama\.md(#[^)]*)?\)/g, '](/docs/guides/ollama/$1)')
     .replace(/\]\(create-workload\.md(#[^)]*)?\)/g, '](/docs/guides/create-workload/$1)')
+    .replace(/\]\(img\/([^)]+)\)/g, '](/docs-img/$1)')
+    .replace(/\]\(using-overview\.md(#[^)]*)?\)/g, '](/docs/using/$1)')
+    .replace(/\]\(using-dashboard\.md(#[^)]*)?\)/g, '](/docs/using/dashboard/$1)')
+    .replace(/\]\(using-devices\.md(#[^)]*)?\)/g, '](/docs/using/devices/$1)')
+    .replace(/\]\(using-vms\.md(#[^)]*)?\)/g, '](/docs/using/vms/$1)')
+    .replace(/\]\(using-vm-details\.md(#[^)]*)?\)/g, '](/docs/using/vm-details/$1)')
+    .replace(/\]\(using-ollama\.md(#[^)]*)?\)/g, '](/docs/using/ollama/$1)')
+    .replace(/\]\(using-chat\.md(#[^)]*)?\)/g, '](/docs/using/chat/$1)')
+    .replace(/\]\(using-images\.md(#[^)]*)?\)/g, '](/docs/using/images/$1)')
+    .replace(/\]\(using-disks\.md(#[^)]*)?\)/g, '](/docs/using/disks/$1)')
+    .replace(/\]\(using-networks\.md(#[^)]*)?\)/g, '](/docs/using/networks/$1)')
+    .replace(/\]\(using-repositories\.md(#[^)]*)?\)/g, '](/docs/using/repositories/$1)')
+    .replace(/\]\(using-logs\.md(#[^)]*)?\)/g, '](/docs/using/logs/$1)')
+    .replace(/\]\(using-settings\.md(#[^)]*)?\)/g, '](/docs/using/settings/$1)')
+    .replace(/\]\(settings-home\.md(#[^)]*)?\)/g, '](/docs/using/settings/home/$1)')
+    .replace(/\]\(settings-pairing\.md(#[^)]*)?\)/g, '](/docs/using/settings/pairing/$1)')
+    .replace(/\]\(settings-library\.md(#[^)]*)?\)/g, '](/docs/using/settings/library/$1)')
+    .replace(/\]\(settings-disks\.md(#[^)]*)?\)/g, '](/docs/using/settings/disks/$1)')
+    .replace(/\]\(settings-api-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/api-keys/$1)')
+    .replace(/\]\(settings-ssh-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/ssh-keys/$1)')
+    .replace(/\]\(settings-audit-log\.md(#[^)]*)?\)/g, '](/docs/using/settings/audit-log/$1)')
     .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
     .replace(/\]\(roadmap\.md(#[^)]*)?\)/g, '](/docs/roadmap/$1)')
     .replace(/\]\(host-process-boundary\.md(#[^)]*)?\)/g, '](https://github.com/pmdroid/barkvisor/blob/main/docs/host-process-boundary.md$1)')
@@ -146,4 +268,15 @@ for (const [srcName, meta] of Object.entries(map)) {
   console.log(`synced ${srcName} → src/content/docs/docs/${meta.out}`);
 }
 
-console.log('done');
+console.log('done')
+
+const imgDir = path.join(docsDir, 'img');
+const imgOut = path.resolve(__dirname, '../public/docs-img');
+if (fs.existsSync(imgDir)) {
+  fs.rmSync(imgOut, { recursive: true, force: true });
+  fs.mkdirSync(imgOut, { recursive: true });
+  for (const f of fs.readdirSync(imgDir)) {
+    fs.copyFileSync(path.join(imgDir, f), path.join(imgOut, f));
+  }
+  console.log(`synced docs/img → public/docs-img (${fs.readdirSync(imgDir).length} files)`);
+};

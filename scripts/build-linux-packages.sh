@@ -168,16 +168,20 @@ fi
 getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor || true
 if getent group disk >/dev/null 2>&1; then
   usermod -aG disk barkvisor || true
-  mkdir -p /etc/systemd/system/barkvisor.service.d
-  printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
-    >/etc/systemd/system/barkvisor.service.d/disk.conf
+  for unit in barkvisor.service barkvisor-agent.service; do
+    mkdir -p /etc/systemd/system/${unit}.d
+    printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+      >/etc/systemd/system/${unit}.d/disk.conf
+  done
 fi
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   systemctl enable barkvisor.service
   systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
   echo "Start with: systemctl start barkvisor.service"
+  echo "API-only Device: systemctl enable --now barkvisor-agent.service"
 fi
 echo "Installed. UI: http://$(hostname -I 2>/dev/null | awk '{print $1}'):7777"
 EOS

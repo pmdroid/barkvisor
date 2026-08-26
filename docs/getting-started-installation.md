@@ -52,7 +52,8 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
 ```
 /usr/local/
   bin/
-    barkvisor                   # Main server daemon
+    barkvisor                   # Home Device daemon (SPA + API)
+    barkvisor-agent             # API-only Device (symlink; no SPA)
   libexec/barkvisor/            # unused for QEMU (Homebrew); leftover-safe
   lib/barkvisor/
     *.dylib                     # daemon dylibs if any
@@ -75,6 +76,8 @@ sudo brew services start socket_vmnet   # only if you want bridged/vmnet
 ```
 
 BarkVisor does not ship a privileged helper. Bridged/vmnet attaches to the Homebrew `socket_vmnet` service. NAT Workloads do not need that service.
+
+`barkvisor-agent` is a symlink to `barkvisor`. launchd still starts `barkvisor` (SPA). For an API-only Mac, point `Program` at `/usr/local/bin/barkvisor-agent` and join with `barkvisor-agent join --code`. One process per Device. Do not run both names as daemons.
 
 ## Data Directory
 
@@ -111,7 +114,7 @@ Additionally, short-lived unix sockets for QMP communication are stored in a sho
 1. Stop the daemon: `sudo launchctl bootout system/dev.barkvisor`
 2. Remove installed files:
    ```
-   sudo rm -f /usr/local/bin/barkvisor
+   sudo rm -f /usr/local/bin/barkvisor /usr/local/bin/barkvisor-agent
    sudo rm -rf /usr/local/libexec/barkvisor /usr/local/lib/barkvisor /usr/local/share/barkvisor
    sudo rm -f /Library/LaunchDaemons/dev.barkvisor.plist
    ```

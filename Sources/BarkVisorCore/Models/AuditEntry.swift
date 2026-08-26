@@ -21,6 +21,7 @@ public struct AuditEntry: Codable, Sendable, FetchableRecord, PersistableRecord,
         public static let timestamp = Column(CodingKeys.timestamp)
         public static let action = Column(CodingKeys.action)
         public static let resourceType = Column(CodingKeys.resourceType)
+        public static let resourceId = Column(CodingKeys.resourceId)
     }
 
     public init(

@@ -26,6 +26,16 @@ describe('modal light mode', () => {
     expect(text).toContain('modal-overlay stack')
   })
 
+  test('log stream uses theme term tokens, not a hardcoded dark pane', () => {
+    const css = readFileSync(join(srcRoot, 'style.css'), 'utf8')
+    expect(css).toContain('--term-bg: #070a10')
+    expect(css).toContain('--term-bg: #ffffff')
+    expect(css).toMatch(/\.term \{[\s\S]*?background: var\(--term-bg\)/)
+    expect(css).not.toMatch(/\.term \{[\s\S]{0,180}background: #070a10/)
+    expect(css).toMatch(/\.term-head \{[\s\S]*?background: var\(--term-head-bg\)/)
+    expect(css).toMatch(/\.line:hover \{ background: var\(--term-row-hover\)/)
+  })
+
   test('USB picker teleports out of the Create VM frame', () => {
     const text = readFileSync(join(srcRoot, 'components/create-vm/CreateVMNetworkStep.vue'), 'utf8')
     expect(text).toContain('Teleport')

@@ -29,6 +29,7 @@ enum SystemCapabilitiesController {
             accelerator: inv.virtualization.accelerator,
             hostArch: inv.platform.arch,
             hostCpuCount: inv.resources.cpuCount,
+            maxMemoryMB: inv.resources.memoryTotalMB,
             guestTypes: inv.guestTypes.map {
                 GuestTypeInfo(
                     id: $0.id,

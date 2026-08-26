@@ -28,6 +28,32 @@ struct DiskUsageResponse: Content {
     let actualSizeBytes: Int64
 }
 
+struct DiskResponse: Content {
+    let id: String
+    let name: String
+    let path: String
+    let sizeBytes: Int64
+    let format: String
+    let vmId: String?
+    let autoCreated: Bool
+    let status: String
+    let createdAt: String
+    let attachedTo: [DiskAttachment]
+
+    init(disk: Disk, attachedTo: [DiskAttachment]) {
+        id = disk.id
+        name = disk.name
+        path = disk.path
+        sizeBytes = disk.sizeBytes
+        format = disk.format
+        vmId = disk.vmId
+        autoCreated = disk.autoCreated
+        status = disk.status
+        createdAt = disk.createdAt
+        self.attachedTo = attachedTo
+    }
+}
+
 struct StorageSummaryResponse: Content {
     let totalVirtualBytes: Int64
     let totalActualBytes: Int64
@@ -57,9 +83,13 @@ struct DiskController: RouteCollection {
     }
 
     @Sendable
-    func list(req: Vapor.Request) async throws -> [Disk] {
+    func list(req: Vapor.Request) async throws -> [DiskResponse] {
         let (limit, offset) = req.pagination()
-        return try await req.db.read { db in try Disk.limit(limit, offset: offset).fetchAll(db) }
+        return try await req.db.read { db in
+            let disks = try Disk.limit(limit, offset: offset).fetchAll(db)
+            let attachments = try DiskService.attachmentsByDiskId(vms: VM.fetchAll(db), disks: disks)
+            return disks.map { DiskResponse(disk: $0, attachedTo: attachments[$0.id] ?? []) }
+        }
     }
 
     @Sendable
@@ -82,12 +112,15 @@ struct DiskController: RouteCollection {
     }
 
     @Sendable
-    func get(req: Vapor.Request) async throws -> Disk {
+    func get(req: Vapor.Request) async throws -> DiskResponse {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        guard let disk = try await req.db.read({ db in try Disk.fetchOne(db, key: id) }) else {
-            throw Abort(.notFound)
+        return try await req.db.read { db in
+            guard let disk = try Disk.fetchOne(db, key: id) else {
+                throw Abort(.notFound)
+            }
+            let attachments = try DiskService.attachmentsByDiskId(vms: VM.fetchAll(db), disks: [disk])
+            return DiskResponse(disk: disk, attachedTo: attachments[disk.id] ?? [])
         }
-        return disk
     }
 
     @Sendable

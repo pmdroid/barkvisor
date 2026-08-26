@@ -18,10 +18,12 @@ Use the tarball + `install.sh` or Docker if your environment is unusual.
 
 ```
 /usr/local/bin/barkvisor
+/usr/local/bin/barkvisor-agent              # symlink; API-only Device (no SPA)
 /usr/local/share/barkvisor/frontend/dist/   # SPA (packages still bundle this by default)
 /usr/local/lib/barkvisor/swift/             # bundled Swift runtime
 /usr/local/lib/barkvisor/compat/            # optional SONAME shims
 /usr/lib/systemd/system/barkvisor.service
+/usr/lib/systemd/system/barkvisor-agent.service
 /etc/barkvisor/barkvisor.env
 /var/lib/barkvisor                          # created by maintainer scripts
 ```

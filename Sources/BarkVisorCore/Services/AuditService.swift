@@ -1,6 +1,15 @@
 import Foundation
 import GRDB
 
+public enum VMLifecycleAction {
+    public static let started = "vm.started"
+    public static let stopped = "vm.stopped"
+    public static let crashed = "vm.crashed"
+    public static let restarted = "vm.restarted"
+    public static let legacy = ["vm.start", "vm.stop", "vm.restart"]
+    public static let feed = [started, stopped, crashed, restarted] + legacy
+}
+
 public enum AuditService {
     /// Log an audit entry with explicit user context.
     public static func log(
@@ -65,6 +74,48 @@ public enum AuditService {
             }
         } catch {
             Log.audit.error("Failed to write system audit log entry (\(action)): \(error)")
+        }
+    }
+
+    public static func logVMEvent(
+        action: String,
+        vmID: String,
+        detail: String? = nil,
+        db: DatabasePool,
+    ) async {
+        let entry = AuditEntry(
+            id: nil,
+            timestamp: iso8601.string(from: Date()),
+            userId: nil,
+            username: nil,
+            action: action,
+            resourceType: "vm",
+            resourceId: vmID,
+            resourceName: nil,
+            detail: detail,
+            authMethod: nil,
+            apiKeyId: nil,
+        )
+        do {
+            try await db.write { db in try entry.insert(db) }
+        } catch {
+            Log.audit.error("Failed to write VM lifecycle event (\(action)): \(error)")
+        }
+    }
+
+    public static func vmEvents(
+        vmID: String,
+        limit: Int = 100,
+        db: DatabasePool,
+    ) async throws -> [AuditEntry] {
+        try await db.read { db in
+            try AuditEntry
+                .filter(AuditEntry.Columns.resourceType == "vm")
+                .filter(AuditEntry.Columns.resourceId == vmID)
+                .filter(VMLifecycleAction.feed.contains(AuditEntry.Columns.action))
+                .order(AuditEntry.Columns.id.desc)
+                .limit(limit)
+                .fetchAll(db)
         }
     }
 

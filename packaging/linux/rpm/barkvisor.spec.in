@@ -33,9 +33,11 @@ cp -a %{_sourcedir}/root/. %{buildroot}/
 %files
 %defattr(-,root,root,-)
 /usr/local/bin/barkvisor
+/usr/local/bin/barkvisor-agent
 /usr/local/share/barkvisor
 /usr/local/lib/barkvisor
 /usr/lib/systemd/system/barkvisor.service
+/usr/lib/systemd/system/barkvisor-agent.service
 %config(noreplace) /etc/barkvisor/barkvisor.env
 
 %pre
@@ -49,14 +51,17 @@ exit 0
 %post
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
 if getent group disk >/dev/null 2>&1; then
-  mkdir -p /etc/systemd/system/barkvisor.service.d
-  printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
-    >/etc/systemd/system/barkvisor.service.d/disk.conf
+  for unit in barkvisor.service barkvisor-agent.service; do
+    mkdir -p /etc/systemd/system/${unit}.d
+    printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+      >/etc/systemd/system/${unit}.d/disk.conf
+  done
 fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable barkvisor.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
 fi
 exit 0
 
@@ -64,6 +69,8 @@ exit 0
 if [ "$1" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
   systemctl stop barkvisor.service >/dev/null 2>&1 || true
   systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor-agent.service >/dev/null 2>&1 || true
 fi
 exit 0
 

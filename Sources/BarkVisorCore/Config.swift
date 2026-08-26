@@ -81,6 +81,14 @@ public enum Config {
         max(0, ProcessInfo.processInfo.systemUptime - processStartSystemUptime)
     }
 
+    public static var daemonRole: DaemonRole {
+        DaemonRole.from(executablePath: ProcessInfo.processInfo.arguments[0])
+    }
+
+    public static var serveFrontend: Bool {
+        daemonRole.serveFrontend
+    }
+
     /// HTTP listen port (SPA + JWT). Override with `BARKVISOR_PORT` (1–65535).
     public static let port: Int = {
         if let raw = ProcessInfo.processInfo.environment["BARKVISOR_PORT"],
