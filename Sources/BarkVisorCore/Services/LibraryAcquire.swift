@@ -210,7 +210,12 @@ public enum LibraryAcquire {
         insertIfMissing: Bool,
         db: Database,
     ) throws -> Claim? {
-        let rows = try VMImage.filter(Column("sourceUrl") == request.sourceUrl).fetchAll(db)
+        let key = claimSourceUrl(request)
+        var rows = try VMImage.filter(Column("sourceUrl") == key).fetchAll(db)
+        if rows.isEmpty, request.sourceUrl.isEmpty, case let .sha256(hash) = request.expectedChecksum {
+            let want = hash.lowercased()
+            rows = try VMImage.fetchAll(db).filter { $0.sha256?.lowercased() == want }
+        }
         if let ready = rows.first(where: {
             $0.status == "ready"
                 && ImageService.matchesCatalogChecksum($0, expected: request.expectedChecksum)
@@ -239,7 +244,7 @@ public enum LibraryAcquire {
             sizeBytes: nil,
             status: "downloading",
             error: kind == .depot ? depotCopyingMarker : nil,
-            sourceUrl: request.sourceUrl,
+            sourceUrl: key,
             createdAt: now,
             updatedAt: now,
         )
@@ -248,6 +253,14 @@ public enum LibraryAcquire {
             LiveLibraryJobs.begin(image.id)
         }
         return .started(image)
+    }
+
+    private static func claimSourceUrl(_ request: LibraryDepotFetchRequest) -> String {
+        if !request.sourceUrl.isEmpty { return request.sourceUrl }
+        if case let .sha256(hash) = request.expectedChecksum {
+            return "sha256:" + hash.lowercased()
+        }
+        return request.sourceUrl
     }
 }
 

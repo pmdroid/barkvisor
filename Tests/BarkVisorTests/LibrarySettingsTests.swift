@@ -84,6 +84,39 @@ final class LibrarySettingsTests {
         #expect(LibrarySettings.implicitDepotHostId(devices: devices, localHostId: "self") == nil)
     }
 
+    @Test func `explicit none depot disables the one-peer default`() throws {
+        let dir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let devices = DeviceRegistry(dataDir: dir)
+        try devices.upsert(
+            hostId: "console",
+            fingerprint: "aa",
+            agentHost: "10.0.0.1",
+            agentPort: 7_778,
+        )
+        try dbPool.write { db in
+            try AppSetting(
+                key: LibrarySettings.libraryDepotHostIdKey,
+                value: LibrarySettings.disabledDepotHostId,
+            )
+            .save(db, onConflict: .replace)
+        }
+        let resolved = try dbPool.read { db in
+            try LibrarySettings.resolvedDepotHostId(
+                from: db, devices: devices, localHostId: "agent",
+            )
+        }
+        #expect(resolved == nil)
+        #expect(
+            try LibrarySettings.validateDepotHostId(nil, localHostId: "agent", devices: devices)
+                == LibrarySettings.disabledDepotHostId,
+        )
+        #expect(
+            try LibrarySettings.validateDepotHostId("NONE", localHostId: "agent", devices: devices)
+                == LibrarySettings.disabledDepotHostId,
+        )
+    }
+
     @Test func `explicit depot setting wins over the one-peer default`() throws {
         let dir = tmpDir.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

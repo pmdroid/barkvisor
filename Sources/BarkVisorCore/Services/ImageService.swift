@@ -18,12 +18,23 @@ public struct ImageDownloadRequest: Sendable {
     public let url: String
     public let imageType: String
     public let arch: String
+    public let expectedChecksum: ExpectedChecksum?
+    public let expectedStoredSha256: String?
 
-    public init(name: String, url: String, imageType: String, arch: String) {
+    public init(
+        name: String,
+        url: String,
+        imageType: String,
+        arch: String,
+        expectedChecksum: ExpectedChecksum? = nil,
+        expectedStoredSha256: String? = nil,
+    ) {
         self.name = name
         self.url = url
         self.imageType = imageType
         self.arch = arch
+        self.expectedChecksum = expectedChecksum
+        self.expectedStoredSha256 = expectedStoredSha256
     }
 }
 
@@ -103,7 +114,13 @@ public enum ImageService {
             try image.insert(db)
         }
 
-        await downloader.start(imageID: id, url: sourceURL, destination: destination)
+        await downloader.start(
+            imageID: id,
+            url: sourceURL,
+            destination: destination,
+            expectedChecksum: request.expectedChecksum,
+            expectedStoredSha256: request.expectedStoredSha256,
+        )
 
         return image
     }
@@ -196,8 +213,11 @@ public enum ImageService {
                     db: db,
                 )
                 await downloader.start(
-                    imageID: image.id, url: sourceURL, destination: destination,
+                    imageID: image.id,
+                    url: sourceURL,
+                    destination: destination,
                     expectedChecksum: checksum,
+                    expectedStoredSha256: nil,
                 )
                 return .started(image)
             } catch {
@@ -307,7 +327,7 @@ public enum ImageService {
     }
 
     /// Catalog checksums cover the compressed download; the depot stores the decompressed file.
-    static func isCompressedSource(_ sourceUrl: String) -> Bool {
+    public static func isCompressedSource(_ sourceUrl: String) -> Bool {
         let path = URL(string: sourceUrl)?.path ?? sourceUrl
         let lower = path.lowercased()
         return compressionExtensions.contains { lower.hasSuffix($0) }

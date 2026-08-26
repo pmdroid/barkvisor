@@ -52,6 +52,7 @@ public protocol ImageDownloadStarting: Actor {
         url: URL,
         destination: URL,
         expectedChecksum: ExpectedChecksum?,
+        expectedStoredSha256: String?,
     )
 }
 
@@ -81,7 +82,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private static let initialBackoff: UInt64 = 2_000_000_000 // 2s
 
     public func start(
-        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum? = nil,
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum? = nil,
+        expectedStoredSha256: String? = nil,
     ) {
         // Seed last-event so GET /images and late SSE subscribers do not replay
         // a previous ready/error from a retried row.
@@ -97,7 +102,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
             guard let self else { return }
             do {
                 try await downloadWithRetry(
-                    imageID: imageID, url: url, destination: destination, expectedChecksum: expectedChecksum,
+                    imageID: imageID,
+                    url: url,
+                    destination: destination,
+                    expectedChecksum: expectedChecksum,
+                    expectedStoredSha256: expectedStoredSha256,
                 )
             } catch {
                 await handleDownloadError(imageID: imageID, error: error)
@@ -107,7 +116,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     }
 
     private func downloadWithRetry(
-        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum?,
+        expectedStoredSha256: String?,
     ) async throws {
         var lastError: Error?
 
@@ -129,7 +142,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
             do {
                 try Task.checkCancellation()
                 try await performDownload(
-                    imageID: imageID, url: url, destination: destination, expectedChecksum: expectedChecksum,
+                    imageID: imageID,
+                    url: url,
+                    destination: destination,
+                    expectedChecksum: expectedChecksum,
+                    expectedStoredSha256: expectedStoredSha256,
                 )
                 return // Success
             } catch is CancellationError {
@@ -167,7 +184,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     }
 
     private func performDownload(
-        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum?,
+        expectedStoredSha256: String?,
     ) async throws {
         if !url.isFileURL, let ssrfError = SSRFGuard.fetchRejection(for: url) {
             throw BarkVisorError.downloadFailed(ssrfError)
@@ -225,6 +246,15 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
         // Persist sha256 of the stored file (after decompress). Catalog sha512 is
         // verified above when present; the row always stores sha256 for depot verify.
         let digest = try ImageFileChecksum.sha256Hex(ofFile: finalPath)
+        if let expectedStoredSha256 {
+            let want = expectedStoredSha256.lowercased()
+            if !want.isEmpty, digest.lowercased() != want {
+                try? FileManager.default.removeItem(at: finalPath)
+                throw BarkVisorError.downloadFailed(
+                    "SHA256 mismatch: expected \(want), got \(digest.lowercased())",
+                )
+            }
+        }
         try await LibraryAcquire.persistReady(
             imageId: imageID,
             path: finalPath.path,

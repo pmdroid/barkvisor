@@ -15,3 +15,9 @@ Feature: Library fill on Create
     When I open Create VM and select that image
     Then the x86_64 Device shows an architecture mismatch
     And create does not copy the image onto that Device
+
+  Scenario: Explicit none depot stays internet-only with one peer
+    Given a Device with exactly one peer
+    And Library depot is set to None
+    When I acquire an image that is missing locally
+    Then the Device does not copy from the peer
