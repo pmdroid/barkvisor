@@ -7,6 +7,18 @@ struct ConfigTests {
         #expect(Config.port == 7_777)
     }
 
+    @Test func `daemon role from executable name`() {
+        #expect(DaemonRole.from(executablePath: "/usr/local/bin/barkvisor") == .home)
+        #expect(DaemonRole.from(executablePath: "barkvisor") == .home)
+        #expect(DaemonRole.from(executablePath: "/usr/local/bin/barkvisor-agent") == .agent)
+        #expect(DaemonRole.from(executablePath: "barkvisor-agent") == .agent)
+        #expect(DaemonRole.from(executablePath: "/.build/debug/BarkVisorApp") == .home)
+        #expect(DaemonRole.from(executablePath: "/usr/local/bin/barkvisor").commandName == "barkvisor")
+        #expect(DaemonRole.from(executablePath: "barkvisor-agent").commandName == "barkvisor-agent")
+        #expect(DaemonRole.from(executablePath: "barkvisor").serveFrontend)
+        #expect(!DaemonRole.from(executablePath: "barkvisor-agent").serveFrontend)
+    }
+
     @Test func `default agent port is distinct from spa port`() {
         #expect(Config.agentPort == 7_778)
         #expect(Config.agentPort != Config.port)
