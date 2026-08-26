@@ -28,6 +28,7 @@ const {
   selectOS,
   cpuCount,
   hostCpuCount,
+  hostMemoryMB,
   memoryMB,
   displayResolution,
   tpmEnabled,
@@ -211,6 +212,7 @@ const nextStepLabel = computed(() => stepLabels.value[step.value] || '')
         :alwaysShowArchDetails="alwaysShowArchDetails"
         :archProblem="archProblemText"
         :maxCpu="hostCpuCount"
+        :maxMemory="hostMemoryMB"
         @update:cpuCount="cpuCount = $event"
         @update:memoryMB="memoryMB = $event"
         @update:displayResolution="displayResolution = $event"

@@ -43,6 +43,10 @@ export function parseSystemCapabilities(data: Partial<SystemCapabilities> | null
       typeof doc.hostCpuCount === 'number' && doc.hostCpuCount >= 1
         ? doc.hostCpuCount
         : defaultCapabilities.hostCpuCount,
+    maxMemoryMB:
+      typeof doc.maxMemoryMB === 'number' && doc.maxMemoryMB >= 128
+        ? doc.maxMemoryMB
+        : undefined,
     guestTypes: Array.isArray(doc.guestTypes) ? doc.guestTypes : [],
     details: Array.isArray(doc.details) ? doc.details : [],
     inventorySchemaVersion:

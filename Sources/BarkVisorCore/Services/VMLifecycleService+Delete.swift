@@ -122,9 +122,7 @@ extension VMLifecycleService {
         // PAS-48: block cross-arch create/deploy (shared by TemplateDeployService).
         try PlatformCapabilities.requireCompatibleGuestArch(profile.arch)
         try validateCPUCount(params.cpuCount)
-        guard params.memoryMB >= 128, params.memoryMB <= 1_048_576 else {
-            throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
-        }
+        try validateMemoryMB(params.memoryMB)
 
         let network: Network? =
             if let networkId = params.networkId {
