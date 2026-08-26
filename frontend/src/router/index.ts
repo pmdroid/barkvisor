@@ -61,11 +61,14 @@ export async function checkSetupRequired(): Promise<boolean> {
     if (res.ok) {
       const data = await res.json()
       setupRequired = !data.complete
+      setupChecked = true
+    } else if (res.status === 403 || res.status === 503) {
+      setupRequired = true
+      setupChecked = true
     }
   } catch {
-    // Server may not be ready
+    return setupRequired
   }
-  setupChecked = true
   return setupRequired
 }
 
