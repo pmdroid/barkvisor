@@ -909,8 +909,8 @@ onUnmounted(() => {
   <div v-if="isPairingTab(tab)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0">
-        Add a {{ DEVICE_LABEL }} to this {{ HOME_LABEL }}. On the new {{ DEVICE_LABEL }}, open
-        setup and choose Join an existing {{ HOME_LABEL }}, then paste this pairing code.
+        Add a {{ DEVICE_LABEL }} to this {{ HOME_LABEL }}. On the new {{ DEVICE_LABEL }}, run
+        <code>barkvisor join --code</code> with this pairing offer.
       </p>
       <AppButton
         variant="primary"
@@ -935,8 +935,8 @@ onUnmounted(() => {
         <li>Pick the address the new {{ DEVICE_LABEL }} can reach (LAN IP or DNS name).</li>
         <li>Copy the full <code>barkvisor://</code> offer, not only the short code.</li>
         <li>
-          On the new {{ DEVICE_LABEL }}, choose Join an existing {{ HOME_LABEL }} or run
-          <code>barkvisor join --code</code>.
+          On the new {{ DEVICE_LABEL }}, run
+          <code>barkvisor join --code '&lt;offer&gt;'</code>.
         </li>
         <li>The offer expires. Revoke it if you are not going to use it.</li>
       </ol>

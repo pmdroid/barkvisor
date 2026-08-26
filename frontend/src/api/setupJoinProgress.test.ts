@@ -97,16 +97,13 @@ describe('setup join progress (PAS-51)', () => {
     expect(shouldResumeJoinReady({ complete: true, joined: true }, sample)).toBe(false)
   })
 
-  test('SetupView persists join progress and resumes join-ready after refresh', () => {
+  test('SetupView is create-only; join progress is not wired into the SPA', () => {
     const setup = readFileSync(join(here, '../views/SetupView.vue'), 'utf8')
-    expect(setup).toContain('loadSetupJoinProgress')
-    expect(setup).toContain('saveSetupJoinProgress')
-    expect(setup).toContain('clearSetupJoinProgress')
-    expect(setup).toContain('shouldResumeJoinReady')
-    expect(setup).toContain('status.joined')
-    expect(setup).toContain('resumeJoinReady')
-    expect(setup).toMatch(/joinResult\.value = saved/)
-    expect(setup).toMatch(/saveSetupJoinProgress\(joinResult\.value\)/)
-    expect(setup).toMatch(/clearSetupJoinProgress\(\)/)
+    expect(setup).not.toContain('loadSetupJoinProgress')
+    expect(setup).not.toContain('saveSetupJoinProgress')
+    expect(setup).not.toContain('shouldResumeJoinReady')
+    expect(setup).not.toContain('resumeJoinReady')
+    expect(setup).not.toContain('submitJoin')
+    expect(setup).toContain('barkvisor join --code')
   })
 })
