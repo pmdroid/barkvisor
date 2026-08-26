@@ -628,7 +628,7 @@ onUnmounted(() => {
   right: 0;
   bottom: 0;
   width: 300px;
-  background: #0d1219;
+  background: var(--drawer-bg);
   border-left: 1px solid var(--line);
   transform: translateX(100%);
   transition: transform 0.18s ease;
@@ -717,7 +717,6 @@ onUnmounted(() => {
 }
 .d-foot :deep(.app-btn) { flex: 1; justify-content: center; }
 
-:global(:root[data-theme="light"]) .dash-drawer { background: #f3f4f6; }
 :global(:root[data-theme="light"]) .chip { background: rgba(0,0,0,0.04); }
 :global(:root[data-theme="light"]) .bar { background: rgba(0,0,0,0.08); }
 
