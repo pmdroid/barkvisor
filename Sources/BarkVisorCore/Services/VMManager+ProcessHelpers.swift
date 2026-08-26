@@ -4,8 +4,14 @@ import GRDB
 extension VMManager {
     // MARK: - Termination Handling
 
-    public func handleTermination(vmID: String, status: Int32) async {
-        // Guard against double-cleanup: if the VM is already removed, another handler got here first
+    public func handleTermination(vmID: String, status: Int32, pid: Int32? = nil) async {
+        if let pid, let running = runningVMs[vmID], running.pid != pid {
+            Log.vm.debug(
+                "handleTermination PID \(pid) is not current QEMU \(running.pid) — skipping",
+                vm: vmID,
+            )
+            return
+        }
         guard runningVMs[vmID] != nil else {
             Log.vm.debug(
                 "handleTermination called for VM \(vmID) but already cleaned up — skipping", vm: vmID,
