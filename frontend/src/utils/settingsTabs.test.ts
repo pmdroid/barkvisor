@@ -72,7 +72,7 @@ describe('settings tab query', () => {
     expect(settings).toContain('v-if="isPairingTab(tab)"')
     expect(settings).toContain("tab === 'home'")
     expect(settings).toContain('Phone sign-in')
-    expect(settings).toContain('PairingQr')
+    expect(settings).not.toContain('PairingQr')
     expect(settings).toContain('issueLoginOffer')
     expect(settings).toContain('Re-pair this {{ DEVICE_LABEL }}')
     expect(settings).toContain('Advertise URL')
@@ -92,7 +92,7 @@ describe('settings tab query', () => {
     expect(homeBlock).not.toContain('Re-pair this')
     expect(homeBlock).not.toContain('Show sign-in QR')
     const pairingBlock = settings.slice(pairingStart)
-    expect(pairingBlock).toContain('PairingQr')
+    expect(pairingBlock).not.toContain('PairingQr')
     expect(pairingBlock).toContain('Phone sign-in')
     expect(pairingBlock).toContain('Re-pair this {{ DEVICE_LABEL }}')
 
