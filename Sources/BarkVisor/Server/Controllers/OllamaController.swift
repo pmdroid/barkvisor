@@ -27,6 +27,8 @@ struct OllamaController: RouteCollection {
     var detect: (@Sendable () -> OllamaDetectResult)?
     var resources: (@Sendable () -> ResourcesInfo)?
     var displayName: String
+    let unsloth: UnslothInferenceBackend
+    let unslothDetect: @Sendable () -> OllamaDetectResult
 
     init(
         backgroundTasks: BackgroundTaskManager,
@@ -36,6 +38,8 @@ struct OllamaController: RouteCollection {
         makeBackend: (@Sendable (DatabasePool) async throws -> any InferenceBackend)? = nil,
         detect: (@Sendable () -> OllamaDetectResult)? = nil,
         resources: (@Sendable () -> ResourcesInfo)? = nil,
+        unsloth: UnslothInferenceBackend? = nil,
+        unslothDetect: (@Sendable () -> OllamaDetectResult)? = nil,
     ) {
         self.backgroundTasks = backgroundTasks
         self.hostId = hostId
@@ -44,6 +48,11 @@ struct OllamaController: RouteCollection {
         self.makeBackend = makeBackend
         self.detect = detect
         self.resources = resources
+        self.unsloth = unsloth ?? UnslothInferenceBackend(
+            modelsDir: UnslothStagedModels.directory(dataDir: dataDir),
+            detect: unslothDetect ?? { UnslothDetect.liveDetect() },
+        )
+        self.unslothDetect = unslothDetect ?? { UnslothDetect.liveDetect() }
     }
 
     func boot(routes: any RoutesBuilder) throws {
@@ -102,7 +111,7 @@ struct OllamaController: RouteCollection {
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
         let backend = try await resolvedBackend(db: db)
         guard await backend.isReachable() else {
-            throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
+            throw Self.unreachableError(backendId: backend.backendId)
         }
         let taskID = UUID().uuidString
         let tasks = backgroundTasks
@@ -130,7 +139,7 @@ struct OllamaController: RouteCollection {
         let snap = try await currentSnapshot(db: db)
         let backend = try await resolvedBackend(db: db)
         guard await backend.isReachable() else {
-            throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
+            throw Self.unreachableError(backendId: backend.backendId)
         }
         let model = snap.models.first { OllamaModelName.matches(name, available: $0.name) }
         let fit = OllamaFit.check(
@@ -156,7 +165,7 @@ struct OllamaController: RouteCollection {
         guard !name.isEmpty else { throw BarkVisorError.badRequest("Model name is required") }
         let backend = try await resolvedBackend(db: db)
         guard await backend.isReachable() else {
-            throw BarkVisorError.badGateway("Ollama is not reachable on this Device")
+            throw Self.unreachableError(backendId: backend.backendId)
         }
         try await backend.stop(model: name)
         return .noContent
@@ -186,9 +195,20 @@ struct OllamaController: RouteCollection {
     }
 
     func currentSnapshot(db: DatabasePool) async throws -> OllamaDeviceSnapshot {
+        let res = resources?() ?? HostInventoryService.metricsSlice(dataDir: dataDir, hostId: hostId).resources
+        let backend = try await resolvedBackend(db: db)
+        if let unslothBackend = backend as? UnslothInferenceBackend {
+            return await unslothBackend.snapshot(
+                hostId: hostId,
+                displayName: displayName,
+                detectResult: unslothDetect(),
+                memoryTotalMB: res.memoryTotalMB,
+                memoryUsedMB: res.memoryUsedMB,
+                cpuLoadPercent: res.cpuLoadPercent,
+            )
+        }
         let detectResult = detect?() ?? OllamaDetect.liveDetect()
         let client = try await resolvedClient(db: db)
-        let res = resources?() ?? HostInventoryService.metricsSlice(dataDir: dataDir, hostId: hostId).resources
         return await OllamaLocalProbe.snapshot(
             hostId: hostId,
             displayName: displayName,
@@ -200,11 +220,26 @@ struct OllamaController: RouteCollection {
         )
     }
 
+    static func unreachableError(backendId: String) -> BarkVisorError {
+        switch backendId {
+        case "unsloth":
+            return .badGateway("Unsloth is not installed on this Device. \(UnslothDetect.installHint)")
+        default:
+            return .badGateway("Ollama is not reachable on this Device")
+        }
+    }
+
     private func resolvedBackend(db: DatabasePool) async throws -> any InferenceBackend {
         if let makeBackend {
             return try await makeBackend(db)
         }
-        return try await OllamaInferenceBackend(client: resolvedClient(db: db))
+        let kind = try await db.read { db in
+            try InferenceSettings.load(hostId: hostId, from: db)
+        }
+        guard kind == .unsloth else {
+            return try await OllamaInferenceBackend(client: resolvedClient(db: db))
+        }
+        return unsloth
     }
 
     private func resolvedClient(db: DatabasePool) async throws -> OllamaClient {
