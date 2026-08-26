@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import AppButton from './ui/AppButton.vue'
+import AppSelect from './ui/AppSelect.vue'
 import EmptyState from './ui/EmptyState.vue'
 import { useChatStore } from '../stores/chat'
 import { useOllamaStore } from '../stores/ollama'
@@ -40,9 +41,15 @@ function onKey(event: KeyboardEvent) {
       <p class="welcome-sub">
         {{ HOME_LABEL }} Ollama grant. Completions use /v1/chat/completions.
       </p>
-      <select v-if="chat.visible" v-model="chat.model" class="chat-model" :disabled="chat.streaming">
+      <AppSelect
+        v-if="chat.visible"
+        class="chat-model"
+        :model-value="chat.model"
+        :disabled="chat.streaming"
+        @update:model-value="chat.model = $event"
+      >
         <option v-for="name in chat.modelNames" :key="name" :value="name">{{ name }}</option>
-      </select>
+      </AppSelect>
     </div>
 
     <EmptyState
