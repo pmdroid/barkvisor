@@ -231,6 +231,56 @@ struct CatalogSlugResolutionTests {
         #expect(missing.isEmpty, "Unresolved template image slugs: \(missing.joined(separator: ", "))")
     }
 
+    @Test func `iso templates attach installer images as iso not cloud`() throws {
+        let root = repoRoot()
+        let templates = try JSONDecoder().decode(
+            TemplateCatalog.self,
+            from: Data(contentsOf: root.appendingPathComponent("repos/templates.json")),
+        )
+        let images = try JSONDecoder().decode(
+            RepoCatalog.self,
+            from: Data(contentsOf: root.appendingPathComponent("repos/images.json")),
+        )
+        let bySlug = Dictionary(uniqueKeysWithValues: images.images.map { ($0.slug, $0) })
+        for slug in ["nixos", "talos"] {
+            let row = try #require(templates.templates.first { $0.slug == slug })
+            var needed = [row.imageSlug]
+            needed.append(contentsOf: Array(row.imageByArch?.values ?? [:].values))
+            for imageSlug in Set(needed) {
+                let image = try #require(bySlug[imageSlug])
+                #expect(image.imageType == "iso")
+            }
+        }
+    }
+
+    @Test func `alpine cloud template uses ash and OpenRC`() throws {
+        let url = repoRoot().appendingPathComponent("repos/templates.json")
+        let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: Data(contentsOf: url))
+        let row = try #require(catalog.templates.first { $0.slug == "alpine-cloud" })
+        #expect(row.userDataTemplate.contains("/bin/ash"))
+        #expect(!row.userDataTemplate.contains("/bin/bash"))
+        #expect(row.userDataTemplate.contains("rc-update"))
+        #expect(!row.userDataTemplate.contains("systemctl"))
+    }
+
+    @Test func `tailscale template does not leave the auth key only in runcmd`() throws {
+        let url = repoRoot().appendingPathComponent("repos/templates.json")
+        let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: Data(contentsOf: url))
+        let row = try #require(catalog.templates.first { $0.slug == "tailscale" })
+        #expect(row.userDataTemplate.contains("/run/tailscale-authkey"))
+        #expect(row.userDataTemplate.contains("shred"))
+        #expect(!row.userDataTemplate.contains("--auth-key={{authkey}}"))
+    }
+
+    @Test func `haos images have checksum pins`() throws {
+        let url = repoRoot().appendingPathComponent("repos/images.json")
+        let images = try JSONDecoder().decode(RepoCatalog.self, from: Data(contentsOf: url))
+        for slug in ["haos-18.2-arm64", "haos-18.2-x86_64"] {
+            let image = try #require(images.images.first { $0.slug == slug })
+            #expect(!(image.sha256 ?? "").isEmpty)
+        }
+    }
+
     @Test func `onyx template is ubuntu cloud-init with lite compose`() throws {
         let url = repoRoot().appendingPathComponent("repos/templates.json")
         let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: Data(contentsOf: url))
@@ -266,7 +316,13 @@ struct CatalogSlugResolutionTests {
             let hasPin = !(image.sha256 ?? "").isEmpty || !(image.sha512 ?? "").isEmpty
             guard hasPin else { continue }
             let url = image.downloadUrl
-            if url.contains("/current/") || url.contains("/latest/") || url.contains(".latest.") {
+            let lower = url.lowercased()
+            let freebsdReleaseLatest =
+                lower.contains("/vm-images/") && lower.contains("-release/") && lower.contains("/latest/")
+            if freebsdReleaseLatest {
+                continue
+            }
+            if lower.contains("/current/") || lower.contains("/latest/") || lower.contains(".latest.") {
                 rotating.append("\(image.slug) → \(url)")
             }
         }

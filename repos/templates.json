@@ -469,7 +469,7 @@
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/ash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackages:\n  - qemu-guest-agent\nruncmd:\n  - rc-update add qemu-guest-agent default\n  - rc-service qemu-guest-agent start\n"
     },
     {
       "slug": "rocky-10-cloud",
@@ -1023,7 +1023,7 @@
           "placeholder": "tskey-auth-..."
         }
       ],
-      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - qemu-guest-agent\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - curl -fsSL https://tailscale.com/install.sh | sh\n  - tailscale up --auth-key={{authkey}} --ssh --accept-routes\n"
+      "userDataTemplate": "#cloud-config\npackage_update: true\npackages:\n  - qemu-guest-agent\n  - curl\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n  - curl -fsSL https://tailscale.com/install.sh | sh\n  - printf '%s' '{{authkey}}' > /run/tailscale-authkey\n  - chmod 600 /run/tailscale-authkey\n  - tailscale up --auth-key=file:/run/tailscale-authkey --ssh --accept-routes\n  - shred -u /run/tailscale-authkey\n  - shred -u /var/lib/cloud/instance/user-data.txt /var/lib/cloud/instance/cloud-config.txt || true\n"
     }
   ]
 }
