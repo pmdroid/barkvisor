@@ -114,10 +114,6 @@ async function nextStep() {
   step.value++
 }
 
-function startCreate() {
-  nextStep()
-}
-
 function backToWelcome() {
   error.value = ''
   step.value = 1
@@ -247,20 +243,14 @@ async function finishSetup() {
             <div class="eyebrow">Step 01 — Welcome</div>
             <h1>Commission this {{ DEVICE_LABEL }}</h1>
             <p class="sub">
-              BarkVisor manages headless QEMU virtual machines. Set up this
-              {{ DEVICE_LABEL }} as a new {{ HOME_LABEL }}. To join an existing
+              BarkVisor manages headless QEMU virtual machines. This wizard creates a
+              {{ HOME_LABEL }} on this {{ DEVICE_LABEL }}. To join an existing
               {{ HOME_LABEL }}, run <code>barkvisor join --code</code> on the CLI.
             </p>
-            <button class="choice" @click="startCreate">
-              <span class="cid">→</span>
-              <span>
-                <div class="t">Set up this {{ DEVICE_LABEL }}</div>
-                <div class="d">
-                  Create a new {{ HOME_LABEL }} with this machine as its first
-                  {{ DEVICE_LABEL }}.
-                </div>
-              </span>
-            </button>
+            <div class="actions">
+              <div class="spacer"></div>
+              <AppButton variant="primary" @click="nextStep">Continue</AppButton>
+            </div>
           </div>
 
           <!-- Admin account -->

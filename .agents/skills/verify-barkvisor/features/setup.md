@@ -2,7 +2,7 @@
 
 ## Sub-features
 
-- **Welcome** — single CTA **Set up this {Device}** (create a Home). Joining an existing Home is CLI-only: `barkvisor join --code`
+- **Welcome** — intro + **Continue** into create-Home setup. Joining an existing Home is CLI-only: `barkvisor join --code`
 - Create path: **Create Admin Account** (username + password ≥10 chars + confirm) → **Image Catalog** sync (or Skip) → **All Set!** → **Launch Dashboard**
 - Ops-checklist rail tracks 01–04; setup is forced until `/api/setup/status` says `complete`
 
