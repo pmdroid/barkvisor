@@ -69,36 +69,42 @@ public actor VMProcessMonitor {
     }
 
     private func tryReconnectVM(vmID: String, pidFile: URL) async -> Bool {
-        guard let content = try? String(contentsOf: pidFile, encoding: .utf8) else {
-            try? FileManager.default.removeItem(at: pidFile)
-            return false
-        }
-
-        guard let pids = VMPidFile.parse(content) else {
+        guard let content = try? String(contentsOf: pidFile, encoding: .utf8),
+              let pids = VMPidFile.parse(content)
+        else {
             try? FileManager.default.removeItem(at: pidFile)
             return false
         }
         let pid = pids.qemuPid
+        let argv = PlatformProcess.arguments(pid: pid)
+        let parsed = argv.flatMap { QEMUArgv(arguments: $0) }
+        let executableIsQEMU = parsed != nil || isQEMUProcess(pid: pid)
 
-        guard kill(pid, 0) == 0 else {
+        switch QEMUArgv.reconnectDecision(
+            pidAlive: kill(pid, 0) == 0,
+            executableIsQEMU: executableIsQEMU,
+            argvUUID: parsed?.uuid,
+            vmID: vmID,
+        ) {
+        case .cleanupDead:
             Log.vm.info("VM \(vmID): process \(pid) no longer running, cleaning up", vm: vmID)
             cleanupDeadVM(vmID: vmID)
             return false
-        }
-
-        guard isQEMUProcess(pid: pid) else {
-            Log.vm.warning("VM \(vmID): PID \(pid) is not QEMU (PID reuse), cleaning up", vm: vmID)
-            cleanupDeadVM(vmID: vmID)
+        case .dropStalePidFile:
+            Log.vm.warning(
+                "VM \(vmID): PID \(pid) is not this Workload's QEMU, dropping stale pidfile", vm: vmID,
+            )
+            if let swtpmPid = pids.swtpmPid {
+                VMManager.terminateSwtpm(pid: swtpmPid, vmID: vmID)
+            }
+            try? FileManager.default.removeItem(at: pidFile)
             return false
+        case .adopt:
+            break
         }
 
-        let sockets = VMSockets(vmID: vmID)
-        guard FileManager.default.fileExists(atPath: sockets.qmp.path) else {
-            Log.vm.warning("VM \(vmID): sockets missing, killing orphaned process", vm: vmID)
-            kill(pid, SIGTERM)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
-            cleanupDeadVM(vmID: vmID)
+        guard let vmManager else {
+            try? FileManager.default.removeItem(at: pidFile)
             return false
         }
 
@@ -106,41 +112,22 @@ public actor VMProcessMonitor {
             try VM.fetchOne(db, key: vmID)
         }
         guard let vmRecord else {
-            Log.vm.warning("VM \(vmID): no DB record, killing orphaned process", vm: vmID)
-            kill(pid, SIGTERM)
-            cleanupDeadVM(vmID: vmID)
+            Log.vm.warning("VM \(vmID): no DB record for live QEMU PID \(pid), dropping pidfile", vm: vmID)
+            try? FileManager.default.removeItem(at: pidFile)
             return false
         }
 
-        let swtpmPid = pids.swtpmPid.flatMap { candidate in
-            VMManager.isSwtpmProcess(pid: candidate) ? candidate : nil
+        do {
+            try await vmManager.adoptRunningProcess(vmID: vmID, pid: pid, argv: parsed, previousPids: pids)
+        } catch {
+            Log.vm.critical(
+                "VM \(vmID): adopted QEMU PID \(pid) but failed to persist running state: \(error)",
+                vm: vmID,
+            )
         }
-        let running = RunningVM(
-            process: nil,
-            pid: pid,
-            serialSocketPath: sockets.serial.path,
-            vncSocketPath: sockets.vnc.path,
-            qmpSocketPath: sockets.qmp.path,
-            qmpEventSocketPath: sockets.event.path,
-            swtpmProcess: nil,
-            reconnected: true,
-            swtpmPid: swtpmPid,
-        )
-        await vmManager?.registerReconnectedVM(
-            vmID: vmID,
-            running: running,
-            codingAgentHostPort: pids.codingAgentHostPort,
-        )
-
-        await consoleBuffers?.attach(vmID: vmID, serialSocketPath: sockets.serial.path)
-        await metricsCollector?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path, pid: pid)
-        await guestAgentInventory?.start(vmID: vmID, qmpSocketPath: sockets.qmp.path)
-        await qmpEventListener?.start(vmID: vmID, eventSocketPath: sockets.event.path)
-
-        watchProcess(vmID: vmID, pid: pid)
 
         Log.vm.info(
-            "Reconnected to VM \(vmRecord.name) (PID: \(pid), VNC: \(sockets.vnc.path))",
+            "Reconnected to VM \(vmRecord.name) (PID: \(pid), VNC: \(parsed?.vncSocketPath ?? VMSockets(vmID: vmID).vnc.path))",
             vm: vmID,
         )
         return true

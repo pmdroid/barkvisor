@@ -201,6 +201,15 @@ public actor VMManager: VMStateQuerying {
             paths: [loaded.disk.path] + loaded.additionalDisks.map(\.path),
         )
 
+        let diskPaths = [loaded.disk.path] + loaded.additionalDisks.map(\.path)
+        if try await adoptExistingQEMUOrConflict(
+            vmID: vmID,
+            vmName: loaded.vm.name,
+            diskPaths: diskPaths,
+        ) {
+            return
+        }
+
         // Update state to starting and clear pending changes
         try await updateState(vmID: vmID, state: "starting")
         try await dbPool.write { db in
@@ -209,6 +218,7 @@ public actor VMManager: VMStateQuerying {
 
         // Declared outside do/catch so catch block can clean up swtpm on QEMU failure
         var swtpmProc: Process?
+        var qemuProc: Process?
 
         do {
             let sockets = VMSockets(vmID: vmID)
@@ -247,6 +257,7 @@ public actor VMManager: VMStateQuerying {
             logLaunchCommand(launch: launch, network: loaded.network, vmName: loaded.vm.name, vmID: vmID)
 
             let (process, stdoutPipe, stderrPipe) = configureQEMUProcess(launch: launch, vmID: vmID)
+            qemuProc = process
             try process.run()
             let pid = process.processIdentifier
             if (try? WorkloadClass.parse(loaded.vm.workloadClass)) == .agent {
@@ -257,16 +268,6 @@ public actor VMManager: VMStateQuerying {
                     throw error
                 }
             }
-
-            // Write PID file (QEMU, swtpm, optional ttyd host port).
-            let pidFile = VMPidFile(
-                qemuPid: pid,
-                swtpmPid: swtpmProc?.processIdentifier,
-                codingAgentHostPort: loopbackHostfwds.first?.hostPort,
-            )
-            try pidFile.serialized().write(
-                to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8,
-            )
 
             try await waitForQMPSocket(
                 process: process,
@@ -286,6 +287,15 @@ public actor VMManager: VMStateQuerying {
             )
 
             sockets.setOwnerOnlyPermissions()
+
+            let pidFile = VMPidFile(
+                qemuPid: pid,
+                swtpmPid: swtpmProc?.processIdentifier,
+                codingAgentHostPort: loopbackHostfwds.first?.hostPort,
+            )
+            try pidFile.serialized().write(
+                to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8,
+            )
 
             let running = RunningVM(
                 process: process,
@@ -316,8 +326,33 @@ public actor VMManager: VMStateQuerying {
                 vm: vmID,
             )
         } catch {
+            qemuProc?.terminationHandler = nil
             await CodingAgentSessionStore.shared.remove(vmID: vmID)
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
+
+            if case let .processSpawnFailed(message)? = error as? BarkVisorError,
+               QEMUArgv.reportsWriteLock(message) {
+                do {
+                    if try await adoptExistingQEMUOrConflict(
+                        vmID: vmID,
+                        vmName: loaded.vm.name,
+                        diskPaths: diskPaths,
+                        excludingPids: Set([qemuProc?.processIdentifier].compactMap(\.self)),
+                    ) {
+                        Log.vm.info(
+                            "VM \(loaded.vm.name): adopted existing QEMU after disk-lock failure",
+                            vm: vmID,
+                        )
+                        return
+                    }
+                } catch let conflictError {
+                    GPUPassthroughService.releaseVFIO(loaded.vm.decodedGPUDevices)
+                    recordHealthError(conflictError.localizedDescription, for: vmID)
+                    try? await updateState(vmID: vmID, state: "error", error: conflictError.localizedDescription)
+                    throw conflictError
+                }
+            }
+
             GPUPassthroughService.releaseVFIO(loaded.vm.decodedGPUDevices)
             Log.vm.error("VM start failed: \(error.localizedDescription)", vm: vmID)
             do {
