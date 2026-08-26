@@ -17,6 +17,7 @@ const props = defineProps<{
   archProblem: string | null
   /** Picked Device logical CPU count (PAS-182). */
   maxCpu: number
+  maxMemory: number | null
 }>()
 
 const emit = defineEmits<{
@@ -36,6 +37,14 @@ function onCpuInput(raw: string) {
   const clamped = Math.min(Math.max(1, Math.trunc(n)), max)
   emit('update:cpuCount', clamped)
 }
+
+function onMemoryInput(raw: string) {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return
+  const max = props.maxMemory != null && props.maxMemory >= 128 ? props.maxMemory : null
+  const clamped = Math.max(128, Math.trunc(n))
+  emit('update:memoryMB', max != null ? Math.min(clamped, max) : clamped)
+}
 </script>
 
 <template>
@@ -53,13 +62,14 @@ function onCpuInput(raw: string) {
         />
       </div>
       <div class="form-group" style="flex:1">
-        <label>Memory (MB)</label>
+        <label>Memory (MB) <span v-if="maxMemory != null && maxMemory >= 128" class="hint">(max {{ maxMemory }})</span></label>
         <input
           :value="memoryMB"
           type="number"
           min="128"
           step="256"
-          @input="emit('update:memoryMB', Number(($event.target as HTMLInputElement).value))"
+          :max="maxMemory != null && maxMemory >= 128 ? maxMemory : undefined"
+          @input="onMemoryInput(($event.target as HTMLInputElement).value)"
         />
       </div>
     </div>

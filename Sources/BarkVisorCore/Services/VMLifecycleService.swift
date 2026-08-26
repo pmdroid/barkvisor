@@ -592,9 +592,7 @@ extension VMLifecycleService {
             try validateCPUCount(cpu)
         }
         if let mem = params.memoryMB {
-            guard mem >= 128, mem <= 1_048_576 else {
-                throw BarkVisorError.badRequest("memoryMB must be between 128 and 1048576")
-            }
+            try validateMemoryMB(mem)
         }
         if let usb = params.usbDevices, !usb.isEmpty {
             try PlatformCapabilities.requireUSBPassthrough()
@@ -610,6 +608,15 @@ extension VMLifecycleService {
         guard cpuCount >= 1, cpuCount <= hostCPUs else {
             throw BarkVisorError.badRequest(
                 "cpuCount must be between 1 and \(hostCPUs) (host has \(hostCPUs) logical CPU\(hostCPUs == 1 ? "" : "s"))",
+            )
+        }
+    }
+
+    static func validateMemoryMB(_ memoryMB: Int) throws {
+        let hostMemoryMB = PlatformHost.physicalMemoryMB
+        guard memoryMB >= 128, memoryMB <= hostMemoryMB else {
+            throw BarkVisorError.badRequest(
+                "memoryMB must be between 128 and \(hostMemoryMB) (host has \(hostMemoryMB) MB physical memory)",
             )
         }
     }
