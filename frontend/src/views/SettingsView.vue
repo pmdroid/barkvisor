@@ -158,7 +158,6 @@ async function loadPairingCode() {
 
 function openHomeTab() {
   tab.value = 'home'
-  fetchLibrarySettings()
   fetchRemoteAccess()
   devicesStore.fetchHealth()
 }
@@ -906,35 +905,6 @@ onUnmounted(() => {
         </AppButton>
       </div>
     </div>
-    <div class="pairing-card" style="margin-top:16px">
-      <p class="pairing-hint" style="text-align:left;margin:0 0 10px">
-        Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other
-        {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
-        down or the checksum does not match, they download from the internet.
-        Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
-      </p>
-      <div class="form-group" style="margin:0;text-align:left">
-        <label>Library depot</label>
-        <AppSelect
-          :modelValue="depotDraft"
-          :options="depotOptions"
-          :disabled="libraryLoading || depotSaving"
-          @update:modelValue="depotDraft = $event"
-        />
-      </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:12px">
-        <AppButton
-          size="sm"
-          variant="primary"
-          :loading="depotSaving"
-          loading-text="Saving..."
-          :disabled="libraryLoading"
-          @click="saveDepotSettings"
-        >
-          Save Library depot
-        </AppButton>
-      </div>
-    </div>
   </div>
 
   <!-- Pairing / Add a Device (PAS-51) — existing /api/pairing/codes, not a second wizard -->
@@ -1309,6 +1279,34 @@ onUnmounted(() => {
       >
         Reset to default
       </AppButton>
+    </div>
+    <div style="margin-top:28px;max-width:640px">
+      <p style="color:var(--text-secondary);font-size:13px;margin:0 0 10px 0">
+        Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other
+        {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
+        down or the checksum does not match, they download from the internet.
+        Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
+      </p>
+      <div class="form-group">
+        <label>Library depot</label>
+        <AppSelect
+          :modelValue="depotDraft"
+          :options="depotOptions"
+          :disabled="libraryLoading || depotSaving"
+          @update:modelValue="depotDraft = $event"
+        />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <AppButton
+          variant="primary"
+          :loading="depotSaving"
+          loading-text="Saving..."
+          :disabled="libraryLoading"
+          @click="saveDepotSettings"
+        >
+          Save Library depot
+        </AppButton>
+      </div>
     </div>
     <FolderPicker
       v-if="showLibraryPicker"

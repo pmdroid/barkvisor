@@ -16,6 +16,14 @@ describe('Settings', () => {
     cy.get('.tabs button').eq(6).should('contain', 'Audit Log')
   })
 
+  it('Library tab has Catalog Download', () => {
+    cy.contains('.tabs button', 'Library').click()
+    cy.contains('Catalog Download').should('be.visible')
+    cy.contains('button', 'Save Library depot').should('exist')
+    cy.contains('.tabs button', 'Home').click()
+    cy.contains('Catalog Download').should('not.exist')
+  })
+
   // ==================== API Keys ====================
 
   describe('API Keys tab', () => {

@@ -84,8 +84,9 @@ describe('settings tab query', () => {
     expect(homeStart).toBeGreaterThan(-1)
     expect(pairingStart).toBeGreaterThan(-1)
     expect(homeBlock).toContain('Advertise URL')
-    expect(homeBlock).toContain('Save Library depot')
     expect(homeBlock).toContain('openPairingTab')
+    expect(homeBlock).not.toContain('Save Library depot')
+    expect(homeBlock).not.toContain('Catalog Download')
     expect(homeBlock).not.toContain('PairingQr')
     expect(homeBlock).not.toContain('Phone sign-in')
     expect(homeBlock).not.toContain('Re-pair this')
@@ -98,6 +99,18 @@ describe('settings tab query', () => {
     const devices = readFileSync(join(here, '../views/DevicesView.vue'), 'utf8')
     expect(devices).toContain('/settings?tab=pairing')
     expect(devices).not.toContain('/settings?tab=home')
+  })
+
+  test('Catalog Download lives on Settings Library, not Home', () => {
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    const libraryStart = settings.indexOf('v-if="tab === \'library\'"')
+    const disksStart = settings.indexOf('v-if="tab === \'disks\'"')
+    expect(libraryStart).toBeGreaterThan(-1)
+    expect(disksStart).toBeGreaterThan(libraryStart)
+    const libraryBlock = settings.slice(libraryStart, disksStart)
+    expect(libraryBlock).toContain('Catalog Download')
+    expect(libraryBlock).toContain('Save Library depot')
+    expect(libraryBlock).toContain('Library path')
   })
 
   test('Default VM disk directory lives on Settings Disks, not the Disks list', () => {
