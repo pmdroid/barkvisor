@@ -44,6 +44,14 @@ run = "./scripts/guest-boot-bdd.sh blank"
 description = "Opt-in REAL_GUEST Ubuntu cloud-image BDD (long; TCG ~15 min)"
 run = "./scripts/guest-boot-bdd.sh real"
 
+[tasks.instance-start]
+description = "Start a throwaway BarkVisor daemon (fresh data dir; --seed fills demo content)"
+run = "./scripts/dev-instance.sh start"
+
+[tasks.instance-stop]
+description = "Stop a throwaway BarkVisor daemon"
+run = "./scripts/dev-instance.sh stop"
+
 [tasks.api-bdd]
 description = "Opt-in API contract BDD: probe every OpenAPI operation (fast, no QEMU)"
 run = "./scripts/api-contract-bdd.sh"
