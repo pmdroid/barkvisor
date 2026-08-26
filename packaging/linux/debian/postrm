@@ -5,6 +5,7 @@ case "$1" in
   purge)
     if command -v systemctl >/dev/null 2>&1; then
       systemctl disable barkvisor.service >/dev/null 2>&1 || true
+      systemctl disable barkvisor-agent.service >/dev/null 2>&1 || true
       systemctl daemon-reload || true
     fi
     # Keep /var/lib/barkvisor data unless admin purges explicitly via uninstall --purge

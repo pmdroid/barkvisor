@@ -87,7 +87,8 @@ Creates the staged install layout under `build/stage/`:
 ```
 usr/local/
   bin/
-    barkvisor                   (main server daemon)
+    barkvisor                   (Home Device daemon)
+    barkvisor-agent             (API-only Device; symlink)
   libexec/barkvisor/            (xz + mkisofs; QEMU only if BUNDLE_HYPERVISOR_DEPS=true)
   lib/barkvisor/                (daemon dylibs, populated in step 9)
   share/barkvisor/

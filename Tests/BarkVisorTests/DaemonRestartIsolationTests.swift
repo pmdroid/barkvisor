@@ -91,9 +91,15 @@ struct DaemonRestartIsolationTests {
         #expect(!packaged.contains("SupplementaryGroups=kvm disk"))
         let postinst = try Self.readRepoFile("packaging/linux/debian/postinst")
         #expect(postinst.contains("usermod -aG disk barkvisor"))
-        #expect(postinst.contains("barkvisor.service.d/disk.conf"))
+        #expect(postinst.contains("barkvisor.service barkvisor-agent.service"))
+        #expect(postinst.contains("${unit}.d/disk.conf"))
         #expect(postinst.contains("SupplementaryGroups=disk"))
         #expect(postinst.contains("try-restart barkvisor.service"))
+        #expect(postinst.contains("try-restart barkvisor-agent.service"))
+        let agent = try Self.readRepoFile("packaging/linux/barkvisor-agent.service")
+        #expect(agent.contains("KillMode=process"))
+        #expect(agent.contains("RuntimeDirectoryPreserve=yes"))
+        #expect(!agent.contains("KillMode=control-group"))
     }
 
     @Test func `pid file parses qemu and swtpm lines`() {
