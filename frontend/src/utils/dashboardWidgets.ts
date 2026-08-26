@@ -1,83 +1,120 @@
 export const DASHBOARD_WIDGETS_STORAGE_KEY = 'barkvisor.dashboardWidgets'
 
-export const DEFAULT_WIDGETS = [
+export const DASHBOARD_MODULES = [
+  'attention',
+  'needs',
+  'running',
+  'stopped',
+  'failed',
+  'meters',
   'devices',
-  'health',
-  'cpu',
-  'memory',
-  'storage',
-  'temperature',
-  'recent',
 ] as const
 
-export type DashboardWidgetId = (typeof DEFAULT_WIDGETS)[number]
+export type DashboardModuleId = (typeof DASHBOARD_MODULES)[number]
 
-export const DASHBOARD_WIDGET_LABELS: Record<DashboardWidgetId, string> = {
-  devices: 'Devices',
-  health: 'Health',
-  cpu: 'CPU',
-  memory: 'Memory',
-  storage: 'Storage',
-  temperature: 'Temperature',
-  recent: 'Recent Machines',
+export type DashboardModule = {
+  id: DashboardModuleId
+  on: boolean
 }
 
-export const THIS_DEVICE_WIDGETS = [
-  'cpu',
-  'memory',
-  'storage',
-  'temperature',
-] as const satisfies readonly DashboardWidgetId[]
-
-export type ThisDeviceWidgetId = (typeof THIS_DEVICE_WIDGETS)[number]
-
-const WIDGET_IDS = new Set<string>(DEFAULT_WIDGETS)
-const THIS_DEVICE_WIDGET_IDS = new Set<string>(THIS_DEVICE_WIDGETS)
-
-export function isDashboardWidgetId(value: string): value is DashboardWidgetId {
-  return WIDGET_IDS.has(value)
+export const DASHBOARD_MODULE_META: Record<DashboardModuleId, { title: string; hint: string }> = {
+  attention: { title: 'Attention', hint: 'Only appears when something needs you' },
+  needs: { title: 'Needs you', hint: 'Failed workloads and unreachable Devices' },
+  running: { title: 'Running', hint: 'Running workloads' },
+  stopped: { title: 'Stopped', hint: 'Stopped workloads' },
+  failed: { title: 'Failed', hint: 'Failed workloads as a list' },
+  meters: { title: 'This Device', hint: 'CPU, memory, storage, temperature' },
+  devices: { title: 'Home', hint: 'Every Device in this Home' },
 }
 
-export function isThisDeviceWidget(id: DashboardWidgetId): id is ThisDeviceWidgetId {
-  return THIS_DEVICE_WIDGET_IDS.has(id)
+export const DASHBOARD_FEED_MODULES: readonly DashboardModuleId[] = [
+  'needs',
+  'running',
+  'failed',
+  'stopped',
+]
+
+export const DASHBOARD_SIDE_MODULES: readonly DashboardModuleId[] = ['meters', 'devices']
+
+export const DEFAULT_LAYOUT: DashboardModule[] = [
+  { id: 'attention', on: true },
+  { id: 'needs', on: true },
+  { id: 'running', on: true },
+  { id: 'stopped', on: true },
+  { id: 'failed', on: false },
+  { id: 'meters', on: true },
+  { id: 'devices', on: true },
+]
+
+const MODULE_IDS = new Set<string>(DASHBOARD_MODULES)
+
+export function isDashboardModuleId(value: string): value is DashboardModuleId {
+  return MODULE_IDS.has(value)
 }
 
-export function resetDashboardLayout(): DashboardWidgetId[] {
-  return [...DEFAULT_WIDGETS]
+export function resetDashboardLayout(): DashboardModule[] {
+  return DEFAULT_LAYOUT.map((row) => ({ ...row }))
 }
 
-export function parseDashboardLayout(raw: string | null): DashboardWidgetId[] {
+export function parseDashboardLayout(raw: string | null): DashboardModule[] {
   if (raw == null || raw.trim() === '') return resetDashboardLayout()
   try {
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return resetDashboardLayout()
-    const seen = new Set<DashboardWidgetId>()
-    const layout: DashboardWidgetId[] = []
+    const seen = new Set<DashboardModuleId>()
+    const layout: DashboardModule[] = []
     for (const item of parsed) {
-      if (typeof item !== 'string' || !isDashboardWidgetId(item) || seen.has(item)) continue
-      seen.add(item)
-      layout.push(item)
+      if (!item || typeof item !== 'object') continue
+      const row = item as { id?: unknown; on?: unknown }
+      if (typeof row.id !== 'string' || !isDashboardModuleId(row.id) || seen.has(row.id)) continue
+      seen.add(row.id)
+      layout.push({ id: row.id, on: row.on !== false })
     }
-    if (layout.length === 0 && parsed.length > 0) return resetDashboardLayout()
+    for (const id of DASHBOARD_MODULES) {
+      if (!seen.has(id)) {
+        const fallback = DEFAULT_LAYOUT.find((row) => row.id === id)
+        layout.push({ id, on: fallback?.on ?? false })
+      }
+    }
+    if (layout.length === 0) return resetDashboardLayout()
     return layout
   } catch {
     return resetDashboardLayout()
   }
 }
 
-export function isWidgetVisible(
-  layout: readonly DashboardWidgetId[],
-  id: DashboardWidgetId,
-): boolean {
-  return layout.includes(id)
+export function isModuleOn(layout: readonly DashboardModule[], id: DashboardModuleId): boolean {
+  return layout.find((row) => row.id === id)?.on === true
 }
 
-export function toggleWidget(
-  layout: readonly DashboardWidgetId[],
-  id: DashboardWidgetId,
-): DashboardWidgetId[] {
-  if (layout.includes(id)) return layout.filter((item) => item !== id)
-  const visible = new Set(layout)
-  visible.add(id)
-  return DEFAULT_WIDGETS.filter((item) => visible.has(item))
+export function toggleModule(
+  layout: readonly DashboardModule[],
+  id: DashboardModuleId,
+): DashboardModule[] {
+  return layout.map((row) => (row.id === id ? { ...row, on: !row.on } : { ...row }))
+}
+
+export function moveModule(
+  layout: readonly DashboardModule[],
+  index: number,
+  delta: number,
+): DashboardModule[] {
+  const next = layout.map((row) => ({ ...row }))
+  const dest = index + delta
+  if (dest < 0 || dest >= next.length) return next
+  const current = next[index]
+  const other = next[dest]
+  if (!current || !other) return next
+  next[index] = other
+  next[dest] = current
+  return next
+}
+
+export function loadDashboardLayout(): DashboardModule[] {
+  if (typeof localStorage === 'undefined') return resetDashboardLayout()
+  return parseDashboardLayout(localStorage.getItem(DASHBOARD_WIDGETS_STORAGE_KEY))
+}
+
+export function saveDashboardLayout(layout: readonly DashboardModule[]): void {
+  localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(layout))
 }

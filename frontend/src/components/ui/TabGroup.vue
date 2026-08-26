@@ -25,16 +25,17 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 .tab-group {
   display: flex;
   gap: 2px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius-sm);
-  padding: 3px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
   width: fit-content;
 }
 
 .tab-group button {
-  padding: 5px 14px;
-  border: none;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
   background: transparent;
   color: var(--text-dim);
   font-size: 12px;
@@ -53,8 +54,9 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 }
 
 .tab-group button.active {
-  background: var(--accent-muted);
-  color: var(--accent);
+  background: transparent;
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .tab-count {

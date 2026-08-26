@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { useDevicesStore } from './stores/devices'
@@ -8,7 +8,8 @@ import { useOllamaStore } from './stores/ollama'
 import { useThemeStore } from './stores/theme'
 import { chatIsVisible } from './utils/chatCompletions'
 import { DEVICE_SCOPE_ALL } from './utils/deviceScope'
-import { DEVICE_LABEL } from './utils/terminology'
+import { isReachabilityOk } from './utils/homeDeviceHealth'
+import { DEVICE_LABEL, HOME_LABEL } from './utils/terminology'
 import ToastContainer from './components/ToastContainer.vue'
 
 const route = useRoute()
@@ -18,6 +19,31 @@ const ollama = useOllamaStore()
 const devices = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const mobileMenuOpen = ref(false)
+
+const tickerDevice = computed(() =>
+  deviceScope.isAll ? null : devices.deviceByHostId(deviceScope.selectedHostId),
+)
+const tickerLabel = computed(() =>
+  tickerDevice.value ? devices.deviceLabel(tickerDevice.value) : HOME_LABEL,
+)
+const tickerCounts = computed(() => {
+  const row = tickerDevice.value
+  if (row) {
+    return {
+      running: row.healthCounts?.running ?? 0,
+      failed: row.healthCounts?.failed ?? 0,
+      stopped: row.healthCounts?.stopped ?? 0,
+      unreachable: isReachabilityOk(row.reachability) ? 0 : 1,
+    }
+  }
+  const counts = devices.totals?.healthCounts
+  return {
+    running: counts?.running ?? 0,
+    failed: counts?.failed ?? 0,
+    stopped: counts?.stopped ?? 0,
+    unreachable: devices.totals?.unreachable ?? 0,
+  }
+})
 
 onMounted(() => {
   if (auth.isAuthenticated) {
@@ -46,6 +72,11 @@ watch(
 watch(() => route.path, () => { mobileMenuOpen.value = false })
 
 function isActive(path: string) {
+  if (path === '/vms') return route.path === '/vms' || /\/vms(\/|$)/.test(route.path)
+  if (path === '/devices') {
+    if (/\/vms(\/|$)/.test(route.path)) return false
+    return route.path.startsWith('/devices')
+  }
   return route.path.startsWith(path)
 }
 </script>
@@ -57,7 +88,7 @@ function isActive(path: string) {
   <div v-else class="layout">
     <aside class="sidebar" :class="{ 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-header">
-        <img src="/onboarding-hero.png" class="sidebar-logo" alt="BarkVisor" />
+        <svg class="sidebar-logo" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect width="22" height="22" rx="4" fill="#0090f8"/><path d="M6.5 9v4M10 6.5v9M13.5 9.5v3M17 7.5v7" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg>
         <span class="sidebar-title">BarkVisor</span>
         <button class="mobile-menu-toggle" @click="mobileMenuOpen = !mobileMenuOpen" :aria-label="mobileMenuOpen ? 'Close menu' : 'Open menu'">
           <svg v-if="!mobileMenuOpen" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -69,7 +100,7 @@ function isActive(path: string) {
         </button>
       </div>
       <div class="sidebar-scope">
-        <label for="device-scope">{{ DEVICE_LABEL }}</label>
+        <label for="device-scope">{{ DEVICE_LABEL }} scope</label>
         <select
           id="device-scope"
           :value="deviceScope.selectedHostId"
@@ -173,7 +204,21 @@ function isActive(path: string) {
       <div class="sidebar-footer">Made with ❤️ in SF</div>
     </aside>
     <main class="main">
-      <router-view />
+      <div class="ops-ticker">
+        <span class="ops-ticker-label">{{ tickerLabel }}</span>
+        <span class="ops-tick"><span class="ops-dot ok"></span><b>{{ tickerCounts.running }}</b>&nbsp;running</span>
+        <span class="ops-tick" :class="{ alert: tickerCounts.failed > 0 }">
+          <span class="ops-dot bad" :class="{ pulse: tickerCounts.failed > 0 }"></span><b>{{ tickerCounts.failed }}</b>&nbsp;failed
+        </span>
+        <span class="ops-tick"><span class="ops-dot off"></span><b>{{ tickerCounts.stopped }}</b>&nbsp;stopped</span>
+        <span class="ops-tick" :class="{ 'warn-t': tickerCounts.unreachable > 0 }">
+          <span class="ops-dot warn" :class="{ pulse: tickerCounts.unreachable > 0 }"></span><b>{{ tickerCounts.unreachable }}</b>&nbsp;{{ DEVICE_LABEL }} unreachable
+        </span>
+        <span class="ops-ticker-right"><span class="ops-dot ok pulse"></span>Live</span>
+      </div>
+      <div class="main-slot">
+        <router-view />
+      </div>
     </main>
     <ToastContainer />
   </div>

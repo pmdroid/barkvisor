@@ -162,11 +162,10 @@ const emit = defineEmits<{
       </span>
     </CapabilityGate>
 
-    <!-- USB Device Picker Modal -->
+    <Teleport to="body">
     <div
       v-if="usb.available && showUSBPicker"
-      class="modal-overlay"
-      style="z-index:1100"
+      class="modal-overlay stack"
       @click.self="emit('update:showUSBPicker', false)"
     >
       <div class="modal" style="max-width:480px">
@@ -209,6 +208,7 @@ const emit = defineEmits<{
         </div>
       </div>
     </div>
+    </Teleport>
   </div>
 </template>
 

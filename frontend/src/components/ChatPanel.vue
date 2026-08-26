@@ -100,6 +100,12 @@ function onKey(event: KeyboardEvent) {
 </template>
 
 <style scoped>
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 .chat-toolbar {
   display: flex;
   gap: 12px;
@@ -114,10 +120,12 @@ function onKey(event: KeyboardEvent) {
 .chat-shell {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 160px);
+  flex: 1;
+  min-height: 0;
   gap: 12px;
 }
 .compact .chat-shell {
+  flex: none;
   min-height: 420px;
 }
 .chat-log {

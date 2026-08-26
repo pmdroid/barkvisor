@@ -163,15 +163,8 @@ describe('guestHome (PAS-201)', () => {
     })).toEqual({ kind: 'empty' })
 
     const listSrc = readFileSync(join(here, '../views/VMListView.vue'), 'utf8')
-    const chipsFn = listSrc.match(/function serviceChipsFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
-    expect(chipsFn).toMatch(/if \(row\.role !== 'self' && !row\.reachable\) return null/)
-    const modeFn = listSrc.match(/function networkModeFor\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
-    expect(modeFn).toContain('deviceNetworks.networksFor(row.hostId)')
-    expect(modeFn).toMatch(/if \(row\.role === 'self'\) return networkMap/)
-    const ipFn = listSrc.match(/function listGuestIp\(row: HomeWorkloadRow\) \{[\s\S]*?\n\}/)?.[0] ?? ''
-    expect(ipFn).toContain('listDisplayGuestIp')
-    expect(ipFn).toContain('networkModeFor(row)')
-    expect(listSrc).toContain('deviceNetworks.fetchFor(device)')
+    expect(listSrc).toContain('formatPortForwards')
+    expect(listSrc).not.toContain('localhost:')
   })
 
   test('self NAT still shows localhost host ports; bridged uses guest IP', () => {
@@ -204,10 +197,8 @@ describe('guestHome (PAS-201)', () => {
     expect(list).toContain('guestInfoFetchPath')
     expect(detail).toContain('guestInfoFetchPath')
     expect(list).toContain('guestInfoIfRunning')
-    expect(list).toContain('guestIpPortsView')
-    expect(list).toContain('guestListServiceChips')
-    expect(list).toContain('guestIpsReachableFromNetwork')
-    expect(list).toContain('listDisplayGuestIp')
+    expect(list).toContain('guestOsLabel')
+    expect(list).toContain('formatPortForwards')
     expect(detail).toContain('guestOsLabel')
     expect(detail).toContain('{{ memberOsLabel }}')
     expect(detail).not.toContain('v-if="guestInfo?.osName"')

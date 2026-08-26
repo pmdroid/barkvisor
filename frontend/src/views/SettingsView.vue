@@ -12,6 +12,7 @@ import type {
   SSHKey,
 } from '../api/types'
 import { useToastStore } from '../stores/toast'
+import { useAuthStore } from '../stores/auth'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import {
   advertisedHostForOffer,
@@ -61,8 +62,21 @@ import PairingQr from '../components/PairingQr.vue'
 
 const route = useRoute()
 const toast = useToastStore()
+const auth = useAuthStore()
 const sshKeyStore = useSSHKeyStore()
 const tab = ref<SettingsTab>(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
+
+const homeDeviceName = computed(() =>
+  devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : `This ${DEVICE_LABEL}`,
+)
+const homeToolbarSub = computed(() =>
+  devicesStore.selfDevice ? `${homeDeviceName.value} · This ${DEVICE_LABEL}` : '',
+)
+const advertisedHostChips = computed(() => remoteAccess.value?.advertisedHosts ?? [])
+const roleTag = computed(() => (auth.isAdmin ? 'admin' : 'member'))
+const roleNote = computed(() =>
+  auth.isAdmin ? 'Full control on this Home' : 'Standard access on this Home',
+)
 
 const pairingOffer = ref<PairingIssue | null>(null)
 const pairingLoading = ref(false)
@@ -144,7 +158,6 @@ async function loadPairingCode() {
 
 function openHomeTab() {
   tab.value = 'home'
-  fetchLibrarySettings()
   fetchRemoteAccess()
   devicesStore.fetchHealth()
 }
@@ -770,9 +783,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar">
     <h1>Settings</h1>
+    <span v-if="homeToolbarSub" class="ops-sub">{{ homeToolbarSub }}</span>
+    <div class="ops-actions">
+      <AppButton
+        v-if="tab === 'home'"
+        variant="primary"
+        :loading="remoteAccessSaving || depotSaving"
+        :disabled="!remoteAccess || remoteAccessLoading"
+        @click="saveRemoteAccess(); saveDepotSettings()"
+      >Save changes</AppButton>
+    </div>
   </div>
+  <div class="ops-body">
 
   <div class="tabs">
     <button :class="{ active: tab === 'home' }" @click="openHomeTab">{{ HOME_LABEL }}</button>
@@ -786,6 +811,34 @@ onUnmounted(() => {
 
   <!-- Home — remote access, advertise URL, Library depot. Pairing QR lives on the Pairing tab. -->
   <div v-if="tab === 'home'">
+    <div class="facts">
+      <div class="fact">
+        <span class="k">Device name<span>How this Device appears in the Home</span></span>
+        <span class="v">{{ homeDeviceName }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">Advertised hosts<span>Addresses other Devices use to reach this one</span></span>
+        <span class="v">
+          <span v-if="advertisedHostChips.length" class="hosts">
+            <span v-for="host in advertisedHostChips" :key="host" class="host">{{ host }}</span>
+          </span>
+          <span v-else style="color:var(--text-dim)">—</span>
+        </span>
+      </div>
+      <div class="fact">
+        <span class="k">Role<span>What you can do on this Home</span></span>
+        <span class="v role">
+          <span class="role-tag">{{ roleTag }}</span>
+          <span style="font-size:12px;color:var(--text-dim)">{{ roleNote }}</span>
+        </span>
+      </div>
+      <div class="fact" style="border-bottom:0">
+        <span class="k">Add a {{ DEVICE_LABEL }}<span>Grow this Home</span></span>
+        <span class="v pair-line">
+          Pairing is how you add a {{ DEVICE_LABEL }}. <a @click="openPairingTab">Open Pairing →</a>
+        </span>
+      </div>
+    </div>
     <div class="pairing-card" style="margin-bottom:16px;text-align:left">
       <h3 class="login-offer-title">Remote access</h3>
       <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
@@ -849,44 +902,6 @@ onUnmounted(() => {
           @click="saveRemoteAccess"
         >
           Save remote access
-        </AppButton>
-      </div>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <p style="color:var(--text-secondary);font-size:13px;margin:0">
-        Pair another {{ DEVICE_LABEL }} or sign in on the phone from Pairing.
-      </p>
-      <AppButton variant="primary" icon="plus" @click="openPairingTab">
-        Add a {{ DEVICE_LABEL }}
-      </AppButton>
-    </div>
-
-    <div class="pairing-card" style="margin-top:16px">
-      <p class="pairing-hint" style="text-align:left;margin:0 0 10px">
-        Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other
-        {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
-        down or the checksum does not match, they download from the internet.
-        Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
-      </p>
-      <div class="form-group" style="margin:0;text-align:left">
-        <label>Library depot</label>
-        <AppSelect
-          :modelValue="depotDraft"
-          :options="depotOptions"
-          :disabled="libraryLoading || depotSaving"
-          @update:modelValue="depotDraft = $event"
-        />
-      </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:12px">
-        <AppButton
-          size="sm"
-          variant="primary"
-          :loading="depotSaving"
-          loading-text="Saving..."
-          :disabled="libraryLoading"
-          @click="saveDepotSettings"
-        >
-          Save Library depot
         </AppButton>
       </div>
     </div>
@@ -1265,6 +1280,34 @@ onUnmounted(() => {
         Reset to default
       </AppButton>
     </div>
+    <div style="margin-top:28px;max-width:640px">
+      <p style="color:var(--text-secondary);font-size:13px;margin:0 0 10px 0">
+        Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other
+        {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
+        down or the checksum does not match, they download from the internet.
+        Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
+      </p>
+      <div class="form-group">
+        <label>Library depot</label>
+        <AppSelect
+          :modelValue="depotDraft"
+          :options="depotOptions"
+          :disabled="libraryLoading || depotSaving"
+          @update:modelValue="depotDraft = $event"
+        />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <AppButton
+          variant="primary"
+          :loading="depotSaving"
+          loading-text="Saving..."
+          :disabled="libraryLoading"
+          @click="saveDepotSettings"
+        >
+          Save Library depot
+        </AppButton>
+      </div>
+    </div>
     <FolderPicker
       v-if="showLibraryPicker"
       :model-value="libraryDraft"
@@ -1377,30 +1420,36 @@ onUnmounted(() => {
     @confirm="doRevoke"
     @cancel="revokeTarget = null"
   />
+  </div>
+  </div>
 </template>
 
 <style scoped>
 .tabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: 24px;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-glass);
 }
 .tabs button {
-  padding: 6px 14px;
+  padding: 8px 14px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-xs, 6px);
-  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  color: var(--text-dim);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .tabs button.active {
-  background: var(--accent);
-  color: var(--accent-text, #fff);
+  background: transparent;
+  color: var(--text);
+  border-bottom-color: var(--accent);
 }
 .tabs button:hover:not(.active) {
-  color: var(--text);
+  color: var(--text-secondary);
 }
 .badge-yellow { background: var(--yellow-muted, rgba(234,179,8,0.15)); color: var(--yellow, #eab308); }
 

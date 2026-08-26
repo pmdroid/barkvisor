@@ -27,10 +27,11 @@ defineProps<{
 
 <style scoped>
 .data-table-wrap {
-  background: var(--bg-card);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--border-glass);
+  background: var(--panel);
+  backdrop-filter: none;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow-x: auto;
+  box-shadow: none;
 }
 </style>

@@ -5,7 +5,6 @@ import api from '../api/client'
 import type { BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeReadiness, HostInterface } from '../api/types'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
-import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -18,6 +17,7 @@ import { useCapabilitiesStore } from '../stores/capabilities'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceNetworksStore, type HomeNetworkRow, type NetworkWriteBody } from '../stores/deviceNetworks'
+import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useNetworkStore } from '../stores/networks'
 import { storeToRefs } from 'pinia'
 import { bridgeManagementMode, useFeature } from '../composables/useFeature'
@@ -36,7 +36,8 @@ import {
   macosSocketVmnetStatusSummary,
   readinessAppliesTo,
 } from '../utils/linuxBridgeSetup'
-import { DEVICE_LABEL } from '../utils/terminology'
+import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
+import { healthLabel, vmHealth } from '../utils/workloadHealth'
 import { scopeRows } from '../utils/deviceScope'
 
 const toast = useToastStore()
@@ -44,6 +45,7 @@ const caps = useCapabilitiesStore()
 const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeNets = useDeviceNetworksStore()
+const homeWorkloads = useDeviceWorkloadsStore()
 const networkStore = useNetworkStore()
 const bridged = useFeature('bridgedNetworking')
 const managedBridge = useFeature('managedBridgeDaemon')
@@ -226,6 +228,48 @@ function rowKey(row: HomeNetworkRow): string {
   return `${row.hostId}:${row.network.id}`
 }
 
+type PendingBridge = { key: string; hostId: string; label: string; role: string }
+
+const pendingBridges = computed<PendingBridge[]>(() => {
+  const devices = scopeRows(devicesStore.devices, deviceScope.selectedHostId)
+  const items: PendingBridge[] = []
+  for (const device of devices) {
+    const capsFor = deviceCapsFor(device.hostId)
+    if (!capsFor.supportsBridgedNetworking) continue
+    const hasBridge = homeNets.networksFor(device.hostId).some((net) => net.mode === 'bridged')
+    if (hasBridge) continue
+    items.push({
+      key: `pending:${device.hostId}`,
+      hostId: device.hostId,
+      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+      role: isSelfDevice(device) ? 'self' : 'member',
+    })
+  }
+  return items
+})
+
+const selectedKey = ref('')
+const selectedRow = computed(() =>
+  homeRows.value.find((row) => rowKey(row) === selectedKey.value) ?? null,
+)
+const selectedPending = computed(() =>
+  pendingBridges.value.find((item) => item.key === selectedKey.value) ?? null,
+)
+
+watch([homeRows, pendingBridges], ([rows, pending]) => {
+  if (!rows.length && !pending.length) {
+    selectedKey.value = ''
+    return
+  }
+  const keys = [
+    ...rows.map((row) => rowKey(row)),
+    ...pending.map((item) => item.key),
+  ]
+  if (!keys.includes(selectedKey.value)) {
+    selectedKey.value = keys[0] ?? ''
+  }
+}, { immediate: true })
+
 function canMutate(row: HomeNetworkRow): boolean {
   return row.reachable && !row.network.isDefault
 }
@@ -275,6 +319,65 @@ const usedBridgeInterfaces = computed(() => {
   return used
 })
 
+const NAT_SUBNET = '10.0.2.0/24'
+const NAT_GATEWAY = '10.0.2.2'
+const NAT_DNS = '10.0.2.3'
+const NAT_DHCP = '10.0.2.15 – 10.0.2.254'
+
+function attachedWorkloads(row: HomeNetworkRow) {
+  const rows = useHomeUnion.value
+    ? homeWorkloads.homeRows(devicesStore.devices)
+    : []
+  return rows.filter((item) => {
+    if (item.hostId !== row.hostId) return false
+    if (row.network.isDefault && !item.vm.networkId) return true
+    return item.vm.networkId === row.network.id
+  })
+}
+
+function natSubnet(row: HomeNetworkRow): string {
+  if (row.network.mode === 'nat') return NAT_SUBNET
+  return '—'
+}
+
+function natGateway(row: HomeNetworkRow): string {
+  if (row.network.mode === 'nat') return NAT_GATEWAY
+  if (row.network.mode === 'bridged' && row.network.bridge) {
+    return interfaceIp(row.network.bridge, row.hostId) || '—'
+  }
+  return '—'
+}
+
+function natDns(row: HomeNetworkRow): string {
+  if (row.network.dnsServer) return row.network.dnsServer
+  if (row.network.mode === 'nat') return NAT_DNS
+  return '—'
+}
+
+function natDhcp(row: HomeNetworkRow): string {
+  if (row.network.mode === 'nat') return NAT_DHCP
+  return '—'
+}
+
+function modeCopy(row: HomeNetworkRow): string {
+  if (row.network.mode === 'nat') return 'NAT — outbound only, shared Device address'
+  if (row.network.mode === 'bridged') return 'Bridge — own LAN address'
+  if (row.network.mode === 'isolated') return 'Isolated — private, no host/LAN/internet'
+  return modeLabel(row.network.mode)
+}
+
+function deviceLine(row: HomeNetworkRow): string {
+  if (row.role === 'self') return `This ${DEVICE_LABEL}`
+  return row.label
+}
+
+function workloadDot(row: ReturnType<typeof attachedWorkloads>[number]): string {
+  const health = vmHealth(row.vm)
+  if (health === 'failed') return 'bad'
+  if (health === 'stopped' || health === 'unknown') return 'off'
+  return 'ok'
+}
+
 function modeLabel(mode: string): string {
   const row = formNetworkModes.value.find((m) => m.mode === mode)
   if (row?.label) return row.label
@@ -282,12 +385,6 @@ function modeLabel(mode: string): string {
   if (mode === 'bridged') return 'Bridged (Home Network)'
   if (mode === 'isolated') return 'Isolated (Private)'
   return mode
-}
-
-function modeBadgeClass(mode: string): string {
-  if (mode === 'nat') return 'badge-accent'
-  if (mode === 'isolated') return 'badge-gray'
-  return 'badge-blue'
 }
 
 const selectedModeRow = computed(() => formNetworkModes.value.find((m) => m.mode === newMode.value))
@@ -326,7 +423,10 @@ async function refreshHomeNetworks() {
     await Promise.all(tasks)
     return
   }
-  await homeNets.fetchHomeAll(devicesStore.devices)
+  await Promise.all([
+    homeNets.fetchHomeAll(devicesStore.devices),
+    homeWorkloads.fetchHomeAll(devicesStore.devices),
+  ])
 }
 
 async function loadFormContext() {
@@ -542,9 +642,11 @@ async function doDeleteNetwork() {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar">
     <h1>Networks</h1>
-    <div style="display:flex;gap:8px;align-items:center">
+    <span class="ops-sub">Connectivity across {{ HOME_LABEL }}</span>
+    <div class="ops-actions">
       <span :title="canShowBridgeSetup ? undefined : (managedBridge.explanation || undefined)">
         <AppButton
           icon="settings"
@@ -555,54 +657,160 @@ async function doDeleteNetwork() {
       <AppButton variant="primary" icon="plus" @click="openCreate">Create Network</AppButton>
     </div>
   </div>
+  <div class="ops-body" :class="{ split: homeRows.length > 0 || pendingBridges.length > 0 }">
 
+  <template v-if="homeRows.length > 0 || pendingBridges.length > 0">
+  <section class="list-col">
+    <div class="ops-sec-head"><h3>Networks</h3><span class="n">{{ homeRows.length + pendingBridges.length }}</span></div>
+    <div class="list-scroll">
+      <button
+        v-for="row in homeRows"
+        :key="rowKey(row)"
+        type="button"
+        class="nrow"
+        :class="{ selected: selectedKey === rowKey(row) }"
+        @click="selectedKey = rowKey(row)"
+      >
+        <div class="nrow-top">
+          <span class="ops-dot" :class="row.reachable ? 'ok' : 'off'"></span>
+          <span class="nrow-name">{{ row.network.name }}</span>
+          <span v-if="row.network.isDefault" class="tag badge badge-accent">NAT</span>
+          <span v-else class="tag">{{ modeLabel(row.network.mode) }}</span>
+        </div>
+        <div class="nrow-meta">
+          {{ deviceLine(row) }} · {{ natSubnet(row) }} · {{ attachedWorkloads(row).length }} Workload{{ attachedWorkloads(row).length === 1 ? '' : 's' }}
+        </div>
+      </button>
+      <button
+        v-for="item in pendingBridges"
+        :key="item.key"
+        type="button"
+        class="nrow pending"
+        :class="{ selected: selectedKey === item.key }"
+        @click="selectedKey = item.key"
+      >
+        <div class="nrow-top">
+          <span class="ops-dot warn pulse"></span>
+          <span class="nrow-name">Bridge</span>
+          <span class="tag-amber">Pending</span>
+        </div>
+        <div class="nrow-meta">{{ item.label }} · not configured</div>
+      </button>
+    </div>
+  </section>
+
+  <section v-if="selectedRow" class="inspect">
+    <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0">
+      {{ loadErrors[0] }}
+    </p>
+
+    <div class="detail-head">
+      <div>
+        <h2>{{ selectedRow.network.name }}</h2>
+        <div class="detail-meta">{{ deviceLine(selectedRow) }}<template v-if="selectedRow.role === 'self'"> · This {{ DEVICE_LABEL }}</template> · <span class="ops-ok-text">{{ selectedRow.reachable ? 'Active' : 'Unreachable' }}</span></div>
+      </div>
+      <div class="chips">
+        <span class="chip">Mode <b>{{ modeLabel(selectedRow.network.mode) }}</b></span>
+        <span class="chip">Subnet <b>{{ natSubnet(selectedRow) }}</b></span>
+        <span class="chip">Workloads <b>{{ attachedWorkloads(selectedRow).length }}</b></span>
+        <span v-if="selectedRow.network.isDefault" class="chip green">Default NAT</span>
+      </div>
+    </div>
+
+    <div class="sheet">
+      <div class="sheet-head">
+        Configuration
+        <AppButton v-if="canMutate(selectedRow)" size="sm" @click="openEdit(selectedRow)">Edit</AppButton>
+      </div>
+      <div class="fact">
+        <span class="k">Mode</span>
+        <span class="v">{{ modeCopy(selectedRow) }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">Subnet</span>
+        <span class="v">{{ natSubnet(selectedRow) }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">Gateway</span>
+        <span class="v">{{ natGateway(selectedRow) }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">DNS</span>
+        <span class="v">{{ natDns(selectedRow) }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">DHCP range</span>
+        <span class="v">{{ natDhcp(selectedRow) }}</span>
+      </div>
+      <div class="fact">
+        <span class="k">{{ DEVICE_LABEL }}</span>
+        <span class="v">{{ deviceLine(selectedRow) }}</span>
+      </div>
+    </div>
+
+    <div v-if="selectedRow.network.mode === 'nat'" class="sheet">
+      <div class="sheet-head">Port forwards</div>
+      <div class="fwd-hint">
+        Forwards are configured per Workload. Open a Workload → Network to publish a port, e.g. reachable as <code>localhost:port</code> on this {{ DEVICE_LABEL }}.
+      </div>
+    </div>
+
+    <div class="sheet">
+      <div class="sheet-head">Attached Workloads</div>
+      <div v-if="attachedWorkloads(selectedRow).length === 0" class="fwd-hint">No Workloads on this network.</div>
+      <div v-for="item in attachedWorkloads(selectedRow)" :key="item.vm.id" class="fact">
+        <span class="k">{{ item.vm.name }}</span>
+        <span class="v">
+          <span class="ops-dot" :class="workloadDot(item)"></span>
+          {{ healthLabel(vmHealth(item.vm)) }}
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <section v-else-if="selectedPending" class="inspect">
+    <div class="detail-head">
+      <div>
+        <h2>Bridge</h2>
+        <div class="detail-meta">{{ selectedPending.label }} · <span style="color:var(--amber);font-weight:600">Pending setup</span></div>
+      </div>
+      <div class="chips">
+        <span class="chip">Mode <b>Bridge</b></span>
+      </div>
+    </div>
+    <div class="ops-banner amber">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+      <div>
+        <div class="ops-banner-title">Bridge networking is not set up</div>
+        <div class="ops-banner-sub">Workloads on a bridge get their own LAN addresses and are reachable from other machines.</div>
+      </div>
+    </div>
+    <div class="sheet">
+      <div class="sheet-head">
+        Setup
+        <AppButton variant="primary" size="sm" :disabled="!canShowBridgeSetup" @click="showBridges = true; bridgeHostId = selectedPending.hostId">Bridge setup</AppButton>
+      </div>
+      <div class="steps">
+        <div class="step"><span class="no">1</span><span>Pick the uplink interface on {{ selectedPending.label }} — Wi-Fi or Ethernet.</span></div>
+        <div class="step"><span class="no">2</span><span>BarkVisor creates the bridge and moves the Device address onto it.</span></div>
+        <div class="step"><span class="no">3</span><span>Attach Workloads — each one gets its own LAN address from DHCP.</span></div>
+      </div>
+    </div>
+  </section>
+  </template>
+
+  <template v-else>
   <p v-if="loadErrors.length" style="color:var(--red, #ef4444);font-size:13px;margin:0 0 12px">
     {{ loadErrors[0] }}
   </p>
 
   <EmptyState
-    v-if="homeRows.length === 0 && !pageLoading"
+    v-if="!pageLoading"
     icon="globe"
     title="No networks configured. VMs use NAT networking by default."
   />
-
-  <DataTable v-else-if="homeRows.length > 0" :columns="[
-    { key: 'name', label: 'Name' },
-    { key: 'device', label: 'Device' },
-    { key: 'mode', label: 'Mode' },
-    { key: 'bridge', label: 'Bridge' },
-    { key: 'dns', label: 'DNS' },
-    { key: 'actions', label: '', align: 'right' },
-  ]">
-    <tr v-for="row in homeRows" :key="rowKey(row)">
-      <td style="font-weight:500">{{ row.network.name }}</td>
-      <td>
-        <WorkloadDeviceChip
-          :label="row.label"
-          :self="row.role === 'self'"
-          :reachable="row.reachable"
-        />
-      </td>
-      <td><span class="badge" :class="modeBadgeClass(row.network.mode)">{{ row.network.mode }}</span></td>
-      <td>
-        <template v-if="row.network.bridge">
-          <span style="display:flex;align-items:center;gap:6px">
-            {{ row.network.bridge }}
-            <span v-if="interfaceIp(row.network.bridge, row.hostId)" class="mono" style="color:var(--text-secondary);font-size:12px">{{ interfaceIp(row.network.bridge, row.hostId) }}</span>
-            <span v-if="getBridgeStatusForNetwork(row)" class="badge" :class="bridgeBadgeClass(getBridgeStatusForNetwork(row)!)">{{ bridgeBadgeLabel(getBridgeStatusForNetwork(row)!) }}</span>
-          </span>
-        </template>
-        <template v-else>-</template>
-      </td>
-      <td class="mono" style="color:var(--text-secondary)">{{ row.network.dnsServer || '-' }}</td>
-      <td style="text-align:right">
-        <div v-if="canMutate(row)" style="display:flex;gap:4px;justify-content:flex-end">
-          <AppButton size="sm" @click="openEdit(row)">Edit</AppButton>
-          <AppButton size="sm" @click="deleteNetwork(row)">Delete</AppButton>
-        </div>
-      </td>
-    </tr>
-  </DataTable>
+  </template>
+  </div>
 
   <!-- Bridge setup (install guides only) -->
   <AppModal v-if="showBridges" title="Bridge setup" max-width="800px" @close="showBridges = false">
@@ -688,7 +896,23 @@ async function doDeleteNetwork() {
   </AppModal>
 
   <!-- Create/Edit Network Modal -->
-  <AppModal v-if="showCreate" :title="(editingId ? 'Edit' : 'Create') + ' Network'" @close="showCreate = false">
+  <AppModal
+    v-if="showCreate"
+    :title="(editingId ? 'Edit' : 'Create') + ' Network'"
+    subtitle="NAT is outbound only. Bridge gives each Workload a LAN address."
+    rail-title="Network"
+    @close="showCreate = false"
+  >
+    <template #rail>
+      <div class="split-s on">
+        <span class="wizard-dot active">1</span>
+        <div><div class="t">Mode</div><div class="d">NAT / Bridge</div></div>
+      </div>
+      <div class="split-s">
+        <span class="wizard-dot">2</span>
+        <div><div class="t">Addressing</div><div class="d">DNS · DHCP</div></div>
+      </div>
+    </template>
     <div v-if="formDeviceOptions.length > 0" class="form-group">
       <label>{{ DEVICE_LABEL }}</label>
       <AppSelect v-model="formHostId" :options="formDeviceOptions" :disabled="Boolean(editingId)" />
@@ -771,4 +995,5 @@ async function doDeleteNetwork() {
     @confirm="doDeleteNetwork"
     @cancel="deleteTarget = null"
   />
+  </div>
 </template>

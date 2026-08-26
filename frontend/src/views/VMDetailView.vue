@@ -5,7 +5,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useVMStore } from '../stores/vms'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
-import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
 import api from '../api/client'
 import {
   canFetchDeviceWorkloads,
@@ -14,6 +13,7 @@ import {
   devicePath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
+import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
@@ -44,10 +44,9 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
-import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
 import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
 import { usbCanPersist, usbNoSerialCopy } from '../composables/useUSBPicker'
-import { formatBytes } from '../utils/format'
+import { formatBytes, formatMemoryMB, formatPortForwards, formatShortDate } from '../utils/format'
 import { applyVMStateEvent, healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
 import { acceleratorLabel, vmBackend } from '../utils/workloadBackend'
 import { architectureLabel } from '../utils/architectureDetails'
@@ -85,10 +84,9 @@ import { canConnectDeviceConsole, vncWindowPath } from '../utils/consoleHome'
 import { parseSystemCapabilities } from '../utils/capabilitiesParse'
 import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuDetachAllowed, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import { isDisplayPassthrough, isDisplayPciClass, pciClassLabel, pciPassthroughSupported } from '../utils/pciPassthrough'
-import { isAgentWorkload, workloadGrantCopy, parseWorkloadClass } from '../utils/workloadClass'
+import { isAgentWorkload } from '../utils/workloadClass'
 import {
   parseStartOnBoot,
-  startOnBootFooterFromWorkload,
   startOnBootLabel,
 } from '../utils/workloadStartOnBoot'
 import {
@@ -172,9 +170,8 @@ const vm = computed(() => {
 })
 
 const agentCage = computed(() => isAgentWorkload(vm.value))
-const grantCopy = computed(() => workloadGrantCopy(parseWorkloadClass(vm.value?.workloadClass ?? vm.value?.spec?.spec?.workloadClass)))
 const startOnBootOn = computed(() => parseStartOnBoot(vm.value))
-const startOnBootHint = computed(() => startOnBootFooterFromWorkload(vm.value))
+
 const ollamaStore = useOllamaStore()
 const codingAgent = computed(() => isCodingAgentSession(vm.value))
 const showAgentChat = computed(() => codingAgent.value && chatIsVisible(ollamaStore.anyReachable, ollamaStore.models.length))
@@ -333,6 +330,30 @@ const availableDisks = computed(() => {
   if (!vm.value) return []
   const attached = new Set([vm.value.bootDiskId, ...(vm.value.additionalDiskIds || [])])
   return detailDisks.value.filter(d => !attached.has(d.id))
+})
+
+const bootDisk = computed(() => {
+  const v = vm.value
+  if (!v) return null
+  return detailDisks.value.find((d) => d.id === v.bootDiskId) ?? null
+})
+
+const bootDiskName = computed(() => {
+  const v = vm.value
+  if (!v) return '—'
+  return bootDisk.value?.name || `${v.bootDiskId.slice(0, 8)}...`
+})
+
+const deviceFactName = computed(() => {
+  const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
+  return device ? devicesStore.deviceLabel(device) : '—'
+})
+
+const deviceFactMeta = computed(() => {
+  const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
+  if (!device) return ''
+  if (isSelfDevice(device)) return `this ${DEVICE_LABEL}`
+  return `Member · ${isReachabilityOk(device.reachability) ? 'Reachable' : reachabilityLabel(device.reachability)}`
 })
 
 const additionalDiskDetails = computed(() => {
@@ -673,8 +694,7 @@ async function stopWorkload(method: 'acpi' | 'force') {
   await store.stop(vmId.value, { method })
 }
 
-async function toggleStartOnBoot(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
+async function toggleStartOnBoot(checked: boolean) {
   try {
     await patchWorkload({ startOnBoot: checked })
   } catch (e: any) {
@@ -985,7 +1005,6 @@ async function loadLocalDetail(existingVersion?: number) {
   const loadVersion = existingVersion ?? ++detailLoadVersion
   stopRealtimeSync()
   guestInfo.value = null
-  diskUsages.value = {}
   try {
     await Promise.all([
       store.fetchOne(vmId.value),
@@ -1247,61 +1266,107 @@ const currentNetwork = computed(() => {
 
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
+const toolbarSub = computed(() => {
+  const v = vm.value
+  if (!v) return ''
+  const type = v.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+  const device = isMemberDetail.value ? memberDevice.value : devicesStore.selfDevice
+  return device ? `${type} · ${devicesStore.deviceLabel(device)}` : type
+})
+
+const healthBanner = computed(() => {
+  const v = vm.value
+  if (!v) return null
+  const health = vmHealth(v)
+  const error = v.status?.healthError || null
+  if (health !== 'failed' && !(health === 'degraded' && error)) return null
+  return {
+    title: `${healthLabel(health)} — ${error || 'guest failed'}`,
+    sub: v.state === 'running' ? 'The Workload is still running.' : 'Start the Workload to retry.',
+  }
+})
+
+const recentEvents = computed(() => {
+  const v = vm.value
+  if (!v) return []
+  const items: { when: string; what: string; bad: boolean; warn: boolean }[] = []
+  if (healthBanner.value) {
+    items.push({
+      when: formatShortDate(v.updatedAt),
+      what: healthBanner.value.title,
+      bad: true,
+      warn: false,
+    })
+  }
+  if (v.pendingChanges) {
+    items.push({
+      when: formatShortDate(v.updatedAt),
+      what: 'Configuration changed — restart pending',
+      bad: false,
+      warn: true,
+    })
+  }
+  items.push({
+    when: formatShortDate(v.createdAt),
+    what: `Workload created${toolbarSub.value.includes('·') ? ` on ${toolbarSub.value.split('·').slice(1).join('·').trim()}` : ''}`,
+    bad: false,
+    warn: false,
+  })
+  return items
+})
+
 </script>
 
 <template>
-  <div v-if="!vm" class="empty">
-    <template v-if="isMemberDetail && memberLoadSettled">
-      <div class="page-header">
-        <div style="display:flex;align-items:center;gap:10px">
-          <button class="back-icon" @click="router.push('/vms')" title="Back to VMs">
-            <AppIcon name="chevron-left" :size="18" />
-          </button>
-          <h1>{{ vmId }}</h1>
-        </div>
-      </div>
-      <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
-      <p v-else-if="!memberReachable">
-        This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Live state unavailable.
-      </p>
-      <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
-    </template>
-    <p v-else>Loading...</p>
-  </div>
-  <div v-else>
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button class="back-icon" @click="router.push('/vms')" title="Back to VMs">
-          <AppIcon name="chevron-left" :size="18" />
-        </button>
-        <h1>{{ vm.name }}</h1>
-        <span class="badge badge-gray" :title="grantCopy">{{ grantCopy }}</span>
-        <WorkloadDeviceChip
-          v-if="isMemberDetail && memberDevice"
-          :label="devicesStore.deviceLabel(memberDevice)"
-          :reachable="memberReachable"
-        />
-      </div>
-      <div style="display: flex; gap: 8px; align-items: center">
-        <span
-          class="status-pill"
-          :class="healthPillClass(vmHealth(vm))"
-          :title="vm.status?.healthError || undefined"
-        >{{ healthLabel(vmHealth(vm)) }}</span>
+  <div class="ops-page">
+  <template v-if="!vm">
+    <div v-if="isMemberDetail && memberLoadSettled" class="ops-toolbar">
+      <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
+        <AppIcon name="chevron-left" :size="16" />
+        <span>Virtual Machines</span>
+      </button>
+      <h1>{{ vmId }}</h1>
+    </div>
+    <div class="ops-body empty">
+      <template v-if="isMemberDetail && memberLoadSettled">
+        <p v-if="memberLoadError" class="list-error">{{ memberLoadError }}</p>
+        <p v-else-if="!memberReachable">
+          This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Live state unavailable.
+        </p>
+        <p v-else>Workload not found on this {{ DEVICE_LABEL.toLowerCase() }}.</p>
+      </template>
+      <p v-else>Loading...</p>
+    </div>
+  </template>
+  <template v-else>
+    <div class="ops-toolbar vm-toolbar">
+      <button class="back-icon back-labeled" type="button" @click="router.push('/vms')" title="Back to VMs">
+        <AppIcon name="chevron-left" :size="16" />
+        <span>Virtual Machines</span>
+      </button>
+      <h1>{{ vm.name }}</h1>
+      <span
+        class="status-pill"
+        :class="healthPillClass(vmHealth(vm))"
+        :title="vm.status?.healthError || undefined"
+      >{{ healthLabel(vmHealth(vm)) }}</span>
+      <span class="ops-sub">{{ toolbarSub }}</span>
+      <div class="ops-actions">
         <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="primary"
           :disabled="controlDisabled" @click="action('start', () => startWorkload())">Start</AppButton>
         <StopButtonGroup v-if="vm.state === 'running' || vm.state === 'stopping'" :loading="controlDisabled || stopLoading" @stop="requestStop($event)" />
+        <AppButton v-if="vm.state === 'running'"
+          :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
         <AppButton
           v-if="showMemberConnect && (vm.state === 'running' || vm.state === 'stopping')"
           title="Open VNC in a new resizable window"
           :disabled="vm.state !== 'running'"
           @click="openVncWindow"
         >VNC</AppButton>
-        <AppButton v-if="vm.state === 'running'"
-          :disabled="controlDisabled" @click="action('restart', () => restartWorkload())">Restart</AppButton>
-        <AppButton v-if="!isMemberDetail && (vm.state === 'stopped' || vm.state === 'error')" variant="danger" :disabled="!!actionLoading" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
+        <AppButton v-if="vm.state === 'stopped' || vm.state === 'error'" variant="danger" :disabled="!!actionLoading || (isMemberDetail && !memberReachable)" @click="showDeleteDialog = true; keepDisk = false">Delete</AppButton>
       </div>
     </div>
+    <div class="ops-body">
 
     <div v-if="!isMemberDetail" class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
@@ -1309,6 +1374,7 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div class="tab" :class="{ active: tab === 'console' }" @click="tab = 'console'">{{ consoleLabel }}</div>
       <div class="tab" :class="{ active: tab === 'vnc' }" @click="tab = 'vnc'">VNC</div>
       <div v-if="vm.state === 'running'" class="tab" :class="{ active: tab === 'metrics' }" @click="tab = 'metrics'">Metrics</div>
+      <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
     <div v-else class="tabs">
       <div class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">Overview</div>
@@ -1319,295 +1385,298 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       <div class="tab" :class="{ active: tab === 'logs' }" @click="tab = 'logs'">Logs</div>
     </div>
 
-    <div v-if="isMemberDetail && !memberReachable" class="pending-banner">
-      This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known data, not live state.
-    </div>
-    <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
-
-    <div v-if="codingAgent && session?.warning" class="pending-banner">
-      {{ sessionWarningCopy(session.remainingSeconds) }}
-    </div>
-
-    <div v-if="codingAgent && sessionReceipt" class="pending-banner" :class="{ 'session-nopush': sessionReceipt.loud }">
-      Stopped at {{ sessionReceipt.stoppedAt }}.
-      <strong v-if="sessionReceipt.loud">{{ SESSION_NO_PUSH }}</strong>
-      <span v-else>Last git push {{ sessionReceipt.git }}.</span>
-    </div>
-
-    <div v-if="vm.pendingChanges" class="pending-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      Configuration changed. Restart the VM to apply new settings.
-    </div>
-
-    <div v-if="backend?.emulated && backend.warning" class="emu-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
-      {{ backend.warning }}
-    </div>
-
-    <div v-if="!isMemberDetail && bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="bridge-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
-      <span v-if="bridgeStatus === 'installed'">Bridge daemon is not running for <strong>{{ currentNetwork?.bridge }}</strong>. The VM cannot start until the daemon is active.</span>
-      <span v-else>Bridge is not configured for <strong>{{ currentNetwork?.bridge }}</strong>. The VM cannot start until the bridge is set up.</span>
-      <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :loading="!!bridgeLoading" loading-text="Setting up..." @click="setupBridgeFromDetail">Setup Bridge</AppButton>
-    </div>
-
-    <div v-if="tab === 'overview'">
-      <div v-if="codingAgent && session" class="card" style="margin-bottom:16px">
-        <div class="detail-row">
-          <span class="detail-label">Session TTL</span>
-          <span>{{ session.expiryAction === 'stop' ? 'Stop (keep disk)' : session.expiryAction }}</span>
+    <div v-if="tab === 'overview'" class="twins">
+      <div class="col-stack">
+        <div v-if="healthBanner" class="ops-banner">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+          <div>
+            <div class="ops-banner-title"><span class="ops-dot bad pulse"></span>{{ healthBanner.title }}</div>
+            <div class="ops-banner-sub">{{ healthBanner.sub }}</div>
+          </div>
         </div>
-        <div v-if="session.expiresAt" class="detail-row">
-          <span class="detail-label">Expires</span>
-          <span class="mono">{{ session.expiresAt }}</span>
+
+        <div v-if="isMemberDetail && !memberReachable" class="ops-banner">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+          <div>
+            <div class="ops-banner-title">{{ DEVICE_LABEL }} unreachable</div>
+            <div class="ops-banner-sub">This {{ DEVICE_LABEL.toLowerCase() }} did not answer. Showing last-known data, not live state.</div>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-          <AppButton
-            v-if="vm.state === 'stopped' || vm.state === 'error'"
-            variant="primary"
-            :disabled="controlDisabled"
-            @click="action('resume', () => sessionAction('resume'))"
-          >Resume</AppButton>
-          <AppButton :disabled="controlDisabled" @click="showResetDialog = true">Reset to Library image</AppButton>
-          <AppButton variant="danger" :disabled="controlDisabled" @click="showBurnDialog = true">Burn</AppButton>
+        <p v-if="isMemberDetail && memberLoadError" class="list-error">{{ memberLoadError }}</p>
+
+        <div v-if="codingAgent && session?.warning" class="ops-banner amber">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+          <div>
+            <div class="ops-banner-title">{{ sessionWarningCopy(session.remainingSeconds) }}</div>
+          </div>
         </div>
-      </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div></div>
-          <AppButton size="sm" :disabled="isMemberDetail && (!memberReachable || !editCpuMax)" @click="openEditModal">Edit Settings</AppButton>
+
+        <div v-if="codingAgent && sessionReceipt" class="ops-banner" :class="{ amber: !sessionReceipt.loud }">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+          <div>
+            <div class="ops-banner-title">Stopped at {{ sessionReceipt.stoppedAt }}.</div>
+            <div class="ops-banner-sub">
+              <strong v-if="sessionReceipt.loud">{{ SESSION_NO_PUSH }}</strong>
+              <span v-else>Last git push {{ sessionReceipt.git }}.</span>
+            </div>
+          </div>
         </div>
-        <div class="detail-grid">
-          <div class="detail-row">
-            <span class="detail-label">Type</span>
-            <span><span class="badge badge-gray">{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></span>
+
+        <div v-if="vm.pendingChanges" class="ops-banner amber">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/><path d="M7 4v3.2l2.2 1.3"/></svg>
+          <div>
+            <div class="ops-banner-title">Pending restart</div>
+            <div class="ops-banner-sub">Configuration changed. Restart the VM to apply new settings.</div>
           </div>
-          <div v-if="backend" class="detail-row">
-            <span class="detail-label">Architecture</span>
-            <span class="mono">{{ architectureLabel(backend.guestArch) }}</span>
+        </div>
+
+        <div v-if="backend?.emulated && backend.warning" class="ops-banner amber">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+          <div>
+            <div class="ops-banner-title">{{ backend.warning }}</div>
           </div>
-          <div v-if="backend" class="detail-row">
-            <span class="detail-label">Accelerator</span>
-            <span style="display:flex;align-items:center;gap:6px">
-              <span class="mono">{{ acceleratorLabel(backend.accelerator) }}</span>
-              <span v-if="backend.emulated" class="badge badge-amber">emulated</span>
-              <span v-else class="badge badge-green">hardware</span>
-            </span>
+        </div>
+
+        <div v-if="!isMemberDetail && bridgeNotReady && (vm.state === 'stopped' || vm.state === 'error')" class="ops-banner">
+          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+          <div>
+            <div v-if="bridgeStatus === 'installed'" class="ops-banner-title">Bridge daemon is not running for <strong>{{ currentNetwork?.bridge }}</strong></div>
+            <div v-else class="ops-banner-title">Bridge is not configured for <strong>{{ currentNetwork?.bridge }}</strong></div>
+            <div v-if="bridgeStatus === 'installed'" class="ops-banner-sub">The VM cannot start until the daemon is active.</div>
+            <div v-else class="ops-banner-sub">The VM cannot start until the bridge is set up.</div>
           </div>
-          <div v-if="backend" class="detail-row">
-            <span class="detail-label">QEMU</span>
-            <span class="mono" style="color:var(--text-secondary)">{{ backend.qemuBinary }}</span>
+          <AppButton size="sm" style="margin-left:auto;flex-shrink:0" :loading="!!bridgeLoading" loading-text="Setting up..." @click="setupBridgeFromDetail">Setup Bridge</AppButton>
+        </div>
+
+        <div v-if="codingAgent && session" class="sheet">
+          <div class="sheet-head"><h3>Session</h3></div>
+          <div class="facts">
+            <div class="detail-row">
+              <span class="detail-label">Session TTL</span>
+              <span>{{ session.expiryAction === 'stop' ? 'Stop (keep disk)' : session.expiryAction }}</span>
+            </div>
+            <div v-if="session.expiresAt" class="detail-row">
+              <span class="detail-label">Expires</span>
+              <span class="mono">{{ session.expiresAt }}</span>
+            </div>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">CPU</span>
-            <span>{{ vm.cpuCount }} cores</span>
+          <div class="item" style="gap:8px;flex-wrap:wrap">
+            <AppButton
+              v-if="vm.state === 'stopped' || vm.state === 'error'"
+              variant="primary"
+              size="sm"
+              :disabled="controlDisabled"
+              @click="action('resume', () => sessionAction('resume'))"
+            >Resume</AppButton>
+            <AppButton size="sm" :disabled="controlDisabled" @click="showResetDialog = true">Reset to Library image</AppButton>
+            <AppButton size="sm" variant="danger" :disabled="controlDisabled" @click="showBurnDialog = true">Burn</AppButton>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Memory</span>
-            <span>{{ vm.memoryMB }} MB</span>
+        </div>
+
+        <div class="sheet">
+          <div class="sheet-head">
+            <h3>Hardware</h3>
+            <AppButton size="sm" :disabled="isMemberDetail && (!memberReachable || !editCpuMax)" @click="openEditModal">Edit Settings</AppButton>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Description</span>
-            <span style="color:var(--text-secondary)">{{ vm.description || '-' }}</span>
+          <div class="facts">
+            <div class="detail-row">
+              <span class="detail-label">Device</span>
+              <span>{{ deviceFactName }}<span v-if="deviceFactMeta" class="ok-text"> · {{ deviceFactMeta }}</span></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Type</span>
+              <span>{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Architecture</span>
+              <span class="mono">{{ backend ? architectureLabel(backend.guestArch) : '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Accelerator</span>
+              <span v-if="backend" style="display:flex;align-items:center;gap:6px">
+                <span class="mono">{{ acceleratorLabel(backend.accelerator) }}</span>
+                <span v-if="backend.emulated" class="badge badge-amber">emulated</span>
+                <span v-else class="badge badge-green">hardware</span>
+              </span>
+              <span v-else class="dim-text">—</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">QEMU</span>
+              <span class="mono dim-text">{{ backend?.qemuBinary || '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">CPU</span>
+              <span>{{ vm.cpuCount }} cores</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Memory</span>
+              <span>{{ formatMemoryMB(vm.memoryMB) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Description</span>
+              <span class="dim-text">{{ vm.description || '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">{{ startOnBootLabel() }}</span>
+              <span>
+                <button type="button" class="mini" :disabled="controlDisabled" @click="toggleStartOnBoot(!startOnBootOn)">
+                  {{ startOnBootOn ? 'On' : 'Off' }}
+                </button>
+              </span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Boot Order</span>
+              <span class="mono">{{ vm.bootOrder || 'cd' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Resolution</span>
+              <span class="mono">{{ vm.displayResolution || '1280x800' }}</span>
+            </div>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">{{ startOnBootLabel() }}</span>
-            <span>
-              <label class="pairing-hint" style="display:flex;gap:8px;align-items:flex-start;text-align:left;margin:0">
-                <input
-                  type="checkbox"
-                  :checked="startOnBootOn"
-                  :disabled="controlDisabled"
-                  style="width:16px;height:16px;cursor:pointer;margin-top:2px"
-                  @change="toggleStartOnBoot"
-                />
-                <span style="color:var(--text-secondary)">{{ startOnBootHint }}</span>
-              </label>
-            </span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">Boot Order</span>
-            <span class="mono">{{ vm.bootOrder || 'cd' }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">Resolution</span>
-            <span class="mono">{{ vm.displayResolution || '1280x800' }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">Network</span>
-            <span style="display:flex;align-items:center;gap:6px">
-              <template v-if="currentNetwork">
-                <span style="color:var(--text-secondary)">{{ currentNetwork.name }}</span>
-                <span class="badge badge-gray">{{ currentNetwork.mode }}</span>
-                <template v-if="!isMemberDetail && currentNetwork.mode === 'bridged' && currentNetwork.bridge">
-                  <span class="mono" style="color:var(--text-dim);font-size:12px">{{ currentNetwork.bridge }}</span>
-                  <span v-if="bridgeStatus === 'active'" class="badge badge-green">active</span>
-                  <span v-else-if="bridgeStatus === 'installed'" class="badge badge-accent">installed</span>
-                  <span v-else class="badge badge-gray">no bridge</span>
+        </div>
+
+        <div class="sheet">
+          <div class="sheet-head"><h3>Network</h3></div>
+          <div class="facts">
+            <div class="detail-row">
+              <span class="detail-label">Network</span>
+              <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <template v-if="currentNetwork">
+                  <span>{{ currentNetwork.name }}</span>
+                  <span class="badge badge-gray">{{ currentNetwork.mode }}</span>
+                  <template v-if="!isMemberDetail && currentNetwork.mode === 'bridged' && currentNetwork.bridge">
+                    <span class="mono dim-text">{{ currentNetwork.bridge }}</span>
+                    <span v-if="bridgeStatus === 'active'" class="badge badge-green">active</span>
+                    <span v-else-if="bridgeStatus === 'installed'" class="badge badge-accent">installed</span>
+                    <span v-else class="badge badge-gray">no bridge</span>
+                  </template>
                 </template>
-              </template>
-              <span v-else-if="isMemberDetail" :class="vm.networkId ? 'mono' : ''" :style="vm.networkId ? undefined : 'color:var(--text-dim)'">
-                {{ memberNetworkCaption(vm.networkId) }}
-              </span>
-              <span v-else style="color:var(--text-dim)">Default NAT</span>
-            </span>
-          </div>
-          <div v-if="!currentNetwork || currentNetwork.mode === 'nat'" class="detail-row">
-            <span class="detail-label">Port Forwards</span>
-            <span class="detail-editable">
-              <span v-if="vm.portForwards && vm.portForwards.length > 0" style="display:flex;flex-wrap:wrap;gap:4px">
-                <span v-for="(pf, i) in vm.portForwards" :key="i" class="badge badge-gray" style="font-variant-numeric:tabular-nums">
-                  {{ pf.protocol }}:{{ pf.hostPort }}&rarr;{{ pf.guestPort }}
+                <span v-else-if="isMemberDetail" :class="vm.networkId ? 'mono' : 'dim-text'">
+                  {{ memberNetworkCaption(vm.networkId) }}
                 </span>
+                <span v-else class="dim-text">Default NAT</span>
               </span>
-              <span v-else style="color:var(--text-dim)">None</span>
-              <AppButton size="sm" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor()">Edit</AppButton>
-            </span>
-          </div>
-          <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
-            <span class="detail-label">Services</span>
-            <span style="display:flex;flex-wrap:wrap;gap:4px">
-              <template v-if="guestInfo?.ipAddresses?.length">
-                <a v-for="(pf, i) in vm.portForwards!.filter(p => p.protocol === 'tcp')" :key="i"
-                   :href="(pf.guestPort === 443 || pf.guestPort === 9443 ? 'https://' : 'http://') + guestInfo.ipAddresses[0] + (pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort)"
-                   target="_blank" class="badge badge-accent" style="text-decoration:none;font-variant-numeric:tabular-nums;cursor:pointer">
-                  {{ guestInfo.ipAddresses[0] }}{{ pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort }}
-                </a>
-              </template>
-              <template v-else>
-                <span v-for="(pf, i) in vm.portForwards!.filter(p => p.protocol === 'tcp')" :key="i" class="badge badge-gray" style="font-variant-numeric:tabular-nums">
-                  port {{ pf.guestPort }}
-                </span>
-                <span style="color:var(--text-dim);font-size:12px">{{ showGuestAgentInstall ? 'Install the guest agent below' : 'waiting for guest agent...' }}</span>
-              </template>
-            </span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">ISOs</span>
-            <span style="display:flex;flex-direction:column;gap:6px;flex:1">
-              <div v-for="iso in isoImages" :key="iso.id" style="display:flex;align-items:center;justify-content:space-between">
-                <span style="display:flex;align-items:center;gap:8px">
-                  <a href="#" @click.prevent="router.push('/images')" style="color:var(--accent);text-decoration:none;font-size:13px">
-                    {{ iso.name }}
+            </div>
+            <div v-if="!currentNetwork || currentNetwork.mode === 'nat'" class="detail-row">
+              <span class="detail-label">Port Forwards</span>
+              <span class="detail-editable">
+                <span>{{ formatPortForwards(vm.portForwards) }}</span>
+                <button type="button" class="fact-edit" :disabled="isMemberDetail && !memberReachable" @click="openPortForwardEditor()">Edit</button>
+              </span>
+            </div>
+            <div v-if="!isMemberDetail && currentNetwork?.mode === 'bridged' && (vm.portForwards?.length ?? 0) > 0" class="detail-row">
+              <span class="detail-label">Services</span>
+              <span style="display:flex;flex-wrap:wrap;gap:4px">
+                <template v-if="guestInfo?.ipAddresses?.length">
+                  <a v-for="(pf, i) in vm.portForwards!.filter(p => p.protocol === 'tcp')" :key="i"
+                     :href="(pf.guestPort === 443 || pf.guestPort === 9443 ? 'https://' : 'http://') + guestInfo.ipAddresses[0] + (pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort)"
+                     target="_blank" class="badge badge-accent" style="text-decoration:none;font-variant-numeric:tabular-nums;cursor:pointer">
+                    {{ guestInfo.ipAddresses[0] }}{{ pf.guestPort === 80 || pf.guestPort === 443 ? '' : ':' + pf.guestPort }}
                   </a>
-                  <span v-if="!isMemberDetail" class="badge badge-gray">{{ iso.arch }}</span>
-                </span>
-                <AppButton v-if="!isMemberDetail" size="sm" :disabled="!!actionLoading"
-                  @click="action('detach ISO', () => store.detachISO(vmId, iso.id))">Detach</AppButton>
-              </div>
-              <div v-if="isoImages.length === 0" style="font-size:12px;color:var(--text-dim)">No ISOs attached</div>
-              <div v-if="!isMemberDetail && showIsoAttach" style="display:flex;gap:6px;align-items:end;margin-top:4px">
-                <AppSelect v-model="attachIsoId" size="sm" style="flex:1">
-                  <option value="" disabled>Select ISO...</option>
-                  <option v-for="img in availableIsos" :key="img.id" :value="img.id">{{ img.name }}</option>
-                </AppSelect>
-                <AppButton variant="primary" size="sm" :disabled="!attachIsoId || !!actionLoading" @click="doAttachISO">Attach</AppButton>
-                <AppButton size="sm" @click="showIsoAttach = false; attachIsoId = ''">Cancel</AppButton>
-              </div>
-              <AppButton v-else-if="!isMemberDetail" size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
-            </span>
-          </div>
-          <div v-if="vm.macAddress" class="detail-row">
-            <span class="detail-label">MAC Address</span>
-            <span class="mono" style="color:var(--text-secondary)">{{ vm.macAddress }}</span>
-          </div>
-          <div v-if="isMemberDetail" class="detail-row">
-            <span class="detail-label">OS</span>
-            <span>{{ memberOsLabel }}</span>
-          </div>
-          <div v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" class="detail-row">
-            <span class="detail-label">IP Address</span>
-            <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
-            </span>
-          </div>
-          <div v-else-if="isMemberDetail" class="detail-row">
-            <span class="detail-label">IP Address</span>
-            <span style="color:var(--text-dim)">—</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">Created</span>
-            <span style="color:var(--text-secondary)">{{ new Date(vm.createdAt).toLocaleString() }}</span>
+                </template>
+                <template v-else>
+                  <span v-for="(pf, i) in vm.portForwards!.filter(p => p.protocol === 'tcp')" :key="i" class="badge badge-gray" style="font-variant-numeric:tabular-nums">
+                    port {{ pf.guestPort }}
+                  </span>
+                  <span class="dim-text">{{ showGuestAgentInstall ? 'Install the guest agent below' : 'waiting for guest agent...' }}</span>
+                </template>
+              </span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">MAC Address</span>
+              <span class="mono dim-text">{{ vm.macAddress || '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">IP Address</span>
+              <span v-if="vm.state === 'running' && guestInfo?.available && guestInfo?.ipAddresses?.length" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
+              </span>
+              <span v-else class="dim-text">—</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Guest agent install (PAS-215) -->
-      <div v-if="showGuestAgentInstall" style="margin-top:20px">
-        <h2 style="font-size:16px;font-weight:700;margin-bottom:12px">Guest Agent</h2>
-        <div class="card">
-          <p style="color:var(--text-secondary);font-size:13px;margin:0 0 14px;line-height:1.5">
-            Install the guest agent inside this Workload to show IP and OS, and to shut down cleanly.
-          </p>
-          <GuestCommandAccordion
-            :groups="guestAgentInstallCommands"
-            :initial-open="guestAgentOpenId"
-          />
-          <!-- PAS-214: clipboard is spice-vdagent / Spice guest tools, not qemu-guest-agent -->
-          <p style="color:var(--text-dim);font-size:11px;margin:12px 0 0;line-height:1.5">
-            Desktop clipboard still needs <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">spice-vdagent</code>
-            (Linux) or Spice guest tools (Windows).
-          </p>
-        </div>
-      </div>
-
-      <!-- Guest Agent Info -->
-      <div v-if="vm.state === 'running' && guestInfo?.available" style="margin-top:20px">
-        <h2 style="font-size:16px;font-weight:700;margin-bottom:12px">Guest Agent</h2>
-        <div class="card">
-          <div class="detail-grid">
-            <div v-if="guestInfo.hostname" class="detail-row">
+        <div class="sheet">
+          <div class="sheet-head"><h3>Guest</h3></div>
+          <div class="facts">
+            <div class="detail-row">
+              <span class="detail-label">OS</span>
+              <span>{{ memberOsLabel }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">ISOs</span>
+              <span style="display:flex;flex-direction:column;gap:6px;flex:1">
+                <div v-for="iso in isoImages" :key="iso.id" style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="display:flex;align-items:center;gap:8px">
+                    <a href="#" @click.prevent="router.push('/images')" style="color:var(--accent);text-decoration:none;font-size:13px">
+                      {{ iso.name }}
+                    </a>
+                    <span v-if="!isMemberDetail" class="badge badge-gray">{{ iso.arch }}</span>
+                  </span>
+                  <AppButton v-if="!isMemberDetail" size="sm" :disabled="!!actionLoading"
+                    @click="action('detach ISO', () => store.detachISO(vmId, iso.id))">Detach</AppButton>
+                </div>
+                <div v-if="isoImages.length === 0" class="dim-text">No ISOs attached</div>
+                <div v-if="!isMemberDetail && showIsoAttach" style="display:flex;gap:6px;align-items:end;margin-top:4px">
+                  <AppSelect v-model="attachIsoId" size="sm" style="flex:1">
+                    <option value="" disabled>Select ISO...</option>
+                    <option v-for="img in availableIsos" :key="img.id" :value="img.id">{{ img.name }}</option>
+                  </AppSelect>
+                  <AppButton variant="primary" size="sm" :disabled="!attachIsoId || !!actionLoading" @click="doAttachISO">Attach</AppButton>
+                  <AppButton size="sm" @click="showIsoAttach = false; attachIsoId = ''">Cancel</AppButton>
+                </div>
+                <button v-else-if="!isMemberDetail" type="button" class="fact-edit" style="align-self:flex-start" @click="showIsoAttach = true; fetchImages()">Attach ISO</button>
+              </span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Created</span>
+              <span class="dim-text">{{ formatShortDate(vm.createdAt) }}</span>
+            </div>
+            <div v-if="guestInfo?.available && guestInfo.hostname" class="detail-row">
               <span class="detail-label">Hostname</span>
               <span class="mono">{{ guestInfo.hostname }}</span>
             </div>
-            <div v-if="guestInfo.osName" class="detail-row">
-              <span class="detail-label">OS</span>
-              <span>{{ guestInfo.osName }}<template v-if="guestInfo.osVersion"> {{ guestInfo.osVersion }}</template></span>
-            </div>
-            <div v-if="guestInfo.kernelRelease" class="detail-row">
+            <div v-if="guestInfo?.available && guestInfo.kernelRelease" class="detail-row">
               <span class="detail-label">Kernel</span>
               <span class="mono">{{ guestInfo.kernelRelease }}</span>
             </div>
-            <div v-if="guestInfo.machine" class="detail-row">
+            <div v-if="guestInfo?.available && guestInfo.machine" class="detail-row">
               <span class="detail-label">Architecture</span>
               <span class="mono">{{ guestInfo.machine }}</span>
             </div>
-            <div v-if="guestInfo.ipAddresses?.length" class="detail-row">
-              <span class="detail-label">IP Addresses</span>
-              <span style="display:flex;gap:6px;flex-wrap:wrap">
-                <span v-for="ip in guestInfo.ipAddresses" :key="ip" class="badge badge-accent" style="font-variant-numeric:tabular-nums">{{ ip }}</span>
-              </span>
-            </div>
-            <div v-if="guestInfo.macAddress" class="detail-row">
-              <span class="detail-label">MAC Address</span>
-              <span class="mono" style="color:var(--text-secondary)">{{ guestInfo.macAddress }}</span>
-            </div>
-            <div v-if="guestInfo.timezone" class="detail-row">
+            <div v-if="guestInfo?.available && guestInfo.timezone" class="detail-row">
               <span class="detail-label">Timezone</span>
               <span>{{ guestInfo.timezone }}<template v-if="guestInfo.timezoneOffset != null"> (UTC{{ guestInfo.timezoneOffset >= 0 ? '+' : '' }}{{ guestInfo.timezoneOffset / 3600 }})</template></span>
             </div>
-            <div v-if="guestInfo.users?.length" class="detail-row">
+            <div v-if="guestInfo?.available && guestInfo.users?.length" class="detail-row">
               <span class="detail-label">Logged In Users</span>
               <span style="display:flex;gap:6px;flex-wrap:wrap">
                 <span v-for="u in guestInfo.users" :key="u.name" class="badge badge-gray">{{ u.name }}</span>
               </span>
             </div>
           </div>
-
-          <div v-if="guestInfo.listeningPorts != null" style="margin-top:16px">
-            <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Listening ports</h3>
-            <p v-if="guestListeningPortRows.length === 0" style="color:var(--text-dim);font-size:12px;margin:0">None</p>
+          <div v-if="showGuestAgentInstall" class="item" style="flex-direction:column;align-items:stretch;gap:10px">
+            <p class="dim-text" style="margin:0;line-height:1.5">
+              Install the guest agent inside this Workload to show IP and OS, and to shut down cleanly.
+            </p>
+            <GuestCommandAccordion
+              :groups="guestAgentInstallCommands"
+              :initial-open="guestAgentOpenId"
+            />
+            <!-- PAS-214: clipboard is spice-vdagent / Spice guest tools, not qemu-guest-agent -->
+            <p class="dim-text" style="margin:0;font-size:11px;line-height:1.5">
+              Desktop clipboard still needs <code style="background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:2px">spice-vdagent</code>
+              (Linux) or Spice guest tools (Windows).
+            </p>
+          </div>
+          <div v-if="guestInfo?.available && guestInfo.listeningPorts != null" class="item" style="flex-direction:column;align-items:stretch;gap:8px">
+            <h3 class="sheet-sub">Listening ports</h3>
+            <p v-if="guestListeningPortRows.length === 0" class="dim-text" style="margin:0">None</p>
             <DataTable v-else :columns="[{ key: 'port', label: 'Port' }, { key: 'address', label: 'Address' }, { key: 'label', label: 'Service' }, { key: 'access', label: 'Access' }, { key: 'publish', label: '' }]">
               <tr v-for="row in guestListeningPortRows" :key="row.key">
                 <td class="mono" style="font-variant-numeric:tabular-nums">{{ row.port }}</td>
                 <td class="mono">{{ row.address }}</td>
-                <td><span v-if="row.label" class="badge badge-gray">{{ row.label }}</span><span v-else style="color:var(--text-dim)">—</span></td>
+                <td><span v-if="row.label" class="badge badge-gray">{{ row.label }}</span><span v-else class="dim-text">—</span></td>
                 <td>
                   <span v-if="row.access === 'Internal'" class="badge badge-gray">Internal</span>
                   <a v-else-if="row.href" :href="row.href" target="_blank" class="badge badge-accent" style="text-decoration:none">{{ row.href.replace(/^https?:\/\//, '') }}</a>
@@ -1619,209 +1688,150 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
               </tr>
             </DataTable>
           </div>
-
-          <!-- Filesystems sub-table -->
-          <div v-if="guestInfo.filesystems?.length" style="margin-top:16px">
-            <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Filesystems</h3>
+          <div v-if="guestInfo?.available && guestInfo.filesystems?.length" class="item" style="flex-direction:column;align-items:stretch;gap:8px">
+            <h3 class="sheet-sub">Filesystems</h3>
             <DataTable :columns="[{ key: 'mount', label: 'Mount' }, { key: 'type', label: 'Type' }, { key: 'device', label: 'Device' }, { key: 'used', label: 'Used' }, { key: 'total', label: 'Total' }]">
-                  <tr v-for="fs in guestInfo.filesystems" :key="fs.mountpoint">
-                    <td class="mono">{{ fs.mountpoint }}</td>
-                    <td><span class="badge badge-gray">{{ fs.type }}</span></td>
-                    <td class="mono">{{ fs.device }}</td>
-                    <td class="mono">{{ fs.usedBytes != null ? formatBytes(fs.usedBytes) : '-' }}</td>
-                    <td class="mono">{{ fs.totalBytes != null ? formatBytes(fs.totalBytes) : '-' }}</td>
-                  </tr>
+              <tr v-for="fs in guestInfo.filesystems" :key="fs.mountpoint">
+                <td class="mono">{{ fs.mountpoint }}</td>
+                <td><span class="badge badge-gray">{{ fs.type }}</span></td>
+                <td class="mono">{{ fs.device }}</td>
+                <td class="mono">{{ fs.usedBytes != null ? formatBytes(fs.usedBytes) : '-' }}</td>
+                <td class="mono">{{ fs.totalBytes != null ? formatBytes(fs.totalBytes) : '-' }}</td>
+              </tr>
             </DataTable>
           </div>
         </div>
       </div>
 
-      <!-- Disks Section -->
-      <div style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="font-size:16px;font-weight:700">Disks</h2>
-          <AppButton size="sm" icon="plus" :disabled="isMemberDetail && !memberReachable" @click="showAttachDisk = true; fetchDisks()">Attach Disk</AppButton>
+      <div class="col-stack">
+        <div class="sheet">
+          <div class="sheet-head">
+            <h3>Disks</h3>
+            <AppButton size="sm" icon="plus" :disabled="isMemberDetail && !memberReachable" @click="showAttachDisk = true; fetchDisks()">Attach Disk</AppButton>
+          </div>
+          <div v-if="vm.bootDiskId" class="item">
+            <a v-if="!isMemberDetail" href="#" class="name" @click.prevent="router.push('/disks')">{{ bootDiskName }}</a>
+            <span v-else class="name">{{ bootDiskName }}</span>
+            <span class="meta">{{ bootDisk?.format || 'qcow2' }}</span>
+            <span class="meta">{{ bootDisk ? formatBytes(bootDisk.sizeBytes) : '—' }} provisioned</span>
+            <span class="meta">{{ detailDiskUsages[vm.bootDiskId] ? formatBytes(detailDiskUsages[vm.bootDiskId].actualSizeBytes) : '—' }} used</span>
+            <span class="tag-boot">Boot</span>
+          </div>
+          <div v-for="disk in additionalDiskDetails" :key="disk.id" class="item">
+            <a v-if="!isMemberDetail" href="#" class="name" @click.prevent="router.push('/disks')">{{ disk.name }}</a>
+            <span v-else class="name">{{ disk.name }}</span>
+            <span class="meta">{{ disk.format }}</span>
+            <span class="meta">{{ formatBytes(disk.sizeBytes) }} provisioned</span>
+            <span class="meta">{{ detailDiskUsages[disk.id] ? formatBytes(detailDiskUsages[disk.id].actualSizeBytes) : '—' }} used</span>
+            <span class="badge badge-blue">Extra</span>
+            <span v-if="vm.state === 'running'" class="dim-text" style="margin-left:auto">Stop VM to detach</span>
+            <AppButton v-else size="sm" style="margin-left:auto" :disabled="isMemberDetail && !memberReachable" @click="detachDisk(disk.id)">Detach</AppButton>
+          </div>
         </div>
-        <DataTable :columns="[{ key: 'name', label: 'Name' }, { key: 'format', label: 'Format' }, { key: 'provisioned', label: 'Provisioned' }, { key: 'used', label: 'Used' }, { key: 'role', label: 'Role' }, { key: 'actions', label: '' }]">
-              <!-- Boot disk -->
-              <tr>
-                <td style="font-weight:500">
-                  <a v-if="!isMemberDetail" href="#" @click.prevent="router.push('/disks')" style="color:var(--accent);text-decoration:none">
-                    {{ detailDisks.find(d => d.id === vm!.bootDiskId)?.name || vm!.bootDiskId.slice(0,8) + '...' }}
-                  </a>
-                  <span v-else>
-                    {{ detailDisks.find(d => d.id === vm!.bootDiskId)?.name || vm!.bootDiskId.slice(0,8) + '...' }}
-                  </span>
-                </td>
-                <td><span class="badge badge-gray">qcow2</span></td>
-                <td class="mono">{{ detailDisks.find(d => d.id === vm!.bootDiskId) ? formatBytes(detailDisks.find(d => d.id === vm!.bootDiskId)!.sizeBytes) : '-' }}</td>
-                <td class="mono">
-                  <template v-if="detailDiskUsages[vm!.bootDiskId]">{{ formatBytes(detailDiskUsages[vm!.bootDiskId].actualSizeBytes) }}</template>
-                  <span v-else style="color:var(--text-dim)">-</span>
-                </td>
-                <td><span class="badge badge-accent">Boot</span></td>
-                <td></td>
-              </tr>
-              <!-- Additional disks -->
-              <tr v-for="disk in additionalDiskDetails" :key="disk.id">
-                <td style="font-weight:500">
-                  <a v-if="!isMemberDetail" href="#" @click.prevent="router.push('/disks')" style="color:var(--accent);text-decoration:none">{{ disk.name }}</a>
-                  <span v-else>{{ disk.name }}</span>
-                </td>
-                <td><span class="badge badge-gray">{{ disk.format }}</span></td>
-                <td class="mono">{{ formatBytes(disk.sizeBytes) }}</td>
-                <td class="mono">
-                  <template v-if="detailDiskUsages[disk.id]">{{ formatBytes(detailDiskUsages[disk.id].actualSizeBytes) }}</template>
-                  <span v-else style="color:var(--text-dim)">-</span>
-                </td>
-                <td><span class="badge badge-blue">Extra</span></td>
-                <td style="text-align:right">
-                  <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
-                  <AppButton v-else size="sm" :disabled="isMemberDetail && !memberReachable" @click="detachDisk(disk.id)">Detach</AppButton>
-                </td>
-              </tr>
-              <tr v-if="!additionalDiskDetails.length">
-                <td colspan="6"><EmptyState title="No additional disks attached" /></td>
-              </tr>
-        </DataTable>
-      </div>
 
-      <!-- Shared Folders Section -->
-      <div v-if="!isMemberDetail && !agentCage" style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="font-size:16px;font-weight:700">Shared Folders</h2>
-          <AppButton size="sm" icon="plus" @click="showFolderPicker = true">Add Shared Folder</AppButton>
+        <div v-if="!isMemberDetail && !agentCage" class="sheet">
+          <div class="sheet-head">
+            <h3>Shared folders</h3>
+            <AppButton size="sm" icon="plus" @click="showFolderPicker = true">Add</AppButton>
+          </div>
+          <div v-if="!vm.sharedPaths?.length" class="item none">None</div>
+          <div v-for="(path, i) in (vm.sharedPaths || [])" :key="path" class="item">
+            <span class="name" style="font-family:var(--font-mono);font-size:12px;font-weight:500">{{ path }}</span>
+            <span class="badge badge-gray">{{ i === 0 ? 'hostshare' : `hostshare${i}` }}</span>
+            <AppButton size="sm" variant="danger" style="margin-left:auto" @click="removeSharedPath(path)">Remove</AppButton>
+          </div>
         </div>
-        <DataTable :columns="[{ key: 'path', label: 'Host Path' }, { key: 'tag', label: 'Mount Tag' }, { key: 'actions', label: '' }]">
-              <tr v-for="(path, i) in (vm.sharedPaths || [])" :key="path">
-                <td style="font-weight:500;font-family:var(--font-mono);font-size:12px">{{ path }}</td>
-                <td><span class="badge badge-gray">{{ i === 0 ? 'hostshare' : `hostshare${i}` }}</span></td>
-                <td style="text-align:right">
-                  <AppButton size="sm" variant="danger" @click="removeSharedPath(path)">Remove</AppButton>
-                </td>
-              </tr>
-              <tr v-if="!vm.sharedPaths?.length">
-                <td colspan="3">
-                  <EmptyState title="No shared folders" subtitle="Mount inside guest: mount -t 9p -o trans=virtio hostshare /mnt/share" />
-                </td>
-              </tr>
-        </DataTable>
-      </div>
 
-      <!-- USB Devices Section -->
-      <div v-if="!agentCage" style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="font-size:16px;font-weight:700">USB Devices</h2>
-          <AppButton
-            size="sm"
-            icon="plus"
-            :disabled="!usbAvailable || (isMemberDetail && !memberReachable)"
-            :title="usbAvailable ? undefined : usbExplanation"
-            @click="showAttachUSB = true; fetchUSBDevices()"
-          >Attach USB Device</AppButton>
-        </div>
-        <UnsupportedHint v-if="!usbAvailable" :text="usbExplanation" />
-        <DataTable v-else :columns="[{ key: 'device', label: 'Device' }, { key: 'id', label: 'ID' }, { key: 'actions', label: '' }]">
-              <tr v-for="dev in (vm.usbDevices || [])" :key="usbDeviceKey(dev)">
-                <td>
-                  <div style="font-weight:500">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</div>
-                  <div v-if="dev.serialNumber" style="font-size:11px;color:var(--text-dim)">Serial {{ dev.serialNumber }}</div>
-                </td>
-                <td><span class="badge badge-gray" style="font-family:var(--font-mono);font-size:11px">{{ usbDeviceKey(dev) }}</span></td>
-                <td style="text-align:right">
-                  <span v-if="vm?.state === 'running'" style="font-size:12px;color:var(--text-dim)">Stop VM to detach</span>
-                  <AppButton v-else size="sm" variant="danger" :disabled="usbLoading || (isMemberDetail && !memberReachable)" @click="usbDetach(dev)">Detach</AppButton>
-                </td>
-              </tr>
-              <tr v-if="!vm.usbDevices?.length">
-                <td colspan="4"><EmptyState title="No USB devices attached" :subtitle="isMemberDetail ? 'Attach a USB device from that Device.' : 'Click &quot;Attach USB Device&quot; to pass through a USB device from this device.'" /></td>
-              </tr>
-        </DataTable>
-      </div>
-
-      <div style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="font-size:16px;font-weight:700">GPU passthrough</h2>
-          <AppButton
-            size="sm"
-            icon="plus"
-            :disabled="!gpuReady || (isMemberDetail && !memberReachable)"
-            :title="gpuReady ? undefined : gpuExplanation"
-            @click="showAttachGPU = true; fetchGPUDevices()"
-          >Attach GPU</AppButton>
-        </div>
-        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 8px">
-          {{ gpuReady ? 'Attach like USB. Guest Ollama is ' + GUEST_OLLAMA_PATH + '. The same card cannot be host and guest.' : 'Not available on this Device.' }}
-        </p>
-        <p
-          v-if="gpuReady && singleGPUDisplay"
-          role="alert"
-          style="font-size:13px;font-weight:700;color:var(--red);margin:0 0 12px"
-        >{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
-        <UnsupportedHint v-if="!gpuReady" :text="gpuExplanation" />
-        <DataTable v-else :columns="[{ key: 'gpu', label: 'GPU' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
-          <template v-for="group in attachedGPUGroups" :key="group.key">
-            <tr class="gpu-vendor-row">
-              <td colspan="3">{{ group.label }}</td>
-            </tr>
-            <tr v-for="dev in group.devices" :key="dev.pciAddress">
-              <td>
-                <div style="font-weight:500">{{ dev.label || dev.pciAddress }}</div>
-                <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }}</div>
-              </td>
-              <td>
-                <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
-                <div style="font-size:11px;color:var(--text-dim)">Group mates: {{ gpuGroupMatesLabel(dev.pciAddress, dev.groupAddresses) }}</div>
-              </td>
-              <td style="text-align:right">
-                <span v-if="!gpuDetachAllowed(vm?.state)" style="font-size:12px;color:var(--text-dim)">Stop the Workload to detach</span>
-                <AppButton v-else size="sm" variant="danger" :disabled="gpuLoading || (isMemberDetail && !memberReachable)" @click="gpuDetach(dev)">Detach</AppButton>
-              </td>
-            </tr>
+        <div v-if="!agentCage" class="sheet">
+          <div class="sheet-head">
+            <h3>USB</h3>
+            <AppButton
+              size="sm"
+              icon="plus"
+              :disabled="!usbAvailable || (isMemberDetail && !memberReachable)"
+              :title="usbAvailable ? undefined : usbExplanation"
+              @click="showAttachUSB = true; fetchUSBDevices()"
+            >Attach USB Device</AppButton>
+          </div>
+          <div v-if="!usbAvailable" class="item none">
+            <span>None<span class="note">{{ usbExplanation }}</span></span>
+          </div>
+          <template v-else>
+            <div v-if="!vm.usbDevices?.length" class="item none">None</div>
+            <div v-for="dev in (vm.usbDevices || [])" :key="usbDeviceKey(dev)" class="item">
+              <span class="name">{{ dev.label || `${dev.vendorId}:${dev.productId}` }}</span>
+              <span class="meta">{{ usbDeviceKey(dev) }}</span>
+              <span v-if="vm.state === 'running'" class="dim-text" style="margin-left:auto">Stop VM to detach</span>
+              <AppButton v-else size="sm" variant="danger" style="margin-left:auto" :disabled="usbLoading || (isMemberDetail && !memberReachable)" @click="usbDetach(dev)">Detach</AppButton>
+            </div>
           </template>
-          <tr v-if="!attachedDisplayGPUs.length">
-            <td colspan="3">
-              <EmptyState title="No GPU attached" subtitle="Pass through a PCI GPU. Guest Ollama uses the card at 127.0.0.1:11434." />
-            </td>
-          </tr>
-        </DataTable>
-      </div>
-
-      <div v-if="pciReady" style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="font-size:16px;font-weight:700">PCI devices</h2>
-          <AppButton
-            size="sm"
-            icon="plus"
-            :disabled="isMemberDetail && !memberReachable"
-            @click="showAttachPCI = true; fetchPCIDevices()"
-          >Attach PCI device</AppButton>
         </div>
-        <p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px">
-          Pass through a NIC, NVMe, or other PCIe device with vfio-pci. The host boot disk and any remaining uplink cannot be attached.
-        </p>
-        <DataTable :columns="[{ key: 'pci', label: 'Device' }, { key: 'class', label: 'Class' }, { key: 'group', label: 'IOMMU group' }, { key: 'actions', label: '' }]">
-          <tr v-for="dev in attachedPCIDevices" :key="dev.pciAddress">
-            <td>
-              <div style="font-weight:500">{{ dev.label || dev.pciAddress }}</div>
-              <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">{{ dev.pciAddress }} {{ dev.vendorId }}:{{ dev.deviceId }}</div>
-            </td>
-            <td><span class="badge badge-gray">{{ pciClassLabel(dev.pciClass || '') }}</span></td>
-            <td>
+
+        <div class="sheet">
+          <div class="sheet-head">
+            <h3>GPU passthrough</h3>
+            <AppButton
+              size="sm"
+              icon="plus"
+              :disabled="!gpuReady || (isMemberDetail && !memberReachable)"
+              :title="gpuReady ? undefined : gpuExplanation"
+              @click="showAttachGPU = true; fetchGPUDevices()"
+            >Attach GPU</AppButton>
+          </div>
+          <div v-if="!gpuReady" class="item none">
+            <span>None<span class="note">{{ gpuExplanation }}</span></span>
+          </div>
+          <template v-else>
+            <p v-if="singleGPUDisplay" role="alert" class="item none" style="color:var(--red);font-weight:700">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
+            <div v-if="!attachedDisplayGPUs.length" class="item none">
+              <span>None<span class="note">Pass through a PCI GPU. Guest Ollama uses the card at {{ GUEST_OLLAMA_PATH }}.</span></span>
+            </div>
+            <template v-for="group in attachedGPUGroups" :key="group.key">
+              <div class="item none" style="font-weight:600;color:var(--text)">{{ group.label }}</div>
+              <div v-for="dev in group.devices" :key="dev.pciAddress" class="item">
+                <span class="name">{{ dev.label || dev.pciAddress }}</span>
+                <span class="meta">{{ dev.pciAddress }}</span>
+                <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
+                <span v-if="!gpuDetachAllowed(vm.state)" class="dim-text" style="margin-left:auto">Stop the Workload to detach</span>
+                <AppButton v-else size="sm" variant="danger" style="margin-left:auto" :disabled="gpuLoading || (isMemberDetail && !memberReachable)" @click="gpuDetach(dev)">Detach</AppButton>
+              </div>
+            </template>
+          </template>
+        </div>
+
+        <div class="sheet">
+          <div class="sheet-head">
+            <h3>PCI devices</h3>
+            <AppButton
+              size="sm"
+              icon="plus"
+              :disabled="!pciReady || (isMemberDetail && !memberReachable)"
+              @click="showAttachPCI = true; fetchPCIDevices()"
+            >Attach PCI device</AppButton>
+          </div>
+          <div v-if="!pciReady" class="item none">None</div>
+          <template v-else>
+            <div v-if="!attachedPCIDevices.length" class="item none">None</div>
+            <div v-for="dev in attachedPCIDevices" :key="dev.pciAddress" class="item">
+              <span class="name">{{ dev.label || dev.pciAddress }}</span>
+              <span class="meta">{{ pciClassLabel(dev.pciClass || '') }}</span>
               <span class="badge badge-gray">{{ dev.iommuGroup }}</span>
-              <div style="font-size:11px;color:var(--text-dim)">Group mates: {{ gpuGroupMatesLabel(dev.pciAddress, dev.groupAddresses) }}</div>
-            </td>
-            <td style="text-align:right">
-              <span v-if="!gpuDetachAllowed(vm?.state)" style="font-size:12px;color:var(--text-dim)">Stop the Workload to detach</span>
-              <AppButton v-else size="sm" variant="danger" :disabled="pciLoading || (isMemberDetail && !memberReachable)" @click="pciDetach(dev)">Detach</AppButton>
-            </td>
-          </tr>
-          <tr v-if="!attachedPCIDevices.length">
-            <td colspan="4">
-              <EmptyState title="No PCI device attached" subtitle="Pass through a host NIC, NVMe, or other PCIe function." />
-            </td>
-          </tr>
-        </DataTable>
+              <span v-if="!gpuDetachAllowed(vm.state)" class="dim-text" style="margin-left:auto">Stop the Workload to detach</span>
+              <AppButton v-else size="sm" variant="danger" style="margin-left:auto" :disabled="pciLoading || (isMemberDetail && !memberReachable)" @click="pciDetach(dev)">Detach</AppButton>
+            </div>
+          </template>
+        </div>
+
+        <div class="sheet">
+          <div class="sheet-head"><h3>Recent events</h3></div>
+          <div v-for="(ev, i) in recentEvents" :key="i" class="ev">
+            <span class="when">{{ ev.when }}</span>
+            <span class="what" :class="{ bad: ev.bad }">
+              <span class="ops-dot" :class="ev.bad ? 'bad' : ev.warn ? 'warn' : 'off'"></span>
+              {{ ev.what }}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1850,10 +1860,10 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       :device="isMemberDetail ? memberDevice : undefined"
     />
     <LogsPanel
-      v-if="isMemberDetail && tab === 'logs'"
-      :key="`logs-${hostId}-${vmId}`"
+      v-if="tab === 'logs'"
+      :key="`logs-${isMemberDetail ? hostId : 'local'}-${vmId}`"
       :vm-id="vmId"
-      :device="memberDevice"
+      :device="isMemberDetail ? memberDevice : undefined"
     />
 
     <!-- Attach USB Device Modal -->
@@ -1993,7 +2003,8 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
         </div>
       </div>
     </div>
-  </div>
+    </div>
+  </template>
 
   <!-- Folder Picker -->
   <FolderPicker
@@ -2140,9 +2151,17 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
+.vm-toolbar {
+  height: auto;
+  min-height: 58px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
 .empty p,
 .list-error {
   color: var(--text-secondary);
@@ -2172,58 +2191,129 @@ const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 .edit-field select {
   width: 100%;
 }
-.pending-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--amber-muted);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--amber, #f59e0b);
-}
-.session-nopush {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.12);
+.back-icon.back-labeled {
+  width: auto;
+  padding: 0 10px;
+  gap: 7px;
+  font-size: 12.5px;
   font-weight: 600;
 }
-.emu-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--amber-muted);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--amber, #f59e0b);
+.twins {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
 }
-.bridge-banner {
+.col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.sheet {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.sheet-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--red-muted, rgba(248, 113, 113, 0.1));
-  border: 1px solid rgba(248, 113, 113, 0.25);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  color: var(--red, #f87171);
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.sheet-head h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+.sheet-head .app-btn,
+.sheet-head :deep(.app-btn) {
+  margin-left: auto;
+}
+.sheet-sub {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-weight: 700;
+  margin: 0;
+}
+.facts {
+  padding: 2px 14px 6px;
+}
+.ok-text { color: var(--green); }
+.dim-text { color: var(--text-dim); }
+.fact-edit {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.fact-edit:disabled { opacity: 0.35; cursor: default; }
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+.item.none { color: var(--text-dim); font-size: 12px; }
+.item .name { font-weight: 600; color: var(--text); text-decoration: none; }
+.item .meta { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.item .note { display: block; color: var(--text-dim); font-size: 11.5px; margin-top: 2px; }
+.tag-boot {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(0,144,248,0.14);
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ev {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.ev:last-child { border-bottom: none; }
+.ev .when { width: 150px; flex-shrink: 0; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ev .what { display: flex; align-items: center; gap: 8px; }
+.ev .what.bad { color: var(--red); font-weight: 600; }
+.ops-banner-sub strong {
+  color: var(--red);
 }
 .detail-grid {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
+.facts .detail-row {
+  padding: 8px 0;
+}
+.facts .detail-label {
+  width: 118px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+}
+@media (max-width: 900px) {
+  .twins { grid-template-columns: 1fr; }
+}
 .detail-row {
   display: flex;
   align-items: center;
   padding: 14px 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--line);
 }
 .detail-row:last-child { border-bottom: none; }
 .detail-row > span:not(.detail-label) {

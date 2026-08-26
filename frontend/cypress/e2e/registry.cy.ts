@@ -9,14 +9,32 @@ describe('Repositories / Registry', () => {
     cy.contains('button', 'Manage').should('exist')
   })
 
-  it('shows Templates / Images tab bar', () => {
-    cy.get('.tab-bar .tab-btn').should('have.length', 2)
-    cy.get('.tab-btn').contains('Templates').should('exist')
-    cy.get('.tab-btn').contains('Images').should('exist')
+  it('empty catalog is a Catalog hero without tabs', () => {
+    cy.get('body').then(($b) => {
+      if ($b.find('.hero').length) {
+        cy.contains('h2', 'Your catalog is empty').should('be.visible')
+        cy.get('.tab-bar').should('not.exist')
+        cy.get('.stat-row .lbl').should('contain', 'Templates')
+        cy.get('.stat-row .lbl').should('contain', 'Images')
+        cy.get('.ops-body').should('have.class', 'catalog')
+      }
+    })
   })
 
-  it('Templates tab is active by default', () => {
-    cy.get('.tab-btn.active').should('contain', 'Templates')
+  it('shows Templates / Images tab bar when the catalog has items', () => {
+    cy.get('body').then(($b) => {
+      if ($b.find('.hero').length) return
+      cy.get('.tab-bar .tab-btn').should('have.length', 2)
+      cy.get('.tab-btn').contains('Templates').should('exist')
+      cy.get('.tab-btn').contains('Images').should('exist')
+    })
+  })
+
+  it('Templates tab is active by default when the catalog has items', () => {
+    cy.get('body').then(($b) => {
+      if ($b.find('.hero').length) return
+      cy.get('.tab-btn.active').should('contain', 'Templates')
+    })
   })
 
   it('tab bar shows counts', () => {

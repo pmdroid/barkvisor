@@ -12,37 +12,32 @@ import {
 } from 'chart.js'
 import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
-import type { CurrentHostCapabilities, HomeDeviceHealthSnapshot, HostGPUDevice, SystemAbout, SystemStatsSample } from '../api/types'
+import type { HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
 import AppButton from '../components/ui/AppButton.vue'
-import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
-import StopButtonGroup from '../components/ui/StopButtonGroup.vue'
-import UnsupportedHint from '../components/ui/UnsupportedHint.vue'
+import { useDeviceDisksStore } from '../stores/deviceDisks'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
-import { parseSystemCapabilities } from '../utils/capabilitiesParse'
-import { GUEST_OLLAMA_PATH, GPU_SINGLE_DISPLAY_WARNING, gpuGroupMatesLabel, gpuHostOccupancyLabel, gpuPassthroughExplanation, gpuPassthroughSupported, groupGpusByVendor } from '../utils/gpuPassthrough'
 import {
   emptyDeviceStatsChartSeries,
   latestGpuPercent,
   mapStatsHistorySamples,
   shouldFetchDeviceStatsHistory,
 } from '../utils/deviceStatsHistory'
-import { canFetchDeviceWorkloads, deviceAboutPath, deviceCapabilitiesPath, deviceGpuDevicesPath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
+import { canFetchDeviceWorkloads, deviceAboutPath, devicePath, deviceStatsHistoryPath } from '../utils/homeDeviceApi'
 import { parseSystemAbout } from '../utils/systemAbout'
 import {
-  deviceResourcesLine,
-  deviceWorkloadLine,
   reachabilityHint,
   reachabilityLabel,
-  reachabilityPillClass,
 } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
-import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
+import { opsStatusClass, opsStatusLabel, vmHealth } from '../utils/workloadHealth'
+import { formatCores, formatMemoryMB, formatPortForwards, formatTemperatureC, formatVolumeUsed } from '../utils/format'
+import { acceleratorLabel, listBackendBadge, vmBackend } from '../utils/workloadBackend'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
 
@@ -50,12 +45,12 @@ const route = useRoute()
 const router = useRouter()
 const devices = useDevicesStore()
 const workloads = useDeviceWorkloadsStore()
+const disks = useDeviceDisksStore()
 const toast = useToastStore()
 
 const hostId = computed(() => String(route.params.hostId ?? ''))
 const device = computed(() => devices.deviceByHostId(hostId.value))
 const reachLabel = computed(() => reachabilityLabel(device.value?.reachability))
-const reachPill = computed(() => reachabilityPillClass(device.value?.reachability))
 const reachHint = computed(() => (device.value ? reachabilityHint(device.value) : null))
 const title = computed(() => {
   if (!device.value) return hostId.value
@@ -82,16 +77,55 @@ const showLoadingWorkloads = computed(() =>
 const restartLoading = reactive<Record<string, boolean>>({})
 const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } | null>(null)
 const showCreate = ref(false)
-const deviceCaps = ref<CurrentHostCapabilities | null>(null)
-const hostGPUs = ref<HostGPUDevice[]>([])
 const deviceAbout = ref<SystemAbout | null>(null)
-const aboutReady = ref(false)
+const deviceStats = ref<SystemStats | null>(null)
 
-const gpuReady = computed(() => gpuPassthroughSupported(deviceCaps.value))
-const gpuExplanation = computed(() => gpuPassthroughExplanation(deviceCaps.value))
-const hostGPUGroups = computed(() => groupGpusByVendor(hostGPUs.value))
-const workloadLine = computed(() => (device.value ? deviceWorkloadLine(device.value) : ''))
-const resourcesLine = computed(() => (device.value ? deviceResourcesLine(device.value) : null))
+const failedVms = computed(() => vms.value.filter((vm) => vmHealth(vm) === 'failed'))
+
+function formatUptime(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return ''
+  const mins = Math.floor(seconds / 60)
+  if (mins < 1) return `${Math.floor(seconds)}s`
+  const hours = Math.floor(mins / 60)
+  if (hours < 1) return `${mins}m`
+  const days = Math.floor(hours / 24)
+  if (days < 1) return `${hours}h ${mins % 60}m`
+  if (hours % 24 === 0) return `${days} day${days === 1 ? '' : 's'}`
+  return `${days}d ${hours % 24}h`
+}
+
+const osFact = computed(() => {
+  if (deviceAbout.value) return `${deviceAbout.value.platform} · ${deviceAbout.value.hostArch}`
+  return platformLabel.value
+})
+const roleFact = computed(() => (device.value?.role === 'self' ? `This ${DEVICE_LABEL}` : 'Member'))
+const cpuFact = computed(() => {
+  const count = device.value?.resources?.cpuCount
+  if (count == null) return ''
+  const load = device.value?.resources?.cpuLoadPercent
+  return load == null ? formatCores(count) : `${formatCores(count)} · ${load.toFixed(0)}% used`
+})
+const memoryFact = computed(() => {
+  const total = device.value?.resources?.memoryTotalMB
+  const used = device.value?.resources?.memoryUsedMB
+  if (total == null) return ''
+  if (used == null) return formatMemoryMB(total)
+  return `${formatMemoryMB(total)} · ${formatMemoryMB(used)} used`
+})
+const storageFact = computed(() => {
+  const summary = disks.summaryFor(hostId.value)
+  if (!summary || !summary.volumeTotalBytes) return ''
+  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
+})
+const temperatureFact = computed(() => formatTemperatureC(deviceStats.value?.metrics?.temperatureC) ?? '')
+const addressFact = computed(() => device.value?.agentHost || '')
+const uptimeFact = computed(() => formatUptime(deviceAbout.value?.processUptimeSeconds))
+const virtFact = computed(() => {
+  if (deviceAbout.value?.accelerator) return acceleratorLabel(deviceAbout.value.accelerator)
+  if (device.value?.features?.kvmDevice) return 'KVM'
+  return ''
+})
+const virtAvailable = computed(() => Boolean(device.value?.features?.kvmDevice || deviceAbout.value?.accelerator))
 
 const history = reactive(emptyDeviceStatsChartSeries())
 
@@ -133,6 +167,7 @@ const cpuSparkOpts = computed(() => makeSparkOpts(100))
 const memSparkOpts = computed(() =>
   makeSparkOpts(history.memoryTotalGB != null ? Math.ceil(history.memoryTotalGB) : undefined),
 )
+const gpuSparkOpts = computed(() => makeSparkOpts(100))
 
 const cpuSparkData = computed(() => ({
   labels: history.labels,
@@ -154,7 +189,6 @@ const memSparkData = computed(() => ({
   }],
 }))
 
-const gpuSparkOpts = computed(() => makeSparkOpts(100))
 const gpuSparkData = computed(() => ({
   labels: history.labels,
   datasets: [{
@@ -167,25 +201,41 @@ const gpuSparkData = computed(() => ({
 
 const latestCpu = computed(() => {
   if (history.cpu.length) return history.cpu[history.cpu.length - 1]
+  if (deviceStats.value) return deviceStats.value.hostCpuPercent
   return device.value?.resources?.cpuLoadPercent ?? null
 })
 const latestMemoryGB = computed(() => {
   if (history.memoryGB.length) return history.memoryGB[history.memoryGB.length - 1]
-  const used = device.value?.resources?.memoryUsedMB
+  const used = deviceStats.value?.hostMemoryUsedMB ?? device.value?.resources?.memoryUsedMB
   return used != null ? used / 1024 : null
 })
 const memoryTotalGB = computed(() => {
   if (history.memoryTotalGB != null) return history.memoryTotalGB
-  const total = device.value?.resources?.memoryTotalMB
+  const total = deviceStats.value?.hostMemoryTotalMB ?? device.value?.resources?.memoryTotalMB
   return total != null ? total / 1024 : null
 })
 const latestGpu = computed(() => latestGpuPercent(history.gpu))
 const gpuSparkReady = computed(() => history.gpu.filter((value) => value != null).length > 1)
 
+function failedBannerSub(): string {
+  if (failedVms.value.length === 1) {
+    const vm = failedVms.value[0]!
+    const err = vm.status?.healthError
+    return err ? `${vm.name} — ${err}` : `${vm.name} is down.`
+  }
+  return `${failedVms.value.map((vm) => vm.name).join(', ')} are down.`
+}
+
+function statusSub(vm: (typeof vms.value)[number]): string {
+  if (vmHealth(vm) !== 'failed') return ''
+  const err = vm.status?.healthError
+  const emu = listBackendBadge(vmBackend(vm))
+  return [err, emu?.label].filter(Boolean).join(' · ')
+}
+
 async function refreshAbout(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
     deviceAbout.value = null
-    aboutReady.value = true
     return
   }
   const host = row.hostId
@@ -197,38 +247,21 @@ async function refreshAbout(row: HomeDeviceHealthSnapshot | null = device.value)
     if (hostId.value !== host) return
     deviceAbout.value = null
   }
-  if (hostId.value === host) aboutReady.value = true
 }
 
-async function refreshCapabilities(row: HomeDeviceHealthSnapshot | null = device.value) {
+async function refreshStats(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row || !canFetchDeviceWorkloads(row)) {
-    deviceCaps.value = null
-    hostGPUs.value = []
+    deviceStats.value = null
     return
   }
   const host = row.hostId
   try {
-    const { data } = await api.get(deviceCapabilitiesPath(row))
+    const { data } = await api.get<SystemStats>(devicePath(row, '/system/stats'))
     if (hostId.value !== host) return
-    deviceCaps.value = parseSystemCapabilities(data)
+    deviceStats.value = data
   } catch {
     if (hostId.value !== host) return
-    deviceCaps.value = null
-  }
-  try {
-    const { data } = await api.get<HostGPUDevice[]>(deviceGpuDevicesPath(row))
-    if (hostId.value !== host) return
-    hostGPUs.value = Array.isArray(data) ? data : []
-  } catch {
-    if (hostId.value !== host) return
-    hostGPUs.value = []
-  }
-}
-
-function clearHostTransientState() {
-  stopConfirm.value = null
-  for (const id of Object.keys(restartLoading)) {
-    delete restartLoading[id]
+    deviceStats.value = null
   }
 }
 
@@ -247,12 +280,22 @@ async function refreshHistory(row: HomeDeviceHealthSnapshot | null = device.valu
   }
 }
 
+function clearHostTransientState() {
+  stopConfirm.value = null
+  for (const id of Object.keys(restartLoading)) {
+    delete restartLoading[id]
+  }
+}
+
 async function refreshDevice(row: HomeDeviceHealthSnapshot | null = device.value) {
   if (!row) return
   await workloads.fetchFor(row)
   await refreshAbout(row)
-  await refreshCapabilities(row)
+  await refreshStats(row)
   await refreshHistory(row)
+  if (canFetchDeviceWorkloads(row)) {
+    await disks.fetchSummary(row)
+  }
 }
 
 let refreshSeq = 0
@@ -276,9 +319,7 @@ watch(hostId, () => {
   clearHostTransientState()
   resetHistory()
   deviceAbout.value = null
-  aboutReady.value = false
-  deviceCaps.value = null
-  hostGPUs.value = []
+  deviceStats.value = null
   void refresh()
 })
 
@@ -332,11 +373,34 @@ async function doStop() {
 </script>
 
 <template>
-  <div class="device-detail">
-    <button class="back-link" type="button" @click="router.push('/devices')">
-      ← {{ DEVICE_LABEL }}s
-    </button>
+  <div class="ops-page">
+    <div class="ops-toolbar">
+      <button class="back" type="button" @click="router.push('/devices')">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5L3 6l4.5 4.5"/></svg>
+        {{ DEVICE_LABEL }}s
+      </button>
+      <h1>{{ device ? title : hostId }}</h1>
+      <span v-if="device" :class="device.reachability === 'ok' ? 'pill-ok' : 'pill-bad'">
+        <span class="ops-dot" :class="device.reachability === 'ok' ? 'ok' : 'bad'"></span>
+        {{ reachLabel }}
+      </span>
+      <span v-if="device" class="ops-sub">
+        <template v-if="platformLabel">{{ platformLabel }} · </template>
+        {{ roleFact }}
+      </span>
+      <div v-if="device" class="ops-actions">
+        <AppButton
+          v-if="canFetchDeviceWorkloads(device)"
+          variant="primary"
+          icon="plus"
+          @click="showCreate = true"
+        >
+          Create VM
+        </AppButton>
+      </div>
+    </div>
 
+    <div class="ops-body">
     <div v-if="!device && (devices.loading || !healthReady)" class="missing">
       <p>Loading {{ DEVICE_LABEL.toLowerCase() }}...</p>
     </div>
@@ -356,35 +420,37 @@ async function doStop() {
     </div>
 
     <template v-else-if="device">
-      <div class="detail-header">
+      <div v-if="!canFetchDeviceWorkloads(device)" class="ops-banner">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
         <div>
-          <h1>{{ title }}</h1>
-          <p class="detail-meta">
-            <span v-if="device.role === 'self'" class="device-chip self">This {{ DEVICE_LABEL }}</span>
-            <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
-            <span v-if="platformLabel">{{ platformLabel }}</span>
-          </p>
-          <p class="detail-workload">{{ workloadLine }}</p>
-          <p v-if="resourcesLine" class="detail-res">{{ resourcesLine }}</p>
-        </div>
-        <div class="detail-actions">
-          <AppButton
-            v-if="canFetchDeviceWorkloads(device)"
-            variant="primary"
-            icon="plus"
-            @click="showCreate = true"
-          >
-            Create VM
-          </AppButton>
-          <span class="status-pill" :class="reachPill">
-            {{ reachLabel }}
-          </span>
+          <div class="ops-banner-title">{{ reachLabel }}</div>
+          <div class="ops-banner-sub">{{ reachHint }} Workload counts are not shown.</div>
         </div>
       </div>
 
+      <div v-if="failedVms.length" class="ops-banner">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
+        <div>
+          <div class="ops-banner-title">
+            <span class="ops-dot bad pulse"></span>
+            {{ failedVms.length }} Workload{{ failedVms.length === 1 ? '' : 's' }} failed
+          </div>
+          <div class="ops-banner-sub">{{ failedBannerSub() }}</div>
+        </div>
+        <button
+          v-if="failedVms.length === 1"
+          type="button"
+          class="mini go"
+          :disabled="workloads.isActing(hostId, failedVms[0]!.id)"
+          @click="doStart(failedVms[0]!.id)"
+        >
+          {{ workloads.isActing(hostId, failedVms[0]!.id) ? 'Starting...' : `Start ${failedVms[0]!.name}` }}
+        </button>
+      </div>
+
       <div v-if="shouldFetchDeviceStatsHistory(device)" class="stat-grid">
-        <div class="dash-stat" style="border-left: 3px solid var(--accent)">
-          <div class="dash-stat-spark" v-if="history.cpu.length > 1">
+        <div class="dash-stat cpu">
+          <div v-if="history.cpu.length > 1" class="dash-stat-spark">
             <Line :data="cpuSparkData" :options="cpuSparkOpts" />
           </div>
           <div class="dash-stat-content">
@@ -395,8 +461,8 @@ async function doStop() {
             <div class="dash-stat-label">CPU</div>
           </div>
         </div>
-        <div class="dash-stat" style="border-left: 3px solid var(--green)">
-          <div class="dash-stat-spark" v-if="history.memoryGB.length > 1">
+        <div class="dash-stat mem">
+          <div v-if="history.memoryGB.length > 1" class="dash-stat-spark">
             <Line :data="memSparkData" :options="memSparkOpts" />
           </div>
           <div class="dash-stat-content">
@@ -410,8 +476,8 @@ async function doStop() {
             <div class="dash-stat-label">Memory</div>
           </div>
         </div>
-        <div class="dash-stat" style="border-left: 3px solid #a855f7">
-          <div class="dash-stat-spark" v-if="gpuSparkReady">
+        <div class="dash-stat gpu">
+          <div v-if="gpuSparkReady" class="dash-stat-spark">
             <Line :data="gpuSparkData" :options="gpuSparkOpts" />
           </div>
           <div class="dash-stat-content">
@@ -424,57 +490,56 @@ async function doStop() {
         </div>
       </div>
 
-      <div v-if="canFetchDeviceWorkloads(device) && aboutReady" class="gpu-card">
-        <div class="gpu-card-title">About</div>
-        <dl v-if="deviceAbout" class="about-rows">
-          <div>
-            <dt>Device version</dt>
-            <dd>{{ deviceAbout.version }}</dd>
+      <div class="sheet about-sheet">
+        <div class="sheet-head"><h3>Facts</h3></div>
+        <div class="sheet-grid">
+          <div v-if="osFact" class="fact">
+            <span class="k">OS</span>
+            <span class="v">{{ osFact }}</span>
           </div>
-          <div>
-            <dt>Platform</dt>
-            <dd>{{ deviceAbout.platform }} · {{ deviceAbout.hostArch }}</dd>
+          <div class="fact">
+            <span class="k">Role</span>
+            <span class="v">{{ roleFact }}</span>
           </div>
-          <div>
-            <dt>Accelerator</dt>
-            <dd>{{ deviceAbout.accelerator }}</dd>
+          <div v-if="cpuFact" class="fact">
+            <span class="k">CPU</span>
+            <span class="v">{{ cpuFact }}</span>
           </div>
-          <div>
-            <dt>Uptime</dt>
-            <dd>{{ deviceAbout.processUptimeSeconds }}s</dd>
+          <div v-if="memoryFact" class="fact">
+            <span class="k">Memory</span>
+            <span class="v">{{ memoryFact }}</span>
           </div>
-        </dl>
-        <p v-else class="gpu-card-status">Could not load this {{ DEVICE_LABEL.toLowerCase() }} version.</p>
-      </div>
-
-      <div v-if="deviceCaps" class="gpu-card">
-        <div class="gpu-card-title">GPU passthrough</div>
-        <p class="gpu-card-status">{{ gpuReady ? 'This Device reports IOMMU, vfio-pci, and KVM.' : 'Not available on this Device.' }}</p>
-        <UnsupportedHint :text="gpuExplanation" />
-        <p v-if="gpuReady && hostGPUs.length === 1" class="gpu-warning" role="alert">{{ GPU_SINGLE_DISPLAY_WARNING }}</p>
-        <div v-if="hostGPUs.length" class="gpu-list">
-          <section v-for="group in hostGPUGroups" :key="group.key" class="gpu-vendor-group">
-            <h3 class="gpu-vendor">{{ group.label }}</h3>
-            <ul>
-              <li v-for="gpu in group.devices" :key="gpu.pciAddress">
-                <span class="gpu-name">{{ gpu.name }}</span>
-                <span class="gpu-meta">{{ gpu.pciAddress }} · IOMMU {{ gpu.iommuGroup }}</span>
-                <span class="gpu-meta">Group mates: {{ gpuGroupMatesLabel(gpu.pciAddress, gpu.groupAddresses) }}</span>
-                <span v-if="gpu.claimedByVMName" class="gpu-busy">Attached to {{ gpu.claimedByVMName }}</span>
-                <span v-else-if="gpu.inUseByHost" class="gpu-busy">{{ gpuHostOccupancyLabel(true) }}</span>
-              </li>
-            </ul>
-          </section>
+          <div v-if="storageFact" class="fact">
+            <span class="k">Storage</span>
+            <span class="v">{{ storageFact }}</span>
+          </div>
+          <div v-if="temperatureFact" class="fact">
+            <span class="k">Temperature</span>
+            <span class="v">{{ temperatureFact }}</span>
+          </div>
+          <div v-if="addressFact" class="fact">
+            <span class="k">Address</span>
+            <span class="v mono">{{ addressFact }}</span>
+          </div>
+          <div v-if="uptimeFact" class="fact">
+            <span class="k">Uptime</span>
+            <span class="v">{{ uptimeFact }}</span>
+          </div>
+          <div v-if="virtFact" class="fact">
+            <span class="k">Virtualization</span>
+            <span class="v">
+              {{ virtFact }}
+              <span v-if="virtAvailable" class="ops-ok-text">available</span>
+            </span>
+          </div>
+          <div v-if="deviceAbout" class="fact">
+            <span class="k">Agent</span>
+            <span class="v">barkvisord {{ deviceAbout.version }}</span>
+          </div>
         </div>
-        <p v-if="gpuReady" class="gpu-card-status">Guest Ollama path: {{ GUEST_OLLAMA_PATH }}</p>
       </div>
 
-      <p v-if="!canFetchDeviceWorkloads(device)" class="unreachable-copy">
-        {{ reachHint }}
-        Workload counts are not shown.
-      </p>
-
-      <template v-else>
+      <template v-if="canFetchDeviceWorkloads(device)">
         <p v-if="listError" class="list-error">{{ listError }}</p>
 
         <EmptyState
@@ -485,65 +550,58 @@ async function doStop() {
 
         <p v-else-if="showLoadingWorkloads" class="list-loading">Loading workloads...</p>
 
-        <DataTable
-          v-else-if="listSettled || vms.length > 0"
-          :columns="[
-            { key: 'name', label: 'Workload' },
-            { key: 'resources', label: 'Resources' },
-            { key: 'status', label: 'Status' },
-            { key: 'actions', label: '' },
-          ]"
-        >
-          <tr v-for="vm in vms" :key="vm.id" class="vm-row" @click="openWorkload(vm)">
+        <div v-else-if="listSettled || vms.length > 0" class="sheet workloads-sheet">
+        <div class="sheet-head"><h3>Workloads</h3><span class="n">{{ vms.length }}</span></div>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>OS</th><th>CPU · Mem</th><th>Ports</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+          <tr v-for="vm in vms" :key="vm.id" class="vm-row" :class="{ failed: vmHealth(vm) === 'failed' }" @click="openWorkload(vm)">
             <td>
-              <div class="vm-name">{{ vm.name }}</div>
-              <div v-if="vm.description" class="vm-desc">{{ vm.description }}</div>
+              <div class="vm">{{ vm.name }}</div>
             </td>
-            <td class="vm-res">
-              {{ vm.cpuCount }} CPU ·
-              {{ vm.memoryMB >= 1024
-                ? (vm.memoryMB / 1024).toFixed(vm.memoryMB % 1024 === 0 ? 0 : 1) + ' GB'
-                : vm.memoryMB + ' MB' }}
-            </td>
+            <td>{{ vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</td>
+            <td class="num">{{ formatCores(vm.cpuCount) }} · {{ formatMemoryMB(vm.memoryMB) }}</td>
+            <td class="ports">{{ formatPortForwards(vm.portForwards) }}</td>
             <td>
               <span
-                class="status-pill"
-                :class="healthPillClass(vmHealth(vm))"
+                class="state"
+                :class="opsStatusClass(vmHealth(vm))"
                 :title="vm.status?.healthError || undefined"
-              >{{ healthLabel(vmHealth(vm)) }}</span>
+              >
+                <span
+                  class="ops-dot"
+                  :class="[opsStatusClass(vmHealth(vm)), { pulse: vmHealth(vm) === 'failed' }]"
+                ></span>
+                {{ opsStatusLabel(vmHealth(vm)) }}
+              </span>
+              <div v-if="statusSub(vm)" class="row-sub ops-bad-text">{{ statusSub(vm) }}</div>
             </td>
-            <td>
-              <div class="vm-actions" @click.stop>
-                <AppButton
-                  v-if="vm.state === 'stopped' || vm.state === 'error'"
-                  variant="primary"
-                  size="sm"
-                  :disabled="workloads.isActing(hostId, vm.id)"
-                  @click="doStart(vm.id)"
-                >
-                  {{ workloads.isActing(hostId, vm.id) ? 'Starting...' : 'Start' }}
-                </AppButton>
-                <template v-else-if="vm.state === 'running'">
-                  <AppButton
-                    variant="warning"
-                    size="sm"
-                    :disabled="restartLoading[vm.id] || workloads.isActing(hostId, vm.id)"
-                    @click="doRestart(vm.id)"
-                  >
-                    {{ restartLoading[vm.id] ? 'Restarting...' : 'Restart' }}
-                  </AppButton>
-                  <StopButtonGroup
-                    size="sm"
-                    :loading="workloads.isActing(hostId, vm.id)"
-                    @stop="requestStop(vm.id, $event)"
-                  />
-                </template>
-              </div>
+            <td class="acts" @click.stop>
+              <button
+                v-if="vm.state === 'stopped' || vm.state === 'error'"
+                type="button"
+                class="mini go"
+                :disabled="workloads.isActing(hostId, vm.id)"
+                @click="doStart(vm.id)"
+              >
+                {{ workloads.isActing(hostId, vm.id) ? 'Starting...' : 'Start' }}
+              </button>
+              <template v-else-if="vm.state === 'running'">
+                <button type="button" class="mini" :disabled="workloads.isActing(hostId, vm.id)" @click="requestStop(vm.id, 'acpi')">Stop</button>
+                <button type="button" class="mini" :disabled="restartLoading[vm.id] || workloads.isActing(hostId, vm.id)" @click="doRestart(vm.id)">
+                  {{ restartLoading[vm.id] ? 'Restarting...' : 'Restart' }}
+                </button>
+              </template>
             </td>
           </tr>
-        </DataTable>
+          </tbody>
+        </table>
+        </div>
       </template>
     </template>
+    </div>
 
     <CreateVMDrawer
       v-if="showCreate && device"
@@ -566,92 +624,25 @@ async function doStop() {
 </template>
 
 <style scoped>
-.device-detail {
-  min-width: 0;
-  max-width: 100%;
-}
-.back-link {
-  background: none;
-  border: 0;
-  padding: 0;
-  margin: 0 0 16px;
-  color: var(--text-dim);
-  font-size: 13px;
-  cursor: pointer;
-}
-.back-link:hover { color: var(--text-primary); }
-.detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 20px;
-  min-width: 0;
-}
-.detail-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.detail-header h1 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-.detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-.device-chip {
-  display: inline-flex;
-  padding: 2px 8px;
-  border-radius: 2px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 10px;
-}
-.device-chip.self {
-  color: var(--green);
-  background: var(--green-muted);
-}
-.detail-workload,
-.detail-res {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.detail-res {
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-}
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 12px;
   min-width: 0;
 }
 .dash-stat {
   position: relative;
-  background: var(--bg-card);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--border-glass);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   min-width: 0;
-  min-height: 120px;
+  min-height: 96px;
+  border-left: 3px solid var(--accent);
 }
+.dash-stat.mem { border-left-color: var(--green); }
+.dash-stat.gpu { border-left-color: #a855f7; }
 .dash-stat-spark {
   position: absolute;
   inset: 0;
@@ -667,7 +658,7 @@ async function doStop() {
 .dash-stat-content {
   position: relative;
   z-index: 1;
-  padding: 20px;
+  padding: 14px;
 }
 .dash-stat-top {
   display: flex;
@@ -675,17 +666,17 @@ async function doStop() {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .dash-stat-number {
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   line-height: 1;
 }
 .dash-stat-number small {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -709,7 +700,6 @@ async function doStop() {
   font-weight: 600;
   color: var(--text-secondary);
 }
-.unreachable-copy,
 .list-error,
 .list-loading,
 .missing p {
@@ -721,111 +711,28 @@ async function doStop() {
 .list-loading { margin: 0 0 16px; }
 .missing h1 {
   margin: 0 0 8px;
-  font-size: 28px;
+  font-size: 20px;
 }
 .vm-row { cursor: pointer; }
 .vm-row:hover { background: var(--bg-hover); }
-.vm-name { font-weight: 500; }
-.vm-desc {
+.about-sheet {
+  margin-bottom: 14px;
+}
+.ops-banner {
+  align-items: center;
+}
+.ops-banner .mini {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.pill-ok .ops-dot {
+  background: #06251a;
+}
+.mono {
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-dim);
-  margin-top: 2px;
 }
-.vm-res {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.vm-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
-.about-rows {
-  margin: 8px 0 0;
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-.about-rows > div {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 13px;
-  min-width: 0;
-}
-.about-rows dt {
-  color: var(--text-secondary);
-}
-.about-rows dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-.gpu-card {
-  margin: 0 0 20px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-elevated, var(--bg-hover));
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.gpu-card-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-.gpu-card-status {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.gpu-list {
-  margin: 10px 0 0;
-}
-.gpu-vendor-group {
-  margin: 0 0 8px;
-}
-.gpu-vendor-group:last-child {
-  margin-bottom: 0;
-}
-.gpu-vendor {
-  margin: 0 0 2px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--text-secondary);
-}
-.gpu-list ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.gpu-list li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12px;
-  padding: 4px 0;
-}
-.gpu-name { font-weight: 500; }
-.gpu-meta { font-family: var(--font-mono); color: var(--text-dim); }
-.gpu-busy { color: var(--red); }
-.gpu-warning {
-  margin: 8px 0 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--red);
-}
-
-@media (max-width: 1024px) {
-  .detail-header h1,
-  .missing h1 { font-size: 24px; }
-}
-
 @media (max-width: 768px) {
-  .detail-header h1,
-  .missing h1 { font-size: 22px; }
   .stat-grid { grid-template-columns: 1fr; }
 }
 </style>
