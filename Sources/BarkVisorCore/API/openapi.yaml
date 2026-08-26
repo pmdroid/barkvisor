@@ -2954,6 +2954,20 @@ components:
           type: string
         createdAt:
           type: string
+        attachedTo:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiskAttachment"
+          description: VMs currently referencing this disk (boot or additional disk). Present on list/detail responses.
+
+    DiskAttachment:
+      type: object
+      required: [vmId, vmName]
+      properties:
+        vmId:
+          type: string
+        vmName:
+          type: string
 
     CreateDiskRequest:
       type: object

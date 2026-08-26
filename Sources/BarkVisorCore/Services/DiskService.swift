@@ -11,6 +11,16 @@ public struct DiskImageInfo: Codable, Sendable {
     }
 }
 
+public struct DiskAttachment: Codable, Equatable, Sendable {
+    public let vmId: String
+    public let vmName: String
+
+    public init(vmId: String, vmName: String) {
+        self.vmId = vmId
+        self.vmName = vmName
+    }
+}
+
 public struct StorageSummary: Sendable {
     public let totalVirtual: Int64
     public let totalActual: Int64
@@ -246,6 +256,31 @@ public enum DiskService {
     }
 
     // MARK: - High-level operations (extracted from DiskController)
+
+    public static func attachmentsByDiskId(vms: [VM], disks: [Disk]) -> [String: [DiskAttachment]] {
+        var map: [String: [DiskAttachment]] = [:]
+        for vm in vms {
+            let diskIds = [vm.bootDiskId] + vm.decodedAdditionalDiskIds
+            for diskId in diskIds where !diskId.isEmpty {
+                map[diskId, default: []].append(DiskAttachment(vmId: vm.id, vmName: vm.name))
+            }
+        }
+        let namesById = Dictionary(uniqueKeysWithValues: vms.map { ($0.id, $0.name) })
+        for disk in disks {
+            guard let vmId = disk.vmId, !vmId.isEmpty else { continue }
+            if map[disk.id]?.contains(where: { $0.vmId == vmId }) == true { continue }
+            map[disk.id, default: []].append(
+                DiskAttachment(vmId: vmId, vmName: namesById[vmId] ?? vmId),
+            )
+        }
+        return map
+    }
+
+    public static func attachmentsByDiskId(db: DatabasePool) async throws -> [String: [DiskAttachment]] {
+        try await db.read { db in
+            try attachmentsByDiskId(vms: VM.fetchAll(db), disks: Disk.fetchAll(db))
+        }
+    }
 
     public static func createDisk(
         name: String,
