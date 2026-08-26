@@ -34,11 +34,12 @@ public enum OllamaSettings {
 
     public static func snapshot(hostId: String, from db: Database) throws -> OllamaHostSettings {
         let loaded = try load(hostId: hostId, from: db)
-        return OllamaHostSettings(
+        return try OllamaHostSettings(
             hostId: hostId,
             endpoint: loaded.endpoint.absoluteString,
             hasApiKey: loaded.apiKey != nil,
             apiKeyMasked: maskedAPIKey(loaded.apiKey),
+            backend: InferenceSettings.storedRaw(hostId: hostId, from: db),
         )
     }
 
@@ -65,12 +66,16 @@ public enum OllamaSettings {
         endpoint: String?,
         apiKey: String?,
         updateApiKey: Bool,
+        backend: String? = nil,
         selfHostId: String,
         db: Database,
     ) throws -> OllamaSettingsSnapshot {
         let selfHostId = try requireHostId(selfHostId)
         try seedSelfFromLegacy(hostId: selfHostId, db: db)
         let target = try optionalHostId(hostId) ?? selfHostId
+        if let backend {
+            try InferenceSettings.save(InferenceBackendKind.parseStored(backend), hostId: target, db: db)
+        }
         let existing = try OllamaHostSettingRecord.fetch(db, hostId: target)
         var row = existing ?? OllamaHostSettingRecord(hostId: target, endpoint: nil, apiKey: nil)
         if let endpoint {
