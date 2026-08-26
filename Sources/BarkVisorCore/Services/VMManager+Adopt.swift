@@ -19,10 +19,14 @@ extension VMManager {
             if let previous = VMPidFile.parse(content) {
                 let pid = previous.qemuPid
                 let parsed = PlatformProcess.arguments(pid: pid).flatMap { QEMUArgv(arguments: $0) }
-                let owned = kill(pid, 0) == 0 && (parsed?.uuid.map {
-                    $0.caseInsensitiveCompare(vmID) == .orderedSame
-                } ?? true)
-                if owned {
+                let isQEMU = parsed != nil
+                    || (PlatformProcess.executablePath(pid: pid)?.contains("qemu-system") ?? false)
+                if QEMUArgv.reconnectDecision(
+                    pidAlive: kill(pid, 0) == 0,
+                    executableIsQEMU: isQEMU,
+                    argvUUID: parsed?.uuid,
+                    vmID: vmID,
+                ) == .adopt {
                     try await adoptRunningProcess(vmID: vmID, pid: pid, argv: parsed, previousPids: previous)
                     Log.vm.info("VM \(vmName): adopted existing QEMU (PID \(pid)) via pidfile", vm: vmID)
                     return true
@@ -74,9 +78,12 @@ extension VMManager {
             swtpmPid: swtpmPid,
             codingAgentHostPort: previousPids?.codingAgentHostPort,
         )
-        try? rewritten.serialized().write(
+        try rewritten.serialized().write(
             to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8,
         )
+
+        clearHealthError(for: vmID)
+        try await updateState(vmID: vmID, state: "running")
 
         await registerReconnectedVM(
             vmID: vmID,
@@ -107,9 +114,6 @@ extension VMManager {
         }
 
         await processMonitor?.watchProcess(vmID: vmID, pid: pid)
-
-        clearHealthError(for: vmID)
-        try await updateState(vmID: vmID, state: "running")
     }
 
     static func readPidFile(pidsDir: URL, vmID: String) -> VMPidFile? {

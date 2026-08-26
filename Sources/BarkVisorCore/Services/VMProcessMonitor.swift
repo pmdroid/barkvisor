@@ -124,6 +124,7 @@ public actor VMProcessMonitor {
                 "VM \(vmID): adopted QEMU PID \(pid) but failed to persist running state: \(error)",
                 vm: vmID,
             )
+            return false
         }
 
         Log.vm.info(
@@ -195,7 +196,7 @@ public actor VMProcessMonitor {
             "Reconnected VM \(vmID) (PID: \(pid)) has exited (expected: \(wasExpected))", vm: vmID,
         )
         if let vmManager {
-            await vmManager.handleTermination(vmID: vmID, status: exitStatus)
+            await vmManager.handleTermination(vmID: vmID, status: exitStatus, pid: pid)
         }
         removeProcessSource(vmID: vmID)
     }

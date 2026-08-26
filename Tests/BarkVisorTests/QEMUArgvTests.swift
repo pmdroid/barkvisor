@@ -143,6 +143,21 @@ struct QEMUArgvTests {
         )
     }
 
+    @Test func `disk holder does not match a drive path prefix`() {
+        let backup: QEMUArgv.ProcessEntry = (
+            pid: 707,
+            arguments: [
+                "/usr/bin/qemu-system-x86_64",
+                "-uuid", Self.vmID,
+                "-drive", "file=\(Self.bootDisk).backup,format=qcow2",
+            ],
+        )
+        #expect(
+            QEMUArgv.diskHolder(diskPaths: [Self.bootDisk], vmID: Self.vmID, processes: [backup])
+                == nil,
+        )
+    }
+
     @Test func `disk holder ignores unrelated and non qemu processes`() {
         let unrelatedQemu: QEMUArgv.ProcessEntry = (
             pid: 404,

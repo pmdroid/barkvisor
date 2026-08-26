@@ -104,8 +104,9 @@ public struct QEMUArgv: Equatable, Sendable {
     }
 
     static func usesDisk(_ argv: QEMUArgv, _ diskPaths: [String]) -> Bool {
-        argv.arguments.contains { element in
-            diskPaths.contains { element.contains($0) }
+        let drives = Set(argv.driveFilePaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+        return diskPaths.contains { disk in
+            drives.contains(URL(fileURLWithPath: disk).standardizedFileURL.path)
         }
     }
 
