@@ -3,7 +3,7 @@ import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { HomeDeviceHealthSnapshot, HostBlockDevice, StorageSummary } from '../api/types'
+import type { DiskAttachment, HomeDeviceHealthSnapshot, HostBlockDevice, StorageSummary } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
@@ -22,6 +22,7 @@ import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { guestResizeCommands } from '../utils/guestAgentInstall'
 import { isReachabilityOk } from '../utils/homeDeviceHealth'
 import { formatBytes } from '../utils/format'
+import { diskAttachments, isDiskInUse } from '../utils/diskAttachment'
 import {
   canCallDeviceAPI,
   deviceBlockDevicesPath,
@@ -218,26 +219,28 @@ function usageFor(row: HomeDiskRow) {
   return diskUsages.value[row.disk.id]
 }
 
-function workloadName(row: HomeDiskRow): string {
-  const vmId = row.disk.vmId
-  if (!vmId) return ''
+function attachmentsFor(row: HomeDiskRow): DiskAttachment[] {
+  return diskAttachments(row.disk)
+}
+
+function attachmentName(row: HomeDiskRow, attachment: DiskAttachment): string {
+  if (attachment.vmName && attachment.vmName !== attachment.vmId) return attachment.vmName
+  const vmId = attachment.vmId
   if (useHomeUnion.value) {
     return homeWorkloads.vmFor(row.hostId, vmId)?.name || `${vmId.slice(0, 8)}...`
   }
   return vmStore.vms.find((vm) => vm.id === vmId)?.name || `${vmId.slice(0, 8)}...`
 }
 
-function workloadHref(row: HomeDiskRow): string {
-  if (!row.disk.vmId) return ''
-  return workloadDetailPath({ hostId: row.hostId, role: row.role, vm: { id: row.disk.vmId } })
+function workloadHref(row: HomeDiskRow, attachment: DiskAttachment): string {
+  return workloadDetailPath({ hostId: row.hostId, role: row.role, vm: { id: attachment.vmId } })
 }
 
-function openWorkload(row: HomeDiskRow) {
-  if (!row.disk.vmId) return
+function openWorkload(row: HomeDiskRow, attachment: DiskAttachment) {
   openWorkloadRow((path) => { router.push(path) }, {
     hostId: row.hostId,
     role: row.role,
-    vm: { id: row.disk.vmId },
+    vm: { id: attachment.vmId },
   })
 }
 
@@ -479,20 +482,21 @@ async function resizeDisk() {
       <td class="num">{{ formatBytes(row.disk.sizeBytes) }}</td>
       <td>
         <a
-          v-if="row.disk.vmId"
+          v-for="att in attachmentsFor(row)"
+          :key="att.vmId"
           class="vm-link"
-          :href="workloadHref(row)"
-          @click.prevent="openWorkload(row)"
+          :href="workloadHref(row, att)"
+          @click.prevent="openWorkload(row, att)"
         >
-          {{ workloadName(row) }}
+          <span class="badge badge-purple">In use by {{ attachmentName(row, att) }}</span>
         </a>
-        <span v-else class="badge badge-gray">Unattached</span>
+        <span v-if="!attachmentsFor(row).length" class="badge badge-gray">Unattached</span>
       </td>
       <td>
         <button v-if="canMutate(row) && !isBlockDisk(row)" type="button" class="mini" @click="openResize(row)">Resize</button>
       </td>
       <td>
-        <button v-if="canMutate(row) && !row.disk.vmId" type="button" class="mini danger" @click="deleteDisk(row)">Delete</button>
+        <button v-if="canMutate(row) && !isDiskInUse(row.disk)" type="button" class="mini danger" @click="deleteDisk(row)">Delete</button>
       </td>
     </tr>
     </tbody>

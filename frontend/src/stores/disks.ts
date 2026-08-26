@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed } from 'vue'
 import type { Disk, DiskUsage, StorageSummary } from '../api/types'
 import type { DiskWriteBody } from './deviceDisks'
+import { isDiskInUse } from '../utils/diskAttachment'
 import { thisDeviceTarget } from './homeInventory'
 import { useDeviceDisksStore } from './deviceDisks'
 import { useDevicesStore } from './devices'
@@ -36,7 +37,7 @@ export const useDiskStore = defineStore('disks', () => {
     return map
   })
 
-  const unattached = computed(() => disks.value.filter(d => !d.vmId))
+  const unattached = computed(() => disks.value.filter(d => !isDiskInUse(d)))
 
   async function fetchAll(opts: { withUsage?: boolean } = {}) {
     await home.fetchFor(selfTarget(), {

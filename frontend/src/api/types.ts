@@ -285,6 +285,11 @@ export interface CodingAgentSession {
   actions: Array<'resume' | 'reset' | 'burn' | string>
 }
 
+export interface DiskAttachment {
+  vmId: string
+  vmName: string
+}
+
 export interface Disk {
   id: string
   name: string
@@ -294,6 +299,7 @@ export interface Disk {
   vmId: string | null
   status: 'ready' | 'creating' | 'error'
   createdAt: string
+  attachedTo?: DiskAttachment[]
 }
 
 export interface DiskSettings {
