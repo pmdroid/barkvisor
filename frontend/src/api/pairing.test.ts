@@ -26,13 +26,14 @@ describe('PAS-51 pairing client', () => {
     expect(isPairingPayload('https://example/pair')).toBe(false)
   })
 
-  test('SetupView joins through /api/pairing/join only', () => {
+  test('SetupView is create-only; join is CLI', () => {
     const setup = readFileSync(join(here, '../views/SetupView.vue'), 'utf8')
-    expect(setup).toContain('joinHome')
-    expect(setup).toContain('Join an existing {{ HOME_LABEL }}')
     expect(setup).toContain('HOME_LABEL')
     expect(setup).toContain('DEVICE_LABEL')
-    expect(setup).toContain("barkvisor://pair/v1")
+    expect(setup).toContain('barkvisor join --code')
+    expect(setup).not.toContain('joinHome')
+    expect(setup).not.toContain('submitJoin')
+    expect(setup).not.toContain('startJoin')
     expect(setup).not.toMatch(/\b(?:nodes?|clusters?)\b/i)
     expect(setup).not.toContain('/api/pairing/redeem')
     expect(setup).not.toContain('OnboardingWizard')

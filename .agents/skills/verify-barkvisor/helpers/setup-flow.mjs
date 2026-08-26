@@ -14,7 +14,6 @@ const base = arg('base').replace(/\/$/, '')
 const user = arg('user', 'admin')
 const pass = arg('pass', 'setup-verify-pass')
 const dir = arg('dir')
-const joinPayload = arg('join-payload', '')
 const scrubs = []
 for (let i = 0; i < args.length; i++) if (args[i] === '--scrub') scrubs.push(args[i + 1])
 
@@ -33,7 +32,10 @@ async function applyScrubs(page) {
       let node
       while ((node = walk.nextNode())) nodes.push(node)
       for (node of nodes) {
-        if (re.test(node.textContent)) { re.lastIndex = 0; node.textContent = node.textContent.replace(re, repl) }
+        if (re.test(node.textContent)) {
+          re.lastIndex = 0
+          node.textContent = node.textContent.replace(re, repl)
+        }
         re.lastIndex = 0
       }
       document.title = document.title.replace(re, repl)
@@ -56,41 +58,24 @@ try {
   await page.waitForSelector('.shell', { timeout: 15000 })
   await shot('01-welcome')
 
-  if (joinPayload) {
-    await page.click('button:has-text("Join an existing")')
-    await page.fill('#setup-offer', joinPayload)
-    await shot('02-join-form')
-    await page.click('button:has-text("Join")')
-    await page.waitForSelector('h1:has-text("Joined your")', { timeout: 20000 })
-    await shot('03-join-ready')
-  } else {
-    await page.click('button:has-text("Set up this")')
-    await page.waitForSelector('h1:has-text("Create Admin Account")', { timeout: 10000 })
-    await page.fill('input[placeholder="admin"]', user)
-    await page.fill('input[placeholder="Minimum 10 characters"]', pass)
-    await page.fill('input[placeholder="Repeat password"]', pass)
-    await shot('02-admin')
-    await page.click('button:has-text("Continue")')
+  await page.click('button:has-text("Continue")')
+  await page.waitForSelector('h1:has-text("Create Admin Account")', { timeout: 10000 })
+  await page.fill('input[placeholder="admin"]', user)
+  await page.fill('input[placeholder="Minimum 10 characters"]', pass)
+  await page.fill('input[placeholder="Repeat password"]', pass)
+  await shot('02-admin')
+  await page.click('button:has-text("Continue")')
 
-    const bridge = await page
-      .waitForSelector('h1:has-text("Network Bridge")', { timeout: 6000 })
-      .catch(() => null)
-    if (bridge) {
-      await shot('03-bridge')
-      await page.click('button:has-text("Skip (use NAT)")')
-    }
+  await page.waitForSelector('h1:has-text("Image Catalog")', { timeout: 15000 })
+  await shot('03-catalog')
+  await page.click('button:has-text("Skip")')
 
-    await page.waitForSelector('h1:has-text("Image Catalog")', { timeout: 15000 })
-    await shot('04-catalog')
-    await page.click('button:has-text("Skip")')
-
-    await page.waitForSelector('h1:has-text("All Set!")', { timeout: 15000 })
-    await shot('05-ready')
-    await page.click('button:has-text("Launch Dashboard")')
-  }
+  await page.waitForSelector('h1:has-text("All Set!")', { timeout: 15000 })
+  await shot('04-ready')
+  await page.click('button:has-text("Launch Dashboard")')
 
   await page.waitForSelector('.sidebar-nav', { timeout: 20000 })
-  await shot('06-landed')
+  await shot('05-landed')
 
   const status = await (await fetch(`${base}/api/setup/status`)).json()
   writeFileSync(`${dir}/result.json`, JSON.stringify({ ok: status.complete === true, setupStatus: status, shots }, null, 2))
