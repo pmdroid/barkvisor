@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import router from './router'
+import router, { clearSetupCache } from './router'
 import App from './App.vue'
 import './style.css'
 import { useToastStore } from './stores/toast'
@@ -28,6 +28,7 @@ setUnauthorizedHandler(() => {
 
 // Redirect to setup wizard when server is in setup mode
 setSetupRequiredHandler(() => {
+  clearSetupCache()
   if (router.currentRoute.value.name !== 'setup') {
     router.push({ name: 'setup' })
   }

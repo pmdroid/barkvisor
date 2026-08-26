@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPinia, setActivePinia } from 'pinia'
-import api, { isAuthBootstrapRequest, setUnauthorizedHandler } from '../api/client'
+import api, {
+  isAuthBootstrapRequest,
+  isHomeMemberProxyRequest,
+  setUnauthorizedHandler,
+} from '../api/client'
 import { REFRESH_TOKEN_KEY, useAuthStore } from './auth'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -204,6 +208,18 @@ describe('auth store (PAS-242)', () => {
     expect(isAuthBootstrapRequest({ url: '/auth/login-offers/redeem' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/login-offers' })).toBe(false)
     expect(isAuthBootstrapRequest({ url: '/vms' })).toBe(false)
+  })
+
+  test('member proxy 503 setup_required does not latch local setup', () => {
+    expect(isHomeMemberProxyRequest({ url: '/home/devices/peer-1/v1/vms' })).toBe(true)
+    expect(isHomeMemberProxyRequest({ url: '/api/home/devices/peer-1/v1/vms' })).toBe(true)
+    expect(isHomeMemberProxyRequest({ url: '/vms' })).toBe(false)
+    expect(isHomeMemberProxyRequest({ url: '/setup/status' })).toBe(false)
+    const client = readFileSync(join(here, '../api/client.ts'), 'utf8')
+    expect(client).toContain('!isHomeMemberProxyRequest(error.config)')
+    const main = readFileSync(join(here, '../main.ts'), 'utf8')
+    expect(main).toContain('clearSetupCache()')
+    expect(main).not.toContain('markSetupRequired')
   })
 
   test('expired JWT guard and 401 interceptor revoke through logout', () => {

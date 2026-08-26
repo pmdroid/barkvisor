@@ -42,6 +42,11 @@ function requestPath(url: unknown): string {
   return path
 }
 
+export function isHomeMemberProxyRequest(config?: { url?: string } | null): boolean {
+  const path = requestPath(config?.url)
+  return path.includes('/home/devices/')
+}
+
 /** Login/refresh/logout/redeem 401s must not revoke a still-valid session. */
 export function isAuthBootstrapRequest(config?: { url?: string } | null): boolean {
   const path = requestPath(config?.url)
@@ -71,7 +76,11 @@ api.interceptors.response.use(
         onUnauthorized()
       }
     }
-    if (error.response?.status === 503 && error.response?.data?.reason === 'setup_required') {
+    if (
+      error.response?.status === 503 &&
+      error.response?.data?.reason === 'setup_required' &&
+      !isHomeMemberProxyRequest(error.config)
+    ) {
       if (onSetupRequired) {
         onSetupRequired()
       }
