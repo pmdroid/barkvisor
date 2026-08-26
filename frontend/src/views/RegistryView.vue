@@ -690,7 +690,7 @@ async function addRepo() {
         <option value="__all__">All Repos</option>
         <option v-for="r in activeRepos" :key="r.id" :value="r.id">{{ r.name }}</option>
       </AppSelect>
-      <input v-model="searchQuery" placeholder="Search images..." style="flex:1;min-width:200px;font-size:13px;padding:7px 12px" />
+      <input v-model="searchQuery" class="ops-search" type="search" placeholder="Search images..." style="flex:1;min-width:200px;width:auto" />
       <AppSelect v-model="filterType" size="sm">
         <option value="">All types</option>
         <option v-for="t in types" :key="t" :value="t">{{ t }}</option>

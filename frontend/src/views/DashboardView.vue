@@ -212,14 +212,14 @@ onUnmounted(() => {
           <strong>{{ row.vm.name }}</strong>
           <span>{{ vmError(row) }} on {{ rowDeviceLabel(row) }}</span>
           <span class="spacer"></span>
-          <button type="button" class="ghost-btn" @click="openVm(row)">Open</button>
+          <AppButton @click="openVm(row)">Open</AppButton>
         </div>
         <div v-for="row in unreachableDevices" :key="'down-' + row.hostId" class="incident warn">
           <span class="pill unreach">Unreachable</span>
           <strong>{{ devices.deviceLabel(row) }}</strong>
           <span>{{ unreachableIncidentText(row) }}</span>
           <span class="spacer"></span>
-          <button type="button" class="ghost-btn" @click="openDevice(row)">{{ DEVICE_LABEL }}</button>
+          <AppButton @click="openDevice(row)">{{ DEVICE_LABEL }}</AppButton>
         </div>
       </div>
 
@@ -406,18 +406,6 @@ onUnmounted(() => {
 .incident strong { font-size: 13px; font-weight: 650; }
 .incident span { color: var(--text-secondary); font-size: 13px; }
 .incident .spacer { flex: 1; }
-.ghost-btn {
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 5px 12px;
-  cursor: pointer;
-}
-.ghost-btn:hover { border-color: rgba(255,255,255,0.25); }
 .pill {
   display: inline-flex;
   align-items: center;
