@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { storeToRefs } from 'pinia'
-import api from '../api/client'
-import type { HomeDeviceHealthSnapshot, SystemStats, VM } from '../api/types'
+import type { HomeDeviceHealthSnapshot, VM } from '../api/types'
 import AppButton from '../components/ui/AppButton.vue'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceWorkloadsStore, type HomeWorkloadRow } from '../stores/deviceWorkloads'
-import { useDiskStore } from '../stores/disks'
 import { useVMStore } from '../stores/vms'
 import {
   DASHBOARD_FEED_MODULES,
@@ -24,8 +21,7 @@ import {
   toggleModule,
 } from '../utils/dashboardWidgets'
 import { scopeRows } from '../utils/deviceScope'
-import { formatCores, formatMemoryMB, formatTemperatureC, formatVolumeUsed } from '../utils/format'
-import { isSelfDevice } from '../utils/homeDeviceApi'
+import { formatCores, formatMemoryMB } from '../utils/format'
 import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
@@ -33,12 +29,9 @@ import { opsStatusLabel, vmHealth } from '../utils/workloadHealth'
 
 const router = useRouter()
 const store = useVMStore()
-const diskStore = useDiskStore()
 const devices = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeWorkloads = useDeviceWorkloadsStore()
-const { summary: storageSummary } = storeToRefs(diskStore)
-const stats = ref<SystemStats | null>(null)
 const layout = ref<DashboardModule[]>(loadDashboardLayout())
 const customizeOpen = ref(false)
 
@@ -94,49 +87,6 @@ const toolbarSub = computed(() => {
   if (failed) parts.push(`${failed} failed`)
   if (down) parts.push(`${down} unreachable`)
   return parts.join(' · ')
-})
-
-const meterDevice = computed(() => {
-  if (!deviceScope.isAll) return scopedDevices.value[0] ?? null
-  return scopedDevices.value.find((row) => isSelfDevice(row)) ?? scopedDevices.value[0] ?? null
-})
-
-const meterIsSelf = computed(() => (meterDevice.value ? isSelfDevice(meterDevice.value) : false))
-const selfTempC = computed(() => stats.value?.metrics?.temperatureC ?? null)
-const selfTempLabel = computed(() => formatTemperatureC(selfTempC.value))
-const selfStorageLabel = computed(() => {
-  const summary = storageSummary.value
-  if (!summary || !summary.volumeTotalBytes) return null
-  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
-})
-
-const meterCpu = computed(() => {
-  if (meterIsSelf.value && stats.value) return Math.round(stats.value.hostCpuPercent)
-  const value = meterDevice.value?.resources?.cpuLoadPercent
-  return value == null ? null : Math.round(value)
-})
-const meterMem = computed(() => {
-  if (meterIsSelf.value && stats.value) {
-    return {
-      label: `${(stats.value.hostMemoryUsedMB / 1024).toFixed(1)} / ${(stats.value.hostMemoryTotalMB / 1024).toFixed(0)} GB`,
-      pct: stats.value.hostMemoryTotalMB
-        ? Math.min((stats.value.hostMemoryUsedMB / stats.value.hostMemoryTotalMB) * 100, 100)
-        : 0,
-    }
-  }
-  const used = meterDevice.value?.resources?.memoryUsedMB
-  const total = meterDevice.value?.resources?.memoryTotalMB
-  if (used == null || total == null) return null
-  return {
-    label: `${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} GB`,
-    pct: total ? Math.min((used / total) * 100, 100) : 0,
-  }
-})
-const meterStoragePct = computed(() => {
-  const summary = storageSummary.value
-  if (!meterIsSelf.value || !summary || !summary.volumeTotalBytes) return null
-  const used = summary.volumeTotalBytes - summary.volumeAvailableBytes
-  return Math.min((used / summary.volumeTotalBytes) * 100, 100)
 })
 
 const feedModules = computed(() =>
@@ -204,8 +154,7 @@ function homeDevSub(row: HomeDeviceHealthSnapshot): string {
   const os = row.platform?.os
   const arch = row.platform?.arch
   const bits = [os, arch].filter(Boolean)
-  if (isSelfDevice(row)) bits.push(`this ${DEVICE_LABEL}`)
-  else if (!isReachabilityOk(row.reachability)) bits.push('unreachable')
+  if (!isReachabilityOk(row.reachability)) bits.push('unreachable')
   else if ((row.healthCounts?.failed ?? 0) > 0) bits.push(`${row.healthCounts?.failed} failed`)
   return bits.join(' · ')
 }
@@ -216,18 +165,6 @@ function openVm(row: HomeWorkloadRow) {
 
 function openDevice(row: HomeDeviceHealthSnapshot) {
   router.push({ name: 'device-detail', params: { hostId: row.hostId } })
-}
-
-async function fetchStats() {
-  try {
-    const { data } = await api.get('/system/stats')
-    stats.value = data
-  } catch {
-  }
-}
-
-async function fetchStorage() {
-  await Promise.all([diskStore.fetchAll(), diskStore.fetchSummary()]).catch(() => {})
 }
 
 async function refreshHomeWorkloads() {
@@ -248,10 +185,7 @@ function onKey(event: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   void refreshHomeWorkloads()
-  void fetchStats()
-  void fetchStorage()
   pollTimer = window.setInterval(() => {
-    void fetchStats()
     void refreshHomeWorkloads()
   }, 5000)
 })
@@ -389,26 +323,7 @@ onUnmounted(() => {
 
         <aside v-if="sideModules.length" class="side">
           <template v-for="mod in sideModules" :key="mod.id">
-            <div v-if="mod.id === 'meters' && meterDevice" class="panel">
-              <h2>This {{ DEVICE_LABEL }} · {{ devices.deviceLabel(meterDevice) }}</h2>
-              <div v-if="meterCpu != null" class="vital">
-                <div class="vital-top"><span>CPU</span><b>{{ meterCpu }}%</b></div>
-                <div class="bar"><i class="fill-cpu" :style="{ width: meterCpu + '%' }"></i></div>
-              </div>
-              <div v-if="meterMem" class="vital">
-                <div class="vital-top"><span>Memory</span><b>{{ meterMem.label }}</b></div>
-                <div class="bar"><i class="fill-mem" :style="{ width: meterMem.pct + '%' }"></i></div>
-              </div>
-              <div v-if="meterIsSelf && selfStorageLabel" class="vital">
-                <div class="vital-top"><span>Storage</span><b>{{ selfStorageLabel }}</b></div>
-                <div class="bar"><i class="fill-cpu" :style="{ width: (meterStoragePct ?? 0) + '%' }"></i></div>
-              </div>
-              <div v-if="meterIsSelf && selfTempLabel" class="vital">
-                <div class="vital-top"><span>Temperature</span><b>{{ selfTempLabel }}</b></div>
-                <div class="bar"><i class="fill-hot" :style="{ width: Math.min(selfTempC ?? 0, 100) + '%' }"></i></div>
-              </div>
-            </div>
-            <div v-else-if="mod.id === 'devices'" class="panel">
+            <div v-if="mod.id === 'devices'" class="panel">
               <h2>{{ HOME_LABEL }}</h2>
               <button
                 v-for="row in scopedDevices"
@@ -574,15 +489,6 @@ onUnmounted(() => {
   padding: 16px;
 }
 .panel h2 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
-.vital { margin-bottom: 12px; }
-.vital:last-child { margin-bottom: 0; }
-.vital-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
-.vital-top span { color: var(--text-dim); }
-.bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
-.bar > i { display: block; height: 100%; border-radius: 2px; }
-.fill-cpu { background: var(--accent); }
-.fill-mem { background: var(--green); }
-.fill-hot { background: var(--amber); }
 .triage-home-dev {
   display: flex;
   justify-content: space-between;
@@ -718,7 +624,6 @@ onUnmounted(() => {
 .d-foot :deep(.app-btn) { flex: 1; justify-content: center; }
 
 :global(:root[data-theme="light"]) .chip { background: rgba(0,0,0,0.04); }
-:global(:root[data-theme="light"]) .bar { background: rgba(0,0,0,0.08); }
 
 @media (max-width: 900px) {
   .triage-body { grid-template-columns: 1fr; }

@@ -139,6 +139,9 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('Needs you')
     expect(text).not.toContain('healthLabel')
     expect(text).not.toContain('dash-col-head')
+    expect(text).not.toContain('This Device')
+    expect(text).not.toContain('This ${DEVICE_LABEL}')
+    expect(text).not.toContain('this ${DEVICE_LABEL}')
   })
 
   test('Devices view is Home-scoped and reuses Settings pairing', () => {

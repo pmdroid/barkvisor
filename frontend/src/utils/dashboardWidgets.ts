@@ -6,7 +6,6 @@ export const DASHBOARD_MODULES = [
   'running',
   'stopped',
   'failed',
-  'meters',
   'devices',
 ] as const
 
@@ -23,7 +22,6 @@ export const DASHBOARD_MODULE_META: Record<DashboardModuleId, { title: string; h
   running: { title: 'Running', hint: 'Running workloads' },
   stopped: { title: 'Stopped', hint: 'Stopped workloads' },
   failed: { title: 'Failed', hint: 'Failed workloads as a list' },
-  meters: { title: 'This Device', hint: 'CPU, memory, storage, temperature' },
   devices: { title: 'Home', hint: 'Every Device in this Home' },
 }
 
@@ -34,7 +32,7 @@ export const DASHBOARD_FEED_MODULES: readonly DashboardModuleId[] = [
   'stopped',
 ]
 
-export const DASHBOARD_SIDE_MODULES: readonly DashboardModuleId[] = ['meters', 'devices']
+export const DASHBOARD_SIDE_MODULES: readonly DashboardModuleId[] = ['devices']
 
 export const DEFAULT_LAYOUT: DashboardModule[] = [
   { id: 'attention', on: true },
@@ -42,7 +40,6 @@ export const DEFAULT_LAYOUT: DashboardModule[] = [
   { id: 'running', on: true },
   { id: 'stopped', on: true },
   { id: 'failed', on: false },
-  { id: 'meters', on: true },
   { id: 'devices', on: true },
 ]
 
