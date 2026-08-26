@@ -411,7 +411,11 @@ private actor StubImageDownloader: ImageDownloadStarting {
     private(set) var startCallCount = 0
 
     func start(
-        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum?,
+        expectedStoredSha256: String?,
     ) {
         startCallCount += 1
     }

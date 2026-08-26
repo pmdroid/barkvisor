@@ -202,6 +202,40 @@ final class ImageChecksumTests {
             )
         }
 
+        @Test func `download with wrong stored SHA 256 fails`() async throws {
+            let content = Data("hello world".utf8)
+            let sourceFile = tmpDir.appendingPathComponent("source-stored.iso")
+            try content.write(to: sourceFile)
+            let now = iso8601.string(from: Date())
+            let imageID = "img-stored-sha-bad"
+            try await dbPool.write { db in
+                let image = VMImage(
+                    id: imageID, name: "Test", imageType: "iso", arch: "arm64",
+                    path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                    sourceUrl: sourceFile.absoluteString, createdAt: now, updatedAt: now,
+                )
+                try image.insert(db)
+            }
+            let dest = tmpDir.appendingPathComponent("dest-stored.iso")
+            await downloader.start(
+                imageID: imageID,
+                url: sourceFile,
+                destination: dest,
+                expectedChecksum: nil,
+                expectedStoredSha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            let stream = await downloader.progressStream(imageID: imageID)
+            for await event in stream {
+                if event.status == "ready" || event.status == "error" {
+                    break
+                }
+            }
+            let image = try await dbPool.read { db in try VMImage.fetchOne(db, key: imageID) }
+            #expect(image?.status == "error")
+            #expect(image?.error?.contains("SHA256 mismatch") ?? false)
+            #expect(!FileManager.default.fileExists(atPath: dest.path))
+        }
+
         @Test func `download with correct SHA 512 succeeds`() async throws {
             let content = Data("hello world".utf8)
             let hash = SHA512.hash(data: content).compactMap { String(format: "%02x", $0) }.joined()

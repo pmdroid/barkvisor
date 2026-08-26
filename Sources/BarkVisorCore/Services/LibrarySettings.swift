@@ -8,6 +8,7 @@ import GRDB
 public enum LibrarySettings {
     public static let imageDirectoryKey = "image_directory"
     public static let libraryDepotHostIdKey = "library_depot_host_id"
+    public static let disabledDepotHostId = "none"
     public static let previousDirectoriesKey = "previous_image_directories"
 
     public static var defaultDirectory: URL {
@@ -128,6 +129,9 @@ public enum LibrarySettings {
         localHostId: String,
     ) throws -> String? {
         if let stored = try resolvedDepotHostId(from: db) {
+            if stored.caseInsensitiveCompare(disabledDepotHostId) == .orderedSame {
+                return nil
+            }
             return stored
         }
         return implicitDepotHostId(devices: devices, localHostId: localHostId)
@@ -140,8 +144,8 @@ public enum LibrarySettings {
         devices: DeviceRegistry,
     ) throws -> String? {
         let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return nil
+        if trimmed.isEmpty || trimmed.caseInsensitiveCompare(disabledDepotHostId) == .orderedSame {
+            return disabledDepotHostId
         }
         if trimmed == localHostId {
             return trimmed

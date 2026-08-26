@@ -431,8 +431,14 @@ final class LibraryDepotTests {
     }
 
     @Test func `validateDepotHostId accepts paired Device and self`() throws {
-        #expect(try LibrarySettings.validateDepotHostId(nil, localHostId: localHostId, devices: devices) == nil)
-        #expect(try LibrarySettings.validateDepotHostId("  ", localHostId: localHostId, devices: devices) == nil)
+        #expect(
+            try LibrarySettings.validateDepotHostId(nil, localHostId: localHostId, devices: devices)
+                == LibrarySettings.disabledDepotHostId,
+        )
+        #expect(
+            try LibrarySettings.validateDepotHostId("  ", localHostId: localHostId, devices: devices)
+                == LibrarySettings.disabledDepotHostId,
+        )
         #expect(
             try LibrarySettings.validateDepotHostId(
                 localHostId, localHostId: localHostId, devices: devices,

@@ -390,7 +390,11 @@ private actor RecordingCatalogDownloader: ImageDownloadStarting {
     private(set) var startedURLs: [URL] = []
 
     func start(
-        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum?,
+        expectedStoredSha256: String?,
     ) {
         startedURLs.append(url)
     }

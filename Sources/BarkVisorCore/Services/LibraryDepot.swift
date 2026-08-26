@@ -103,7 +103,7 @@ public enum LibraryDepotCatalog {
             request = request.filter(Column("sourceUrl") == sourceUrl)
         }
         if let sha256, !sha256.isEmpty {
-            request = request.filter(Column("sha256") == sha256)
+            request = request.filter(sql: "LOWER(sha256) = ?", arguments: [sha256.lowercased()])
         }
         let rows = try request.fetchAll(db)
         return try rows.compactMap { image in

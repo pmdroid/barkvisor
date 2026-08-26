@@ -182,9 +182,19 @@ struct ImageController: RouteCollection {
         if source.isEmpty {
             throw Abort(.badRequest, reason: "Image cannot be copied without a source URL")
         }
+        let storedSha: String? = if sha.isEmpty || ImageService.isCompressedSource(source) {
+            nil
+        } else {
+            sha
+        }
         let image = try await ImageService.startDownload(
             ImageDownloadRequest(
-                name: body.name, url: source, imageType: body.imageType, arch: body.arch,
+                name: body.name,
+                url: source,
+                imageType: body.imageType,
+                arch: body.arch,
+                expectedChecksum: checksum,
+                expectedStoredSha256: storedSha,
             ),
             downloader: downloader, db: req.db,
         )

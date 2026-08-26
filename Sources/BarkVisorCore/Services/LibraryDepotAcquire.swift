@@ -262,11 +262,19 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         } catch {
             return false
         }
+        let storedSha: String? = if ImageService.isCompressedSource(job.request.sourceUrl) {
+            nil
+        } else if case let .sha256(hash) = job.request.expectedChecksum {
+            hash
+        } else {
+            nil
+        }
         await starter.start(
             imageID: job.imageId,
             url: url,
             destination: destination,
             expectedChecksum: job.request.expectedChecksum,
+            expectedStoredSha256: storedSha,
         )
         return true
     }

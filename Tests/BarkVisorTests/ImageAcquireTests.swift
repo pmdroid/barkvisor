@@ -65,5 +65,9 @@ struct ImageAcquireTests {
             try LibraryDepotCatalog.list(db: db, sourceUrl: nil, sha256: "deadbeef")
         }
         #expect(listed.map(\.id) == ["img-1"])
+        let mixed = try dbPool.read { db in
+            try LibraryDepotCatalog.list(db: db, sourceUrl: nil, sha256: "DEADBEEF")
+        }
+        #expect(mixed.map(\.id) == ["img-1"])
     }
 }
