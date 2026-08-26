@@ -40,19 +40,21 @@ On the new Device, open `http://localhost:7777` (or that host’s LAN IP) before
 
 1. On the other Device, pick the address this Device can reach and copy the full `barkvisor://pair/v1?…` offer.
 2. Choose **Join an existing Home** and paste that offer.
-3. Join. Finish setup if the wizard still asks for a local admin (the Home login is what you use afterward). On an API-only Device, use `barkvisor join --code` instead.
+3. Join. Finish setup if the wizard still asks for a local admin (the Home login is what you use afterward). On an API-only Device, use `barkvisor-agent join --code` instead.
 
 This Device still starts if the other Device later goes down. Unauthenticated join during setup is console-local (`127.0.0.1` only).
 
 ## Join from the CLI (API-only / worker)
 
-A Device can run without the SPA. The binary is the same — there is no separate worker process.
+A Device can run without the SPA. Packages ship `barkvisor` (SPA Home Device) and `barkvisor-agent` (API-only). Same process, two names. Invoking `barkvisor-agent` skips the SPA. Do not run both.
 
-On that host, after the daemon is up:
+On that host, after `barkvisor-agent.service` (Linux) or the `barkvisor-agent` daemon (macOS) is up:
 
 ```sh
-barkvisor join --code 'barkvisor://pair/v1?…'
+barkvisor-agent join --code 'barkvisor://pair/v1?…'
 ```
+
+`barkvisor join --code` posts the same offer.
 
 Or set `BARKVISOR_JOIN_CODE` in the daemon environment (`/etc/barkvisor/barkvisor.env` on Linux) **before first boot**. After setup or an existing pair, that env is ignored.
 

@@ -62,6 +62,11 @@ if [ -f /usr/local/bin/barkvisor ]; then
     rm -f /usr/local/bin/barkvisor
 fi
 
+if [ -e /usr/local/bin/barkvisor-agent ]; then
+    log "Removing /usr/local/bin/barkvisor-agent"
+    rm -f /usr/local/bin/barkvisor-agent
+fi
+
 if [ -d /usr/local/libexec/barkvisor ]; then
     log "Removing /usr/local/libexec/barkvisor/ (QEMU, swtpm, etc.)"
     rm -rf /usr/local/libexec/barkvisor

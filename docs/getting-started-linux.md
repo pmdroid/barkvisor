@@ -134,9 +134,23 @@ The unit does **not** enable `NoNewPrivileges` so QEMU can run setuid `qemu-brid
 
 ## API-only Device (no SPA)
 
-Release packages still bundle the SPA by default. The daemon is the same binary either way — there is no separate controller or worker process.
+Packages ship two binaries. One process per Device. Do not enable both units.
 
-To install **API-only** from a source checkout, even if `frontend/dist` exists:
+| Binary | systemd unit | Use |
+|--------|--------------|-----|
+| `/usr/local/bin/barkvisor` | `barkvisor.service` | Home Device with the web UI |
+| `/usr/local/bin/barkvisor-agent` | `barkvisor-agent.service` | API-only worker Device (no SPA) |
+
+`barkvisor-agent` is a symlink to the same Mach-O / ELF. Invoking that name skips the SPA even if `frontend/dist` is on disk. Default package install enables `barkvisor.service`.
+
+From a package, switch to API-only:
+
+```sh
+sudo systemctl disable --now barkvisor.service
+sudo systemctl enable --now barkvisor-agent.service
+```
+
+From a source checkout, skip the SPA copy and enable the agent unit even if `frontend/dist` exists:
 
 ```sh
 sudo SKIP_FRONTEND=1 ./scripts/install-linux.sh
@@ -146,7 +160,8 @@ Join a Home **from that Device** (console-local `POST http://127.0.0.1:7777/api/
 
 ```sh
 # After the daemon is up:
-barkvisor join --code 'barkvisor://pair/v1?…'
+barkvisor-agent join --code 'barkvisor://pair/v1?…'
+# barkvisor join --code works too
 ```
 
 Or set `BARKVISOR_JOIN_CODE` in `/etc/barkvisor/barkvisor.env` before first boot. If the other Device is unreachable, this Device still starts and keeps local SQLite.
@@ -164,7 +179,8 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
 ```
 /usr/local/
   bin/
-    barkvisor                         # Main server daemon
+    barkvisor                         # Home Device daemon (SPA + API)
+    barkvisor-agent                   # API-only Device (symlink; no SPA)
   lib/
     barkvisor/
       swift/                          # Bundled Swift runtime
@@ -179,7 +195,8 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
   barkvisor/
     barkvisor.env                     # Port, data dir, library path
 /usr/lib/systemd/system/              # or /usr/local/lib/systemd/system/
-  barkvisor.service                   # systemd unit
+  barkvisor.service                   # systemd unit (SPA Home Device)
+  barkvisor-agent.service             # systemd unit (API-only Device)
 /var/lib/
   barkvisor/                          # Data directory (created on install / first run)
 /var/run/
@@ -227,6 +244,7 @@ Additionally, short-lived unix sockets for QMP communication are stored in a sho
 1. Stop and disable the service:
    ```sh
    sudo systemctl disable --now barkvisor.service
+   sudo systemctl disable --now barkvisor-agent.service
    ```
 2. Remove the package (or installed files):
 
@@ -245,10 +263,12 @@ Additionally, short-lived unix sockets for QMP communication are stored in a sho
 
    **Manual / tarball layout:**
    ```sh
-   sudo rm -f /usr/local/bin/barkvisor
+   sudo rm -f /usr/local/bin/barkvisor /usr/local/bin/barkvisor-agent
    sudo rm -rf /usr/local/lib/barkvisor /usr/local/share/barkvisor
    sudo rm -f /usr/lib/systemd/system/barkvisor.service \
-              /usr/local/lib/systemd/system/barkvisor.service
+              /usr/lib/systemd/system/barkvisor-agent.service \
+              /usr/local/lib/systemd/system/barkvisor.service \
+              /usr/local/lib/systemd/system/barkvisor-agent.service
    sudo rm -rf /etc/barkvisor
    sudo systemctl daemon-reload
    ```

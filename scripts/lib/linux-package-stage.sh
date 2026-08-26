@@ -117,6 +117,7 @@ barkvisor_stage_install_tree() {
     "$stage/var/run/barkvisor"
 
   install -m 0755 "$bin" "$stage/usr/local/bin/barkvisor"
+  ln -s barkvisor "$stage/usr/local/bin/barkvisor-agent"
 
   if [[ -n "$fe" && -f "$fe/index.html" ]]; then
     cp -a "$fe"/. "$stage/usr/local/share/barkvisor/frontend/dist/"
@@ -128,6 +129,7 @@ barkvisor_stage_install_tree() {
   fi
 
   install -m 0644 "$pkg_root/barkvisor.service" "$stage/usr/lib/systemd/system/barkvisor.service"
+  install -m 0644 "$pkg_root/barkvisor-agent.service" "$stage/usr/lib/systemd/system/barkvisor-agent.service"
   install -m 0644 "$pkg_root/barkvisor.env" "$stage/etc/barkvisor/barkvisor.env"
 
   # Bundle Swift runtime (required for dynamically linked release binary).
@@ -165,8 +167,10 @@ barkvisor_stage_install_tree() {
 BarkVisor Linux package
 =======================
 Binary:  /usr/local/bin/barkvisor
+Agent:   /usr/local/bin/barkvisor-agent
 SPA:     /usr/local/share/barkvisor/frontend/dist
-Unit:    barkvisor.service
+Unit:    barkvisor.service (SPA Home Device)
+Agent:   barkvisor-agent.service (API-only Device)
 Env:     /etc/barkvisor/barkvisor.env
 Data:    /var/lib/barkvisor
 

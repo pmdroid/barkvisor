@@ -37,6 +37,7 @@ class Barkvisor < Formula
     odie "swift build did not produce BarkVisorApp" if binary.nil?
 
     bin.install binary => "barkvisor"
+    bin.install_symlink "barkvisor" => "barkvisor-agent"
     (share/"barkvisor/frontend").install "frontend/dist"
     # Same path as scripts/build-release.sh: share/barkvisor/templates.json.
     # Seeder reads Config.shareDir; brew services cwd is /var/lib/barkvisor.
@@ -101,6 +102,7 @@ class Barkvisor < Formula
 
   test do
     assert_path_exists bin/"barkvisor"
+    assert_path_exists bin/"barkvisor-agent"
     assert_path_exists share/"barkvisor/templates.json"
     assert_path_exists libexec/"barkvisor"
     plist = (prefix/"homebrew.mxcl.barkvisor.plist").read
