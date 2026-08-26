@@ -102,7 +102,7 @@ describe('VM Detail (existing VMs)', () => {
   it('shows boot disk in Disks section', () => {
     withFirstVM((vm) => {
       cy.visit(`/vms/${vm.id}`)
-      cy.contains('h2', 'Disks').should('exist')
+      cy.contains('h3', 'Disks').should('exist')
       cy.get('.badge').contains('Boot').should('exist')
     })
   })
@@ -148,8 +148,8 @@ describe('VM Detail (existing VMs)', () => {
   it('shows Shared Folders section with Add button', () => {
     withFirstVM((vm) => {
       cy.visit(`/vms/${vm.id}`)
-      cy.contains('h2', 'Shared Folders').should('exist')
-      cy.contains('button', 'Add Shared Folder').should('exist')
+      cy.contains('h3', 'Shared folders').should('exist')
+      cy.contains('.sheet-head', 'Shared folders').contains('button', 'Add').should('exist')
     })
   })
 

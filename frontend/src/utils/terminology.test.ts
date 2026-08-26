@@ -121,6 +121,17 @@ describe('PAS-82 Home terminology', () => {
     expect(offenders).toEqual([])
   })
 
+  test('VM detail overview is Twin columns', () => {
+    const text = readFileSync(join(srcRoot, 'views/VMDetailView.vue'), 'utf8')
+    expect(text).toContain('class="twins"')
+    expect(text).toContain('>Hardware</h3>')
+    expect(text).toContain('>Network</h3>')
+    expect(text).toContain('>Guest</h3>')
+    expect(text).toContain('>Disks</h3>')
+    expect(text).toContain('item none')
+    expect(text).not.toContain('class="card config-sheet"')
+  })
+
   test('Dashboard is triage inbox with Customize Home', () => {
     const text = readFileSync(join(srcRoot, 'views/DashboardView.vue'), 'utf8')
     expect(text).toContain('opsStatusLabel')
