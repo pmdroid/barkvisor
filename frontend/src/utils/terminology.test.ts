@@ -181,7 +181,7 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('HOME_LABEL')
     expect(text).toContain('DEVICE_LABEL')
     expect(text).toContain('This {{ DEVICE_LABEL }} is operational')
-    expect(text).toContain('Join an existing')
+    expect(text).toContain('barkvisor join --code')
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
 
