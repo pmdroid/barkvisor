@@ -41,7 +41,6 @@ import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpac
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
   isCurrentPairingSeq,
-  isPairingOfferActive,
   nextPairingLoadSeq,
   pairingExpiryLabel,
 } from '../utils/pairingOffer'
@@ -58,7 +57,6 @@ import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
-import PairingQr from '../components/PairingQr.vue'
 
 const route = useRoute()
 const toast = useToastStore()
@@ -912,7 +910,7 @@ onUnmounted(() => {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0">
         Add a {{ DEVICE_LABEL }} to this {{ HOME_LABEL }}. On the new {{ DEVICE_LABEL }}, open
-        setup and choose Join an existing {{ HOME_LABEL }}, then scan the QR or paste this pairing code.
+        setup and choose Join an existing {{ HOME_LABEL }}, then paste this pairing code.
       </p>
       <AppButton
         variant="primary"
@@ -935,7 +933,7 @@ onUnmounted(() => {
     <div v-else class="pairing-card">
       <ol class="pairing-steps">
         <li>Pick the address the new {{ DEVICE_LABEL }} can reach (LAN IP or DNS name).</li>
-        <li>Scan the QR or copy the full <code>barkvisor://</code> offer, not only the short code.</li>
+        <li>Copy the full <code>barkvisor://</code> offer, not only the short code.</li>
         <li>
           On the new {{ DEVICE_LABEL }}, choose Join an existing {{ HOME_LABEL }} or run
           <code>barkvisor join --code</code>.
@@ -967,11 +965,6 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="pairing-code">{{ pairingOffer.code }}</div>
-      <PairingQr
-        v-if="isPairingOfferActive(pairingOffer.expiresAt, pairingNow)"
-        :key="pairingOffer.qrPayload"
-        :payload="pairingOffer.qrPayload"
-      />
       <p class="pairing-meta">{{ pairingExpiryLabel(pairingOffer.expiresAt, pairingNow) }}</p>
       <p class="pairing-hint">
         Changing the address issues a new code and offer. This
