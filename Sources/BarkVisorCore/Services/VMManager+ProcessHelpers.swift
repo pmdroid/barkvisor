@@ -29,9 +29,14 @@ extension VMManager {
         }
         Log.vm.info("VM \(vmID) terminated (status: \(status))", vm: vmID)
 
-        // Log unexpected exits as errors
         if status != 0 {
             Log.vm.error("VM terminated unexpectedly (exit status \(status))", vm: vmID)
+            await AuditService.logVMEvent(
+                action: VMLifecycleAction.crashed,
+                vmID: vmID,
+                detail: "{\"reason\":\"exit status \(status)\"}",
+                db: dbPool,
+            )
         }
 
         await releasePassthroughGPUs(vmID: vmID)
