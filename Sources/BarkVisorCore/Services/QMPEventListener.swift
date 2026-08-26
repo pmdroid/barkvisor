@@ -135,6 +135,12 @@ public actor QMPEventListener {
                     )
                 }
                 let event = VMStateEvent(id: vmID, state: "error", error: "Kernel panic")
+                await AuditService.logVMEvent(
+                    action: VMLifecycleAction.crashed,
+                    vmID: vmID,
+                    detail: "{\"reason\":\"kernel panic (\(action))\"}",
+                    db: dbPool,
+                )
                 await vmManager?.recordHealthError("Kernel panic", for: vmID)
                 await stateStreamService?.broadcast(event: event)
             } catch {
@@ -146,6 +152,12 @@ public actor QMPEventListener {
             let operation = (data?["operation"] as? String) ?? "unknown"
             let action = (data?["action"] as? String) ?? "unknown"
             Log.vm.error("Disk I/O error on \(device): \(operation) (action: \(action))", vm: vmID)
+            await AuditService.logVMEvent(
+                action: VMLifecycleAction.crashed,
+                vmID: vmID,
+                detail: "{\"reason\":\"block io error on \(device) (\(operation))\"}",
+                db: dbPool,
+            )
 
         case "DEVICE_TRAY_MOVED":
             let trayout = (data?["tray-open"] as? Bool) ?? false
