@@ -13,7 +13,7 @@ struct AgentLibraryDepotClient: LibraryDepotClient {
         self.stream = materialClient
     }
 
-    func listImages(sourceUrl: String) async throws -> [LibraryDepotImageInfo] {
+    func listImages(sourceUrl: String, sha256: String?) async throws -> [LibraryDepotImageInfo] {
         guard let host = record.agentHost, !host.isEmpty else {
             throw HomeDeviceProxyError.unreachable("Device has no reachable address")
         }
@@ -21,7 +21,7 @@ struct AgentLibraryDepotClient: LibraryDepotClient {
             host: host,
             port: record.agentPort,
             path: LibraryDepotHTTP.listPath,
-            query: LibraryDepotHTTP.sourceUrlQuery(sourceUrl),
+            query: LibraryDepotHTTP.listQuery(sourceUrl: sourceUrl, sha256: sha256),
         )
         let result = try await listClient.send(
             HomeDeviceProxyRequest(

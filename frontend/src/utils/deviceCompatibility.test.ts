@@ -191,6 +191,25 @@ describe('deviceCompatibility (PAS-34)', () => {
     expect(createVMIncompatibilityReasons(peer, { hasImage: false })).toEqual([
       "Not in this Device's Library",
     ])
+    const x86 = device({
+      hostId: 'box',
+      role: 'member',
+      platform: { os: 'Linux', arch: 'x86_64' },
+    })
+    expect(
+      createVMIncompatibilityReasons(x86, {
+        guestArch: 'arm64',
+        hasImage: false,
+        fetchable: true,
+        capabilities: x86Caps,
+      }),
+    ).toContain('Architecture (arm64) is not compatible with this Device (x86_64).')
+    expect(
+      createVMIncompatibilityReasons(peer, { hasImage: false, fetchable: true }),
+    ).toEqual([])
+    expect(
+      createVMIncompatibilityReasons(peer, { hasImage: false, fetchable: false }),
+    ).toEqual(['Image cannot be copied to this Device (no source URL or checksum)'])
     const option = toPickOption(peer, [])
     expect(option.compatible).toBe(true)
     expect(option.placeAnyway).toBe(true)
@@ -200,7 +219,7 @@ describe('deviceCompatibility (PAS-34)', () => {
     expect(missing.placeAnyway).toBe(false)
     const archOnly = toPickOption(peer, ['Architecture (x86_64) is not compatible with this Device (arm64).'])
     expect(archOnly.compatible).toBe(false)
-    expect(archOnly.placeAnyway).toBe(true)
+    expect(archOnly.placeAnyway).toBe(false)
     const recommended = toPickOption(peer, [], {
       recommended: true,
       recommendReasons: ['2048 MB free memory, 10% CPU load.'],

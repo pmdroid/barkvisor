@@ -70,10 +70,14 @@ final class FakeLibraryDepotClient: LibraryDepotClient, @unchecked Sendable {
         snapshotFetched()
     }
 
-    func listImages(sourceUrl: String) async throws -> [LibraryDepotImageInfo] {
+    func listImages(sourceUrl: String, sha256: String?) async throws -> [LibraryDepotImageInfo] {
         let snapshot = recordList(sourceUrl)
         if let listError = snapshot.0 { throw listError }
-        return snapshot.1.filter { $0.sourceUrl == sourceUrl || $0.sourceUrl == nil }
+        return snapshot.1.filter { image in
+            let urlOk = sourceUrl.isEmpty || image.sourceUrl == sourceUrl || image.sourceUrl == nil
+            let shaOk = sha256 == nil || sha256?.isEmpty == true || image.sha256?.lowercased() == sha256?.lowercased()
+            return urlOk && shaOk
+        }
     }
 
     func fetchBytes(imageId: String, to destination: URL) async throws -> LibraryDepotFetchBytes {
@@ -153,6 +157,12 @@ final class LibraryDepotTests {
             agentHost: "192.168.10.8",
             agentPort: 7_778,
         )
+        try devices.upsert(
+            hostId: "other-device",
+            fingerprint: "bb",
+            agentHost: "192.168.10.9",
+            agentPort: 7_778,
+        )
         client = FakeLibraryDepotClient()
         let fake = client
         acquire = LibraryDepotAcquire(
@@ -224,6 +234,31 @@ final class LibraryDepotTests {
         #expect(image == nil)
         #expect(client.listedURLs.isEmpty)
         #expect(try auditActions().isEmpty)
+    }
+
+    @Test func `unset depot with one peer fetches that peer`() async throws {
+        let soloDir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: soloDir, withIntermediateDirectories: true)
+        let solo = DeviceRegistry(dataDir: soloDir)
+        try solo.upsert(
+            hostId: "depot-device",
+            fingerprint: "aa",
+            agentHost: "192.168.10.8",
+            agentPort: 7_778,
+        )
+        let fake = client
+        let onePeer = LibraryDepotAcquire(
+            localHostId: localHostId,
+            dataDir: tmpDir,
+            devices: solo,
+            openClient: { _ in fake },
+            awaitCopy: true,
+        )
+        let source = "https://example.com/cloud.img"
+        seedReadyRemote(id: "remote-1", source: source)
+        let image = await onePeer.fetchMatching(Self.cloudRequest(sourceUrl: source), db: dbPool)
+        #expect(image?.status == "ready")
+        #expect(client.listedURLs.contains(source))
     }
 
     @Test func `self depot skips without fetching`() async throws {

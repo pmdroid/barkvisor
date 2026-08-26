@@ -227,7 +227,42 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(self?.compatible).toBe(true)
   })
 
-  test('missing local copy is a Place reason and the Device stays pickable', () => {
+  test('missing fetchable copy is pickable and will copy on create', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'box',
+        role: 'member',
+        displayName: 'box',
+        platform: { os: 'Linux', arch: 'arm64' },
+      }),
+    ])
+    const key = seedLibraryImage(
+      readyImage({
+        id: 'iso-1',
+        name: 'ubuntu.iso',
+        arch: 'arm64',
+        sourceUrl: 'https://example.test/ubuntu.iso',
+        sha256: 'abc123',
+      }),
+      ['desk'],
+    )
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    wizard.selectedImageId.value = key
+    wizard.step.value = 3
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'copy'
+    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
+    expect(peer?.reasons).toEqual([])
+    expect(peer?.willCopy).toBe(true)
+    expect(peer?.reachable).toBe(true)
+    wizard.selectedHostId.value = 'box'
+    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.selectedDeviceBlocksPlacement()).toBe(false)
+  })
+
+  test('missing copy with no source URL or checksum blocks Place', () => {
     const devices = useDevicesStore()
     devices.report = report([
       device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
@@ -244,16 +279,42 @@ describe('useCreateVMWizard (PAS-182)', () => {
     wizard.step.value = 3
     wizard.pickedDeviceLoading.value = false
     wizard.name.value = 'copy'
-    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
-    expect(peer?.reasons).toContain("Not in this Device's Library")
-    expect(peer?.reachable).toBe(true)
     wizard.selectedHostId.value = 'box'
-    expect(wizard.canProceed()).toBe(false)
     expect(wizard.selectedDeviceBlocksPlacement()).toBe(true)
-    expect(wizard.selectedDeviceIncompatibility()).toBe("Not in this Device's Library")
+    expect(wizard.selectedDeviceIncompatibility()).toBe(
+      'Image cannot be copied to this Device (no source URL or checksum)',
+    )
   })
 
-  test('submit rejects a library key when the picked Device has no local copy', async () => {
+  test('x86 Device shows arch mismatch even when the image is missing locally', () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'box',
+        role: 'member',
+        displayName: 'box',
+        platform: { os: 'Linux', arch: 'x86_64' },
+      }),
+    ])
+    const key = seedLibraryImage(
+      readyImage({
+        id: 'iso-1',
+        name: 'ubuntu.iso',
+        arch: 'arm64',
+        sourceUrl: 'https://example.test/ubuntu.iso',
+      }),
+      ['desk'],
+    )
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'desk' })
+    wizard.selectedImageId.value = key
+    const peer = wizard.deviceOptions.value.find((row) => row.hostId === 'box')
+    expect(peer?.reasons.some((reason) => reason.includes('arm64'))).toBe(true)
+    expect(peer?.willCopy).toBe(false)
+    expect(peer?.placeAnyway).toBe(false)
+  })
+
+  test('submit acquires a missing fetchable image then creates', async () => {
     const devices = useDevicesStore()
     devices.report = report([
       device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
@@ -265,7 +326,72 @@ describe('useCreateVMWizard (PAS-182)', () => {
       }),
     ])
     const key = seedLibraryImage(
-      readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64', sha256: 'abc123' }),
+      readyImage({
+        id: 'iso-1',
+        name: 'ubuntu.iso',
+        arch: 'arm64',
+        sourceUrl: 'https://example.test/ubuntu.iso',
+        sha256: 'abc123',
+      }),
+      ['desk'],
+    )
+    const posts: Array<{ url: string; body?: Record<string, unknown> }> = []
+    const post = mock((url: string, body?: Record<string, unknown>) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      posts.push({ url, body })
+      if (url === '/home/devices/box/v1/images/acquire') {
+        return Promise.resolve({
+          data: {
+            id: 'box-iso-1',
+            name: 'ubuntu.iso',
+            imageType: 'iso',
+            arch: 'arm64',
+            status: 'ready',
+            sizeBytes: 1,
+            sourceUrl: 'https://example.test/ubuntu.iso',
+            error: null,
+            sha256: 'abc123',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+        })
+      }
+      if (url === '/home/devices/box/v1/vms') {
+        return Promise.resolve({ data: { id: 'vm-1', name: 'copy' } })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    })
+    api.post = post as typeof api.post
+
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectedImageId.value = key
+    wizard.selectedHostId.value = 'box'
+    wizard.pickedDeviceLoading.value = false
+    wizard.name.value = 'copy'
+    await wizard.submit()
+    expect(wizard.error.value).toBe('')
+    expect(posts.map((row) => row.url)).toEqual([
+      '/home/devices/box/v1/images/acquire',
+      '/home/devices/box/v1/vms',
+    ])
+    expect(posts[1]?.body).toMatchObject({ isoId: 'box-iso-1' })
+  })
+
+  test('submit rejects a library key when the image cannot be copied', async () => {
+    const devices = useDevicesStore()
+    devices.report = report([
+      device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
+      device({
+        hostId: 'box',
+        role: 'member',
+        displayName: 'box',
+        platform: { os: 'Linux', arch: 'arm64' },
+      }),
+    ])
+    const key = seedLibraryImage(
+      readyImage({ id: 'iso-1', name: 'ubuntu.iso', arch: 'arm64' }),
       ['desk'],
     )
     const createPosts: Array<{ url: string; body?: Record<string, unknown> }> = []
@@ -284,7 +410,9 @@ describe('useCreateVMWizard (PAS-182)', () => {
     wizard.pickedDeviceLoading.value = false
     wizard.name.value = 'copy'
     await wizard.submit()
-    expect(wizard.error.value).toBe("Not in this Device's Library")
+    expect(wizard.error.value).toBe(
+      'Image cannot be copied to this Device (no source URL or checksum)',
+    )
     expect(wizard.loading.value).toBe(false)
     expect(createPosts).toEqual([])
   })
@@ -388,7 +516,7 @@ describe('useCreateVMWizard (PAS-182)', () => {
     await wizard.loadPickedDevice()
     expect(wizard.selectedHostId.value).toBe('desk')
     expect(wizard.deviceOptions.value.find((row) => row.hostId === 'studio')?.reasons)
-      .toContain("Not in this Device's Library")
+      .toContain('Image cannot be copied to this Device (no source URL or checksum)')
   })
 
   test('This Device stays selectable when placement recommends a foreign-arch member', () => {
@@ -423,7 +551,7 @@ describe('useCreateVMWizard (PAS-182)', () => {
     wizard.step.value = 3
     wizard.name.value = 'anyway'
     wizard.selectedHostId.value = 'orb'
-    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
     expect(wizard.selectedDeviceIncompatibility()).toContain('x86_64')
   })
 
@@ -634,7 +762,7 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(wizard.canProceed()).toBe(true)
   })
 
-  test('re-scores placement when memory or guest arch changes and still allows place-anyway', async () => {
+  test('re-scores placement when memory or guest arch changes and blocks Place on hard reasons', async () => {
     const devices = useDevicesStore()
     const health = report([
       device({ hostId: 'desk', role: 'self', displayName: 'desk' }),
@@ -703,7 +831,7 @@ describe('useCreateVMWizard (PAS-182)', () => {
     expect(desk?.compatible).toBe(false)
     expect(desk?.reasons.some((reason) => reason.includes('8192'))).toBe(true)
     wizard.name.value = 'tight-vm'
-    expect(wizard.canProceed()).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
     expect(wizard.selectedDeviceIncompatibility()).toContain('8192')
 
     const beforeArch = scoreBodies.length

@@ -914,6 +914,26 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/images/acquire:
+    post:
+      tags: [images]
+      operationId: acquireImage
+      x-barkvisor-stability: stable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcquireImageRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/capabilities:
     get:
       tags: [evolving]
@@ -3218,6 +3238,25 @@ components:
         arch:
           type: string
           enum: [arm64, x86_64]
+
+    AcquireImageRequest:
+      type: object
+      required: [name, imageType, arch]
+      properties:
+        name:
+          type: string
+        imageType:
+          type: string
+          enum: [iso, cloud-image]
+        arch:
+          type: string
+          enum: [arm64, x86_64]
+        sourceUrl:
+          type: string
+          nullable: true
+        sha256:
+          type: string
+          nullable: true
 
     PortForwardRule:
       type: object

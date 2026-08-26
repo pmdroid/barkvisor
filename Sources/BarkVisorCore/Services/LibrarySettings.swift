@@ -110,6 +110,29 @@ public enum LibrarySettings {
         return raw.isEmpty ? nil : raw
     }
 
+    public static func implicitDepotHostId(
+        devices: DeviceRegistry,
+        localHostId: String,
+    ) -> String? {
+        guard let rows = try? devices.load() else { return nil }
+        let others = rows.filter { row in
+            row.hostId != localHostId && !(row.agentHost ?? "").isEmpty
+        }
+        guard others.count == 1 else { return nil }
+        return others[0].hostId
+    }
+
+    public static func resolvedDepotHostId(
+        from db: Database,
+        devices: DeviceRegistry,
+        localHostId: String,
+    ) throws -> String? {
+        if let stored = try resolvedDepotHostId(from: db) {
+            return stored
+        }
+        return implicitDepotHostId(devices: devices, localHostId: localHostId)
+    }
+
     /// Empty/whitespace ⇒ `nil` (clear). Otherwise a paired Device or this Device.
     public static func validateDepotHostId(
         _ raw: String?,

@@ -53,12 +53,18 @@ export function usePlacement(opts: {
   function hostAllowed(hostId: string): boolean {
     const row = devicesStore.deviceByHostId(hostId)
     if (!row) return false
+    const hasLocal = opts.selectedLibraryKey.value
+      ? homeLibrary.deviceHasLibraryImage(opts.selectedLibraryKey.value, row)
+      : undefined
+    const img = opts.selectedLibraryKey.value
+      ? homeLibrary.imageByKey(opts.selectedLibraryKey.value)
+      : undefined
+    const fetchable = !!(img?.sourceUrl?.trim() || img?.sha256?.trim())
     return createVMIncompatibilityReasons(row, {
       guestArch: opts.effectiveGuestArch.value,
       osType: opts.osType.value,
-      hasImage: opts.selectedLibraryKey.value
-        ? homeLibrary.deviceHasLibraryImage(opts.selectedLibraryKey.value, row)
-        : undefined,
+      hasImage: opts.selectedLibraryKey.value ? hasLocal : undefined,
+      fetchable: opts.selectedLibraryKey.value && hasLocal === false ? fetchable : undefined,
     }).length === 0
   }
 

@@ -33,6 +33,12 @@ final class DepotRetryTests {
             agentHost: "192.168.10.8",
             agentPort: 7_778,
         )
+        try devices.upsert(
+            hostId: "other-device",
+            fingerprint: "bb",
+            agentHost: "192.168.10.9",
+            agentPort: 7_778,
+        )
         client = FakeLibraryDepotClient()
     }
 

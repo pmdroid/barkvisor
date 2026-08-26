@@ -24,7 +24,7 @@ import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
-import { hostArchToImageArch, normalizeImageArch } from '../utils/imageArch'
+import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   architectureIsProblem,
@@ -36,6 +36,7 @@ import {
 } from '../utils/architectureDetails'
 import {
   createVMIncompatibilityReasons,
+  DEVICE_IMAGE_UNFETCHABLE_REASON,
   guestTypesSupportWindows,
   toPickOption,
   type DevicePickOption,
@@ -50,6 +51,7 @@ import {
   resolveSelectedDevice,
   selectedHostIsLive,
   usesLocalDeviceInventory,
+  type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
 import {
   isRecommendedHost,
@@ -68,6 +70,29 @@ import {
 } from '../utils/codingAgentImage'
 
 export { cancelLivePlacementScores } from './usePlacement'
+
+async function acquireImageOnDevice(device: DeviceApiTarget, img: Image): Promise<Image> {
+  const { data } = await api.post(devicePath(device, '/images/acquire'), {
+    sourceUrl: img.sourceUrl || undefined,
+    sha256: img.sha256 || undefined,
+    name: img.name,
+    imageType: img.imageType,
+    arch: img.arch,
+  })
+  const started = data as Image
+  if (started.status === 'ready') return started
+  const id = started.id
+  for (let i = 0; i < 180; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const { data: row } = await api.get(devicePath(device, `/images/${id}`))
+    const image = row as Image
+    if (image.status === 'ready') return image
+    if (image.status === 'error') {
+      throw new Error(image.error || 'Image copy failed')
+    }
+  }
+  throw new Error('Timed out copying the image to this Device')
+}
 
 export function useCreateVMWizard(
   emit: (e: 'created') => void,
@@ -237,23 +262,37 @@ export function useCreateVMWizard(
     const rows = devicesStore.devices
     const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
     const guest = effectiveGuestArch.value || null
+    const selected = selectedImage.value
+    const fetchable = !!(selected?.sourceUrl?.trim() || selected?.sha256?.trim())
     return list.map((row) => {
+      const hasLocal = selectedLibraryKey.value
+        ? homeLibrary.deviceHasLibraryImage(selectedLibraryKey.value, row)
+        : undefined
       const local = createVMIncompatibilityReasons(row, {
         guestArch: guest,
         osType: osType.value,
         capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
-        hasImage: selectedLibraryKey.value
-          ? homeLibrary.deviceHasLibraryImage(selectedLibraryKey.value, row)
-          : undefined,
+        hasImage: selectedLibraryKey.value ? hasLocal : undefined,
+        fetchable: selectedLibraryKey.value && hasLocal === false ? fetchable : undefined,
       })
       const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
       const hard = (scored?.reasons ?? [])
         .filter((reason) => reason.kind === 'hard')
         .map((reason) => reason.message)
       const reasons = [...new Set([...local, ...hard])]
+      const hostArch = row.platform?.arch ?? null
+      const willCopy = !!(
+        selectedLibraryKey.value
+        && hasLocal === false
+        && fetchable
+        && guest
+        && hostArch
+        && imageArchSupportedOnHost(guest, hostArch)
+      )
       return toPickOption(row, reasons, {
         recommended: isRecommendedHost(placementScore.value, row.hostId),
         recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
+        willCopy,
       })
     })
   })
@@ -742,17 +781,28 @@ export function useCreateVMWizard(
       error.value = 'The selected Device is no longer available. Pick a Device again.'
       return
     }
-    const createImage = homeLibrary.resolveImageForCreate(
+    let createImage = homeLibrary.resolveImageForCreate(
       selectedLibraryKey.value,
       selectedDevice.value,
       selectedImage.value,
     )
+    const pickedImage = selectedImage.value
     if ((selectedLibraryKey.value || selectedImageId.value) && !createImage) {
-      error.value = "Not in this Device's Library"
-      return
+      if (!pickedImage || !(pickedImage.sourceUrl?.trim() || pickedImage.sha256?.trim())) {
+        error.value = DEVICE_IMAGE_UNFETCHABLE_REASON
+        return
+      }
     }
     loading.value = true
     try {
+      if (!createImage && pickedImage && selectedDevice.value) {
+        toast.info('Copying image to the picked Device...')
+        createImage = await acquireImageOnDevice(selectedDevice.value, pickedImage)
+      }
+      if ((selectedLibraryKey.value || selectedImageId.value) && !createImage) {
+        error.value = DEVICE_IMAGE_UNFETCHABLE_REASON
+        return
+      }
       const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
       const req = buildCreateVMPayload({
         name: name.value,

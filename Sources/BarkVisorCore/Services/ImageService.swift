@@ -124,6 +124,13 @@ public enum ImageService {
         return nil
     }
 
+    public static func readyImage(sha256: String, db: Database) throws -> VMImage? {
+        let want = sha256.lowercased()
+        guard !want.isEmpty else { return nil }
+        let rows = try VMImage.filter(Column("status") == "ready").fetchAll(db)
+        return rows.first { $0.sha256?.lowercased() == want }
+    }
+
     /// Catalog hashes are of the compressed artifact; stored `sha256` is the
     /// decompressed file. For compressed sources, verify the recorded digest
     /// against the on-disk file instead of comparing to the catalog hash.

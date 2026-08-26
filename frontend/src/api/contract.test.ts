@@ -50,6 +50,7 @@ describe('API contract (PAS-78)', () => {
       '/api/disks',
       '/api/networks',
       '/api/images',
+      '/api/images/acquire',
       '/api/health',
       '/api/openapi.yaml',
       '/api/contract',

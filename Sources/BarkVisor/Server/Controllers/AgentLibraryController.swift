@@ -24,8 +24,9 @@ struct AgentLibraryController: RouteCollection {
             throw Abort(.notFound)
         }
         let sourceUrl = req.query[String.self, at: "sourceUrl"]
+        let sha256 = req.query[String.self, at: "sha256"]
         return try await db.read { db in
-            try LibraryDepotCatalog.list(db: db, sourceUrl: sourceUrl)
+            try LibraryDepotCatalog.list(db: db, sourceUrl: sourceUrl, sha256: sha256)
         }
     }
 

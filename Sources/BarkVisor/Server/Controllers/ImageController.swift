@@ -50,6 +50,20 @@ struct DownloadImageRequest: Content, Validatable {
     }
 }
 
+struct AcquireImageRequest: Content, Validatable {
+    let name: String
+    let imageType: String
+    let arch: String
+    let sourceUrl: String?
+    let sha256: String?
+
+    static func validations(_ validations: inout Validations) {
+        validations.add("name", as: String.self, is: .count(1 ... 255))
+        validations.add("imageType", as: String.self, is: .in("iso", "cloud-image"))
+        validations.add("arch", as: String.self, is: .in("arm64", "x86_64"))
+    }
+}
+
 // MARK: - Image Controller
 
 struct ImageController: RouteCollection {
@@ -61,6 +75,7 @@ struct ImageController: RouteCollection {
         images.get(":id", use: get)
         images.delete(":id", use: delete)
         images.post("download", use: startDownload)
+        images.post("acquire", use: acquire)
         images.get(":id", "progress", use: progress)
 
         // Tus endpoints (PATCH receives 50 MB chunks)
@@ -121,6 +136,56 @@ struct ImageController: RouteCollection {
 
         let image = try await ImageService.startDownload(
             ImageDownloadRequest(name: body.name, url: body.url, imageType: body.imageType, arch: body.arch),
+            downloader: downloader, db: req.db,
+        )
+        return await response(image)
+    }
+
+    @Sendable
+    func acquire(req: Vapor.Request) async throws -> ImageResponse {
+        try AcquireImageRequest.validate(content: req)
+        let body = try req.content.decode(AcquireImageRequest.self)
+        let source = body.sourceUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let sha = body.sha256?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if source.isEmpty && sha.isEmpty {
+            throw Abort(.badRequest, reason: "sourceUrl or sha256 is required")
+        }
+        if !source.isEmpty, let reason = Self.downloadURLRejection(source) {
+            throw Abort(.badRequest, reason: reason)
+        }
+        let checksum: ExpectedChecksum? = sha.isEmpty ? nil : .sha256(sha)
+        if !source.isEmpty {
+            if let existing = try await req.db.read({ db in
+                try ImageService.readyImage(
+                    sourceUrl: source, expectedChecksum: checksum, db: db,
+                )
+            }) {
+                return await response(existing)
+            }
+        } else if let existing = try await req.db.read({ db in
+            try ImageService.readyImage(sha256: sha, db: db)
+        }) {
+            return await response(existing)
+        }
+        let request = LibraryDepotFetchRequest(
+            sourceUrl: source,
+            name: body.name,
+            imageType: body.imageType,
+            arch: body.arch,
+            expectedChecksum: checksum,
+        )
+        if let fetched = await LibraryDepotClients.acquire(downloader: downloader).fetchMatching(
+            request, db: req.db,
+        ) {
+            return await response(fetched)
+        }
+        if source.isEmpty {
+            throw Abort(.badRequest, reason: "Image cannot be copied without a source URL")
+        }
+        let image = try await ImageService.startDownload(
+            ImageDownloadRequest(
+                name: body.name, url: source, imageType: body.imageType, arch: body.arch,
+            ),
             downloader: downloader, db: req.db,
         )
         return await response(image)
