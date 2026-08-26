@@ -1,25 +1,35 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import api from '../api/client'
-import { apiErrorMessage } from '../api/errors'
 import type { HomeDeviceHealthSnapshot, SystemStats, VM } from '../api/types'
 import AppButton from '../components/ui/AppButton.vue'
-import DeviceCard from '../components/DeviceCard.vue'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
-import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
+import { useDeviceWorkloadsStore, type HomeWorkloadRow } from '../stores/deviceWorkloads'
 import { useDiskStore } from '../stores/disks'
-import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
+import {
+  DASHBOARD_FEED_MODULES,
+  DASHBOARD_MODULE_META,
+  DASHBOARD_SIDE_MODULES,
+  type DashboardModule,
+  type DashboardModuleId,
+  isModuleOn,
+  loadDashboardLayout,
+  moveModule,
+  resetDashboardLayout,
+  saveDashboardLayout,
+  toggleModule,
+} from '../utils/dashboardWidgets'
 import { scopeRows } from '../utils/deviceScope'
-import { formatTemperatureC, formatVolumeUsed } from '../utils/format'
+import { formatCores, formatMemoryMB, formatTemperatureC, formatVolumeUsed } from '../utils/format'
 import { isSelfDevice } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { openWorkloadRow } from '../utils/workloadDetail'
-import { opsStatusClass, opsStatusLabel, vmHealth } from '../utils/workloadHealth'
+import { opsStatusLabel, vmHealth } from '../utils/workloadHealth'
 
 const router = useRouter()
 const store = useVMStore()
@@ -27,92 +37,25 @@ const diskStore = useDiskStore()
 const devices = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeWorkloads = useDeviceWorkloadsStore()
-const toast = useToastStore()
 const { summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
-const retrying = ref<Record<string, boolean>>({})
+const layout = ref<DashboardModule[]>(loadDashboardLayout())
+const customizeOpen = ref(false)
 
 const scopedDevices = computed(() => scopeRows(devices.devices, deviceScope.selectedHostId))
-const selectedHostId = ref<string | null>(null)
 
-watch(
-  scopedDevices,
-  (rows) => {
-    if (!rows.length) {
-      selectedHostId.value = null
-      return
-    }
-    if (!rows.some((row) => row.hostId === selectedHostId.value)) {
-      const self = rows.find((row) => isSelfDevice(row))
-      selectedHostId.value = (self ?? rows[0]).hostId
-    }
-  },
-  { immediate: true },
-)
-
-const selectedDevice = computed(
-  () => scopedDevices.value.find((row) => row.hostId === selectedHostId.value) ?? null,
-)
-const selectedReachable = computed(() =>
-  selectedDevice.value ? isReachabilityOk(selectedDevice.value.reachability) : false,
-)
-const selectedIsSelf = computed(() =>
-  selectedDevice.value ? isSelfDevice(selectedDevice.value) : false,
-)
-const selectedReachLabel = computed(() => reachabilityLabel(selectedDevice.value?.reachability))
-const selectedReachHint = computed(() =>
-  selectedDevice.value ? reachabilityHint(selectedDevice.value) : null,
-)
-const selectedPlatform = computed(() => {
-  const os = selectedDevice.value?.platform?.os
-  const arch = selectedDevice.value?.platform?.arch
-  if (os && arch) return `${os} ${arch}`
-  return os || arch || ''
-})
-
-const toolbarSub = computed(() => {
-  if (deviceScope.isAll) return `${HOME_LABEL} overview`
-  const row = scopedDevices.value[0]
-  return row ? devices.deviceLabel(row) : DEVICE_LABEL
-})
-
-const selfTempLabel = computed(() => formatTemperatureC(stats.value?.metrics?.temperatureC))
-const selfStorageLabel = computed(() => {
-  const summary = storageSummary.value
-  if (!summary || !summary.volumeTotalBytes) return null
-  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
-})
-
-type Chip = { key: string; label?: string; value: string }
-const selectedChips = computed<Chip[]>(() => {
-  const row = selectedDevice.value
-  if (!row || !selectedReachable.value) return []
-  if (selectedIsSelf.value && stats.value) {
-    const chips: Chip[] = [
-      { key: 'cpu', label: 'CPU', value: `${stats.value.hostCpuPercent.toFixed(0)}%` },
-      {
-        key: 'mem',
-        label: 'Mem',
-        value: `${(stats.value.hostMemoryUsedMB / 1024).toFixed(1)} / ${(stats.value.hostMemoryTotalMB / 1024).toFixed(0)} GB`,
-      },
-    ]
-    if (selfTempLabel.value) chips.push({ key: 'temp', value: selfTempLabel.value })
-    if (selfStorageLabel.value) chips.push({ key: 'storage', label: 'Storage', value: selfStorageLabel.value })
-    return chips
-  }
-  const chips: Chip[] = []
-  const cpu = row.resources?.cpuLoadPercent
-  if (cpu != null) chips.push({ key: 'cpu', label: 'CPU', value: `${Math.round(cpu)}%` })
-  const used = row.resources?.memoryUsedMB
-  const total = row.resources?.memoryTotalMB
-  if (used != null && total != null) {
-    chips.push({
-      key: 'mem',
-      label: 'Mem',
-      value: `${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} GB`,
-    })
-  }
-  return chips
+const homeRows = computed(() => {
+  const list = devices.devices
+  const rows = list.length > 0
+    ? homeWorkloads.homeRows(list)
+    : store.vms.map((vm) => ({
+        vm,
+        hostId: devices.selfDevice?.hostId || '',
+        label: '',
+        role: 'self',
+        reachable: true,
+      }))
+  return scopeRows(rows, deviceScope.selectedHostId)
 })
 
 type BoardBucket = 'running' | 'failed' | 'stopped'
@@ -124,35 +67,105 @@ function bucketOf(vm: VM): BoardBucket {
   return 'stopped'
 }
 
-const selectedVms = computed(() =>
-  selectedDevice.value ? homeWorkloads.vmsFor(selectedDevice.value.hostId) : [],
+const runningRows = computed(() => homeRows.value.filter((row) => bucketOf(row.vm) === 'running'))
+const failedRows = computed(() => homeRows.value.filter((row) => bucketOf(row.vm) === 'failed'))
+const stoppedRows = computed(() => homeRows.value.filter((row) => bucketOf(row.vm) === 'stopped'))
+const unreachableDevices = computed(() =>
+  scopedDevices.value.filter((row) => !isReachabilityOk(row.reachability)),
 )
 
-const board = computed<Record<BoardBucket, VM[]>>(() => {
-  const buckets: Record<BoardBucket, VM[]> = { running: [], failed: [], stopped: [] }
-  for (const vm of selectedVms.value) buckets[bucketOf(vm)].push(vm)
-  return buckets
+const workloadTotal = computed(() => {
+  if (!deviceScope.isAll) {
+    return scopedDevices.value[0]?.workloadCount ?? homeRows.value.length
+  }
+  return devices.totals?.workloadCount ?? homeRows.value.length
 })
 
-const boardColumns: Array<{
-  key: BoardBucket
-  label: string
-  headClass: string
-  dotClass: string
-}> = [
-  { key: 'running', label: 'Running', headClass: 'c-ok', dotClass: 'ok' },
-  { key: 'failed', label: 'Failed', headClass: 'c-bad', dotClass: 'bad' },
-  { key: 'stopped', label: 'Stopped', headClass: 'c-off', dotClass: 'off' },
-]
+const toolbarSub = computed(() => {
+  const n = scopedDevices.value.length
+  const running = runningRows.value.length
+  const total = workloadTotal.value
+  const failed = failedRows.value.length
+  const down = unreachableDevices.value.length
+  const parts = [
+    `${n} ${n === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}`,
+    total ? `${running} of ${total} workloads running` : 'No workloads',
+  ]
+  if (failed) parts.push(`${failed} failed`)
+  if (down) parts.push(`${down} unreachable`)
+  return parts.join(' · ')
+})
 
-function emptyText(key: BoardBucket): string {
-  if (key === 'failed') return selectedReachable.value ? 'No failures' : 'No failed workloads'
-  if (key === 'running') return 'No running workloads'
-  return 'No stopped workloads'
+const meterDevice = computed(() => {
+  if (!deviceScope.isAll) return scopedDevices.value[0] ?? null
+  return scopedDevices.value.find((row) => isSelfDevice(row)) ?? scopedDevices.value[0] ?? null
+})
+
+const meterIsSelf = computed(() => (meterDevice.value ? isSelfDevice(meterDevice.value) : false))
+const selfTempC = computed(() => stats.value?.metrics?.temperatureC ?? null)
+const selfTempLabel = computed(() => formatTemperatureC(selfTempC.value))
+const selfStorageLabel = computed(() => {
+  const summary = storageSummary.value
+  if (!summary || !summary.volumeTotalBytes) return null
+  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
+})
+
+const meterCpu = computed(() => {
+  if (meterIsSelf.value && stats.value) return Math.round(stats.value.hostCpuPercent)
+  const value = meterDevice.value?.resources?.cpuLoadPercent
+  return value == null ? null : Math.round(value)
+})
+const meterMem = computed(() => {
+  if (meterIsSelf.value && stats.value) {
+    return {
+      label: `${(stats.value.hostMemoryUsedMB / 1024).toFixed(1)} / ${(stats.value.hostMemoryTotalMB / 1024).toFixed(0)} GB`,
+      pct: stats.value.hostMemoryTotalMB
+        ? Math.min((stats.value.hostMemoryUsedMB / stats.value.hostMemoryTotalMB) * 100, 100)
+        : 0,
+    }
+  }
+  const used = meterDevice.value?.resources?.memoryUsedMB
+  const total = meterDevice.value?.resources?.memoryTotalMB
+  if (used == null || total == null) return null
+  return {
+    label: `${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} GB`,
+    pct: total ? Math.min((used / total) * 100, 100) : 0,
+  }
+})
+const meterStoragePct = computed(() => {
+  const summary = storageSummary.value
+  if (!meterIsSelf.value || !summary || !summary.volumeTotalBytes) return null
+  const used = summary.volumeTotalBytes - summary.volumeAvailableBytes
+  return Math.min((used / summary.volumeTotalBytes) * 100, 100)
+})
+
+const feedModules = computed(() =>
+  layout.value.filter((row) => row.on && (DASHBOARD_FEED_MODULES as readonly string[]).includes(row.id)),
+)
+const sideModules = computed(() =>
+  layout.value.filter((row) => row.on && (DASHBOARD_SIDE_MODULES as readonly string[]).includes(row.id)),
+)
+
+const showAttention = computed(() =>
+  isModuleOn(layout.value, 'attention')
+  && (failedRows.value.length > 0 || unreachableDevices.value.length > 0),
+)
+
+function persist(next: DashboardModule[]) {
+  layout.value = next
+  saveDashboardLayout(next)
 }
 
-function selectDevice(row: HomeDeviceHealthSnapshot) {
-  selectedHostId.value = row.hostId
+function onToggle(id: DashboardModuleId) {
+  persist(toggleModule(layout.value, id))
+}
+
+function onMove(index: number, delta: number) {
+  persist(moveModule(layout.value, index, delta))
+}
+
+function onReset() {
+  persist(resetDashboardLayout())
 }
 
 function vmOs(vm: VM): string {
@@ -160,41 +173,49 @@ function vmOs(vm: VM): string {
 }
 
 function vmSpecs(vm: VM): string {
-  const mem = vm.memoryMB >= 1024
-    ? `${(vm.memoryMB / 1024).toFixed(vm.memoryMB % 1024 === 0 ? 0 : 1)} GB`
-    : `${vm.memoryMB} MB`
-  return `${vm.cpuCount} cores · ${mem}`
+  return `${vmOs(vm)} · ${formatCores(vm.cpuCount)} · ${formatMemoryMB(vm.memoryMB)}`
 }
 
-function vmStateClass(vm: VM): string {
-  return opsStatusClass(vmHealth(vm))
+function vmError(row: HomeWorkloadRow): string {
+  return row.vm.status?.healthError || 'failed'
 }
 
-function vmError(vm: VM): string | null {
-  return vm.status?.healthError ?? null
+function rowDeviceLabel(row: HomeWorkloadRow): string {
+  if (row.label) return row.label
+  const device = devices.deviceByHostId(row.hostId)
+  return device ? devices.deviceLabel(device) : DEVICE_LABEL
 }
 
-function openVm(vm: VM) {
-  const device = selectedDevice.value
-  if (!device) return
-  openWorkloadRow((path) => { router.push(path) }, {
-    hostId: device.hostId,
-    role: device.role,
-    vm,
-  })
+function deviceMeta(row: HomeDeviceHealthSnapshot): string {
+  const os = row.platform?.os
+  const arch = row.platform?.arch
+  const platform = os && arch ? `${os} · ${arch}` : os || arch || ''
+  return [platform, reachabilityLabel(row.reachability)].filter(Boolean).join(' · ')
 }
 
-async function retry(vm: VM) {
-  const device = selectedDevice.value
-  if (!device) return
-  retrying.value = { ...retrying.value, [vm.id]: true }
-  try {
-    await homeWorkloads.start(device, vm.id)
-  } catch (err) {
-    toast.error(apiErrorMessage(err))
-  } finally {
-    retrying.value = { ...retrying.value, [vm.id]: false }
-  }
+function unreachableIncidentText(row: HomeDeviceHealthSnapshot): string {
+  const stopped = row.healthCounts?.stopped ?? 0
+  if (stopped === 1) return `1 stopped workload still on that ${DEVICE_LABEL}`
+  if (stopped > 1) return `${stopped} stopped workloads still on that ${DEVICE_LABEL}`
+  return reachabilityHint(row) || 'Unreachable'
+}
+
+function homeDevSub(row: HomeDeviceHealthSnapshot): string {
+  const os = row.platform?.os
+  const arch = row.platform?.arch
+  const bits = [os, arch].filter(Boolean)
+  if (isSelfDevice(row)) bits.push(`this ${DEVICE_LABEL}`)
+  else if (!isReachabilityOk(row.reachability)) bits.push('unreachable')
+  else if ((row.healthCounts?.failed ?? 0) > 0) bits.push(`${row.healthCounts?.failed} failed`)
+  return bits.join(' · ')
+}
+
+function openVm(row: HomeWorkloadRow) {
+  openWorkloadRow((path) => { router.push(path) }, row)
+}
+
+function openDevice(row: HomeDeviceHealthSnapshot) {
+  router.push({ name: 'device-detail', params: { hostId: row.hostId } })
 }
 
 async function fetchStats() {
@@ -220,7 +241,12 @@ async function refreshHomeWorkloads() {
 }
 
 let pollTimer: number
+function onKey(event: KeyboardEvent) {
+  if (event.key === 'Escape') customizeOpen.value = false
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onKey)
   void refreshHomeWorkloads()
   void fetchStats()
   void fetchStorage()
@@ -229,7 +255,10 @@ onMounted(() => {
     void refreshHomeWorkloads()
   }, 5000)
 })
-onUnmounted(() => clearInterval(pollTimer))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  clearInterval(pollTimer)
+})
 </script>
 
 <template>
@@ -238,346 +267,464 @@ onUnmounted(() => clearInterval(pollTimer))
       <h1>Dashboard</h1>
       <span class="ops-sub">{{ toolbarSub }}</span>
       <div class="ops-actions">
-        <AppButton variant="ghost" icon="sliders" @click="router.push('/settings')">Customize</AppButton>
+        <AppButton variant="ghost" icon="sliders" @click="customizeOpen = true">Customize</AppButton>
         <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
       </div>
     </div>
-    <div class="ops-body split">
-      <section class="dash-devices">
-        <div class="ops-sec-head">
-          <h3>{{ DEVICE_LABEL }}s</h3>
-          <span class="n">{{ scopedDevices.length }}</span>
-          <span class="hint">Select a {{ DEVICE_LABEL }} to inspect</span>
+    <div class="ops-body triage">
+      <div v-if="showAttention" class="incidents">
+        <div v-for="row in failedRows" :key="'fail-' + row.vm.id" class="incident">
+          <span class="pill failed">Failed</span>
+          <strong>{{ row.vm.name }}</strong>
+          <span>{{ vmError(row) }} on {{ rowDeviceLabel(row) }}</span>
+          <span class="spacer"></span>
+          <button type="button" class="ghost-btn" @click="openVm(row)">Open</button>
         </div>
-        <div class="dash-dev-list">
-          <DeviceCard
-            v-for="row in scopedDevices"
-            :key="row.hostId"
-            :device="row"
-            selectable
-            :selected="row.hostId === selectedHostId"
-            :temp-label="row.role === 'self' ? selfTempLabel : null"
-            :storage-label="row.role === 'self' ? selfStorageLabel : null"
-            @click="selectDevice(row)"
-          />
-          <div v-if="!scopedDevices.length" class="dash-empty">
-            No {{ DEVICE_LABEL }}s in this {{ HOME_LABEL }} yet
-          </div>
+        <div v-for="row in unreachableDevices" :key="'down-' + row.hostId" class="incident warn">
+          <span class="pill unreach">Unreachable</span>
+          <strong>{{ devices.deviceLabel(row) }}</strong>
+          <span>{{ unreachableIncidentText(row) }}</span>
+          <span class="spacer"></span>
+          <button type="button" class="ghost-btn" @click="openDevice(row)">{{ DEVICE_LABEL }}</button>
         </div>
-      </section>
-      <section v-if="selectedDevice" class="dash-detail">
-        <div class="dash-detail-head">
-          <div>
-            <h2>{{ devices.deviceLabel(selectedDevice) }}</h2>
-            <div class="dash-detail-meta">
-              <template v-if="selectedIsSelf">This {{ DEVICE_LABEL }} · </template>
-              <template v-if="selectedPlatform">{{ selectedPlatform }} · </template>
-              <span :class="selectedReachable ? 'ops-ok-text' : 'ops-bad-text'">{{ selectedReachLabel }}</span>
-            </div>
-          </div>
-          <div class="dash-chips">
-            <span v-if="!selectedReachable" class="dash-chip bad">
-              <span class="ops-dot bad pulse"></span><b>{{ selectedReachLabel }}</b>
-            </span>
-            <span v-for="chip in selectedChips" :key="chip.key" class="dash-chip">
-              <template v-if="chip.label">{{ chip.label }} </template><b>{{ chip.value }}</b>
-            </span>
-          </div>
-        </div>
-        <div v-if="!selectedReachable" class="ops-banner">
-          <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
-          <div>
-            <div class="ops-banner-title">{{ DEVICE_LABEL }} unreachable</div>
-            <div class="ops-banner-sub">
-              {{ selectedReachHint }} Showing last known state. Workloads on {{ devices.deviceLabel(selectedDevice) }} cannot be managed until it reconnects.
-            </div>
-          </div>
-        </div>
-        <div class="dash-board">
-          <div v-for="col in boardColumns" :key="col.key" class="dash-col">
-            <div class="dash-col-head" :class="col.headClass">
-              <span
-                class="ops-dot"
-                :class="[col.dotClass, { pulse: col.key === 'failed' && board.failed.length > 0 }]"
-              ></span>
-              {{ col.label }}
-              <span class="count">{{ board[col.key].length }}</span>
-            </div>
-            <div class="dash-col-body">
-              <div
-                v-for="vm in board[col.key]"
-                :key="vm.id"
-                class="dash-card"
-                :class="{ failed: col.key === 'failed', dim: !selectedReachable }"
-                @click="openVm(vm)"
-              >
-                <div class="dash-card-top">
-                  <span class="dash-card-name">{{ vm.name }}</span>
-                  <span class="dash-os">{{ vmOs(vm) }}</span>
-                </div>
-                <div class="dash-card-specs">{{ vmSpecs(vm) }}</div>
-                <div v-if="col.key === 'failed' && vmError(vm)" class="dash-err">
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 1.5L13 12H1z" stroke-linejoin="round"/><path d="M7 5.5v3" stroke-linecap="round"/><circle cx="7" cy="10.2" r=".7" fill="currentColor" stroke="none"/></svg>
-                  {{ vmError(vm) }}
-                </div>
-                <div class="dash-card-foot">
-                  <span class="dash-state" :class="vmStateClass(vm)">
-                    <span class="ops-dot" :class="vmStateClass(vm)"></span>{{ opsStatusLabel(vmHealth(vm)) }}
-                  </span>
-                  <button
-                    v-if="col.key === 'failed'"
-                    class="dash-mini"
-                    :disabled="retrying[vm.id]"
-                    @click.stop="retry(vm)"
-                  >{{ retrying[vm.id] ? 'Retrying' : 'Retry' }}</button>
-                </div>
+      </div>
+
+      <div class="triage-body" :class="{ full: !sideModules.length }">
+        <section class="feed-col">
+          <template v-for="mod in feedModules" :key="mod.id">
+            <div v-if="mod.id === 'needs'" class="feed-block">
+              <div class="section-label">Needs you</div>
+              <div v-if="failedRows.length || unreachableDevices.length" class="feed">
+                <article
+                  v-for="row in failedRows"
+                  :key="'need-' + row.vm.id"
+                  class="row loud"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">{{ vmSpecs(row.vm) }}<template v-if="vmError(row)"> · {{ vmError(row) }}</template></div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill failed">Failed</span>
+                </article>
+                <article
+                  v-for="row in unreachableDevices"
+                  :key="'need-dev-' + row.hostId"
+                  class="row loud"
+                  @click="openDevice(row)"
+                >
+                  <div>
+                    <h3>{{ devices.deviceLabel(row) }}</h3>
+                    <div class="meta">{{ deviceMeta(row) }}</div>
+                  </div>
+                  <span class="chip">{{ DEVICE_LABEL }}</span>
+                  <span class="pill unreach">Unreachable</span>
+                </article>
               </div>
-              <div
-                v-if="!board[col.key].length"
-                class="dash-col-empty"
-                :class="{ ok: col.key === 'failed' && selectedReachable }"
-              >
-                {{ emptyText(col.key) }}
+              <div v-else class="empty">Nothing needs you</div>
+            </div>
+            <div v-else-if="mod.id === 'running'" class="feed-block">
+              <div class="section-label">Running</div>
+              <div v-if="runningRows.length" class="feed">
+                <article
+                  v-for="row in runningRows"
+                  :key="row.hostId + row.vm.id"
+                  class="row"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">{{ vmSpecs(row.vm) }}</div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill running">{{ opsStatusLabel(vmHealth(row.vm)) }}</span>
+                </article>
+              </div>
+              <div v-else class="empty">No running workloads</div>
+            </div>
+            <div v-else-if="mod.id === 'failed'" class="feed-block">
+              <div class="section-label">Failed</div>
+              <div v-if="failedRows.length" class="feed">
+                <article
+                  v-for="row in failedRows"
+                  :key="'fl-' + row.hostId + row.vm.id"
+                  class="row loud"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">{{ vmSpecs(row.vm) }}<template v-if="vmError(row)"> · {{ vmError(row) }}</template></div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill failed">Failed</span>
+                </article>
+              </div>
+              <div v-else class="empty">No failed workloads</div>
+            </div>
+            <div v-else-if="mod.id === 'stopped'" class="feed-block">
+              <div class="section-label">Stopped</div>
+              <div v-if="stoppedRows.length" class="feed">
+                <article
+                  v-for="row in stoppedRows"
+                  :key="row.hostId + row.vm.id"
+                  class="row"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">
+                      {{ vmSpecs(row.vm) }}
+                      <template v-if="!row.reachable"> · {{ DEVICE_LABEL }} is unreachable</template>
+                    </div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill stopped">Stopped</span>
+                </article>
+              </div>
+              <div v-else class="empty">No stopped workloads</div>
+            </div>
+          </template>
+        </section>
+
+        <aside v-if="sideModules.length" class="side">
+          <template v-for="mod in sideModules" :key="mod.id">
+            <div v-if="mod.id === 'meters' && meterDevice" class="panel">
+              <h2>This {{ DEVICE_LABEL }} · {{ devices.deviceLabel(meterDevice) }}</h2>
+              <div v-if="meterCpu != null" class="vital">
+                <div class="vital-top"><span>CPU</span><b>{{ meterCpu }}%</b></div>
+                <div class="bar"><i class="fill-cpu" :style="{ width: meterCpu + '%' }"></i></div>
+              </div>
+              <div v-if="meterMem" class="vital">
+                <div class="vital-top"><span>Memory</span><b>{{ meterMem.label }}</b></div>
+                <div class="bar"><i class="fill-mem" :style="{ width: meterMem.pct + '%' }"></i></div>
+              </div>
+              <div v-if="meterIsSelf && selfStorageLabel" class="vital">
+                <div class="vital-top"><span>Storage</span><b>{{ selfStorageLabel }}</b></div>
+                <div class="bar"><i class="fill-cpu" :style="{ width: (meterStoragePct ?? 0) + '%' }"></i></div>
+              </div>
+              <div v-if="meterIsSelf && selfTempLabel" class="vital">
+                <div class="vital-top"><span>Temperature</span><b>{{ selfTempLabel }}</b></div>
+                <div class="bar"><i class="fill-hot" :style="{ width: Math.min(selfTempC ?? 0, 100) + '%' }"></i></div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
+            <div v-else-if="mod.id === 'devices'" class="panel">
+              <h2>{{ HOME_LABEL }}</h2>
+              <button
+                v-for="row in scopedDevices"
+                :key="row.hostId"
+                type="button"
+                class="triage-home-dev"
+                @click="openDevice(row)"
+              >
+                <div>
+                  <b>{{ devices.deviceLabel(row) }}</b>
+                  <small>{{ homeDevSub(row) }}</small>
+                </div>
+                <span class="side-dot" :class="isReachabilityOk(row.reachability) ? 'ok' : 'off'"></span>
+              </button>
+              <div v-if="!scopedDevices.length" class="empty">No {{ DEVICE_LABEL }}s in this {{ HOME_LABEL }} yet</div>
+            </div>
+          </template>
+        </aside>
+      </div>
     </div>
+
+    <div v-if="customizeOpen" class="scrim" @click="customizeOpen = false"></div>
+    <aside class="dash-drawer" :class="{ open: customizeOpen }" aria-label="Customize Home">
+      <div class="d-head">
+        <div>
+          <h2>Customize Home</h2>
+          <span class="hint">Show, hide, and reorder modules</span>
+        </div>
+        <button type="button" class="d-close" aria-label="Close" @click="customizeOpen = false">×</button>
+      </div>
+      <div class="d-list">
+        <div v-for="(row, index) in layout" :key="row.id" class="drow" :class="{ off: !row.on }">
+          <div class="d-move">
+            <button type="button" :disabled="index === 0" aria-label="Move up" @click="onMove(index, -1)">▲</button>
+            <button type="button" :disabled="index === layout.length - 1" aria-label="Move down" @click="onMove(index, 1)">▼</button>
+          </div>
+          <div class="d-info">
+            <div class="d-name">{{ DASHBOARD_MODULE_META[row.id].title }}</div>
+            <div class="d-desc">{{ DASHBOARD_MODULE_META[row.id].hint }}</div>
+          </div>
+          <label class="d-tog">
+            <input type="checkbox" :checked="row.on" @change="onToggle(row.id)">
+            <i></i>
+          </label>
+        </div>
+      </div>
+      <div class="d-foot">
+        <AppButton variant="ghost" @click="onReset">Reset</AppButton>
+        <AppButton variant="primary" @click="customizeOpen = false">Done</AppButton>
+      </div>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.dash-devices {
-  width: 40%;
-  min-width: 0;
+.ops-body.triage {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-}
-.dash-detail {
-  width: 60%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.dash-dev-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-.dash-empty {
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: 16px 10px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 11.5px;
-}
-.dash-detail-head {
-  display: flex;
-  align-items: flex-start;
   gap: 16px;
-  margin-bottom: 12px;
 }
-.dash-detail-head h2 {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.dash-detail-meta {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-top: 3px;
-}
-.dash-chips {
-  margin-left: auto;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 420px;
-}
-.dash-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-dim);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 4px 8px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.dash-chip b { color: var(--text); font-weight: 600; }
-.dash-chip.bad {
-  border-color: rgba(248,113,113,0.5);
-  color: var(--red);
-  background: rgba(248,113,113,0.08);
-}
-.dash-board {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
-  min-height: 0;
-}
-.dash-col {
-  background: rgba(255,255,255,0.015);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.dash-col-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.dash-col-head .count {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: var(--text-dim);
-  background: rgba(255,255,255,0.06);
-  padding: 1px 7px;
-  border-radius: 10px;
-  font-variant-numeric: tabular-nums;
-}
-.dash-col-head.c-ok { color: var(--green); }
-.dash-col-head.c-bad { color: var(--red); }
-.dash-col-head.c-off { color: var(--text-dim); }
-.dash-col-body {
-  padding: 10px;
+.incidents {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
 }
-.dash-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 10px 11px;
-  transition: border-color 0.12s;
-  cursor: pointer;
-}
-.dash-card:hover { border-color: rgba(255,255,255,0.16); }
-.dash-card-top { display: flex; align-items: center; gap: 8px; }
-.dash-card-name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
-.dash-os {
-  margin-left: auto;
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--text-dim);
-  border: 1px solid var(--line);
-  padding: 2px 6px;
-  border-radius: var(--radius);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-.dash-card-specs {
-  color: var(--text-dim);
-  font-size: 11.5px;
-  margin-top: 5px;
-  font-variant-numeric: tabular-nums;
-}
-.dash-card-foot { display: flex; align-items: center; margin-top: 9px; }
-.dash-state {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.dash-state.ok { color: var(--green); }
-.dash-state.bad { color: var(--red); }
-.dash-state.off { color: var(--text-dim); }
-.dash-card.failed {
-  border-color: rgba(248,113,113,0.55);
-  background: rgba(248,113,113,0.07);
-  box-shadow: 0 0 0 1px rgba(248,113,113,0.22), 0 6px 22px rgba(248,113,113,0.12);
-}
-.dash-err {
+.incident {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 9px;
-  font-size: 11.5px;
-  color: var(--red);
-  background: rgba(248,113,113,0.12);
-  border: 1px solid rgba(248,113,113,0.32);
+  gap: 12px;
+  padding: 10px 14px;
   border-radius: var(--radius);
-  padding: 6px 8px;
-  font-weight: 500;
+  border: 1px solid rgba(248,113,113,0.35);
+  background: rgba(248,113,113,0.08);
+  flex-wrap: wrap;
 }
-.dash-err svg { flex-shrink: 0; }
-.dash-mini {
-  margin-left: auto;
+.incident.warn {
+  border-color: rgba(251,191,36,0.4);
+  background: rgba(251,191,36,0.08);
+}
+.incident strong { font-size: 13px; font-weight: 650; }
+.incident span { color: var(--text-secondary); font-size: 13px; }
+.incident .spacer { flex: 1; }
+.ghost-btn {
   font: inherit;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  background: rgba(255,255,255,0.06);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 3px 9px;
+  padding: 5px 12px;
   cursor: pointer;
 }
-.dash-mini:hover { border-color: var(--red); color: var(--red); }
-.dash-mini:disabled { opacity: 0.4; pointer-events: none; }
-.dash-col-empty {
-  border: 1px dashed rgba(255,255,255,0.12);
+.ghost-btn:hover { border-color: rgba(255,255,255,0.25); }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.pill.failed { background: var(--red-muted); color: var(--red); }
+.pill.running { background: var(--green-muted); color: var(--green); }
+.pill.stopped { background: var(--gray-muted); color: var(--gray); }
+.pill.unreach { background: var(--red-muted); color: var(--red); }
+.triage-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  min-height: 0;
+  flex: 1;
+}
+.triage-body.full { grid-template-columns: 1fr; }
+.feed-col { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.feed { display: flex; flex-direction: column; gap: 8px; }
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 16px 10px;
+  cursor: pointer;
+}
+.row.loud { border-color: rgba(248,113,113,0.35); }
+.row h3 { font-size: 14px; font-weight: 650; }
+.row .meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+.chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.chip.self { color: var(--accent); border-color: rgba(0,144,248,0.3); }
+.side { display: flex; flex-direction: column; gap: 18px; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.panel h2 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+.vital { margin-bottom: 12px; }
+.vital:last-child { margin-bottom: 0; }
+.vital-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+.vital-top span { color: var(--text-dim); }
+.bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 2px; }
+.fill-cpu { background: var(--accent); }
+.fill-mem { background: var(--green); }
+.fill-hot { background: var(--amber); }
+.triage-home-dev {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  cursor: pointer;
+}
+.triage-home-dev:first-of-type { border-top: 0; padding-top: 0; }
+.triage-home-dev b { font-weight: 650; }
+.triage-home-dev small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+.side-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.side-dot.off { background: var(--red); }
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 14px 10px;
   text-align: center;
   color: var(--text-dim);
   font-size: 11.5px;
 }
-.dash-col-empty.ok {
-  border-color: rgba(52,211,153,0.28);
-  color: rgba(52,211,153,0.85);
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 65;
 }
-.dash-card.dim { opacity: 0.55; }
+.dash-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  background: #0d1219;
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+}
+.dash-drawer.open { transform: none; }
+.d-head {
+  display: flex;
+  align-items: center;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.d-head h2 { font-size: 13px; font-weight: 700; }
+.d-head .hint { display: block; color: var(--text-dim); font-size: 11px; margin-top: 2px; font-weight: 400; }
+.d-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.d-close:hover { color: var(--text); }
+.d-list { flex: 1; overflow-y: auto; padding: 12px 14px; }
+.drow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  background: var(--panel);
+}
+.drow.off { opacity: 0.5; }
+.d-info { min-width: 0; flex: 1; }
+.d-name { font-size: 12.5px; font-weight: 600; }
+.d-desc { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; }
+.d-move { display: flex; flex-direction: column; gap: 2px; }
+.d-move button {
+  width: 18px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--text-dim);
+  font-size: 8px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.d-move button:hover { color: var(--text); }
+.d-move button:disabled { opacity: 0.3; cursor: default; }
+.d-tog { position: relative; width: 26px; height: 15px; flex-shrink: 0; cursor: pointer; }
+.d-tog input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.d-tog i {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.12);
+  pointer-events: none;
+}
+.d-tog i::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.d-tog input:checked + i { background: rgba(0,144,248,0.4); }
+.d-tog input:checked + i::after { transform: translateX(11px); background: var(--accent); }
+.d-foot {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+  display: flex;
+  gap: 8px;
+}
+.d-foot :deep(.app-btn) { flex: 1; justify-content: center; }
 
-:root[data-theme="light"] .dash-col { background: rgba(0,0,0,0.015); }
-:root[data-theme="light"] .dash-col-head .count { background: rgba(0,0,0,0.06); }
-:root[data-theme="light"] .dash-card:hover { border-color: rgba(0,0,0,0.2); }
-:root[data-theme="light"] .dash-mini { background: rgba(0,0,0,0.05); }
-:root[data-theme="light"] .dash-col-empty { border-color: rgba(0,0,0,0.14); }
+:global(:root[data-theme="light"]) .dash-drawer { background: #f3f4f6; }
+:global(:root[data-theme="light"]) .chip { background: rgba(0,0,0,0.04); }
+:global(:root[data-theme="light"]) .bar { background: rgba(0,0,0,0.08); }
 
 @media (max-width: 900px) {
-  .dash-devices,
-  .dash-detail {
-    width: 100%;
-    flex-shrink: 0;
-    min-height: auto;
-  }
-  .dash-dev-list { overflow: visible; }
-  .dash-board {
-    grid-template-columns: 1fr;
-    flex: none;
-    min-height: auto;
-  }
-  .dash-detail-head { flex-direction: column; }
-  .dash-chips {
-    margin-left: 0;
-    max-width: none;
-    justify-content: flex-start;
-  }
+  .triage-body { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr auto; }
+  .row .pill { grid-column: 2; }
+  .dash-drawer { width: min(320px, 92vw); }
 }
 </style>

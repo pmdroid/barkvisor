@@ -13,19 +13,22 @@ describe('Dashboard', () => {
     cy.get('.ops-ticker').invoke('text').should('match', /running/i)
   })
 
-  it('shows the Device list', () => {
-    cy.get('.ops-dev').should('have.length.gte', 1)
+  it('shows the Home Device list', () => {
+    cy.get('.triage-home-dev').should('have.length.gte', 1)
   })
 
-  it('selecting a Device row marks it selected', () => {
-    cy.get('.ops-dev').first().click()
-    cy.get('.ops-dev').first().should('have.class', 'selected')
+  it('shows triage sections', () => {
+    cy.contains('.section-label', 'Needs you').should('exist')
+    cy.contains('.section-label', 'Running').should('exist')
+    cy.contains('.section-label', 'Stopped').should('exist')
   })
 
-  it('shows the workload board columns', () => {
-    cy.contains('.dash-col-head', 'Running').should('exist')
-    cy.contains('.dash-col-head', 'Failed').should('exist')
-    cy.contains('.dash-col-head', 'Stopped').should('exist')
+  it('Customize opens the module drawer', () => {
+    cy.get('.dash-drawer').should('not.have.class', 'open')
+    cy.contains('button', 'Customize').click()
+    cy.get('.dash-drawer').should('have.class', 'open')
+    cy.contains('Customize Home').should('exist')
+    cy.contains('This Device').should('exist')
   })
 
   it('Create VM button navigates to /vms', () => {

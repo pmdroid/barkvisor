@@ -121,11 +121,13 @@ describe('PAS-82 Home terminology', () => {
     expect(offenders).toEqual([])
   })
 
-  test('Dashboard board uses ops Running labels', () => {
+  test('Dashboard is triage inbox with Customize Home', () => {
     const text = readFileSync(join(srcRoot, 'views/DashboardView.vue'), 'utf8')
     expect(text).toContain('opsStatusLabel')
-    expect(text).toContain('Customize')
+    expect(text).toContain('Customize Home')
+    expect(text).toContain('Needs you')
     expect(text).not.toContain('healthLabel')
+    expect(text).not.toContain('dash-col-head')
   })
 
   test('Devices view is Home-scoped and reuses Settings pairing', () => {
