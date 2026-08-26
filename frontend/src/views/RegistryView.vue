@@ -368,6 +368,22 @@ const imagesEmptySubtitle = computed(() => {
   return undefined
 })
 
+const catalogEmpty = computed(() =>
+  !templateStore.loading
+  && !homeLibrary.loading
+  && !imagesLoading.value
+  && templateTabCount.value === 0
+  && imageTabCount.value === 0,
+)
+
+const catalogSearch = computed({
+  get: () => (activeTab.value === 'templates' ? templateSearch.value : searchQuery.value),
+  set: (value: string) => {
+    if (activeTab.value === 'templates') templateSearch.value = value
+    else searchQuery.value = value
+  },
+})
+
 watch([filterType, filterArch, searchQuery], () => { imagePage.value = 1 })
 
 function localImage(img: RepositoryImage): Image | undefined {
@@ -507,49 +523,96 @@ async function addRepo() {
 </script>
 
 <template>
-  <div class="page-header">
+  <div class="ops-page">
+  <div class="ops-toolbar">
     <h1>Repositories</h1>
-    <AppButton icon="settings" @click="showRepoSettings = true">Manage</AppButton>
-  </div>
-
-  <!-- Manage Repositories Modal -->
-  <AppModal v-if="showRepoSettings" title="Manage Repositories" max-width="640px" @close="showRepoSettings = false">
-    <div v-for="r in repoStore.repositories" :key="r.id" class="repo-item">
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:500;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          {{ r.name }}
-          <span class="badge badge-gray" style="font-size:10px">{{ r.repoType }}</span>
-          <span v-if="r.isBuiltIn" class="badge badge-accent" style="font-size:10px">built-in</span>
-          <span v-if="r.syncStatus === 'syncing'" class="badge badge-amber" style="font-size:10px">syncing...</span>
-          <span v-else-if="r.syncStatus === 'error' || r.lastError" class="badge badge-red" style="font-size:10px">error</span>
-          <span v-else-if="r.lastSyncedAt" class="badge badge-green" style="font-size:10px">synced</span>
+    <span class="ops-sub">Template &amp; image catalog</span>
+    <div class="ops-actions">
+      <input
+        v-model="catalogSearch"
+        class="ops-search"
+        type="search"
+        placeholder="Search templates &amp; images"
+        style="width:200px"
+      />
+      <div class="repo-menu-wrap">
+        <AppButton variant="primary" icon="settings" @click="showRepoSettings = !showRepoSettings">Manage</AppButton>
+        <div v-if="showRepoSettings" class="repo-backdrop" @click="showRepoSettings = false"></div>
+        <div v-if="showRepoSettings" class="repo-dropdown">
+          <div class="repo-dropdown-head">Repositories</div>
+          <div v-for="r in repoStore.repositories" :key="r.id" class="repo-dropdown-item">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:500;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span class="repo-name">{{ r.name }}</span>
+                <span class="badge badge-gray" style="font-size:10px">{{ r.repoType }}</span>
+                <span v-if="r.isBuiltIn" class="badge badge-accent" style="font-size:10px">built-in</span>
+                <span v-if="r.syncStatus === 'syncing'" class="badge badge-amber" style="font-size:10px">syncing...</span>
+                <span v-else-if="r.syncStatus === 'error' || r.lastError" class="badge badge-red" style="font-size:10px">error</span>
+                <span v-else-if="r.lastSyncedAt" class="badge badge-green" style="font-size:10px">synced</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">{{ r.url }}</div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0">
+              <AppButton size="sm" :disabled="r.syncStatus === 'syncing'" @click="syncRepo(r.id)">{{ r.syncStatus === 'syncing' ? 'Syncing...' : 'Sync' }}</AppButton>
+              <AppButton v-if="!r.isBuiltIn" variant="danger" size="sm" @click="deleteRepo(r.id, r.name)">Remove</AppButton>
+            </div>
+          </div>
+          <div v-if="repoStore.repositories.length === 0" style="padding:16px;text-align:center;color:var(--text-dim);font-size:13px">
+            No repositories configured.
+          </div>
+          <div class="repo-dropdown-foot">
+            <button type="button" class="repo-add" @click="newRepoType = activeTab === 'templates' ? 'templates' : 'images'; showAddRepo = true; showRepoSettings = false">+ Add</button>
+          </div>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px">{{ r.url }}</div>
-      </div>
-      <div style="display:flex;gap:4px;flex-shrink:0">
-        <AppButton size="sm" :disabled="r.syncStatus === 'syncing'" @click="syncRepo(r.id)">{{ r.syncStatus === 'syncing' ? 'Syncing...' : 'Sync' }}</AppButton>
-        <AppButton v-if="!r.isBuiltIn" variant="danger" size="sm" @click="deleteRepo(r.id, r.name)">Remove</AppButton>
       </div>
     </div>
-    <div v-if="repoStore.repositories.length === 0" style="padding:16px;text-align:center;color:var(--text-dim);font-size:13px">
-      No repositories configured.
-    </div>
-    <template #actions>
-      <AppButton icon="plus" @click="newRepoType = activeTab === 'templates' ? 'templates' : 'images'; showAddRepo = true; showRepoSettings = false">Add Repository</AppButton>
-      <div style="flex:1" />
-      <AppButton @click="showRepoSettings = false">Close</AppButton>
-    </template>
-  </AppModal>
+  </div>
+  <div class="ops-body" :class="{ catalog: catalogEmpty }">
 
-  <!-- Tabs -->
-  <TabGroup
-    v-model="activeTab"
-    :tabs="[
-      { key: 'templates', label: 'Templates', count: templateTabCount },
-      { key: 'images', label: 'Images', count: imageTabCount },
-    ]"
-    style="margin-bottom:16px"
-  />
+  <template v-if="catalogEmpty">
+    <div class="hero">
+      <div class="hero-icon">
+        <svg width="30" height="30" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M1.5 3.5a1 1 0 011-1h3L7 4h4.5a1 1 0 011 1v6a1 1 0 01-1 1h-9a1 1 0 01-1-1v-7.5z"/></svg>
+      </div>
+      <h2>Your catalog is empty</h2>
+      <p>Add a repository source to browse ready-made VM templates and images, then pull them onto any Device in your Home.</p>
+      <div class="hero-row">
+        <AppButton variant="primary" icon="settings" @click="showRepoSettings = true">Manage</AppButton>
+      </div>
+    </div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="big">0</span>
+        <div>
+          <div class="lbl">Templates</div>
+          <div class="sub">Ready-to-run VM definitions</div>
+        </div>
+      </div>
+      <div class="stat">
+        <span class="big">0</span>
+        <div>
+          <div class="lbl">Images</div>
+          <div class="sub">Cached install media on Devices</div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template v-else>
+  <div class="tab-bar">
+    <button
+      type="button"
+      class="tab-btn"
+      :class="{ active: activeTab === 'templates' }"
+      @click="activeTab = 'templates'"
+    >Templates<span class="n">{{ templateTabCount }}</span></button>
+    <button
+      type="button"
+      class="tab-btn"
+      :class="{ active: activeTab === 'images' }"
+      @click="activeTab = 'images'"
+    >Images<span class="n">{{ imageTabCount }}</span></button>
+  </div>
 
   <!-- ==================== Templates Tab ==================== -->
   <template v-if="activeTab === 'templates'">
@@ -558,7 +621,7 @@ async function addRepo() {
         <option value="__all__">All Repos</option>
         <option v-for="r in activeRepos" :key="r.id" :value="r.id">{{ r.name }}</option>
       </AppSelect>
-      <input v-model="templateSearch" placeholder="Search templates..." style="flex:1;min-width:200px;font-size:13px;padding:7px 12px" />
+
       <TabGroup v-if="categoryTabs.length > 0" :model-value="activeCategory" :tabs="categoryTabs" @update:model-value="setCategory" />
       <span style="font-size:12px;color:var(--text-dim)">{{ filteredTemplates.length }} templates</span>
     </div>
@@ -725,9 +788,26 @@ async function addRepo() {
     </div>
 
   </template>
+  </template>
 
   <!-- Add Repo Modal -->
-  <AppModal v-if="showAddRepo" title="Add Repository" @close="showAddRepo = false">
+  <AppModal
+    v-if="showAddRepo"
+    title="Add Repository"
+    subtitle="A catalog URL your Home can sync."
+    rail-title="Source"
+    @close="showAddRepo = false"
+  >
+    <template #rail>
+      <div class="split-s on">
+        <span class="wizard-dot active">1</span>
+        <div><div class="t">Kind</div><div class="d">Templates / images</div></div>
+      </div>
+      <div class="split-s">
+        <span class="wizard-dot">2</span>
+        <div><div class="t">URL</div><div class="d">Catalog JSON</div></div>
+      </div>
+    </template>
     <div class="form-group">
       <label>Type</label>
       <div class="type-toggle">
@@ -767,6 +847,8 @@ async function addRepo() {
     @confirm="doDeleteRepo"
     @cancel="confirmDeleteRepo = null"
   />
+  </div>
+  </div>
 </template>
 
 <style scoped>
@@ -844,12 +926,19 @@ async function addRepo() {
   color: #fff;
   border-color: var(--accent);
 }
-.repo-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border-subtle);
+.repo-add {
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.repo-item:last-child { border-bottom: none; }
+.repo-add:hover {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
 </style>

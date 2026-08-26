@@ -1,51 +1,35 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useVMStore } from '../stores/vms'
-import { useDiskStore } from '../stores/disks'
+import { storeToRefs } from 'pinia'
+import api from '../api/client'
+import type { HomeDeviceHealthSnapshot, SystemStats, VM } from '../api/types'
+import AppButton from '../components/ui/AppButton.vue'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
-import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
-import AppButton from '../components/ui/AppButton.vue'
-import DataTable from '../components/ui/DataTable.vue'
-import DeviceCard from '../components/DeviceCard.vue'
-import WorkloadDeviceChip from '../components/home/WorkloadDeviceChip.vue'
-import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
-import api from '../api/client'
-import type { SystemStats, SystemStatsSample, WorkloadHealth, WorkloadHealthSummary } from '../api/types'
+import { useDeviceWorkloadsStore, type HomeWorkloadRow } from '../stores/deviceWorkloads'
+import { useDiskStore } from '../stores/disks'
+import { useVMStore } from '../stores/vms'
 import {
-  DASHBOARD_WIDGET_LABELS,
-  DASHBOARD_WIDGETS_STORAGE_KEY,
-  DEFAULT_WIDGETS,
-  THIS_DEVICE_WIDGETS,
-  isThisDeviceWidget,
-  isWidgetVisible,
-  parseDashboardLayout,
+  DASHBOARD_FEED_MODULES,
+  DASHBOARD_MODULE_META,
+  DASHBOARD_SIDE_MODULES,
+  type DashboardModule,
+  type DashboardModuleId,
+  isModuleOn,
+  loadDashboardLayout,
+  moveModule,
   resetDashboardLayout,
-  toggleWidget,
-  type DashboardWidgetId,
+  saveDashboardLayout,
+  toggleModule,
 } from '../utils/dashboardWidgets'
-import { formatTemperatureC } from '../utils/format'
 import { scopeRows } from '../utils/deviceScope'
-import { hasKnownHealthCounts, homeWorkloadsRunningLine, resolveHealthCounts } from '../utils/homeDeviceHealth'
+import { formatCores, formatMemoryMB, formatTemperatureC, formatVolumeUsed } from '../utils/format'
+import { isSelfDevice } from '../utils/homeDeviceApi'
+import { isReachabilityOk, reachabilityHint, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
-import { healthLabel, healthPillClass, vmHealth } from '../utils/workloadHealth'
-import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
-import { openWorkloadRow, workloadRowKey } from '../utils/workloadDetail'
-import { storeToRefs } from 'pinia'
-import { Line } from 'vue-chartjs'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-} from 'chart.js'
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler)
-
-const MAX_HISTORY = 60
+import { openWorkloadRow } from '../utils/workloadDetail'
+import { opsStatusLabel, vmHealth } from '../utils/workloadHealth'
 
 const router = useRouter()
 const store = useVMStore()
@@ -53,175 +37,199 @@ const diskStore = useDiskStore()
 const devices = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const homeWorkloads = useDeviceWorkloadsStore()
-const { disks, summary: storageSummary } = storeToRefs(diskStore)
+const { summary: storageSummary } = storeToRefs(diskStore)
 const stats = ref<SystemStats | null>(null)
-const healthSummary = ref<WorkloadHealthSummary | null>(null)
+const layout = ref<DashboardModule[]>(loadDashboardLayout())
 const customizeOpen = ref(false)
-const history = reactive<{ timestamps: string[]; cpu: number[]; memory: number[] }>({
-  timestamps: [],
-  cpu: [],
-  memory: [],
-})
-
-function loadLayout(): DashboardWidgetId[] {
-  try {
-    return parseDashboardLayout(localStorage.getItem(DASHBOARD_WIDGETS_STORAGE_KEY))
-  } catch {
-    return resetDashboardLayout()
-  }
-}
-
-const layout = ref<DashboardWidgetId[]>(loadLayout())
-
-function persistLayout(next: DashboardWidgetId[]) {
-  layout.value = next
-  try {
-    if (next.length === DEFAULT_WIDGETS.length && DEFAULT_WIDGETS.every((id, i) => id === next[i])) {
-      localStorage.removeItem(DASHBOARD_WIDGETS_STORAGE_KEY)
-    } else {
-      localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(next))
-    }
-  } catch {
-  }
-}
-
-function widgetOn(id: DashboardWidgetId): boolean {
-  return isWidgetVisible(layout.value, id)
-}
-
-function onToggleWidget(id: DashboardWidgetId) {
-  persistLayout(toggleWidget(layout.value, id))
-}
-
-function onResetWidgets() {
-  persistLayout(resetDashboardLayout())
-}
 
 const scopedDevices = computed(() => scopeRows(devices.devices, deviceScope.selectedHostId))
-const showThisDeviceStats = computed(() => {
-  if (deviceScope.isAll) return true
-  const selfId = devices.selfDevice?.hostId
-  return Boolean(selfId && deviceScope.selectedHostId === selfId)
-})
-const anyThisDeviceWidget = computed(() =>
-  showThisDeviceStats.value && THIS_DEVICE_WIDGETS.some((id) => widgetOn(id)),
-)
-const thisDeviceScope = computed(() => `This ${DEVICE_LABEL}`)
-const homeWidgetScope = computed(() => {
-  if (deviceScope.isAll) return HOME_LABEL
-  const row = scopedDevices.value[0]
-  return row ? devices.deviceLabel(row) : DEVICE_LABEL
+
+const homeRows = computed(() => {
+  const list = devices.devices
+  const rows = list.length > 0
+    ? homeWorkloads.homeRows(list)
+    : store.vms.map((vm) => ({
+        vm,
+        hostId: devices.selfDevice?.hostId || '',
+        label: '',
+        role: 'self',
+        reachable: true,
+      }))
+  return scopeRows(rows, deviceScope.selectedHostId)
 })
 
-function widgetScopeLabel(id: DashboardWidgetId): string {
-  if (isThisDeviceWidget(id)) return thisDeviceScope.value
-  return homeWidgetScope.value
+type BoardBucket = 'running' | 'failed' | 'stopped'
+
+function bucketOf(vm: VM): BoardBucket {
+  const health = vmHealth(vm)
+  if (health === 'running' || health === 'guest_ready' || health === 'starting') return 'running'
+  if (health === 'failed' || health === 'degraded') return 'failed'
+  return 'stopped'
 }
 
-const runningVMs = computed(() => store.vms.filter(v => v.state === 'running').length)
+const runningRows = computed(() => homeRows.value.filter((row) => bucketOf(row.vm) === 'running'))
+const failedRows = computed(() => homeRows.value.filter((row) => bucketOf(row.vm) === 'failed'))
+const stoppedRows = computed(() => homeRows.value.filter((row) => bucketOf(row.vm) === 'stopped'))
+const unreachableDevices = computed(() =>
+  scopedDevices.value.filter((row) => !isReachabilityOk(row.reachability)),
+)
 
-const healthStrip = computed(() => {
-  const preferred = deviceScope.isAll
-    ? devices.totals?.healthCounts
-    : scopedDevices.value[0]?.healthCounts
-  const fallback = deviceScope.isAll ? healthSummary.value?.counts : undefined
-  const counts = resolveHealthCounts(preferred, fallback)
-  return (['running', 'starting', 'degraded', 'failed', 'stopped'] as WorkloadHealth[])
-    .map((key) => ({ key, count: counts[key] ?? 0, label: healthLabel(key) }))
-})
-
-const failedCount = computed(() => {
-  if (!deviceScope.isAll) return scopedDevices.value[0]?.healthCounts?.failed ?? 0
-  const counts = devices.totals?.healthCounts
-  if (hasKnownHealthCounts(counts)) return counts.failed ?? 0
-  return healthSummary.value?.counts?.failed ?? 0
-})
-
-const homeRunningCount = computed(() => {
-  if (!deviceScope.isAll) return scopedDevices.value[0]?.healthCounts?.running ?? 0
-  const counts = devices.totals?.healthCounts
-  if (hasKnownHealthCounts(counts)) return counts.running ?? 0
-  return runningVMs.value
-})
-
-const homeWorkloadsLine = computed(() => {
+const workloadTotal = computed(() => {
   if (!deviceScope.isAll) {
-    const row = scopedDevices.value[0]
-    if (row?.workloadCount == null) return null
-    return homeWorkloadsRunningLine({ workloadCount: row.workloadCount }, homeRunningCount.value)
+    return scopedDevices.value[0]?.workloadCount ?? homeRows.value.length
   }
-  return homeWorkloadsRunningLine(devices.totals, homeRunningCount.value)
+  return devices.totals?.workloadCount ?? homeRows.value.length
 })
 
-const homeRows = computed(() =>
-  scopeRows(homeWorkloads.homeRows(devices.devices), deviceScope.selectedHostId),
+const toolbarSub = computed(() => {
+  const n = scopedDevices.value.length
+  const running = runningRows.value.length
+  const total = workloadTotal.value
+  const failed = failedRows.value.length
+  const down = unreachableDevices.value.length
+  const parts = [
+    `${n} ${n === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's'}`,
+    total ? `${running} of ${total} workloads running` : 'No workloads',
+  ]
+  if (failed) parts.push(`${failed} failed`)
+  if (down) parts.push(`${down} unreachable`)
+  return parts.join(' · ')
+})
+
+const meterDevice = computed(() => {
+  if (!deviceScope.isAll) return scopedDevices.value[0] ?? null
+  return scopedDevices.value.find((row) => isSelfDevice(row)) ?? scopedDevices.value[0] ?? null
+})
+
+const meterIsSelf = computed(() => (meterDevice.value ? isSelfDevice(meterDevice.value) : false))
+const selfTempC = computed(() => stats.value?.metrics?.temperatureC ?? null)
+const selfTempLabel = computed(() => formatTemperatureC(selfTempC.value))
+const selfStorageLabel = computed(() => {
+  const summary = storageSummary.value
+  if (!summary || !summary.volumeTotalBytes) return null
+  return formatVolumeUsed(summary.volumeTotalBytes, summary.volumeAvailableBytes)
+})
+
+const meterCpu = computed(() => {
+  if (meterIsSelf.value && stats.value) return Math.round(stats.value.hostCpuPercent)
+  const value = meterDevice.value?.resources?.cpuLoadPercent
+  return value == null ? null : Math.round(value)
+})
+const meterMem = computed(() => {
+  if (meterIsSelf.value && stats.value) {
+    return {
+      label: `${(stats.value.hostMemoryUsedMB / 1024).toFixed(1)} / ${(stats.value.hostMemoryTotalMB / 1024).toFixed(0)} GB`,
+      pct: stats.value.hostMemoryTotalMB
+        ? Math.min((stats.value.hostMemoryUsedMB / stats.value.hostMemoryTotalMB) * 100, 100)
+        : 0,
+    }
+  }
+  const used = meterDevice.value?.resources?.memoryUsedMB
+  const total = meterDevice.value?.resources?.memoryTotalMB
+  if (used == null || total == null) return null
+  return {
+    label: `${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(0)} GB`,
+    pct: total ? Math.min((used / total) * 100, 100) : 0,
+  }
+})
+const meterStoragePct = computed(() => {
+  const summary = storageSummary.value
+  if (!meterIsSelf.value || !summary || !summary.volumeTotalBytes) return null
+  const used = summary.volumeTotalBytes - summary.volumeAvailableBytes
+  return Math.min((used / summary.volumeTotalBytes) * 100, 100)
+})
+
+const feedModules = computed(() =>
+  layout.value.filter((row) => row.on && (DASHBOARD_FEED_MODULES as readonly string[]).includes(row.id)),
+)
+const sideModules = computed(() =>
+  layout.value.filter((row) => row.on && (DASHBOARD_SIDE_MODULES as readonly string[]).includes(row.id)),
 )
 
-const recentVMs = computed(() =>
-  [...homeRows.value]
-    .sort((a, b) => new Date(b.vm.updatedAt).getTime() - new Date(a.vm.updatedAt).getTime())
-    .slice(0, 5),
+const showAttention = computed(() =>
+  isModuleOn(layout.value, 'attention')
+  && (failedRows.value.length > 0 || unreachableDevices.value.length > 0),
 )
 
-function openRow(row: HomeWorkloadRow) {
+function persist(next: DashboardModule[]) {
+  layout.value = next
+  saveDashboardLayout(next)
+}
+
+function onToggle(id: DashboardModuleId) {
+  persist(toggleModule(layout.value, id))
+}
+
+function onMove(index: number, delta: number) {
+  persist(moveModule(layout.value, index, delta))
+}
+
+function onReset() {
+  persist(resetDashboardLayout())
+}
+
+function vmOs(vm: VM): string {
+  return vm.vmType.startsWith('windows') ? 'Windows' : 'Linux'
+}
+
+function vmSpecs(vm: VM): string {
+  return `${vmOs(vm)} · ${formatCores(vm.cpuCount)} · ${formatMemoryMB(vm.memoryMB)}`
+}
+
+function vmError(row: HomeWorkloadRow): string {
+  return row.vm.status?.healthError || 'failed'
+}
+
+function rowDeviceLabel(row: HomeWorkloadRow): string {
+  if (row.label) return row.label
+  const device = devices.deviceByHostId(row.hostId)
+  return device ? devices.deviceLabel(device) : DEVICE_LABEL
+}
+
+function deviceMeta(row: HomeDeviceHealthSnapshot): string {
+  const os = row.platform?.os
+  const arch = row.platform?.arch
+  const platform = os && arch ? `${os} · ${arch}` : os || arch || ''
+  return [platform, reachabilityLabel(row.reachability)].filter(Boolean).join(' · ')
+}
+
+function unreachableIncidentText(row: HomeDeviceHealthSnapshot): string {
+  const stopped = row.healthCounts?.stopped ?? 0
+  if (stopped === 1) return `1 stopped workload still on that ${DEVICE_LABEL}`
+  if (stopped > 1) return `${stopped} stopped workloads still on that ${DEVICE_LABEL}`
+  return reachabilityHint(row) || 'Unreachable'
+}
+
+function homeDevSub(row: HomeDeviceHealthSnapshot): string {
+  const os = row.platform?.os
+  const arch = row.platform?.arch
+  const bits = [os, arch].filter(Boolean)
+  if (isSelfDevice(row)) bits.push(`this ${DEVICE_LABEL}`)
+  else if (!isReachabilityOk(row.reachability)) bits.push('unreachable')
+  else if ((row.healthCounts?.failed ?? 0) > 0) bits.push(`${row.healthCounts?.failed} failed`)
+  return bits.join(' · ')
+}
+
+function openVm(row: HomeWorkloadRow) {
   openWorkloadRow((path) => { router.push(path) }, row)
 }
 
-function emuBadge(vm: (typeof store.vms)[0]) {
-  return listBackendBadge(vmBackend(vm))
+function openDevice(row: HomeDeviceHealthSnapshot) {
+  router.push({ name: 'device-detail', params: { hostId: row.hostId } })
 }
-const totalDiskGB = computed(() => {
-  if (storageSummary.value) return (storageSummary.value.totalActualBytes / 1073741824).toFixed(1)
-  const bytes = disks.value.reduce((sum, d) => sum + d.sizeBytes, 0)
-  return (bytes / 1073741824).toFixed(1)
-})
 
 async function fetchStats() {
   try {
     const { data } = await api.get('/system/stats')
     stats.value = data
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    history.timestamps.push(now)
-    history.cpu.push(data.hostCpuPercent)
-    history.memory.push(data.hostMemoryUsedMB / 1024)
-    if (history.timestamps.length > MAX_HISTORY) {
-      history.timestamps.shift()
-      history.cpu.shift()
-      history.memory.shift()
-    }
-  } catch { /* ignore */ }
-}
-
-async function fetchHistory() {
-  try {
-    const { data } = await api.get<SystemStatsSample[]>('/system/stats/history?minutes=30')
-    for (const s of data) {
-      const t = new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      history.timestamps.push(t)
-      history.cpu.push(s.hostCpuPercent)
-      history.memory.push(s.hostMemoryUsedMB / 1024)
-    }
-    if (history.timestamps.length > MAX_HISTORY) {
-      const excess = history.timestamps.length - MAX_HISTORY
-      history.timestamps.splice(0, excess)
-      history.cpu.splice(0, excess)
-      history.memory.splice(0, excess)
-    }
-  } catch { /* ignore - will build up from polling */ }
+  } catch {
+  }
 }
 
 async function fetchStorage() {
-  await Promise.all([diskStore.fetchAll(), diskStore.fetchSummary()])
+  await Promise.all([diskStore.fetchAll(), diskStore.fetchSummary()]).catch(() => {})
 }
 
-async function fetchHealthSummary() {
-  try {
-    const { data } = await api.get<WorkloadHealthSummary>('/workloads/health-summary')
-    healthSummary.value = data
-  } catch { /* ignore */ }
-}
-
-let pollTimer: number
 async function refreshHomeWorkloads() {
   await devices.fetchHealth().catch(() => {})
   const list = devices.devices
@@ -232,495 +240,490 @@ async function refreshHomeWorkloads() {
   await homeWorkloads.fetchHomeAll(list)
 }
 
-watch(anyThisDeviceWidget, (show) => {
-  if (!show) return
-  if (history.timestamps.length === 0) fetchHistory()
-  fetchStats()
-}, { immediate: true })
+let pollTimer: number
+function onKey(event: KeyboardEvent) {
+  if (event.key === 'Escape') customizeOpen.value = false
+}
 
 onMounted(() => {
+  window.addEventListener('keydown', onKey)
   void refreshHomeWorkloads()
-  fetchStorage()
-  fetchHealthSummary()
+  void fetchStats()
+  void fetchStorage()
   pollTimer = window.setInterval(() => {
-    if (anyThisDeviceWidget.value) fetchStats()
-    fetchHealthSummary()
+    void fetchStats()
     void refreshHomeWorkloads()
   }, 5000)
 })
-onUnmounted(() => clearInterval(pollTimer))
-
-function makeSparkOpts(max?: number) {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false as const,
-    scales: {
-      x: { display: false },
-      y: { display: false, beginAtZero: true, max },
-    },
-    plugins: { tooltip: { enabled: false }, legend: { display: false } },
-    elements: {
-      point: { radius: 0 },
-      line: { tension: 0.4, borderWidth: 1.5 },
-    },
-  }
-}
-
-const cpuSparkOpts = computed(() => makeSparkOpts(100))
-const memSparkOpts = computed(() =>
-  makeSparkOpts(stats.value ? Math.ceil(stats.value.hostMemoryTotalMB / 1024) : undefined)
-)
-
-const cpuSparkData = computed(() => ({
-  labels: history.timestamps,
-  datasets: [{
-    data: history.cpu,
-    borderColor: 'rgba(0,144,248,0.5)',
-    backgroundColor: 'rgba(0,144,248,0.06)',
-    fill: true,
-  }],
-}))
-
-const memSparkData = computed(() => ({
-  labels: history.timestamps,
-  datasets: [{
-    data: history.memory,
-    borderColor: 'rgba(52,211,153,0.5)',
-    backgroundColor: 'rgba(52,211,153,0.06)',
-    fill: true,
-  }],
-}))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  clearInterval(pollTimer)
+})
 </script>
 
 <template>
-  <div class="dashboard">
-
-    <!-- Welcome -->
-    <div class="welcome">
-      <div>
-        <h1>Dashboard</h1>
-        <p class="welcome-sub">
-          <template v-if="!deviceScope.isAll && scopedDevices[0]">
-            {{ devices.deviceLabel(scopedDevices[0]) }}
-            <template v-if="homeWorkloadsLine">
-              · {{ homeWorkloadsLine }}
-            </template>
-          </template>
-          <template v-else-if="devices.totals">
-            {{ devices.totals.devices }} {{ devices.totals.devices === 1 ? DEVICE_LABEL : DEVICE_LABEL + 's' }}
-            <template v-if="homeWorkloadsLine">
-              · {{ homeWorkloadsLine }}
-            </template>
-            <span v-if="devices.totals.unreachable > 0">
-              · {{ devices.totals.unreachable }} unreachable
-            </span>
-          </template>
-          <template v-else>
-            {{ runningVMs }} of {{ store.vms.length }} VMs running
-          </template>
-          <span v-if="failedCount > 0"> · {{ failedCount }} failed</span>
-        </p>
-      </div>
-      <div class="welcome-actions">
-        <AppButton size="sm" @click="customizeOpen = !customizeOpen">Customize</AppButton>
+  <div class="ops-page">
+    <div class="ops-toolbar">
+      <h1>Dashboard</h1>
+      <span class="ops-sub">{{ toolbarSub }}</span>
+      <div class="ops-actions">
+        <AppButton variant="ghost" icon="sliders" @click="customizeOpen = true">Customize</AppButton>
         <AppButton variant="primary" icon="plus" @click="router.push('/vms?create=1')">Create VM</AppButton>
       </div>
     </div>
-
-    <div v-if="customizeOpen" class="widget-panel">
-      <div class="widget-panel-head">
-        <span>Widgets</span>
-        <AppButton size="sm" @click="onResetWidgets">Reset</AppButton>
-      </div>
-      <div class="widget-checks">
-        <label v-for="id in DEFAULT_WIDGETS" :key="id" class="widget-check">
-          <input
-            type="checkbox"
-            :checked="widgetOn(id)"
-            @change="onToggleWidget(id)"
-          >
-          <span>{{ DASHBOARD_WIDGET_LABELS[id] }}</span>
-          <span class="widget-scope">{{ widgetScopeLabel(id) }}</span>
-        </label>
-      </div>
-    </div>
-
-    <div v-if="widgetOn('devices') && scopedDevices.length" class="section device-home">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h2>
-          {{ DEVICE_LABEL }}s
-          <span class="widget-scope">{{ homeWidgetScope }}</span>
-        </h2>
-        <AppButton size="sm" @click="router.push('/devices')">View all</AppButton>
-      </div>
-      <div class="device-grid">
-        <DeviceCard v-for="row in scopedDevices" :key="row.hostId" :device="row" />
-      </div>
-    </div>
-
-    <div v-if="widgetOn('health') && (healthSummary || devices.totals)" class="health-strip">
-      <span class="widget-scope health-scope">{{ homeWidgetScope }}</span>
-      <div v-for="row in healthStrip" :key="row.key" class="health-chip" :class="row.key">
-        <span class="health-chip-count">{{ row.count }}</span>
-        <span class="health-chip-label">{{ row.label }}</span>
-      </div>
-    </div>
-
-    <!-- Host Stats (this Device only; hidden when another Device is scoped) -->
-    <div class="stat-grid" v-if="stats && anyThisDeviceWidget">
-      <div v-if="widgetOn('cpu')" class="dash-stat" style="border-left: 3px solid var(--accent)">
-        <div class="dash-stat-spark" v-if="history.cpu.length > 1">
-          <Line :data="cpuSparkData" :options="cpuSparkOpts" />
+    <div class="ops-body triage">
+      <div v-if="showAttention" class="incidents">
+        <div v-for="row in failedRows" :key="'fail-' + row.vm.id" class="incident">
+          <span class="pill failed">Failed</span>
+          <strong>{{ row.vm.name }}</strong>
+          <span>{{ vmError(row) }} on {{ rowDeviceLabel(row) }}</span>
+          <span class="spacer"></span>
+          <button type="button" class="ghost-btn" @click="openVm(row)">Open</button>
         </div>
-        <div class="dash-stat-content">
-          <div class="dash-stat-top">
-            <span class="dash-stat-number">{{ stats.hostCpuPercent.toFixed(0) }}%</span>
-            <span class="dash-stat-trend" :class="stats.hostCpuPercent > 80 ? 'warn' : 'up'">{{ thisDeviceScope }}</span>
-          </div>
-          <div class="dash-stat-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
-            CPU
-          </div>
+        <div v-for="row in unreachableDevices" :key="'down-' + row.hostId" class="incident warn">
+          <span class="pill unreach">Unreachable</span>
+          <strong>{{ devices.deviceLabel(row) }}</strong>
+          <span>{{ unreachableIncidentText(row) }}</span>
+          <span class="spacer"></span>
+          <button type="button" class="ghost-btn" @click="openDevice(row)">{{ DEVICE_LABEL }}</button>
         </div>
       </div>
 
-      <div v-if="widgetOn('memory')" class="dash-stat" style="border-left: 3px solid var(--green)">
-        <div class="dash-stat-spark" v-if="history.memory.length > 1">
-          <Line :data="memSparkData" :options="memSparkOpts" />
-        </div>
-        <div class="dash-stat-content">
-          <div class="dash-stat-top">
-            <span class="dash-stat-number">{{ (stats.hostMemoryUsedMB / 1024).toFixed(1) }} <small>GB</small></span>
-            <span class="dash-stat-trend up">/ {{ (stats.hostMemoryTotalMB / 1024).toFixed(0) }} GB</span>
-          </div>
-          <div class="dash-stat-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19v-8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8"/><path d="M6 19h12"/><path d="M10 5h4v4h-4z"/></svg>
-            Memory
-            <span class="widget-scope">{{ thisDeviceScope }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="widgetOn('storage')" class="dash-stat" style="border-left: 3px solid var(--blue)">
-        <div class="dash-stat-content">
-          <div class="dash-stat-top">
-            <span class="dash-stat-number">{{ totalDiskGB }} <small>GB</small></span>
-            <span class="dash-stat-trend up">{{ disks.length }} disks</span>
-          </div>
-          <div class="dash-stat-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>
-            Storage
-            <span class="widget-scope">{{ thisDeviceScope }}</span>
-          </div>
-          <div class="dash-stat-bar" v-if="storageSummary"><div class="dash-stat-bar-fill" :style="{ width: Math.min(storageSummary.totalActualBytes / storageSummary.volumeTotalBytes * 100, 100) + '%', background: 'var(--blue)' }" /></div>
-        </div>
-      </div>
-
-      <div v-if="widgetOn('temperature')" class="dash-stat" style="border-left: 3px solid var(--amber)">
-        <div class="dash-stat-content">
-          <div class="dash-stat-top">
-            <span class="dash-stat-number">{{ formatTemperatureC(stats.metrics?.temperatureC) ?? '—' }}</span>
-            <span class="dash-stat-trend" :class="stats.metrics?.temperatureC == null ? '' : 'up'">
-              {{ stats.metrics?.temperatureC == null ? 'unavailable' : thisDeviceScope }}
-            </span>
-          </div>
-          <div class="dash-stat-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
-            Temperature
-            <span class="widget-scope">{{ thisDeviceScope }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent VMs -->
-    <div class="section" v-if="widgetOn('recent') && recentVMs.length > 0">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <h2>
-          Recent Machines
-          <span class="widget-scope">{{ homeWidgetScope }}</span>
-        </h2>
-        <AppButton size="sm" @click="router.push('/vms')">View all</AppButton>
-      </div>
-      <DataTable :columns="[
-        { key: 'name', label: 'Name' },
-        { key: 'device', label: 'Device' },
-        { key: 'status', label: 'Status' },
-        { key: 'type', label: 'Type' },
-        { key: 'cpu', label: 'CPU' },
-        { key: 'memory', label: 'Memory' },
-        { key: 'updated', label: 'Updated' },
-      ]">
-        <tr v-for="row in recentVMs" :key="workloadRowKey(row)" @click="openRow(row)" style="cursor:pointer">
-          <td>
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span style="font-weight:600">{{ row.vm.name }}</span>
-              <span
-                v-if="emuBadge(row.vm)"
-                class="badge badge-amber"
-                :title="emuBadge(row.vm)!.title"
-              >{{ emuBadge(row.vm)!.label }}</span>
+      <div class="triage-body" :class="{ full: !sideModules.length }">
+        <section class="feed-col">
+          <template v-for="mod in feedModules" :key="mod.id">
+            <div v-if="mod.id === 'needs'" class="feed-block">
+              <div class="section-label">Needs you</div>
+              <div v-if="failedRows.length || unreachableDevices.length" class="feed">
+                <article
+                  v-for="row in failedRows"
+                  :key="'need-' + row.vm.id"
+                  class="row loud"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">{{ vmSpecs(row.vm) }}<template v-if="vmError(row)"> · {{ vmError(row) }}</template></div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill failed">Failed</span>
+                </article>
+                <article
+                  v-for="row in unreachableDevices"
+                  :key="'need-dev-' + row.hostId"
+                  class="row loud"
+                  @click="openDevice(row)"
+                >
+                  <div>
+                    <h3>{{ devices.deviceLabel(row) }}</h3>
+                    <div class="meta">{{ deviceMeta(row) }}</div>
+                  </div>
+                  <span class="chip">{{ DEVICE_LABEL }}</span>
+                  <span class="pill unreach">Unreachable</span>
+                </article>
+              </div>
+              <div v-else class="empty">Nothing needs you</div>
             </div>
-          </td>
-          <td>
-            <WorkloadDeviceChip
-              :label="row.label"
-              :self="row.role === 'self'"
-              :reachable="row.reachable"
-            />
-          </td>
-          <td>
-            <span
-              class="status-pill"
-              :class="healthPillClass(vmHealth(row.vm))"
-              :title="row.vm.status?.healthError || undefined"
-            >{{ healthLabel(vmHealth(row.vm)) }}</span>
-          </td>
-          <td><span class="badge badge-gray">{{ row.vm.vmType.startsWith('windows') ? 'Windows' : 'Linux' }}</span></td>
-          <td style="font-variant-numeric:tabular-nums">{{ row.vm.cpuCount }} cores</td>
-          <td style="font-variant-numeric:tabular-nums">{{ row.vm.memoryMB >= 1024 ? (row.vm.memoryMB / 1024).toFixed(1) + ' GB' : row.vm.memoryMB + ' MB' }}</td>
-          <td style="color:var(--text-dim);font-size:12px">{{ new Date(row.vm.updatedAt).toLocaleDateString() }}</td>
-        </tr>
-      </DataTable>
+            <div v-else-if="mod.id === 'running'" class="feed-block">
+              <div class="section-label">Running</div>
+              <div v-if="runningRows.length" class="feed">
+                <article
+                  v-for="row in runningRows"
+                  :key="row.hostId + row.vm.id"
+                  class="row"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">{{ vmSpecs(row.vm) }}</div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill running">{{ opsStatusLabel(vmHealth(row.vm)) }}</span>
+                </article>
+              </div>
+              <div v-else class="empty">No running workloads</div>
+            </div>
+            <div v-else-if="mod.id === 'failed'" class="feed-block">
+              <div class="section-label">Failed</div>
+              <div v-if="failedRows.length" class="feed">
+                <article
+                  v-for="row in failedRows"
+                  :key="'fl-' + row.hostId + row.vm.id"
+                  class="row loud"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">{{ vmSpecs(row.vm) }}<template v-if="vmError(row)"> · {{ vmError(row) }}</template></div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill failed">Failed</span>
+                </article>
+              </div>
+              <div v-else class="empty">No failed workloads</div>
+            </div>
+            <div v-else-if="mod.id === 'stopped'" class="feed-block">
+              <div class="section-label">Stopped</div>
+              <div v-if="stoppedRows.length" class="feed">
+                <article
+                  v-for="row in stoppedRows"
+                  :key="row.hostId + row.vm.id"
+                  class="row"
+                  @click="openVm(row)"
+                >
+                  <div>
+                    <h3>{{ row.vm.name }}</h3>
+                    <div class="meta">
+                      {{ vmSpecs(row.vm) }}
+                      <template v-if="!row.reachable"> · {{ DEVICE_LABEL }} is unreachable</template>
+                    </div>
+                  </div>
+                  <span class="chip" :class="{ self: row.role === 'self' }">{{ rowDeviceLabel(row) }}</span>
+                  <span class="pill stopped">Stopped</span>
+                </article>
+              </div>
+              <div v-else class="empty">No stopped workloads</div>
+            </div>
+          </template>
+        </section>
+
+        <aside v-if="sideModules.length" class="side">
+          <template v-for="mod in sideModules" :key="mod.id">
+            <div v-if="mod.id === 'meters' && meterDevice" class="panel">
+              <h2>This {{ DEVICE_LABEL }} · {{ devices.deviceLabel(meterDevice) }}</h2>
+              <div v-if="meterCpu != null" class="vital">
+                <div class="vital-top"><span>CPU</span><b>{{ meterCpu }}%</b></div>
+                <div class="bar"><i class="fill-cpu" :style="{ width: meterCpu + '%' }"></i></div>
+              </div>
+              <div v-if="meterMem" class="vital">
+                <div class="vital-top"><span>Memory</span><b>{{ meterMem.label }}</b></div>
+                <div class="bar"><i class="fill-mem" :style="{ width: meterMem.pct + '%' }"></i></div>
+              </div>
+              <div v-if="meterIsSelf && selfStorageLabel" class="vital">
+                <div class="vital-top"><span>Storage</span><b>{{ selfStorageLabel }}</b></div>
+                <div class="bar"><i class="fill-cpu" :style="{ width: (meterStoragePct ?? 0) + '%' }"></i></div>
+              </div>
+              <div v-if="meterIsSelf && selfTempLabel" class="vital">
+                <div class="vital-top"><span>Temperature</span><b>{{ selfTempLabel }}</b></div>
+                <div class="bar"><i class="fill-hot" :style="{ width: Math.min(selfTempC ?? 0, 100) + '%' }"></i></div>
+              </div>
+            </div>
+            <div v-else-if="mod.id === 'devices'" class="panel">
+              <h2>{{ HOME_LABEL }}</h2>
+              <button
+                v-for="row in scopedDevices"
+                :key="row.hostId"
+                type="button"
+                class="triage-home-dev"
+                @click="openDevice(row)"
+              >
+                <div>
+                  <b>{{ devices.deviceLabel(row) }}</b>
+                  <small>{{ homeDevSub(row) }}</small>
+                </div>
+                <span class="side-dot" :class="isReachabilityOk(row.reachability) ? 'ok' : 'off'"></span>
+              </button>
+              <div v-if="!scopedDevices.length" class="empty">No {{ DEVICE_LABEL }}s in this {{ HOME_LABEL }} yet</div>
+            </div>
+          </template>
+        </aside>
+      </div>
     </div>
 
+    <div v-if="customizeOpen" class="scrim" @click="customizeOpen = false"></div>
+    <aside class="dash-drawer" :class="{ open: customizeOpen }" aria-label="Customize Home">
+      <div class="d-head">
+        <div>
+          <h2>Customize Home</h2>
+          <span class="hint">Show, hide, and reorder modules</span>
+        </div>
+        <button type="button" class="d-close" aria-label="Close" @click="customizeOpen = false">×</button>
+      </div>
+      <div class="d-list">
+        <div v-for="(row, index) in layout" :key="row.id" class="drow" :class="{ off: !row.on }">
+          <div class="d-move">
+            <button type="button" :disabled="index === 0" aria-label="Move up" @click="onMove(index, -1)">▲</button>
+            <button type="button" :disabled="index === layout.length - 1" aria-label="Move down" @click="onMove(index, 1)">▼</button>
+          </div>
+          <div class="d-info">
+            <div class="d-name">{{ DASHBOARD_MODULE_META[row.id].title }}</div>
+            <div class="d-desc">{{ DASHBOARD_MODULE_META[row.id].hint }}</div>
+          </div>
+          <label class="d-tog">
+            <input type="checkbox" :checked="row.on" @change="onToggle(row.id)">
+            <i></i>
+          </label>
+        </div>
+      </div>
+      <div class="d-foot">
+        <AppButton variant="ghost" @click="onReset">Reset</AppButton>
+        <AppButton variant="primary" @click="customizeOpen = false">Done</AppButton>
+      </div>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.dashboard {
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* Welcome */
-.welcome {
+.ops-body.triage {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 32px;
-}
-.welcome h1 {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-.welcome-sub {
-  color: var(--text-dim);
-  font-size: 13px;
-  margin-top: 4px;
-}
-.welcome-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.widget-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius);
-  padding: 16px;
-  margin: -16px 0 28px;
-}
-.widget-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.widget-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 18px;
-}
-.widget-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.widget-check input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  margin: 0;
-  flex-shrink: 0;
-  accent-color: var(--accent);
-  box-shadow: none;
-}
-.widget-scope {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-dim);
-}
-h2 .widget-scope {
-  margin-left: 8px;
-  vertical-align: middle;
-}
-.health-scope {
-  align-self: center;
-  margin-right: 4px;
-}
-.health-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: -16px 0 24px;
-}
-.health-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-glass);
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-}
-.health-chip-count {
-  font-size: 16px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.health-chip-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* Stat Cards */
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  flex-direction: column;
   gap: 16px;
-  margin-bottom: 40px;
-  min-width: 0;
 }
-.dash-stat {
-  position: relative;
-  background: var(--bg-card);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius);
-  overflow: hidden;
-  min-width: 0;
-  min-height: 120px;
-}
-.dash-stat-spark {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.7;
-}
-.dash-stat-spark :deep(*) {
-  position: absolute;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-}
-.dash-stat-content {
-  position: relative;
-  z-index: 1;
-  padding: 20px;
-}
-.dash-stat-top {
+.incidents {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  margin-bottom: 12px;
 }
-.dash-stat-number {
-  font-size: 32px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-.dash-stat-number small {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.dash-stat-trend {
+.incident {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  padding: 3px 8px;
-  border-radius: 2px;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(248,113,113,0.35);
+  background: rgba(248,113,113,0.08);
+  flex-wrap: wrap;
 }
-.dash-stat-trend.up {
-  color: var(--green);
-  background: var(--green-muted);
+.incident.warn {
+  border-color: rgba(251,191,36,0.4);
+  background: rgba(251,191,36,0.08);
 }
-.dash-stat-trend.warn {
-  color: var(--amber);
-  background: var(--amber-muted);
-}
-.dash-stat-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.incident strong { font-size: 13px; font-weight: 650; }
+.incident span { color: var(--text-secondary); font-size: 13px; }
+.incident .spacer { flex: 1; }
+.ghost-btn {
+  font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 5px 12px;
+  cursor: pointer;
 }
-.dash-stat-bar {
-  height: 4px;
-  background: rgba(255,255,255,0.06);
+.ghost-btn:hover { border-color: rgba(255,255,255,0.25); }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border-radius: 2px;
-  overflow: hidden;
-  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 600;
 }
-.dash-stat-bar-fill {
-  height: 100%;
-  transition: width 0.5s ease;
+.pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
-
-/* Sections */
-.section {
-  margin-bottom: 36px;
-}
-.section h2 {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.device-home {
-  margin-bottom: 28px;
-}
-.device-grid {
+.pill.failed { background: var(--red-muted); color: var(--red); }
+.pill.running { background: var(--green-muted); color: var(--green); }
+.pill.stopped { background: var(--gray-muted); color: var(--gray); }
+.pill.unreach { background: var(--red-muted); color: var(--red); }
+.triage-body {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  min-height: 0;
+  flex: 1;
 }
-.device-grid > * {
-  min-width: 0;
+.triage-body.full { grid-template-columns: 1fr; }
+.feed-col { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
 }
+.feed { display: flex; flex-direction: column; gap: 8px; }
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.row.loud { border-color: rgba(248,113,113,0.35); }
+.row h3 { font-size: 14px; font-weight: 650; }
+.row .meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+.chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.chip.self { color: var(--accent); border-color: rgba(0,144,248,0.3); }
+.side { display: flex; flex-direction: column; gap: 18px; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.panel h2 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+.vital { margin-bottom: 12px; }
+.vital:last-child { margin-bottom: 0; }
+.vital-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+.vital-top span { color: var(--text-dim); }
+.bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 2px; }
+.fill-cpu { background: var(--accent); }
+.fill-mem { background: var(--green); }
+.fill-hot { background: var(--amber); }
+.triage-home-dev {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  cursor: pointer;
+}
+.triage-home-dev:first-of-type { border-top: 0; padding-top: 0; }
+.triage-home-dev b { font-weight: 650; }
+.triage-home-dev small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+.side-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.side-dot.off { background: var(--red); }
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 65;
+}
+.dash-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  background: var(--drawer-bg);
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+}
+.dash-drawer.open { transform: none; }
+.d-head {
+  display: flex;
+  align-items: center;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.d-head h2 { font-size: 13px; font-weight: 700; }
+.d-head .hint { display: block; color: var(--text-dim); font-size: 11px; margin-top: 2px; font-weight: 400; }
+.d-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.d-close:hover { color: var(--text); }
+.d-list { flex: 1; overflow-y: auto; padding: 12px 14px; }
+.drow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  background: var(--panel);
+}
+.drow.off { opacity: 0.5; }
+.d-info { min-width: 0; flex: 1; }
+.d-name { font-size: 12.5px; font-weight: 600; }
+.d-desc { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; }
+.d-move { display: flex; flex-direction: column; gap: 2px; }
+.d-move button {
+  width: 18px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--text-dim);
+  font-size: 8px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.d-move button:hover { color: var(--text); }
+.d-move button:disabled { opacity: 0.3; cursor: default; }
+.d-tog { position: relative; width: 26px; height: 15px; flex-shrink: 0; cursor: pointer; }
+.d-tog input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.d-tog i {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.12);
+  pointer-events: none;
+}
+.d-tog i::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.d-tog input:checked + i { background: rgba(0,144,248,0.4); }
+.d-tog input:checked + i::after { transform: translateX(11px); background: var(--accent); }
+.d-foot {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+  display: flex;
+  gap: 8px;
+}
+.d-foot :deep(.app-btn) { flex: 1; justify-content: center; }
 
-@media (max-width: 1024px) {
-  .stat-grid { grid-template-columns: repeat(2, 1fr); }
-}
+:global(:root[data-theme="light"]) .chip { background: rgba(0,0,0,0.04); }
+:global(:root[data-theme="light"]) .bar { background: rgba(0,0,0,0.08); }
 
-@media (max-width: 768px) {
-  .welcome { flex-direction: column; align-items: flex-start; gap: 12px; margin-bottom: 24px; }
-  .welcome h1 { font-size: 22px; }
-  .stat-grid { grid-template-columns: 1fr; gap: 12px; margin-bottom: 28px; }
-  .section { margin-bottom: 28px; }
-  table { min-width: 500px; }
+@media (max-width: 900px) {
+  .triage-body { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr auto; }
+  .row .pill { grid-column: 2; }
+  .dash-drawer { width: min(320px, 92vw); }
 }
 </style>

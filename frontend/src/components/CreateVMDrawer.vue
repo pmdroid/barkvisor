@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useCreateVMWizard } from '../composables/useCreateVMWizard'
 import CreateVMOSStep from './create-vm/CreateVMOSStep.vue'
 import CreateVMHardwareStep from './create-vm/CreateVMHardwareStep.vue'
@@ -16,6 +17,7 @@ const {
   step,
   totalSteps,
   currentStepLabel,
+  stepLabels,
   canProceed,
   next,
   prev,
@@ -99,26 +101,58 @@ function openUSBPicker() {
   showUSBPicker.value = true
   fetchUSBDevices()
 }
+
+const stepHint: Record<string, string> = {
+  Basics: 'Name and type',
+  Image: 'ISO or cloud',
+  Place: 'Which Device',
+  Hardware: 'CPU · memory',
+  Drivers: 'Virtio ISO',
+  Storage: 'Disk size',
+  Network: 'NAT or bridge',
+  Summary: 'Create',
+}
+
+const stepBlurb: Record<string, string> = {
+  Basics: 'What this Workload is called, and whether it is Windows or Linux.',
+  Image: 'ISO or cloud image from the Library.',
+  Place: 'Which Device runs this Workload.',
+  Hardware: 'CPU, memory, and guest architecture.',
+  Drivers: 'Windows virtio drivers for this guest.',
+  Storage: 'Boot disk size and extra volumes.',
+  Network: 'NAT or bridge, plus port forwards.',
+  Summary: 'Review and create.',
+}
+
+const nextStepLabel = computed(() => stepLabels.value[step.value] || '')
 </script>
 
 <template>
   <div class="modal-overlay" @click.self="emit('close')">
-    <div class="modal" style="max-width:520px">
-      <h2>Create Virtual Machine</h2>
-
-      <!-- Step indicator -->
-      <div class="wizard-steps">
-        <div
-          v-for="s in totalSteps"
-          :key="s"
-          class="wizard-dot"
-          :class="{ active: s === step, done: s < step }"
-          @click="s < step ? (step = s) : null"
+    <div class="split-frame">
+      <aside class="split-rail">
+        <h3>Create VM</h3>
+        <button
+          v-for="(label, i) in stepLabels"
+          :key="label"
+          type="button"
+          class="split-s"
+          :class="{ on: step === i + 1, done: step > i + 1 }"
+          @click="step > i + 1 ? (step = i + 1) : null"
         >
-          {{ s }}
+          <span class="wizard-dot" :class="{ active: step === i + 1, done: step > i + 1 }">{{ i + 1 }}</span>
+          <div>
+            <div class="t">{{ label }}</div>
+            <div class="d">{{ stepHint[label] }}</div>
+          </div>
+        </button>
+      </aside>
+      <section class="split-stage">
+        <div class="split-head">
+          <h2>Create Virtual Machine</h2>
+          <p>{{ currentStepLabel }} · {{ stepBlurb[currentStepLabel] }}</p>
         </div>
-      </div>
-
+        <div class="split-body">
       <CreateVMOSStep
         v-if="currentStepLabel === 'Basics'"
         :name="name"
@@ -282,21 +316,18 @@ function openUSBPicker() {
       >
         {{ error }}
       </p>
-
-      <!-- Navigation -->
-      <div class="wizard-nav">
-        <button class="btn-ghost" @click="step > 1 ? prev() : emit('close')">
-          {{ step > 1 ? 'Back' : 'Cancel' }}
-        </button>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span style="font-size:12px;color:var(--text-dim)">Step {{ step }} of {{ totalSteps }}</span>
+        </div>
+        <div class="split-foot">
+          <button class="btn-ghost" @click="step > 1 ? prev() : emit('close')">
+            {{ step > 1 ? 'Back' : 'Cancel' }}
+          </button>
           <button
             v-if="step < totalSteps"
             class="btn-primary"
             :disabled="!canProceed()"
             @click="next"
           >
-            Next
+            Next · {{ nextStepLabel }}
           </button>
           <button
             v-else
@@ -307,50 +338,12 @@ function openUSBPicker() {
             {{ loading ? 'Creating...' : 'Create VM' }}
           </button>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.wizard-steps {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-.wizard-dot {
-  width: 28px;
-  height: 28px;
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  border: 2px solid var(--border);
-  color: var(--text-dim);
-  transition: all 0.2s;
-}
-.wizard-dot.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
-}
-.wizard-dot.done {
-  border-color: var(--green);
-  background: var(--green);
-  color: #fff;
-  cursor: pointer;
-}
-.wizard-nav {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-}
 .placement-override {
   margin-top: 12px;
   padding: 8px 12px;

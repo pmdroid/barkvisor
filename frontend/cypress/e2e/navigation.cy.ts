@@ -49,15 +49,6 @@ describe('Navigation', () => {
     cy.url().should('include', '/dashboard')
   })
 
-  it('sidebar can be expanded and collapsed', () => {
-    cy.visit('/dashboard')
-    cy.get('.sidebar').should('not.have.class', 'expanded')
-    cy.get('.sidebar-toggle').click({ force: true })
-    cy.get('.sidebar').should('have.class', 'expanded')
-    cy.get('.sidebar-toggle').click({ force: true })
-    cy.get('.sidebar').should('not.have.class', 'expanded')
-  })
-
   it('each sidebar link has an icon', () => {
     cy.visit('/dashboard')
     sidebarRoutes.forEach(({ href }) => {

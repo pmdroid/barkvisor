@@ -121,12 +121,33 @@ describe('PAS-82 Home terminology', () => {
     expect(offenders).toEqual([])
   })
 
+  test('VM detail overview is Twin columns', () => {
+    const text = readFileSync(join(srcRoot, 'views/VMDetailView.vue'), 'utf8')
+    expect(text).toContain('class="twins"')
+    expect(text).toContain('>Hardware</h3>')
+    expect(text).toContain('>Network</h3>')
+    expect(text).toContain('>Guest</h3>')
+    expect(text).toContain('>Disks</h3>')
+    expect(text).toContain('item none')
+    expect(text).not.toContain('class="card config-sheet"')
+  })
+
+  test('Dashboard is triage inbox with Customize Home', () => {
+    const text = readFileSync(join(srcRoot, 'views/DashboardView.vue'), 'utf8')
+    expect(text).toContain('opsStatusLabel')
+    expect(text).toContain('Customize Home')
+    expect(text).toContain('Needs you')
+    expect(text).not.toContain('healthLabel')
+    expect(text).not.toContain('dash-col-head')
+  })
+
   test('Devices view is Home-scoped and reuses Settings pairing', () => {
     const text = readFileSync(join(srcRoot, 'views/DevicesView.vue'), 'utf8')
     expect(text).toContain('DEVICE_LABEL')
     expect(text).toContain('HOME_LABEL')
     expect(text).toContain('/settings?tab=pairing')
     expect(text).not.toContain('/api/pairing/join')
+    expect(text).not.toContain('max-width: 720px')
     expect(text).not.toMatch(forbiddenTemplateRe)
   })
 
@@ -139,9 +160,12 @@ describe('PAS-82 Home terminology', () => {
     expect(text).toContain('await devices.fetchHealth()')
     expect(text).not.toContain('Promise.all')
     expect(text).toContain('deviceAboutPath')
-    expect(text).toContain('Device version')
+    expect(text).toContain('deviceAbout.version')
     expect(text).toContain('CreateVMDrawer')
     expect(text).toContain('initial-host-id')
+    expect(text).toContain('Facts')
+    expect(text).toContain('deviceStatsHistoryPath')
+    expect(text).not.toContain('GPU passthrough')
     expect(text).not.toContain('cluster')
     expect(text).not.toMatch(forbiddenTemplateRe)
     const card = readFileSync(join(srcRoot, 'components/DeviceCard.vue'), 'utf8')

@@ -275,7 +275,6 @@ describe('deviceLogs store (PAS-219)', () => {
     const panel = readFileSync(join(here, '../components/LogsPanel.vue'), 'utf8')
     const detail = readFileSync(join(here, '../stores/logs.ts'), 'utf8')
     expect(page).toContain("from '../stores/deviceLogs'")
-    expect(page).toContain('WorkloadDeviceChip')
     expect(page).toContain('All Devices')
     expect(page).toContain('startHomeTail')
     expect(page).toContain('homeLogs.homeRows(devicesStore.devices, limit, {')

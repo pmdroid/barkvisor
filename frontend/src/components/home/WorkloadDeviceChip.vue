@@ -20,13 +20,14 @@ defineProps<{
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 9.5px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
+  border-radius: 2px;
+  border: 0;
+  background: rgba(0,144,248,0.14);
+  color: var(--accent);
   white-space: nowrap;
 }
 .device-chip.self {

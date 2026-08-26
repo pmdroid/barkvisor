@@ -618,9 +618,28 @@ async function submit() {
 
 <template>
   <div class="modal-overlay" @click.self="emit('close')">
-    <div class="modal" style="max-width:520px">
-      <h2>Deploy {{ template.name }}</h2>
-      <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">{{ template.description }}</p>
+    <div class="split-frame">
+      <aside class="split-rail">
+        <h3>Deploy</h3>
+        <button type="button" class="split-s" :class="{ on: phase !== 'form' || step === 1 }">
+          <span class="wizard-dot" :class="{ active: phase !== 'form' || step === 1 }">1</span>
+          <div><div class="t">Name</div><div class="d">Resources</div></div>
+        </button>
+        <button v-if="visibleInputs.length > 0" type="button" class="split-s" :class="{ on: phase === 'form' && step === 2, done: phase === 'form' && step > 2 }">
+          <span class="wizard-dot" :class="{ active: phase === 'form' && step === 2, done: phase === 'form' && step > 2 }">2</span>
+          <div><div class="t">Config</div><div class="d">Template inputs</div></div>
+        </button>
+        <button type="button" class="split-s" :class="{ on: phase === 'form' && step === totalSteps }">
+          <span class="wizard-dot" :class="{ active: phase === 'form' && step === totalSteps }">{{ visibleInputs.length > 0 ? 3 : 2 }}</span>
+          <div><div class="t">Review</div><div class="d">Deploy</div></div>
+        </button>
+      </aside>
+      <section class="split-stage">
+        <div class="split-head">
+          <h2>Deploy {{ template.name }}</h2>
+          <p>{{ template.description }}</p>
+        </div>
+        <div class="split-body">
       <DevicePicker
         v-if="phase === 'form' && deviceOptions.length > 0"
         v-model="selectedHostId"
@@ -822,10 +841,11 @@ async function submit() {
         </div>
 
         <div v-if="error" class="error-box">{{ error }}</div>
-
-        <div style="display:flex;justify-content:space-between;margin-top:20px">
+      </template>
+        </div>
+        <div v-if="phase === 'form'" class="split-foot">
           <button v-if="step > 1" class="btn-ghost" @click="prev">Back</button>
-          <span v-else />
+          <button v-else class="btn-ghost" @click="emit('close')">Cancel</button>
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
@@ -833,46 +853,14 @@ async function submit() {
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>
-      </template>
+      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.wizard-steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  margin-bottom: 20px;
-}
-.wizard-dot {
-  width: 28px;
-  height: 28px;
-  border-radius: 2px;
-  border: 2px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: default;
-  transition: all 0.2s;
-  padding: 0;
-  flex-shrink: 0;
-}
-.wizard-dot.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-.wizard-dot.done {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
+.wizard-line {
+  display: none;
 }
 .wizard-dot:disabled {
   opacity: 0.5;

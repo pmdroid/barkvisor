@@ -1,108 +1,83 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  DASHBOARD_MODULES,
   DASHBOARD_WIDGETS_STORAGE_KEY,
-  DEFAULT_WIDGETS,
-  THIS_DEVICE_WIDGETS,
-  isThisDeviceWidget,
-  isWidgetVisible,
+  DEFAULT_LAYOUT,
+  isModuleOn,
+  moveModule,
   parseDashboardLayout,
   resetDashboardLayout,
-  toggleWidget,
-  type DashboardWidgetId,
+  toggleModule,
 } from './dashboardWidgets'
 
-describe('dashboard widgets defaults', () => {
-  test('default layout is the shipped stats set', () => {
-    expect(DEFAULT_WIDGETS).toEqual([
+describe('dashboard layout defaults', () => {
+  test('Grok triage modules with Failed off', () => {
+    expect(DASHBOARD_MODULES).toEqual([
+      'attention',
+      'needs',
+      'running',
+      'stopped',
+      'failed',
+      'meters',
       'devices',
-      'health',
-      'cpu',
-      'memory',
-      'storage',
-      'temperature',
-      'recent',
     ])
     expect(DASHBOARD_WIDGETS_STORAGE_KEY).toBe('barkvisor.dashboardWidgets')
-    expect(resetDashboardLayout()).toEqual([...DEFAULT_WIDGETS])
-    expect(resetDashboardLayout()).not.toBe(DEFAULT_WIDGETS)
-  })
-
-  test('this-Device widgets are the local host stats', () => {
-    expect(THIS_DEVICE_WIDGETS).toEqual(['cpu', 'memory', 'storage', 'temperature'])
-    for (const id of THIS_DEVICE_WIDGETS) expect(isThisDeviceWidget(id)).toBe(true)
-    expect(isThisDeviceWidget('devices')).toBe(false)
-    expect(isThisDeviceWidget('health')).toBe(false)
-    expect(isThisDeviceWidget('recent')).toBe(false)
+    expect(resetDashboardLayout()).toEqual(DEFAULT_LAYOUT)
+    expect(resetDashboardLayout()).not.toBe(DEFAULT_LAYOUT)
+    expect(isModuleOn(DEFAULT_LAYOUT, 'attention')).toBe(true)
+    expect(isModuleOn(DEFAULT_LAYOUT, 'failed')).toBe(false)
+    expect(isModuleOn(DEFAULT_LAYOUT, 'meters')).toBe(true)
   })
 })
 
 describe('parseDashboardLayout', () => {
-  test('null, empty, and invalid raw restore defaults', () => {
-    expect(parseDashboardLayout(null)).toEqual([...DEFAULT_WIDGETS])
-    expect(parseDashboardLayout('')).toEqual([...DEFAULT_WIDGETS])
-    expect(parseDashboardLayout('  ')).toEqual([...DEFAULT_WIDGETS])
-    expect(parseDashboardLayout('not-json')).toEqual([...DEFAULT_WIDGETS])
-    expect(parseDashboardLayout('{}')).toEqual([...DEFAULT_WIDGETS])
-    expect(parseDashboardLayout('["nope"]')).toEqual([...DEFAULT_WIDGETS])
-    expect(parseDashboardLayout('[1,2]')).toEqual([...DEFAULT_WIDGETS])
+  test('null empty and invalid restore defaults', () => {
+    expect(parseDashboardLayout(null)).toEqual(DEFAULT_LAYOUT)
+    expect(parseDashboardLayout('')).toEqual(DEFAULT_LAYOUT)
+    expect(parseDashboardLayout('not-json')).toEqual(DEFAULT_LAYOUT)
+    expect(parseDashboardLayout('{}')).toEqual(DEFAULT_LAYOUT)
+    expect(parseDashboardLayout('["devices"]')).toEqual(DEFAULT_LAYOUT)
   })
 
-  test('keeps known ids, order, and uniqueness', () => {
-    expect(parseDashboardLayout('["recent","devices","cpu"]')).toEqual([
-      'recent',
+  test('keeps known modules order and fills missing', () => {
+    const parsed = parseDashboardLayout(
+      JSON.stringify([
+        { id: 'running', on: true },
+        { id: 'meters', on: false },
+        { id: 'bogus', on: true },
+      ]),
+    )
+    expect(parsed.map((row) => row.id)).toEqual([
+      'running',
+      'meters',
+      'attention',
+      'needs',
+      'stopped',
+      'failed',
       'devices',
-      'cpu',
     ])
-    expect(parseDashboardLayout('["cpu","bogus","recent","cpu","health"]')).toEqual([
-      'cpu',
-      'recent',
-      'health',
-    ])
-  })
-
-  test('empty array is all hidden', () => {
-    expect(parseDashboardLayout('[]')).toEqual([])
+    expect(isModuleOn(parsed, 'running')).toBe(true)
+    expect(isModuleOn(parsed, 'meters')).toBe(false)
+    expect(isModuleOn(parsed, 'devices')).toBe(true)
   })
 })
 
-describe('isWidgetVisible and toggleWidget', () => {
-  test('defaults are visible', () => {
-    for (const id of DEFAULT_WIDGETS) {
-      expect(isWidgetVisible(DEFAULT_WIDGETS, id)).toBe(true)
-    }
-    expect(isWidgetVisible(['devices', 'recent'], 'cpu')).toBe(false)
-    expect(isWidgetVisible([], 'health')).toBe(false)
+describe('toggle and move', () => {
+  test('toggle flips one module', () => {
+    const next = toggleModule(DEFAULT_LAYOUT, 'failed')
+    expect(isModuleOn(next, 'failed')).toBe(true)
+    expect(isModuleOn(DEFAULT_LAYOUT, 'failed')).toBe(false)
   })
 
-  test('toggle hides and restores at default order', () => {
-    expect(toggleWidget(DEFAULT_WIDGETS, 'cpu')).toEqual([
-      'devices',
-      'health',
-      'memory',
-      'storage',
-      'temperature',
-      'recent',
-    ])
-    expect(toggleWidget(['devices', 'recent'], 'cpu')).toEqual([
-      'devices',
-      'cpu',
-      'recent',
-    ])
-    expect(toggleWidget(['recent'], 'devices')).toEqual(['devices', 'recent'])
-    expect(toggleWidget([], 'health')).toEqual(['health'])
+  test('move swaps neighbors', () => {
+    const swapped = moveModule(DEFAULT_LAYOUT, 0, 1)
+    expect(swapped[0]?.id).toBe('needs')
+    expect(swapped[1]?.id).toBe('attention')
   })
 
-  test('reset after hide restores defaults', () => {
-    const hidden = toggleWidget(DEFAULT_WIDGETS, 'recent')
-    expect(isWidgetVisible(hidden, 'recent')).toBe(false)
-    expect(resetDashboardLayout()).toEqual([...DEFAULT_WIDGETS])
-    expect(isWidgetVisible(resetDashboardLayout(), 'recent')).toBe(true)
-  })
-
-  test('hiding every widget then reset restores the default set', () => {
-    let layout: DashboardWidgetId[] = [...DEFAULT_WIDGETS]
-    for (const id of DEFAULT_WIDGETS) layout = toggleWidget(layout, id)
-    expect(layout).toEqual([])
-    expect(resetDashboardLayout()).toEqual([...DEFAULT_WIDGETS])
+  test('move past the ends is a no-op copy', () => {
+    expect(moveModule(DEFAULT_LAYOUT, 0, -1).map((row) => row.id)).toEqual(
+      DEFAULT_LAYOUT.map((row) => row.id),
+    )
   })
 })
