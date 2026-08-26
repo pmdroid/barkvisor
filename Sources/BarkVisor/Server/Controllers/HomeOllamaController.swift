@@ -222,8 +222,7 @@ struct HomeOllamaController: RouteCollection {
         user: AuthenticatedUser,
     ) async throws -> OllamaSettingsSnapshot {
         let target = body.hostId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !target.isEmpty, target != hostId,
-           body.endpoint != nil || body.apiKey != nil || body.backend != nil {
+        if !target.isEmpty, target != hostId, body.endpoint != nil || body.apiKey != nil {
             try await proxyEmpty(
                 hostId: target,
                 method: "PUT",
@@ -233,7 +232,6 @@ struct HomeOllamaController: RouteCollection {
                         hostId: target,
                         endpoint: body.endpoint,
                         apiKey: body.apiKey,
-                        backend: body.backend,
                     ),
                 ),
                 user: user,
@@ -245,7 +243,6 @@ struct HomeOllamaController: RouteCollection {
                 endpoint: body.endpoint,
                 apiKey: body.apiKey,
                 updateApiKey: body.apiKey != nil,
-                backend: body.backend,
                 selfHostId: hostId,
                 db: db,
             )

@@ -17,6 +17,7 @@ import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
+  AuditEntry,
   CurrentHostCapabilities,
   Disk,
   DiskUsage,
@@ -41,6 +42,7 @@ import FolderPicker from '../components/FolderPicker.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
+import AppModal from '../components/ui/AppModal.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -294,6 +296,13 @@ const editCpuMax = computed(() => {
     return typeof n === 'number' && n >= 1 ? n : undefined
   }
   return caps.hostCpuCount
+})
+const editMemoryMax = computed(() => {
+  if (isMemberDetail.value) {
+    const n = memberCaps.value?.maxMemoryMB
+    return typeof n === 'number' && n >= 128 ? n : undefined
+  }
+  return caps.maxMemoryMB
 })
 
 // Port forwards
@@ -1065,6 +1074,7 @@ async function action(name: string, fn: () => Promise<void>) {
   actionLoading.value = name
   try {
     await fn()
+    if (['start', 'restart', 'detach ISO', 'attach ISO'].includes(name)) fetchVMEvents()
   } catch (e: any) {
     const reason = apiErrorMessage(e)
     const code = e.response?.data?.code
@@ -1098,6 +1108,7 @@ async function confirmStop() {
     guestInfo.value = null
     guestInfoLoaded.value = false
     await fetchGuestInfo()
+    fetchVMEvents()
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -1286,9 +1297,34 @@ const healthBanner = computed(() => {
   }
 })
 
+const vmEvents = ref<AuditEntry[]>([])
+async function fetchVMEvents() {
+  if (isMemberDetail.value) return
+  try {
+    const { data } = await api.get<AuditEntry[]>(`/api/vms/${vmId.value}/events`)
+    vmEvents.value = data
+  } catch {}
+}
+function eventLabel(a: string): string {
+  if (a === 'vm.started' || a === 'vm.start') return 'Started'
+  if (a === 'vm.stopped' || a === 'vm.stop') return 'Stopped'
+  if (a === 'vm.restarted' || a === 'vm.restart') return 'Restarted'
+  if (a === 'vm.crashed') return 'Crashed'
+  return a.replace(/^vm\./, '')
+}
 const recentEvents = computed(() => {
   const v = vm.value
   if (!v) return []
+  if (vmEvents.value.length > 0) {
+    return vmEvents.value.map((e) => {
+      const bad = e.action === 'vm.crashed'
+      const warn = false
+      let detail: string | null = null
+      try { detail = e.detail ? (JSON.parse(e.detail).reason as string) ?? null : null } catch {}
+      const what = detail ? `${eventLabel(e.action)} — ${detail}` : eventLabel(e.action)
+      return { when: formatShortDate(e.timestamp), what, bad, warn }
+    })
+  }
   const items: { when: string; what: string; bad: boolean; warn: boolean }[] = []
   if (healthBanner.value) {
     items.push({
@@ -1314,6 +1350,8 @@ const recentEvents = computed(() => {
   })
   return items
 })
+watch(vmId, () => { vmEvents.value = []; fetchVMEvents() })
+onMounted(fetchVMEvents)
 
 </script>
 
@@ -1625,7 +1663,7 @@ const recentEvents = computed(() => {
                   <AppButton variant="primary" size="sm" :disabled="!attachIsoId || !!actionLoading" @click="doAttachISO">Attach</AppButton>
                   <AppButton size="sm" @click="showIsoAttach = false; attachIsoId = ''">Cancel</AppButton>
                 </div>
-                <button v-else-if="!isMemberDetail" type="button" class="fact-edit" style="align-self:flex-start" @click="showIsoAttach = true; fetchImages()">Attach ISO</button>
+                <AppButton v-else-if="!isMemberDetail" size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
               </span>
             </div>
             <div class="detail-row">
@@ -2047,65 +2085,65 @@ const recentEvents = computed(() => {
     @cancel="confirmRemoveShare = null"
   />
 
-  <!-- Edit Settings Modal -->
-  <div v-if="showEditModal" class="modal-overlay" @click.self="!editSaving && (showEditModal = false)">
-    <div class="modal" style="max-width:480px">
-      <h2>Edit Settings</h2>
-      <div class="edit-form">
-        <div class="edit-field">
-          <label>Description</label>
-          <input v-model="editDraft.description" placeholder="Add a description..." />
-        </div>
-        <div class="edit-field">
-          <label>CPU Cores<template v-if="editCpuMax"> (max {{ editCpuMax }})</template></label>
-          <input
-            v-model.number="editDraft.cpuCount"
-            type="number"
-            min="1"
-            :max="editCpuMax"
-          />
-        </div>
-        <div class="edit-field">
-          <label>Memory (MB)</label>
-          <input v-model.number="editDraft.memoryMB" type="number" min="128" step="128" />
-        </div>
-        <div class="edit-field">
-          <label>Boot Order</label>
-          <AppSelect v-model="editDraft.bootOrder">
-            <option value="cd">CD-ROM first (cd)</option>
-            <option value="dc">Disk first (dc)</option>
-            <option value="c">Disk only (c)</option>
-            <option value="d">CD-ROM only (d)</option>
-            <option value="n">Network (n)</option>
-            <option value="nc">Network, then disk (nc)</option>
-          </AppSelect>
-        </div>
-        <div class="edit-field">
-          <label>Network</label>
-          <AppSelect v-model="editDraft.networkId" :disabled="isMemberDetail && !memberReachable">
-            <option v-for="n in detailNetworks" :key="n.id" :value="n.id">{{ n.name }} ({{ n.mode }})</option>
-          </AppSelect>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <AppButton :disabled="editSaving" @click="showEditModal = false">Cancel</AppButton>
-        <AppButton variant="primary" :loading="editSaving" loading-text="Saving..." @click="saveEdit">Save</AppButton>
-      </div>
+  <AppModal
+    v-if="showEditModal"
+    title="Edit Settings"
+    max-width="480px"
+    @close="!editSaving && (showEditModal = false)"
+  >
+    <div class="form-group">
+      <label>Description</label>
+      <input v-model="editDraft.description" placeholder="Add a description..." />
     </div>
-  </div>
+    <div class="form-group">
+      <label>CPU Cores<template v-if="editCpuMax"> (max {{ editCpuMax }})</template></label>
+      <input
+        v-model.number="editDraft.cpuCount"
+        type="number"
+        min="1"
+        :max="editCpuMax"
+      />
+    </div>
+    <div class="form-group">
+      <label>Memory (MB)<template v-if="editMemoryMax"> (max {{ editMemoryMax }})</template></label>
+      <input v-model.number="editDraft.memoryMB" type="number" min="128" step="128" :max="editMemoryMax" />
+    </div>
+    <div class="form-group">
+      <label>Boot Order</label>
+      <AppSelect v-model="editDraft.bootOrder">
+        <option value="cd">CD-ROM first (cd)</option>
+        <option value="dc">Disk first (dc)</option>
+        <option value="c">Disk only (c)</option>
+        <option value="d">CD-ROM only (d)</option>
+        <option value="n">Network (n)</option>
+        <option value="nc">Network, then disk (nc)</option>
+      </AppSelect>
+    </div>
+    <div class="form-group">
+      <label>Network</label>
+      <AppSelect v-model="editDraft.networkId" :disabled="isMemberDetail && !memberReachable">
+        <option v-for="n in detailNetworks" :key="n.id" :value="n.id">{{ n.name }} ({{ n.mode }})</option>
+      </AppSelect>
+    </div>
+    <template #actions>
+      <AppButton :disabled="editSaving" @click="showEditModal = false">Cancel</AppButton>
+      <AppButton variant="primary" :loading="editSaving" loading-text="Saving..." @click="saveEdit">Save</AppButton>
+    </template>
+  </AppModal>
 
-  <!-- Port Forward Editor Modal -->
-  <div v-if="showPortForwardEditor" class="modal-overlay" @click.self="!pfSaving && (showPortForwardEditor = false)">
-    <div class="modal" style="max-width:480px">
-      <h2>Port Forwards</h2>
-      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Forward host ports to guest ports (NAT mode only).</p>
-      <PortForwardEditor v-model="editPortForwards" />
-      <div class="modal-actions">
-        <AppButton :disabled="pfSaving" @click="showPortForwardEditor = false">Cancel</AppButton>
-        <AppButton variant="primary" :loading="pfSaving" loading-text="Saving..." @click="savePortForwards">Save</AppButton>
-      </div>
-    </div>
-  </div>
+  <AppModal
+    v-if="showPortForwardEditor"
+    title="Port Forwards"
+    subtitle="Forward host ports to guest ports (NAT mode only)."
+    max-width="520px"
+    @close="!pfSaving && (showPortForwardEditor = false)"
+  >
+    <PortForwardEditor v-model="editPortForwards" />
+    <template #actions>
+      <AppButton :disabled="pfSaving" @click="showPortForwardEditor = false">Cancel</AppButton>
+      <AppButton variant="primary" :loading="pfSaving" loading-text="Saving..." @click="savePortForwards">Save</AppButton>
+    </template>
+  </AppModal>
 
   <!-- Delete VM Dialog -->
   <div v-if="showResetDialog" class="modal-overlay" @click.self="showResetDialog = false">
@@ -2169,28 +2207,6 @@ const recentEvents = computed(() => {
   line-height: 1.5;
 }
 .list-error { margin: 0 0 16px; }
-.edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-bottom: 20px;
-}
-.edit-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.edit-field label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.edit-field input,
-.edit-field select {
-  width: 100%;
-}
 .back-icon.back-labeled {
   width: auto;
   padding: 0 10px;

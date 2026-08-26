@@ -10,8 +10,10 @@
 #
 # Layout (matches Config.prefix when binary is /usr/local/bin/barkvisor):
 #   /usr/local/bin/barkvisor
+#   /usr/local/bin/barkvisor-agent
 #   /usr/local/share/barkvisor/frontend/dist/   # SPA (optional)
 #   /usr/local/lib/systemd/system/barkvisor.service
+#   /usr/local/lib/systemd/system/barkvisor-agent.service
 #   /etc/barkvisor/barkvisor.env                # EnvironmentFile
 #   /var/lib/barkvisor  /var/run/barkvisor
 #
@@ -30,10 +32,12 @@ SKIP_FRONTEND="${SKIP_FRONTEND:-0}"
 
 PREFIX="${PREFIX:-/usr/local}"
 BIN_DST="${PREFIX}/bin/barkvisor"
+AGENT_BIN_DST="${PREFIX}/bin/barkvisor-agent"
 SHARE_DST="${PREFIX}/share/barkvisor"
 FRONTEND_DST="${SHARE_DST}/frontend/dist"
 COMPAT_DST="${PREFIX}/lib/barkvisor/compat"
 UNIT_DST="/usr/local/lib/systemd/system/barkvisor.service"
+AGENT_UNIT_DST="/usr/local/lib/systemd/system/barkvisor-agent.service"
 ENV_DIR="/etc/barkvisor"
 ENV_FILE="${ENV_DIR}/barkvisor.env"
 DATA_DIR="/var/lib/barkvisor"
@@ -95,8 +99,10 @@ fi
 
 echo "==> BarkVisor Linux install"
 echo "    binary:  $BIN_SRC → $BIN_DST"
+echo "    agent:   $AGENT_BIN_DST"
 echo "    data:    $DATA_DIR"
 echo "    unit:    $UNIT_DST"
+echo "    agent unit: $AGENT_UNIT_DST"
 if [[ -n "$FRONTEND_SRC" ]]; then
   echo "    SPA:     $FRONTEND_SRC → $FRONTEND_DST"
 else
@@ -108,6 +114,11 @@ need_root
 
 run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR" "$COMPAT_DST"
 run install -m 0755 "$BIN_SRC" "$BIN_DST"
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: ln -sfn barkvisor $AGENT_BIN_DST"
+else
+  ln -sfn barkvisor "$AGENT_BIN_DST"
+fi
 
 if [[ -n "$FRONTEND_SRC" ]]; then
   run install -d "$FRONTEND_DST"
@@ -142,9 +153,11 @@ else
   getent group kvm &>/dev/null && usermod -aG kvm barkvisor || true
   if getent group disk &>/dev/null; then
     usermod -aG disk barkvisor || true
-    mkdir -p /etc/systemd/system/barkvisor.service.d
-    printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
-      >/etc/systemd/system/barkvisor.service.d/disk.conf
+    for unit in barkvisor.service barkvisor-agent.service; do
+      mkdir -p /etc/systemd/system/${unit}.d
+      printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+        >/etc/systemd/system/${unit}.d/disk.conf
+    done
   fi
   chown -R barkvisor:barkvisor "$DATA_DIR" "$RUN_DIR"
   if [[ -d "$SHARE_DST" ]]; then
@@ -184,25 +197,36 @@ EOF
 fi
 
 run install -m 0644 "$ROOT/Resources/barkvisor.service" "$UNIT_DST"
+run install -m 0644 "$ROOT/Resources/barkvisor-agent.service" "$AGENT_UNIT_DST"
+
+if [[ "$SKIP_FRONTEND" == "1" ]]; then
+  ENABLE_UNIT="barkvisor-agent.service"
+  DISABLE_UNIT="barkvisor.service"
+else
+  ENABLE_UNIT="barkvisor.service"
+  DISABLE_UNIT="barkvisor-agent.service"
+fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: systemctl daemon-reload"
+  echo "DRY_RUN: systemctl disable --now $DISABLE_UNIT || true"
   if [[ "$SKIP_START" != "1" ]]; then
-    echo "DRY_RUN: systemctl enable --now barkvisor.service"
-    echo "DRY_RUN: systemctl status barkvisor.service"
+    echo "DRY_RUN: systemctl enable --now $ENABLE_UNIT"
+    echo "DRY_RUN: systemctl status $ENABLE_UNIT"
   else
     echo "DRY_RUN: SKIP_START=1 — would not enable/start"
   fi
 else
   systemctl daemon-reload
-  if systemctl is-active --quiet barkvisor.service; then
-    systemctl try-restart barkvisor.service || true
+  systemctl disable --now "$DISABLE_UNIT" >/dev/null 2>&1 || true
+  if systemctl is-active --quiet "$ENABLE_UNIT"; then
+    systemctl try-restart "$ENABLE_UNIT" || true
   elif [[ "$SKIP_START" != "1" ]]; then
-    systemctl enable --now barkvisor.service
-    systemctl --no-pager --full status barkvisor.service || true
+    systemctl enable --now "$ENABLE_UNIT"
+    systemctl --no-pager --full status "$ENABLE_UNIT" || true
   else
-    systemctl enable barkvisor.service
-    echo "Installed unit (not started). Start with: systemctl start barkvisor.service"
+    systemctl enable "$ENABLE_UNIT"
+    echo "Installed unit (not started). Start with: systemctl start $ENABLE_UNIT"
   fi
 fi
 
@@ -210,12 +234,14 @@ HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 echo
 echo "UI: http://${HOST_IP:-127.0.0.1}:7777"
 echo "Env: $ENV_FILE"
-echo "Logs: journalctl -u barkvisor.service -f"
+echo "Logs: journalctl -u $ENABLE_UNIT -f"
 if [[ -z "$FRONTEND_SRC" ]]; then
   echo
   echo "Note: no SPA installed (API-only Device)."
+  echo "Service: $ENABLE_UNIT"
   echo "Join a Home from this Device after the daemon is up:"
-  echo "  barkvisor join --code 'barkvisor://pair/v1?…'"
+  echo "  barkvisor-agent join --code 'barkvisor://pair/v1?…'"
+  echo "  barkvisor join --code works too"
   echo "Or set BARKVISOR_JOIN_CODE in $ENV_FILE before first boot."
   echo "To add the SPA later:"
   echo "  ./scripts/linux-frontend-serve.sh"

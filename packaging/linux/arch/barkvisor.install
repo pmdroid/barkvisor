@@ -4,14 +4,17 @@ post_install() {
   getent group kvm >/dev/null 2>&1 && usermod -aG kvm barkvisor 2>/dev/null || true
   if getent group disk >/dev/null 2>&1; then
     usermod -aG disk barkvisor 2>/dev/null || true
-    mkdir -p /etc/systemd/system/barkvisor.service.d
-    printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
-      >/etc/systemd/system/barkvisor.service.d/disk.conf
+    for unit in barkvisor.service barkvisor-agent.service; do
+      mkdir -p /etc/systemd/system/${unit}.d
+      printf '%s\n' '[Service]' 'SupplementaryGroups=disk' \
+        >/etc/systemd/system/${unit}.d/disk.conf
+    done
   fi
   install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable barkvisor.service >/dev/null 2>&1 || true
   systemctl try-restart barkvisor.service >/dev/null 2>&1 || true
+  systemctl try-restart barkvisor-agent.service >/dev/null 2>&1 || true
 }
 
 post_upgrade() {
@@ -21,6 +24,8 @@ post_upgrade() {
 pre_remove() {
   systemctl stop barkvisor.service >/dev/null 2>&1 || true
   systemctl disable barkvisor.service >/dev/null 2>&1 || true
+  systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
+  systemctl disable barkvisor-agent.service >/dev/null 2>&1 || true
 }
 
 post_remove() {

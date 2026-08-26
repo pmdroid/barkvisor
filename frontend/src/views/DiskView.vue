@@ -3,9 +3,8 @@ import { apiErrorMessage } from '../api/errors'
 import api from '../api/client'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { DiskSettings, HomeDeviceHealthSnapshot, HostBlockDevice, StorageSummary } from '../api/types'
+import type { DiskAttachment, HomeDeviceHealthSnapshot, HostBlockDevice, StorageSummary } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
-import FolderPicker from '../components/FolderPicker.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -23,10 +22,10 @@ import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { guestResizeCommands } from '../utils/guestAgentInstall'
 import { isReachabilityOk } from '../utils/homeDeviceHealth'
 import { formatBytes } from '../utils/format'
+import { diskAttachments, isDiskInUse } from '../utils/diskAttachment'
 import {
   canCallDeviceAPI,
   deviceBlockDevicesPath,
-  deviceDiskSettingsPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
@@ -50,19 +49,14 @@ const formHostId = ref('')
 const newName = ref('')
 const newSizeGB = ref(10)
 const newFormat = ref('qcow2')
-const newDirectory = ref('')
 const useBlockDevice = ref(false)
 const blockDevicePath = ref('')
 const blockDevices = ref<HostBlockDevice[]>([])
 const showBlockConfirm = ref(false)
-const showCreatePicker = ref(false)
 const loading = ref(false)
 const error = ref('')
 
-const formDiskDirectory = ref('')
 const formContextSeq = ref(0)
-const directoryEdited = ref(false)
-const directoryForHostId = ref('')
 
 const resizingRow = ref<HomeDiskRow | null>(null)
 const resizeSizeGB = ref(0)
@@ -191,49 +185,21 @@ function mutateApiTarget(device: HomeDeviceHealthSnapshot | null) {
 async function loadFormDiskContext() {
   const seq = ++formContextSeq.value
   const device = formDevice.value
-  const hostId = device?.hostId || ''
   blockDevices.value = []
-  if (homeUnionDeviceBlocked(device)) {
-    if (seq !== formContextSeq.value) return
-    formDiskDirectory.value = ''
-    newDirectory.value = ''
+  if (homeUnionDeviceBlocked(device) || !formIsLinux()) {
+    useBlockDevice.value = false
+    blockDevicePath.value = ''
     return
   }
   const target = mutateApiTarget(device)
   try {
-    const { data } = await api.get<DiskSettings>(deviceDiskSettingsPath(target))
+    const { data } = await api.get<HostBlockDevice[]>(deviceBlockDevicesPath(target))
     if (seq !== formContextSeq.value) return
-    formDiskDirectory.value = data.diskDirectory
-    if (!directoryEdited.value || directoryForHostId.value !== hostId) {
-      newDirectory.value = data.diskDirectory
-      directoryForHostId.value = hostId
-      directoryEdited.value = false
-    }
+    blockDevices.value = data
   } catch {
     if (seq !== formContextSeq.value) return
-    formDiskDirectory.value = ''
-  }
-  if (formIsLinux()) {
-    try {
-      const { data } = await api.get<HostBlockDevice[]>(deviceBlockDevicesPath(target))
-      if (seq !== formContextSeq.value) return
-      blockDevices.value = data
-    } catch {
-      if (seq !== formContextSeq.value) return
-      blockDevices.value = []
-    }
-  } else {
-    if (seq !== formContextSeq.value) return
     blockDevices.value = []
-    useBlockDevice.value = false
-    blockDevicePath.value = ''
   }
-}
-
-function markDirectoryEdited(value: string) {
-  newDirectory.value = value
-  directoryEdited.value = true
-  directoryForHostId.value = formDevice.value?.hostId || ''
 }
 
 const blockDeviceOptions = computed(() =>
@@ -253,26 +219,28 @@ function usageFor(row: HomeDiskRow) {
   return diskUsages.value[row.disk.id]
 }
 
-function workloadName(row: HomeDiskRow): string {
-  const vmId = row.disk.vmId
-  if (!vmId) return ''
+function attachmentsFor(row: HomeDiskRow): DiskAttachment[] {
+  return diskAttachments(row.disk)
+}
+
+function attachmentName(row: HomeDiskRow, attachment: DiskAttachment): string {
+  if (attachment.vmName && attachment.vmName !== attachment.vmId) return attachment.vmName
+  const vmId = attachment.vmId
   if (useHomeUnion.value) {
     return homeWorkloads.vmFor(row.hostId, vmId)?.name || `${vmId.slice(0, 8)}...`
   }
   return vmStore.vms.find((vm) => vm.id === vmId)?.name || `${vmId.slice(0, 8)}...`
 }
 
-function workloadHref(row: HomeDiskRow): string {
-  if (!row.disk.vmId) return ''
-  return workloadDetailPath({ hostId: row.hostId, role: row.role, vm: { id: row.disk.vmId } })
+function workloadHref(row: HomeDiskRow, attachment: DiskAttachment): string {
+  return workloadDetailPath({ hostId: row.hostId, role: row.role, vm: { id: attachment.vmId } })
 }
 
-function openWorkload(row: HomeDiskRow) {
-  if (!row.disk.vmId) return
+function openWorkload(row: HomeDiskRow, attachment: DiskAttachment) {
   openWorkloadRow((path) => { router.push(path) }, {
     hostId: row.hostId,
     role: row.role,
-    vm: { id: row.disk.vmId },
+    vm: { id: attachment.vmId },
   })
 }
 
@@ -309,7 +277,6 @@ onMounted(() => {
 })
 
 watch(formHostId, () => {
-  directoryEdited.value = false
   if (showCreate.value) void loadFormDiskContext()
 })
 
@@ -322,10 +289,6 @@ function resetForm() {
   newName.value = ''
   newSizeGB.value = 10
   newFormat.value = 'qcow2'
-  newDirectory.value = ''
-  directoryEdited.value = false
-  directoryForHostId.value = ''
-  formDiskDirectory.value = ''
   blockDevices.value = []
   useBlockDevice.value = false
   blockDevicePath.value = ''
@@ -350,14 +313,11 @@ function createBody(): DiskWriteBody | null {
     }
     return { name: newName.value.trim(), blockDevice: blockDevicePath.value }
   }
-  const body: DiskWriteBody = {
+  return {
     name: newName.value.trim(),
     sizeGB: newSizeGB.value,
     format: newFormat.value,
   }
-  const dir = newDirectory.value.trim()
-  if (dir && dir !== formDiskDirectory.value) body.directory = dir
-  return body
 }
 
 async function submitCreate() {
@@ -522,20 +482,21 @@ async function resizeDisk() {
       <td class="num">{{ formatBytes(row.disk.sizeBytes) }}</td>
       <td>
         <a
-          v-if="row.disk.vmId"
+          v-for="att in attachmentsFor(row)"
+          :key="att.vmId"
           class="vm-link"
-          :href="workloadHref(row)"
-          @click.prevent="openWorkload(row)"
+          :href="workloadHref(row, att)"
+          @click.prevent="openWorkload(row, att)"
         >
-          {{ workloadName(row) }}
+          <span class="badge badge-purple">In use by {{ attachmentName(row, att) }}</span>
         </a>
-        <span v-else class="badge badge-gray">Unattached</span>
+        <span v-if="!attachmentsFor(row).length" class="badge badge-gray">Unattached</span>
       </td>
       <td>
         <button v-if="canMutate(row) && !isBlockDisk(row)" type="button" class="mini" @click="openResize(row)">Resize</button>
       </td>
       <td>
-        <button v-if="canMutate(row) && !row.disk.vmId" type="button" class="mini danger" @click="deleteDisk(row)">Delete</button>
+        <button v-if="canMutate(row) && !isDiskInUse(row.disk)" type="button" class="mini danger" @click="deleteDisk(row)">Delete</button>
       </td>
     </tr>
     </tbody>
@@ -549,17 +510,13 @@ async function resizeDisk() {
         <h3>Disk</h3>
         <div class="split-s on">
           <span class="wizard-dot active">1</span>
-          <div><div class="t">File</div><div class="d">Name · size</div></div>
-        </div>
-        <div class="split-s">
-          <span class="wizard-dot">2</span>
-          <div><div class="t">Location</div><div class="d">Directory</div></div>
+          <div><div class="t">File</div><div class="d">Name · size · format</div></div>
         </div>
       </aside>
       <section class="split-stage">
         <div class="split-head">
           <h2>Create Disk</h2>
-          <p>qcow2 is sparse. Raw is fully allocated.</p>
+          <p>Saved in Settings → Disks. qcow2 is sparse. Raw is fully allocated.</p>
         </div>
         <div class="split-body">
       <div v-if="formDeviceOptions.length > 0" class="form-group">
@@ -586,18 +543,6 @@ async function resizeDisk() {
             <option value="qcow2">QCOW2 (sparse, supports snapshots)</option>
             <option value="raw">Raw (best I/O performance, full allocation)</option>
           </AppSelect>
-        </div>
-        <div class="form-group">
-          <label>Location</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input
-              :value="newDirectory"
-              :placeholder="formDiskDirectory || 'Default disk directory'"
-              style="flex:1"
-              @input="markDirectoryEdited(($event.target as HTMLInputElement).value)"
-            />
-            <AppButton v-if="!useHomeUnion || isSelfDevice(formDevice || { hostId: '', role: 'self' })" size="sm" @click="showCreatePicker = true">Browse</AppButton>
-          </div>
         </div>
       </template>
       <FormError v-if="error" :message="error" />
@@ -649,13 +594,6 @@ async function resizeDisk() {
       </template>
     </div>
   </div>
-
-  <FolderPicker
-    v-if="showCreatePicker"
-    :model-value="newDirectory"
-    @update:model-value="markDirectoryEdited($event)"
-    @close="showCreatePicker = false"
-  />
 
   <ConfirmDialog
     v-if="showBlockConfirm"

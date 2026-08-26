@@ -3,6 +3,7 @@ Description=BarkVisor QEMU management daemon
 Documentation=https://github.com/pmdroid/barkvisor
 After=network-online.target
 Wants=network-online.target
+Conflicts=barkvisor-agent.service
 
 [Service]
 Type=simple

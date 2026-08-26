@@ -128,7 +128,12 @@ struct CreateVMRequest: Content, Validatable {
             is: .range(1 ... PlatformHost.cpuCount),
             required: false,
         )
-        validations.add("memoryMB", as: Int.self, is: .range(128 ... 1_048_576), required: false)
+        validations.add(
+            "memoryMB",
+            as: Int.self,
+            is: .range(128 ... PlatformHost.physicalMemoryMB),
+            required: false,
+        )
     }
 }
 
@@ -161,7 +166,12 @@ struct UpdateVMRequest: Content, Validatable {
             is: .nil || .range(1 ... PlatformHost.cpuCount),
             required: false,
         )
-        validations.add("memoryMB", as: Int?.self, is: .nil || .range(128 ... 1_048_576), required: false)
+        validations.add(
+            "memoryMB",
+            as: Int?.self,
+            is: .nil || .range(128 ... PlatformHost.physicalMemoryMB),
+            required: false,
+        )
     }
 }
 
@@ -245,6 +255,7 @@ struct VMController: RouteCollection {
         vms.post(":id", "gpu", use: attachGPU)
         vms.delete(":id", "gpu", ":deviceId", use: detachGPU)
         vms.get(":id", "state", use: stateStream)
+        vms.get(":id", "events", use: events)
         vms.get(":id", "guest-info", use: getGuestInfo)
         vms.get(":id", "health", use: getHealth)
         vms.put(":id", "health", use: putHealth)
@@ -364,7 +375,7 @@ struct VMController: RouteCollection {
     func start(req: Vapor.Request) async throws -> HTTPStatus {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         try await vmManager.start(vmID: id)
-        AuditService.log(action: "vm.start", resourceType: "vm", resourceId: id, req: req)
+        AuditService.log(action: VMLifecycleAction.started, resourceType: "vm", resourceId: id, req: req)
         return .noContent
     }
 
@@ -381,7 +392,8 @@ struct VMController: RouteCollection {
         let detailJSON =
             try String(data: JSONEncoder().encode(["method": method]), encoding: .utf8) ?? "{}"
         AuditService.log(
-            action: "vm.stop", resourceType: "vm", resourceId: id, detail: detailJSON, req: req,
+            action: VMLifecycleAction.stopped, resourceType: "vm", resourceId: id, detail: detailJSON,
+            req: req,
         )
         return .noContent
     }
@@ -390,8 +402,14 @@ struct VMController: RouteCollection {
     func restart(req: Vapor.Request) async throws -> HTTPStatus {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
         try await vmManager.restart(vmID: id)
-        AuditService.log(action: "vm.restart", resourceType: "vm", resourceId: id, req: req)
+        AuditService.log(action: VMLifecycleAction.restarted, resourceType: "vm", resourceId: id, req: req)
         return .noContent
+    }
+
+    @Sendable
+    func events(req: Vapor.Request) async throws -> [AuditEntry] {
+        guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
+        return try await AuditService.vmEvents(vmID: id, db: req.db)
     }
 
     @Sendable

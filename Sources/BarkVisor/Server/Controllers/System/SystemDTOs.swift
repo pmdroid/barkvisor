@@ -97,6 +97,7 @@ struct SystemCapabilitiesResponse: Content {
     let hostArch: String
     /// Online logical CPU count on the host (max assignable vCPUs per VM).
     let hostCpuCount: Int
+    let maxMemoryMB: Int
     /// Guest profiles this host can run natively (host-arch filtered).
     let guestTypes: [GuestTypeInfo]
     /// Per-feature support + reason/remediation (PAS-37 / PAS-94). Booleans stay for older clients.

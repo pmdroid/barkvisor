@@ -33,14 +33,15 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
 }
 
 .tab-group button {
-  padding: 4px 10px;
+  box-sizing: border-box;
+  height: var(--control-h);
+  padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 2px;
   background: transparent;
   color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: var(--radius-xs);
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: all 0.15s;
   display: flex;

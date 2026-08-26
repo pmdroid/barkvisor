@@ -110,6 +110,10 @@ export function useCreateVMWizard(
     const n = pickedCaps.value.hostCpuCount
     return typeof n === 'number' && n >= 1 ? n : 1
   })
+  const hostMemoryMB = computed(() => {
+    const n = pickedCaps.value.maxMemoryMB
+    return typeof n === 'number' && n >= 128 ? n : null
+  })
   const usb = computed(() => ({
     available: pickedCaps.value.supportsUSBPassthrough,
   }))
@@ -362,6 +366,10 @@ export function useCreateVMWizard(
 
   watch(hostCpuCount, (max) => {
     if (pickedHostArchKnown.value && cpuCount.value > max) cpuCount.value = max
+  })
+
+  watch(hostMemoryMB, (max) => {
+    if (max != null && memoryMB.value > max) memoryMB.value = max
   })
 
   // Step 2: Image (Home Library)
@@ -682,7 +690,10 @@ export function useCreateVMWizard(
       case 'Place':
         return selectedDevicePlaceable()
       case 'Hardware':
-        return cpuCount.value >= 1 && memoryMB.value >= 128 && selectedDevicePlaceable()
+        return cpuCount.value >= 1
+          && memoryMB.value >= 128
+          && (hostMemoryMB.value == null || memoryMB.value <= hostMemoryMB.value)
+          && selectedDevicePlaceable()
       case 'Drivers':
         return virtioWinAvailable.value
       case 'Storage':
@@ -809,6 +820,7 @@ export function useCreateVMWizard(
     sshKeys: computed(() => sshKeyStore.keys),
     selectedHostId,
     hostCpuCount,
+    hostMemoryMB,
     placementStepReached,
     placementScore,
     deviceOptions,

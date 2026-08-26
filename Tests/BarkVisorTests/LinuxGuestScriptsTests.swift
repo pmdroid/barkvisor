@@ -411,13 +411,51 @@ struct LinuxGuestScriptsTests {
         #expect(!docs.localizedCaseInsensitiveContains("quorum"))
     }
 
+    @Test func `packages ship barkvisor and barkvisor-agent`() throws {
+        let feature = try String(
+            contentsOf: repoRoot.appendingPathComponent("features/install-binaries.feature"),
+            encoding: .utf8,
+        )
+        #expect(feature.contains("barkvisor-agent"))
+        #expect(feature.contains("Conflicts"))
+
+        let stage = try String(
+            contentsOf: repoRoot.appendingPathComponent("scripts/lib/linux-package-stage.sh"),
+            encoding: .utf8,
+        )
+        #expect(stage.contains("ln -s barkvisor"))
+        #expect(stage.contains("barkvisor-agent.service"))
+
+        let home = try String(
+            contentsOf: repoRoot.appendingPathComponent("packaging/linux/barkvisor.service"),
+            encoding: .utf8,
+        )
+        let agent = try String(
+            contentsOf: repoRoot.appendingPathComponent("packaging/linux/barkvisor-agent.service"),
+            encoding: .utf8,
+        )
+        #expect(home.contains("ExecStart=/usr/local/bin/barkvisor\n"))
+        #expect(home.contains("Conflicts=barkvisor-agent.service"))
+        #expect(agent.contains("ExecStart=/usr/local/bin/barkvisor-agent\n"))
+        #expect(agent.contains("Conflicts=barkvisor.service"))
+
+        let rpm = try String(
+            contentsOf: repoRoot.appendingPathComponent("packaging/linux/rpm/barkvisor.spec.in"),
+            encoding: .utf8,
+        )
+        #expect(rpm.contains("/usr/local/bin/barkvisor-agent"))
+        #expect(rpm.contains("/usr/lib/systemd/system/barkvisor-agent.service"))
+    }
+
     @Test func `linux install docs describe API-only join`() throws {
         let linux = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-linux.md"),
             encoding: .utf8,
         )
         #expect(linux.contains("SKIP_FRONTEND=1"))
+        #expect(linux.contains("barkvisor-agent.service"))
         #expect(linux.contains("barkvisor join --code"))
+        #expect(linux.contains("barkvisor-agent join --code"))
         #expect(linux.contains("BARKVISOR_JOIN_CODE"))
         #expect(linux.contains("/api/pairing/join"))
         #expect(!linux.localizedCaseInsensitiveContains("cluster"))

@@ -95,6 +95,13 @@ struct HomebrewFormulaTests {
         #expect(formula.contains("/var/lib/barkvisor"))
     }
 
+    @Test func `formula installs barkvisor and barkvisor-agent`() throws {
+        let formula = try read("packaging/homebrew/barkvisor.rb")
+        #expect(formula.contains("bin.install binary => \"barkvisor\""))
+        #expect(formula.contains("bin.install_symlink \"barkvisor\" => \"barkvisor-agent\""))
+        #expect(formula.contains("assert_path_exists bin/\"barkvisor-agent\""))
+    }
+
     @Test func `formula installs templates.json into shareDir`() throws {
         let formula = try read("packaging/homebrew/barkvisor.rb")
         #expect(formula.contains("(share/\"barkvisor\").install \"repos/templates.json\""))
