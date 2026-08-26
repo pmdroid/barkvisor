@@ -1,0 +1,101 @@
+---
+name: verify-barkvisor
+description: Drive the real BarkVisor web UI (Swift daemon + Vue SPA) end to end on a throwaway instance — launch via scripts/dev-instance.sh, prove features with Playwright screenshots plus API side-effect checks. Use for verifying any user-facing feature, doc screenshot runs, or pre-PR UI checks in this repo.
+---
+
+# Verify BarkVisor
+
+Drive the real BarkVisor web console — a headless Swift daemon serving a Vue 3 SPA on one port. Every run happens on a **throwaway instance** (`scripts/dev-instance.sh`): fresh `BARKVISOR_DATA_DIR`, random free ports, headless admin provisioning, optional demo seed. Instances are fully isolated (port + data dir), so parallel runs are safe with distinct `--name`s. Never drive a daemon on port 7777 — that is the user's real instance; the doctor refuses it.
+
+## Launch
+
+```sh
+cd /Users/pascal/work/barkvisor
+.agents/skills/verify-barkvisor/helpers/up.sh --seed
+```
+
+`up.sh` calls `scripts/dev-instance.sh start --name verify --seed`, waits for `/api/health` + headless setup, and prints the instance meta as **one JSON line on stdout** (logs go to stderr). The same JSON is saved to `.agents/skills/verify-barkvisor/current/meta.json`. Ready means: that line exists and `doctor.sh` passes.
+
+```json
+{"name":"verify","url":"http://127.0.0.1:50190","port":50190,"agentPort":50191,"pid":1234,"dataDir":"/var/folders/…/barkvisor-dev-verify.XXXX","logFile":"…/server.log","adminUser":"admin","adminPass":"dev-instance-pass","seeded":true}
+```
+
+Teardown is `helpers/down.sh` (see Cleanup).
+
+## Doctor
+
+Run first whenever anything looks off:
+
+```sh
+.agents/skills/verify-barkvisor/helpers/doctor.sh "$(jq -r .url .agents/skills/verify-barkvisor/current/meta.json)" admin dev-instance-pass
+```
+
+Checks, in order: not port 7777 (refuses without `BARKVISOR_ALLOW_7777=1`) → `/api/health` answers → `/api/setup/status` says `complete:true` → login returns a JWT → prints `/api/system/about` (version/platform) so you know what build you are driving.
+
+## Drive
+
+Harness is Playwright over Chromium from this skill's own `node_modules/playwright-core` (browsers resolve from `~/Library/Caches/ms-playwright`). Run helpers with `bun` or `node`.
+
+Plain page screenshot (real login path every time):
+
+```sh
+bun .agents/skills/verify-barkvisor/helpers/shot.mjs \
+  --base "$URL" --user admin --pass dev-instance-pass \
+  --route "/settings?tab=audit" \
+  --out ".agents/skills/verify-barkvisor/evidence/run-$(date +%s)/settings-audit.png"
+```
+
+Feature flow with built-in assertions — create an API key through the modal, capture the show-once secret, verify it server-side:
+
+```sh
+bun .agents/skills/verify-barkvisor/helpers/api-key-flow.mjs \
+  --base "$URL" --user admin --pass dev-instance-pass \
+  --key-name "verify-proof" --dir ".agents/skills/verify-barkvisor/evidence/run-apikeys"
+# stdout JSON: {"ok":true,"secretPrefix":"bv_…","secretShown":true,"screenshot":"…"}
+```
+
+Stable handles (prefer these, never coordinates):
+
+| Handle | Where |
+|---|---|
+| Login | `.login-card input[type=text]` (Username), `input[type=password]`, button text **Sign In** → lands on `/vms` |
+| Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Chat, Images, Disks, Networks, Repositories, Logs, Settings |
+| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|disks\|apikeys\|sshkeys\|audit` |
+| Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
+| Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |
+| Create Key modal | button **Create Key** → input placeholder `e.g. terraform, ci-pipeline` → **Create** → heading **API Key Created** |
+
+## Evidence
+
+Capture into `.agents/skills/verify-barkvisor/evidence/<run-name>/` (gitignored, survives teardown):
+
+1. **Action proof** — screenshot mid-flow (e.g. the show-once secret screen), not just the final page.
+2. **State proof** — resulting state via the same authenticated API the UI uses:
+   ```sh
+   curl -sf -H "Authorization: Bearer $TOKEN" "$URL/api/auth/keys" | jq '.[].name'
+   ```
+3. **Side effects** — rows/state in the instance SQLite when relevant:
+   ```sh
+   sqlite3 "$(jq -r .dataDir current/meta.json)/db.sqlite" "SELECT name FROM api_keys;"
+   ```
+4. For anything named like a dry-run or preview, observe what it actually skipped (files written, processes spawned) instead of trusting the label.
+
+Proof standard: exercise the real user path (UI form/modal clicks against the running daemon); never internal setters, test-only endpoints, or direct DB writes as the *action* — DB reads are for verification only. Show-once secrets captured from a throwaway instance are fine to keep in evidence.
+
+## Cleanup
+
+```sh
+.agents/skills/verify-barkvisor/helpers/down.sh            # stops 'verify' (or --name X)
+```
+
+Reads `current/meta.json`, kills exactly that pid (SIGTERM → SIGKILL after ~5 s), removes the registry entry and the auto temp data dir, deletes `current/`. Never kill by process name (`pkill BarkVisorApp` would take out the user's real daemon). Run cleanup after every attempt, failed included. Evidence under `evidence/` always survives.
+
+## Helpers
+
+| Script | Invocation | Purpose |
+|---|---|---|
+| `up.sh` | `helpers/up.sh [--seed] [--name TAG] [--data-dir DIR] [--keep]` | launch instance, save meta to `current/meta.json` |
+| `doctor.sh` | `helpers/doctor.sh URL [USER] [PASS]` | read-only "worth driving?" check |
+| `shot.mjs` | `helpers/shot.mjs --base URL --user U --pass P --route R --out F.png [--wait-ms N]` | login + navigate + full-page screenshot |
+| `api-key-flow.mjs` | `helpers/api-key-flow.mjs --base URL --user U --pass P --key-name NAME --dir EVIDENCE_DIR` | create-key flow with assertions + evidence |
+| `down.sh` | `helpers/down.sh [--name TAG]` | stop instance, clean temp state |
