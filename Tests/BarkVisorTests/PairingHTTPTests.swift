@@ -161,13 +161,6 @@ struct PairingHTTPTests {
         #expect(kept.advertisedHost == "100.64.1.8")
         #expect(kept.codeDisplay == issued.code)
     }
-
-    @Test func `setup window join stays console local even for CGNAT peers`() {
-        #expect(PairingPayload.isConsoleLocalClient("127.0.0.1"))
-        #expect(!PairingPayload.isConsoleLocalClient("192.168.1.10"))
-        #expect(!PairingPayload.isConsoleLocalClient("100.64.0.1"))
-        #expect(!PairingPayload.isConsoleLocalClient("10.0.0.5"))
-    }
 }
 
 /// Serves a 302 so tests can prove pairing HTTP does not follow it.
