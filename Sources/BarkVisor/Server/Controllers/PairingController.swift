@@ -156,6 +156,7 @@ struct PairingController: RouteCollection {
         } catch {
             throw BarkVisorError.badRequest("Invalid pairing join request")
         }
+        defer { setupMiddleware.refreshFromDatabase() }
         do {
             let response = try await PairingService.join(
                 request: body,
@@ -165,7 +166,6 @@ struct PairingController: RouteCollection {
                 db: req.db,
                 keys: keys,
             )
-            setupMiddleware.refreshFromDatabase()
             AuditService.log(
                 action: "pairing.join",
                 resourceType: "device",
