@@ -53,6 +53,16 @@ struct SetupConsoleLocalTests {
         #expect(setup.isSetupComplete)
     }
 
+    @Test func `refreshFromDatabase keeps complete when sqlite read fails`() throws {
+        let (dir, pool) = try isolatedPool()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let setup = SetupMiddleware(dbPool: pool)
+        setup.markComplete()
+        try pool.close()
+        setup.refreshFromDatabase()
+        #expect(setup.isSetupComplete)
+    }
+
     @Test func `empty-password setup keeps stored role`() throws {
         let (dir, pool) = try isolatedPool()
         defer { try? FileManager.default.removeItem(at: dir) }
