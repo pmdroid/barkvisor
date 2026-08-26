@@ -2,6 +2,8 @@
 
 **Virtual Machines** lists every **Workload** (VM) in the Home across all Devices in the current [scope](using-overview.md).
 
+![Virtual Machines list with health filter chips](img/vms.png)
+
 ## Health filters
 
 Filter chips above the table show counts at a glance:

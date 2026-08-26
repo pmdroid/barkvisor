@@ -2,6 +2,8 @@
 
 **Repositories** manages catalogs of templates and OS images you can sync into the [Library](using-images.md).
 
+![Repositories catalog with Templates and Images tabs](img/repositories.png)
+
 ## Managing repositories
 
 The toolbar has:

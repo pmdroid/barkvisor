@@ -14,6 +14,8 @@
 
 Settings is admin-only; the **inference** role does not see it.
 
+![Settings page on the default API Keys tab](img/settings-api-keys.png)
+
 ## Deep links
 
 Tabs are addressable with `?tab=` using the ids `home`, `pairing`, `library`, `disks`, `apikeys`, `sshkeys`, `audit` — e.g. `/settings?tab=pairing`. Several pages in this app (like **Add a {Device}**) link straight into a tab that way. Without a query you land on **API Keys**, the default tab.

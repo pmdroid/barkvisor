@@ -4,6 +4,8 @@ description: "Who changed what, when, and how they authenticated."
 ---
 The **Audit Log** tab is the who-did-what trail for this Home: every state-changing call through the API, with who authenticated it.
 
+![Settings Audit Log tab](/docs-img/settings-audit-log.png)
+
 ## Filtering
 
 One select filters entries by resource group:

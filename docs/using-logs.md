@@ -2,6 +2,8 @@
 
 **Logs** is the searchable log stream across the Home — Workloads and daemon events in one terminal-style feed.
 
+![Logs page with filters and live tail](img/logs.png)
+
 ## Filters
 
 Toolbar controls narrow the stream before it renders:

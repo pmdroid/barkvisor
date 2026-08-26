@@ -2,6 +2,8 @@
 
 BarkVisor is a headless daemon that manages QEMU virtual machines and serves a web console. Install it on a **Device** ([macOS](getting-started-installation.md), [Linux](getting-started-linux.md)) and open `http://<device>:7777` in a browser — nothing to launch by hand; the daemon serves the UI itself. To hack on the UI or daemon, see [Development](getting-started-development.md).
 
+![The BarkVisor sign-in screen](img/login.png)
+
 ## First run
 
 Before sign-in, the setup wizard walks you through creating the **Home**:

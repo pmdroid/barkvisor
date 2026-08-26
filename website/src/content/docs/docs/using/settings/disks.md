@@ -4,6 +4,8 @@ description: "Default VM disk directory for new disks on this Device."
 ---
 The **Disks** tab sets where new VM disks land on this Device.
 
+![Settings Disks tab: default VM disk directory](/docs-img/settings-disks.png)
+
 ## Default VM disk directory
 
 - The current default directory with **Browse** to change it

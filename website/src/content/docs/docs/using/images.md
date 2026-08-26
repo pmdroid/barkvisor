@@ -4,6 +4,8 @@ description: "The OS image library on this Device — upload, download, free spa
 ---
 **Images** is the OS image library on this Device: ISOs and cloud images that [Create VM](/docs/guides/create-workload/) offers as boot media.
 
+![Images library with capacity bar](/docs-img/images.png)
+
 ## Library capacity
 
 The capacity bar shows used/free space for the Library path's volume. That volume can differ from the data directory; the same numbers appear under [Settings → Library](/docs/using/settings/library/). When this Device fetches from a depot Device that is offline, you see an explicit empty/error state — not zeros.

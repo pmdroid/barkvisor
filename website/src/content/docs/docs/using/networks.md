@@ -4,6 +4,8 @@ description: "NAT, bridged, and isolated networks plus host bridge setup."
 ---
 **Networks** owns virtual networking for the Home: NAT, bridged, and isolated networks, plus host bridge setup. Networks live here — not in Settings.
 
+![Networks list with inspect pane](/docs-img/networks.png)
+
 ## Toolbar
 
 - **Bridge setup** — guided setup when a planned bridge is not finished on the host yet

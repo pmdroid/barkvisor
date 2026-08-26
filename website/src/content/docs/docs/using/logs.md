@@ -4,6 +4,8 @@ description: "Searchable log stream across Devices with live tail and diagnostic
 ---
 **Logs** is the searchable log stream across the Home — Workloads and daemon events in one terminal-style feed.
 
+![Logs page with filters and live tail](/docs-img/logs.png)
+
 ## Filters
 
 Toolbar controls narrow the stream before it renders:

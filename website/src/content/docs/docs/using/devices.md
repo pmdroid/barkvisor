@@ -4,6 +4,8 @@ description: "Every machine in your Home: health cards, facts, and its Workloads
 ---
 A **Device** is a machine running the BarkVisor daemon — the Mac, PC, or board that hosts Workloads. The **Devices** page shows every machine in the **Home** and how it is doing.
 
+![Devices grid with health cards](/docs-img/devices.png)
+
 ## The grid
 
 Each Device renders as a card with:

@@ -207,6 +207,7 @@ function fixLinks(body) {
     .replace(/\]\(home-and-pairing\.md(#[^)]*)?\)/g, '](/docs/guides/home-and-pairing/$1)')
     .replace(/\]\(ollama\.md(#[^)]*)?\)/g, '](/docs/guides/ollama/$1)')
     .replace(/\]\(create-workload\.md(#[^)]*)?\)/g, '](/docs/guides/create-workload/$1)')
+    .replace(/\]\(img\/([^)]+)\)/g, '](/docs-img/$1)')
     .replace(/\]\(using-overview\.md(#[^)]*)?\)/g, '](/docs/using/$1)')
     .replace(/\]\(using-dashboard\.md(#[^)]*)?\)/g, '](/docs/using/dashboard/$1)')
     .replace(/\]\(using-devices\.md(#[^)]*)?\)/g, '](/docs/using/devices/$1)')
@@ -267,4 +268,15 @@ for (const [srcName, meta] of Object.entries(map)) {
   console.log(`synced ${srcName} → src/content/docs/docs/${meta.out}`);
 }
 
-console.log('done');
+console.log('done')
+
+const imgDir = path.join(docsDir, 'img');
+const imgOut = path.resolve(__dirname, '../public/docs-img');
+if (fs.existsSync(imgDir)) {
+  fs.rmSync(imgOut, { recursive: true, force: true });
+  fs.mkdirSync(imgOut, { recursive: true });
+  for (const f of fs.readdirSync(imgDir)) {
+    fs.copyFileSync(path.join(imgDir, f), path.join(imgOut, f));
+  }
+  console.log(`synced docs/img → public/docs-img (${fs.readdirSync(imgDir).length} files)`);
+};

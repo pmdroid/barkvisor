@@ -2,6 +2,8 @@
 
 The **API Keys** tab issues credentials for scripts and API clients — including inference clients talking to Ollama. This is the default tab when you open Settings.
 
+![Settings API Keys tab with created keys](img/settings-api-keys.png)
+
 ## Create a key
 
 1. Click create. The modal asks for:

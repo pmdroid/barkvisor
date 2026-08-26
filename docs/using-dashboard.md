@@ -2,6 +2,8 @@
 
 **Dashboard** is the triage inbox for your Home: what needs attention first, what is running, and how the machines feel. Admins see it right after sign-in.
 
+![Dashboard with the ops ticker, feed columns, and vitals rail](img/dashboard.png)
+
 ## Incidents
 
 Problems float to the top as incident rows — **Failed** Workloads and **Unreachable** Devices — each with an **Open** button that jumps straight to the offending item. If nothing is wrong, there are no incidents and the board reads calm.
