@@ -8,14 +8,18 @@
 #   scripts/dev-instance.sh stop [--name TAG | --data-dir DIR | --all] [--keep]
 #   scripts/dev-instance.sh list
 #   scripts/dev-instance.sh token [--name TAG]
+#   scripts/dev-instance.sh pair <home-name> <joiner-name>
 #   scripts/dev-instance.sh clean
 #   scripts/dev-instance.sh self-test
 #   scripts/dev-instance.sh help
 #
 # start prints one JSON line: {name,url,port,agentPort,pid,dataDir,logFile,
-# adminUser,seeded}. The daemon runs detached; state lives in a fresh
-# BARKVISOR_DATA_DIR (temp dir unless --data-dir). --seed fills networks,
-# disks, API key, and SSH key through the real API so pages have content.
+# adminUser,adminPass,seeded,provisioned}. The daemon runs detached; state
+# lives in a fresh BARKVISOR_DATA_DIR (temp dir unless --data-dir). --seed
+# fills networks, disks, API key, and SSH key through the real API so pages
+# have content. --no-provision leaves setup incomplete so the setup wizard
+# can be driven; pair then walks a joiner through /api/pairing/join,
+# completes its setup, restarts it, and asserts the Home sees it reachable.
 # stop removes the registry entry and auto temp data dirs unless --keep;
 # custom --data-dir paths are never deleted.
 set -euo pipefail
@@ -29,7 +33,7 @@ DEFAULT_NAME="default"
 SELF_TEST_NAME_PREFIX="selftest"
 
 usage() {
-  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -66,7 +70,7 @@ read_meta_field() {
   local meta
   meta="$(meta_file "$2")"
   [[ -f "$meta" ]] || return 0
-  jq -r ".$1 // empty" "$meta" 2>/dev/null || true
+  jq -r --arg k "$1" 'if has($k) then .[$k] else empty end' "$meta" 2>/dev/null || true
 }
 
 entry_pid() { read_meta_field pid "$1"; }
@@ -153,7 +157,7 @@ seed_demo_data() {
 }
 
 write_entry_files() {
-  local name="$1" token="$2" admin_user="$3" admin_pass="$4" seeded="$5"
+  local name="$1" token="$2" admin_user="$3" admin_pass="$4" seeded="$5" provisioned="$6"
   mkdir -p "$REGISTRY_DIR/$name"
   jq -n \
     --arg name "$name" \
@@ -166,16 +170,18 @@ write_entry_files() {
     --arg adminUser "$admin_user" \
     --arg adminPass "$admin_pass" \
     --argjson seeded "$seeded" \
+    --argjson provisioned "$provisioned" \
     --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{name:$name,url:$url,port:$port,agentPort:$agentPort,pid:$pid,
       dataDir:$dataDir,logFile:$logFile,adminUser:$adminUser,
-      adminPass:$adminPass,seeded:$seeded,createdAt:$createdAt}' > "$(meta_file "$name")"
+      adminPass:$adminPass,seeded:$seeded,provisioned:$provisioned,
+      createdAt:$createdAt}' > "$(meta_file "$name")"
   printf '%s\n' "$token" > "$(token_file "$name")"
   chmod 600 "$(meta_file "$name")" "$(token_file "$name")"
 }
 
 start_instance() {
-  local name="$1" data_dir_arg="$2" want_seed="$3" port_arg="$4"
+  local name="$1" data_dir_arg="$2" want_seed="$3" port_arg="$4" want_provision="${5:-1}"
   local admin_user="${BARKVISOR_ADMIN_USER:-admin}"
   local admin_pass="${BARKVISOR_ADMIN_PASSWORD:-dev-instance-pass}"
   local bin data_dir port agent_port token
@@ -208,21 +214,30 @@ start_instance() {
   SERVER_PID=$!
   wait_health 120 1
 
-  setup_or_login
-  TOKEN="$(api POST /api/auth/login -d "$(jq -n --arg u "$admin_user" --arg p "$admin_pass" '{username:$u,password:$p}')" | jq -r '.token')"
-  [[ -n "$TOKEN" && "$TOKEN" != "null" ]] || fail "login after setup returned no token"
+  if [[ "$want_provision" == "1" ]]; then
+    setup_or_login
+    TOKEN="$(api POST /api/auth/login -d "$(jq -n --arg u "$admin_user" --arg p "$admin_pass" '{username:$u,password:$p}')" | jq -r '.token')"
+    [[ -n "$TOKEN" && "$TOKEN" != "null" ]] || fail "login after setup returned no token"
+  else
+    local complete
+    complete="$(api GET /api/setup/status | jq -r '.complete // false')"
+    [[ "$complete" == "false" ]] || fail "--no-provision requested but setup is already complete"
+    log "leaving '$name' unprovisioned for setup driving"
+    TOKEN=""
+  fi
 
   if [[ "$want_seed" == "1" ]]; then
+    [[ -n "$TOKEN" ]] || fail "--seed needs a provisioned instance"
     log "seeding demo data"
     seed_demo_data
   fi
 
-  write_entry_files "$name" "$TOKEN" "$admin_user" "$admin_pass" "$([[ $want_seed == 1 ]] && echo true || echo false)"
+  write_entry_files "$name" "$TOKEN" "$admin_user" "$admin_pass" "$([[ $want_seed == 1 ]] && echo true || echo false)" "$([[ $want_provision == 1 ]] && echo true || echo false)"
   cat "$(meta_file "$name")"
 }
 
 cmd_start() {
-  local name="$DEFAULT_NAME" data_dir="" seed=0 keep=0 port=""
+  local name="$DEFAULT_NAME" data_dir="" seed=0 keep=0 port="" provision=1
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --name) name="$2"; shift 2 ;;
@@ -230,6 +245,7 @@ cmd_start() {
       --seed) seed=1; shift ;;
       --keep) keep=1; shift ;;
       --port) port="$2"; shift 2 ;;
+      --no-provision) provision=0; shift ;;
       --admin-user) BARKVISOR_ADMIN_USER="$2"; shift 2 ;;
       --admin-pass) BARKVISOR_ADMIN_PASSWORD="$2"; shift 2 ;;
       --skip-build) SKIP_BUILD=1; shift ;;
@@ -237,7 +253,7 @@ cmd_start() {
     esac
   done
   [[ "$keep" == "1" && -z "$data_dir" ]] && log "--keep ignored (temp dirs are cleaned by 'stop'; custom --data-dir paths are never deleted)"
-  start_instance "$name" "$data_dir" "$seed" "$port"
+  start_instance "$name" "$data_dir" "$seed" "$port" "$provision"
 }
 
 cmd_stop() {
@@ -296,6 +312,101 @@ cmd_token() {
   jq -n --arg url "$url" --arg token "$token" '{url:$url,token:$token}'
 }
 
+login_token() {
+  local url="$1" user="$2" pass="$3"
+  BASE="$url"
+  api POST /api/auth/login -d "$(jq -n --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')" | jq -r '.token // empty'
+}
+
+restart_entry() {
+  local name="$1" token="$2"
+  local bin pid port agent data_dir
+  bin="$(find_bin)" || fail "binary not found for restart"
+  port="$(read_meta_field port "$name")"
+  agent="$(read_meta_field agentPort "$name")"
+  data_dir="$(read_meta_field dataDir "$name")"
+  pid="$(entry_pid "$name")"
+  kill_entry_process "$pid"
+
+  export BARKVISOR_PORT="$port"
+  export BARKVISOR_AGENT_PORT="$agent"
+  export BARKVISOR_DATA_DIR="$data_dir"
+  BASE="http://127.0.0.1:${port}"
+  LOG_FILE="${data_dir}/server.log"
+  log "restarting '$name' on :${port}"
+  "$bin" >>"$LOG_FILE" 2>&1 &
+  SERVER_PID=$!
+  wait_health 120 1
+  write_entry_files "$name" "$token" \
+    "$(read_meta_field adminUser "$name")" "$(read_meta_field adminPass "$name")" \
+    "$(read_meta_field seeded "$name")" true
+}
+
+cmd_pair() {
+  [[ $# -eq 2 ]] || die_usage "usage: dev-instance.sh pair <home-name> <joiner-name>"
+  local home_name="$1" joiner_name="$2"
+  local home_url home_user home_pass home_token joiner_url joiner_token
+  [[ -f "$(meta_file "$home_name")" ]] || die_usage "no instance named '$home_name'"
+  [[ -f "$(meta_file "$joiner_name")" ]] || die_usage "no instance named '$joiner_name'"
+  entry_alive "$home_name" || die_usage "instance '$home_name' is not running"
+  entry_alive "$joiner_name" || die_usage "instance '$joiner_name' is not running"
+
+  [[ "$(read_meta_field provisioned "$joiner_name")" == "false" ]] \
+    || die_usage "'$joiner_name' is already provisioned — first-time pairing needs a joiner started with --no-provision"
+
+  home_url="$(read_meta_field url "$home_name")"
+  home_user="$(read_meta_field adminUser "$home_name")"
+  home_pass="$(read_meta_field adminPass "$home_name")"
+  home_token="$(login_token "$home_url" "$home_user" "$home_pass")"
+  [[ -n "$home_token" ]] || fail "could not log in to home $home_url"
+
+  export BARKVISOR_ADMIN_USER="$(read_meta_field adminUser "$joiner_name")"
+  export BARKVISOR_ADMIN_PASSWORD="$(read_meta_field adminPass "$joiner_name")"
+
+  log "issuing pairing offer on '$home_name'"
+  BASE="$home_url"
+  TOKEN="$home_token"
+  local issue join_code qr
+  api_code POST /api/pairing/codes -d '{}' >/dev/null
+  qr="$(cat "${SMOKE_BODY_FILE:-/tmp/barkvisor-smoke-body.$$}" | jq -r '.qrPayload // empty')"
+  [[ -n "$qr" && "$qr" != "null" ]] || fail "pairing issue returned no qrPayload"
+
+  joiner_url="$(read_meta_field url "$joiner_name")"
+  log "'$joiner_name' joins via POST /api/pairing/join"
+  BASE="$joiner_url"
+  TOKEN=""
+  join_code="$(api_code POST /api/pairing/join -d "$(jq -n --arg q "$qr" '{qrPayload:$q}')")"
+  [[ "$join_code" == "200" ]] || fail "pairing/join returned HTTP $join_code: $(cat "${SMOKE_BODY_FILE:-/tmp/barkvisor-smoke-body.$$}")"
+
+  log "completing setup on '$joiner_name'"
+  setup_or_login
+  joiner_token="$TOKEN"
+  [[ -n "$joiner_token" && "$joiner_token" != "null" ]] || fail "joiner setup/complete returned no token"
+
+  restart_entry "$joiner_name" "$joiner_token"
+
+  log "waiting for '$home_name' to see '$joiner_name' reachable"
+  BASE="$home_url"
+  TOKEN="$home_token"
+  local health member_id reach i
+  member_id=""; reach=""
+  for i in $(seq 1 40); do
+    health="$(api GET /api/home/devices/health || true)"
+    member_id="$(echo "$health" | jq -r '[.devices[]? | select(.role != "self")] | .[0].hostId // empty')"
+    reach="$(echo "$health" | jq -r --arg id "$member_id" \
+      '[.devices[]? | select(.hostId == $id)] | .[0].reachability // empty')"
+    [[ -n "$member_id" && "$reach" == "ok" ]] && break
+    sleep 0.5
+  done
+  [[ "$reach" == "ok" ]] || fail "'$home_name' does not see '$joiner_name' reachable (reachability=${reach:-unknown})"
+
+  jq -n --arg home "$home_name" --arg joiner "$joiner_name" \
+    --arg homeUrl "$home_url" --arg joinerUrl "$joiner_url" \
+    --arg memberHostId "$member_id" --arg reachability "$reach" \
+    '{home:$home,homeUrl:$homeUrl,joiner:$joiner,joinerUrl:$joinerUrl,
+      memberHostId:$memberHostId,reachability:$reachability,paired:true}'
+}
+
 cmd_self_test() {
   local name="${SELF_TEST_NAME_PREFIX}-$$" meta_json url token code count
   trap 'stop_one "'"$name"'" 0 2>/dev/null || true' EXIT
@@ -328,6 +439,7 @@ main() {
     stop) cmd_stop "$@" ;;
     list) cmd_list ;;
     token) cmd_token "$@" ;;
+    pair) shift 0; cmd_pair "$@" ;;
     clean) cmd_stop --all ;;
     self-test) cmd_self_test ;;
     help|--help|-h) usage ;;

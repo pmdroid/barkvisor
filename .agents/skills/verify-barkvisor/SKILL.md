@@ -22,6 +22,11 @@ cd /Users/pascal/work/barkvisor
 
 Teardown is `helpers/down.sh` (see Cleanup).
 
+Two setup-related variants:
+
+- `up.sh --no-provision` (or `scripts/dev-instance.sh start --no-provision`) leaves setup incomplete so the **setup wizard** can be driven — see [features/setup.md](features/setup.md) and `helpers/setup-flow.mjs`.
+- `scripts/dev-instance.sh pair <home-name> <joiner-name>` pairs two running instances (joiner must be `--no-provision`): issues the offer, joins, completes the joiner's setup, restarts it, and asserts the Home sees it reachable. This is the pairing proof.
+
 ## Doctor
 
 Run first whenever anything looks off:
@@ -96,6 +101,7 @@ Reads `current/meta.json`, kills exactly that pid (SIGTERM → SIGKILL after ~5 
 |---|---|---|
 | `up.sh` | `helpers/up.sh [--seed] [--name TAG] [--data-dir DIR] [--keep]` | launch instance, save meta to `current/meta.json` |
 | `doctor.sh` | `helpers/doctor.sh URL [USER] [PASS]` | read-only "worth driving?" check |
-| `shot.mjs` | `helpers/shot.mjs --base URL --user U --pass P --route R --out F.png [--wait-ms N]` | login + navigate + full-page screenshot |
+| `shot.mjs` | `helpers/shot.mjs --base URL [--token T \| --user U --pass P] --route R --out F.png [--raw] [--wait-ms N] [--scrub /from/to]…` | login (or token inject) + navigate + full-page screenshot, with DOM redaction |
 | `api-key-flow.mjs` | `helpers/api-key-flow.mjs --base URL --user U --pass P --key-name NAME --dir EVIDENCE_DIR` | create-key flow with assertions + evidence |
+| `setup-flow.mjs` | `helpers/setup-flow.mjs --base URL --dir EVIDENCE_DIR [--join-payload URI]` | drive the first-run wizard step by step; asserts `setup/status complete` |
 | `down.sh` | `helpers/down.sh [--name TAG]` | stop instance, clean temp state |

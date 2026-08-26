@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BarkVisor — Device Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: rgba(255,255,255,.03);
+    --line: rgba(255,255,255,.07);
+    --text: #e4e4e2;
+    --dim: #6e6e6c;
+    --accent: #0090f8;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --radius: 2px;
+    --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { width: 880px; }
+
+  /* Header */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .topbar svg { display: block; }
+  .topbar .name { font-weight: 700; font-size: 15px; letter-spacing: .01em; }
+  .topbar .tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 2px 7px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar .session {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .topbar .session b { color: var(--amber); font-weight: 500; }
+
+  /* Card: rail + content */
+  .card {
+    display: flex;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    min-height: 520px;
+  }
+
+  /* Checklist rail */
+  .rail {
+    width: 264px;
+    flex: 0 0 auto;
+    border-right: 1px solid var(--line);
+    padding: 22px 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .rail-head {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--dim);
+    padding: 0 22px 14px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 13px 22px;
+    border-left: 2px solid transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .item.current {
+    background: rgba(0,144,248,.06);
+    border-left-color: var(--accent);
+  }
+  .item .box {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+    margin-top: 2px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color .2s, background .2s;
+  }
+  .item .box svg {
+    width: 10px;
+    height: 10px;
+    stroke: var(--green);
+    stroke-width: 2.4;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 16;
+    stroke-dashoffset: 16;
+  }
+  .item.done .box {
+    border-color: rgba(52,211,153,.5);
+    background: rgba(52,211,153,.1);
+  }
+  .item.done .box svg {
+    animation: draw .35s ease-out forwards;
+  }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .item .num {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--dim);
+    letter-spacing: .08em;
+    margin-bottom: 2px;
+  }
+  .item .t { font-size: 13px; font-weight: 600; color: var(--dim); transition: color .15s; }
+  .item.current .t { color: var(--text); }
+  .item.done .t { color: var(--text); }
+  .item .st {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-top: 3px;
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--dim);
+    opacity: .5;
+  }
+  .item.current .dot { background: var(--accent); opacity: 1; animation: pulse 1.6s infinite; }
+  .item.current .st { color: var(--accent); }
+  .item.done .dot { background: var(--green); opacity: 1; }
+  .item.done .st { color: var(--green); }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,144,248,.4); } 50% { box-shadow: 0 0 0 4px rgba(0,144,248,0); } }
+  .rail-foot {
+    margin-top: auto;
+    padding: 14px 22px 0;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--dim);
+    line-height: 1.8;
+  }
+  .rail-foot .k { color: var(--dim); }
+  .rail-foot .v { color: var(--text); }
+
+  /* Content pane */
+  .content {
+    flex: 1;
+    padding: 34px 40px 28px;
+    display: flex;
+    flex-direction: column;
+  }
+  .pane { display: none; flex: 1; flex-direction: column; }
+  .pane.current { display: flex; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  h1 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; margin-bottom: 6px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 26px; }
+
+  /* Choice cards */
+  .choice {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 15px 18px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    color: var(--text);
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  .choice:hover { border-color: rgba(0,144,248,.5); background: rgba(0,144,248,.04); }
+  .choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .choice .cid {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 4px 7px;
+    flex: 0 0 auto;
+  }
+  .choice:hover .cid { color: var(--accent); border-color: rgba(0,144,248,.4); }
+  .choice .t { font-weight: 600; font-size: 13.5px; margin-bottom: 2px; }
+  .choice .d { color: var(--dim); font-size: 12px; }
+
+  /* Form */
+  .field { margin-bottom: 16px; }
+  label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  input[type="text"], input[type="password"], textarea {
+    width: 100%;
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 9px 12px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,144,248,.15);
+  }
+  input::placeholder, textarea::placeholder { color: var(--dim); }
+  textarea { resize: vertical; min-height: 104px; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+  .hint { font-size: 11.5px; color: var(--dim); margin-top: 5px; font-family: var(--mono); }
+  .hint.err { color: var(--red); }
+  .hint.ok { color: var(--green); }
+
+  /* Sync console */
+  .console {
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.9;
+    color: var(--dim);
+    min-height: 108px;
+    margin-bottom: 14px;
+  }
+  .console .ln { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .console .ok { color: var(--green); }
+  .console .ac { color: var(--accent); }
+  .console .am { color: var(--amber); }
+  .progress {
+    height: 3px;
+    background: var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress .bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width .18s linear;
+  }
+  .sync-status { font-family: var(--mono); font-size: 11.5px; color: var(--dim); min-height: 18px; }
+  .sync-status.ok { color: var(--green); }
+
+  /* Success block */
+  .result {
+    border: 1px solid rgba(52,211,153,.3);
+    background: rgba(52,211,153,.05);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+  .result .badge {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    border: 1px solid rgba(52,211,153,.4);
+    background: rgba(52,211,153,.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--green);
+    font-size: 16px;
+  }
+  .result .t { font-weight: 600; font-size: 14px; }
+  .result .d { color: var(--dim); font-size: 12px; margin-top: 1px; }
+
+  .kv {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--dim);
+    line-height: 2;
+    margin-top: 12px;
+  }
+  .kv .v { color: var(--text); }
+
+  /* Actions */
+  .actions {
+    display: flex;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 24px;
+    gap: 12px;
+  }
+  .actions .spacer { flex: 1; }
+  .btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--radius);
+    padding: 9px 18px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s, opacity .15s;
+  }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn-primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
+  .btn-primary:hover { background: #1a9df9; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-ghost { background: transparent; border: 1px solid transparent; color: var(--dim); }
+  .btn-ghost:hover { color: var(--text); }
+  .btn-outline { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  .btn-outline:hover { border-color: rgba(255,255,255,.2); }
+  .btn-outline:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Ops ticker footer */
+  .ticker {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    color: var(--dim);
+    overflow: hidden;
+  }
+  .ticker .cell {
+    padding: 8px 14px;
+    border-right: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .ticker .cell:last-child { border-right: none; }
+  .ticker .v { color: var(--text); }
+  .ticker .live { color: var(--green); display: flex; align-items: center; gap: 6px; }
+  .ticker .live::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.6s infinite;
+  }
+  .ticker .grow { flex: 1; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="topbar">
+    <svg width="22" height="22" viewBox="0 0 22 22"><rect width="22" height="22" rx="4" fill="#0090f8"/><path d="M6.5 9v4M10 6.5v9M13.5 9.5v3M17 7.5v7" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg>
+    <span class="name">BarkVisor</span>
+    <span class="tag">First-run setup</span>
+    <div class="spacer"></div>
+    <span class="session">session <b id="session-id">BV-SETUP-0000</b></span>
+  </div>
+
+  <div class="card">
+    <!-- Checklist rail -->
+    <div class="rail">
+      <div class="rail-head">Commissioning checklist</div>
+      <div id="rail-items"></div>
+      <div class="rail-foot">
+        <div><span class="k">device&nbsp;&nbsp;</span><span class="v">unassigned</span></div>
+        <div><span class="k">state&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="v" id="rail-state">awaiting input</span></div>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- CREATE PATH -->
+
+      <div class="pane" data-pane="welcome">
+        <div class="eyebrow">Step 01 — Welcome</div>
+        <h1>Commission this Device</h1>
+        <p class="sub">BarkVisor manages headless QEMU virtual machines. Choose how this Device joins your setup.</p>
+        <button class="choice" data-go="account">
+          <span class="cid">A</span>
+          <span>
+            <div class="t">Set up this Device</div>
+            <div class="d">Create a new Home with this machine as its first Device.</div>
+          </span>
+        </button>
+        <button class="choice" data-go="join">
+          <span class="cid">B</span>
+          <span>
+            <div class="t">Join an existing Home</div>
+            <div class="d">Pair this Device with a Home using an offer from another Device.</div>
+          </span>
+        </button>
+      </div>
+
+      <div class="pane" data-pane="account">
+        <div class="eyebrow">Step 02 — Admin account</div>
+        <h1>Create Admin Account</h1>
+        <p class="sub">This account administers every Device in your Home.</p>
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="admin" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Minimum 10 characters">
+          <div class="hint" id="pw-hint">min_length: 10</div>
+        </div>
+        <div class="field">
+          <label for="confirm">Confirm password</label>
+          <input type="password" id="confirm" placeholder="Repeat password">
+          <div class="hint" id="cf-hint"></div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" data-go="welcome">Back</button>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" id="account-next" disabled>Continue</button>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="catalog">
+        <div class="eyebrow">Step 03 — Image catalog</div>
+        <h1>Image Catalog</h1>
+        <p class="sub">Sync the OS image and template catalog so you can create virtual machines right away.</p>
+        <div class="console" id="console">
+          <span class="ln">$ barkvisorctl catalog sync</span>
+          <span class="ln am">// idle — press Sync to fetch the catalog</span>
+        </div>
+        <div class="progress"><div class="bar" id="bar"></div></div>
+        <div class="sync-status" id="sync-status"></div>
+        <div class="actions">
+          <button class="btn btn-ghost" data-go="account">Back</button>
+          <div class="spacer"></div>
+          <button class="btn btn-outline" id="sync-btn">Sync catalog</button>
+          <button class="btn btn-ghost" data-go="done" id="skip-btn">Skip</button>
+          <button class="btn btn-primary" id="catalog-next" data-go="done" disabled>Continue</button>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="done">
+        <div class="eyebrow">Step 04 — Ready</div>
+        <h1>All Set!</h1>
+        <p class="sub">Commissioning complete. This Device is operational.</p>
+        <div class="result">
+          <div class="badge">&#10003;</div>
+          <div>
+            <div class="t">Device commissioned</div>
+            <div class="d">Admin account active · catalog state recorded below</div>
+          </div>
+        </div>
+        <div class="kv">
+          <div>home&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">created</span></div>
+          <div>device&nbsp;&nbsp;&nbsp;<span class="v">this machine (primary)</span></div>
+          <div>catalog&nbsp;&nbsp;<span class="v" id="done-catalog">not synced</span></div>
+        </div>
+        <div class="actions">
+          <div class="spacer"></div>
+          <button class="btn btn-primary">Launch Dashboard</button>
+        </div>
+      </div>
+
+      <!-- JOIN PATH -->
+
+      <div class="pane" data-pane="join">
+        <div class="eyebrow">Join flow — Pairing offer</div>
+        <h1>Join an existing Home</h1>
+        <p class="sub">Paste the pairing offer generated on a Device that already belongs to your Home.</p>
+        <div class="field">
+          <label for="offer">Pairing offer</label>
+          <textarea id="offer" placeholder="barkvisor://pair/v1/eyJob21lIjoi…" spellcheck="false"></textarea>
+          <div class="hint" id="offer-hint">expect: barkvisor://pair/v1/&lt;payload&gt;</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" data-go="welcome">Back</button>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" id="join-btn" disabled>Join Home</button>
+        </div>
+      </div>
+
+      <div class="pane" data-pane="joined">
+        <div class="eyebrow">Join flow — Complete</div>
+        <h1>Joined your Home</h1>
+        <p class="sub">Pairing handshake verified. This Device now reports to your Home.</p>
+        <div class="result">
+          <div class="badge">&#10003;</div>
+          <div>
+            <div class="t">Device paired</div>
+            <div class="d">Sign in with your Home's admin account to continue</div>
+          </div>
+        </div>
+        <div class="kv">
+          <div>home&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">joined via offer</span></div>
+          <div>device&nbsp;&nbsp;&nbsp;<span class="v">this machine (paired)</span></div>
+          <div>offer&nbsp;&nbsp;&nbsp;&nbsp;<span class="v" id="joined-offer">barkvisor://pair/v1/…</span></div>
+        </div>
+        <div class="actions">
+          <div class="spacer"></div>
+          <button class="btn btn-primary">Launch Dashboard</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Ops ticker -->
+  <div class="ticker">
+    <span class="cell live">DAEMON UP</span>
+    <span class="cell">HOME <span class="v" id="tick-home">—</span></span>
+    <span class="cell">DEVICE <span class="v" id="tick-device">unassigned</span></span>
+    <span class="cell grow"></span>
+    <span class="cell">QEMU <span class="v">10.0.2</span></span>
+    <span class="cell">BARKVISOR <span class="v">v0.4.1</span></span>
+  </div>
+</div>
+
+<script>
+const FLOWS = {
+  create: ['welcome', 'account', 'catalog', 'done'],
+  join:   ['welcome', 'join', 'joined']
+};
+const RAIL_CREATE = [
+  { id: 'welcome', num: '01', t: 'Welcome' },
+  { id: 'account', num: '02', t: 'Admin account' },
+  { id: 'catalog', num: '03', t: 'Image catalog' },
+  { id: 'done',    num: '04', t: 'Ready' }
+];
+const RAIL_JOIN = [
+  { id: 'welcome', num: '01', t: 'Welcome' },
+  { id: 'join',    num: '02', t: 'Pairing offer' },
+  { id: 'joined',  num: '03', t: 'Ready' }
+];
+
+let flow = null;
+let current = 'welcome';
+let catalogState = 'not synced';
+
+const railEl = document.getElementById('rail-items');
+const railState = document.getElementById('rail-state');
+const tickHome = document.getElementById('tick-home');
+const tickDevice = document.getElementById('tick-device');
+
+document.getElementById('session-id').textContent =
+  'BV-SETUP-' + String(Math.floor(1000 + Math.random() * 9000));
+
+function railSeq() {
+  if (flow === 'join') return RAIL_JOIN;
+  return RAIL_CREATE;
+}
+
+function renderRail() {
+  const seq = railSeq();
+  const idx = seq.findIndex(s => s.id === current);
+  railEl.innerHTML = '';
+  seq.forEach((s, i) => {
+    const state = i < idx ? 'done' : i === idx ? 'current' : 'pending';
+    const item = document.createElement('div');
+    item.className = 'item ' + state;
+    item.innerHTML =
+      '<div class="box"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.6 2.6L10 3.5"/></svg></div>' +
+      '<div><div class="num">' + s.num + '</div>' +
+      '<div class="t">' + s.t + '</div>' +
+      '<div class="st"><span class="dot"></span>' + state + '</div></div>';
+    railEl.appendChild(item);
+  });
+  railState.textContent = idx === seq.length - 1 && idx > 0 ? 'complete' : 'awaiting input';
+}
+
+function renderTicker() {
+  if (current === 'done') {
+    tickHome.textContent = 'created';
+    tickDevice.textContent = 'this machine (primary)';
+  } else if (current === 'joined') {
+    tickHome.textContent = 'joined';
+    tickDevice.textContent = 'this machine (paired)';
+  } else {
+    tickHome.textContent = '—';
+    tickDevice.textContent = 'unassigned';
+  }
+}
+
+function show(id) {
+  if (id === 'account' || id === 'catalog' || id === 'done') flow = 'create';
+  if (id === 'join' || id === 'joined') flow = 'join';
+  if (id === 'welcome') flow = null;
+  current = id;
+  document.querySelectorAll('.pane').forEach(p =>
+    p.classList.toggle('current', p.dataset.pane === id));
+  renderRail();
+  renderTicker();
+  const pane = document.querySelector('.pane[data-pane="' + id + '"]');
+  const first = pane.querySelector('input, textarea, .choice, .btn-primary');
+  if (first) first.focus();
+}
+
+document.querySelectorAll('[data-go]').forEach(el =>
+  el.addEventListener('click', () => show(el.dataset.go)));
+
+/* Account validation */
+const pw = document.getElementById('password');
+const cf = document.getElementById('confirm');
+const un = document.getElementById('username');
+const nextBtn = document.getElementById('account-next');
+const pwHint = document.getElementById('pw-hint');
+const cfHint = document.getElementById('cf-hint');
+
+function validateAccount() {
+  const pwOk = pw.value.length >= 10;
+  const cfOk = pwOk && cf.value === pw.value;
+  pwHint.textContent = pw.value && !pwOk ? 'err: too short — min_length: 10' : 'min_length: 10';
+  pwHint.className = 'hint' + (pw.value && !pwOk ? ' err' : '');
+  cfHint.textContent = cf.value ? (cfOk ? 'ok: passwords match' : 'err: passwords do not match') : '';
+  cfHint.className = 'hint' + (cf.value ? (cfOk ? ' ok' : ' err') : '');
+  nextBtn.disabled = !(un.value.trim() && pwOk && cfOk);
+}
+[pw, cf, un].forEach(el => el.addEventListener('input', validateAccount));
+nextBtn.addEventListener('click', () => show('catalog'));
+
+/* Catalog sync simulation */
+const syncBtn = document.getElementById('sync-btn');
+const bar = document.getElementById('bar');
+const status = document.getElementById('sync-status');
+const catNext = document.getElementById('catalog-next');
+const skipBtn = document.getElementById('skip-btn');
+const consoleEl = document.getElementById('console');
+let syncing = false;
+
+function logLine(html) {
+  const ln = document.createElement('span');
+  ln.className = 'ln';
+  ln.innerHTML = html;
+  consoleEl.appendChild(ln);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+syncBtn.addEventListener('click', () => {
+  if (syncing) return;
+  syncing = true;
+  syncBtn.disabled = true;
+  consoleEl.innerHTML = '';
+  logLine('$ barkvisorctl catalog sync');
+  logLine('<span class="ac">→</span> resolving catalog endpoint…');
+  status.className = 'sync-status';
+  status.textContent = 'syncing…';
+  let p = 0;
+  let loggedFetch = false;
+  const tick = setInterval(() => {
+    p = Math.min(100, p + Math.random() * 13);
+    bar.style.width = p + '%';
+    if (p > 30 && !loggedFetch) {
+      loggedFetch = true;
+      logLine('<span class="ac">→</span> fetching manifest <span class="am">catalog-v3.json</span>');
+      logLine('<span class="ac">→</span> verifying signatures…');
+    }
+    if (p >= 100) {
+      clearInterval(tick);
+      logLine('<span class="ok">✓</span> <span class="ok">24 images and 9 templates synced</span>');
+      status.textContent = 'ok: 24 images and 9 templates synced';
+      status.className = 'sync-status ok';
+      catNext.disabled = false;
+      skipBtn.style.display = 'none';
+      catalogState = '24 images, 9 templates';
+      document.getElementById('done-catalog').textContent = catalogState;
+      syncing = false;
+    }
+  }, 150);
+});
+
+/* Join validation */
+const offer = document.getElementById('offer');
+const joinBtn = document.getElementById('join-btn');
+const offerHint = document.getElementById('offer-hint');
+
+offer.addEventListener('input', () => {
+  const v = offer.value.trim();
+  const ok = v.startsWith('barkvisor://pair/v1/') && v.length > 24;
+  joinBtn.disabled = !ok;
+  offerHint.textContent = !v ? 'expect: barkvisor://pair/v1/<payload>'
+    : ok ? 'ok: offer signature well-formed' : 'err: not a valid pairing offer';
+  offerHint.className = 'hint' + (!v ? '' : ok ? ' ok' : ' err');
+});
+joinBtn.addEventListener('click', () => {
+  const v = offer.value.trim();
+  document.getElementById('joined-offer').textContent =
+    v.length > 34 ? v.slice(0, 31) + '…' : v;
+  show('joined');
+});
+
+show('welcome');
+</script>
+</body>
+</html>
