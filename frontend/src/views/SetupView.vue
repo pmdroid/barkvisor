@@ -15,13 +15,6 @@ import {
   type RepoSyncStatus,
   type SetupStatus,
 } from '../api/setup'
-import { joinHome, isPairingPayload, type PairingJoin } from '../api/pairing'
-import {
-  clearSetupJoinProgress,
-  loadSetupJoinProgress,
-  saveSetupJoinProgress,
-  shouldResumeJoinReady,
-} from '../api/setupJoinProgress'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { clearSetupCache } from '../router'
@@ -33,19 +26,8 @@ const caps = useCapabilitiesStore()
 /** Linear UI step index (1-based). Wizard: Welcome → Admin → Catalog → Ready. */
 const step = ref(1)
 
-/** Create-Home wizard vs join-existing-Home branch (same SetupView). */
-const path = ref<'create' | 'join'>('create')
-const qrPayload = ref('')
-const joinResult = ref<PairingJoin | null>(null)
-/** Server-side join (identity complete) so refresh works when sessionStorage is blocked. */
-const resumeJoinReady = ref(false)
-
-/** Which content panel to show for the current linear index. */
 const panel = computed(() => {
   if (step.value === 1) return 'welcome'
-  if (path.value === 'join') {
-    return joinResult.value || resumeJoinReady.value ? 'join-ready' : 'join'
-  }
   if (step.value === 2) return 'admin'
   if (step.value === 3) return 'repos'
   return 'ready'
@@ -71,14 +53,6 @@ const confirmHint = computed(() => {
   return confirmOk.value ? 'ok: passwords match' : 'err: passwords do not match'
 })
 
-// Join offer validation hint
-const offerTrimmed = computed(() => qrPayload.value.trim())
-const offerOk = computed(() => isPairingPayload(offerTrimmed.value))
-const offerHint = computed(() => {
-  if (!offerTrimmed.value) return 'expect: barkvisor://pair/v1/<payload>'
-  return offerOk.value ? 'ok: offer signature well-formed' : 'err: not a valid pairing offer'
-})
-
 // Repo sync step
 const syncStatus = ref<RepoSyncStatus | null>(null)
 let syncPollInterval: ReturnType<typeof setInterval> | null = null
@@ -92,23 +66,14 @@ const catalogSummary = computed(() =>
 // Ops-checklist rail
 const sessionId = `BV-SETUP-${Math.floor(1000 + Math.random() * 9000)}`
 
-const railSteps = computed(() => {
-  if (path.value === 'join' && step.value > 1) {
-    return [
-      { num: '01', t: 'Welcome', key: 'welcome' },
-      { num: '02', t: 'Pairing offer', key: 'join' },
-      { num: '03', t: 'Ready', key: 'join-ready' },
-    ]
-  }
-  return [
-    { num: '01', t: 'Welcome', key: 'welcome' },
-    { num: '02', t: 'Admin account', key: 'admin' },
-    { num: '03', t: 'Image catalog', key: 'repos' },
-    { num: '04', t: 'Ready', key: 'ready' },
-  ]
-})
+const railSteps = [
+  { num: '01', t: 'Welcome', key: 'welcome' },
+  { num: '02', t: 'Admin account', key: 'admin' },
+  { num: '03', t: 'Image catalog', key: 'repos' },
+  { num: '04', t: 'Ready', key: 'ready' },
+]
 const currentRailIndex = computed(() => {
-  const idx = railSteps.value.findIndex((s) => s.key === panel.value)
+  const idx = railSteps.findIndex((s) => s.key === panel.value)
   return idx === -1 ? 0 : idx
 })
 function railItemState(i: number) {
@@ -117,7 +82,7 @@ function railItemState(i: number) {
   return 'pending'
 }
 const railState = computed(() => {
-  if (panel.value === 'ready' || panel.value === 'join-ready') return 'complete'
+  if (panel.value === 'ready') return 'complete'
   if (panel.value === 'repos' && syncStatus.value?.syncing) return 'syncing catalog'
   return 'awaiting input'
 })
@@ -131,16 +96,7 @@ onMounted(async () => {
     // Server may not be ready yet
   }
   if (status.complete) {
-    clearSetupJoinProgress()
     router.replace('/login')
-    return
-  }
-  const saved = loadSetupJoinProgress()
-  if (shouldResumeJoinReady(status, saved)) {
-    path.value = 'join'
-    joinResult.value = saved
-    resumeJoinReady.value = status.joined === true
-    step.value = 2
   }
 })
 
@@ -148,7 +104,7 @@ async function nextStep() {
   error.value = ''
   // Leaving admin: record NAT-only skip for setup progress.
   // Bridge setup lives on the Networks page, not in first-run.
-  if (path.value === 'create' && step.value === 2) {
+  if (step.value === 2) {
     try {
       await skipBridge()
     } catch {
@@ -159,45 +115,12 @@ async function nextStep() {
 }
 
 function startCreate() {
-  path.value = 'create'
-  joinResult.value = null
-  resumeJoinReady.value = false
-  clearSetupJoinProgress()
-  nextStep()
-}
-
-function startJoin() {
-  path.value = 'join'
-  error.value = ''
   nextStep()
 }
 
 function backToWelcome() {
-  path.value = 'create'
-  joinResult.value = null
-  resumeJoinReady.value = false
-  qrPayload.value = ''
   error.value = ''
   step.value = 1
-  clearSetupJoinProgress()
-}
-
-async function submitJoin() {
-  error.value = ''
-  const payload = qrPayload.value.trim()
-  if (!isPairingPayload(payload)) {
-    error.value = 'Paste the full pairing code (starts with barkvisor://), not only the short code.'
-    return
-  }
-  loading.value = true
-  try {
-    joinResult.value = await joinHome(payload)
-    saveSetupJoinProgress(joinResult.value)
-  } catch (e: unknown) {
-    error.value = apiErrorMessage(e, 'Failed to join Home')
-  } finally {
-    loading.value = false
-  }
 }
 
 // Step 2: Create admin
@@ -228,7 +151,6 @@ async function startSync() {
   loading.value = true
   try {
     syncStatus.value = await startRepoSync()
-    // Poll for progress
     syncPollInterval = setInterval(async () => {
       try {
         syncStatus.value = await getRepoSyncStatus()
@@ -253,7 +175,6 @@ async function finishSetup() {
   loading.value = true
   try {
     const { token } = await completeSetup()
-    clearSetupJoinProgress()
     clearSetupCache()
     authStore.token = token
     localStorage.setItem('token', token)
@@ -326,26 +247,17 @@ async function finishSetup() {
             <div class="eyebrow">Step 01 — Welcome</div>
             <h1>Commission this {{ DEVICE_LABEL }}</h1>
             <p class="sub">
-              BarkVisor manages headless QEMU virtual machines. Choose how this
-              {{ DEVICE_LABEL }} joins your setup.
+              BarkVisor manages headless QEMU virtual machines. Set up this
+              {{ DEVICE_LABEL }} as a new {{ HOME_LABEL }}. To join an existing
+              {{ HOME_LABEL }}, run <code>barkvisor join --code</code> on the CLI.
             </p>
             <button class="choice" @click="startCreate">
-              <span class="cid">A</span>
+              <span class="cid">→</span>
               <span>
                 <div class="t">Set up this {{ DEVICE_LABEL }}</div>
                 <div class="d">
                   Create a new {{ HOME_LABEL }} with this machine as its first
                   {{ DEVICE_LABEL }}.
-                </div>
-              </span>
-            </button>
-            <button class="choice" @click="startJoin">
-              <span class="cid">B</span>
-              <span>
-                <div class="t">Join an existing {{ HOME_LABEL }}</div>
-                <div class="d">
-                  Pair this {{ DEVICE_LABEL }} with a {{ HOME_LABEL }} using an offer from
-                  another {{ DEVICE_LABEL }}.
                 </div>
               </span>
             </button>
@@ -494,80 +406,6 @@ async function finishSetup() {
             </div>
           </div>
 
-          <!-- Join an existing Home -->
-          <div v-if="panel === 'join'" class="pane">
-            <div class="eyebrow">Join flow — Pairing offer</div>
-            <h1>Join an existing {{ HOME_LABEL }}</h1>
-            <p class="sub">
-              Paste the pairing offer generated on a {{ DEVICE_LABEL }} that already belongs to
-              your {{ HOME_LABEL }}.
-            </p>
-            <form @submit.prevent="submitJoin">
-              <div class="field">
-                <label for="setup-offer">Pairing offer</label>
-                <textarea
-                  id="setup-offer"
-                  v-model="qrPayload"
-                  placeholder="barkvisor://pair/v1/eyJob21lIjoi…"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <div class="hint" :class="{ ok: offerOk, err: offerTrimmed && !offerOk }">
-                  {{ offerHint }}
-                </div>
-              </div>
-              <FormError v-if="error" :message="error" />
-              <div class="actions">
-                <AppButton variant="ghost" type="button" @click="backToWelcome">Back</AppButton>
-                <div class="spacer"></div>
-                <AppButton
-                  variant="primary"
-                  :disabled="!offerTrimmed"
-                  :loading="loading"
-                  loading-text="Joining..."
-                >
-                  Join {{ HOME_LABEL }}
-                </AppButton>
-              </div>
-            </form>
-          </div>
-
-          <!-- Joined (join path ready) -->
-          <div v-if="panel === 'join-ready'" class="pane">
-            <div class="eyebrow">Join flow — Complete</div>
-            <h1>Joined your {{ HOME_LABEL }}</h1>
-            <p class="sub">
-              Pairing handshake verified. This {{ DEVICE_LABEL }} now reports to your
-              {{ HOME_LABEL }}.
-            </p>
-            <div class="result">
-              <div class="badge">&#10003;</div>
-              <div>
-                <div class="t">{{ DEVICE_LABEL }} paired</div>
-                <div class="d">Sign in with your {{ HOME_LABEL }}'s admin account to continue</div>
-              </div>
-            </div>
-            <div class="kv">
-              <div>
-                home&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">joined via offer</span>
-              </div>
-              <div>
-                device&nbsp;&nbsp;&nbsp;<span class="v">this machine (paired)</span>
-              </div>
-            </div>
-            <FormError v-if="error" :message="error" />
-            <div class="actions">
-              <div class="spacer"></div>
-              <AppButton
-                variant="primary"
-                :loading="loading"
-                loading-text="Finishing..."
-                @click="finishSetup"
-              >
-                Launch Dashboard
-              </AppButton>
-            </div>
-          </div>
         </div>
       </div>
 
