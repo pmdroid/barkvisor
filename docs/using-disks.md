@@ -2,6 +2,8 @@
 
 **Disks** manages virtual disks across the Home — separate from boot images.
 
+![Disks page with per-Device usage and disk table](img/disks.png)
+
 ## Per-device usage
 
 Storage cards show each Device's disk usage; unreachable Devices render as unreachable cards instead of fake numbers.

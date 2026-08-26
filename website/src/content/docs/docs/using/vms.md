@@ -4,6 +4,8 @@ description: "All Workloads in the Home with health filters and quick actions."
 ---
 **Virtual Machines** lists every **Workload** (VM) in the Home across all Devices in the current [scope](/docs/using/).
 
+![Virtual Machines list with health filter chips](/docs-img/vms.png)
+
 ## Health filters
 
 Filter chips above the table show counts at a glance:

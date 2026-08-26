@@ -4,6 +4,8 @@ description: "Template and image catalogs you sync into the Library."
 ---
 **Repositories** manages catalogs of templates and OS images you can sync into the [Library](/docs/using/images/).
 
+![Repositories catalog with Templates and Images tabs](/docs-img/repositories.png)
+
 ## Managing repositories
 
 The toolbar has:

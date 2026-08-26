@@ -2,6 +2,8 @@
 
 The **Disks** tab sets where new VM disks land on this Device.
 
+![Settings Disks tab: default VM disk directory](img/settings-disks.png)
+
 ## Default VM disk directory
 
 - The current default directory with **Browse** to change it

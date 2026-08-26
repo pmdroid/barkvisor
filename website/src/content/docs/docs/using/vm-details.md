@@ -4,6 +4,8 @@ description: "Actions and tabs for one VM: overview, console, VNC, metrics, logs
 ---
 Every VM row links to its detail page. This is where you drive a single **Workload**: lifecycle actions, hardware facts, and the console surfaces.
 
+![Workload detail: Overview tab with hardware, network, and disks](/docs-img/vm-detail.png)
+
 ## Toolbar actions
 
 - **Start** — boot the Workload

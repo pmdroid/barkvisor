@@ -2,6 +2,8 @@
 
 The **Ollama** page manages local model runtimes across the Home. It is visible to admins and to users with the **inference** role.
 
+![Ollama page with per-Device status and model list](img/ollama.png)
+
 ## Picking a Device
 
 The left rail lists Devices with their Ollama reach state; **This Device** tags the machine you are browsing from. Selecting one scopes the inspect pane.

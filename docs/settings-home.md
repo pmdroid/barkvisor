@@ -2,6 +2,8 @@
 
 The **Home** tab is identity and reachability for this Device. It is not where pairing happens — the QR lives on [Pairing](settings-pairing.md).
 
+![Settings Home tab: facts, remote access, advertise URL](img/settings-home.png)
+
 ## Facts sheet
 
 - **Device name** — how this Device appears across the Home

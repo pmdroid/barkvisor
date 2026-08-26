@@ -2,6 +2,8 @@
 
 The **SSH Keys** tab stores public keys that get injected into guests, so you can `ssh` into Workloads without password games.
 
+![Settings SSH Keys tab](img/settings-ssh-keys.png)
+
 ## Add a key
 
 1. Click add.

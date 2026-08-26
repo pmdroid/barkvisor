@@ -4,6 +4,8 @@ description: "Device facts, remote access, Tailscale detection, and advertise UR
 ---
 The **Home** tab is identity and reachability for this Device. It is not where pairing happens — the QR lives on [Pairing](/docs/using/settings/pairing/).
 
+![Settings Home tab: facts, remote access, advertise URL](/docs-img/settings-home.png)
+
 ## Facts sheet
 
 - **Device name** — how this Device appears across the Home

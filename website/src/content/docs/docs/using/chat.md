@@ -4,6 +4,8 @@ description: "Talk to models served by Ollama on your Devices."
 ---
 **Chat** is the browser chat over your Home's Ollama models. The menu point only appears when at least one Ollama model is reachable — no reachable model, no tab.
 
+![Chat page](/docs-img/chat.png)
+
 ## Layout
 
 - **Conversations list** on the left, with **New chat**

@@ -4,11 +4,13 @@ description: "Pairing QR to add Devices, phone sign-in QR, and re-pairing."
 ---
 The **Pairing** tab issues the offers that grow the Home: adding another Device, and signing in from a phone.
 
+![Settings Pairing tab: pairing offer with short code and full URI](/docs-img/settings-pairing.png)
+
 ## Add a Device
 
 1. Click the primary add button — BarkVisor creates a pairing offer.
-2. A QR code appears with an expiry countdown.
-3. On the new Device, open setup and choose **Join an existing Home**, then scan the QR or paste the code (`barkvisor://pair/v1?…`).
+2. A short code appears with an expiry countdown, plus the full `barkvisor://pair/v1?…` offer to copy.
+3. On the new Device, open setup and choose **Join an existing Home**, then paste the offer (the CLI path is `barkvisor join --code`).
 4. Revoke the code any time before it is used.
 
 You can also pick which advertised host the offer should contain, including **Other / DNS name…** for custom addresses.

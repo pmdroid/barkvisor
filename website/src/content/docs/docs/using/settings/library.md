@@ -4,6 +4,8 @@ description: "Library path, capacity, reset, and the depot Device."
 ---
 The **Library** tab points this Device at its image store and explains the depot.
 
+![Settings Library tab: path, capacity, depot](/docs-img/settings-library.png)
+
 ## Library path
 
 - Current Library directory with a **Browse** folder picker (overlay dialog)
