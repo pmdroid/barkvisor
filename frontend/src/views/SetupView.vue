@@ -424,17 +424,21 @@ async function finishSetup() {
 
 <style scoped>
 .setup-page {
-  --s-bg: #0a0e14;
-  --s-panel: rgba(255, 255, 255, 0.03);
-  --s-line: rgba(255, 255, 255, 0.07);
-  --s-text: #e4e4e2;
-  --s-dim: #6e6e6c;
-  --s-accent: #0090f8;
-  --s-green: #34d399;
-  --s-red: #f87171;
-  --s-amber: #fbbf24;
-  --s-radius: 2px;
+  --s-bg: var(--bg);
+  --s-panel: var(--panel, rgba(255, 255, 255, 0.03));
+  --s-line: var(--line, rgba(255, 255, 255, 0.07));
+  --s-text: var(--text);
+  --s-dim: var(--text-dim);
+  --s-accent: var(--accent);
+  --s-green: var(--green);
+  --s-red: var(--red);
+  --s-amber: var(--amber);
+  --s-radius: var(--radius, 2px);
   --s-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --s-input-bg: var(--bg-input);
+  --s-console-bg: rgba(0, 0, 0, 0.3);
+  --s-choice-hover: rgba(0, 144, 248, 0.04);
+  --s-current-bg: rgba(0, 144, 248, 0.06);
 
   min-height: 100vh;
   display: flex;
@@ -445,6 +449,15 @@ async function finishSetup() {
   font-size: 14px;
   line-height: 1.5;
   padding: 24px 0;
+}
+
+:root[data-theme='light'] .setup-page {
+  --s-panel: rgba(255, 255, 255, 0.85);
+  --s-line: rgba(0, 0, 0, 0.1);
+  --s-input-bg: rgba(255, 255, 255, 0.95);
+  --s-console-bg: rgba(0, 0, 0, 0.04);
+  --s-choice-hover: rgba(0, 120, 212, 0.06);
+  --s-current-bg: rgba(0, 120, 212, 0.08);
 }
 
 .shell {
@@ -528,7 +541,7 @@ async function finishSetup() {
     border-color 0.15s;
 }
 .item.current {
-  background: rgba(0, 144, 248, 0.06);
+  background: var(--s-current-bg);
   border-left-color: var(--s-accent);
 }
 .item .box {
@@ -700,8 +713,8 @@ async function finishSetup() {
     background 0.15s;
 }
 .choice:hover {
-  border-color: rgba(0, 144, 248, 0.5);
-  background: rgba(0, 144, 248, 0.04);
+  border-color: var(--s-accent);
+  background: var(--s-choice-hover);
 }
 .choice:focus-visible {
   outline: 2px solid var(--s-accent);
@@ -747,7 +760,7 @@ async function finishSetup() {
 .field input[type='password'],
 .field textarea {
   width: 100%;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--s-input-bg);
   border: 1px solid var(--s-line);
   border-radius: var(--s-radius);
   color: var(--s-text);
@@ -791,7 +804,7 @@ async function finishSetup() {
 
 /* Sync console */
 .console {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--s-console-bg);
   border: 1px solid var(--s-line);
   border-radius: var(--s-radius);
   padding: 14px 16px;
