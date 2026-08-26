@@ -1626,7 +1626,7 @@ const recentEvents = computed(() => {
                   <AppButton variant="primary" size="sm" :disabled="!attachIsoId || !!actionLoading" @click="doAttachISO">Attach</AppButton>
                   <AppButton size="sm" @click="showIsoAttach = false; attachIsoId = ''">Cancel</AppButton>
                 </div>
-                <button v-else-if="!isMemberDetail" type="button" class="fact-edit" style="align-self:flex-start" @click="showIsoAttach = true; fetchImages()">Attach ISO</button>
+                <AppButton v-else-if="!isMemberDetail" size="sm" icon="plus" style="align-self:flex-start;margin-top:2px" @click="showIsoAttach = true; fetchImages()">Attach ISO</AppButton>
               </span>
             </div>
             <div class="detail-row">
