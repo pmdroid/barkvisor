@@ -384,7 +384,8 @@
       "arch": "arm64",
       "version": "18.2",
       "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.2/haos_generic-aarch64-18.2.qcow2.xz",
-      "sizeBytes": 359971444
+      "sizeBytes": 359971444,
+      "sha256": "2c3e1822a4d83498980708d45573da1b74bc25c0643510bf29937a1bf70b1134"
     },
     {
       "slug": "haos-18.2-x86_64",
@@ -394,7 +395,8 @@
       "arch": "x86_64",
       "version": "18.2",
       "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.2/haos_ova-18.2.qcow2.xz",
-      "sizeBytes": 535936800
+      "sizeBytes": 535936800,
+      "sha256": "254e53f354df0739e3afc09be5431a07df53f0df6b703885404f665c454f254e"
     }
   ]
 }
