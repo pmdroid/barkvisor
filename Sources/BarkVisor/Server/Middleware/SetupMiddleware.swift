@@ -57,4 +57,12 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
     func markComplete() {
         lock.withLock { _setupComplete = true }
     }
+
+    func refreshFromDatabase() {
+        let hasAdmin =
+            (try? dbPool.read { db in
+                try User.filter(User.Columns.password != "").fetchCount(db) > 0
+            }) ?? false
+        lock.withLock { _setupComplete = hasAdmin }
+    }
 }

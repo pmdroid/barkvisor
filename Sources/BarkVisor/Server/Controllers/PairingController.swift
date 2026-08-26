@@ -165,8 +165,7 @@ struct PairingController: RouteCollection {
                 db: req.db,
                 keys: keys,
             )
-            // Pairing during first-run setup must not close /api/setup/* —
-            // the wizard still needs bridge / repo / catalog steps.
+            setupMiddleware.refreshFromDatabase()
             AuditService.log(
                 action: "pairing.join",
                 resourceType: "device",
