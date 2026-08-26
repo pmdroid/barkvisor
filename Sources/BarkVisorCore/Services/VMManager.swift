@@ -1,5 +1,10 @@
 import Foundation
 import GRDB
+#if canImport(Darwin)
+    import Darwin
+#elseif canImport(Glibc)
+    import Glibc
+#endif
 
 public struct RunningVM: @unchecked Sendable {
     public let process: Process? // nil for reconnected VMs
@@ -195,13 +200,8 @@ public actor VMManager: VMStateQuerying {
 
         let bridgeSocketPath = try await validateBridgeIfNeeded(network: loaded.network)
 
-        // Fail fast if hostfwd ports are already bound (another VM, or orphaned QEMU).
-        try Self.assertHostPortsAvailable(for: loaded.vm)
-        try BlockDeviceService.requireHostDeviceReadWrite(
-            paths: [loaded.disk.path] + loaded.additionalDisks.map(\.path),
-        )
-
         let diskPaths = [loaded.disk.path] + loaded.additionalDisks.map(\.path)
+        try BlockDeviceService.requireHostDeviceReadWrite(paths: diskPaths)
         if try await adoptExistingQEMUOrConflict(
             vmID: vmID,
             vmName: loaded.vm.name,
@@ -209,6 +209,8 @@ public actor VMManager: VMStateQuerying {
         ) {
             return
         }
+
+        try Self.assertHostPortsAvailable(for: loaded.vm)
 
         // Update state to starting and clear pending changes
         try await updateState(vmID: vmID, state: "starting")
@@ -326,12 +328,17 @@ public actor VMManager: VMStateQuerying {
                 vm: vmID,
             )
         } catch {
-            qemuProc?.terminationHandler = nil
+            let writeLock: Bool = {
+                if case let .processSpawnFailed(message)? = error as? BarkVisorError {
+                    return QEMUArgv.reportsWriteLock(message)
+                }
+                return false
+            }()
             await CodingAgentSessionStore.shared.remove(vmID: vmID)
             cleanupFailedSwtpm(swtpmProc, vmID: vmID)
 
-            if case let .processSpawnFailed(message)? = error as? BarkVisorError,
-               QEMUArgv.reportsWriteLock(message) {
+            if writeLock {
+                qemuProc?.terminationHandler = nil
                 do {
                     if try await adoptExistingQEMUOrConflict(
                         vmID: vmID,
@@ -351,6 +358,8 @@ public actor VMManager: VMStateQuerying {
                     try? await updateState(vmID: vmID, state: "error", error: conflictError.localizedDescription)
                     throw conflictError
                 }
+            } else if let proc = qemuProc, proc.isRunning {
+                kill(proc.processIdentifier, SIGKILL)
             }
 
             GPUPassthroughService.releaseVFIO(loaded.vm.decodedGPUDevices)
@@ -519,7 +528,7 @@ public actor VMManager: VMStateQuerying {
         try? await Task.sleep(nanoseconds: 200_000_000)
         guard runningVMs[vmID] != nil else { return }
         guard !isProcessAlive(running) else { return }
-        await handleTermination(vmID: vmID, status: status)
+        await handleTermination(vmID: vmID, status: status, pid: running.pid)
     }
 
     // MARK: - Restart

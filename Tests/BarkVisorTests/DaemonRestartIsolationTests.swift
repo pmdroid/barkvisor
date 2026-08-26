@@ -208,6 +208,25 @@ struct DaemonRestartIsolationTests {
         }
     }
 
+    @Test func `preflight does not adopt a live non qemu pidfile`() async throws {
+        let (pool, vmID) = try await Self.makeVMWithPool(state: "stopped")
+        let manager = VMManager(dbPool: pool)
+        let pidsDir = await manager.pidsDir
+        try FileManager.default.createDirectory(at: pidsDir, withIntermediateDirectories: true)
+        let live = ProcessInfo.processInfo.processIdentifier
+        try VMPidFile(qemuPid: live, swtpmPid: nil).serialized()
+            .write(to: pidsDir.appendingPathComponent("\(vmID).pid"), atomically: true, encoding: .utf8)
+
+        let adopted = try await manager.adoptExistingQEMUOrConflict(
+            vmID: vmID,
+            vmName: "test-raw",
+            diskPaths: ["/var/lib/barkvisor/disks/\(vmID).qcow2"],
+            processes: [],
+        )
+        #expect(!adopted)
+        #expect(await manager.isRunning(vmID) == false)
+    }
+
     @Test func `preflight proceeds to spawn when no holder exists`() async throws {
         let pool = try Self.makePool()
         let manager = VMManager(dbPool: pool)
