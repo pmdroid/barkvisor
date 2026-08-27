@@ -12,9 +12,15 @@ public enum TemplateRenderer {
         var result = template
 
         // Compute password_hash from raw password
-        if let password = inputs["password"] {
+        if let password = inputs["password"], !password.isEmpty {
             let hash = generateSHA512Crypt(password: password)
             result = result.replacingOccurrences(of: "{{password_hash}}", with: hash)
+        } else {
+            result = result.replacingOccurrences(
+                of: "    lock_passwd: false\n    passwd: {{password_hash}}\n",
+                with: "    lock_passwd: true\n",
+            )
+            result = result.replacingOccurrences(of: "{{password_hash}}", with: "")
         }
 
         // Compute ssh_keys_yaml from ssh_keys
