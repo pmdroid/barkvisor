@@ -124,4 +124,33 @@ struct CloudInitServiceTests {
             try CloudInitService.validateUserDataRef(escaped, vmID: "vm-1")
         }
     }
+
+    @Test func `hostnameFromVMName slugifies display names`() {
+        #expect(hostnameFromVMName("Ubuntu Server") == "ubuntu-server")
+        #expect(hostnameFromVMName("  Pi-hole  ") == "pi-hole")
+        #expect(hostnameFromVMName("My---VM") == "my-vm")
+    }
+
+    @Test func `generateISO meta-data uses hostname slug`() throws {
+        let vmID = "vm-hostname-test"
+        do {
+            _ = try CloudInitService.generateISO(
+                vmID: vmID,
+                vmName: "Ubuntu Server",
+                sshKeys: [],
+                userData: nil,
+            )
+        } catch BarkVisorError.cloudInitFailed {}
+        let dir = CloudInitService.generatedISOURL(vmID: vmID).deletingLastPathComponent()
+        let meta = try String(
+            contentsOf: dir.appendingPathComponent("meta-data"),
+            encoding: .utf8,
+        )
+        #expect(meta.contains("local-hostname: ubuntu-server"))
+        let userData = try String(
+            contentsOf: dir.appendingPathComponent("user-data"),
+            encoding: .utf8,
+        )
+        #expect(userData.contains("hostname: ubuntu-server"))
+    }
 }

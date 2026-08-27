@@ -245,10 +245,14 @@ struct ControllerLogicTests {
         #endif
     }
 
-    @Test func `validateCPUCount rejects more vCPUs than host has`() throws {
+    @Test func `validateCPUCount rejects more vCPUs than host allows after reserve`() throws {
         let host = PlatformHost.cpuCount
+        let max = VMLifecycleService.maxAssignableCPUs()
         try VMLifecycleService.validateCPUCount(1)
-        try VMLifecycleService.validateCPUCount(host)
+        try VMLifecycleService.validateCPUCount(max)
+        #expect(throws: BarkVisorError.self) {
+            try VMLifecycleService.validateCPUCount(max + 1)
+        }
         #expect(throws: BarkVisorError.self) {
             try VMLifecycleService.validateCPUCount(host + 1)
         }

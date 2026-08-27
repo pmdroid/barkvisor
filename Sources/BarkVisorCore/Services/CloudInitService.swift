@@ -62,13 +62,10 @@ public enum CloudInitService {
         let dir = generatedISOURL(vmID: vmID).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        // meta-data — sanitize vmName for YAML (replace problematic chars)
-        let safeName = vmName.filter {
-            $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "."
-        }
+        let hostname = hostnameFromVMName(vmName)
         let trimmedID = instanceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let resolvedID = trimmedID.isEmpty ? vmID : trimmedID
-        let metaData = "instance-id: \(resolvedID)\nlocal-hostname: \(safeName)\n"
+        let metaData = "instance-id: \(resolvedID)\nlocal-hostname: \(hostname)\n"
         try metaData.write(
             to: dir.appendingPathComponent("meta-data"), atomically: true, encoding: .utf8,
         )
@@ -95,6 +92,10 @@ public enum CloudInitService {
 
         if !sshKeys.isEmpty {
             cloudConfig["ssh_authorized_keys"] = sshKeys
+        }
+
+        if cloudConfig["hostname"] == nil {
+            cloudConfig["hostname"] = hostname
         }
 
         let yamlBody: String
