@@ -607,7 +607,7 @@ extension VMLifecycleService {
     }
 
     static func maxAssignableMemoryMB() -> Int {
-        max(128, PlatformHost.physicalMemoryMB - 4096)
+        max(128, PlatformHost.physicalMemoryMB - 4_096)
     }
 
     /// vCPUs must be at least 1 and leave two logical CPUs for the host.
