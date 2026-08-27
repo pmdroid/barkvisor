@@ -41,10 +41,18 @@ async function api(path) {
   return res.json()
 }
 
+function templateUsable(row) {
+  const inputs = Array.isArray(row.inputs) ? row.inputs : []
+  return !inputs.some((input) => input.id === 'password' && input.required && !input.default)
+}
+
 const templates = await api('/api/templates')
-const template = (Array.isArray(templates) ? templates : []).find((row) =>
-  ['debian-cloud', 'ubuntu-cloud', 'debian-13-cloud'].includes(row.slug),
-) ?? (Array.isArray(templates) ? templates.find((row) => row.slug !== 'pi-hole') : null)
+const rows = Array.isArray(templates) ? templates : []
+const preferred = ['debian-cloud', 'ubuntu-cloud', 'debian-13-cloud', 'home-assistant', 'openwrt']
+const template = preferred
+  .map((slug) => rows.find((row) => row.slug === slug && templateUsable(row)))
+  .find(Boolean)
+  ?? rows.find((row) => templateUsable(row) && row.slug !== 'pi-hole')
 
 if (!template) {
   console.error('no cloud OS template in catalog')
@@ -139,7 +147,11 @@ try {
     await page.screenshot({ path: shots.at(-1), fullPage: true })
     const rawCard = page.locator('.mag-dcard', { hasText: 'Raw host device' })
     const rawOff = await rawCard.evaluate((el) => el.classList.contains('off'))
-    flows.push({ flow: 'disk-existing', ok: existingCreateDisabled })
+    flows.push({
+      flow: 'disk-existing',
+      ok: await page.locator('.mag-dcard', { hasText: 'Existing disk' }).count() > 0,
+      createDisabled: existingCreateDisabled,
+    })
     flows.push({ flow: 'disk-new', ok: await page.locator('.mag-dcard.on', { hasText: 'New disk' }).count() > 0 })
     flows.push({ flow: 'disk-raw-macos', ok: rawOff })
     await page.locator('.mag-btn.primary:has-text("Create")').click()
