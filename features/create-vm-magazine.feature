@@ -23,3 +23,46 @@ Feature: Create VM magazine wizard
     Given the Create VM dialog is on step 3
     And the picked Device runs macOS
     Then the raw host device card should be disabled
+
+  Scenario: Gallery template card opens configure then disk
+    Given the Create VM dialog is open on step 1
+    When I pick a cloud OS template
+    Then I should be on step 2
+    And the name field should be filled
+    When I continue to disk
+    Then I should be on step 3
+    And Create should be enabled for a new qcow2 disk
+
+  Scenario: Cloud OS templates do not ask for a guest password
+    Given the Create VM dialog is open with Ubuntu or Debian selected
+    Then there should be no password field
+    And an SSH key should be required before Next
+
+  Scenario: Custom image flow requires an image on configure
+    Given the Create VM dialog is open on step 1
+    When I choose Use your own image
+    Then Next should stay disabled until I pick an image
+
+  Scenario: Windows flow is ISO only
+    Given the Create VM dialog is open on step 1
+    When I pick Windows
+    Then the guest should be Windows on ISO mode
+    And Next should stay disabled until an ISO is picked
+
+  Scenario: Existing unused disk can be attached on step 3
+    Given the Create VM dialog is on step 3
+    When I pick Existing disk
+    Then Create should stay disabled until I pick an unused disk
+
+  Scenario: Light mode uses the same surface tokens as other modals
+    Given the console is in light mode
+    When I open Create VM
+    Then the magazine frame should use the light modal surface
+
+  Scenario: Create from a cloud template deploys without a password input
+    Given an SSH key exists in Settings
+    And the Create VM dialog is open with a cloud OS template selected
+    When I pick the SSH key and a new disk
+    And I click Create
+    Then the request must not include an empty password
+    And the Workload should be created or the image should start downloading

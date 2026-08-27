@@ -3,7 +3,7 @@
 ## Sub-features
 
 - List with health filter chips (All / Running / Failed / Stopped, each with counts) and table Name · Device · OS · CPU·Mem · Ports · Status
-- **Create VM** split-rail wizard: Basics → Image → Place → Hardware → Storage → Network → Summary
+- **Create VM** magazine dialog: Gallery → Configure → Disk (templates, Windows ISO, custom image, optional Coding Agent)
 - Workload detail toolbar: Start, Stop group (**Shutdown** | **Force Stop**), Restart, VNC pop-out window, Delete
 - Detail tabs: Overview (Session/Hardware/Network/Guest/Disks/Shared folders/USB/GPU/PCI/Recent events), Chat (conditional), Console vs Terminal label (agent-class workloads say Terminal), VNC, Metrics (running only), Logs
 
@@ -22,7 +22,16 @@ Assertions:
 
 - Filter chips render with counts; clicking a chip filters the table
 - Empty state reads "No virtual machines yet" when the instance has none
-- **Create VM** opens the wizard drawer (left rail shows step names); closing without creating leaves `GET /api/vms` unchanged
+- **Create VM** opens the magazine frame (`.mag-frame`, no split-rail); closing without creating leaves `GET /api/vms` unchanged
+
+Full magazine walk + template deploy (screenshots + API side effects):
+
+```sh
+bun helpers/create-vm-flow.mjs --base "$URL" --user admin --pass "$PASS" \
+  --dir "evidence/run-create-vm"
+```
+
+Asserts: gallery cards (templates / Windows / custom), no guest password on cloud OS templates, SSH key on configure, disk cards (new / existing / raw), light-mode surface, and either a VM row or an image download after **Create**.
 
 For a detail page you need an existing workload id from `GET /api/vms` — on a seeded instance there are none unless a guest was booted; prefer asserting list/wizard behavior.
 
