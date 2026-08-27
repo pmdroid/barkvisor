@@ -30,6 +30,8 @@ import {
 } from '../utils/homeDeviceApi'
 import { HOST_BRIDGE_SUGGESTED } from '../utils/hostBridgeFacts'
 import {
+  hostBridgeSetupPending,
+  linuxBridgeFallbackReadiness,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
   macosSocketVmnetSetupGroups,
@@ -195,6 +197,8 @@ const linuxReadiness = ref<HostBridgeReadiness | null>(null)
 const linuxReadinessHostId = ref<string | null>(null)
 const linuxReadinessMode = ref<string | null>(null)
 const linuxReadinessLoading = ref(false)
+const readinessByHost = ref<Record<string, HostBridgeReadiness>>({})
+const pendingReadinessLoading = ref(false)
 /** Newest host-bridge-readiness request; stale completions must not write. */
 let readinessSeq = 0
 
@@ -235,9 +239,12 @@ const pendingBridges = computed<PendingBridge[]>(() => {
   const items: PendingBridge[] = []
   for (const device of devices) {
     const capsFor = deviceCapsFor(device.hostId)
-    if (!capsFor.supportsBridgedNetworking) continue
     const hasBridge = homeNets.networksFor(device.hostId).some((net) => net.mode === 'bridged')
-    if (hasBridge) continue
+    if (!hostBridgeSetupPending({
+      supportsBridgedNetworking: capsFor.supportsBridgedNetworking,
+      hasBridgedNetwork: hasBridge,
+      hostReady: readinessByHost.value[device.hostId]?.ready,
+    })) continue
     items.push({
       key: `pending:${device.hostId}`,
       hostId: device.hostId,
@@ -255,6 +262,21 @@ const selectedRow = computed(() =>
 const selectedPending = computed(() =>
   pendingBridges.value.find((item) => item.key === selectedKey.value) ?? null,
 )
+const selectedPendingMode = computed(() => {
+  const item = selectedPending.value
+  if (!item) return 'hidden' as const
+  const device = devicesStore.deviceByHostId(item.hostId)
+  if (device) return deviceBridgeGuideMode(device)
+  return 'hidden' as const
+})
+const pendingReadiness = computed(() => {
+  const item = selectedPending.value
+  if (!item) return null
+  return readinessByHost.value[item.hostId] ?? null
+})
+const pendingLinuxFacts = computed(() => pendingReadiness.value ?? linuxBridgeFallbackReadiness)
+const pendingLinuxGroups = computed(() => linuxBridgeSetupGroups(pendingLinuxFacts.value))
+const pendingMacosGroups = computed(() => macosSocketVmnetSetupGroups(pendingReadiness.value))
 
 watch([homeRows, pendingBridges], ([rows, pending]) => {
   if (!rows.length && !pending.length) {
@@ -269,6 +291,15 @@ watch([homeRows, pendingBridges], ([rows, pending]) => {
     selectedKey.value = keys[0] ?? ''
   }
 }, { immediate: true })
+
+watch(selectedPending, (item) => {
+  if (!item) return
+  if (readinessByHost.value[item.hostId]) return
+  pendingReadinessLoading.value = true
+  void fetchHostReadiness(devicesStore.deviceByHostId(item.hostId)).finally(() => {
+    pendingReadinessLoading.value = false
+  })
+})
 
 function canMutate(row: HomeNetworkRow): boolean {
   return row.reachable && !row.network.isDefault
@@ -421,12 +452,14 @@ async function refreshHomeNetworks() {
     const tasks: Promise<void>[] = [networkStore.fetchAll(), fetchLocalInterfaces()]
     if (bridged.available) tasks.push(fetchLocalBridges())
     await Promise.all(tasks)
+    await probePendingReadiness()
     return
   }
   await Promise.all([
     homeNets.fetchHomeAll(devicesStore.devices),
     homeWorkloads.fetchHomeAll(devicesStore.devices),
   ])
+  await probePendingReadiness()
 }
 
 async function loadFormContext() {
@@ -464,6 +497,48 @@ async function loadBridgeContext() {
   if (showGuide) await fetchLinuxReadiness()
 }
 
+async function fetchHostReadiness(
+  device: HomeDeviceHealthSnapshot | null,
+): Promise<HostBridgeReadiness | null> {
+  try {
+    const path =
+      device && useHomeUnion.value
+        ? deviceHostBridgeReadinessPath(device)
+        : '/system/host-bridge-readiness'
+    const { data } = await api.get<HostBridgeReadiness>(path)
+    const key = device?.hostId || devicesStore.selfDevice?.hostId || ''
+    if (key) {
+      readinessByHost.value = { ...readinessByHost.value, [key]: data }
+    }
+    return data
+  } catch {
+    return null
+  }
+}
+
+async function probePendingReadiness() {
+  const devices = scopeRows(devicesStore.devices, deviceScope.selectedHostId)
+  await Promise.all(devices.map(async (device) => {
+    if (!canCallDeviceAPI(device)) return
+    const capsFor = deviceCapsFor(device.hostId)
+    if (!capsFor.supportsBridgedNetworking) return
+    const hasBridge = homeNets.networksFor(device.hostId).some((net) => net.mode === 'bridged')
+    if (hasBridge) return
+    await fetchHostReadiness(device)
+  }))
+}
+
+async function recheckPending() {
+  const item = selectedPending.value
+  if (!item) return
+  pendingReadinessLoading.value = true
+  try {
+    await fetchHostReadiness(devicesStore.deviceByHostId(item.hostId))
+  } finally {
+    pendingReadinessLoading.value = false
+  }
+}
+
 async function fetchLinuxReadiness() {
   const device = bridgeDevice.value
   const requestHost = device?.hostId ?? ''
@@ -472,19 +547,15 @@ async function fetchLinuxReadiness() {
   const seq = ++readinessSeq
   linuxReadinessLoading.value = true
   try {
-    const path =
-      device && useHomeUnion.value
-        ? deviceHostBridgeReadinessPath(device)
-        : '/system/host-bridge-readiness'
-    const { data } = await api.get<HostBridgeReadiness>(path)
+    const data = await fetchHostReadiness(device)
     if (seq !== readinessSeq) return
-    linuxReadiness.value = data
-    linuxReadinessHostId.value = requestHost
-    linuxReadinessMode.value = requestMode
+    if (data) {
+      linuxReadiness.value = data
+      linuxReadinessHostId.value = requestHost
+      linuxReadinessMode.value = requestMode
+    }
   } catch {
     if (seq !== readinessSeq) return
-    // Same Device: keep a prior successful snapshot. First miss stays null
-    // so Bridge setup can show "Could not read" instead of a fake DTO.
   } finally {
     if (seq === readinessSeq) linuxReadinessLoading.value = false
   }
@@ -788,13 +859,44 @@ async function doDeleteNetwork() {
     <div class="sheet">
       <div class="sheet-head">
         Setup
-        <AppButton variant="primary" size="sm" :disabled="!canShowBridgeSetup" @click="showBridges = true; bridgeHostId = selectedPending.hostId">Bridge setup</AppButton>
+        <AppButton size="sm" :disabled="pendingReadinessLoading" @click="recheckPending">Re-check</AppButton>
       </div>
-      <div class="steps">
-        <div class="step"><span class="no">1</span><span>Pick the uplink interface on {{ selectedPending.label }} — Wi-Fi or Ethernet.</span></div>
-        <div class="step"><span class="no">2</span><span>BarkVisor creates the bridge and moves the Device address onto it.</span></div>
-        <div class="step"><span class="no">3</span><span>Attach Workloads — each one gets its own LAN address from DHCP.</span></div>
-      </div>
+      <p v-if="pendingReadinessLoading" style="color:var(--text-secondary);font-size:13px;margin:0">Checking this Device…</p>
+      <template v-else-if="selectedPendingMode === 'linux-guide'">
+        <p style="font-size:13px;margin:0 0 12px">{{ linuxBridgeStatusSummary(pendingLinuxFacts) }}</p>
+        <ul v-if="pendingLinuxFacts.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in pendingLinuxFacts.bridges" :key="br.name">
+            <span class="mono">{{ br.name }}</span>
+            <span v-if="br.enslaved.length" style="color:var(--text-secondary)">
+              — {{ br.enslaved.join(', ') }}
+            </span>
+          </li>
+        </ul>
+        <GuestCommandAccordion
+          v-if="pendingLinuxGroups.length"
+          :groups="pendingLinuxGroups"
+          :initial-open="pendingLinuxGroups[0]?.id ?? null"
+        />
+        <p v-if="pendingLinuxFacts.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
+          Do not enslave the only uplink. Prefer NAT on this Device.
+        </p>
+      </template>
+      <template v-else-if="selectedPendingMode === 'macos-guide'">
+        <p style="font-size:13px;margin:0 0 12px">{{ macosSocketVmnetStatusSummary(pendingReadiness) }}</p>
+        <ul v-if="pendingReadiness?.bridges.length" style="margin:0 0 12px;padding-left:18px;font-size:13px">
+          <li v-for="br in (pendingReadiness?.bridges ?? [])" :key="br.name">
+            <span class="mono">{{ br.name }}</span>
+          </li>
+        </ul>
+        <GuestCommandAccordion
+          v-if="pendingMacosGroups.length"
+          :groups="pendingMacosGroups"
+          :initial-open="pendingMacosGroups[0]?.id ?? null"
+        />
+      </template>
+      <p v-else style="color:var(--text-secondary);font-size:13px;margin:0">
+        Could not read host-bridge status on this Device.
+      </p>
     </div>
   </section>
   </template>

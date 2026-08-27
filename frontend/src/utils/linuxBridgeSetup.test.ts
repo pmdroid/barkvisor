@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { HostBridgeReadiness } from '../api/types'
 import {
   BRIDGE_MUTATION_ACTION_KEYS,
+  hostBridgeSetupPending,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
   macosSocketVmnetSetupGroups,
@@ -117,6 +118,42 @@ describe('macosSocketVmnetSetup', () => {
   test('missing facts keep a copyable guide', () => {
     expect(macosSocketVmnetStatusSummary(null)).toContain('socket_vmnet')
     expect(macosSocketVmnetStatusSummary(base({ ready: false }))).toContain('Homebrew')
+  })
+})
+
+describe('hostBridgeSetupPending', () => {
+  test('ready host with no Bridged network is not pending', () => {
+    expect(hostBridgeSetupPending({
+      supportsBridgedNetworking: true,
+      hasBridgedNetwork: false,
+      hostReady: true,
+    })).toBe(false)
+  })
+
+  test('unknown or not-ready host without a Bridged network is pending', () => {
+    expect(hostBridgeSetupPending({
+      supportsBridgedNetworking: true,
+      hasBridgedNetwork: false,
+      hostReady: undefined,
+    })).toBe(true)
+    expect(hostBridgeSetupPending({
+      supportsBridgedNetworking: true,
+      hasBridgedNetwork: false,
+      hostReady: false,
+    })).toBe(true)
+  })
+
+  test('existing Bridged network or missing capability is not pending', () => {
+    expect(hostBridgeSetupPending({
+      supportsBridgedNetworking: true,
+      hasBridgedNetwork: true,
+      hostReady: false,
+    })).toBe(false)
+    expect(hostBridgeSetupPending({
+      supportsBridgedNetworking: false,
+      hasBridgedNetwork: false,
+      hostReady: false,
+    })).toBe(false)
   })
 })
 
