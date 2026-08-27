@@ -31,7 +31,7 @@ bun helpers/create-vm-flow.mjs --base "$URL" --user admin --pass "$PASS" \
   --dir "evidence/run-create-vm"
 ```
 
-Asserts: gallery cards (templates / Windows / custom), no guest password on cloud OS templates, SSH key on configure, disk cards (new / existing / raw), light-mode surface, and either a VM row or an image download after **Create**.
+Asserts: gallery cards (templates / Windows / custom), no guest password on cloud OS templates, SSH key on configure, disk cards (new / existing / raw), light-mode surface, magazine closes after **Create**, and the Workloads list shows that VM as Downloading, Provisioning, or created.
 
 For a detail page you need an existing workload id from `GET /api/vms` — on a seeded instance there are none unless a guest was booted; prefer asserting list/wizard behavior.
 

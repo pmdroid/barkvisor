@@ -7,6 +7,7 @@ import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { useDevicesStore } from '../stores/devices'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useToastStore } from '../stores/toast'
+import { useCreateProgressStore } from '../stores/createProgress'
 import { cancelLivePlacementScores, useCreateVMWizard, WIZARD_STEP_LABELS } from './useCreateVMWizard'
 import { vmCpuCap, vmMemoryCapMB } from '../utils/hostBuffer'
 import type { HomeTemplate } from '../stores/homeLibrary'
@@ -91,6 +92,7 @@ describe('useCreateVMWizard (magazine)', () => {
 
   afterEach(() => {
     cancelLivePlacementScores()
+    useCreateProgressStore().cancelAll()
     api.get = originalGet
     api.post = originalPost
     globalThis.fetch = originalFetch
@@ -277,6 +279,11 @@ describe('useCreateVMWizard magazine flows', () => {
       if (url === '/images' || url.endsWith('/images')) {
         return Promise.resolve({ data: catalogImages })
       }
+      if (url.includes('/images/')) {
+        return Promise.resolve({
+          data: { id: 'img-alma', status: 'downloading', downloadPercent: 10 },
+        })
+      }
       if (url.includes('/ssh-keys')) {
         return Promise.resolve({ data: [demoKey()] })
       }
@@ -315,6 +322,7 @@ describe('useCreateVMWizard magazine flows', () => {
 
   afterEach(() => {
     cancelLivePlacementScores()
+    useCreateProgressStore().cancelAll()
     api.get = originalGet
     api.post = originalPost
     globalThis.fetch = originalFetch
@@ -483,7 +491,7 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(created).toBe(true)
   })
 
-  test('template deploy downloading toasts Images', async () => {
+  test('template deploy downloading emits created and lists progress', async () => {
     patchSelfDevice()
     const library = useHomeLibraryStore()
     catalogTemplates = [ubuntuTemplate()]
@@ -507,7 +515,8 @@ describe('useCreateVMWizard magazine flows', () => {
     wizard.goToDisk()
     await waitReady(wizard)
     await wizard.submit()
-    expect(useToastStore().toasts.some((t) => t.message.includes('Images'))).toBe(true)
+    expect(useToastStore().toasts.some((t) => t.message.includes('Images'))).toBe(false)
+    expect(useCreateProgressStore().jobs.some((job) => job.phase === 'downloading' && job.name)).toBe(true)
   })
 
   test('new disk is the default Create path', async () => {
