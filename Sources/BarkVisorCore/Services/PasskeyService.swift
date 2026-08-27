@@ -48,6 +48,11 @@ public enum PasskeyService {
         guard originHost.lowercased() == rpId else {
             throw BarkVisorError.badRequest("Origin does not match host")
         }
+        let originPort = url.port ?? defaultPort(for: url.scheme)
+        let hostPort = hostPort(fromHostHeader: hostHeader) ?? defaultPort(for: url.scheme)
+        guard originPort == hostPort else {
+            throw BarkVisorError.badRequest("Origin does not match host")
+        }
         return PasskeyRelyingParty(rpId: rpId, origin: origin)
     }
 
@@ -154,7 +159,7 @@ public enum PasskeyService {
             verified = try await manager(rp: rp).finishRegistration(
                 challenge: session.challenge,
                 credentialCreationData: credential,
-                requireUserVerification: false,
+                requireUserVerification: true,
                 supportedPublicKeyAlgorithms: [PublicKeyCredentialParameters(alg: .algES256)],
                 confirmCredentialIDNotRegisteredYet: { id in
                     let encoded = base64url(bytes: credential.rawID)
@@ -198,31 +203,14 @@ public enum PasskeyService {
     }
 
     public static func beginLogin(
-        username: String?,
         rp: PasskeyRelyingParty,
-        db: DatabasePool,
         challenges: PasskeyChallengeStore = .shared,
         now: Date = Date(),
     ) async throws -> PasskeyCeremonyBegin {
-        var allow: [PublicKeyCredentialDescriptor]?
-        if let username {
-            let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                if let user = try await db.read({ db in
-                    try User.filter(User.Columns.username == trimmed).fetchOne(db)
-                }) {
-                    let rows = try await records(userId: user.id, db: db)
-                    allow = rows.compactMap { row in
-                        guard let bytes = URLEncodedBase64(row.credentialId).decodedBytes else { return nil }
-                        return PublicKeyCredentialDescriptor(id: bytes)
-                    }
-                }
-            }
-        }
         let options = manager(rp: rp).beginAuthentication(
             timeout: .seconds(5 * 60),
-            allowCredentials: allow,
-            userVerification: .preferred,
+            allowCredentials: nil,
+            userVerification: .required,
         )
         let sessionId = await challenges.store(
             kind: .login,
@@ -265,24 +253,27 @@ public enum PasskeyService {
             throw BarkVisorError.badRequest("Invalid passkey credential")
         }
         let credentialId = base64url(bytes: assertion.rawID)
-        guard let row = try await db.read({ db in
-            try PasskeyCredential.filter(PasskeyCredential.Columns.credentialId == credentialId).fetchOne(db)
-        }) else {
-            throw BarkVisorError.unauthorized("Invalid credentials")
-        }
+        let userId: String
         do {
-            let verified = try manager(rp: rp).finishAuthentication(
-                credential: assertion,
-                expectedChallenge: session.challenge,
-                credentialPublicKey: [UInt8](row.publicKey),
-                credentialCurrentSignCount: UInt32(row.signCount),
-                requireUserVerification: false,
-            )
-            try await db.write { db in
+            userId = try await db.write { db in
+                guard let row = try PasskeyCredential
+                    .filter(PasskeyCredential.Columns.credentialId == credentialId)
+                    .fetchOne(db)
+                else {
+                    throw BarkVisorError.unauthorized("Invalid credentials")
+                }
+                let verified = try manager(rp: rp).finishAuthentication(
+                    credential: assertion,
+                    expectedChallenge: session.challenge,
+                    credentialPublicKey: [UInt8](row.publicKey),
+                    credentialCurrentSignCount: UInt32(row.signCount),
+                    requireUserVerification: true,
+                )
                 var updated = row
                 updated.signCount = Int(verified.newSignCount)
                 updated.lastUsedAt = iso8601.string(from: now)
                 try updated.update(db)
+                return row.userId
             }
         } catch let error as BarkVisorError {
             throw error
@@ -290,7 +281,7 @@ public enum PasskeyService {
             throw BarkVisorError.unauthorized("Invalid credentials")
         }
         guard let user = try await db.read({ db in
-            try User.fetchOne(db, key: row.userId)
+            try User.fetchOne(db, key: userId)
         }) else {
             throw BarkVisorError.unauthorized("Invalid credentials")
         }
@@ -313,6 +304,20 @@ public enum PasskeyService {
         guard deleted > 0 else {
             throw BarkVisorError.notFound("Passkey not found")
         }
+    }
+
+    private static func defaultPort(for scheme: String?) -> Int {
+        if scheme?.lowercased() == "https" { return 443 }
+        return 80
+    }
+
+    private static func hostPort(fromHostHeader hostHeader: String?) -> Int? {
+        guard let hostHeader else { return nil }
+        let trimmed = hostHeader.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.hasPrefix("[") else { return nil }
+        let parts = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, let port = Int(parts[1]) else { return nil }
+        return port
     }
 
     public static func isIPAddress(_ host: String) -> Bool {
@@ -365,7 +370,7 @@ public enum PasskeyService {
         obj["authenticatorSelection"] = [
             "residentKey": "required",
             "requireResidentKey": true,
-            "userVerification": "preferred",
+            "userVerification": "required",
         ]
         if !excludeCredentialIds.isEmpty {
             obj["excludeCredentials"] = excludeCredentialIds.map {

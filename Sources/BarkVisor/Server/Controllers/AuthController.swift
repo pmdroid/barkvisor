@@ -270,13 +270,13 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func listPasskeys(req: Vapor.Request) async throws -> [PasskeyCredentialResponse] {
-        let authUser = try req.requireUser
+        let authUser = try requirePasskeySession(req)
         return try await PasskeyService.list(userId: authUser.userId, db: req.db)
     }
 
     @Sendable
     func deletePasskey(req: Vapor.Request) async throws -> HTTPStatus {
-        let authUser = try req.requireUser
+        let authUser = try requirePasskeySession(req)
         guard let id = req.parameters.get("id"), !id.isEmpty else {
             throw BarkVisorError.badRequest("Missing passkey id")
         }
@@ -296,7 +296,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func passkeyRegisterBegin(req: Vapor.Request) async throws -> Response {
-        let authUser = try req.requireUser
+        let authUser = try requirePasskeySession(req)
         let body = (try? req.content.decode(PasskeyRegisterBeginRequest.self)) ?? PasskeyRegisterBeginRequest()
         let user = try await req.db.read { db in
             try User.fetchOne(db, key: authUser.userId)
@@ -313,7 +313,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func passkeyRegisterFinish(req: Vapor.Request) async throws -> PasskeyCredentialResponse {
-        let authUser = try req.requireUser
+        let authUser = try requirePasskeySession(req)
         let raw = try await req.body.collect(upTo: 1 << 20)
         let data = Data(buffer: raw)
         let envelope = try passkeyFinishEnvelope(data)
@@ -342,11 +342,9 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func passkeyLoginBegin(req: Vapor.Request) async throws -> Response {
-        let body = (try? req.content.decode(PasskeyLoginBeginRequest.self)) ?? PasskeyLoginBeginRequest()
+        _ = try? req.content.decode(PasskeyLoginBeginRequest.self)
         let rp = try passkeyRelyingParty(req)
-        let begin = try await PasskeyService.beginLogin(
-            username: body.username, rp: rp, db: req.db,
-        )
+        let begin = try await PasskeyService.beginLogin(rp: rp)
         return try passkeyJSON(begin)
     }
 
@@ -379,6 +377,14 @@ struct AuthController: RouteCollection {
             }
             throw error
         }
+    }
+
+    private func requirePasskeySession(_ req: Vapor.Request) throws -> AuthenticatedUser {
+        let authUser = try req.requireUser
+        guard authUser.authMethod == "jwt" else {
+            throw BarkVisorError.forbidden("Passkeys require a signed-in session")
+        }
+        return authUser
     }
 
     private func passkeyRelyingParty(_ req: Vapor.Request) throws -> PasskeyRelyingParty {

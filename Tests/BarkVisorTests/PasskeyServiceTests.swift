@@ -77,6 +77,13 @@ struct PasskeyServiceTests {
         )
         #expect(rp.rpId == "localhost")
         #expect(rp.origin == origin)
+        let port = #expect(throws: BarkVisorError.self) {
+            try PasskeyService.relyingParty(
+                hostHeader: "localhost:7777",
+                originHeader: "http://localhost:8443",
+            )
+        }
+        #expect(port?.httpStatus == 400)
     }
 
     @Test func `register and login roundtrip`() async throws {
@@ -112,7 +119,7 @@ struct PasskeyServiceTests {
         #expect(after.count == 1)
 
         let loginBegin = try await PasskeyService.beginLogin(
-            username: nil, rp: rp, db: db, challenges: challenges,
+            rp: rp, challenges: challenges,
         )
         let getJSON = try authenticator.assertionJSON(
             challenge: Self.challengeString(loginBegin),
@@ -221,7 +228,7 @@ struct PasskeyServiceTests {
         )
 
         let zeroBegin = try await PasskeyService.beginLogin(
-            username: "admin", rp: rp, db: db, challenges: challenges,
+            rp: rp, challenges: challenges,
         )
         _ = try await PasskeyService.finishLogin(
             sessionId: zeroBegin.sessionId,
@@ -242,7 +249,7 @@ struct PasskeyServiceTests {
         #expect(storedZero?.signCount == 0)
 
         let upBegin = try await PasskeyService.beginLogin(
-            username: nil, rp: rp, db: db, challenges: challenges,
+            rp: rp, challenges: challenges,
         )
         _ = try await PasskeyService.finishLogin(
             sessionId: upBegin.sessionId,
@@ -263,7 +270,7 @@ struct PasskeyServiceTests {
         #expect(storedUp?.signCount == 2)
 
         let downBegin = try await PasskeyService.beginLogin(
-            username: nil, rp: rp, db: db, challenges: challenges,
+            rp: rp, challenges: challenges,
         )
         let down = await #expect(throws: BarkVisorError.self) {
             try await PasskeyService.finishLogin(
@@ -342,7 +349,7 @@ private struct PasskeyTestAuthenticator {
 
     private func authenticatorData(rpId: String, signCount: UInt32, attested: Bool) -> [UInt8] {
         var bytes = [UInt8](SHA256.hash(data: Data(rpId.utf8)))
-        bytes.append(attested ? 0x41 : 0x01)
+        bytes.append(attested ? 0x45 : 0x05)
         bytes.append(contentsOf: [
             UInt8(truncatingIfNeeded: signCount >> 24),
             UInt8(truncatingIfNeeded: signCount >> 16),

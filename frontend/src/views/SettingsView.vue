@@ -1231,28 +1231,26 @@ onUnmounted(() => {
     <div v-if="!passkeysAvailable" style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
       {{ passkeyUnavailable }}
     </div>
-    <template v-else>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px">
-        <p style="color:var(--text-secondary);font-size:13px;margin:0">
-          Passkeys sign you in to this Home without a password. They stay on this user.
-        </p>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input v-model="newPasskeyName" placeholder="Name (optional)" style="width:160px" />
-          <AppButton variant="primary" icon="plus" :loading="addPasskeyLoading" loadingText="Waiting..." @click="addPasskey">Add passkey</AppButton>
-        </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px">
+      <p style="color:var(--text-secondary);font-size:13px;margin:0">
+        Passkeys sign you in to this Home without a password. They stay on this user.
+      </p>
+      <div v-if="passkeysAvailable" style="display:flex;gap:8px;align-items:center">
+        <input v-model="newPasskeyName" placeholder="Name (optional)" style="width:160px" />
+        <AppButton variant="primary" icon="plus" :loading="addPasskeyLoading" loading-text="Waiting..." @click="addPasskey">Add passkey</AppButton>
       </div>
-      <EmptyState v-if="passkeyStore.keys.length === 0" icon="key" title="No passkeys yet. Add one to sign in without a password." />
-      <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'lastUsed', label: 'Last used' }, { key: 'created', label: 'Created' }, { key: 'actions', label: '', align: 'right' }]">
-        <tr v-for="k in passkeyStore.keys" :key="k.id">
-          <td style="font-weight:500">{{ k.name }}</td>
-          <td style="color:var(--text-secondary)">{{ k.lastUsedAt ? formatDate(k.lastUsedAt) : 'Never' }}</td>
-          <td style="color:var(--text-secondary)">{{ formatDate(k.createdAt) }}</td>
-          <td style="text-align:right">
-            <AppButton size="sm" style="color:var(--red)" @click="deletePasskeyTarget = k">Delete</AppButton>
-          </td>
-        </tr>
-      </DataTable>
-    </template>
+    </div>
+    <EmptyState v-if="passkeyStore.keys.length === 0" icon="key" title="No passkeys yet. Add one to sign in without a password." />
+    <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'lastUsed', label: 'Last used' }, { key: 'created', label: 'Created' }, { key: 'actions', label: '', align: 'right' }]">
+      <tr v-for="k in passkeyStore.keys" :key="k.id">
+        <td style="font-weight:500">{{ k.name }}</td>
+        <td style="color:var(--text-secondary)">{{ k.lastUsedAt ? formatDate(k.lastUsedAt) : 'Never' }}</td>
+        <td style="color:var(--text-secondary)">{{ formatDate(k.createdAt) }}</td>
+        <td style="text-align:right">
+          <AppButton size="sm" style="color:var(--red)" @click="deletePasskeyTarget = k">Delete</AppButton>
+        </td>
+      </tr>
+    </DataTable>
   </div>
 
   <ConfirmDialog
