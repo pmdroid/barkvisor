@@ -430,14 +430,29 @@ struct WorkloadSpecProjectorTests {
         }
     }
 
-    @Test func `validate accepts host logical CPU count`() throws {
+    @Test func `validate accepts host logical CPU count minus host reserve`() throws {
+        let spec = WorkloadSpec(
+            metadata: WorkloadMetadata(name: "n"),
+            spec: WorkloadSpecBody(
+                resources: WorkloadResources(
+                    cpu: max(1, PlatformHost.cpuCount - 2),
+                    memoryMb: 512,
+                ),
+            ),
+        )
+        try WorkloadSpecProjector.validate(spec)
+    }
+
+    @Test func `validate rejects assigning every host CPU`() {
         let spec = WorkloadSpec(
             metadata: WorkloadMetadata(name: "n"),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(cpu: PlatformHost.cpuCount, memoryMb: 512),
             ),
         )
-        try WorkloadSpecProjector.validate(spec)
+        #expect(throws: BarkVisorError.self) {
+            try WorkloadSpecProjector.validate(spec)
+        }
     }
 
     @Test func `apply with empty disks preserves iso and data disks`() throws {
