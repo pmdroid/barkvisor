@@ -43,10 +43,26 @@ async function applyScrubs(page) {
   }
 }
 
+const origin = new URL(base)
+if (origin.hostname === '127.0.0.1' || origin.hostname === '[::1]') origin.hostname = 'localhost'
+const site = origin.toString().replace(/\/$/, '')
+
 const browser = await chromium.launch()
 const shots = []
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('WebAuthn.enable')
+  await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2',
+      transport: 'internal',
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  })
   const shot = async (name) => {
     await applyScrubs(page)
     const p = `${dir}/${name}.png`
@@ -54,17 +70,14 @@ try {
     shots.push(p)
   }
 
-  await page.goto(`${base}/setup`, { waitUntil: 'networkidle' })
+  await page.goto(`${site}/setup`, { waitUntil: 'networkidle' })
   await page.waitForSelector('.shell', { timeout: 15000 })
   await shot('01-welcome')
 
   await page.click('button:has-text("Continue")')
-  await page.waitForSelector('h1:has-text("Create Admin Account")', { timeout: 10000 })
-  await page.fill('input[placeholder="admin"]', user)
-  await page.fill('input[placeholder="Minimum 10 characters"]', pass)
-  await page.fill('input[placeholder="Repeat password"]', pass)
+  await page.waitForSelector('h1:has-text("Add a passkey")', { timeout: 10000 })
   await shot('02-admin')
-  await page.click('button:has-text("Continue")')
+  await page.click('button:has-text("Add passkey")')
 
   await page.waitForSelector('h1:has-text("Image Library")', { timeout: 15000 })
   await shot('03-library')
@@ -99,7 +112,7 @@ try {
   await page.waitForSelector('.sidebar-nav', { timeout: 20000 })
   await shot('06-landed')
 
-  const status = await (await fetch(`${base}/api/setup/status`)).json()
+  const status = await (await fetch(`${site}/api/setup/status`)).json()
   writeFileSync(`${dir}/result.json`, JSON.stringify({ ok: status.complete === true, setupStatus: status, shots }, null, 2))
   console.log(JSON.stringify({ ok: status.complete === true, setupStatus: status, shots }))
   process.exit(status.complete ? 0 : 1)

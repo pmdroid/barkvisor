@@ -5,29 +5,15 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import AppButton from '../components/ui/AppButton.vue'
 import FormError from '../components/ui/FormError.vue'
-import { isPasskeyAvailable } from '../utils/webauthn'
+import { isPasskeyAvailable, passkeyBlock } from '../utils/webauthn'
+import PasskeyBlocked from '../components/PasskeyBlocked.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
-const username = ref('')
-const password = ref('')
 const error = ref('')
-const loading = ref(false)
 const passkeyLoading = ref(false)
 const showPasskey = isPasskeyAvailable()
-
-async function submit() {
-  error.value = ''
-  loading.value = true
-  try {
-    await auth.login(username.value, password.value)
-    router.push('/vms')
-  } catch (e: any) {
-    error.value = apiErrorMessage(e, 'Login failed')
-  } finally {
-    loading.value = false
-  }
-}
+const blocked = passkeyBlock()
 
 async function signInWithPasskey() {
   error.value = ''
@@ -59,54 +45,25 @@ async function signInWithPasskey() {
         </svg>
         <span class="login-tag">Web console</span>
       </div>
-      <form class="login-card" @submit.prevent="submit">
+      <div class="login-card">
         <div class="login-eyebrow">Operator sign-in</div>
         <h1>BarkVisor</h1>
         <p class="login-subtitle">
           Virtual machines, devices, and local models — one console for your Home.
         </p>
-        <div class="form-group">
-          <label for="login-username">Username</label>
-          <input
-            id="login-username"
-            v-model="username"
-            type="text"
-            autofocus
-            placeholder="admin"
-            autocomplete="username"
-            required
-          />
-        </div>
-        <div class="form-group">
-          <label for="login-password">Password</label>
-          <input
-            id="login-password"
-            v-model="password"
-            type="password"
-            placeholder="password"
-            autocomplete="current-password"
-            required
-          />
-        </div>
         <FormError v-if="error" class="login-error" :message="error" />
         <AppButton
+          v-if="showPasskey"
+          type="button"
           variant="primary"
+          icon="key"
           class="login-btn"
-          :loading="loading"
-          loading-text="Signing in..."
-        >Sign In</AppButton>
-        <template v-if="showPasskey">
-          <p class="login-or">or</p>
-          <AppButton
-            type="button"
-            icon="key"
-            class="login-btn"
-            :loading="passkeyLoading"
-            loading-text="Waiting for passkey..."
-            @click="signInWithPasskey"
-          >Sign in with passkey</AppButton>
-        </template>
-      </form>
+          :loading="passkeyLoading"
+          loading-text="Waiting for passkey..."
+          @click="signInWithPasskey"
+        >Sign in with passkey</AppButton>
+        <PasskeyBlocked v-else-if="blocked" :block="blocked" />
+      </div>
       <div class="login-foot">Made with ❤️ in SF</div>
     </div>
   </div>
@@ -185,24 +142,7 @@ async function signInWithPasskey() {
   font-size: 13.5px;
   margin-top: 4px;
 }
-.login-or {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 16px 0 12px;
-  color: var(--text-dim);
-  font-family: var(--l-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.login-or::before,
-.login-or::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
+
 .login-foot {
   margin-top: 14px;
   text-align: center;

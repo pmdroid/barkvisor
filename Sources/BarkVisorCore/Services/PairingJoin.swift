@@ -579,7 +579,7 @@ extension PairingService {
         let id = admin.id.trimmingCharacters(in: .whitespacesAndNewlines)
         let username = admin.username.trimmingCharacters(in: .whitespacesAndNewlines)
         let hash = admin.passwordHash
-        guard !id.isEmpty, !username.isEmpty, !hash.isEmpty else {
+        guard !id.isEmpty, !username.isEmpty else {
             throw PairingError.invalidPayload("Issuer returned incomplete admin identity")
         }
         return (id, username, hash)

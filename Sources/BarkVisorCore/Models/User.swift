@@ -36,4 +36,25 @@ public struct User: Codable, Sendable, FetchableRecord, PersistableRecord, Table
     public var userRole: UserRole {
         UserRolePolicy.parseStored(role)
     }
+
+    public var hasPassword: Bool {
+        !password.isEmpty
+    }
+
+    public static func hasProvisionedAdmin(_ db: Database) throws -> Bool {
+        if try User.filter(User.Columns.password != "").fetchCount(db) > 0 {
+            return true
+        }
+        return try PasskeyCredential.fetchCount(db) > 0
+    }
+
+    public static func fetchProvisionedAdmin(_ db: Database) throws -> User? {
+        if let user = try User.filter(User.Columns.password != "").order(User.Columns.createdAt.asc).fetchOne(db) {
+            return user
+        }
+        guard let passkey = try PasskeyCredential.order(PasskeyCredential.Columns.createdAt.asc).fetchOne(db) else {
+            return nil
+        }
+        return try User.fetchOne(db, key: passkey.userId)
+    }
 }

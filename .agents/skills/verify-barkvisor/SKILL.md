@@ -63,7 +63,7 @@ Stable handles (prefer these, never coordinates):
 
 | Handle | Where |
 |---|---|
-| Login | `.login-card input[type=text]` (Username), `input[type=password]`, button text **Sign In** → lands on `/vms` |
+| Login | **Sign in with passkey** on `.login-card` (no username/password). Helpers inject a JWT from `POST /api/auth/login` on headless instances. |
 | Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Images, Disks, Networks, Repositories, Logs, Settings |
 | Settings tabs | deep links `/settings?tab=home\|pairing\|library\|disks\|apikeys\|sshkeys\|audit` |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |

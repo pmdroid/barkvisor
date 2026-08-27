@@ -290,6 +290,51 @@ struct PasskeyServiceTests {
         #expect(down?.httpStatus == 401)
     }
 
+    @Test func `cannot delete last passkey when user has no password`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let db = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(db)
+        try await db.write { db in
+            try User(
+                id: "user-1",
+                username: "admin",
+                password: "",
+                createdAt: "2025-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        let challenges = PasskeyChallengeStore()
+        let authenticator = PasskeyTestAuthenticator()
+        let user = User(
+            id: "user-1",
+            username: "admin",
+            password: "",
+            createdAt: "2025-01-01T00:00:00Z",
+        )
+        let begin = try await PasskeyService.beginRegister(
+            user: user, name: "Only", rp: rp, db: db, challenges: challenges,
+        )
+        let stored = try await PasskeyService.finishRegister(
+            sessionId: begin.sessionId,
+            credentialJSON: authenticator.registrationJSON(
+                challenge: Self.challengeString(begin), rpId: rp.rpId, origin: origin, signCount: 0,
+            ),
+            name: "Only",
+            userId: "user-1",
+            rp: rp,
+            db: db,
+            challenges: challenges,
+        )
+        #expect(try await db.read { db in try User.hasProvisionedAdmin(db) })
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await PasskeyService.delete(id: stored.id, userId: "user-1", db: db)
+        }
+        #expect(error?.httpStatus == 400)
+        let listed = try await PasskeyService.list(userId: "user-1", db: db)
+        #expect(listed.count == 1)
+    }
+
     private static func challengeString(_ begin: PasskeyCeremonyBegin) throws -> String {
         let body = try begin.responseBody()
         let obj = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])

@@ -38,11 +38,20 @@ try {
       localStorage.setItem('userRole', 'admin')
     }, token)
   } else if (!raw) {
-    await page.goto(`${base}/login`, { waitUntil: 'networkidle' })
-    await page.fill('.login-card input[type=text]', user)
-    await page.fill('.login-card input[type=password]', pass)
-    await page.click('button:has-text("Sign In")')
-    await page.waitForSelector('.sidebar-nav', { timeout: 15000 })
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass }),
+    })
+    if (!loginRes.ok) {
+      console.error(`login failed: HTTP ${loginRes.status}`)
+      process.exit(1)
+    }
+    const session = await loginRes.json()
+    await page.addInitScript((t) => {
+      localStorage.setItem('token', t)
+      localStorage.setItem('userRole', 'admin')
+    }, session.token)
   }
 
   await page.goto(`${base}${route}`, { waitUntil: 'networkidle' })
