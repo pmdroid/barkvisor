@@ -250,10 +250,15 @@ public enum TemplateDeployService {
             try CloudInitService.validateUserData(userData, allowCatalogIdentityKeys: true)
         }
 
-        let cloudInit = CloudInitConfig(
-            sshAuthorizedKeys: sshKeys.isEmpty ? nil : sshKeys,
-            userData: userData.isEmpty ? nil : userData,
-        )
+        let isISO = localImage.imageType == "iso"
+        let cloudInit: CloudInitConfig? = if isISO {
+            nil
+        } else {
+            CloudInitConfig(
+                sshAuthorizedKeys: sshKeys.isEmpty ? nil : sshKeys,
+                userData: userData.isEmpty ? nil : userData,
+            )
+        }
 
         let params = CreateVMParams(
             name: options.vmName,
@@ -261,7 +266,8 @@ public enum TemplateDeployService {
             cpuCount: cpu,
             memoryMB: mem,
             diskSizeGB: disk,
-            cloudImageId: localImage.id,
+            isoId: isISO ? localImage.id : nil,
+            cloudImageId: isISO ? nil : localImage.id,
             cloudInit: cloudInit,
             networkId: resolvedNetworkId,
             portForwards: portForwards,

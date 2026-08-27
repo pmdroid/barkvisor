@@ -4,24 +4,11 @@ import Yams
 @testable import BarkVisorCore
 
 struct CodingAgentImageTests {
-    @Test func `catalog ships one image family for both arches`() throws {
+    @Test func `official catalog does not ship coding agent images`() throws {
         let url = repoRoot().appendingPathComponent("repos/images.json")
         let catalog = try JSONDecoder().decode(RepoCatalog.self, from: Data(contentsOf: url))
-        let rows = catalog.images.filter { CodingAgentImage.slugs.contains($0.slug) }
-        #expect(Set(rows.map(\.slug)) == CodingAgentImage.slugs)
-        #expect(Set(rows.map(\.arch)) == ["arm64", "x86_64"])
-        #expect(rows.allSatisfy { $0.name == CodingAgentImage.name })
-        #expect(rows.allSatisfy { $0.imageType == "cloud-image" })
-        #expect(rows.allSatisfy { ($0.description ?? "").contains("OPENAI_BASE_URL") })
-        let ubuntu = Dictionary(
-            uniqueKeysWithValues: catalog.images.filter { $0.slug.hasPrefix("ubuntu-24.04-") }
-                .map { ($0.arch, $0) },
-        )
-        for row in rows {
-            let base = try #require(ubuntu[row.arch])
-            #expect(row.downloadUrl == base.downloadUrl)
-            #expect(row.sha256 == base.sha256)
-        }
+        #expect(catalog.images.allSatisfy { !CodingAgentImage.slugs.contains($0.slug) })
+        #expect(catalog.images.allSatisfy { $0.name != CodingAgentImage.name })
     }
 
     @Test func `matches name and slug not generic ubuntu`() {
