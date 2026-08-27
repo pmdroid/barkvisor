@@ -3,26 +3,48 @@
   "version": 1,
   "images": [
     {
-      "slug": "alpine-3.23-arm64",
-      "name": "Alpine Linux 3.23",
-      "description": "Lightweight virtual ISO for ARM64 (~75 MB)",
+      "slug": "alpine-3.24-arm64",
+      "name": "Alpine Linux 3.24",
+      "description": "Lightweight virtual ISO for ARM64 (~88 MB)",
       "imageType": "iso",
       "arch": "arm64",
-      "version": "3.23.3",
-      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/aarch64/alpine-virt-3.23.3-aarch64.iso",
-      "sizeBytes": 79204352,
-      "sha256": "69223638286cb1c7728e70e6dee133c501490591804656b5051a2c1fa3eaa51f"
+      "version": "3.24.1",
+      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-virt-3.24.1-aarch64.iso",
+      "sizeBytes": 92743680,
+      "sha256": "c81699152db11d2a6dbb7d75348d632fcf5811eff414d7e71876a8bb6d48bc02"
     },
     {
-      "slug": "alpine-3.23-x86_64",
-      "name": "Alpine Linux 3.23",
-      "description": "Lightweight virtual ISO for x86_64 (~67 MB)",
+      "slug": "alpine-3.24-x86_64",
+      "name": "Alpine Linux 3.24",
+      "description": "Lightweight virtual ISO for x86_64 (~66 MB)",
       "imageType": "iso",
       "arch": "x86_64",
-      "version": "3.23.3",
-      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-virt-3.23.3-x86_64.iso",
-      "sizeBytes": 70254592,
-      "sha256": "d91fb5c7a73528c89e0a1aa9a7d959f9deb9ca3dc5211e39bd73fd7df0d9070e"
+      "version": "3.24.1",
+      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-virt-3.24.1-x86_64.iso",
+      "sizeBytes": 69206016,
+      "sha256": "e73a6241bd5f3c5c2d4d38c02cc52c378c0415a7c888bd292066bf36e0f41a39"
+    },
+    {
+      "slug": "alpine-3.24-cloud-arm64",
+      "name": "Alpine Linux 3.24 Cloud",
+      "description": "Generic UEFI cloud-init qcow2 for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "3.24.1",
+      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/generic_alpine-3.24.1-aarch64-uefi-cloudinit-r0.qcow2",
+      "sizeBytes": 239271936,
+      "sha512": "c80b2693236ac0c1d92078e5e6eb69edd015feac363811a4952a4366c6815a53a644d17b1e4de8302c52e6c8a7e197dbf1fb74c3bb64bfea096334c7c8a3b5ca"
+    },
+    {
+      "slug": "alpine-3.24-cloud-x86_64",
+      "name": "Alpine Linux 3.24 Cloud",
+      "description": "Generic UEFI cloud-init qcow2 for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "3.24.1",
+      "downloadUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/generic_alpine-3.24.1-x86_64-uefi-cloudinit-r0.qcow2",
+      "sizeBytes": 201981952,
+      "sha512": "ed976ef40de1f73adcb0a3b253ec9e73e43c408208fcc3c30dcdf7a69b91a387a4777f88c6b72345123edf3832d7cb49403ecce28ec84d496d4b3bad6fbd0923"
     },
     {
       "slug": "ubuntu-24.04-arm64",
@@ -31,9 +53,9 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260814/ubuntu-24.04-server-cloudimg-arm64.img",
-      "sizeBytes": 618370560,
-      "sha256": "4a281a921b8d7db952895ab619736f10efe9f63e111fa5b5779ed18f023818aa"
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260826/ubuntu-24.04-server-cloudimg-arm64.img",
+      "sizeBytes": 619036160,
+      "sha256": "afa139bac6f2629c1e1f2f8f34215f3a9ad9779801bcb945521ba1a45016743f"
     },
     {
       "slug": "ubuntu-24.04-x86_64",
@@ -42,31 +64,31 @@
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260814/ubuntu-24.04-server-cloudimg-amd64.img",
-      "sizeBytes": 624447488,
-      "sha256": "6e40c07ae715f744f84af0bec76415cc1987dd115b4b8de437818561f01a3733"
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260826/ubuntu-24.04-server-cloudimg-amd64.img",
+      "sizeBytes": 624829952,
+      "sha256": "d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30"
     },
     {
-      "slug": "coding-agent-arm64",
-      "name": "Coding Agent",
-      "description": "Linux with git, ttyd web terminal (guest :7681), and coding-agent CLIs. One image; Device Ollama or BYO OPENAI_BASE_URL at create. Agent class.",
+      "slug": "ubuntu-26.04-arm64",
+      "name": "Ubuntu 26.04 LTS",
+      "description": "Minimal cloud image for ARM64",
       "imageType": "cloud-image",
       "arch": "arm64",
-      "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260814/ubuntu-24.04-server-cloudimg-arm64.img",
-      "sizeBytes": 618370560,
-      "sha256": "4a281a921b8d7db952895ab619736f10efe9f63e111fa5b5779ed18f023818aa"
+      "version": "26.04",
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/resolute/release-20260731/ubuntu-26.04-server-cloudimg-arm64.img",
+      "sizeBytes": 940920832,
+      "sha256": "3e113fdd41f39e13729375173bb2ae793f87dc6db4294e5251ff2476971788ba"
     },
     {
-      "slug": "coding-agent-x86_64",
-      "name": "Coding Agent",
-      "description": "Linux with git, ttyd web terminal (guest :7681), and coding-agent CLIs. One image; Device Ollama or BYO OPENAI_BASE_URL at create. Agent class.",
+      "slug": "ubuntu-26.04-x86_64",
+      "name": "Ubuntu 26.04 LTS",
+      "description": "Minimal cloud image for x86_64",
       "imageType": "cloud-image",
       "arch": "x86_64",
-      "version": "24.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/releases/noble/release-20260814/ubuntu-24.04-server-cloudimg-amd64.img",
-      "sizeBytes": 624447488,
-      "sha256": "6e40c07ae715f744f84af0bec76415cc1987dd115b4b8de437818561f01a3733"
+      "version": "26.04",
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/resolute/release-20260731/ubuntu-26.04-server-cloudimg-amd64.img",
+      "sizeBytes": 860447744,
+      "sha256": "9dc7c5363c0146a08ba0c9aa834d82c2c6dfbb1c471ad9a2f0aba1189e21be05"
     },
     {
       "slug": "debian-12-arm64",
@@ -75,9 +97,9 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "12",
-      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/20260806-2562/debian-12-generic-arm64-20260806-2562.qcow2",
-      "sizeBytes": 434044928,
-      "sha512": "8f872616a25ac6ca7c0d1b169b062931db51cd03fda4c8cbc74f228d045b186edd1c7d105933a7149c3377372cd0196d7659f07574d7bf6425b82b01df323026"
+      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/20260821-2577/debian-12-generic-arm64-20260821-2577.qcow2",
+      "sizeBytes": 434241536,
+      "sha512": "7a9afb7e4ccbc432c634f53dd3ec90449d94cef2d9499ce86a454ba0858a8de20b3118201418287452a7d1eec0e89a0e82838924435427c6eeb24088007ef8b0"
     },
     {
       "slug": "debian-12-x86_64",
@@ -86,8 +108,9 @@
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "12",
-      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
-      "sizeBytes": 448069632
+      "downloadUrl": "https://cloud.debian.org/images/cloud/bookworm/20260821-2577/debian-12-generic-amd64-20260821-2577.qcow2",
+      "sizeBytes": 449511424,
+      "sha512": "ee13344d530f70ca055d880e5c9b61e9af89874af02c5e2a5c26724461c79409e6d76db97c67ab222e71d03c3e33a738a8958fa5c497962f592258e9835cfcb0"
     },
     {
       "slug": "debian-13-arm64",
@@ -96,8 +119,9 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "13",
-      "downloadUrl": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2",
-      "sizeBytes": 429195264
+      "downloadUrl": "https://cloud.debian.org/images/cloud/trixie/20260826-2582/debian-13-generic-arm64-20260826-2582.qcow2",
+      "sizeBytes": 429326336,
+      "sha512": "bf89ff37888d751f063aaf0328ca216cb39ebcf6e00848f0ae5bb2cb15db83fbd31276cab5561cdd3722057572898c945d33be98a9cd80b2edba9e77096b7845"
     },
     {
       "slug": "debian-13-x86_64",
@@ -106,8 +130,9 @@
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "13",
-      "downloadUrl": "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2",
-      "sizeBytes": 436404224
+      "downloadUrl": "https://cloud.debian.org/images/cloud/trixie/20260826-2582/debian-13-generic-amd64-20260826-2582.qcow2",
+      "sizeBytes": 433651712,
+      "sha512": "720d9a2d21167e8aa1bb86a8a816658c7beaeec6975c376e15a0761383a869a466cbf7fe11c287c989020070309889dd81c37cd412290531245e3562334e05f3"
     },
     {
       "slug": "ubuntu-22.04-arm64",
@@ -116,8 +141,9 @@
       "imageType": "cloud-image",
       "arch": "arm64",
       "version": "22.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-arm64.img",
-      "sizeBytes": 703484928
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/jammy/release-20260826/ubuntu-22.04-server-cloudimg-arm64.img",
+      "sizeBytes": 704513024,
+      "sha256": "81fb9116b507f68650e6a4de369fa4104731c8f205b4c48338e1b7d294a79e8e"
     },
     {
       "slug": "ubuntu-22.04-x86_64",
@@ -126,8 +152,9 @@
       "imageType": "cloud-image",
       "arch": "x86_64",
       "version": "22.04",
-      "downloadUrl": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
-      "sizeBytes": 734344192
+      "downloadUrl": "https://cloud-images.ubuntu.com/releases/jammy/release-20260826/ubuntu-22.04-server-cloudimg-amd64.img",
+      "sizeBytes": 734972416,
+      "sha256": "c0a5af17e6c0f76351fe07e2fffef3011dab1facb8a8ed5701dcf648dabd4f0a"
     },
     {
       "slug": "rocky-9-arm64",
@@ -135,9 +162,10 @@
       "description": "Generic cloud image for ARM64",
       "imageType": "cloud-image",
       "arch": "arm64",
-      "version": "9",
-      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2",
-      "sizeBytes": 519831552
+      "version": "9.8",
+      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base-9.8-20260525.0.aarch64.qcow2",
+      "sizeBytes": 519831552,
+      "sha256": "24692a444f1f0b8bb95375c38c8b43f8099a115347623691be2c330b40c8a1fe"
     },
     {
       "slug": "rocky-9-x86_64",
@@ -145,50 +173,230 @@
       "description": "Generic cloud image for x86_64",
       "imageType": "cloud-image",
       "arch": "x86_64",
-      "version": "9",
-      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
-      "sizeBytes": 645988352
+      "version": "9.8",
+      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2",
+      "sizeBytes": 645988352,
+      "sha256": "92c206cc6f790c61583247eefe87890f8828420662c17cacf247cec78ab4eec8"
     },
     {
-      "slug": "fedora-42-arm64",
-      "name": "Fedora 42 Cloud",
+      "slug": "rocky-10-arm64",
+      "name": "Rocky Linux 10",
+      "description": "Generic cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "10.2",
+      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/10/images/aarch64/Rocky-10-GenericCloud-Base-10.2-20260525.0.aarch64.qcow2",
+      "sizeBytes": 469368832,
+      "sha256": "457c8375e19496f43a25c4a6169fa11237536c53cef6f85a20ea3c5a751aa0f5"
+    },
+    {
+      "slug": "rocky-10-x86_64",
+      "name": "Rocky Linux 10",
+      "description": "Generic cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "10.2",
+      "downloadUrl": "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base-10.2-20260525.0.x86_64.qcow2",
+      "sizeBytes": 544997376,
+      "sha256": "9fc9e9ff16888bb68ac39b0392e25c9c92684d50c85f1cce6ab549363bbc4b48"
+    },
+    {
+      "slug": "alma-9-arm64",
+      "name": "AlmaLinux 9",
+      "description": "Generic cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "9.8",
+      "downloadUrl": "https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-9.8-20260810.aarch64.qcow2",
+      "sizeBytes": 451543040,
+      "sha256": "d5c2c1b1c03c02fe0d2abd774fa7d3bf6c4a86261c746e871a0475d12e74f8ae"
+    },
+    {
+      "slug": "alma-9-x86_64",
+      "name": "AlmaLinux 9",
+      "description": "Generic cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "9.8",
+      "downloadUrl": "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-9.8-20260810.x86_64.qcow2",
+      "sizeBytes": 589299712,
+      "sha256": "6bdab6376d46d42e4203ace3733efafc7c5d37c7cb443a6cc74750097002d74b"
+    },
+    {
+      "slug": "alma-10-arm64",
+      "name": "AlmaLinux 10",
+      "description": "Generic cloud image for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "10.2",
+      "downloadUrl": "https://repo.almalinux.org/almalinux/10/cloud/aarch64/images/AlmaLinux-10-GenericCloud-10.2-20260526.0.aarch64.qcow2",
+      "sizeBytes": 467992576,
+      "sha256": "336c6861fe0ba9115af00f557ed1b09385a3525612dd0cb9cce7e0486f8e74a4"
+    },
+    {
+      "slug": "alma-10-x86_64",
+      "name": "AlmaLinux 10",
+      "description": "Generic cloud image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "10.2",
+      "downloadUrl": "https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-10.2-20260526.0.x86_64.qcow2",
+      "sizeBytes": 573571072,
+      "sha256": "47f2218668dd4776be140dd92fa3bea700be1766e2c7d88bdfd6a4b50f477b4d"
+    },
+    {
+      "slug": "fedora-44-arm64",
+      "name": "Fedora 44 Cloud",
       "description": "Cloud base image for ARM64",
       "imageType": "cloud-image",
       "arch": "arm64",
-      "version": "42",
-      "downloadUrl": "https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-42-1.1.aarch64.qcow2",
-      "sizeBytes": 533069824,
-      "sha256": "e10658419a8d50231037dc781c3155aa94180a8c7a74e5cac2a6b09eaa9342b7"
+      "version": "44",
+      "downloadUrl": "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-44-1.7.aarch64.qcow2",
+      "sizeBytes": 528154624,
+      "sha256": "55c60a3b80d3616a08705afd0459e75fe9f03c54aba7a46e4002a41a72fa0d5b"
     },
     {
-      "slug": "haos-17.2-arm64",
-      "name": "Home Assistant OS",
-      "description": "Smart home OS for QEMU ARM64 (~300 MB)",
+      "slug": "fedora-44-x86_64",
+      "name": "Fedora 44 Cloud",
+      "description": "Cloud base image for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "44",
+      "downloadUrl": "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2",
+      "sizeBytes": 583729152,
+      "sha256": "28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f"
+    },
+    {
+      "slug": "leap-16-arm64",
+      "name": "openSUSE Leap 16",
+      "description": "Minimal cloud VM for ARM64",
       "imageType": "cloud-image",
       "arch": "arm64",
-      "version": "17.2",
-      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/17.2/haos_generic-aarch64-17.2.qcow2.xz",
-      "sizeBytes": 314572800
+      "version": "16.0",
+      "downloadUrl": "https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.aarch64-Cloud-Build18.7.qcow2",
+      "sizeBytes": 318963712,
+      "sha256": "2e9eeb56e7523775f1f01261f4900f289e20c38910226b0c1e5aa7228a84194a"
     },
     {
-      "slug": "haos-18.1-arm64",
-      "name": "Home Assistant OS 18.1",
+      "slug": "leap-16-x86_64",
+      "name": "openSUSE Leap 16",
+      "description": "Minimal cloud VM for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "16.0",
+      "downloadUrl": "https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud-Build18.7.qcow2",
+      "sizeBytes": 337259520,
+      "sha256": "c5cd6904632c86d5368dea3896da8c17571c238ef96a0e2c8b0ca1835d796e07"
+    },
+    {
+      "slug": "openwrt-25.12-arm64",
+      "name": "OpenWrt 25.12",
+      "description": "EFI combined ext4 image for ARM64 QEMU (~14 MB compressed)",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "25.12.5",
+      "downloadUrl": "https://downloads.openwrt.org/releases/25.12.5/targets/armsr/armv8/openwrt-25.12.5-armsr-armv8-generic-ext4-combined-efi.img.gz",
+      "sizeBytes": 14643090,
+      "sha256": "d7dcf013547e8be28006d83ce2c2232cd065755b803f4a5ee6b2e22391cfbc76"
+    },
+    {
+      "slug": "openwrt-25.12-x86_64",
+      "name": "OpenWrt 25.12",
+      "description": "EFI combined ext4 image for x86_64 QEMU (~13 MB compressed)",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "25.12.5",
+      "downloadUrl": "https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/openwrt-25.12.5-x86-64-generic-ext4-combined-efi.img.gz",
+      "sizeBytes": 13802928,
+      "sha256": "c8ee59ce7b0f635a6b50c1b7307b07ee7785214a6faf2af42280dd4ef4310290"
+    },
+    {
+      "slug": "nixos-25.11-arm64",
+      "name": "NixOS 25.11",
+      "description": "Minimal installer ISO for ARM64",
+      "imageType": "iso",
+      "arch": "arm64",
+      "version": "25.11.12484",
+      "downloadUrl": "https://releases.nixos.org/nixos/25.11/nixos-25.11.12484.b6018f87da91/nixos-minimal-25.11.12484.b6018f87da91-aarch64-linux.iso",
+      "sizeBytes": 1713428480,
+      "sha256": "9549bce52087ddb6c797ec87b371d7748464ecc5e7ef712acf6a15d8e333d6e6"
+    },
+    {
+      "slug": "nixos-25.11-x86_64",
+      "name": "NixOS 25.11",
+      "description": "Minimal installer ISO for x86_64",
+      "imageType": "iso",
+      "arch": "x86_64",
+      "version": "25.11.12484",
+      "downloadUrl": "https://releases.nixos.org/nixos/25.11/nixos-25.11.12484.b6018f87da91/nixos-minimal-25.11.12484.b6018f87da91-x86_64-linux.iso",
+      "sizeBytes": 1654456320,
+      "sha256": "dfd577d0d8fd0593ae269d21c34b836119e4d4482d40c27bab03d34f526d5b08"
+    },
+    {
+      "slug": "talos-1.13-arm64",
+      "name": "Talos Linux 1.13",
+      "description": "Bare-metal ISO for ARM64 Kubernetes nodes",
+      "imageType": "iso",
+      "arch": "arm64",
+      "version": "1.13.9",
+      "downloadUrl": "https://github.com/siderolabs/talos/releases/download/v1.13.9/metal-arm64.iso",
+      "sizeBytes": 211070976,
+      "sha256": "11fa07a914f19166fe9f316f3539cba822c56e08f0831646f72d1bf1cb19e247"
+    },
+    {
+      "slug": "talos-1.13-x86_64",
+      "name": "Talos Linux 1.13",
+      "description": "Bare-metal ISO for x86_64 Kubernetes nodes",
+      "imageType": "iso",
+      "arch": "x86_64",
+      "version": "1.13.9",
+      "downloadUrl": "https://github.com/siderolabs/talos/releases/download/v1.13.9/metal-amd64.iso",
+      "sizeBytes": 333787136,
+      "sha256": "d7df972af66d3c907800859b81241889e9dae1fcc6fe3460c0472b4909db4ab3"
+    },
+    {
+      "slug": "freebsd-15.1-arm64",
+      "name": "FreeBSD 15.1",
+      "description": "Cloud-init UFS qcow2 for ARM64",
+      "imageType": "cloud-image",
+      "arch": "arm64",
+      "version": "15.1",
+      "downloadUrl": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+      "sizeBytes": 593721796,
+      "sha256": "9722aea499610802de9a14bb645707fc4f6df49ff765cd9ce372b783c4693963"
+    },
+    {
+      "slug": "freebsd-15.1-x86_64",
+      "name": "FreeBSD 15.1",
+      "description": "Cloud-init UFS qcow2 for x86_64",
+      "imageType": "cloud-image",
+      "arch": "x86_64",
+      "version": "15.1",
+      "downloadUrl": "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+      "sizeBytes": 664729340,
+      "sha256": "e4ca4db889f8559c9b9dfcacc70405c038476f4b6d41649b152d3809a2ed9e1f"
+    },
+    {
+      "slug": "haos-18.2-arm64",
+      "name": "Home Assistant OS 18.2",
       "description": "Official HAOS generic image for QEMU ARM64",
       "imageType": "cloud-image",
       "arch": "arm64",
-      "version": "18.1",
-      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.1/haos_generic-aarch64-18.1.qcow2.xz",
-      "sizeBytes": 359257372
+      "version": "18.2",
+      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.2/haos_generic-aarch64-18.2.qcow2.xz",
+      "sizeBytes": 359971444,
+      "sha256": "2c3e1822a4d83498980708d45573da1b74bc25c0643510bf29937a1bf70b1134"
     },
     {
-      "slug": "haos-18.1-x86_64",
-      "name": "Home Assistant OS 18.1",
-      "description": "Official HAOS OVA for QEMU/KVM x86_64 (~510 MB compressed). Also available via the dedicated catalog: repos/haos-x86_64.json",
+      "slug": "haos-18.2-x86_64",
+      "name": "Home Assistant OS 18.2",
+      "description": "Official HAOS OVA for QEMU/KVM x86_64 (~511 MB compressed)",
       "imageType": "cloud-image",
       "arch": "x86_64",
-      "version": "18.1",
-      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.1/haos_ova-18.1.qcow2.xz",
-      "sizeBytes": 535083320
+      "version": "18.2",
+      "downloadUrl": "https://github.com/home-assistant/operating-system/releases/download/18.2/haos_ova-18.2.qcow2.xz",
+      "sizeBytes": 535936800,
+      "sha256": "254e53f354df0739e3afc09be5431a07df53f0df6b703885404f665c454f254e"
     }
   ]
 }
