@@ -14,13 +14,16 @@ RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; \
     elif [ -f package-lock.json ]; then bun install; \
     else bun install; fi
 COPY frontend/ ./
-RUN bun run build && test -f dist/index.html
+RUN bun x vite build && test -f dist/index.html
 
 # ---------------------------------------------------------------------------
 FROM swift:${SWIFT_VERSION}-noble AS build
 # Optional product version baked into Config.swift (About API / User-Agent).
 ARG BARKVISOR_VERSION=
 WORKDIR /src
+SHELL ["/bin/bash", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY Package.swift Package.resolved* .swift-version* ./
 COPY Sources ./Sources
 COPY Tests ./Tests
@@ -28,13 +31,11 @@ COPY Resources ./Resources
 COPY repos ./repos
 COPY scripts/lib/inject-version.sh ./scripts/lib/inject-version.sh
 COPY --from=frontend /frontend/dist ./Sources/BarkVisor/Resources/frontend/dist
-RUN set -euo pipefail \
-    && if [ -n "${BARKVISOR_VERSION}" ]; then \
-         # shellcheck source=/dev/null \
-         . ./scripts/lib/inject-version.sh \
-         && barkvisor_inject_config_version "${BARKVISOR_VERSION}"; \
-       fi \
-    && swift build -c release --product BarkVisorApp \
+RUN if [ -n "${BARKVISOR_VERSION}" ]; then \
+      . ./scripts/lib/inject-version.sh \
+      && barkvisor_inject_config_version "${BARKVISOR_VERSION}"; \
+    fi
+RUN swift build -c release --product BarkVisorApp \
     && install -d /out \
     && cp -a .build/release/BarkVisorApp /out/BarkVisorApp
 

@@ -1,7 +1,5 @@
 import Foundation
 import GRDB
-import Logging
-import SwiftSentry
 #if canImport(os)
     import os
 #endif
@@ -81,18 +79,8 @@ public actor LogService {
     private var skipDatabaseInserts = false
     private var reclaimingDisk = false
 
-    /// SwiftLog logger for forwarding errors to Sentry
-    nonisolated(unsafe) static var swiftLogger: Logging.Logger?
-
     public init() {
         self.minLevel = .info
-    }
-
-    /// Set SwiftLog logger used for forwarding error logs.
-    ///
-    /// LoggingSystem bootstrap must already be configured by the executable.
-    public static func configureSentry(sentry _: Sentry) {
-        swiftLogger = Logger(label: "barkvisor")
     }
 
     private nonisolated static func platformLog(_ message: String, level: LogLevel = .error) {
@@ -166,13 +154,6 @@ public actor LogService {
             }
         }
 
-        // Forward error/critical to Sentry via SwiftLog
-        if level >= .error, let swiftLogger = Self.swiftLogger {
-            let sentryMsg = "[\(category.rawValue)] \(msg)\(error.map { " - \($0)" } ?? "")"
-            swiftLogger.log(level: .error, .init(stringLiteral: sentryMsg))
-        }
-
-        // Platform log (os_log on Apple, stderr on Linux)
         Self.platformLog("[\(category.rawValue)] \(msg)", level: level)
 
         // Notify tail listeners

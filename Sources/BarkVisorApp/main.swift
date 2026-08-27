@@ -8,7 +8,6 @@ import Foundation
     import Glibc
 #endif
 import Logging
-import SwiftSentry
 
 /// Pipe for signal→async communication.
 /// A raw POSIX signal handler writes here; the async main reads from it.
@@ -72,22 +71,10 @@ struct Join: AsyncParsableCommand {
 }
 
 func configureLogging() {
-    let sentry = try? Sentry(
-        dsn: "https://fd23965cd2644e52116484d7029e900d@o477595.ingest.us.sentry.io/4511210185162752",
-    )
-    LoggingSystem.bootstrap { [sentry] label in
+    LoggingSystem.bootstrap { label in
         var handler = StreamLogHandler.standardOutput(label: label)
         handler.logLevel = .debug
-        if let sentry {
-            return MultiplexLogHandler([
-                SentryLogHandler(label: label, sentry: sentry, level: .error),
-                handler,
-            ])
-        }
         return handler
-    }
-    if let sentry {
-        LogService.configureSentry(sentry: sentry)
     }
 }
 
