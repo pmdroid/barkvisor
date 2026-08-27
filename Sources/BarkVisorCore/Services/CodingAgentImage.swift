@@ -341,6 +341,7 @@ public enum CodingAgentImage {
             overrides: params.overrides,
             health: params.health,
             workloadClass: klass,
+            allowCatalogIdentityKeys: params.allowCatalogIdentityKeys,
         )
     }
 }

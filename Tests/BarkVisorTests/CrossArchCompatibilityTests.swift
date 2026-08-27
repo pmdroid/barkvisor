@@ -52,6 +52,56 @@ struct CrossArchCompatibilityTests {
         }
     }
 
+    @Test func `validateCreateVMInputs allows catalog users key`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        try await VMLifecycleService.validateCreateVMInputs(
+            params: CreateVMParams(
+                name: "alma-10-1",
+                vmType: hostLinux,
+                cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+                memoryMB: 512,
+                cloudImageId: "img-alma",
+                cloudInit: CloudInitConfig(
+                    sshAuthorizedKeys: nil,
+                    userData: "users:\n  - name: alma\n    lock_passwd: true\n",
+                ),
+                allowCatalogIdentityKeys: true,
+            ),
+            db: pool,
+        )
+    }
+
+    @Test func `validateCreateVMInputs rejects wizard users key`() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let pool = try DatabasePool(path: tmp.appendingPathComponent("test.sqlite").path)
+        try AppDatabase.makeMigrator().migrate(pool)
+        let hostLinux = GuestProfiles.defaultLinuxID(forImageArch: PlatformCapabilities.hostArch)
+        let error = await #expect(throws: BarkVisorError.self) {
+            try await VMLifecycleService.validateCreateVMInputs(
+                params: CreateVMParams(
+                    name: "wizard-users",
+                    vmType: hostLinux,
+                    cpuCount: min(2, max(1, PlatformHost.cpuCount)),
+                    memoryMB: 512,
+                    cloudImageId: "img-1",
+                    cloudInit: CloudInitConfig(
+                        sshAuthorizedKeys: nil,
+                        userData: "users:\n  - name: alma\n",
+                    ),
+                ),
+                db: pool,
+            )
+        }
+        #expect(error?.errorDescription?.contains("protected keys") == true)
+    }
+
     // MARK: - Host ↔ guest compatibility
 
     @Test func `same arch guest is compatible`() {

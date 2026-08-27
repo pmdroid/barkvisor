@@ -855,6 +855,9 @@ export function useCreateVMWizard(
           return
         }
         const result = await templateStore.deploy(buildTemplateDeployRequest(), target ?? undefined)
+        if (result.status === 'downloading') {
+          toast.info('Downloading the image. It shows under Images until the VM is created.')
+        }
         if (result.taskID) {
           toast.info(`VM "${name.value.trim()}" is provisioning...`)
           const { poll } = useTaskPoller()

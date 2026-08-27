@@ -167,7 +167,10 @@ extension VMLifecycleService {
         if let ci = params.cloudInit {
             if let userData = ci.userData,
                !userData.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try CloudInitService.validateUserData(userData)
+                try CloudInitService.validateUserData(
+                    userData,
+                    allowCatalogIdentityKeys: params.allowCatalogIdentityKeys,
+                )
             }
         }
 
