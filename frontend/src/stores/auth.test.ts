@@ -206,7 +206,10 @@ describe('auth store (PAS-242)', () => {
     expect(isAuthBootstrapRequest({ url: '/auth/refresh' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/logout' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/login-offers/redeem' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/passkeys/login/begin' })).toBe(true)
+    expect(isAuthBootstrapRequest({ url: '/auth/passkeys/login/finish' })).toBe(true)
     expect(isAuthBootstrapRequest({ url: '/auth/login-offers' })).toBe(false)
+    expect(isAuthBootstrapRequest({ url: '/auth/passkeys' })).toBe(false)
     expect(isAuthBootstrapRequest({ url: '/vms' })).toBe(false)
   })
 

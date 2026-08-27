@@ -73,6 +73,7 @@ export default defineConfig({
                 { label: 'Disks', link: '/docs/using/settings/disks/' },
                 { label: 'API Keys', link: '/docs/using/settings/api-keys/' },
                 { label: 'SSH Keys', link: '/docs/using/settings/ssh-keys/' },
+                { label: 'Passkeys', link: '/docs/using/settings/passkeys/' },
                 { label: 'Audit Log', link: '/docs/using/settings/audit-log/' },
               ],
             },

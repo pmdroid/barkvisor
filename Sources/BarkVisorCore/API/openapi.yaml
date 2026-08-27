@@ -261,6 +261,128 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/auth/passkeys/login/begin:
+    post:
+      tags: [evolving]
+      operationId: beginPasskeyLogin
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Start a discoverable passkey login ceremony
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginBeginRequest"
+      responses:
+        "200":
+          description: Challenge session and request options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremonyBegin"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/passkeys/login/finish:
+    post:
+      tags: [evolving]
+      operationId: finishPasskeyLogin
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Finish passkey login and issue a JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginFinishRequest"
+      responses:
+        "200":
+          description: JWT and refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/passkeys:
+    get:
+      tags: [evolving]
+      operationId: listPasskeys
+      x-barkvisor-stability: evolving
+      summary: List passkeys for the authenticated user
+      responses:
+        "200":
+          description: Passkeys owned by the current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PasskeyCredential"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/passkeys/{id}:
+    delete:
+      tags: [evolving]
+      operationId: deletePasskey
+      x-barkvisor-stability: evolving
+      summary: Delete one of the authenticated user's passkeys
+      parameters:
+        - $ref: "#/components/parameters/id"
+      responses:
+        "204":
+          description: Passkey deleted
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/passkeys/register/begin:
+    post:
+      tags: [evolving]
+      operationId: beginPasskeyRegister
+      x-barkvisor-stability: evolving
+      summary: Start a passkey registration ceremony
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegisterBeginRequest"
+      responses:
+        "200":
+          description: Challenge session and creation options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCeremonyBegin"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/auth/passkeys/register/finish:
+    post:
+      tags: [evolving]
+      operationId: finishPasskeyRegister
+      x-barkvisor-stability: evolving
+      summary: Finish passkey registration and store the credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegisterFinishRequest"
+      responses:
+        "200":
+          description: Stored passkey
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCredential"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/vms:
     get:
       tags: [vms]
@@ -2423,6 +2545,69 @@ components:
           type: string
         port:
           type: integer
+
+    PasskeyLoginBeginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+
+    PasskeyRegisterBeginRequest:
+      type: object
+      properties:
+        name:
+          type: string
+
+    PasskeyCeremonyBegin:
+      type: object
+      required: [sessionId, publicKey]
+      properties:
+        sessionId:
+          type: string
+        publicKey:
+          type: object
+          additionalProperties: true
+          description: WebAuthn PublicKeyCredential options. Binary fields are base64url strings.
+
+    PasskeyLoginFinishRequest:
+      type: object
+      required: [sessionId, credential]
+      properties:
+        sessionId:
+          type: string
+        credential:
+          type: object
+          additionalProperties: true
+          description: navigator.credentials.get JSON. Binary fields are base64url strings.
+
+    PasskeyRegisterFinishRequest:
+      type: object
+      required: [sessionId, credential]
+      properties:
+        sessionId:
+          type: string
+        credential:
+          type: object
+          additionalProperties: true
+          description: navigator.credentials.create JSON. Binary fields are base64url strings.
+        name:
+          type: string
+
+    PasskeyCredential:
+      type: object
+      required: [id, name, createdAt, credentialId]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+        lastUsedAt:
+          type: string
+          nullable: true
+        credentialId:
+          type: string
 
     LoginRedeemRequest:
       type: object

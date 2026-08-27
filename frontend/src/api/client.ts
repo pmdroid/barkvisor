@@ -54,7 +54,9 @@ export function isAuthBootstrapRequest(config?: { url?: string } | null): boolea
     path.endsWith('/auth/login') ||
     path.endsWith('/auth/refresh') ||
     path.endsWith('/auth/logout') ||
-    path.endsWith('/auth/login-offers/redeem')
+    path.endsWith('/auth/login-offers/redeem') ||
+    path.endsWith('/auth/passkeys/login/begin') ||
+    path.endsWith('/auth/passkeys/login/finish')
   )
 }
 

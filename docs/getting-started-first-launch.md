@@ -74,7 +74,7 @@ This Device is already a **Home** of one. Later, more Devices join that Home —
 
 Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI — all management happens through the browser (macOS and Linux).
 
-On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen (you land on **Login** instead).
+On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen (you land on **Login** instead). After setup you can add a passkey under **Settings → Passkeys** for passwordless web sign-in.
 
 ## Bridged networking (optional)
 

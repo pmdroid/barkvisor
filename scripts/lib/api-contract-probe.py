@@ -117,6 +117,14 @@ def body_for(method: str, path: str) -> bytes | None:
         return b"{}"
     if path == "/api/auth/login-offers/redeem":
         return json.dumps({"code": "AAAA-AAAA"}).encode()
+    if path == "/api/auth/passkeys/login/begin":
+        return b"{}"
+    if path == "/api/auth/passkeys/login/finish":
+        return json.dumps({"sessionId": "invalid", "credential": {}}).encode()
+    if path == "/api/auth/passkeys/register/begin":
+        return b"{}"
+    if path == "/api/auth/passkeys/register/finish":
+        return json.dumps({"sessionId": "invalid", "credential": {}}).encode()
     if path == "/api/home/placement/score":
         return b"{}"
     if path == "/api/system/library/settings":

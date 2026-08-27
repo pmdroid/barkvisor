@@ -25,6 +25,7 @@ describe('settings tab query', () => {
     expect(settingsTabFromQuery('disks')).toBe('disks')
     expect(settingsTabFromQuery('apikeys')).toBe('apikeys')
     expect(settingsTabFromQuery('sshkeys')).toBe('sshkeys')
+    expect(settingsTabFromQuery('passkeys')).toBe('passkeys')
     expect(settingsTabFromQuery('audit')).toBe('audit')
 
     expect(settingsTabFromQuery({ tab: 'pairing' })).toBe('pairing')

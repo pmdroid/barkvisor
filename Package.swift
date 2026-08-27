@@ -18,6 +18,7 @@ var coreDependencies: [Target.Dependency] = [
     .product(name: "Crypto", package: "swift-crypto"),
     .product(name: "X509", package: "swift-certificates"),
     .product(name: "AsyncHTTPClient", package: "async-http-client"),
+    .product(name: "WebAuthn", package: "webauthn-swift"),
 ]
 
 var testDependencies: [Target.Dependency] = [
@@ -58,6 +59,7 @@ packageTargets.append(contentsOf: [
             .product(name: "NIOSSL", package: "swift-nio-ssl"),
             .product(name: "X509", package: "swift-certificates"),
             .product(name: "AsyncHTTPClient", package: "async-http-client"),
+            .product(name: "WebAuthn", package: "webauthn-swift"),
         ],
         path: "Sources/BarkVisor",
         exclude: [
@@ -99,6 +101,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.30.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+        .package(url: "https://github.com/swift-server/webauthn-swift.git", from: "1.0.0-alpha"),
     ],
     targets: packageTargets,
 )
