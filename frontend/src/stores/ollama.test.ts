@@ -154,7 +154,8 @@ describe('ollama store (PAS-269)', () => {
       join(dirname(fileURLToPath(import.meta.url)), '../views/ModelsView.vue'),
       'utf8',
     )
-    expect(src).toContain('Home holds upstream keys per')
+    expect(src).not.toContain('Home holds upstream keys per')
+    expect(src).not.toContain('Ollama API key')
     expect(src).not.toContain('saved on this Device')
     expect(src).not.toContain('store.settings?.hasApiKey')
     expect(src).toContain('Export JSON')
@@ -165,15 +166,16 @@ describe('ollama store (PAS-269)', () => {
     expect(src).not.toContain('ollamaStatsUnreachableCopy')
     expect(src).not.toContain('latestGpuPercent')
     expect(src).not.toMatch(/<AppButton[\s\S]*?>\s*Export JSON/)
-    expect(src).toContain('ollamaSettingsKeyBody')
-    expect(src).toContain('Library search')
+    expect(src).not.toContain('ollamaSettingsKeyBody')
+    expect(src).not.toContain('Library search')
     expect(src).toContain('Filter catalog')
     expect(src).toContain('Filter pulled models...')
-    expect(src).toContain("placeholder=\"Search the Ollama library...\"")
-    expect(src).toContain('pullModel(ollamaLibraryResultName(row))')
+    expect(src).not.toContain("placeholder=\"Search the Ollama library...\"")
+    expect(src).not.toContain('pullModel(ollamaLibraryResultName(row))')
+    expect(src).toContain('store.pull(name, pullHost.value)')
     expect(src).not.toContain('placeholder="Search models..."')
     expect(src).not.toContain('apiKey: apiKeyDraft.value')
-    expect(src).toContain(':disabled="!keyBody"')
+    expect(src).not.toContain(':disabled="!keyBody"')
   })
 
   test('a failed fetch hides Models', async () => {

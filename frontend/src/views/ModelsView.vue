@@ -3,10 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
 import type {
-  APIKeyCreateResponse,
-  APIKeyResponse,
   OllamaCatalogModel,
-  OllamaLibrarySearchResult,
   OllamaTaskAccepted,
   RemoteAccessStatus,
 } from '../api/types'
@@ -32,11 +29,6 @@ import {
   ollamaInstallSteps,
 } from '../utils/ollamaInstall'
 import { downloadOllamaPsExport } from '../utils/ollamaPsExport'
-import { ollamaSettingsKeyBody } from '../utils/ollamaSettings'
-import {
-  ollamaLibraryResultName,
-  ollamaLibrarySearchQuery,
-} from '../utils/ollamaLibrary'
 import {
   ollamaDefaultStartHostId,
   ollamaModelMatchesName,
@@ -53,11 +45,6 @@ import {
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { scopeOllamaModels, scopeRows } from '../utils/deviceScope'
 import { inferenceHowToFromOrigin, tailnetListenHost } from '../utils/inferenceApiHowTo'
-import {
-  inferenceHowToMintBanner,
-  inferenceHowToMintBody,
-  needsInferenceHowToMint,
-} from '../utils/inferenceHowToMint'
 
 const auth = useAuthStore()
 const store = useOllamaStore()
@@ -66,20 +53,11 @@ const deviceScope = useDeviceScopeStore()
 const toast = useToastStore()
 const poller = useTaskPoller()
 const pullName = ref('')
-const pullHost = ref('')
 const pulling = ref(false)
 const cancelling = ref(false)
 const pullTask = ref<OllamaTaskAccepted | null>(null)
 const cancelledByUser = ref(false)
-const apiKeyDraft = ref('')
-const keyHost = ref('')
-const keySaving = ref(false)
 const nameQuery = ref('')
-const libraryQuery = ref('')
-const libraryResults = ref<OllamaLibrarySearchResult[]>([])
-const librarySearched = ref(false)
-const librarySearching = ref(false)
-const libraryError = ref<string | null>(null)
 const startTarget = ref<OllamaCatalogModel | null>(null)
 const startHost = ref('')
 const starting = ref(false)
@@ -87,9 +65,6 @@ const stopTarget = ref<OllamaCatalogModel | null>(null)
 const stopping = ref(false)
 const copied = ref('')
 const remoteAccess = ref<RemoteAccessStatus | null>(null)
-const mintedKey = ref('')
-const mintBanner = ref('')
-let mintAttempted = false
 const rechecking = ref(false)
 
 const howTo = computed(() =>
@@ -97,7 +72,6 @@ const howTo = computed(() =>
     role: 'self',
     advertiseHost: remoteAccess.value?.advertiseUrl,
     tailnetHost: tailnetListenHost(remoteAccess.value?.tailscale),
-    grantPlaintext: mintedKey.value || null,
   }),
 )
 
@@ -171,11 +145,6 @@ function pickerDot(row: (typeof pickerRows.value)[number]): string {
 
 function selectDevice(hostId: string) {
   selectedHostId.value = hostId
-  const valid = new Set(hostOptions.value.map((opt) => opt.value))
-  if (valid.has(hostId)) {
-    pullHost.value = hostId
-    keyHost.value = hostId
-  }
 }
 
 const selectedDeviceReachable = computed(() => selectedRow.value?.deviceReachable ?? true)
@@ -228,7 +197,6 @@ async function copySnippet(key: string, text: string) {
       if (copied.value === key) copied.value = ''
     }, 1500)
   } catch {
-    /* ignore */
   }
 }
 
@@ -240,6 +208,11 @@ const hostOptions = computed(() =>
       label: row.displayName?.trim() || row.hostId,
     })),
 )
+
+const pullHost = computed(() => {
+  const valid = new Set(hostOptions.value.map((opt) => opt.value))
+  return valid.has(selectedHostId.value) ? selectedHostId.value : ''
+})
 
 const startHostOptions = computed(() =>
   ollamaStartReachableCandidates(startTarget.value, deviceScope.selectedHostId).map((loc) => {
@@ -278,12 +251,6 @@ const scopedModels = computed(() => {
   )
 })
 
-const selectedKeyHost = computed(() => keyHost.value || hostOptions.value[0]?.value || '')
-const selectedHostSettings = computed(() =>
-  selectedKeyHost.value ? store.hostSettings(selectedKeyHost.value) : null,
-)
-const keyBody = computed(() => ollamaSettingsKeyBody(selectedKeyHost.value, apiKeyDraft.value))
-
 const pullPercent = computed(() => ollamaPullPercent(poller.task.value?.progress))
 const pullIndeterminate = computed(() => pullPercent.value == null)
 const pullProgressLabel = computed(() => {
@@ -306,10 +273,6 @@ onMounted(() => {
   void store.fetchCatalog()
   void fetchRemoteAccess()
   void devices.fetchHealth()
-  if (auth.isAdmin) {
-    void store.fetchSettings()
-  }
-  void loadHowTo()
   pollTimer = window.setInterval(() => { void store.fetchCatalog() }, 10_000)
 })
 onUnmounted(() => {
@@ -323,11 +286,7 @@ watch(
     const scopedHost = !deviceScope.isAll && valid.has(deviceScope.selectedHostId)
       ? deviceScope.selectedHostId
       : ''
-    if (pullHost.value && !valid.has(pullHost.value)) pullHost.value = scopedHost
     if (startHost.value && !valid.has(startHost.value)) startHost.value = scopedHost
-    if (keyHost.value && !valid.has(keyHost.value)) {
-      keyHost.value = scopedHost || hostOptions.value[0]?.value || ''
-    }
   },
   { immediate: true, deep: true },
 )
@@ -345,42 +304,13 @@ function pullPath(task: OllamaTaskAccepted): string {
   return ollamaPullTaskPath(task, devices.selfDevice?.hostId)
 }
 
-let librarySearchGen = 0
-
-async function searchLibrary() {
-  const q = ollamaLibrarySearchQuery(libraryQuery.value)
-  const gen = ++librarySearchGen
-  if (!q) {
-    if (gen !== librarySearchGen) return
-    libraryResults.value = []
-    librarySearched.value = false
-    libraryError.value = null
-    return
-  }
-  librarySearching.value = true
-  libraryError.value = null
-  try {
-    const data = await store.searchLibrary(q)
-    if (gen !== librarySearchGen || !data) return
-    libraryResults.value = data.results
-    librarySearched.value = true
-  } catch (e: unknown) {
-    if (gen !== librarySearchGen) return
-    libraryResults.value = []
-    librarySearched.value = true
-    libraryError.value = apiErrorMessage(e, 'Ollama library is unreachable')
-  } finally {
-    if (gen === librarySearchGen) librarySearching.value = false
-  }
-}
-
-async function pullModel(nameOverride?: string) {
-  const name = (nameOverride ?? pullName.value).trim()
-  if (!name) return
+async function pullModel() {
+  const name = pullName.value.trim()
+  if (!name || !pullHost.value) return
   pulling.value = true
   cancelledByUser.value = false
   try {
-    const task = await store.pull(name, pullHost.value || undefined)
+    const task = await store.pull(name, pullHost.value)
     pullTask.value = task
     const event = await poller.poll(task.taskID, {
       path: pullPath(task),
@@ -488,61 +418,8 @@ async function stopModel() {
   }
 }
 
-function onKeyHost(value: string) {
-  keyHost.value = value
-}
-
 function exportPs() {
   downloadOllamaPsExport(store.models)
-}
-
-async function loadHowTo() {
-  try {
-    const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
-    remoteAccess.value = data
-  } catch {
-    /* LAN origin fallback */
-  }
-  await mintHowToKeyIfNeeded()
-}
-
-async function mintHowToKeyIfNeeded() {
-  if (mintAttempted) return
-  mintAttempted = true
-  try {
-    const { data: keys } = await api.get<APIKeyResponse[]>('/auth/keys')
-    if (!needsInferenceHowToMint(keys)) return
-    const { data } = await api.post<APIKeyCreateResponse>('/auth/keys', inferenceHowToMintBody())
-    mintedKey.value = data.key
-  } catch (e: unknown) {
-    mintBanner.value = inferenceHowToMintBanner({
-      status: axiosStatus(e),
-      message: apiErrorMessage(e),
-    })
-  }
-}
-
-function axiosStatus(error: unknown): number | null {
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const status = (error as { response?: { status?: number } }).response?.status
-    return typeof status === 'number' ? status : null
-  }
-  return null
-}
-
-async function saveKey() {
-  const body = keyBody.value
-  if (!body) return
-  keySaving.value = true
-  try {
-    await store.saveSettings(body)
-    apiKeyDraft.value = ''
-    toast.success('Ollama API key saved')
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    keySaving.value = false
-  }
 }
 </script>
 
@@ -600,49 +477,17 @@ async function saveKey() {
     </AppButton>
   </div>
 
-  <details class="card howto-collapse" style="margin-bottom:16px">
-    <summary class="howto-summary">Use this API</summary>
-    <p style="color:var(--text-secondary);font-size:13px">
-      OpenAI-compatible completions on this {{ HOME_LABEL }}:
-      <code>{{ howTo.lanCompletionsURL }}</code>.
-      Send <code>Authorization: Bearer</code> with an inference key.
-      That is not Device :11434.
-    </p>
-    <p v-if="mintBanner" style="color:var(--danger, #b42318);font-size:13px">{{ mintBanner }}</p>
-    <div class="form-group">
-      <label>curl</label>
-      <pre class="howto-pre">{{ howTo.curl }}</pre>
-      <AppButton size="sm" @click="copySnippet('curl', howTo.curl)">
-        {{ copied === 'curl' ? 'Copied' : 'Copy curl' }}
-      </AppButton>
+  <div class="card" style="margin-bottom:16px">
+    <div class="form-group" style="margin:0">
+      <label>Completions</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <code class="howto-pre" style="flex:1;margin:0">{{ howTo.lanCompletionsURL }}</code>
+        <AppButton size="sm" @click="copySnippet('completions', howTo.lanCompletionsURL)">
+          {{ copied === 'completions' ? 'Copied' : 'Copy' }}
+        </AppButton>
+      </div>
     </div>
-    <div class="form-group">
-      <label>OPENAI_BASE_URL / OPENAI_API_KEY</label>
-      <pre class="howto-pre">{{ howTo.env }}</pre>
-      <AppButton size="sm" @click="copySnippet('env', howTo.env)">
-        {{ copied === 'env' ? 'Copied' : 'Copy env' }}
-      </AppButton>
-    </div>
-    <div v-if="mintedKey" class="form-group">
-      <label>API key (shown once)</label>
-      <pre class="howto-pre">{{ mintedKey }}</pre>
-      <AppButton size="sm" @click="copySnippet('key', mintedKey)">
-        {{ copied === 'key' ? 'Copied' : 'Copy key' }}
-      </AppButton>
-    </div>
-    <h3>From inside a Workload</h3>
-    <p style="color:var(--text-secondary);font-size:13px">
-      Cage <code>OPENAI_BASE_URL</code> is <code>{{ howTo.cageBaseURL }}</code>
-      (<code>CAGE_OPENAI_BASE_URL</code>, PAS-268 guestfwd). {{ howTo.cageDnsLine }}
-      This is not the LAN :7777 URL.
-    </p>
-    <div class="form-group" style="margin-bottom:0">
-      <pre class="howto-pre">{{ howTo.cageEnv }}</pre>
-      <AppButton size="sm" @click="copySnippet('cage', howTo.cageEnv)">
-        {{ copied === 'cage' ? 'Copied' : 'Copy cage env' }}
-      </AppButton>
-    </div>
-  </details>
+  </div>
 
   <div v-if="!selectedDeviceReachable" class="sheet fwd-hint">
     Unreachable — Workloads and Ollama on this {{ DEVICE_LABEL }} keep running locally.
@@ -681,11 +526,7 @@ async function saveKey() {
         <label>Pull by name</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <input v-model="pullName" placeholder="llama3" style="flex:1;min-width:160px" />
-          <AppSelect v-model="pullHost" style="min-width:160px">
-            <option value="">Any reachable {{ DEVICE_LABEL }}</option>
-            <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </AppSelect>
-          <AppButton variant="primary" :disabled="!pullName.trim() || pulling || !store.anyReachable" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
+          <AppButton variant="primary" :disabled="!pullName.trim() || pulling || !pullHost" :loading="pulling && !cancelling" loading-text="Pulling..." @click="pullModel()">
             Pull
           </AppButton>
           <AppButton v-if="pulling" variant="ghost" :loading="cancelling" loading-text="Cancelling..." @click="cancelPull">
@@ -699,53 +540,6 @@ async function saveKey() {
             :label="pullProgressLabel"
           />
         </div>
-      </div>
-    </div>
-
-    <div v-if="auth.isAdmin" class="card" style="margin-bottom:16px">
-      <div class="form-group" style="margin:0">
-        <label>Library search</label>
-        <p class="stats-unknown" style="margin:0 0 8px">Search popular models on ollama.com. Catalog filter below only matches models already pulled.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <input
-            v-model="libraryQuery"
-            placeholder="Search the Ollama library..."
-            style="flex:1;min-width:160px"
-            @keydown.enter.prevent="searchLibrary"
-          />
-          <AppButton
-            variant="primary"
-            :disabled="!ollamaLibrarySearchQuery(libraryQuery) || librarySearching"
-            :loading="librarySearching"
-            loading-text="Searching..."
-            @click="searchLibrary"
-          >
-            Search
-          </AppButton>
-        </div>
-        <p v-if="!ollamaLibrarySearchQuery(libraryQuery)" class="stats-unknown" style="margin:8px 0 0">
-          Enter a name to search the Ollama library.
-        </p>
-        <p v-else-if="librarySearching" class="stats-unknown" style="margin:8px 0 0">Searching the Ollama library…</p>
-        <p v-else-if="libraryError" class="stats-unknown" style="margin:8px 0 0">{{ libraryError }}</p>
-        <p v-else-if="librarySearched && libraryResults.length === 0" class="stats-unknown" style="margin:8px 0 0">
-          No library matches for “{{ libraryQuery.trim() }}”.
-        </p>
-        <ul v-else-if="libraryResults.length" class="library-results">
-          <li v-for="row in libraryResults" :key="row.name">
-            <span>
-              <strong>{{ row.name }}</strong>
-              <span v-if="row.size" class="stats-unknown"> · {{ formatBytes(row.size) }}</span>
-            </span>
-            <AppButton
-              size="sm"
-              :disabled="!ollamaLibraryResultName(row) || pulling || !store.anyReachable"
-              @click="pullModel(ollamaLibraryResultName(row))"
-            >
-              Download
-            </AppButton>
-          </li>
-        </ul>
       </div>
     </div>
 
@@ -794,34 +588,6 @@ async function saveKey() {
       </DataTable>
     </template>
 
-    <div v-if="auth.isAdmin" class="card" style="margin-top:24px">
-      <h2 style="margin-top:0">Ollama API key</h2>
-      <p style="color:var(--text-secondary);font-size:13px">
-        Home holds upstream keys per {{ DEVICE_LABEL }}. Clients authenticate with a BarkVisor user or inference token.
-        {{
-          selectedHostSettings?.hasApiKey
-            ? `A key is stored for this ${DEVICE_LABEL}.`
-            : `No upstream key stored for this ${DEVICE_LABEL}.`
-        }}
-      </p>
-      <div class="form-group">
-        <label>{{ DEVICE_LABEL }}</label>
-        <AppSelect
-          :model-value="selectedKeyHost"
-          style="min-width:160px"
-          :disabled="hostOptions.length === 0"
-          @update:model-value="onKeyHost"
-        >
-          <option v-for="opt in hostOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-        </AppSelect>
-      </div>
-      <div class="form-group">
-        <input v-model="apiKeyDraft" type="password" placeholder="OLLAMA_API_KEY" :disabled="!selectedKeyHost" />
-      </div>
-      <AppButton variant="primary" :disabled="!keyBody" :loading="keySaving" loading-text="Saving..." @click="saveKey">
-        Save Ollama key
-      </AppButton>
-    </div>
   </template>
   </section>
 
@@ -856,27 +622,9 @@ async function saveKey() {
 </template>
 
 <style scoped>
-.howto-collapse {
-  padding: 16px 20px;
-}
-.howto-summary {
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 600;
-  list-style: none;
-}
-.howto-summary::-webkit-details-marker {
-  display: none;
-}
-.howto-summary::before {
-  content: '▸ ';
-  font-weight: 500;
-  color: var(--text-dim);
-}
-details.howto-collapse[open] > .howto-summary::before {
-  content: '▾ ';
-}
 .howto-pre {
+  display: block;
+
   font-family: var(--font-mono);
   font-size: 12px;
   background: var(--bg);
@@ -939,19 +687,6 @@ details.howto-collapse[open] > .howto-summary::before {
 }
 .overflow-menu-panel button:not(:disabled):hover {
   background: var(--bg-hover);
-}
-.library-results {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-}
-.library-results li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border-glass);
 }
 .stats-unknown {
   margin: 0;
