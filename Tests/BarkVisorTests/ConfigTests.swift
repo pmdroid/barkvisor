@@ -7,6 +7,16 @@ struct ConfigTests {
         #expect(Config.port == 7_777)
     }
 
+    @Test func `listenPort zero is ephemeral`() {
+        #expect(Config.listenPort(from: "0", fallback: 7_777) == 0)
+        #expect(Config.listenPort(from: " 0 ", fallback: 7_777) == 0)
+        #expect(Config.listenPort(from: "8080", fallback: 7_777) == 8_080)
+        #expect(Config.listenPort(from: nil, fallback: 7_777) == 7_777)
+        #expect(Config.listenPort(from: "", fallback: 7_777) == 7_777)
+        #expect(Config.listenPort(from: "-1", fallback: 7_777) == 7_777)
+        #expect(Config.listenPort(from: "65536", fallback: 7_777) == 7_777)
+    }
+
     @Test func `daemon role from executable name`() {
         #expect(DaemonRole.from(executablePath: "/usr/local/bin/barkvisor") == .home)
         #expect(DaemonRole.from(executablePath: "barkvisor") == .home)
@@ -22,6 +32,8 @@ struct ConfigTests {
     @Test func `default agent port is distinct from spa port`() {
         #expect(Config.agentPort == 7_778)
         #expect(Config.agentPort != Config.port)
+        #expect(Config.listenPort(from: "0", fallback: 7_778) == 0)
+        #expect(Config.listenPort(from: "7778", fallback: 7_778) == 7_778)
     }
 
     @Test func `allowed URL schemes`() {

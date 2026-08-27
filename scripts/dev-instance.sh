@@ -198,20 +198,33 @@ start_instance() {
   else
     data_dir="$(mktemp -d "$(auto_tmp_prefix)${name}.XXXXXX")"
   fi
-  port="${port_arg:-$(pick_free_port)}"
-  agent_port="$(pick_free_port)"
+  port="${port_arg:-0}"
+  agent_port=0
 
   export BARKVISOR_PORT="$port"
   export BARKVISOR_AGENT_PORT="$agent_port"
   export BARKVISOR_DATA_DIR="$data_dir"
   export BARKVISOR_ADMIN_USER="$admin_user"
   export BARKVISOR_ADMIN_PASSWORD="$admin_pass"
-  BASE="http://127.0.0.1:${port}"
   LOG_FILE="${data_dir}/server.log"
 
-  log "starting '$name' on :${port} (agent :${agent_port}) data=${data_dir}"
+  log "starting '$name' (ephemeral ports) data=${data_dir}"
   "$bin" >"$LOG_FILE" 2>&1 &
   SERVER_PID=$!
+  if [[ "$port" == "0" ]]; then
+    port="$(wait_bound_port "${data_dir}/http.port" 200)" || fail "server never wrote http.port"
+    export BARKVISOR_PORT="$port"
+  fi
+  if [[ "$agent_port" == "0" ]]; then
+    if agent_port="$(wait_bound_port "${data_dir}/agent.port" 50)"; then
+      export BARKVISOR_AGENT_PORT="$agent_port"
+    else
+      agent_port=0
+      export BARKVISOR_AGENT_PORT=0
+    fi
+  fi
+  BASE="http://127.0.0.1:${port}"
+  log "starting '$name' on :${port} (agent :${agent_port}) data=${data_dir}"
   wait_health 120 1
 
   if [[ "$want_provision" == "1" ]]; then

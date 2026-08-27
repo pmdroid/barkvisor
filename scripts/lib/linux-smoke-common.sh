@@ -105,6 +105,26 @@ smoke_cleanup_trap() {
   trap smoke_cleanup EXIT
 }
 
+wait_bound_port() {
+  local file="$1"
+  local attempts="${2:-80}"
+  local i p
+  for i in $(seq 1 "$attempts"); do
+    if [[ -f "$file" ]]; then
+      p="$(tr -d '[:space:]' <"$file")"
+      if [[ "$p" =~ ^[1-9][0-9]*$ ]] && [[ "$p" -le 65535 ]]; then
+        echo "$p"
+        return 0
+      fi
+    fi
+    if [[ -n "${SERVER_PID:-}" ]] && ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      return 1
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 # Always bind an ephemeral port (ignores BARKVISOR_PORT). For multi-daemon.
 pick_free_port() {
   python3 - <<'PY'
