@@ -137,6 +137,9 @@ public final class VaporServer: @unchecked Sendable {
 
         try await app.startup()
         self.app = app
+        if let bound = app.http.server.shared.localAddress?.port {
+            Config.adoptBoundHTTPPort(bound)
+        }
 
         // PAS-76: agent mTLS is best-effort. Local SQLite / QEMU keep running
         // if 7778 cannot bind or cert material cannot be written (PAS-47/90).
@@ -147,6 +150,9 @@ public final class VaporServer: @unchecked Sendable {
             vmState: services.manager,
             consoleBuffers: services.consoleBuffers,
         )
+        if let bound = self.agentTLSServer?.boundPort {
+            Config.adoptBoundAgentPort(bound)
+        }
 
         scheduleFirstBootJoin(setupComplete: setup.isSetupComplete)
     }

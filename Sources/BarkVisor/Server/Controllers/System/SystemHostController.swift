@@ -26,17 +26,22 @@ struct SystemHostController: RouteCollection {
 
     @Sendable
     func browseDirectory(req: Vapor.Request) async throws -> [BrowseEntry] {
-        let rawPath = (try? req.query.get(String.self, at: "path")) ?? NSHomeDirectory()
-
-        // Resolve symlinks and canonicalize to prevent traversal via symlinks or ../
-        let resolvedPath = (rawPath as NSString).resolvingSymlinksInPath
-
         let extraRoots = try await req.db.read { db in
             try [
+                Config.dataDir.path,
                 LibrarySettings.resolvedDirectory(from: db).path,
                 DiskSettings.resolvedDirectory(from: db).path,
             ]
         }
+        let rawPath = (try? req.query.get(String.self, at: "path")) ?? ""
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return DirectoryBrowser.rootEntries(extraRoots: extraRoots).map {
+                BrowseEntry(name: $0.name, path: $0.path, isDirectory: true)
+            }
+        }
+
+        let resolvedPath = (trimmed as NSString).resolvingSymlinksInPath
         guard DirectoryBrowser.isAllowed(resolvedPath, extraRoots: extraRoots) else {
             throw Abort(.forbidden, reason: "Access denied: path is outside allowed directories")
         }
@@ -50,23 +55,18 @@ struct SystemHostController: RouteCollection {
         let contents = try FileManager.default.contentsOfDirectory(atPath: resolvedPath)
         var entries: [BrowseEntry] = []
 
-        // Parent directory (only if still within allowed roots)
-        if resolvedPath != "/" {
-            let parent = (resolvedPath as NSString).deletingLastPathComponent
-            if DirectoryBrowser.isAllowed(parent, extraRoots: extraRoots) {
-                entries.append(BrowseEntry(name: "..", path: parent, isDirectory: true))
-            }
+        if let parent = DirectoryBrowser.parentPath(of: resolvedPath, extraRoots: extraRoots) {
+            entries.append(BrowseEntry(name: "..", path: parent, isDirectory: true))
         }
 
         for name in contents.sorted() {
-            // Skip hidden files
             if name.hasPrefix(".") { continue }
             let fullPath = (resolvedPath as NSString).appendingPathComponent(name)
             var childIsDir: ObjCBool = false
             FileManager.default.fileExists(atPath: fullPath, isDirectory: &childIsDir)
-            if childIsDir.boolValue {
-                entries.append(BrowseEntry(name: name, path: fullPath, isDirectory: true))
-            }
+            guard childIsDir.boolValue else { continue }
+            guard DirectoryBrowser.isAllowed(fullPath, extraRoots: extraRoots) else { continue }
+            entries.append(BrowseEntry(name: name, path: fullPath, isDirectory: true))
         }
 
         return entries

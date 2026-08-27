@@ -313,7 +313,7 @@ public final class AgentTLSServer: @unchecked Sendable {
         vmState: (any VMStateQuerying)? = nil,
         consoleBuffers: ConsoleBufferManager? = nil,
     ) async -> AgentTLSServer? {
-        if port == Config.port {
+        if port != 0, Config.port != 0, port == Config.port {
             Log.server.error(
                 "Agent mTLS port \(port) collides with SPA port; leaving agent listener disabled. Local runtime continues.",
             )

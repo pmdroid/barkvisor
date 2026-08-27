@@ -34,8 +34,13 @@ import {
 } from '../api/loginOffer'
 import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
+import { useDeviceScopeStore } from '../stores/deviceScope'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
-import { deviceDiskSettingsPath, isSelfDevice } from '../utils/homeDeviceApi'
+import {
+  canCallDeviceAPI,
+  deviceDiskSettingsPath,
+  isSelfDevice,
+} from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
@@ -343,10 +348,11 @@ function openLibraryTab() {
 
 function openDisksTab() {
   tab.value = 'disks'
-  fetchDiskSettings()
+  void loadDiskSettingsTab()
 }
 
 const devicesStore = useDevicesStore()
+const deviceScope = useDeviceScopeStore()
 const librarySettings = ref<LibrarySettings>({
   imageDirectory: '',
   isDefault: true,
@@ -367,6 +373,7 @@ const diskDirectoryDraft = ref('')
 const diskDirLoading = ref(false)
 const diskDirSaving = ref(false)
 const showDiskDirPicker = ref(false)
+const diskHostId = ref('')
 
 const remoteAccess = ref<RemoteAccessStatus | null>(null)
 const remoteAccessLoading = ref(false)
@@ -498,15 +505,52 @@ async function resetLibrarySettings() {
   }
 }
 
-function selfDiskSettingsPath() {
-  const device = devicesStore.selfDevice
+function defaultDiskHostId() {
+  if (!deviceScope.isAll) return deviceScope.selectedHostId
+  return devicesStore.selfDevice?.hostId || devicesStore.devices[0]?.hostId || ''
+}
+
+const diskSettingsDevice = computed(() => {
+  if (diskHostId.value) return devicesStore.deviceByHostId(diskHostId.value)
+  return devicesStore.selfDevice
+})
+
+const diskDeviceOptions = computed(() =>
+  devicesStore.devices.map((device) => {
+    const name = isSelfDevice(device)
+      ? `This ${DEVICE_LABEL}`
+      : deviceDisplayLabel(device)
+    const reach = canCallDeviceAPI(device)
+      ? ''
+      : ` — ${reachabilityLabel(device.reachability).toLowerCase()}`
+    return { value: device.hostId, label: `${name}${reach}`, disabled: !canCallDeviceAPI(device) }
+  }),
+)
+
+const diskDirCanEdit = computed(() => {
+  const device = diskSettingsDevice.value
+  return !device || canCallDeviceAPI(device)
+})
+
+function diskSettingsApiPath() {
+  const device = diskSettingsDevice.value
   return device ? deviceDiskSettingsPath(device) : '/system/disk/settings'
+}
+
+async function loadDiskSettingsTab() {
+  await devicesStore.fetchHealth()
+  const next = diskHostId.value || defaultDiskHostId()
+  if (diskHostId.value !== next) {
+    diskHostId.value = next
+    return
+  }
+  await fetchDiskSettings()
 }
 
 async function fetchDiskSettings() {
   diskDirLoading.value = true
   try {
-    const { data } = await api.get<DiskSettings>(selfDiskSettingsPath())
+    const { data } = await api.get<DiskSettings>(diskSettingsApiPath())
     diskSettings.value = data
     diskDirectoryDraft.value = data.diskDirectory
   } catch (e: unknown) {
@@ -516,10 +560,17 @@ async function fetchDiskSettings() {
   }
 }
 
+watch(diskHostId, () => {
+  if (tab.value !== 'disks') return
+  showDiskDirPicker.value = false
+  void fetchDiskSettings()
+})
+
 async function saveDiskSettings() {
+  if (!diskDirCanEdit.value) return
   diskDirSaving.value = true
   try {
-    const { data } = await api.put<DiskSettings>(selfDiskSettingsPath(), {
+    const { data } = await api.put<DiskSettings>(diskSettingsApiPath(), {
       diskDirectory: diskDirectoryDraft.value,
     })
     diskSettings.value = data
@@ -1312,18 +1363,31 @@ onUnmounted(() => {
 
   <div v-if="tab === 'disks'">
     <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0">
-      New disks go here.
+      New disks go here on the selected {{ DEVICE_LABEL }}.
     </p>
+    <div v-if="diskDeviceOptions.length" class="form-group" style="max-width:640px">
+      <label>{{ DEVICE_LABEL }}</label>
+      <AppSelect
+        :modelValue="diskHostId"
+        :options="diskDeviceOptions"
+        :disabled="diskDirLoading || diskDirSaving"
+        @update:modelValue="diskHostId = $event"
+      />
+    </div>
     <div class="form-group" style="max-width:640px">
       <label>Default VM disk directory</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input
           v-model="diskDirectoryDraft"
-          :disabled="diskDirLoading || diskDirSaving"
+          :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit"
           placeholder="/var/lib/barkvisor/disks"
           style="flex:1"
         />
-        <AppButton size="sm" :disabled="diskDirLoading || diskDirSaving" @click="showDiskDirPicker = true">
+        <AppButton
+          size="sm"
+          :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit"
+          @click="showDiskDirPicker = true"
+        >
           Browse
         </AppButton>
       </div>
@@ -1337,13 +1401,13 @@ onUnmounted(() => {
         variant="primary"
         :loading="diskDirSaving"
         loading-text="Saving..."
-        :disabled="diskDirLoading"
+        :disabled="diskDirLoading || !diskDirCanEdit"
         @click="saveDiskSettings"
       >
         Save
       </AppButton>
       <AppButton
-        :disabled="diskDirLoading || diskDirSaving || diskSettings?.isDefault"
+        :disabled="diskDirLoading || diskDirSaving || !diskDirCanEdit || diskSettings?.isDefault"
         @click="resetDiskSettings"
       >
         Reset to default
@@ -1352,6 +1416,7 @@ onUnmounted(() => {
     <FolderPicker
       v-if="showDiskDirPicker"
       :model-value="diskDirectoryDraft"
+      :device="diskSettingsDevice"
       @update:model-value="diskDirectoryDraft = $event"
       @close="showDiskDirPicker = false"
     />

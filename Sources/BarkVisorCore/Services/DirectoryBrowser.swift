@@ -1,20 +1,70 @@
 import Foundation
 
-/// Host folder picker roots. `$HOME` and `/Volumes` plus the configured Library.
 public enum DirectoryBrowser {
-    public static let staticRoots: [String] = [
-        NSHomeDirectory(),
-        "/Volumes",
-    ]
+    public struct Entry: Equatable, Sendable {
+        public let name: String
+        public let path: String
 
-    public static func isAllowed(_ path: String, extraRoots: [String] = []) -> Bool {
+        public init(name: String, path: String) {
+            self.name = name
+            self.path = path
+        }
+    }
+
+    public static let volumeRoots: [String] = ["/Volumes", "/mnt", "/media"]
+
+    public static func staticRoots(home: String = NSHomeDirectory()) -> [String] {
+        [home] + volumeRoots
+    }
+
+    public static func isAllowed(
+        _ path: String,
+        extraRoots: [String] = [],
+        home: String = NSHomeDirectory(),
+    ) -> Bool {
         let resolvedPath = (path as NSString).resolvingSymlinksInPath
-        let roots = staticRoots + extraRoots
+        let roots = staticRoots(home: home) + extraRoots
         let inRoot = roots.contains { root in
             let canonical = (root as NSString).resolvingSymlinksInPath
             let rootWithSlash = canonical.hasSuffix("/") ? canonical : canonical + "/"
             return resolvedPath == canonical || resolvedPath.hasPrefix(rootWithSlash)
         }
         return inRoot || resolvedPath == "/"
+    }
+
+    public static func rootEntries(
+        extraRoots: [String] = [],
+        home: String = NSHomeDirectory(),
+        exists: (String) -> Bool = { path in
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+        },
+    ) -> [Entry] {
+        var seen = Set<String>()
+        var entries: [Entry] = []
+        for root in staticRoots(home: home) + extraRoots {
+            let resolved = (root as NSString).resolvingSymlinksInPath
+            guard isAllowed(resolved, extraRoots: extraRoots, home: home) else { continue }
+            guard exists(resolved) else { continue }
+            if seen.contains(resolved) { continue }
+            seen.insert(resolved)
+            let name = (resolved as NSString).lastPathComponent
+            entries.append(Entry(name: name.isEmpty ? resolved : name, path: resolved))
+        }
+        return entries
+    }
+
+    public static func parentPath(
+        of path: String,
+        extraRoots: [String] = [],
+        home: String = NSHomeDirectory(),
+    ) -> String? {
+        let resolved = (path as NSString).resolvingSymlinksInPath
+        if resolved == "/" { return nil }
+        let parent = (resolved as NSString).deletingLastPathComponent
+        if isAllowed(parent, extraRoots: extraRoots, home: home) {
+            return parent
+        }
+        return ""
     }
 }

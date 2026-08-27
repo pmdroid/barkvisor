@@ -203,6 +203,11 @@ export function deviceDiskSettingsPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/disk/settings')
 }
 
+export function deviceBrowsePath(device?: DeviceApiTarget | null): string {
+  if (!device) return '/system/browse'
+  return devicePath(device, '/system/browse')
+}
+
 export function deviceBlockDevicesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/block-devices')
 }
