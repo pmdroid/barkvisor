@@ -8,6 +8,7 @@ import {
   SETTINGS_TABS,
   settingsTabFromQuery,
   shouldRunPairingTick,
+  SSH_KEYS_SETTINGS_HREF,
 } from './settingsTabs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -25,6 +26,7 @@ describe('settings tab query', () => {
     expect(settingsTabFromQuery('disks')).toBe('disks')
     expect(settingsTabFromQuery('apikeys')).toBe('apikeys')
     expect(settingsTabFromQuery('sshkeys')).toBe('sshkeys')
+    expect(SSH_KEYS_SETTINGS_HREF).toBe('/settings?tab=sshkeys')
     expect(settingsTabFromQuery('passkeys')).toBe('passkeys')
     expect(settingsTabFromQuery('audit')).toBe('audit')
 
@@ -112,6 +114,21 @@ describe('settings tab query', () => {
     expect(libraryBlock).toContain('Catalog Download')
     expect(libraryBlock).toContain('Save Library depot')
     expect(libraryBlock).toContain('Library path')
+  })
+
+  test('Create VM SSH picker is on Configure and opens Settings sshkeys in a new tab', () => {
+    const configure = readFileSync(
+      join(here, '../components/create-vm/CreateVMConfigureStep.vue'),
+      'utf8',
+    )
+    const ssh = configure.indexOf('v-if="showSshKey"')
+    const adv = configure.indexOf('<details class="mag-adv">')
+    expect(ssh).toBeGreaterThan(-1)
+    expect(adv).toBeGreaterThan(-1)
+    expect(ssh).toBeLessThan(adv)
+    expect(configure).toContain('SSH_KEYS_SETTINGS_HREF')
+    expect(configure).toContain('target="_blank"')
+    expect(configure).toContain('This VM needs an SSH key for first login')
   })
 
   test('Default VM disk directory lives on Settings Disks, not the Disks list', () => {

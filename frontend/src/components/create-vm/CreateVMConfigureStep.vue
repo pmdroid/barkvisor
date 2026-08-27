@@ -5,6 +5,7 @@ import type { DevicePickOption } from '../../utils/deviceCompatibility'
 import type { Image } from '../../api/types'
 import type { SizePreset } from '../../utils/hostBuffer'
 import { hostnameFromVMName } from '../../utils/hostnameFromVMName'
+import { SSH_KEYS_SETTINGS_HREF } from '../../utils/settingsTabs'
 
 const props = defineProps<{
   name: string
@@ -124,6 +125,25 @@ function onIsoPick(event: Event) {
       Also the hostname: {{ hostnameSlug }}
     </p>
 
+    <div v-if="showSshKey" class="mag-ssh">
+      <label class="mag-flabel">SSH key</label>
+      <AppSelect
+        v-if="sshKeyOptions.length"
+        :model-value="selectedSSHKeyId"
+        :options="sshKeyOptions"
+        @update:model-value="emit('update:selectedSSHKeyId', $event as string)"
+      />
+      <p v-else class="mag-ssh-err">
+        This VM needs an SSH key for first login. There is no key yet.
+      </p>
+      <a
+        class="mag-ssh-link"
+        :href="SSH_KEYS_SETTINGS_HREF"
+        target="_blank"
+        rel="noopener"
+      >{{ sshKeyOptions.length ? 'Add another key' : 'Add an SSH key' }}</a>
+    </div>
+
     <label class="mag-flabel">Device</label>
     <button
       v-for="option in deviceOptions"
@@ -236,17 +256,6 @@ function onIsoPick(event: Event) {
           </div>
           <button type="button" class="mag-tgl" :class="{ on: tpmEnabled }" aria-label="TPM 2.0" @click="emit('update:tpmEnabled', !tpmEnabled)" />
         </div>
-        <div v-if="showSshKey" class="mag-fwrow">
-          <div>
-            <b>SSH key</b>
-            <span>Used for first login to this VM.</span>
-          </div>
-          <AppSelect
-            :model-value="selectedSSHKeyId"
-            :options="sshKeyOptions"
-            @update:model-value="emit('update:selectedSSHKeyId', $event as string)"
-          />
-        </div>
       </div>
     </details>
   </div>
@@ -278,6 +287,21 @@ input, select {
   font-size: 11.5px;
   color: var(--mag-dim);
 }
+.mag-ssh { margin-top: 2px; }
+.mag-ssh-err {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--red, #e5484d);
+  line-height: 1.45;
+}
+.mag-ssh-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--mag-accent);
+  text-decoration: none;
+}
+.mag-ssh-link:hover { text-decoration: underline; }
 .mag-dev {
   width: 100%;
   display: flex;
