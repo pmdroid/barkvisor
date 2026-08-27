@@ -5,7 +5,6 @@ import { useToastStore } from '../stores/toast'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import {
-  capabilitiesArchRunnable,
   defaultCapabilities,
   parseSystemCapabilities,
 } from '../utils/capabilitiesParse'
@@ -14,7 +13,9 @@ import api from '../api/client'
 import type {
   PortForwardRule,
   CurrentHostCapabilities,
+  DeployTemplateRequest,
   Disk,
+  HostBlockDevice,
   Image,
   Network,
 } from '../api/types'
@@ -26,21 +27,29 @@ import { useDevicesStore } from '../stores/devices'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
-import {
-  architectureIsProblem,
-  architectureLabel,
-  defaultMachineType,
-  readAlwaysShowArchitectureDetails,
-  shouldRevealArchitectureDetails,
-  writeAlwaysShowArchitectureDetails,
-} from '../utils/architectureDetails'
+import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   createVMIncompatibilityReasons,
   DEVICE_IMAGE_UNFETCHABLE_REASON,
   guestTypesSupportWindows,
+  templateIncompatibilityReasons,
   toPickOption,
   type DevicePickOption,
 } from '../utils/deviceCompatibility'
+import {
+  availableSizePresets,
+  SIZE_PRESETS,
+  vmCpuCap,
+  vmMemoryCapMB,
+  type SizePreset,
+} from '../utils/hostBuffer'
+import { defaultVMNameFromLabel } from '../utils/hostnameFromVMName'
+import { useTemplateStore } from '../stores/templates'
+import { templateDeclaresSshKeys } from '../utils/templateDeploy'
+import {
+  deviceBlockDevicesPath,
+  deviceDisksPath,
+} from '../utils/homeDeviceApi'
 import {
   canCallDeviceAPI,
   defaultPickedHostId,
@@ -59,8 +68,6 @@ import {
 } from '../utils/placement'
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
 import { usePlacement } from './usePlacement'
-import { useVirtioDownload } from './useVirtioDownload'
-import { useUSBPicker } from './useUSBPicker'
 import { useCreateVMPayload } from './useCreateVMPayload'
 import {
   HOME_OLLAMA_GRANT_URL,
@@ -69,7 +76,15 @@ import {
   type OpenAIPreset,
 } from '../utils/codingAgentImage'
 
+export type GalleryKind = 'template' | 'windows' | 'custom' | 'coding-agent' | null
+
+export const WIZARD_STEP_LABELS = ['Gallery', 'Configure', 'Disk'] as const
+
 export { cancelLivePlacementScores } from './usePlacement'
+
+function isLinuxDeviceOs(os: string | null | undefined): boolean {
+  return (os ?? '').toLowerCase().includes('linux')
+}
 
 async function acquireImageOnDevice(device: DeviceApiTarget, img: Image): Promise<Image> {
   const { data } = await api.post(devicePath(device, '/images/acquire'), {
@@ -139,6 +154,12 @@ export function useCreateVMWizard(
     const n = pickedCaps.value.maxMemoryMB
     return typeof n === 'number' && n >= 128 ? n : null
   })
+  const vmCpuCapValue = computed(() => vmCpuCap(hostCpuCount.value))
+  const vmMemCapMB = computed(() => vmMemoryCapMB(hostMemoryMB.value))
+  const vmMemCapGB = computed(() => {
+    const cap = vmMemCapMB.value
+    return cap != null ? Math.max(1, Math.floor(cap / 1024)) : 8
+  })
   const usb = computed(() => ({
     available: pickedCaps.value.supportsUSBPassthrough,
   }))
@@ -158,10 +179,19 @@ export function useCreateVMWizard(
   })
   const availableDisks = computed(() => deviceDisks.value.filter((d) => !d.vmId))
 
-  // Wizard step
-  const step = ref(1)
+  const templateStore = useTemplateStore()
+  const galleryKind = ref<GalleryKind>(null)
+  const selectedTemplateSlug = ref('')
+  const dedicated = ref(true)
+  const selectedPresetId = ref('medium')
+  const blockDevices = ref<HostBlockDevice[]>([])
+  const blockDevicePath = ref('')
 
-  // Step 1: Basics (name + OS). Zero arch / capability language.
+  const step = ref(1)
+  const totalSteps = computed(() => 3)
+  const stepLabels = computed(() => [...WIZARD_STEP_LABELS])
+  const currentStepLabel = computed(() => stepLabels.value[step.value - 1] || '')
+
   const name = ref('')
   const osType = ref<'linux' | 'windows'>('linux')
   /**
@@ -174,12 +204,8 @@ export function useCreateVMWizard(
     return guestTypesSupportWindows(types)
   })
 
-  /** Null means “use the host default” so a simple create can omit vmType (PAS-93). */
-  const guestArchOverride = ref<string | null>(null)
-  const selectedImageId = ref('')
-
-  /** Picked Device native arch — used for firmware/omit-vmType and “this pick cannot run…”. */
   const hostImageArch = computed(() => hostArchToImageArch(hostArch.value))
+  const selectedImageId = ref('')
 
   const selectedImage = computed(() => {
     if (!selectedImageId.value) return null
@@ -196,18 +222,37 @@ export function useCreateVMWizard(
       : homeImageKey(selectedImage.value)
   })
 
-  /**
-   * Guest arch comes from the chosen image (or an explicit override).
-   * Never default a guest from a Device row — that lectures before intent (PAS-182).
-   */
-  const effectiveGuestArch = computed(() => {
-    if (guestArchOverride.value) return guestArchOverride.value
-    const fromImage = normalizeImageArch(selectedImage.value?.arch) ?? selectedImage.value?.arch
-    return fromImage || ''
+  const selectedTemplate = computed(() =>
+    homeLibrary.templates.find((t) => t.slug === selectedTemplateSlug.value) ?? null,
+  )
+
+  const resolvedTemplate = computed(() => {
+    if (!selectedTemplate.value) return null
+    return homeLibrary.resolveTemplateForDeploy(
+      selectedTemplate.value.slug,
+      selectedDevice.value,
+      selectedTemplate.value,
+    )
   })
 
-  const cpuCount = ref(2)
-  const memoryMB = ref(1024)
+  const galleryTemplates = computed(() => homeLibrary.templates)
+  const showCodingAgentCard = computed(() =>
+    homeLibrary.images.some((img) => img.status === 'ready' && isCodingAgentImage(img)),
+  )
+
+  const isCloudInitGuest = computed(() => {
+    if (galleryKind.value === 'template' || galleryKind.value === 'coding-agent') return true
+    if (galleryKind.value === 'custom') return mode.value === 'cloud'
+    return false
+  })
+
+  const showHostnameHint = computed(() => isCloudInitGuest.value)
+
+  /** Guest arch is always the picked Device arch in the magazine wizard. */
+  const effectiveGuestArch = computed(() => hostImageArch.value)
+
+  const cpuCount = ref(4)
+  const memoryMB = ref(8192)
 
   const placement = usePlacement({
     selectedHostId,
@@ -226,41 +271,38 @@ export function useCreateVMWizard(
     refreshPlacement,
   } = placement
 
-  const virtio = useVirtioDownload({
-    selectedHostId,
-    selectedDevice,
-    osType,
-  })
-  const {
-    virtioWinAvailable,
-    virtioWinDownloading,
-    virtioWinProgress,
-    virtioWinStatus,
-    virtioWinError,
-    checkVirtioWinStatus,
-    startVirtioWinDownload,
-  } = virtio
-
-  const usbPicker = useUSBPicker({
-    selectedHostId,
-    selectedDevice,
-  })
-  const {
-    hostUSBDevices,
-    selectedUSBDevices,
-    showUSBPicker,
-    fetchUSBDevices,
-    toggleUSBDevice,
-    isUSBSelected,
-    removeUSBDevice,
-    clearUSBSelection,
-  } = usbPicker
-
   const { buildCreateVMPayload } = useCreateVMPayload()
+
+  const sizePresets = computed(() =>
+    availableSizePresets(vmCpuCapValue.value, vmMemCapMB.value),
+  )
+
+  const selectedPreset = computed(() =>
+    sizePresets.value.find((p) => p.id === selectedPresetId.value)
+    || sizePresets.value[1]
+    || sizePresets.value[0],
+  )
 
   const deviceOptions = computed<DevicePickOption[]>(() => {
     const rows = devicesStore.devices
     const list = rows.length > 0 ? rows : (devicesStore.selfDevice ? [devicesStore.selfDevice] : [])
+    const template = selectedTemplate.value
+    if (galleryKind.value === 'template' && template) {
+      return list.map((row) => {
+        const local = templateIncompatibilityReasons(row, template, {
+          capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
+          hasTemplate: homeLibrary.deviceHasDeployableTemplate(template.slug, row),
+        })
+        const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
+        const hard = (scored?.reasons ?? [])
+          .filter((reason) => reason.kind === 'hard')
+          .map((reason) => reason.message)
+        return toPickOption(row, [...new Set([...local, ...hard])], {
+          recommended: isRecommendedHost(placementScore.value, row.hostId),
+          recommendReasons: placementReasonsForHost(placementScore.value, row.hostId),
+        })
+      })
+    }
     const guest = effectiveGuestArch.value || null
     const selected = selectedImage.value
     const fetchable = !!(selected?.sourceUrl?.trim() || selected?.sha256?.trim())
@@ -300,230 +342,209 @@ export function useCreateVMWizard(
   const vmType = computed(() =>
     resolveGuestType({
       osFamily: osType.value,
-      arch: effectiveGuestArch.value || hostImageArch.value,
-      // Unknown image arch tokens must not throw during render; submit still
-      // fail-closes via archIsProblem / place-anyway (PAS-241).
+      arch: hostImageArch.value,
       defaultArch: hostImageArch.value,
     }),
   )
 
-  // Step 2: Hardware
   const displayResolution = ref('1280x800')
   const uefi = ref(true)
   const tpmOverride = ref<boolean | null>(null)
   const tpmEnabled = computed(() =>
-    tpmOverride.value ?? (guestProfile(vmType.value)?.defaultTPMEnabled ?? false),
+    tpmOverride.value ?? (osType.value === 'windows' || guestProfile(vmType.value)?.defaultTPMEnabled === true),
   )
-  const alwaysShowArchDetails = ref(readAlwaysShowArchitectureDetails())
-
-  const archCustomized = computed(() => {
-    const guest = effectiveGuestArch.value
-    if (!guest) return false
-    if (guestArchOverride.value) return guestArchOverride.value !== hostImageArch.value
-    return !!hostImageArch.value && guest !== hostImageArch.value
-  })
   const uefiCustomized = computed(() => uefi.value !== true)
   const tpmCustomized = computed(() => tpmOverride.value !== null)
-  const archRunnable = computed(() => capabilitiesArchRunnable(pickedCaps.value, effectiveGuestArch.value))
-  const imageArchKnown = computed(() => !!effectiveGuestArch.value)
-  const archIsProblem = computed(() => {
-    if (!pickedHostArchKnown.value || !imageArchKnown.value) return false
-    return architectureIsProblem(effectiveGuestArch.value, archRunnable.value)
-  })
-  const archProblemText = computed(() => {
-    if (!archIsProblem.value) return null
-    const guest = effectiveGuestArch.value || 'selected'
-    const host = hostImageArch.value || 'this device'
-    return `VM architecture (${guest}) is not compatible with this device (${host}). Cross-architecture VMs are not supported.`
-  })
-  const revealArchOnSummary = computed(() =>
-    shouldRevealArchitectureDetails({
-      alwaysShow: alwaysShowArchDetails.value,
-      customized: archCustomized.value || uefiCustomized.value || tpmCustomized.value,
-      problem: archIsProblem.value,
-    }),
-  )
-  const archOptions = computed(() => {
-    const host = hostImageArch.value
-    return [
-      {
-        value: 'arm64',
-        label: host === 'arm64' ? 'ARM64 (this device)' : 'ARM64',
-      },
-      {
-        value: 'x86_64',
-        label: host === 'x86_64' ? 'x86_64 (this device)' : 'x86_64',
-      },
-    ]
-  })
-  const machineType = computed(() => {
-    const fromCaps = (guestTypes.value ?? []).find((g) => g.id === vmType.value)?.machine
-    return fromCaps || defaultMachineType(vmType.value)
-  })
-  const cpuModel = computed(() => {
-    const accel = accelerator.value
-    return accel === 'hvf' || accel === 'kvm' ? 'host' : accel ? 'max' : 'host default'
-  })
-  const archLabel = computed(() => architectureLabel(effectiveGuestArch.value))
-
-  function setGuestArch(arch: string) {
-    guestArchOverride.value = arch || null
-  }
-
-  function setAlwaysShowArchDetails(on: boolean) {
-    alwaysShowArchDetails.value = on
-    writeAlwaysShowArchitectureDetails(on)
-  }
 
   function setTpmEnabled(on: boolean) {
     tpmOverride.value = on
   }
 
-  function selectOS(os: 'linux' | 'windows') {
-    osType.value = os
-    selectedImageId.value = ''
-    tpmOverride.value = null
-    if (os === 'windows' && guestArchOverride.value === 'x86_64') {
-      guestArchOverride.value = null
-    }
-    const maxCpu = pickedHostArchKnown.value ? hostCpuCount.value : (os === 'windows' ? 4 : 2)
-    if (os === 'windows') {
-      cpuCount.value = Math.min(4, maxCpu)
-      memoryMB.value = 4096
-      diskSizeGB.value = 64
-      uefi.value = true
-      mode.value = 'iso'
-    } else {
-      cpuCount.value = Math.min(2, maxCpu)
-      memoryMB.value = 1024
-      diskSizeGB.value = 10
-      if (homeLibrary.images.some((i) => i.status === 'ready' && isCodingAgentImage(i))) {
-        mode.value = 'cloud'
-      }
-    }
+  function applyPreset(preset: SizePreset) {
+    selectedPresetId.value = preset.id
+    cpuCount.value = preset.cpu
+    memoryMB.value = preset.memGB * 1024
+    diskSizeGB.value = preset.diskGB
   }
 
-  watch(hostCpuCount, (max) => {
-    if (pickedHostArchKnown.value && cpuCount.value > max) cpuCount.value = max
+  function applySizeFromPresetId(id: string) {
+    const preset = sizePresets.value.find((p) => p.id === id)
+    if (preset) applyPreset(preset)
+  }
+
+  function selectGalleryTemplate(template: HomeTemplate) {
+    galleryKind.value = 'template'
+    selectedTemplateSlug.value = template.slug
+    osType.value = 'linux'
+    workloadClass.value = 'house'
+    name.value = defaultVMNameFromLabel(template.name)
+    const medium = sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0]
+    if (medium) applyPreset(medium)
+    diskSizeGB.value = template.diskSizeGB
+    uefi.value = true
+    tpmOverride.value = null
+    step.value = 2
+    void enterConfigure()
+  }
+
+  function selectGalleryWindows() {
+    galleryKind.value = 'windows'
+    osType.value = 'windows'
+    workloadClass.value = 'house'
+    name.value = 'Windows 11'
+    const iso = homeLibrary.images.find((row) => row.imageType === 'iso' && row.status === 'ready')
+    selectedImageId.value = iso ? (iso.libraryKey || homeImageKey(iso)) : ''
+    mode.value = 'iso'
+    applyPreset(sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0])
+    uefi.value = true
+    tpmOverride.value = true
+    step.value = 2
+    void enterConfigure()
+  }
+
+  function selectGalleryCustom() {
+    galleryKind.value = 'custom'
+    osType.value = 'linux'
+    workloadClass.value = 'house'
+    name.value = defaultVMNameFromLabel('Custom VM')
+    selectedImageId.value = ''
+    mode.value = 'iso'
+    applyPreset(sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0])
+    uefi.value = true
+    tpmOverride.value = null
+    step.value = 2
+    void enterConfigure()
+  }
+
+  function selectGalleryCodingAgent() {
+    const img = homeLibrary.images.find((row) => row.status === 'ready' && isCodingAgentImage(row))
+    if (!img) return
+    galleryKind.value = 'coding-agent'
+    osType.value = 'linux'
+    workloadClass.value = 'agent'
+    name.value = defaultVMNameFromLabel(img.name)
+    selectedImageId.value = img.libraryKey || homeImageKey(img)
+    mode.value = 'cloud'
+    openaiPreset.value = 'home-ollama'
+    applyPreset(sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0])
+    if (memoryMB.value < 2048) memoryMB.value = 2048
+    if (diskSizeGB.value < 20) diskSizeGB.value = 20
+    uefi.value = true
+    tpmOverride.value = null
+    step.value = 2
+    void enterConfigure()
+  }
+
+  watch(vmCpuCapValue, (cap) => {
+    if (cpuCount.value > cap) cpuCount.value = cap
   })
 
-  watch(hostMemoryMB, (max) => {
-    if (max != null && memoryMB.value > max) memoryMB.value = max
+  watch(vmMemCapMB, (cap) => {
+    if (cap != null && memoryMB.value > cap) memoryMB.value = cap
   })
 
-  // Step 2: Image (Home Library)
   const mode = ref<'iso' | 'cloud'>('iso')
   const selectedSSHKeyId = ref('')
-  const showCloudInit = ref(false)
   const cloudUserData = ref('')
   const openaiPreset = ref<OpenAIPreset>('home-ollama')
   const byoOpenAIURL = ref(HOME_OLLAMA_GRANT_URL)
   const byoOpenAIAPIKey = ref('')
 
-  watch(selectedImage, (img, prev) => {
-    const now = isCodingAgentImage(img)
-    const was = isCodingAgentImage(prev)
-    if (now && !was) {
-      workloadClass.value = 'agent'
-      mode.value = 'cloud'
-      openaiPreset.value = 'home-ollama'
-      if (memoryMB.value < 2048) memoryMB.value = 2048
-      if (diskSizeGB.value < 20) diskSizeGB.value = 20
-      return
-    }
-    if (was && !now && osType.value === 'linux') {
-      workloadClass.value = 'house'
-      memoryMB.value = 1024
-      diskSizeGB.value = 10
-    }
-  })
-
-  // Dynamic step mapping (PAS-182): Basics → Image → Place → Hardware → Drivers? → Storage → Network → Summary
-  const needsDriverStep = computed(() => osType.value === 'windows' && !virtioWinAvailable.value)
-  const totalSteps = computed(() => (needsDriverStep.value ? 8 : 7))
-
-  const stepLabels = computed(() => {
-    const base = ['Basics', 'Image', 'Place', 'Hardware']
-    if (needsDriverStep.value) base.push('Drivers')
-    base.push('Storage', 'Network', 'Summary')
-    return base
-  })
-
   function stepContent(s: number): string {
     return stepLabels.value[s - 1] || ''
   }
 
-  const currentStepLabel = computed(() => stepContent(step.value))
-
-  async function enterPlace() {
+  async function enterConfigure() {
     await loadPickedDevice()
+    await loadBlockDevices()
   }
 
-  // Step 4/5: Storage
-  const diskSource = ref<'new' | 'existing'>('new')
-  const diskSizeGB = ref(10)
+  async function enterDisk() {
+    await loadPickedDevice()
+    await loadBlockDevices()
+  }
+
+  const diskSource = ref<'new' | 'existing' | 'raw'>('new')
+  const diskSizeGB = ref(64)
   const existingDiskId = ref('')
   const sharedPaths = ref<string[]>([])
-  const showFolderPicker = ref(false)
 
-  // Step 5/6: Network (list from shared store)
   const selectedNetworkId = ref('')
+  const networkBridged = ref(false)
   const portForwards = ref<PortForwardRule[]>([])
-  const newPFProto = ref<'tcp' | 'udp'>('tcp')
-  const newPFHostPort = ref<number | null>(null)
-  const newPFGuestPort = ref<number | null>(null)
 
-  function addPortForward() {
-    if (!newPFHostPort.value || !newPFGuestPort.value) return
-    portForwards.value.push({
-      protocol: newPFProto.value,
-      hostPort: newPFHostPort.value,
-      guestPort: newPFGuestPort.value,
-    })
-    newPFHostPort.value = null
-    newPFGuestPort.value = null
+  const isNAT = computed(() => !networkBridged.value)
+
+  const rawDiskAvailable = computed(() => isLinuxDeviceOs(selectedDevice.value?.platform?.os))
+
+  const rawDiskWhy = computed(() =>
+    rawDiskAvailable.value
+      ? 'Pass a whole host disk through to the VM.'
+      : 'Host disks only on Linux Devices.',
+  )
+
+  const atResourceCap = computed(() =>
+    cpuCount.value >= vmCpuCapValue.value
+    || (vmMemCapMB.value != null && memoryMB.value >= vmMemCapMB.value),
+  )
+
+  const deviceLabel = computed(() =>
+    selectedDevice.value?.displayName || selectedDevice.value?.hostId || 'Device',
+  )
+
+  const capHintText = computed(() =>
+    `${deviceLabel.value} keeps 2 cores and 4 GB for itself.`,
+  )
+
+  const leftoverCores = computed(() => Math.max(0, hostCpuCount.value - cpuCount.value))
+  const leftoverMemGB = computed(() => Math.max(0, Math.round((hostMemoryMB.value ?? memoryMB.value) / 1024) - Math.round(memoryMB.value / 1024)))
+
+  const leftoverText = computed(() =>
+    `${deviceLabel.value} keeps <b>${leftoverCores.value} cores</b> and <b>${leftoverMemGB.value} GB</b>.`,
+  )
+
+  const sharedLeftoverText = computed(() =>
+    'Shared with the Device. Other apps may still use these cores.',
+  )
+
+  const headTitle = computed(() => {
+    if (step.value === 1) return 'What do you want to run?'
+    if (step.value === 3) return 'Disk'
+    if (galleryKind.value === 'windows') return 'Set up Windows'
+    return 'Name it and pick a size'
+  })
+
+  const tpmWhyText = computed(() =>
+    osType.value === 'windows'
+      ? 'Windows expects TPM 2.0. On by default for Windows guests.'
+      : 'Linux guests do not need TPM 2.0. Off by default.',
+  )
+
+  const showSshKeyRow = computed(() => {
+    if (!isCloudInitGuest.value) return false
+    if (galleryKind.value === 'template' && selectedTemplate.value) {
+      return templateDeclaresSshKeys(selectedTemplate.value.inputs)
+    }
+    return galleryKind.value === 'custom' && mode.value === 'cloud'
+      || galleryKind.value === 'coding-agent'
+  })
+
+  async function loadBlockDevices() {
+    blockDevices.value = []
+    blockDevicePath.value = ''
+    const device = selectedDevice.value
+    if (!device || !rawDiskAvailable.value || !canCallDeviceAPI(device)) return
+    try {
+      const { data } = await api.get<HostBlockDevice[]>(deviceBlockDevicesPath(device))
+      blockDevices.value = Array.isArray(data) ? data : []
+    } catch {
+      blockDevices.value = []
+    }
   }
 
-  function removePortForward(i: number) {
-    portForwards.value.splice(i, 1)
-  }
-
-  const isNAT = computed(() => {
-    // Missing selection is implicit NAT (PAS-67).
-    if (!selectedNetworkId.value) return true
-    const net = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
-    return !net || net.mode === 'nat'
-  })
-
-  watch(isNAT, (nat) => {
-    if (!nat) portForwards.value = []
-  })
-
-  watch(isAgent, (agent) => {
-    if (!agent) return
-    selectedUSBDevices.value = []
-    portForwards.value = []
-    sharedPaths.value = []
-    const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
-    if (current?.mode === 'bridged') {
-      const fallback =
-        allNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
-        ?? allNetworks.value.find((n) => n.mode === 'nat')
-        ?? allNetworks.value.find((n) => n.mode === 'isolated')
-        ?? null
-      selectedNetworkId.value = fallback?.id ?? ''
-    }
-  })
-
-  watch([() => bridged.value.available, allNetworks], () => {
-    const current = allNetworks.value.find((n) => n.id === selectedNetworkId.value)
-    if (current && current.mode === 'bridged' && !bridged.value.available) {
-      const fallback =
-        allNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
-        ?? allNetworks.value.find((n) => n.mode === 'nat')
-        ?? null
-      selectedNetworkId.value = fallback?.id ?? ''
-    }
+  watch(selectedHostId, () => {
+    if (diskSource.value === 'raw' && !rawDiskAvailable.value) diskSource.value = 'new'
+    void loadBlockDevices()
   })
 
   // State
@@ -571,7 +592,10 @@ export function useCreateVMWizard(
 
   async function refreshHomeLibrary() {
     await devicesStore.fetchHealth().catch(() => {})
-    await homeLibrary.fetchImages(devicesStore.devices).catch(() => {})
+    await Promise.all([
+      homeLibrary.fetchImages(devicesStore.devices).catch(() => {}),
+      homeLibrary.fetchAll(devicesStore.devices).catch(() => {}),
+    ])
   }
 
   async function loadPickedDevice() {
@@ -630,7 +654,6 @@ export function useCreateVMWizard(
         deviceNetworks.value = Array.isArray(netsRes.data) ? netsRes.data : []
         deviceDisks.value = Array.isArray(disksRes.data) ? disksRes.data : []
         existingDiskId.value = ''
-        clearUSBSelection()
         error.value = ''
         await applyLoadedResources(false, seq)
       } catch (e: unknown) {
@@ -639,9 +662,6 @@ export function useCreateVMWizard(
         error.value = apiErrorMessage(e, 'Could not load inventory from the picked Device.')
       }
     } finally {
-      if (isCurrentPickedDeviceLoad(seq) && osType.value === 'windows') {
-        await checkVirtioWinStatus()
-      }
       if (isCurrentPickedDeviceLoad(seq)) pickedDeviceLoading.value = false
     }
   }
@@ -657,7 +677,7 @@ export function useCreateVMWizard(
   })
 
   watch(currentStepLabel, (label) => {
-    if (label === 'Image') void refreshHomeLibrary()
+    if (label === 'Configure') void refreshHomeLibrary()
   })
 
   watch(selectedHostId, async (next, prev) => {
@@ -665,8 +685,6 @@ export function useCreateVMWizard(
     if (!next || next === prev) return
     if (!programmatic) userOverrodeHost.value = true
     existingDiskId.value = ''
-    clearUSBSelection()
-    // loadPickedDevice already continues with the new host after refreshPlacement.
     if (programmatic) return
     await loadPickedDevice()
   })
@@ -706,11 +724,7 @@ export function useCreateVMWizard(
     return selectedDeviceSelectable() && !selectedDeviceBlocksPlacement()
   }
 
-  const placementStepReached = computed(() => {
-    const label = currentStepLabel.value
-    return label === 'Place' || label === 'Hardware' || label === 'Drivers'
-      || label === 'Storage' || label === 'Network' || label === 'Summary'
-  })
+  const placementStepReached = computed(() => step.value >= 2)
 
   function canProceed(): boolean {
     const content = stepContent(step.value)
@@ -718,42 +732,92 @@ export function useCreateVMWizard(
       pickedDeviceLoading.value
       || placementRefreshing.value
       || homeLibrary.imagesLoading
+      || homeLibrary.loading
     )) {
       return false
     }
     switch (content) {
-      case 'Basics':
-        return !!name.value.trim()
-      case 'Image':
-        return !!selectedImageId.value
-      case 'Place':
-        return selectedDevicePlaceable()
-      case 'Hardware':
+      case 'Gallery':
+        return galleryKind.value != null
+      case 'Configure':
+        if (!name.value.trim() || !selectedDevicePlaceable()) return false
+        if (galleryKind.value === 'custom' || galleryKind.value === 'windows') {
+          return !!selectedImageId.value
+        }
         return cpuCount.value >= 1
           && memoryMB.value >= 128
-          && (hostMemoryMB.value == null || memoryMB.value <= hostMemoryMB.value)
-          && selectedDevicePlaceable()
-      case 'Drivers':
-        return virtioWinAvailable.value
-      case 'Storage':
-        return diskSource.value === 'existing' ? !!existingDiskId.value : diskSizeGB.value >= 1
-      case 'Network':
-        return true
-      case 'Summary':
-        return pickedDeviceStillLive() && selectedDevicePlaceable()
+          && cpuCount.value <= vmCpuCapValue.value
+          && (vmMemCapMB.value == null || memoryMB.value <= vmMemCapMB.value)
+      case 'Disk':
+        if (diskSource.value === 'existing') return !!existingDiskId.value
+        if (diskSource.value === 'raw') {
+          const dev = blockDevices.value.find((row) => row.path === blockDevicePath.value)
+          return !!blockDevicePath.value && !!dev?.attachable
+        }
+        return diskSizeGB.value >= 1
       default:
         return false
     }
   }
 
   function next() {
+    if (step.value === 1 && galleryKind.value) {
+      return
+    }
     if (!canProceed() || step.value >= totalSteps.value) return
     step.value++
-    if (stepContent(step.value) === 'Place') void enterPlace()
+    if (stepContent(step.value) === 'Configure') void enterConfigure()
+    if (stepContent(step.value) === 'Disk') void enterDisk()
+  }
+
+  function goToDisk() {
+    if (!canProceed()) return
+    step.value = 3
+    void enterDisk()
   }
 
   function prev() {
     if (step.value > 1) step.value--
+  }
+
+  watch(networkBridged, (bridgedMode) => {
+    const net = bridgedMode
+      ? allNetworks.value.find((n) => n.mode === 'bridged')
+      : allNetworks.value.find((n) => n.mode === 'nat' && n.isDefault)
+        ?? allNetworks.value.find((n) => n.mode === 'nat')
+    selectedNetworkId.value = net?.id ?? ''
+  })
+
+  function buildTemplateDeployRequest(): DeployTemplateRequest {
+    const resolved = resolvedTemplate.value
+    if (!resolved) throw new Error("Not in this Device's Library")
+    const inputs: Record<string, string> = {}
+    for (const input of resolved.inputs) {
+      if (input.id === 'ssh_keys') continue
+      inputs[input.id] = input.default ?? ''
+    }
+    if (templateDeclaresSshKeys(resolved.inputs)) {
+      const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
+      if (selectedKey) inputs.ssh_keys = authorizedKeyForCloudInit(selectedKey)
+    }
+    return {
+      templateId: resolved.id,
+      vmName: name.value.trim(),
+      inputs,
+      cpuCount: cpuCount.value,
+      memoryMB: memoryMB.value,
+      diskSizeGB: diskSizeGB.value,
+      networkId: selectedNetworkId.value || undefined,
+    }
+  }
+
+  async function createRawDisk(device: DeviceApiTarget): Promise<string> {
+    const diskName = `${name.value.trim()}-disk`
+    const { data } = await api.post(deviceDisksPath(device), {
+      name: diskName,
+      blockDevice: blockDevicePath.value,
+    })
+    return (data as Disk).id
   }
 
   async function submit() {
@@ -768,12 +832,7 @@ export function useCreateVMWizard(
       error.value = 'Windows VMs are not available on this device architecture.'
       return
     }
-    if (archIsProblem.value) {
-      error.value = archProblemText.value
-        || 'VM architecture is not compatible with this device.'
-      return
-    }
-    if (selectedNetwork.value?.mode === 'bridged' && !bridged.value.available) {
+    if (networkBridged.value && !bridged.value.available) {
       error.value = bridged.value.explanation || 'Bridged networking is not available on this device.'
       return
     }
@@ -781,20 +840,52 @@ export function useCreateVMWizard(
       error.value = 'The selected Device is no longer available. Pick a Device again.'
       return
     }
-    let createImage = homeLibrary.resolveImageForCreate(
-      selectedLibraryKey.value,
-      selectedDevice.value,
-      selectedImage.value,
-    )
-    const pickedImage = selectedImage.value
-    if ((selectedLibraryKey.value || selectedImageId.value) && !createImage) {
-      if (!pickedImage || !(pickedImage.sourceUrl?.trim() || pickedImage.sha256?.trim())) {
-        error.value = DEVICE_IMAGE_UNFETCHABLE_REASON
-        return
-      }
-    }
+    const target = selectedDevice.value
     loading.value = true
     try {
+      if (galleryKind.value === 'template') {
+        const resolved = resolvedTemplate.value
+        if (!resolved) {
+          error.value = "Not in this Device's Library"
+          return
+        }
+        const result = await templateStore.deploy(buildTemplateDeployRequest(), target ?? undefined)
+        if (result.taskID) {
+          toast.info(`VM "${name.value.trim()}" is provisioning...`)
+          const { poll } = useTaskPoller()
+          const event = await poll(result.taskID, {
+            path: target ? deviceTaskPath(target, result.taskID) : undefined,
+          })
+          if (event.status !== 'completed') {
+            error.value = event.error || 'Provisioning failed'
+            return
+          }
+        }
+        emit('created')
+        return
+      }
+
+      let existingDisk = existingDiskId.value
+      if (diskSource.value === 'raw') {
+        if (!target) {
+          error.value = 'Pick a Device to place this VM.'
+          return
+        }
+        existingDisk = await createRawDisk(target)
+      }
+
+      let createImage = homeLibrary.resolveImageForCreate(
+        selectedLibraryKey.value,
+        selectedDevice.value,
+        selectedImage.value,
+      )
+      const pickedImage = selectedImage.value
+      if ((selectedLibraryKey.value || selectedImageId.value) && !createImage) {
+        if (!pickedImage || !(pickedImage.sourceUrl?.trim() || pickedImage.sha256?.trim())) {
+          error.value = DEVICE_IMAGE_UNFETCHABLE_REASON
+          return
+        }
+      }
       if (!createImage && pickedImage && selectedDevice.value) {
         toast.info('Copying image to the picked Device...')
         createImage = await acquireImageOnDevice(selectedDevice.value, pickedImage)
@@ -809,14 +900,14 @@ export function useCreateVMWizard(
         osFamily: osType.value,
         cpuCount: cpuCount.value,
         memoryMB: memoryMB.value,
-        archCustomized: archCustomized.value,
+        archCustomized: false,
         vmType: vmType.value,
         uefiCustomized: uefiCustomized.value,
         uefi: uefi.value,
         tpmCustomized: tpmCustomized.value,
         tpmEnabled: tpmEnabled.value,
-        diskSource: diskSource.value,
-        existingDiskId: existingDiskId.value,
+        diskSource: diskSource.value === 'existing' || diskSource.value === 'raw' ? 'existing' : 'new',
+        existingDiskId: existingDisk,
         diskSizeGB: diskSizeGB.value,
         mode: mode.value,
         imageId: createImage?.id,
@@ -832,12 +923,11 @@ export function useCreateVMWizard(
         selectedNetworkId: selectedNetworkId.value,
         portForwards: portForwards.value,
         sharedPaths: sharedPaths.value,
-        usbAvailable: usb.value.available,
-        usbDevices: selectedUSBDevices.value,
+        usbAvailable: false,
+        usbDevices: [],
         workloadClass: workloadClass.value,
       })
 
-      const target = selectedDevice.value
       const result = await vmStore.create(req, target ?? undefined)
       if (result.taskID && target && !isSelfDevice(target)) {
         toast.info(`VM "${name.value.trim()}" is provisioning on the picked Device...`)
@@ -864,25 +954,34 @@ export function useCreateVMWizard(
     return b + ' B'
   }
 
+  const sshKeyOptions = computed(() => [
+    ...sshKeyStore.keys.map((k) => ({
+      value: k.id,
+      label: k.isDefault ? `${k.name} (default)` : k.name,
+    })),
+    { value: '', label: 'none' },
+  ])
+
   return {
-    // stores exposed for steps that need lists
-    sshKeyStore,
     sshKeys: computed(() => sshKeyStore.keys),
+    sshKeyOptions,
     selectedHostId,
     hostCpuCount,
     hostMemoryMB,
+    vmCpuCapValue,
+    vmMemCapGB,
     placementStepReached,
     placementScore,
     deviceOptions,
     selectedDevice,
     selectedDeviceIncompatibility,
     selectedDeviceBlocksPlacement,
-    hostArch,
-    archLabel,
-    revealArchOnSummary,
-    archProblemText,
-
-    // navigation
+    headTitle,
+    galleryKind,
+    selectedTemplateSlug,
+    galleryTemplates,
+    showCodingAgentCard,
+    showHostnameHint,
     step,
     totalSteps,
     stepLabels,
@@ -891,86 +990,54 @@ export function useCreateVMWizard(
     canProceed,
     next,
     prev,
-
-    // OS
+    goToDisk,
     name,
     osType,
     workloadClass,
     isAgent,
-    vmType,
     supportsWindows,
-    selectOS,
-
-    // Hardware
+    selectGalleryTemplate,
+    selectGalleryWindows,
+    selectGalleryCustom,
+    selectGalleryCodingAgent,
     cpuCount,
     memoryMB,
     displayResolution,
     uefi,
     tpmEnabled,
-    effectiveGuestArch,
-    archOptions,
-    machineType,
-    accelerator,
-    cpuModel,
-    alwaysShowArchDetails,
-    setGuestArch,
-    setAlwaysShowArchDetails,
+    tpmWhyText,
     setTpmEnabled,
-
-    // Image
+    dedicated,
+    sizePresets,
+    selectedPresetId,
+    selectedPreset,
+    applySizeFromPresetId,
+    leftoverText,
+    sharedLeftoverText,
+    atResourceCap,
+    capHintText,
     mode,
     selectedImageId,
     selectedSSHKeyId,
-    showCloudInit,
     cloudUserData,
     openaiPreset,
     byoOpenAIURL,
     byoOpenAIAPIKey,
     isCodingAgentSelected: computed(() => isCodingAgentImage(selectedImage.value)),
     filteredImages,
-    foreignArchImageCount,
-    hostImageArch,
     selectedImage,
     formatBytes,
-
-    // Drivers
-    virtioWinAvailable,
-    virtioWinDownloading,
-    virtioWinProgress,
-    virtioWinStatus,
-    virtioWinError,
-    startVirtioWinDownload,
-
-    // Storage
     diskSource,
     diskSizeGB,
     existingDiskId,
     availableDisks,
-    sharedPaths,
-    showFolderPicker,
-
-    // USB
-    hostUSBDevices,
-    selectedUSBDevices,
-    showUSBPicker,
-    fetchUSBDevices,
-    toggleUSBDevice,
-    isUSBSelected,
-    removeUSBDevice,
-
-    // Network
-    networks,
-    selectedNetworkId,
-    selectedNetwork,
-    portForwards,
-    newPFProto,
-    newPFHostPort,
-    newPFGuestPort,
-    addPortForward,
-    removePortForward,
+    blockDevices,
+    blockDevicePath,
+    rawDiskAvailable,
+    rawDiskWhy,
+    showSshKeyRow,
+    networkBridged,
     isNAT,
-
-    // submit
     error,
     loading,
     pickedDeviceLoading,
