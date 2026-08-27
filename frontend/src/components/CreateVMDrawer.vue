@@ -131,18 +131,19 @@ const showCustomImage = computed(() =>
 .mag-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--modal-overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 20;
   padding: 24px;
-  --mag-bg: #0a0e14;
-  --mag-text: #e4e4e2;
-  --mag-dim: #6e6e6c;
-  --mag-accent: #0090f8;
-  --mag-line: rgba(255, 255, 255, 0.07);
-  --mag-panel: rgba(255, 255, 255, 0.03);
+  --mag-text: var(--text);
+  --mag-dim: var(--text-dim);
+  --mag-accent: var(--accent);
+  --mag-line: var(--line);
+  --mag-panel: var(--panel);
+  --mag-input: var(--bg-input);
+  --mag-track: var(--progress-track);
   font-family: Inter, -apple-system, sans-serif;
 }
 .mag-frame {
@@ -150,13 +151,13 @@ const showCustomImage = computed(() =>
   max-width: 100%;
   height: 560px;
   max-height: 90vh;
-  background: #0c1118;
-  border: 1px solid var(--mag-line);
+  background: var(--modal-surface);
+  border: 1px solid var(--border);
   border-radius: 2px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-lg);
   color: var(--mag-text);
   font-size: 13px;
 }
@@ -213,7 +214,7 @@ const showCustomImage = computed(() =>
 .mag-btn.ghost:hover { color: var(--mag-text); }
 .mag-btn.primary {
   background: var(--mag-accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 .mag-btn:disabled {
   opacity: 0.5;
@@ -221,9 +222,9 @@ const showCustomImage = computed(() =>
 }
 .mag-error {
   margin-top: 12px;
-  color: #f87171;
+  color: var(--red);
   font-size: 13px;
-  background: rgba(248, 113, 113, 0.12);
+  background: var(--red-muted);
   padding: 8px 12px;
   border-radius: 2px;
 }

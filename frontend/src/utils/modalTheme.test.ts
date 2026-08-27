@@ -41,4 +41,14 @@ describe('modal light mode', () => {
     expect(text).toContain('Teleport')
     expect(text).toContain('modal-overlay stack')
   })
+
+  test('magazine Create VM uses theme surface tokens', () => {
+    const text = readFileSync(join(srcRoot, 'components/CreateVMDrawer.vue'), 'utf8')
+    expect(text).toMatch(/\.mag-overlay \{[\s\S]*?background: var\(--modal-overlay-bg\)/)
+    expect(text).toMatch(/\.mag-frame \{[\s\S]*?background: var\(--modal-surface\)/)
+    expect(text).toContain('--mag-text: var(--text)')
+    expect(text).toContain('--mag-line: var(--line)')
+    expect(text).not.toMatch(/\.mag-frame \{[\s\S]{0,220}background: #0c1118/)
+    expect(text).not.toContain('--mag-bg: #0a0e14')
+  })
 })

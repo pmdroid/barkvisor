@@ -86,9 +86,9 @@ const emit = defineEmits<{
   gap: 10px;
 }
 .mag-card {
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
-  background: var(--mag-panel, rgba(255, 255, 255, 0.03));
+  background: var(--mag-panel);
   padding: 16px 14px;
   cursor: pointer;
   display: flex;
@@ -97,8 +97,8 @@ const emit = defineEmits<{
 }
 .mag-card:hover { border-color: rgba(0, 144, 248, 0.5); }
 .mag-card.on {
-  border-color: var(--mag-accent, #0090f8);
-  background: rgba(0, 144, 248, 0.08);
+  border-color: var(--mag-accent);
+  background: var(--accent-muted);
 }
 .mag-ic {
   width: 34px;
@@ -109,24 +109,24 @@ const emit = defineEmits<{
   justify-content: center;
 }
 .mag-card b { font-size: 13.5px; font-weight: 600; }
-.mag-card span { font-size: 11.5px; color: var(--mag-dim, #6e6e6c); line-height: 1.4; }
+.mag-card span { font-size: 11.5px; color: var(--mag-dim); line-height: 1.4; }
 .mag-custom {
   margin-top: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 11px 14px;
-  border: 1px dashed var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px dashed var(--mag-line);
   border-radius: 2px;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   cursor: pointer;
   font-size: 12.5px;
 }
-.mag-custom:hover { color: var(--mag-text, #e4e4e2); border-color: rgba(255, 255, 255, 0.2); }
+.mag-custom:hover { color: var(--mag-text); border-color: var(--border-glass); }
 .mag-custom.on {
-  border-color: var(--mag-accent, #0090f8);
-  color: var(--mag-text, #e4e4e2);
-  background: rgba(0, 144, 248, 0.05);
+  border-color: var(--mag-accent);
+  color: var(--mag-text);
+  background: var(--accent-muted);
 }
 .mag-custom-hint { margin-left: auto; font-size: 11px; }
 </style>
