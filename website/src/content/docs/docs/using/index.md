@@ -6,13 +6,13 @@ BarkVisor is a headless daemon that manages QEMU virtual machines and serves a w
 
 ![The BarkVisor sign-in screen](/docs-img/login.png)
 
-Sign in with username and password, or **Sign in with passkey** when the page is https (or localhost) on a hostname. Register passkeys under [Settings → Passkeys](/docs/using/settings/passkeys/).
+Sign in with **Sign in with passkey** when the page is https (or localhost) on a hostname. Register more under [Settings → Passkeys](/docs/using/settings/passkeys/). A raw IP (`127.0.0.1`) hides the button — use `localhost`.
 
 ## First run
 
 Before sign-in, the setup wizard walks you through creating the **Home**:
 
-- **Set up this Device** — create the admin account (username and password) and pick the network interface to advertise. This makes the machine the first Device of a new Home.
+- **Set up this Device** — add a passkey and pick the Library folder. This makes the machine the first Device of a new Home.
 - **Join an existing Home** — paste or scan a pairing offer (`barkvisor://pair/v1?…`) issued by another Device in the Home.
 
 Details live in [First launch](/docs/getting-started/first-launch/) and [Home and pairing](/docs/guides/home-and-pairing/).

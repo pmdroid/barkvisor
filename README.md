@@ -66,7 +66,7 @@ swift build
 swift run BarkVisorApp
 ```
 
-The server starts on `http://localhost:7777`. On first launch a web-based setup wizard creates your admin account.
+The server starts on `http://localhost:7777`. On first launch a web-based setup wizard registers a passkey. Use localhost, not `127.0.0.1`.
 
 ### 2. Run the frontend (development)
 

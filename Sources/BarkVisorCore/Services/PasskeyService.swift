@@ -296,7 +296,19 @@ public enum PasskeyService {
         db: DatabasePool,
     ) async throws {
         let deleted = try await db.write { db in
-            try PasskeyCredential
+            let matching = try PasskeyCredential
+                .filter(PasskeyCredential.Columns.id == id)
+                .filter(PasskeyCredential.Columns.userId == userId)
+                .fetchCount(db)
+            guard matching > 0 else { return 0 }
+            let remaining = try PasskeyCredential
+                .filter(PasskeyCredential.Columns.userId == userId)
+                .fetchCount(db)
+            let user = try User.fetchOne(db, key: userId)
+            if remaining <= 1, user?.hasPassword != true {
+                throw BarkVisorError.badRequest("Cannot delete the last passkey")
+            }
+            return try PasskeyCredential
                 .filter(PasskeyCredential.Columns.id == id)
                 .filter(PasskeyCredential.Columns.userId == userId)
                 .deleteAll(db)

@@ -8,7 +8,7 @@ import ProgressBar from '../components/ui/ProgressBar.vue'
 import LibraryFolderForm from '../components/LibraryFolderForm.vue'
 import {
   getSetupStatus,
-  createAdmin,
+  registerSetupPasskey,
   skipBridge,
   startRepoSync,
   getRepoSyncStatus,
@@ -20,6 +20,8 @@ import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { clearSetupCache } from '../router'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
+import { isPasskeyAvailable, passkeyBlock, passkeyUnavailableMessage } from '../utils/webauthn'
+import PasskeyBlocked from '../components/PasskeyBlocked.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -36,23 +38,9 @@ const panel = computed(() => {
 const error = ref('')
 const loading = ref(false)
 
-// Step 2: Admin
-const username = ref('admin')
-const password = ref('')
-const passwordConfirm = ref('')
-
-const passwordOk = computed(() => password.value.length >= 10)
-const confirmOk = computed(() => passwordOk.value && passwordConfirm.value === password.value)
-const adminValid = computed(
-  () => username.value.trim() !== '' && passwordOk.value && confirmOk.value,
-)
-const passwordHint = computed(() =>
-  password.value && !passwordOk.value ? 'err: too short — min_length: 10' : 'min_length: 10',
-)
-const confirmHint = computed(() => {
-  if (!passwordConfirm.value) return ''
-  return confirmOk.value ? 'ok: passwords match' : 'err: passwords do not match'
-})
+const passkeysAvailable = isPasskeyAvailable()
+const passkeyBlocked = passkeyBlock()
+const passkeyUnavailable = passkeyUnavailableMessage()
 
 // Repo sync step
 const syncStatus = ref<RepoSyncStatus | null>(null)
@@ -69,7 +57,7 @@ const sessionId = `BV-SETUP-${Math.floor(1000 + Math.random() * 9000)}`
 
 const railSteps = [
   { num: '01', t: 'Welcome', key: 'welcome' },
-  { num: '02', t: 'Admin account', key: 'admin' },
+  { num: '02', t: 'Passkey', key: 'admin' },
   { num: '03', t: 'Library folder', key: 'library' },
   { num: '04', t: 'Image catalog', key: 'repos' },
   { num: '05', t: 'Ready', key: 'ready' },
@@ -126,20 +114,16 @@ function backToWelcome() {
 
 async function submitAdmin() {
   error.value = ''
-  if (password.value.length < 10) {
-    error.value = 'Password must be at least 10 characters'
-    return
-  }
-  if (password.value !== passwordConfirm.value) {
-    error.value = 'Passwords do not match'
+  if (!passkeysAvailable) {
+    error.value = passkeyUnavailable
     return
   }
   loading.value = true
   try {
-    await createAdmin(username.value, password.value)
+    await registerSetupPasskey()
     await nextStep()
   } catch (e: any) {
-    error.value = apiErrorMessage(e, 'Failed to create admin user')
+    error.value = apiErrorMessage(e, 'Failed to add passkey')
   } finally {
     loading.value = false
   }
@@ -257,58 +241,26 @@ async function finishSetup() {
 
           <!-- Admin account -->
           <div v-if="panel === 'admin'" class="pane">
-            <div class="eyebrow">Step 02 — Admin account</div>
-            <h1>Create Admin Account</h1>
-            <p class="sub">This account administers every {{ DEVICE_LABEL }} in your {{ HOME_LABEL }}.</p>
-            <form @submit.prevent="submitAdmin">
-              <div class="field">
-                <label for="setup-username">Username</label>
-                <input
-                  id="setup-username"
-                  v-model="username"
-                  type="text"
-                  placeholder="admin"
-                  autocomplete="off"
-                />
-              </div>
-              <div class="field">
-                <label for="setup-password">Password</label>
-                <input
-                  id="setup-password"
-                  v-model="password"
-                  type="password"
-                  placeholder="Minimum 10 characters"
-                />
-                <div class="hint" :class="{ err: password && !passwordOk }">
-                  {{ passwordHint }}
-                </div>
-              </div>
-              <div class="field">
-                <label for="setup-confirm">Confirm password</label>
-                <input
-                  id="setup-confirm"
-                  v-model="passwordConfirm"
-                  type="password"
-                  placeholder="Repeat password"
-                />
-                <div class="hint" :class="{ ok: confirmHint.startsWith('ok'), err: confirmHint.startsWith('err') }">
-                  {{ confirmHint }}
-                </div>
-              </div>
-              <FormError v-if="error" :message="error" />
-              <div class="actions">
-                <AppButton variant="ghost" type="button" @click="backToWelcome">Back</AppButton>
-                <div class="spacer"></div>
-                <AppButton
-                  variant="primary"
-                  :disabled="!adminValid"
-                  :loading="loading"
-                  loading-text="Creating..."
-                >
-                  Continue
-                </AppButton>
-              </div>
-            </form>
+            <div class="eyebrow">Step 02 — Passkey</div>
+            <h1>Add a passkey</h1>
+            <p v-if="passkeysAvailable" class="sub">
+              This passkey signs you in to this {{ HOME_LABEL }}.
+            </p>
+            <PasskeyBlocked v-else-if="passkeyBlocked" :block="passkeyBlocked" />
+            <FormError v-if="error" :message="error" />
+            <div class="actions">
+              <AppButton variant="ghost" type="button" @click="backToWelcome">Back</AppButton>
+              <div class="spacer"></div>
+              <AppButton
+                variant="primary"
+                :disabled="!passkeysAvailable"
+                :loading="loading"
+                loading-text="Waiting..."
+                @click="submitAdmin"
+              >
+                Add passkey
+              </AppButton>
+            </div>
           </div>
 
           <div v-if="panel === 'library'" class="pane">

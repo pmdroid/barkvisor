@@ -10,6 +10,7 @@
 | `disks` | Default VM disk directory |
 | `apikeys` (default) | Create/show-once/revoke API keys |
 | `sshkeys` | Add SSH key, Set Default/Delete |
+| `passkeys` | Add/delete WebAuthn passkeys for this user |
 | `audit` | Audit entries filtered by resource group |
 
 ## How to get to it (user POV)
@@ -25,7 +26,7 @@ bun helpers/api-key-flow.mjs --base "$URL" --user admin --pass "$PASS" \
   --key-name "verify-proof" --dir "evidence/run-apikeys"
 ```
 
-It logs in via the form, opens `?tab=apikeys`, clicks **Create Key**, fills the placeholder input, submits, screenshots the show-once secret, closes with **Done**, then asserts `GET /api/auth/keys` contains the new row. Exit code 0 = proof complete.
+It logs in via `POST /api/auth/login` (JWT inject), opens `?tab=apikeys`, clicks **Create Key**, fills the placeholder input, submits, screenshots the show-once secret, closes with **Done**, then asserts `GET /api/auth/keys` contains the new row. Exit code 0 = proof complete.
 
 Plain tab screenshots:
 

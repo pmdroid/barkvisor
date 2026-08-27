@@ -15,7 +15,7 @@ When BarkVisor starts for the first time:
 
 ## Web-Based Setup
 
-Open your browser and navigate to `http://localhost:7777` (or `http://<host-ip>:7777`). Since no admin account exists yet, the UI presents a setup wizard.
+Open your browser and navigate to `http://localhost:7777`. Use **localhost** (or https + a DNS name), not a raw IP — passkeys reject `127.0.0.1`. Since no admin exists yet, the UI presents a setup wizard.
 
 Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, bridged/vmnet is Homebrew `socket_vmnet` (install it yourself; BarkVisor does not start that daemon). Linux uses a host bridge. NAT works without either.
 
@@ -33,18 +33,15 @@ barkvisor-agent join --code 'barkvisor://pair/v1?…'
 
 Or set `BARKVISOR_JOIN_CODE` in the daemon environment before first boot. Join is console-local (`POST http://127.0.0.1:7777/api/pairing/join`) and is not proxied through Home. Full walkthrough: [Home and pairing](home-and-pairing.md). See also [Installation (Linux)](getting-started-linux.md#api-only-device-no-spa).
 
-### 2. Create admin account
+### 2. Add a passkey
 
 ![Create admin account](/docs/onboarding/setup-admin.png)
 
-- **Username** — defaults to `admin`, but you can choose any name.
-- **Password** — minimum 10 characters. You must type it twice to confirm.
-- The password is hashed with **bcrypt** before being stored in the database. The plaintext password is never written to disk.
-- This account is used to log into the web UI. JWT tokens are issued on login, signed with the auto-generated secret stored in `<dataDir>/jwt-secret`.
+Click **Add passkey** and confirm with Touch ID, Windows Hello, or your password manager. There is no username or password in the web wizard.
 
-![Admin account filled in](/docs/onboarding/setup-admin-filled.png)
+Headless / CI still uses `POST /api/setup/admin` with a username and password.
 
-Click **Continue**. (If you see “Password already set”, setup was partially completed earlier — stop the daemon, delete the data directory, and start again for a clean wizard.)
+After the passkey is stored, the wizard continues. (If setup was partially completed earlier — stop the daemon, delete the data directory, and start again for a clean wizard.)
 
 ### 3. Sync image catalog
 
@@ -74,7 +71,7 @@ This Device is already a **Home** of one. Later, more Devices join that Home —
 
 Once setup is complete, BarkVisor runs as a **headless daemon** serving the web UI on port 7777. There is no native desktop UI — all management happens through the browser (macOS and Linux).
 
-On subsequent launches, the server detects the existing admin user and starts normally without showing the setup screen (you land on **Login** instead). After setup you can add a passkey under **Settings → Passkeys** for passwordless web sign-in.
+On subsequent launches, the server detects the existing admin and starts normally without showing the setup screen (you land on **Login** instead). Sign in with **Sign in with passkey**. Add more under **Settings → Passkeys**.
 
 ## Bridged networking (optional)
 

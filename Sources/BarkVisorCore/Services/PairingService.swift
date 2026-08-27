@@ -324,13 +324,10 @@ public enum PairingService {
         )
     }
 
-    /// First local admin with a password set. Used by redeem to attach identity.
+    /// First local admin (password or passkey). Used by redeem to attach identity.
     public static func loadAdminUser(db: DatabasePool) throws -> PairingAdminUser? {
         let user = try db.read { db in
-            try User
-                .filter(User.Columns.password != "")
-                .order(User.Columns.createdAt.asc)
-                .fetchOne(db)
+            try User.fetchProvisionedAdmin(db)
         }
         guard let user else { return nil }
         return PairingAdminUser(
@@ -416,8 +413,7 @@ public enum PairingService {
         }
         if let admin = input.adminUser,
            !admin.id.isEmpty,
-           !admin.username.isEmpty,
-           !admin.passwordHash.isEmpty {
+           !admin.username.isEmpty {
             copy.adminUser = admin
         }
         return copy

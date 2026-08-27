@@ -13,6 +13,8 @@ struct SetupController: RouteCollection {
         let setup = routes.grouped("api", "setup")
         setup.get("status", use: getStatus)
         setup.post("admin", use: createAdmin)
+        setup.post("passkeys", "register", "begin", use: passkeyRegisterBegin)
+        setup.post("passkeys", "register", "finish", use: passkeyRegisterFinish)
         setup.get("interfaces", use: listInterfaces)
         setup.post("bridge", use: installBridge)
         setup.post("bridge", "skip", use: skipBridge)
@@ -26,6 +28,8 @@ struct SetupController: RouteCollection {
 
     static let mutatingSetupPaths = [
         "/api/setup/admin",
+        "/api/setup/passkeys/register/begin",
+        "/api/setup/passkeys/register/finish",
         "/api/setup/library",
         "/api/setup/complete",
     ]
@@ -58,7 +62,7 @@ struct SetupController: RouteCollection {
     func getStatus(req: Request) async throws -> StatusResponse {
         let snapshot = try await req.db.read { db in
             try (
-                hasAdmin: User.filter(User.Columns.password != "").fetchCount(db) > 0,
+                hasAdmin: User.hasProvisionedAdmin(db),
                 libraryChosen: LibrarySettings.hasExplicitDirectory(from: db),
             )
         }
@@ -128,6 +132,78 @@ struct SetupController: RouteCollection {
         }
 
         return AdminResponse(success: true)
+    }
+
+    @Sendable
+    func passkeyRegisterBegin(req: Request) async throws -> Response {
+        guard !setupMiddleware.isSetupComplete else {
+            throw Abort(.notFound)
+        }
+        let body = (try? req.content.decode(PasskeyRegisterBeginRequest.self)) ?? PasskeyRegisterBeginRequest()
+        let user = try await req.db.write { db in
+            try Self.ensureSetupAdmin(db: db)
+        }
+        let rp = try PasskeyService.relyingParty(
+            hostHeader: req.headers[.host].first,
+            originHeader: req.headers[.origin].first,
+        )
+        let begin = try await PasskeyService.beginRegister(
+            user: user, name: body.name, rp: rp, db: req.db,
+        )
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+        return try Response(status: .ok, headers: headers, body: .init(data: begin.responseBody()))
+    }
+
+    @Sendable
+    func passkeyRegisterFinish(req: Request) async throws -> PasskeyCredentialResponse {
+        guard !setupMiddleware.isSetupComplete else {
+            throw Abort(.notFound)
+        }
+        let raw = try await req.body.collect(upTo: 1 << 20)
+        let data = Data(buffer: raw)
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let sessionId = obj["sessionId"] as? String,
+              !sessionId.isEmpty,
+              let credential = obj["credential"],
+              JSONSerialization.isValidJSONObject(credential)
+        else {
+            throw BarkVisorError.badRequest("Invalid passkey credential")
+        }
+        let user = try await req.db.write { db in
+            try Self.ensureSetupAdmin(db: db)
+        }
+        let rp = try PasskeyService.relyingParty(
+            hostHeader: req.headers[.host].first,
+            originHeader: req.headers[.origin].first,
+        )
+        let credentialJSON = try JSONSerialization.data(withJSONObject: credential)
+        return try await PasskeyService.finishRegister(
+            sessionId: sessionId,
+            credentialJSON: credentialJSON,
+            name: obj["name"] as? String,
+            userId: user.id,
+            rp: rp,
+            db: req.db,
+        )
+    }
+
+    static func ensureSetupAdmin(db: Database) throws -> User {
+        if let existing = try User.filter(User.Columns.username == "admin").fetchOne(db) {
+            return existing
+        }
+        if let existing = try User.fetchOne(db) {
+            return existing
+        }
+        let user = User(
+            id: UUID().uuidString,
+            username: "admin",
+            password: "",
+            createdAt: iso8601.string(from: Date()),
+            role: UserRolePolicy.roleForNewUser(existingUserCount: 0).rawValue,
+        )
+        try user.insert(db)
+        return user
     }
 
     /// Empty-password row: set the hash only. Setup must not overwrite `role`
@@ -333,12 +409,11 @@ struct SetupController: RouteCollection {
             throw Abort(.notFound)
         }
 
-        // Fetch the admin user (first user with a password set)
         let admin = try await req.db.read { db in
-            try User.filter(User.Columns.password != "").fetchOne(db)
+            try User.fetchProvisionedAdmin(db)
         }
         guard let admin else {
-            throw Abort(.badRequest, reason: "Admin user must be created before completing setup")
+            throw Abort(.badRequest, reason: "Add a passkey before completing setup")
         }
 
         let libraryChosen = try await req.db.read { db in
@@ -396,7 +471,7 @@ struct SetupController: RouteCollection {
     private func setupFinished(req: Request) async throws -> Bool {
         let snapshot = try await req.db.read { db in
             try (
-                hasAdmin: User.filter(User.Columns.password != "").fetchCount(db) > 0,
+                hasAdmin: User.hasProvisionedAdmin(db),
                 libraryChosen: LibrarySettings.hasExplicitDirectory(from: db),
             )
         }
