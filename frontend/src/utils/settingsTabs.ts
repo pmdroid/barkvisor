@@ -14,6 +14,8 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number]
 
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'apikeys'
 
+export const SSH_KEYS_SETTINGS_HREF = '/settings?tab=sshkeys'
+
 export function isSettingsTab(value: string): value is SettingsTab {
   return (SETTINGS_TABS as readonly string[]).includes(value)
 }

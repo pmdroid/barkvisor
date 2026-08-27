@@ -47,7 +47,6 @@ import { useTemplateStore } from '../stores/templates'
 import {
   collectTemplateDeployInputs,
   templateDeclaresSshKeys,
-  templateRequiresSshKeys,
 } from '../utils/templateDeploy'
 import {
   deviceBlockDevicesPath,
@@ -532,11 +531,7 @@ export function useCreateVMWizard(
       || galleryKind.value === 'coding-agent'
   })
 
-  const sshKeyRequired = computed(() =>
-    galleryKind.value === 'template' && selectedTemplate.value
-      ? templateRequiresSshKeys(selectedTemplate.value.inputs)
-      : false,
-  )
+  const sshKeyRequired = computed(() => showSshKeyRow.value)
 
   async function loadBlockDevices() {
     blockDevices.value = []
@@ -572,6 +567,23 @@ export function useCreateVMWizard(
     if (!keys.some((k) => k.id === selectedSSHKeyId.value)) {
       selectedSSHKeyId.value = keys.find((k) => k.isDefault)?.id ?? ''
     }
+  }
+
+  let sshRefreshSeq = 0
+
+  async function refreshSSHKeys() {
+    const seq = ++sshRefreshSeq
+    await sshKeyStore.fetchAll().catch(() => {})
+    if (seq !== sshRefreshSeq) return
+    applyHomeSSHKeySelection()
+  }
+
+  function onWindowFocus() {
+    void refreshSSHKeys()
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'visible') void refreshSSHKeys()
   }
 
   async function applyLoadedResources(deviceIsSelf: boolean, seq: number) {
@@ -675,18 +687,24 @@ export function useCreateVMWizard(
     }
   }
 
-  onMounted(async () => {
-    await refreshHomeLibrary()
-    await sshKeyStore.fetchAll().catch(() => {})
-    applyHomeSSHKeySelection()
+  onMounted(() => {
+    window.addEventListener('focus', onWindowFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    void refreshHomeLibrary()
+    void refreshSSHKeys()
   })
 
   onUnmounted(() => {
     placement.cancelPlacementScore()
+    window.removeEventListener('focus', onWindowFocus)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   })
 
   watch(currentStepLabel, (label) => {
-    if (label === 'Configure') void refreshHomeLibrary()
+    if (label === 'Configure') {
+      void refreshHomeLibrary()
+      void refreshSSHKeys()
+    }
   })
 
   watch(selectedHostId, async (next, prev) => {
@@ -751,7 +769,7 @@ export function useCreateVMWizard(
       case 'Configure':
         if (!name.value.trim() || !selectedDevicePlaceable()) return false
         if (galleryKind.value === 'custom' || galleryKind.value === 'windows') {
-          return !!selectedImageId.value
+          if (!selectedImageId.value) return false
         }
         if (sshKeyRequired.value && !selectedSSHKeyId.value) return false
         return cpuCount.value >= 1
@@ -962,14 +980,12 @@ export function useCreateVMWizard(
     return b + ' B'
   }
 
-  const sshKeyOptions = computed(() => {
-    const keys = sshKeyStore.keys.map((k) => ({
+  const sshKeyOptions = computed(() =>
+    sshKeyStore.keys.map((k) => ({
       value: k.id,
       label: k.isDefault ? `${k.name} (default)` : k.name,
-    }))
-    if (sshKeyRequired.value) return keys
-    return [...keys, { value: '', label: 'none' }]
-  })
+    })),
+  )
 
   return {
     sshKeys: computed(() => sshKeyStore.keys),
@@ -1045,6 +1061,8 @@ export function useCreateVMWizard(
     rawDiskAvailable,
     rawDiskWhy,
     showSshKeyRow,
+    sshKeyRequired,
+    refreshSSHKeys,
     networkBridged,
     isNAT,
     error,
