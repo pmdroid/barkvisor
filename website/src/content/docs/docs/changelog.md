@@ -8,6 +8,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Create VM puts the SSH key on Configure when the recipe needs it (not under Advanced). First login requires a key. No key: an error and a Settings → SSH Keys link (new tab). Coming back refreshes the list.
 - Web UI passkeys: **Settings → Passkeys** (`?tab=passkeys`) to add and delete credentials for this user, and **Sign in with passkey** on the login page (password stays). Needs https or localhost and a hostname, not a raw IP (`127.0.0.1` counts as an IP; use `localhost`). Native Console stays password-only.
 - Create VM from a catalog OS recipe (AlmaLinux, Ubuntu, Debian, …) no longer dies on `users:` in the recipe user-data. The VM is created after the image is ready; a first click that only starts the download says so and lists the image under Images.
 - Packages ship two binaries: `barkvisor` (SPA Home Device) and `barkvisor-agent` (API-only Device, symlink). Linux has `barkvisor.service` and `barkvisor-agent.service`; they Conflict. One process per Device.

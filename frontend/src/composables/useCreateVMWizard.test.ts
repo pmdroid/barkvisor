@@ -374,6 +374,89 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(wizard.canProceed()).toBe(true)
   })
 
+  test('SSH-needed template with no keys cannot proceed', async () => {
+    api.get = mock((url: string) => {
+      if (url.includes('/ssh-keys')) return Promise.resolve({ data: [] })
+      if (url === '/templates' || url.endsWith('/templates')) {
+        return Promise.resolve({ data: catalogTemplates })
+      }
+      if (url.includes('/home/devices/health')) {
+        return Promise.resolve({
+          data: { devices: healthDevices, totals: { ...emptyTotals, devices: healthDevices.length } },
+        })
+      }
+      return Promise.resolve({ data: [] })
+    }) as typeof api.get
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate()]
+    library.templates = catalogTemplates
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    expect(wizard.showSshKeyRow.value).toBe(true)
+    expect(wizard.sshKeyRequired.value).toBe(true)
+    expect(wizard.sshKeyOptions.value).toEqual([])
+    expect(wizard.selectedSSHKeyId.value).toBe('')
+    expect(wizard.canProceed()).toBe(false)
+  })
+
+  test('refreshSSHKeys picks a key added after empty', async () => {
+    let keys: SSHKey[] = []
+    api.get = mock((url: string) => {
+      if (url.includes('/ssh-keys')) return Promise.resolve({ data: keys })
+      if (url === '/templates' || url.endsWith('/templates')) {
+        return Promise.resolve({ data: catalogTemplates })
+      }
+      if (url.includes('/home/devices/health')) {
+        return Promise.resolve({
+          data: { devices: healthDevices, totals: { ...emptyTotals, devices: healthDevices.length } },
+        })
+      }
+      return Promise.resolve({ data: [] })
+    }) as typeof api.get
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate()]
+    library.templates = catalogTemplates
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    expect(wizard.selectedSSHKeyId.value).toBe('')
+    keys = [demoKey()]
+    await wizard.refreshSSHKeys()
+    expect(wizard.selectedSSHKeyId.value).toBe('k1')
+    expect(wizard.canProceed()).toBe(true)
+  })
+
+  test('custom cloud cannot leave configure without an SSH key', async () => {
+    patchSelfDevice()
+    const image = readyImage({
+      id: 'img-cloud',
+      name: 'Debian cloud',
+      imageType: 'cloud-image',
+      arch: 'arm64',
+      sourceUrl: 'https://example.test/debian.qcow2',
+    })
+    const library = useHomeLibraryStore()
+    catalogImages = [image]
+    library.images = [{
+      ...image,
+      libraryKey: homeImageKey(image),
+      sourceHostIds: ['desk'],
+      copies: [{ hostId: 'desk', imageId: image.id, status: 'ready' }],
+    }]
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryCustom()
+    await waitReady(wizard)
+    wizard.mode.value = 'cloud'
+    wizard.selectedImageId.value = homeImageKey(image)
+    wizard.selectedSSHKeyId.value = ''
+    expect(wizard.showSshKeyRow.value).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
+    useSSHKeyStore().keys = [demoKey()]
+    wizard.selectedSSHKeyId.value = 'k1'
+    expect(wizard.canProceed()).toBe(true)
+  })
+
   test('template deploy omits empty password and sends SSH', async () => {
     patchSelfDevice()
     const library = useHomeLibraryStore()
