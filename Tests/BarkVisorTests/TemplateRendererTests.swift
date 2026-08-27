@@ -33,6 +33,20 @@ struct TemplateRendererTests {
         #expect(!result.contains("{{password_hash}}"), "Placeholder should be replaced")
     }
 
+    @Test func `empty password locks passwd and drops hash`() throws {
+        let template =
+            "users:\n  - name: debian\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n"
+        let result = try TemplateRenderer.render(template: template, inputs: [:])
+        #expect(result.contains("lock_passwd: true"))
+        #expect(!result.contains("    passwd:"))
+        #expect(!result.contains("{{password_hash}}"))
+        let empty = try TemplateRenderer.render(
+            template: template, inputs: ["password": ""],
+        )
+        #expect(empty.contains("lock_passwd: true"))
+        #expect(!empty.contains("    passwd:"))
+    }
+
     // MARK: - ssh_keys_yaml
 
     @Test func `ssh keys YAML generation`() throws {

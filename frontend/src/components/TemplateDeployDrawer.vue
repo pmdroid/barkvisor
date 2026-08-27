@@ -47,7 +47,12 @@ import {
 } from '../utils/placement'
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
 import { imageProgressPercent, imageRowDownloadPercent } from '../utils/imageProgress'
-import { natWebUILinks, templateDeclaresSshKeys } from '../utils/templateDeploy'
+import {
+  collectTemplateDeployInputs,
+  natWebUILinks,
+  templateDeclaresSshKeys,
+  templateRequiresSshKeys,
+} from '../utils/templateDeploy'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
 const emit = defineEmits(['close', 'deployed'])
@@ -339,15 +344,18 @@ onUnmounted(() => {
 
 function canProceed(): boolean {
   if (step.value === 1) return !!vmName.value.trim()
-  if (step.value === 2 && visibleInputs.value.length > 0) {
-    return visibleInputs.value
-      .filter(i => i.required)
-      .every(i => {
-        const val = inputValues.value[i.id] ?? ''
-        if (!val) return false
-        if (i.minLength && val.length < i.minLength) return false
-        return true
-      })
+  if (step.value === 2) {
+    if (templateRequiresSshKeys(props.template.inputs) && !selectedSSHKeyId.value) return false
+    if (visibleInputs.value.length > 0) {
+      return visibleInputs.value
+        .filter(i => i.required)
+        .every(i => {
+          const val = inputValues.value[i.id] ?? ''
+          if (!val) return false
+          if (i.minLength && val.length < i.minLength) return false
+          return true
+        })
+    }
   }
   return true
 }
@@ -365,13 +373,13 @@ function buildRequest(): DeployTemplateRequest {
   if (!resolved) {
     throw new Error("Not in this Device's Library")
   }
-  const inputs = { ...inputValues.value }
-  if (showsSshPicker.value) {
-    const selectedKey = sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
-    if (selectedKey) {
-      inputs.ssh_keys = authorizedKeyForCloudInit(selectedKey)
-    }
-  }
+  const selectedKey = showsSshPicker.value
+    ? sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
+    : undefined
+  const inputs = collectTemplateDeployInputs(resolved.inputs, {
+    values: inputValues.value,
+    sshAuthorizedKey: selectedKey ? authorizedKeyForCloudInit(selectedKey) : undefined,
+  })
   return {
     templateId: resolved.id,
     vmName: vmName.value.trim(),
