@@ -151,25 +151,27 @@ struct PlatformPathsInstalledLayoutTests {
     }
 
     @Test func `path argv0 resolves homebrew prefix not usr local`() {
+        let brewBin = "/opt/homebrew/bin/barkvisor-layout-test"
         let path = "/opt/homebrew/bin:/usr/bin:/bin"
         let exe = PlatformPaths.resolvedExecutablePath(
-            argument: "barkvisor",
+            argument: "barkvisor-layout-test",
             pathEnvironment: path,
             currentDirectory: "/var/lib/barkvisor",
-            isExecutable: { $0 == "/opt/homebrew/bin/barkvisor" },
+            isExecutable: { $0 == brewBin },
         )
-        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(exe == brewBin)
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
     }
 
     @Test func `absolute argv0 keeps homebrew prefix`() {
+        let brewBin = "/opt/homebrew/bin/barkvisor-layout-test"
         let exe = PlatformPaths.resolvedExecutablePath(
-            argument: "/opt/homebrew/bin/barkvisor",
+            argument: brewBin,
             pathEnvironment: "/usr/bin",
             currentDirectory: "/var/lib/barkvisor",
             isExecutable: { _ in false },
         )
-        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(exe == brewBin)
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
     }
 
@@ -185,20 +187,21 @@ struct PlatformPathsInstalledLayoutTests {
     }
 
     @Test func `empty PATH segment is cwd per POSIX`() {
+        let brewBin = "/opt/homebrew/bin/barkvisor-layout-test"
         let exe = PlatformPaths.resolvedExecutablePath(
-            argument: "barkvisor",
+            argument: "barkvisor-layout-test",
             pathEnvironment: ":/usr/bin",
             currentDirectory: "/opt/homebrew/bin",
-            isExecutable: { $0 == "/opt/homebrew/bin/barkvisor" },
+            isExecutable: { $0 == brewBin },
         )
-        #expect(exe == "/opt/homebrew/bin/barkvisor")
+        #expect(exe == brewBin)
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
     }
 
     @Test func `non executable cwd PATH hit is skipped`() {
-        let brew = "/opt/homebrew/bin/barkvisor"
+        let brew = "/opt/homebrew/bin/barkvisor-layout-test"
         let exe = PlatformPaths.resolvedExecutablePath(
-            argument: "barkvisor",
+            argument: "barkvisor-layout-test",
             pathEnvironment: ":/opt/homebrew/bin",
             currentDirectory: "/tmp/not-bin",
             isExecutable: { $0 == brew },
@@ -209,12 +212,12 @@ struct PlatformPathsInstalledLayoutTests {
 
     @Test func `relative argv0 is resolved from cwd`() {
         let exe = PlatformPaths.resolvedExecutablePath(
-            argument: "./bin/barkvisor",
+            argument: "./bin/barkvisor-layout-test",
             pathEnvironment: "/usr/bin",
             currentDirectory: "/opt/homebrew",
             isExecutable: { _ in false },
         )
-        #expect(exe.hasSuffix("/opt/homebrew/bin/barkvisor"))
+        #expect(exe.hasSuffix("/opt/homebrew/bin/barkvisor-layout-test"))
         #expect(PlatformPaths.installPrefix(executablePath: exe) == "/opt/homebrew")
     }
 
