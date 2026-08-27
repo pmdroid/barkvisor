@@ -205,6 +205,26 @@ struct CodingAgentImageTests {
         #expect(kept.workloadClass == "house")
         #expect(kept.cloudInit?.userData?.contains("vim") == true)
         #expect(kept.cloudInit?.userData?.contains("ttyd") != true)
+
+        let catalog = CreateVMParams(
+            name: "coder",
+            vmType: "linux-arm64",
+            cpuCount: 2,
+            memoryMB: 1_024,
+            diskSizeGB: 10,
+            cloudImageId: "img-1",
+            cloudInit: CloudInitConfig(
+                sshAuthorizedKeys: nil,
+                userData: "users:\n  - name: alma\n",
+            ),
+            allowCatalogIdentityKeys: true,
+        )
+        let catalogKept = try CodingAgentImage.applyingCreateDefaults(
+            params: catalog,
+            imageName: "Coding Agent",
+        )
+        #expect(catalogKept.allowCatalogIdentityKeys == true)
+        #expect(catalogKept.cloudInit?.userData?.contains("users:") == true)
     }
 
     @Test func `home grant is fail-closed and ignored when user-data exists`() throws {
