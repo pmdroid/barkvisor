@@ -3,7 +3,6 @@ import Observation
 
 enum AppRoute: String, CaseIterable, Identifiable, Hashable {
     case dashboard
-    case chat
     case devices
     case workloads
     case models
@@ -20,7 +19,6 @@ enum AppRoute: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .dashboard: "Dashboard"
-        case .chat: "Chat"
         case .devices: Copy.devices
         case .workloads: Copy.workloads
         case .models: "Ollama"
@@ -43,7 +41,6 @@ enum SessionPhase: Equatable {
 
 enum PhoneTab: String, Hashable, CaseIterable {
     case home
-    case chat
     case library
     case models
     case devices
@@ -52,13 +49,13 @@ enum PhoneTab: String, Hashable, CaseIterable {
     static let storageKey = "phoneTab"
 
     static func restored(_ raw: String?) -> PhoneTab {
-        PhoneTab(rawValue: raw ?? "") ?? .home
+        if raw == "chat" { return .home }
+        return PhoneTab(rawValue: raw ?? "") ?? .home
     }
 
     init?(route: AppRoute) {
         switch route {
         case .dashboard: self = .home
-        case .chat: self = .chat
         case .library: self = .library
         case .models: self = .models
         case .devices: self = .devices
@@ -70,7 +67,6 @@ enum PhoneTab: String, Hashable, CaseIterable {
     var appRoute: AppRoute {
         switch self {
         case .home: .dashboard
-        case .chat: .chat
         case .library: .library
         case .models: .models
         case .devices: .devices
@@ -312,8 +308,6 @@ final class AppModel {
         ollamaCatalog = nil
         ollamaSettings = nil
         remoteAccess = nil
-        if route == .chat { route = .dashboard }
-        if phoneTab == .chat { persistPhoneTab(.home) }
         phase = url == nil ? .connect : .login
         banner = nil
         if let url, presented != nil || access != nil {
@@ -358,8 +352,6 @@ final class AppModel {
         ollamaCatalog = nil
         ollamaSettings = nil
         remoteAccess = nil
-        if route == .chat { route = .dashboard }
-        if phoneTab == .chat { persistPhoneTab(.home) }
         phase = .connect
         banner = "Device URL changed. Sign in again."
     }
@@ -774,8 +766,6 @@ final class AppModel {
         switch tab {
         case .home:
             await refreshHome()
-        case .chat:
-            await refreshOllamaCatalog()
         case .library:
             await refreshLibrary()
         case .models:
@@ -1115,10 +1105,6 @@ final class AppModel {
             ollamaCatalog = nil
         }
         await refreshOllamaSettings()
-        if !showsChat {
-            if route == .chat { route = .dashboard }
-            if phoneTab == .chat { persistPhoneTab(.home) }
-        }
     }
 
     private func refreshHomeUnion() async {
@@ -1201,8 +1187,6 @@ final class AppModel {
             await refreshLibrary()
         case .models:
             await refreshOllama()
-        case .chat:
-            await refreshOllamaCatalog()
         default:
             await refreshDeviceScoped()
         }

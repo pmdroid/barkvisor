@@ -64,7 +64,7 @@ Stable handles (prefer these, never coordinates):
 | Handle | Where |
 |---|---|
 | Login | `.login-card input[type=text]` (Username), `input[type=password]`, button text **Sign In** → lands on `/vms` |
-| Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Chat, Images, Disks, Networks, Repositories, Logs, Settings |
+| Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Images, Disks, Networks, Repositories, Logs, Settings |
 | Settings tabs | deep links `/settings?tab=home\|pairing\|library\|disks\|apikeys\|sshkeys\|audit` |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
 | Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |

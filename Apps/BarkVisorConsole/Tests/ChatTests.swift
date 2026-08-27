@@ -44,9 +44,9 @@ struct ChatTests {
         #expect(!ChatAvailability.visible(anyReachable: true, modelCount: 0))
         #expect(!ChatAvailability.visible(catalog: nil))
         #expect(ChatAvailability.defaultModel(in: nil).isEmpty)
-        #expect(AppRoute.chat.title == "Chat")
-        #expect(AppRoute.chat.symbol == "bubble.left.and.bubble.right")
-        #expect(PhoneTab.chat.rawValue == "chat")
+        #expect(!AppRoute.allCases.contains(where: { $0.rawValue == "chat" }))
+        #expect(!PhoneTab.allCases.contains(where: { $0.rawValue == "chat" }))
+        #expect(PhoneTab.restored("chat") == .home)
     }
 
     @Test func `stale deltas stay on the originating assistant turn`() {

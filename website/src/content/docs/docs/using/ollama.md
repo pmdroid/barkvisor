@@ -33,5 +33,4 @@ Toolbar overflow menu → **More → Export JSON** dumps the current model inven
 
 ## Related
 
-- [Chat](/docs/using/chat/) — talk to these models
 - [Settings: API Keys](/docs/using/settings/api-keys/)
