@@ -6,6 +6,7 @@ export const SETTINGS_TABS = [
   'disks',
   'apikeys',
   'sshkeys',
+  'passkeys',
   'audit',
 ] as const
 

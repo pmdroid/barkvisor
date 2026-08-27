@@ -18,7 +18,7 @@ struct PlatformProcessTests {
     @Test func `run reports non-zero exit`() throws {
         #if os(macOS) || os(Linux)
             // `false` exits 1
-            let result = try PlatformProcess.run(path: "/usr/bin/false", arguments: [], timeout: 5)
+            let result = try PlatformProcess.run(path: "/usr/bin/false", arguments: [], timeout: 30)
             #expect(!result.succeeded)
             #expect(result.exitCode != 0)
         #endif

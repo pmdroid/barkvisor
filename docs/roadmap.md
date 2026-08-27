@@ -50,7 +50,7 @@ A Home that survives a Device dying, not only a Device that survives the Home go
 - Tailscale or WireGuard so a Home works off the LAN (v1: detect Tailscale, advertise tailnet, optional require-tailnet; WireGuard is docs-only)
 
 - Friendly service URLs
-- Passkeys and two-factor login
+- Two-factor login (TOTP). Passkeys for web sign-in already ship.
 - Energy-aware placement (prefer the Device that is already awake)
 
 These stay product ideas until the Home you have now is boring to operate.

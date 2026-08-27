@@ -135,7 +135,7 @@ const map = {
   'using-settings.md': {
     out: 'using/settings/index.md',
     title: 'Settings',
-    description: 'The seven Settings tabs and what each one controls.',
+    description: 'The eight Settings tabs and what each one controls.',
   },
   'settings-home.md': {
     out: 'using/settings/home.md',
@@ -166,6 +166,11 @@ const map = {
     out: 'using/settings/ssh-keys.md',
     title: 'Settings: SSH Keys',
     description: 'Public keys injected into guests, defaults, and deletion.',
+  },
+  'settings-passkeys.md': {
+    out: 'using/settings/passkeys.md',
+    title: 'Settings: Passkeys',
+    description: 'WebAuthn passkeys for passwordless web sign-in.',
   },
   'settings-audit-log.md': {
     out: 'using/settings/audit-log.md',
@@ -221,6 +226,7 @@ function fixLinks(body) {
     .replace(/\]\(settings-disks\.md(#[^)]*)?\)/g, '](/docs/using/settings/disks/$1)')
     .replace(/\]\(settings-api-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/api-keys/$1)')
     .replace(/\]\(settings-ssh-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/ssh-keys/$1)')
+    .replace(/\]\(settings-passkeys\.md(#[^)]*)?\)/g, '](/docs/using/settings/passkeys/$1)')
     .replace(/\]\(settings-audit-log\.md(#[^)]*)?\)/g, '](/docs/using/settings/audit-log/$1)')
     .replace(/\]\(changelog\.md(#[^)]*)?\)/g, '](/docs/changelog/$1)')
     .replace(/\]\(roadmap\.md(#[^)]*)?\)/g, '](/docs/roadmap/$1)')
