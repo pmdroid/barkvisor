@@ -435,7 +435,7 @@ struct WorkloadSpecProjectorTests {
             metadata: WorkloadMetadata(name: "n"),
             spec: WorkloadSpecBody(
                 resources: WorkloadResources(
-                    cpu: max(1, PlatformHost.cpuCount - 2),
+                    cpu: VMLifecycleService.maxAssignableCPUs(),
                     memoryMb: 512,
                 ),
             ),

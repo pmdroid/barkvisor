@@ -109,6 +109,7 @@ describe('useCreateVMWizard (magazine)', () => {
 
   test('host buffer reserves two cores and four GB', () => {
     expect(vmCpuCap(10)).toBe(8)
+    expect(vmCpuCap(3)).toBe(2)
     expect(vmMemoryCapMB(32768)).toBe(28672)
   })
 

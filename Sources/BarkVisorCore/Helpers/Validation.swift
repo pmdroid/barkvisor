@@ -1,6 +1,16 @@
 import Foundation
 
 /// RFC-style hostname slug from a display VM name (cloud-init local-hostname).
+public func hostCPUReserve(_ hostCpuCount: Int) -> Int {
+    if hostCpuCount <= 1 { return 0 }
+    if hostCpuCount < 4 { return 1 }
+    return 2
+}
+
+public func maxAssignableHostCPUs(_ hostCpuCount: Int) -> Int {
+    max(1, hostCpuCount - hostCPUReserve(hostCpuCount))
+}
+
 public func hostnameFromVMName(_ name: String) -> String {
     var slug = name.trimmingCharacters(in: .whitespaces).lowercased()
     slug = slug.replacingOccurrences(of: " ", with: "-")

@@ -1,9 +1,16 @@
 export const HOST_CPU_RESERVE = 2
 export const HOST_MEMORY_RESERVE_MB = 4096
 
+export function hostCPUReserve(hostCpuCount: number): number {
+  const host = typeof hostCpuCount === 'number' && hostCpuCount >= 1 ? hostCpuCount : 1
+  if (host <= 1) return 0
+  if (host < 4) return 1
+  return HOST_CPU_RESERVE
+}
+
 export function vmCpuCap(hostCpuCount: number): number {
   const host = typeof hostCpuCount === 'number' && hostCpuCount >= 1 ? hostCpuCount : 1
-  return Math.max(1, host - HOST_CPU_RESERVE)
+  return Math.max(1, host - hostCPUReserve(host))
 }
 
 export function vmMemoryCapMB(hostMemoryMB: number | null | undefined): number | null {

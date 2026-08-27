@@ -132,19 +132,23 @@ struct CloudInitServiceTests {
     }
 
     @Test func `generateISO meta-data uses hostname slug`() throws {
-        let iso = try CloudInitService.generateISO(
-            vmID: "vm-hostname-test",
-            vmName: "Ubuntu Server",
-            sshKeys: [],
-            userData: nil,
-        )
+        let vmID = "vm-hostname-test"
+        do {
+            _ = try CloudInitService.generateISO(
+                vmID: vmID,
+                vmName: "Ubuntu Server",
+                sshKeys: [],
+                userData: nil,
+            )
+        } catch BarkVisorError.cloudInitFailed {}
+        let dir = CloudInitService.generatedISOURL(vmID: vmID).deletingLastPathComponent()
         let meta = try String(
-            contentsOf: iso.deletingLastPathComponent().appendingPathComponent("meta-data"),
+            contentsOf: dir.appendingPathComponent("meta-data"),
             encoding: .utf8,
         )
         #expect(meta.contains("local-hostname: ubuntu-server"))
         let userData = try String(
-            contentsOf: iso.deletingLastPathComponent().appendingPathComponent("user-data"),
+            contentsOf: dir.appendingPathComponent("user-data"),
             encoding: .utf8,
         )
         #expect(userData.contains("hostname: ubuntu-server"))

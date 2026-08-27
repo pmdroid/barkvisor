@@ -603,7 +603,7 @@ extension VMLifecycleService {
     }
 
     static func maxAssignableCPUs() -> Int {
-        max(1, PlatformHost.cpuCount - 2)
+        maxAssignableHostCPUs(PlatformHost.cpuCount)
     }
 
     static func maxAssignableMemoryMB() -> Int {
@@ -614,9 +614,10 @@ extension VMLifecycleService {
     static func validateCPUCount(_ cpuCount: Int) throws {
         let maxCPUs = maxAssignableCPUs()
         let hostCPUs = PlatformHost.cpuCount
+        let reserved = hostCPUReserve(hostCPUs)
         guard cpuCount >= 1, cpuCount <= maxCPUs else {
             throw BarkVisorError.badRequest(
-                "cpuCount must be between 1 and \(maxCPUs) (host has \(hostCPUs) logical CPU\(hostCPUs == 1 ? "" : "s"); 2 reserved for the Device)",
+                "cpuCount must be between 1 and \(maxCPUs) (host has \(hostCPUs) logical CPU\(hostCPUs == 1 ? "" : "s"); \(reserved) reserved for the Device)",
             )
         }
     }
