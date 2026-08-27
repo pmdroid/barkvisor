@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import api from '../api/client'
 import type { HomeDeviceHealthSnapshot, UpdateVMRequest, VM, WorkloadSpec } from '../api/types'
+import type { CreateListPhase } from '../utils/workloadListStatus'
 import {
   canFetchDeviceWorkloads,
   deviceVmActionPath,
@@ -25,6 +26,9 @@ export type HomeWorkloadRow = {
   label: string
   role: string
   reachable: boolean
+  createPhase?: CreateListPhase
+  createDetail?: string
+  createPercent?: number | null
 }
 
 function actionKey(hostId: string, vmId: string): string {

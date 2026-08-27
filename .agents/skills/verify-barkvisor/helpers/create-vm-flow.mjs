@@ -155,8 +155,19 @@ try {
     flows.push({ flow: 'disk-new', ok: await page.locator('.mag-dcard.on', { hasText: 'New disk' }).count() > 0 })
     flows.push({ flow: 'disk-raw-macos', ok: rawOff })
     await page.locator('.mag-btn.primary:has-text("Create")').click()
-    await page.waitForTimeout(3000)
+    await page.waitForSelector('.mag-frame', { state: 'hidden', timeout: 15000 }).catch(() => {})
     magError = ((await page.locator('.mag-error').textContent().catch(() => '')) || magError || '').trim()
+    const magOpen = await page.locator('.mag-frame').count()
+    const listRow = page.locator('tr', { hasText: vmName })
+    const listVisible = magOpen === 0
+      && await listRow.waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
+    const listText = listVisible ? ((await listRow.innerText().catch(() => '')) || '') : ''
+    flows.push({ flow: 'magazine-closes', ok: magOpen === 0 && !magError })
+    flows.push({
+      flow: 'list-progress',
+      ok: listVisible && /Downloading|Decompressing|Provisioning|Starting|Running|Stopped/i.test(listText),
+      statusText: listText,
+    })
     shots.push(`${dir}/08-after-create.png`)
     await page.screenshot({ path: shots.at(-1), fullPage: true })
   }

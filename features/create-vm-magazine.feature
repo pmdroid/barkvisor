@@ -65,4 +65,5 @@ Feature: Create VM magazine wizard
     When I pick the SSH key and a new disk
     And I click Create
     Then the request must not include an empty password
-    And the Workload should be created or the image should start downloading
+    And the magazine should close
+    And the Workloads list should show downloading or provisioning for that VM

@@ -20,7 +20,6 @@ import type {
   Network,
 } from '../api/types'
 import { apiErrorMessage } from '../api/errors'
-import { useTaskPoller } from './useTaskPoller'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
@@ -44,6 +43,7 @@ import {
 } from '../utils/hostBuffer'
 import { defaultVMNameFromLabel } from '../utils/hostnameFromVMName'
 import { useTemplateStore } from '../stores/templates'
+import { useCreateProgressStore } from '../stores/createProgress'
 import {
   collectTemplateDeployInputs,
   templateDeclaresSshKeys,
@@ -57,8 +57,6 @@ import {
   defaultPickedHostId,
   deviceCapabilitiesPath,
   devicePath,
-  deviceTaskPath,
-  isSelfDevice,
   resolveSelectedDevice,
   selectedHostIsLive,
   usesLocalDeviceInventory,
@@ -124,6 +122,7 @@ export function useCreateVMWizard(
   const diskStore = useDiskStore()
   const devicesStore = useDevicesStore()
   const homeLibrary = useHomeLibraryStore()
+  const createProgress = useCreateProgressStore()
 
   const selectedHostId = ref(opts.initialHostId ?? '')
   const userOverrodeHost = ref(!!opts.initialHostId)
@@ -872,21 +871,14 @@ export function useCreateVMWizard(
           error.value = "Not in this Device's Library"
           return
         }
-        const result = await templateStore.deploy(buildTemplateDeployRequest(), target ?? undefined)
-        if (result.status === 'downloading') {
-          toast.info('Downloading the image. It shows under Images until the VM is created.')
-        }
-        if (result.taskID) {
-          toast.info(`VM "${name.value.trim()}" is provisioning...`)
-          const { poll } = useTaskPoller()
-          const event = await poll(result.taskID, {
-            path: target ? deviceTaskPath(target, result.taskID) : undefined,
-          })
-          if (event.status !== 'completed') {
-            error.value = event.error || 'Provisioning failed'
-            return
-          }
-        }
+        const request = buildTemplateDeployRequest()
+        const result = await templateStore.deploy(request, target ?? undefined)
+        void createProgress.followTemplate({
+          name: name.value.trim(),
+          request,
+          device: target ?? undefined,
+          result,
+        })
         emit('created')
         return
       }
@@ -955,17 +947,11 @@ export function useCreateVMWizard(
       })
 
       const result = await vmStore.create(req, target ?? undefined)
-      if (result.taskID && target && !isSelfDevice(target)) {
-        toast.info(`VM "${name.value.trim()}" is provisioning on the picked Device...`)
-        const { poll } = useTaskPoller()
-        const event = await poll(result.taskID, { path: deviceTaskPath(target, result.taskID) })
-        if (event.status !== 'completed') {
-          error.value = event.error || 'Provisioning failed'
-          return
-        }
-      } else if (result.taskID) {
-        toast.info(`VM "${name.value.trim()}" is provisioning...`)
-      }
+      void createProgress.followVM({
+        vm: result.vm,
+        taskID: result.taskID,
+        device: target ?? undefined,
+      })
       emit('created')
     } catch (e: any) {
       error.value = apiErrorMessage(e)
