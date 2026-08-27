@@ -34,15 +34,32 @@ struct SetupConsoleLocalTests {
         }
     }
 
-    @Test func `pairing join leaves setup open until wizard finishes`() throws {
+    @Test func `pairing join closes setup after shared identity lands`() throws {
         let (dir, pool) = try isolatedPool()
         defer { try? FileManager.default.removeItem(at: dir) }
         let setup = SetupMiddleware(dbPool: pool)
         #expect(!setup.isSetupComplete)
-        for path in SetupController.mutatingSetupPaths {
-            #expect(SetupMiddleware.isSetupAPIPath(path))
+        try pool.write { db in
+            try User(
+                id: "u-join",
+                username: "admin",
+                password: "hashed-from-home",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.admin.rawValue,
+            ).insert(db)
         }
+        #expect(!setup.isSetupComplete)
+        setup.refreshFromDatabase()
+        #expect(setup.isSetupComplete)
+    }
+
+    @Test func `refreshFromDatabase keeps complete when sqlite read fails`() throws {
+        let (dir, pool) = try isolatedPool()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let setup = SetupMiddleware(dbPool: pool)
         setup.markComplete()
+        try pool.close()
+        setup.refreshFromDatabase()
         #expect(setup.isSetupComplete)
     }
 
