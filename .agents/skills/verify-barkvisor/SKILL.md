@@ -69,6 +69,15 @@ Stable handles (prefer these, never coordinates):
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
 | Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |
 | Create Key modal | button **Create Key** → input placeholder `e.g. terraform, ci-pipeline` → **Create** → heading **API Key Created** |
+| Create VM | button **Create VM** → `.mag-frame` gallery (`.mag-card` / `.mag-custom`) → Configure → Disk → **Create** |
+
+Magazine Create VM (gallery kinds, disk cards, light mode, template deploy):
+
+```sh
+bun .agents/skills/verify-barkvisor/helpers/create-vm-flow.mjs \
+  --base "$URL" --user admin --pass dev-instance-pass \
+  --dir ".agents/skills/verify-barkvisor/evidence/run-create-vm"
+```
 
 ## Evidence
 
@@ -103,5 +112,6 @@ Reads `current/meta.json`, kills exactly that pid (SIGTERM → SIGKILL after ~5 
 | `doctor.sh` | `helpers/doctor.sh URL [USER] [PASS]` | read-only "worth driving?" check |
 | `shot.mjs` | `helpers/shot.mjs --base URL [--token T \| --user U --pass P] --route R --out F.png [--raw] [--wait-ms N] [--scrub /from/to]…` | login (or token inject) + navigate + full-page screenshot, with DOM redaction |
 | `api-key-flow.mjs` | `helpers/api-key-flow.mjs --base URL --user U --pass P --key-name NAME --dir EVIDENCE_DIR` | create-key flow with assertions + evidence |
+| `create-vm-flow.mjs` | `helpers/create-vm-flow.mjs --base URL --user U --pass P --dir EVIDENCE_DIR` | magazine Create VM flows + template deploy |
 | `setup-flow.mjs` | `helpers/setup-flow.mjs --base URL --dir EVIDENCE_DIR [--join-payload URI]` | drive the first-run wizard step by step; asserts `setup/status complete` |
 | `down.sh` | `helpers/down.sh [--name TAG]` | stop instance, clean temp state |
