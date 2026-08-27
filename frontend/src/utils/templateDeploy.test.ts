@@ -1,11 +1,44 @@
 import { describe, expect, test } from 'bun:test'
-import { natWebUILinks, templateDeclaresSshKeys } from './templateDeploy'
+import {
+  collectTemplateDeployInputs,
+  natWebUILinks,
+  templateDeclaresSshKeys,
+  templateRequiresSshKeys,
+} from './templateDeploy'
 
 describe('templateDeploy', () => {
   test('SSH picker follows a declared ssh_keys input', () => {
     expect(templateDeclaresSshKeys([{ id: 'username' }, { id: 'ssh_keys' }])).toBe(true)
     expect(templateDeclaresSshKeys([{ id: 'ollama_url' }])).toBe(false)
     expect(templateDeclaresSshKeys([])).toBe(false)
+  })
+
+  test('SSH is required only when the recipe says so', () => {
+    expect(templateRequiresSshKeys([{ id: 'ssh_keys', required: true }])).toBe(true)
+    expect(templateRequiresSshKeys([{ id: 'ssh_keys', required: false }])).toBe(false)
+    expect(templateRequiresSshKeys([{ id: 'password', required: true }])).toBe(false)
+  })
+
+  test('deploy inputs skip empty password and attach SSH', () => {
+    expect(
+      collectTemplateDeployInputs(
+        [
+          { id: 'username', default: 'debian', required: true },
+          { id: 'password', required: true },
+          { id: 'ssh_keys', required: true },
+        ],
+        { sshAuthorizedKey: 'ssh-ed25519 AAAA' },
+      ),
+    ).toEqual({ username: 'debian', ssh_keys: 'ssh-ed25519 AAAA' })
+    expect(
+      collectTemplateDeployInputs(
+        [
+          { id: 'username', default: 'pihole' },
+          { id: 'password', required: true },
+        ],
+        { values: { username: 'pihole', password: 'secret' } },
+      ),
+    ).toEqual({ username: 'pihole', password: 'secret' })
   })
 
   test('Open links are This Device NAT with httpPath only', () => {
