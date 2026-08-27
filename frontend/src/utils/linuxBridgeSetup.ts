@@ -133,3 +133,14 @@ export function macosSocketVmnetStatusSummary(
   }
   return 'This Device is not ready for Bridged networks yet. Install socket_vmnet with Homebrew, then Re-check.'
 }
+
+export function hostBridgeSetupPending(args: {
+  supportsBridgedNetworking: boolean
+  hasBridgedNetwork: boolean
+  hostReady: boolean | undefined
+}): boolean {
+  if (!args.supportsBridgedNetworking) return false
+  if (args.hasBridgedNetwork) return false
+  if (args.hostReady === true) return false
+  return true
+}

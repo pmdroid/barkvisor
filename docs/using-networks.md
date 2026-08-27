@@ -6,12 +6,12 @@
 
 ## Toolbar
 
-- **Bridge setup** — guided setup when a planned bridge is not finished on the host yet
+- **Bridge setup** — copyable host commands when the Device is not ready for bridged networks yet
 - **Create Network** — opens the create modal
 
 ## The list
 
-Networks render on the left; rows still waiting on their host bridge show as amber **Bridge · Pending setup**.
+Networks render on the left. A Device that can do bridged networking but is not host-ready yet shows as amber **Bridge · Pending**. A Device that already has `br0` / `socket_vmnet` ready does not — create a Bridged network from **Create Network**.
 
 ## Inspect pane
 
@@ -21,7 +21,8 @@ Selecting a network shows:
 - NAT subnet
 - Attached Workloads
 - Interfaces table
-- Guided steps to finish a pending bridge
+
+Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) and **Re-check**.
 
 ## Create Network
 

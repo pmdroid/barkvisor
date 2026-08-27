@@ -27,7 +27,6 @@ import { useDevicesStore } from '../stores/devices'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
-import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
   createVMIncompatibilityReasons,
   DEVICE_IMAGE_UNFETCHABLE_REASON,
