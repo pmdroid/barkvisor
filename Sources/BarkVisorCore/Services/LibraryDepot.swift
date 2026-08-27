@@ -30,6 +30,21 @@ public enum LibraryDepotHTTP {
         let encoded = sourceUrl.addingPercentEncoding(withAllowedCharacters: allowed) ?? sourceUrl
         return "sourceUrl=\(encoded)"
     }
+
+    public static func listQuery(sourceUrl: String?, sha256: String?) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        var parts: [String] = []
+        if let sourceUrl, !sourceUrl.isEmpty {
+            let encoded = sourceUrl.addingPercentEncoding(withAllowedCharacters: allowed) ?? sourceUrl
+            parts.append("sourceUrl=\(encoded)")
+        }
+        if let sha256, !sha256.isEmpty {
+            let encoded = sha256.addingPercentEncoding(withAllowedCharacters: allowed) ?? sha256
+            parts.append("sha256=\(encoded)")
+        }
+        return parts.joined(separator: "&")
+    }
 }
 
 /// Ready Library row a depot Device will advertise over mTLS.
@@ -78,10 +93,17 @@ public struct LibraryDepotFile: Sendable {
 
 /// Local SQLite listing used by the agent-plane Library routes.
 public enum LibraryDepotCatalog {
-    public static func list(db: Database, sourceUrl: String? = nil) throws -> [LibraryDepotImageInfo] {
+    public static func list(
+        db: Database,
+        sourceUrl: String? = nil,
+        sha256: String? = nil,
+    ) throws -> [LibraryDepotImageInfo] {
         var request = VMImage.filter(Column("status") == "ready")
         if let sourceUrl, !sourceUrl.isEmpty {
             request = request.filter(Column("sourceUrl") == sourceUrl)
+        }
+        if let sha256, !sha256.isEmpty {
+            request = request.filter(sql: "LOWER(sha256) = ?", arguments: [sha256.lowercased()])
         }
         let rows = try request.fetchAll(db)
         return try rows.compactMap { image in
@@ -134,7 +156,7 @@ public enum LibraryDepotCatalog {
 
 /// Bytes copied from a depot Device. Distinct from ``ImageDownloader``.
 public protocol LibraryDepotClient: Sendable {
-    func listImages(sourceUrl: String) async throws -> [LibraryDepotImageInfo]
+    func listImages(sourceUrl: String, sha256: String?) async throws -> [LibraryDepotImageInfo]
     func fetchBytes(imageId: String, to destination: URL) async throws -> LibraryDepotFetchBytes
 }
 

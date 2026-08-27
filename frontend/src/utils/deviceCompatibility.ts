@@ -10,6 +10,8 @@ import { isSelfDevice } from './homeDeviceApi'
 import { reachabilityHint, reachabilityLabel } from './homeDeviceHealth'
 
 export const DEVICE_LIBRARY_MISSING_REASON = "Not in this Device's Library"
+export const DEVICE_IMAGE_UNFETCHABLE_REASON =
+  'Image cannot be copied to this Device (no source URL or checksum)'
 
 function placementUnreachableReason(device: HomeDeviceHealthSnapshot): string {
   return reachabilityHint(device) || reachabilityLabel(device.reachability)
@@ -22,15 +24,15 @@ export type DevicePickOption = {
   platformLine: string
   reachable: boolean
   compatible: boolean
-  /** False when missing Library bytes — place-anyway is only for arch/capacity. */
   placeAnyway: boolean
   reasons: string[]
   recommended?: boolean
   recommendReasons?: string[]
+  willCopy?: boolean
 }
 
 export function reasonsAllowPlaceAnyway(reasons: string[]): boolean {
-  return !reasons.includes(DEVICE_LIBRARY_MISSING_REASON)
+  return reasons.length === 0
 }
 
 export function deviceDisplayLabel(device: {
@@ -79,13 +81,11 @@ export function createVMIncompatibilityReasons(
     requiredFeatures?: string[]
     capabilities?: CurrentHostCapabilities | null
     hasImage?: boolean
+    fetchable?: boolean
   } = {},
 ): string[] {
   if (!isSelfDevice(device) && device.reachability !== 'ok') {
     return [placementUnreachableReason(device)]
-  }
-  if (opts.hasImage === false) {
-    return [DEVICE_LIBRARY_MISSING_REASON]
   }
   const reasons: string[] = []
   const hostArch = pickedHostArch(device, opts.capabilities)
@@ -111,6 +111,16 @@ export function createVMIncompatibilityReasons(
       }
     }
   }
+  if (opts.hasImage === false) {
+    if (opts.fetchable === true) {
+      return reasons
+    }
+    if (opts.fetchable === false) {
+      reasons.push(DEVICE_IMAGE_UNFETCHABLE_REASON)
+    } else {
+      reasons.push(DEVICE_LIBRARY_MISSING_REASON)
+    }
+  }
   return reasons
 }
 
@@ -127,9 +137,6 @@ export function templateIncompatibilityReasons(
 ): string[] {
   if (!isSelfDevice(device) && device.reachability !== 'ok') {
     return [placementUnreachableReason(device)]
-  }
-  if (opts.hasTemplate === false) {
-    return [DEVICE_LIBRARY_MISSING_REASON]
   }
   const reasons: string[] = []
   const hostArch = pickedHostArch(device, opts.capabilities)
@@ -156,13 +163,16 @@ export function templateIncompatibilityReasons(
   if (template.minMemoryMB != null && total != null && total < template.minMemoryMB) {
     reasons.push(`Needs at least ${template.minMemoryMB} MB memory.`)
   }
+  if (opts.hasTemplate === false) {
+    reasons.push(DEVICE_LIBRARY_MISSING_REASON)
+  }
   return reasons
 }
 
 export function toPickOption(
   device: HomeDeviceHealthSnapshot,
   reasons: string[],
-  extra: { recommended?: boolean; recommendReasons?: string[] } = {},
+  extra: { recommended?: boolean; recommendReasons?: string[]; willCopy?: boolean } = {},
 ): DevicePickOption {
   return {
     hostId: device.hostId,
@@ -175,5 +185,6 @@ export function toPickOption(
     reasons,
     recommended: extra.recommended === true,
     recommendReasons: extra.recommendReasons ?? [],
+    willCopy: extra.willCopy === true,
   }
 }

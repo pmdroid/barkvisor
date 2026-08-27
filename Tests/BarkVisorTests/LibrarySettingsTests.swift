@@ -55,6 +55,93 @@ final class LibrarySettingsTests {
         #expect(try dbPool.read { try LibrarySettings.resolvedDepotHostId(from: $0) } == nil)
     }
 
+    @Test func `unset depot uses the only peer with an agent host`() throws {
+        let dir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let devices = DeviceRegistry(dataDir: dir)
+        try devices.upsert(
+            hostId: "console",
+            fingerprint: "aa",
+            agentHost: "192.168.10.8",
+            agentPort: 7_778,
+        )
+        let implicit = LibrarySettings.implicitDepotHostId(devices: devices, localHostId: "agent")
+        #expect(implicit == "console")
+        let resolved = try dbPool.read { db in
+            try LibrarySettings.resolvedDepotHostId(
+                from: db, devices: devices, localHostId: "agent",
+            )
+        }
+        #expect(resolved == "console")
+    }
+
+    @Test func `unset depot stays nil when two peers exist`() throws {
+        let dir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let devices = DeviceRegistry(dataDir: dir)
+        try devices.upsert(hostId: "a", fingerprint: "aa", agentHost: "10.0.0.1", agentPort: 7_778)
+        try devices.upsert(hostId: "b", fingerprint: "bb", agentHost: "10.0.0.2", agentPort: 7_778)
+        #expect(LibrarySettings.implicitDepotHostId(devices: devices, localHostId: "self") == nil)
+    }
+
+    @Test func `explicit none depot disables the one-peer default`() throws {
+        let dir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let devices = DeviceRegistry(dataDir: dir)
+        try devices.upsert(
+            hostId: "console",
+            fingerprint: "aa",
+            agentHost: "10.0.0.1",
+            agentPort: 7_778,
+        )
+        try dbPool.write { db in
+            try AppSetting(
+                key: LibrarySettings.libraryDepotHostIdKey,
+                value: LibrarySettings.disabledDepotHostId,
+            )
+            .save(db, onConflict: .replace)
+        }
+        let resolved = try dbPool.read { db in
+            try LibrarySettings.resolvedDepotHostId(
+                from: db, devices: devices, localHostId: "agent",
+            )
+        }
+        #expect(resolved == nil)
+        #expect(
+            try LibrarySettings.validateDepotHostId(nil, localHostId: "agent", devices: devices)
+                == LibrarySettings.disabledDepotHostId,
+        )
+        #expect(
+            try LibrarySettings.validateDepotHostId("NONE", localHostId: "agent", devices: devices)
+                == LibrarySettings.disabledDepotHostId,
+        )
+    }
+
+    @Test func `explicit depot setting wins over the one-peer default`() throws {
+        let dir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let devices = DeviceRegistry(dataDir: dir)
+        try devices.upsert(hostId: "console", fingerprint: "aa", agentHost: "10.0.0.1", agentPort: 7_778)
+        try dbPool.write { db in
+            try AppSetting(key: LibrarySettings.libraryDepotHostIdKey, value: "picked")
+                .save(db, onConflict: .replace)
+        }
+        let resolved = try dbPool.read { db in
+            try LibrarySettings.resolvedDepotHostId(
+                from: db, devices: devices, localHostId: "agent",
+            )
+        }
+        #expect(resolved == "picked")
+    }
+
+    @Test func `peer without agentHost is not an implicit depot`() throws {
+        let dir = tmpDir.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let devices = DeviceRegistry(dataDir: dir)
+        try devices.upsert(hostId: "console", fingerprint: "aa")
+        #expect(LibrarySettings.implicitDepotHostId(devices: devices, localHostId: "agent") == nil)
+    }
+
     @Test func `empty setting falls back to default`() throws {
         try dbPool.write { db in
             try AppSetting(key: LibrarySettings.imageDirectoryKey, value: "   ")

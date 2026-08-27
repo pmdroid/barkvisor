@@ -99,6 +99,7 @@ public enum APIContract {
         Route(method: "GET", path: "/api/images/{id}", stability: .stable),
         Route(method: "DELETE", path: "/api/images/{id}", stability: .stable),
         Route(method: "POST", path: "/api/images/download", stability: .stable),
+        Route(method: "POST", path: "/api/images/acquire", stability: .stable),
 
         // Evolving — same schema on every host, may still change before 1.0
         Route(method: "GET", path: "/api/system/capabilities", stability: .evolving),

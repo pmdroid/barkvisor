@@ -209,6 +209,36 @@ final class LibraryAcquireTests {
         #expect(!FileManager.default.fileExists(atPath: destination.path))
     }
 
+    @Test func `empty sourceUrl claims are keyed by sha256`() async throws {
+        let first = try await LibraryAcquire.claim(
+            request: request("", expectedChecksum: .sha256("aaa")),
+            kind: .internet,
+            db: dbPool,
+        )
+        let second = try await LibraryAcquire.claim(
+            request: request("", expectedChecksum: .sha256("bbb")),
+            kind: .internet,
+            db: dbPool,
+        )
+        guard case let .started(a) = first, case let .started(b) = second else {
+            Issue.record("expected two started claims, got \(first) \(second)")
+            return
+        }
+        #expect(a.id != b.id)
+        #expect(a.sourceUrl == "sha256:aaa")
+        #expect(b.sourceUrl == "sha256:bbb")
+        let again = try await LibraryAcquire.claim(
+            request: request("", expectedChecksum: .sha256("aaa")),
+            kind: .internet,
+            db: dbPool,
+        )
+        guard case let .inFlight(same) = again else {
+            Issue.record("expected in-flight reuse, got \(again)")
+            return
+        }
+        #expect(same.id == a.id)
+    }
+
     @Test func `catalog checksum pick prefers sha256`() {
         let image = RepositoryImage(
             id: "ri-1", repositoryId: "repo-1", slug: "cloud",
