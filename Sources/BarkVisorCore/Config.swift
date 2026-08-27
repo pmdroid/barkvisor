@@ -107,10 +107,14 @@ public enum Config {
     }
 
     /// HTTP listen port (SPA + JWT). Override with `BARKVISOR_PORT` (1–65535).
-    public static var port: Int { httpPortState.snapshot(requested: requestedHTTPPort) }
+    public static var port: Int {
+        httpPortState.snapshot(requested: requestedHTTPPort)
+    }
 
     /// mTLS agent-plane listen port. Override with `BARKVISOR_AGENT_PORT` (1–65535).
-    public static var agentPort: Int { agentPortState.snapshot(requested: requestedAgentPort) }
+    public static var agentPort: Int {
+        agentPortState.snapshot(requested: requestedAgentPort)
+    }
 
     public static let requestedHTTPPort = listenPort(
         from: ProcessInfo.processInfo.environment["BARKVISOR_PORT"],
