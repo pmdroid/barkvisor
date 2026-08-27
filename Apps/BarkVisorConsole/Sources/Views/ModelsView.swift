@@ -9,22 +9,10 @@ struct ModelsView: View {
     @State private var pullTask: OllamaTaskAccepted?
     @State private var pullEvent: OllamaTaskEvent?
     @State private var nameQuery = ""
-    @State private var libraryQuery = ""
-    @State private var libraryHits: OllamaLibrarySearchResponse?
-    @State private var librarySearchGen = 0
-    @State private var librarySearching = false
-    @State private var libraryError: String?
     @State private var startCandidate: OllamaCatalogModel?
     @State private var startHostId = ""
     @State private var stopCandidate: OllamaCatalogModel?
-    @State private var keySheet = false
-    @State private var keyHostId = ""
-    @State private var keyDraft = ""
-    @State private var keySaving = false
-    @State private var mintedKey: String?
-    @State private var mintAttempted = false
     @State private var rechecking = false
-    @State private var howToOpen = false
 
     var body: some View {
         Group {
@@ -51,7 +39,11 @@ struct ModelsView: View {
                     howToSection
                     Section("Pull by name") {
                         TextField("llama3", text: $pullName)
-                        OllamaReachableDevicePicker(hostId: $pullHostId, devices: reachableDevices)
+                        OllamaReachableDevicePicker(
+                            hostId: $pullHostId,
+                            devices: reachableDevices,
+                            allowAny: false,
+                        )
                         if pulling {
                             if let fraction = pullFraction {
                                 ProgressView(value: fraction) { Text(pullLabel) }
@@ -68,41 +60,9 @@ struct ModelsView: View {
                             }
                             .disabled(
                                 pullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || pullHostId.isEmpty
                                     || reachableDevices.isEmpty,
                             )
-                        }
-                    }
-                    Section("Library search") {
-                        TextField("Search the Ollama library", text: $libraryQuery)
-                        Button("Search") {
-                            Task { await searchLibrary() }
-                        }
-                        .disabled(OllamaLibrarySearchResponse.query(libraryQuery) == nil || librarySearching)
-                        if OllamaLibrarySearchResponse.query(libraryQuery) == nil {
-                            Text("Enter a name to search the Ollama library.")
-                                .foregroundStyle(.secondary)
-                        } else if librarySearching {
-                            ProgressView("Searching…")
-                        } else if let libraryError {
-                            Text(libraryError)
-                                .foregroundStyle(.secondary)
-                        } else if let hits = libraryHits,
-                                  hits.query == OllamaLibrarySearchResponse.query(libraryQuery) {
-                            if hits.results.isEmpty {
-                                Text("No library matches.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(hits.results) { row in
-                                    HStack {
-                                        Text(row.name)
-                                        Spacer()
-                                        Button("Download") {
-                                            Task { await pullModel(name: row.pullName) }
-                                        }
-                                        .disabled(row.pullName.isEmpty || pulling || reachableDevices.isEmpty)
-                                    }
-                                }
-                            }
                         }
                     }
                     Section("Models") {
@@ -117,9 +77,6 @@ struct ModelsView: View {
                                 modelRow(row)
                             }
                         }
-                    }
-                    if model.ollamaSettings != nil {
-                        keySection
                     }
                 }
                 .platformListStyle()
@@ -147,13 +104,16 @@ struct ModelsView: View {
         }
         .task {
             await model.refreshOllama()
-            await mintHowToKeyIfNeeded()
+            syncPullHost()
+        }
+        .onChange(of: model.selectedDeviceID) { _, _ in
+            syncPullHost()
+        }
+        .onChange(of: catalog.devices.map(\.hostId)) { _, _ in
+            syncPullHost()
         }
         .sheet(item: $startCandidate, onDismiss: { startHostId = "" }) { row in
             startSheet(row)
-        }
-        .sheet(isPresented: $keySheet, onDismiss: { keyDraft = "" }) {
-            keyEditor
         }
         .confirmationDialog(
             "Stop model",
@@ -181,7 +141,6 @@ struct ModelsView: View {
             role: isMember ? .member : .thisDevice,
             origin: model.connectedURL,
             memberHost: isMember ? device?.agentHost : nil,
-            grantPlaintext: mintedKey,
             advertiseHost: model.remoteAccess?.advertiseUrl,
             tailnetHost: InferenceAPIHowTo.tailnetListenHost(model.remoteAccess?.tailscale),
         )
@@ -260,46 +219,16 @@ struct ModelsView: View {
 
     private var howToSection: some View {
         Section {
-            DisclosureGroup("Use this API", isExpanded: $howToOpen) {
-                Text(
-                    "OpenAI-compatible completions on this \(Copy.home): \(howTo.lanCompletionsURL). Send Authorization: Bearer with an inference key. That is not Device :11434.",
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                CopyableSnippet(title: "curl", text: howTo.curl)
-                CopyableSnippet(title: "Environment", text: howTo.env)
-                if let mintedKey {
-                    CopyableSnippet(title: "API key (shown once)", text: mintedKey)
-                }
-                Text(
-                    "From inside a Workload, Device Ollama is \(howTo.cageBaseURL) (PAS-268 guestfwd). \(howTo.cageDnsLine)",
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                CopyableSnippet(title: "Cage environment", text: howTo.cageEnv)
-            }
+            CopyableSnippet(title: "Completions", text: howTo.lanCompletionsURL)
         }
     }
 
-    private func mintHowToKeyIfNeeded() async {
-        guard !mintAttempted else { return }
-        mintAttempted = true
-        guard let client = model.client else {
-            model.banner = InferenceHowToMint.bannerMessage(from: APIError.unauthorized)
-            return
-        }
-        do {
-            let keys = try await client.listAPIKeys()
-            guard InferenceHowToMint.needsMint(keys: keys) else { return }
-            let body = InferenceHowToMint.createBody()
-            let created = try await client.createAPIKey(
-                name: body.name,
-                expiresIn: body.expiresIn,
-                kind: body.kind,
-            )
-            mintedKey = created.key
-        } catch {
-            model.banner = InferenceHowToMint.bannerMessage(from: error)
+    private func syncPullHost() {
+        if let id = model.selectedDevice?.hostId,
+           reachableDevices.contains(where: { $0.hostId == id }) {
+            pullHostId = id
+        } else if pullHostId.isEmpty || !reachableDevices.contains(where: { $0.hostId == pullHostId }) {
+            pullHostId = reachableDevices.first?.hostId ?? ""
         }
     }
 
@@ -363,72 +292,6 @@ struct ModelsView: View {
             } else {
                 Button("Start") { beginStart(row) }
             }
-        }
-    }
-
-    private var keySection: some View {
-        Section {
-            Button("Set API key") {
-                keyHostId = reachableDevices.first?.hostId ?? ""
-                keyDraft = ""
-                keySheet = true
-            }
-            .disabled(reachableDevices.isEmpty)
-            Text(keyStatusLine)
-                .foregroundStyle(.secondary)
-        } header: {
-            Text("Ollama API key")
-        } footer: {
-            Text("Home holds upstream keys per \(Copy.device).")
-        }
-    }
-
-    private var keyStatusLine: String {
-        let hostId = keyHostId.isEmpty ? reachableDevices.first?.hostId : keyHostId
-        if let hostId, model.ollamaSettings?.host(hostId)?.hasApiKey == true {
-            return "A key is stored for this \(Copy.device)."
-        }
-        return "No upstream key stored for this \(Copy.device)."
-    }
-
-    private var keyEditor: some View {
-        NavigationStack {
-            Form {
-                OllamaReachableDevicePicker(
-                    hostId: $keyHostId,
-                    devices: reachableDevices,
-                    allowAny: false,
-                )
-                SecureField("OLLAMA_API_KEY", text: $keyDraft)
-                Text("Home holds upstream keys per \(Copy.device).")
-                    .foregroundStyle(.secondary)
-            }
-            .navigationTitle("Ollama API key")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { keySheet = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task { await saveKey() }
-                    }
-                    .disabled(OllamaSettingsUpdate.saveKey(hostId: keyHostId, draft: keyDraft) == nil || keySaving)
-                }
-            }
-        }
-        #if os(iOS)
-        .presentationDetents([.medium])
-        #endif
-    }
-
-    private func saveKey() async {
-        guard let body = OllamaSettingsUpdate.saveKey(hostId: keyHostId, draft: keyDraft) else { return }
-        keySaving = true
-        defer { keySaving = false }
-        let saved = await model.saveOllamaSettings(body)
-        if saved {
-            keyDraft = ""
-            keySheet = false
         }
     }
 
@@ -522,43 +385,16 @@ struct ModelsView: View {
         return "Pulling…"
     }
 
-    private func searchLibrary() async {
-        let gen = librarySearchGen + 1
-        librarySearchGen = gen
-        guard let q = OllamaLibrarySearchResponse.query(libraryQuery) else {
-            guard librarySearchGen == gen else { return }
-            libraryHits = nil
-            libraryError = nil
-            return
-        }
-        librarySearching = true
-        libraryError = nil
-        defer {
-            if librarySearchGen == gen { librarySearching = false }
-        }
-        do {
-            let data = try await model.searchOllamaLibrary(q)
-            guard librarySearchGen == gen else { return }
-            guard let hits = OllamaLibrarySearchResponse.accept(data, currentQuery: libraryQuery)
-            else { return }
-            libraryHits = hits
-        } catch {
-            guard librarySearchGen == gen else { return }
-            libraryHits = nil
-            libraryError = error.localizedDescription
-        }
-    }
-
     private func pullModel(name requested: String? = nil) async {
         let name = (requested ?? pullName).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        guard !name.isEmpty, !pullHostId.isEmpty else { return }
         pulling = true
         defer {
             pulling = false
             pullTask = nil
         }
         do {
-            let task = try await model.pullOllama(name, hostId: pullHostId.isEmpty ? nil : pullHostId)
+            let task = try await model.pullOllama(name, hostId: pullHostId)
             pullTask = task
             while !Task.isCancelled {
                 let event = try await model.ollamaTask(task)

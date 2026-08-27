@@ -44,17 +44,13 @@ A pulled model can only run on a Device that already has it.
 
 **Stop** uses the Device that is running the model and does not ask.
 
-## Use this API
+## Completions
 
-The card is collapsed until opened.
-
-OpenAI-compatible completions on this Home:
+Home serves OpenAI-compatible completions at:
 
 `http://<home>:7777/v1/chat/completions`
 
-Send `Authorization: Bearer` with an inference key. That is **not** Device `:11434`.
-
-From inside a Workload, Device Ollama is `http://10.0.2.2:11434/v1` (guestfwd).
+That is **not** Device `:11434`. Send `Authorization: Bearer` with an inference key from Settings.
 
 ## Related
 
