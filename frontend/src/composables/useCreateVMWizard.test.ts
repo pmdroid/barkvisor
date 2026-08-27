@@ -427,6 +427,36 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(wizard.canProceed()).toBe(true)
   })
 
+  test('custom cloud cannot leave configure without an SSH key', async () => {
+    patchSelfDevice()
+    const image = readyImage({
+      id: 'img-cloud',
+      name: 'Debian cloud',
+      imageType: 'cloud-image',
+      arch: 'arm64',
+      sourceUrl: 'https://example.test/debian.qcow2',
+    })
+    const library = useHomeLibraryStore()
+    catalogImages = [image]
+    library.images = [{
+      ...image,
+      libraryKey: homeImageKey(image),
+      sourceHostIds: ['desk'],
+      copies: [{ hostId: 'desk', imageId: image.id, status: 'ready' }],
+    }]
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryCustom()
+    await waitReady(wizard)
+    wizard.mode.value = 'cloud'
+    wizard.selectedImageId.value = homeImageKey(image)
+    wizard.selectedSSHKeyId.value = ''
+    expect(wizard.showSshKeyRow.value).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
+    useSSHKeyStore().keys = [demoKey()]
+    wizard.selectedSSHKeyId.value = 'k1'
+    expect(wizard.canProceed()).toBe(true)
+  })
+
   test('template deploy omits empty password and sends SSH', async () => {
     patchSelfDevice()
     const library = useHomeLibraryStore()

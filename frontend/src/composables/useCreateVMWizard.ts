@@ -569,8 +569,12 @@ export function useCreateVMWizard(
     }
   }
 
+  let sshRefreshSeq = 0
+
   async function refreshSSHKeys() {
+    const seq = ++sshRefreshSeq
     await sshKeyStore.fetchAll().catch(() => {})
+    if (seq !== sshRefreshSeq) return
     applyHomeSSHKeySelection()
   }
 
@@ -683,11 +687,11 @@ export function useCreateVMWizard(
     }
   }
 
-  onMounted(async () => {
-    await refreshHomeLibrary()
-    await refreshSSHKeys()
+  onMounted(() => {
     window.addEventListener('focus', onWindowFocus)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    void refreshHomeLibrary()
+    void refreshSSHKeys()
   })
 
   onUnmounted(() => {
@@ -765,7 +769,7 @@ export function useCreateVMWizard(
       case 'Configure':
         if (!name.value.trim() || !selectedDevicePlaceable()) return false
         if (galleryKind.value === 'custom' || galleryKind.value === 'windows') {
-          return !!selectedImageId.value
+          if (!selectedImageId.value) return false
         }
         if (sshKeyRequired.value && !selectedSSHKeyId.value) return false
         return cpuCount.value >= 1

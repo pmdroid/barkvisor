@@ -11,13 +11,17 @@ export const useSSHKeyStore = defineStore('sshKeys', () => {
 
   const defaultKey = computed(() => keys.value.find(k => k.isDefault) ?? null)
 
+  let fetchSeq = 0
+
   async function fetchAll() {
+    const seq = ++fetchSeq
     loading.value = true
     try {
       const { data } = await api.get(HOME_SSH_KEYS_PATH)
+      if (seq !== fetchSeq) return
       keys.value = data
     } finally {
-      loading.value = false
+      if (seq === fetchSeq) loading.value = false
     }
   }
 
