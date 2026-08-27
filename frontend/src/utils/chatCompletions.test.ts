@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   chatDeltaFromSSELine,
   chatIsVisible,
@@ -8,7 +11,18 @@ import {
   streamChatCompletions,
 } from './chatCompletions'
 
+const here = dirname(fileURLToPath(import.meta.url))
+
 describe('chat completions (PAS-270)', () => {
+  test('chat page is gone', () => {
+    const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
+    const app = readFileSync(join(here, '../App.vue'), 'utf8')
+    expect(router).toContain("path: '/chat'")
+    expect(router).toContain("redirect: '/dashboard'")
+    expect(router).not.toContain('ChatView')
+    expect(app).not.toContain('to="/chat"')
+  })
+
   test('hides Chat without Ollama or models', () => {
     expect(chatIsVisible(false, 0)).toBe(false)
     expect(chatIsVisible(true, 0)).toBe(false)

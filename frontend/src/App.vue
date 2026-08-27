@@ -4,9 +4,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { useDevicesStore } from './stores/devices'
 import { useDeviceScopeStore } from './stores/deviceScope'
-import { useOllamaStore } from './stores/ollama'
 import { useThemeStore } from './stores/theme'
-import { chatIsVisible } from './utils/chatCompletions'
 import { DEVICE_SCOPE_ALL } from './utils/deviceScope'
 import { isReachabilityOk } from './utils/homeDeviceHealth'
 import { DEVICE_LABEL, HOME_LABEL } from './utils/terminology'
@@ -15,7 +13,6 @@ import ToastContainer from './components/ToastContainer.vue'
 const route = useRoute()
 const auth = useAuthStore()
 const themeStore = useThemeStore()
-const ollama = useOllamaStore()
 const devices = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const mobileMenuOpen = ref(false)
@@ -48,7 +45,6 @@ const tickerCounts = computed(() => {
 onMounted(() => {
   if (auth.isAuthenticated) {
     void auth.fetchMe()
-    void ollama.fetchCatalog()
     void devices.fetchHealth()
   }
 })
@@ -56,7 +52,6 @@ watch(
   () => auth.isAuthenticated,
   (ok) => {
     if (ok) {
-      void ollama.fetchCatalog()
       void devices.fetchHealth()
     }
   },
@@ -139,12 +134,6 @@ function isActive(path: string) {
             <rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h4"/>
           </svg>
           <span class="nav-label">Ollama</span>
-        </router-link>
-        <router-link v-if="chatIsVisible(ollama.anyReachable, ollama.models.length)" to="/chat" :class="{ active: isActive('/chat') }">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/>
-          </svg>
-          <span class="nav-label">Chat</span>
         </router-link>
         <router-link v-if="auth.isAdmin" to="/images" :class="{ active: isActive('/images') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

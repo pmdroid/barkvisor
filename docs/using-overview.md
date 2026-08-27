@@ -16,7 +16,7 @@ Details live in [First launch](getting-started-first-launch.md) and [Home and pa
 ## Roles
 
 - **Admin** — full access to every menu point described here.
-- **Inference** — sees **Ollama** (and **Chat** once a model is reachable) and lands there after sign-in. Everything else stays hidden.
+- **Inference** — sees **Ollama** and lands there after sign-in. Everything else stays hidden.
 
 ## Reading the shell
 
@@ -35,7 +35,6 @@ Around every page sit four shared pieces of chrome:
 | Devices | [Devices](using-devices.md) |
 | Virtual Machines | [Virtual Machines](using-vms.md) and [Workload details](using-vm-details.md) |
 | Ollama | [Ollama](using-ollama.md) |
-| Chat | [Chat](using-chat.md) |
 | Images | [Images](using-images.md) |
 | Disks | [Disks](using-disks.md) |
 | Networks | [Networks](using-networks.md) |

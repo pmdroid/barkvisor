@@ -58,7 +58,6 @@ export default defineConfig({
             { label: 'Virtual Machines', link: '/docs/using/vms/' },
             { label: 'Workload details', link: '/docs/using/vm-details/' },
             { label: 'Ollama', link: '/docs/using/ollama/' },
-            { label: 'Chat', link: '/docs/using/chat/' },
             { label: 'Images', link: '/docs/using/images/' },
             { label: 'Disks', link: '/docs/using/disks/' },
             { label: 'Networks', link: '/docs/using/networks/' },

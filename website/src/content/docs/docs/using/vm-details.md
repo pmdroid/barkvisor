@@ -18,15 +18,11 @@ Actions that need the Device's agent are disabled while it is unreachable.
 
 ## Tabs
 
-Which tabs appear depends on state: **Metrics** only shows while running, **Chat** only when an Ollama model is reachable, and member Devices hide **Console/VNC** until they are reachable again.
+Which tabs appear depends on state: **Metrics** only shows while running, and member Devices hide **Console/VNC** until they are reachable again.
 
 ### Overview
 
 Read-only facts grouped into sheets: **Session**, **Hardware**, **Network**, **Guest**, **Disks**, **Shared folders**, **USB**, **GPU passthrough**, **PCI devices** (Linux hosts only), and **Recent events**.
-
-### Chat
-
-Talk to models served by the Home's Ollama. See [Chat](/docs/using/chat/).
 
 ### Console / Terminal
 

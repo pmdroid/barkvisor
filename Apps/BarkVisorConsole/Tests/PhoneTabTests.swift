@@ -25,7 +25,7 @@ struct PhoneTabTests {
 
     @Test func `openPhoneTab routing includes models refresh`() {
         #expect(PhoneTab.models.appRoute == .models)
-        #expect(PhoneTab.chat.appRoute == .chat)
+        #expect(PhoneTab.restored("chat") == .home)
         #expect(PhoneTab.library.appRoute == .library)
         #expect(PhoneTab.settings.appRoute == .settings)
         #expect(PhoneTab.home.appRoute == .dashboard)
