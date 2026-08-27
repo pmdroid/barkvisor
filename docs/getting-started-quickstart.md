@@ -153,8 +153,7 @@ Monitor the image download percent on the Images page; once the image is
 ready, deploy again.
 
 Used and free Library space is the **Library path** volume. That path can
-live on a different mount than the data dir, and a depot Device is named
-when the Library is not this machine. Unknown capacity is not shown as zeros.
+live on a different mount than the data dir. Unknown capacity is not shown as zeros.
 
 If the image is already available, the VM is created immediately through the
 same pipeline as the wizard (cloud-image mode with rendered user data).

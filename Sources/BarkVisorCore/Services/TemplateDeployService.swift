@@ -44,7 +44,6 @@ public enum TemplateDeployService {
         imageDownloader: any ImageDownloadStarting,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
-        depot: (any LibraryDepotFetching)? = nil,
     ) async throws -> DeployResult {
         let template = try await fetchTemplate(id: options.templateId, db: db)
         try validateInputs(template: template, inputs: options.inputs)
@@ -65,23 +64,6 @@ public enum TemplateDeployService {
         }
 
         if localImage == nil {
-            if let depot {
-                if let fetched = await depot.fetchMatching(
-                    LibraryDepotFetchRequest(repoImage: repoImage),
-                    db: db,
-                ) {
-                    if fetched.status != "ready" {
-                        return .downloading(imageId: fetched.id)
-                    }
-                    return try await createViaLifecycle(
-                        options: options,
-                        template: template,
-                        localImage: fetched,
-                        backgroundTasks: backgroundTasks,
-                        db: db,
-                    )
-                }
-            }
             return try await startOrDetectDownload(
                 repoImage: repoImage, imageDownloader: imageDownloader, db: db,
             )

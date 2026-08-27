@@ -7,8 +7,6 @@ import GRDB
 /// rows stay put — changing the setting never migrates files.
 public enum LibrarySettings {
     public static let imageDirectoryKey = "image_directory"
-    public static let libraryDepotHostIdKey = "library_depot_host_id"
-    public static let disabledDepotHostId = "none"
     public static let previousDirectoriesKey = "previous_image_directories"
 
     public static var defaultDirectory: URL {
@@ -108,66 +106,6 @@ public enum LibrarySettings {
             throw BarkVisorError.badRequest("Library path is not writable by the daemon")
         }
         return url
-    }
-
-    /// Per-Device Library depot. Empty/whitespace ⇒ no depot (internet only).
-    public static func resolvedDepotHostId(from db: Database) throws -> String? {
-        let stored = try AppSetting.fetchOne(db, key: libraryDepotHostIdKey)?.value ?? ""
-        let raw = stored.trimmingCharacters(in: .whitespacesAndNewlines)
-        return raw.isEmpty ? nil : raw
-    }
-
-    public static func implicitDepotHostId(
-        devices: DeviceRegistry,
-        localHostId: String,
-    ) -> String? {
-        guard let rows = try? devices.load() else { return nil }
-        let others = rows.filter { row in
-            row.hostId != localHostId && !(row.agentHost ?? "").isEmpty
-        }
-        guard others.count == 1 else { return nil }
-        return others[0].hostId
-    }
-
-    public static func resolvedDepotHostId(
-        from db: Database,
-        devices: DeviceRegistry,
-        localHostId: String,
-    ) throws -> String? {
-        if let stored = try resolvedDepotHostId(from: db) {
-            if stored.caseInsensitiveCompare(disabledDepotHostId) == .orderedSame {
-                return nil
-            }
-            return stored
-        }
-        return implicitDepotHostId(devices: devices, localHostId: localHostId)
-    }
-
-    /// Empty/whitespace ⇒ `nil` (clear). Otherwise a paired Device or this Device.
-    public static func validateDepotHostId(
-        _ raw: String?,
-        localHostId: String,
-        devices: DeviceRegistry,
-    ) throws -> String? {
-        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.caseInsensitiveCompare(disabledDepotHostId) == .orderedSame {
-            return disabledDepotHostId
-        }
-        if trimmed == localHostId {
-            return trimmed
-        }
-        let members: [DeviceRecord]
-        do {
-            members = try devices.load()
-        } catch {
-            throw BarkVisorError.badRequest(
-                "Device registry is unavailable; pick this Device or clear the Library depot",
-            )
-        }
-        guard members.contains(where: { $0.hostId == trimmed }) else {
-            throw BarkVisorError.badRequest("Library depot must be a paired Device")
-        }
-        return trimmed
     }
 
     /// Previous Library dirs (still on disk after the setting moved).

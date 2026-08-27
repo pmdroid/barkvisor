@@ -380,7 +380,6 @@ struct SetupController: RouteCollection {
             req: req,
             body: LibrarySettingsRequest(
                 imageDirectory: body.imageDirectory,
-                libraryDepotHostId: nil,
             ),
         )
     }

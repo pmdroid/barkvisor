@@ -23,7 +23,7 @@ function pick(option: DevicePickOption) {
   <div class="device-picker">
     <label class="device-picker-label">{{ DEVICE_LABEL }}</label>
     <p class="device-picker-hint">
-      Recommended {{ DEVICE_LABEL }} is a suggestion. Architecture mismatches cannot be placed. Missing images are copied from the Library depot on create.
+      Recommended {{ DEVICE_LABEL }} is a suggestion. Architecture mismatches cannot be placed. Missing images download from the internet on create.
     </p>
     <div class="device-picker-list" role="radiogroup" :aria-label="DEVICE_LABEL">
       <button

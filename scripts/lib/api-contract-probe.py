@@ -32,7 +32,6 @@ HOST_ID = os.environ.get("SEED_HOST_ID", "")
 SKIP = {
     ("GET", "/api/vms/{id}/console"): "WebSocket upgrade",
     ("GET", "/api/vms/{id}/vnc"): "WebSocket / noVNC upgrade",
-    ("GET", "/api/agent/library/images/{id}/content"): "mTLS agent-plane bytes",
     ("POST", "/api/home/devices/{id}/v1/{path}"): "needs a second Device",
     ("PUT", "/api/home/devices/{id}/v1/{path}"): "needs a second Device",
     ("PATCH", "/api/home/devices/{id}/v1/{path}"): "needs a second Device",

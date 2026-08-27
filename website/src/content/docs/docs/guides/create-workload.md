@@ -20,7 +20,7 @@ Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-w
 
 - Catalog downloads follow this Device’s architecture. You can still download the other arch when you will deploy it on a matching Device.
 - A missing Library copy on the target Device is a placement warning, not a silent skip.
-- Optional: set a custom Library directory in **Settings**, and designate a depot Device so others fetch verified image bytes over the agent plane.
+- Optional: set a custom Library directory in **Settings**.
 - **Settings → Library** and the Images page show used/free for that Library path’s volume. It can differ from the data dir. Depot Device offline is an empty/error state, not zeros.
 
 ## Disks

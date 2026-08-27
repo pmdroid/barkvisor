@@ -44,7 +44,7 @@ import {
   deviceDiskSettingsPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
-import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
+import { reachabilityLabel } from '../utils/homeDeviceHealth'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
@@ -363,7 +363,6 @@ const deviceScope = useDeviceScopeStore()
 const librarySettings = ref<LibrarySettings>({
   imageDirectory: '',
   isDefault: true,
-  libraryDepotHostId: null,
   totalBytes: null,
   freeBytes: null,
   usedBytes: null,
@@ -372,8 +371,6 @@ const libraryDraft = ref('')
 const libraryLoading = ref(true)
 const librarySaving = ref(false)
 const showLibraryPicker = ref(false)
-const depotDraft = ref('')
-const depotSaving = ref(false)
 
 const diskSettings = ref<DiskSettings | null>(null)
 const diskDirectoryDraft = ref('')
@@ -439,33 +436,9 @@ const librarySpaceLine = computed(() =>
   librarySpaceCopy(librarySettings.value.totalBytes, librarySettings.value.freeBytes),
 )
 
-/** Depot is another Device — show its id without inventing that Device's capacity. */
-const libraryDepotNote = computed(() => {
-  const id = librarySettings.value.libraryDepotHostId?.trim()
-  if (!id) return null
-  const device = devicesStore.devices.find((d) => d.hostId === id)
-  if (device && isSelfDevice(device)) return null
-  const label = device ? deviceDisplayLabel(device) : id
-  return `Library depot is ${label}. That ${DEVICE_LABEL}’s volume is not shown here.`
-})
-
-const depotOptions = computed(() => {
-  const none = { value: '', label: 'None — download from the internet' }
-  const devices = devicesStore.devices.map((device) => {
-    const name = deviceDisplayLabel(device)
-    const self = device.role === 'self' ? ` (this ${DEVICE_LABEL})` : ''
-    const reach = isReachabilityOk(device.reachability)
-      ? ''
-      : ` — ${reachabilityLabel(device.reachability).toLowerCase()}`
-    return { value: device.hostId, label: `${name}${self}${reach}` }
-  })
-  return [none, ...devices]
-})
-
 function onLibraryFolderSaved(data: LibrarySettings) {
   librarySettings.value = data
   libraryDraft.value = data.imageDirectory
-  depotDraft.value = data.libraryDepotHostId ?? ''
 }
 
 async function fetchLibrarySettings() {
@@ -474,7 +447,6 @@ async function fetchLibrarySettings() {
     const { data } = await api.get<LibrarySettings>('/system/library/settings')
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
-    depotDraft.value = data.libraryDepotHostId ?? ''
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -490,7 +462,6 @@ async function saveLibrarySettings() {
     })
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
-    depotDraft.value = data.libraryDepotHostId ?? ''
     bumpLibrarySettingsEpoch()
     toast.success('Library path saved')
   } catch (e: unknown) {
@@ -508,7 +479,6 @@ async function resetLibrarySettings() {
     })
     librarySettings.value = data
     libraryDraft.value = data.imageDirectory
-    depotDraft.value = data.libraryDepotHostId ?? ''
     bumpLibrarySettingsEpoch()
     toast.success('Library folder cleared')
   } catch (e: unknown) {
@@ -599,22 +569,6 @@ async function saveDiskSettings() {
 async function resetDiskSettings() {
   diskDirectoryDraft.value = ''
   await saveDiskSettings()
-}
-
-async function saveDepotSettings() {
-  depotSaving.value = true
-  try {
-    const { data } = await api.put<LibrarySettings>('/system/library/settings', {
-      libraryDepotHostId: depotDraft.value,
-    })
-    librarySettings.value = data
-    depotDraft.value = data.libraryDepotHostId ?? ''
-    toast.success('Library depot saved')
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e))
-  } finally {
-    depotSaving.value = false
-  }
 }
 
 // API Keys
@@ -889,9 +843,9 @@ onUnmounted(() => {
       <AppButton
         v-if="tab === 'home'"
         variant="primary"
-        :loading="remoteAccessSaving || depotSaving"
+        :loading="remoteAccessSaving"
         :disabled="!remoteAccess || remoteAccessLoading"
-        @click="saveRemoteAccess(); saveDepotSettings()"
+        @click="saveRemoteAccess()"
       >Save changes</AppButton>
     </div>
   </div>
@@ -908,7 +862,7 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
   </div>
 
-  <!-- Home — remote access, advertise URL, Library depot. Pairing QR lives on the Pairing tab. -->
+  <!-- Home — remote access, advertise URL. Pairing QR lives on the Pairing tab. -->
   <div v-if="tab === 'home'">
     <div class="facts">
       <div class="fact">
@@ -1398,12 +1352,6 @@ onUnmounted(() => {
       >
         Capacity unavailable
       </p>
-      <p
-        v-if="libraryDepotNote"
-        style="color:var(--text-tertiary);font-size:12px;margin:8px 0 0 0"
-      >
-        {{ libraryDepotNote }}
-      </p>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <AppButton
@@ -1422,36 +1370,10 @@ onUnmounted(() => {
         Clear saved folder
       </AppButton>
     </div>
+    <p style="color:var(--text-secondary);font-size:13px;margin:16px 0 0 0;max-width:640px">
+      Catalog Download writes into this {{ DEVICE_LABEL }}’s Library.
+    </p>
     </template>
-    <div style="margin-top:28px;max-width:640px">
-      <p style="color:var(--text-secondary);font-size:13px;margin:0 0 10px 0">
-        Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other
-        {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
-        down or the checksum does not match, they download from the internet.
-        Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
-        If this is unset, a {{ DEVICE_LABEL }} with exactly one peer uses that peer as the depot.
-      </p>
-      <div class="form-group">
-        <label>Library depot</label>
-        <AppSelect
-          :modelValue="depotDraft"
-          :options="depotOptions"
-          :disabled="libraryLoading || depotSaving"
-          @update:modelValue="depotDraft = $event"
-        />
-      </div>
-      <div style="display:flex;gap:8px;margin-top:16px">
-        <AppButton
-          variant="primary"
-          :loading="depotSaving"
-          loading-text="Saving..."
-          :disabled="libraryLoading"
-          @click="saveDepotSettings"
-        >
-          Save Library depot
-        </AppButton>
-      </div>
-    </div>
     <FolderPicker
       v-if="showLibraryPicker"
       :model-value="libraryDraft"

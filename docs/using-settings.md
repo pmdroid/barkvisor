@@ -6,7 +6,7 @@
 |-----|------------------|
 | Home | Device facts, remote access, advertise URL — [Settings: Home](settings-home.md) |
 | Pairing | Pairing QR to add Devices, phone sign-in — [Settings: Pairing](settings-pairing.md) |
-| Library | Library path and depot — [Settings: Library](settings-library.md) |
+| Library | Library path — [Settings: Library](settings-library.md) |
 | Disks | Default VM disk directory — [Settings: Disks](settings-disks.md) |
 | API Keys | API keys for scripts and inference clients — [Settings: API Keys](settings-api-keys.md) |
 | SSH Keys | SSH keys injected into guests — [Settings: SSH Keys](settings-ssh-keys.md) |

@@ -8,12 +8,6 @@ export type CatalogDownloadDevice = DeviceApiTarget & {
   platform?: { arch?: string | null } | null
 }
 
-/**
- * Catalog Download writes into a Device Library.
- * Prefer the configured Library depot when that Device is reachable — the depot
- * stores files of any arch. Otherwise pick a reachable Device that can run the
- * guest, preferring This Device.
- */
 /** Refuse catalog Download when Device health is missing or the last fetch failed. */
 export function catalogDownloadBlockedReason(opts: {
   healthError: string | null
@@ -27,13 +21,7 @@ export function catalogDownloadBlockedReason(opts: {
 export function deviceForCatalogImage<T extends CatalogDownloadDevice>(
   imageArch: string | null | undefined,
   devices: T[],
-  depotHostId?: string | null,
 ): T | null {
-  const depotId = depotHostId?.trim()
-  if (depotId) {
-    const depot = devices.find((device) => device.hostId === depotId)
-    if (depot && canCallDeviceAPI(depot)) return depot
-  }
   const want = normalizeImageArch(imageArch)
   if (!want) return null
   const compatible = devices.filter((device) => {

@@ -79,8 +79,6 @@ describe('API contract (PAS-78)', () => {
       '/api/vms/{id}/session/burn',
       '/api/workloads/health-summary',
       '/api/agent/whoami',
-      '/api/agent/library/images',
-      '/api/agent/library/images/{id}/content',
       '/api/pairing/codes',
       '/api/pairing/redeem',
       '/api/pairing/join',

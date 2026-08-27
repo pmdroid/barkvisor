@@ -1,8 +1,8 @@
 # Settings: Library
 
-The **Library** tab points this Device at its image store and explains the depot.
+The **Library** tab points this Device at its image store.
 
-![Settings Library tab: path, capacity, depot](img/settings-library.png)
+![Settings Library tab: path, capacity](img/settings-library.png)
 
 ## Library path
 
@@ -12,9 +12,7 @@ The **Library** tab points this Device at its image store and explains the depot
 
 Moving the path does not move existing files for you; plan a copy when changing it.
 
-## Library depot
-
-One Device can act as the **depot**: others fetch verified image bytes from it over the agent plane instead of re-downloading from the internet. The depot select lives here; an offline depot shows an explicit empty/error state on consumers, never silent zeros.
+Catalog Download writes into this Device's Library. Missing images download from the internet.
 
 ## Related
 
