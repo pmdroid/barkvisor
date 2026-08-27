@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import api from '../api/client'
+import { setupApi } from '../api/setup'
 import { apiErrorMessage } from '../api/errors'
 import type { DeviceApiTarget } from '../utils/homeDeviceApi'
 import {
@@ -14,13 +15,19 @@ import FormError from './ui/FormError.vue'
 const props = defineProps<{
   modelValue: string
   device?: DeviceApiTarget | null
+  source?: 'system' | 'setup'
 }>()
 const emit = defineEmits(['update:modelValue', 'close'])
 
 const currentPath = ref('')
+const pendingSelect = ref('')
 const entries = ref<FolderEntry[]>([])
 const loading = ref(false)
 const error = ref('')
+
+function browseClient() {
+  return props.source === 'setup' ? setupApi : api
+}
 
 onMounted(() => {
   browse('')
@@ -37,16 +44,17 @@ async function browse(path: string) {
   loading.value = true
   error.value = ''
   try {
-    const { data } = await api.get(folderBrowseRequestPath(props.device), {
+    const { data } = await browseClient().get(folderBrowseRequestPath(props.device, props.source), {
       params: folderBrowseParams(path),
     })
     entries.value = asFolderEntries(data)
     currentPath.value = path
+    if (path) pendingSelect.value = path
   } catch (err) {
     error.value = apiErrorMessage(err, 'Unable to list folders')
     if (path) {
       try {
-        const { data } = await api.get(folderBrowseRequestPath(props.device), {
+        const { data } = await browseClient().get(folderBrowseRequestPath(props.device, props.source), {
           params: folderBrowseParams(''),
         })
         entries.value = asFolderEntries(data)
@@ -62,9 +70,19 @@ async function browse(path: string) {
   }
 }
 
+function chosenPath() {
+  return currentPath.value || pendingSelect.value
+}
+
+function onEntryClick(entry: FolderEntry) {
+  if (entry.name !== '..' && entry.path) pendingSelect.value = entry.path
+  browse(entry.path)
+}
+
 function select() {
-  if (!currentPath.value) return
-  emit('update:modelValue', currentPath.value)
+  const path = chosenPath()
+  if (!path) return
+  emit('update:modelValue', path)
   emit('close')
 }
 </script>
@@ -87,7 +105,7 @@ function select() {
                 :key="`${entry.name}:${entry.path}`"
                 type="button"
                 class="folder-item"
-                @click="browse(entry.path)"
+                @click="onEntryClick(entry)"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                   <template v-if="entry.name === '..'">
@@ -104,7 +122,7 @@ function select() {
           </div>
           <div class="split-foot">
             <button class="btn-ghost" @click="emit('close')">Cancel</button>
-            <button class="btn-primary" :disabled="!currentPath" @click="select">Select This Folder</button>
+            <button class="btn-primary" :disabled="!chosenPath()" @click="select">Select This Folder</button>
           </div>
         </section>
       </div>

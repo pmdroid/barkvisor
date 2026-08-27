@@ -56,6 +56,7 @@ struct LinuxGuestScriptsTests {
         for needle in [
             "/api/setup/admin",
             "/api/setup/bridge/skip",
+            "/api/setup/library",
             "/api/setup/complete",
             "/api/auth/login",
             "/api/networks",
@@ -72,6 +73,16 @@ struct LinuxGuestScriptsTests {
         ] {
             #expect(body.contains(needle), "smoke script should reference \(needle)")
         }
+    }
+
+    @Test func `headless setup puts library before complete`() throws {
+        let path = repoRoot.appendingPathComponent("scripts/lib/linux-smoke-common.sh").path
+        let body = try String(contentsOfFile: path, encoding: .utf8)
+        #expect(body.contains("GET /api/setup/library"))
+        #expect(body.contains("api_code PUT /api/setup/library"))
+        let putRange = try #require(body.range(of: "api_code PUT /api/setup/library"))
+        let completeRange = try #require(body.range(of: "POST /api/setup/complete"))
+        #expect(putRange.lowerBound < completeRange.lowerBound)
     }
 
     @Test func `linux real guest smoke wrapper exists and is executable`() throws {

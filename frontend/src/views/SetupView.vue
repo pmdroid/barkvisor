@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import AppButton from '../components/ui/AppButton.vue'
 import FormError from '../components/ui/FormError.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
+import LibraryFolderForm from '../components/LibraryFolderForm.vue'
 import {
   getSetupStatus,
   createAdmin,
@@ -23,13 +24,13 @@ import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 const router = useRouter()
 const authStore = useAuthStore()
 const caps = useCapabilitiesStore()
-/** Linear UI step index (1-based). Wizard: Welcome → Admin → Catalog → Ready. */
 const step = ref(1)
 
 const panel = computed(() => {
   if (step.value === 1) return 'welcome'
   if (step.value === 2) return 'admin'
-  if (step.value === 3) return 'repos'
+  if (step.value === 3) return 'library'
+  if (step.value === 4) return 'repos'
   return 'ready'
 })
 const error = ref('')
@@ -69,9 +70,11 @@ const sessionId = `BV-SETUP-${Math.floor(1000 + Math.random() * 9000)}`
 const railSteps = [
   { num: '01', t: 'Welcome', key: 'welcome' },
   { num: '02', t: 'Admin account', key: 'admin' },
-  { num: '03', t: 'Image catalog', key: 'repos' },
-  { num: '04', t: 'Ready', key: 'ready' },
+  { num: '03', t: 'Library folder', key: 'library' },
+  { num: '04', t: 'Image catalog', key: 'repos' },
+  { num: '05', t: 'Ready', key: 'ready' },
 ]
+const libraryReady = ref(false)
 const currentRailIndex = computed(() => {
   const idx = railSteps.findIndex((s) => s.key === panel.value)
   return idx === -1 ? 0 : idx
@@ -97,6 +100,8 @@ onMounted(async () => {
   }
   if (status.complete) {
     router.replace('/login')
+  } else if (status.admin) {
+    step.value = 3
   }
 })
 
@@ -119,7 +124,6 @@ function backToWelcome() {
   step.value = 1
 }
 
-// Step 2: Create admin
 async function submitAdmin() {
   error.value = ''
   if (password.value.length < 10) {
@@ -141,7 +145,6 @@ async function submitAdmin() {
   }
 }
 
-// Step 3: Repo sync
 async function startSync() {
   error.value = ''
   loading.value = true
@@ -165,7 +168,6 @@ async function startSync() {
   }
 }
 
-// Step 4: Complete — auto-login and redirect to dashboard
 async function finishSetup() {
   error.value = ''
   loading.value = true
@@ -309,9 +311,25 @@ async function finishSetup() {
             </form>
           </div>
 
-          <!-- Image catalog -->
+          <div v-if="panel === 'library'" class="pane">
+            <div class="eyebrow">Step 03 — Library folder</div>
+            <h1>Image Library</h1>
+            <p class="sub">
+              Images download and upload into this folder on this {{ DEVICE_LABEL }}.
+            </p>
+            <LibraryFolderForm source="setup" @saved="libraryReady = true" />
+            <FormError v-if="error" :message="error" />
+            <div class="actions">
+              <AppButton variant="ghost" type="button" @click="step = 2">Back</AppButton>
+              <div class="spacer"></div>
+              <AppButton variant="primary" :disabled="!libraryReady" @click="nextStep">
+                Continue
+              </AppButton>
+            </div>
+          </div>
+
           <div v-if="panel === 'repos'" class="pane">
-            <div class="eyebrow">Step 03 — Image catalog</div>
+            <div class="eyebrow">Step 04 — Image catalog</div>
             <h1>Image Catalog</h1>
             <p class="sub">
               Sync the OS image and template catalog so you can create virtual machines right
@@ -361,7 +379,7 @@ async function finishSetup() {
 
           <!-- Ready (create path) -->
           <div v-if="panel === 'ready'" class="pane">
-            <div class="eyebrow">Step 04 — Ready</div>
+            <div class="eyebrow">Step 05 — Ready</div>
             <h1>All Set!</h1>
             <p class="sub">Commissioning complete. This {{ DEVICE_LABEL }} is operational.</p>
             <div class="result">

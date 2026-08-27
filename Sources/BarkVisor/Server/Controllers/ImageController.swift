@@ -17,6 +17,7 @@ struct ImageResponse: Content {
     let sha256: String?
     let createdAt: String
     let updatedAt: String
+    let path: String?
     /// Live 0...100 while transferring. Nil when total size is unknown or idle.
     let downloadPercent: Int?
 
@@ -32,6 +33,7 @@ struct ImageResponse: Content {
         self.sha256 = image.sha256
         self.createdAt = image.createdAt
         self.updatedAt = image.updatedAt
+        self.path = image.path
         self.downloadPercent = downloadPercent
     }
 }

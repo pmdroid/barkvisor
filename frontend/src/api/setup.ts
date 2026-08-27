@@ -1,12 +1,15 @@
 import axios from 'axios'
+import type { LibrarySettings } from './types'
 
-// Separate client without auth interceptors — setup endpoints don't need JWT
 const setupApi = axios.create({ baseURL: '/api/setup' })
+
+export { setupApi }
 
 export interface SetupStatus {
   complete: boolean
   /** Shared identity landed after a pairing join (admin exists). Not receipt-only. */
   joined?: boolean
+  admin?: boolean
 }
 
 export interface InterfaceInfo {
@@ -60,5 +63,15 @@ export async function getRepoSyncStatus(): Promise<RepoSyncStatus> {
 
 export async function completeSetup(): Promise<{ token: string }> {
   const { data } = await setupApi.post('/complete')
+  return data
+}
+
+export async function getSetupLibrary(): Promise<LibrarySettings> {
+  const { data } = await setupApi.get<LibrarySettings>('/library')
+  return data
+}
+
+export async function saveSetupLibrary(imageDirectory: string): Promise<LibrarySettings> {
+  const { data } = await setupApi.put<LibrarySettings>('/library', { imageDirectory })
   return data
 }

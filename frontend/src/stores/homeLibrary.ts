@@ -17,6 +17,7 @@ export type HomeImageCopy = {
   hostId: string
   imageId: string
   status: Image['status']
+  path?: string | null
 }
 
 export type HomeImage = Image & {
@@ -68,7 +69,7 @@ function readySourceHostIds(copies: HomeImageCopy[]): string[] {
 
 function upsertHomeImage(merged: Map<string, HomeImage>, hostId: string, img: Image): void {
   const key = homeImageKey(img)
-  const copy: HomeImageCopy = { hostId, imageId: img.id, status: img.status }
+  const copy: HomeImageCopy = { hostId, imageId: img.id, status: img.status, path: img.path }
   const existing = merged.get(key)
   if (!existing) {
     merged.set(key, {
@@ -93,6 +94,7 @@ function upsertHomeImage(merged: Map<string, HomeImage>, hostId: string, img: Im
   } else {
     prev.imageId = img.id
     prev.status = img.status
+    prev.path = img.path
   }
   existing.sourceHostIds = readySourceHostIds(existing.copies)
 }
@@ -180,7 +182,7 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
     if (!row) return null
     const copy = row.copies.find((c) => c.hostId === hostId && c.status === 'ready')
     if (!copy) return null
-    return { ...row, id: copy.imageId, status: copy.status }
+    return { ...row, id: copy.imageId, status: copy.status, path: copy.path }
   }
 
   /** Empty library must not imply every Device has a local copy. */

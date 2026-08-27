@@ -12,6 +12,7 @@ import { useVMStore } from '../stores/vms'
 import { useImageProgress } from '../composables/useTicketedEventSource'
 import * as tus from 'tus-js-client'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import LibraryFolderForm from '../components/LibraryFolderForm.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -20,6 +21,8 @@ import ProgressBar from '../components/ui/ProgressBar.vue'
 import api from '../api/client'
 import type { LibrarySettings } from '../api/types'
 import { formatBytes } from '../utils/format'
+import { imageStorageLine } from '../utils/imageStorage'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
 import { imageProgressPercent } from '../utils/imageProgress'
 import { librarySpaceCopy, onLibrarySettingsChanged } from '../utils/librarySpace'
@@ -48,6 +51,28 @@ const librarySpaceLine = computed(() => {
   }
   return librarySpaceCopy(librarySettings.value?.totalBytes, librarySettings.value?.freeBytes)
 })
+const libraryNeedsFolder = computed(() =>
+  librarySpaceLoaded.value && librarySettings.value?.isDefault === true,
+)
+const libraryFolderReady = computed(() =>
+  librarySpaceLoaded.value && librarySettings.value?.isDefault === false,
+)
+
+function imageHostLabel(img: { hostId?: string }): string {
+  if (img.hostId) {
+    const device = devicesStore.deviceByHostId(img.hostId)
+    if (device) return deviceDisplayLabel(device)
+  }
+  return devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : ''
+}
+
+function imageLocation(img: { path?: string | null; hostId?: string }): string {
+  return imageStorageLine({
+    path: img.path,
+    hostLabel: imageHostLabel(img),
+  })
+}
+
 const libraryCapPercent = computed(() => {
   const total = librarySettings.value?.totalBytes
   const used = librarySettings.value?.usedBytes
@@ -62,6 +87,7 @@ function imageRowsFromLibrary(images: HomeImage[]) {
       id: copy.imageId,
       status: copy.status,
       hostId: copy.hostId,
+      path: copy.path,
     })),
   )
 }
@@ -454,6 +480,10 @@ async function deleteImage(id: string, name: string) {
   confirmTarget.value = { id, name }
 }
 
+function onLibraryFolderSaved(data: LibrarySettings) {
+  librarySettings.value = data
+}
+
 async function doDeleteImage() {
   if (!confirmTarget.value) return
   const { id } = confirmTarget.value
@@ -478,19 +508,25 @@ async function doDeleteImage() {
       {{ librarySpaceLine }}
     </div>
     <span v-else-if="librarySpaceLoaded" class="ops-sub">Capacity unavailable</span>
-    <div class="ops-actions">
+    <div v-if="libraryFolderReady" class="ops-actions">
       <AppButton icon="upload" @click="openUpload">Upload</AppButton>
       <AppButton variant="primary" icon="download" @click="openDownload">Download</AppButton>
     </div>
   </div>
   <div class="ops-body">
 
-  <EmptyState v-if="visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+  <LibraryFolderForm
+    v-if="libraryNeedsFolder"
+    source="system"
+    @saved="onLibraryFolderSaved"
+  />
 
-  <div v-else class="sheet">
+  <EmptyState v-else-if="libraryFolderReady && visibleImages.length === 0 && !store.loading && !homeLibrary.imagesLoading" icon="image" title="No images yet" subtitle="Upload an ISO/disk image or download one from a URL" />
+
+  <div v-else-if="libraryFolderReady" class="sheet">
   <table>
     <thead>
-      <tr><th>Name</th><th>Type</th><th>Arch</th><th>Size</th><th>Status</th><th></th></tr>
+      <tr><th>Name</th><th>Type</th><th>Arch</th><th>Size</th><th>Location</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
         <tr v-for="img in visibleImages" :key="'hostId' in img ? `${img.hostId}:${img.id}` : img.id" :class="{ pending: isTransferringStatus(img.status) || img.status === 'uploading' }">
@@ -505,6 +541,7 @@ async function doDeleteImage() {
           <td>{{ imageTypeLabel(img.imageType) }}</td>
           <td><span class="arch">{{ img.arch }}</span></td>
           <td class="num">{{ formatBytes(img.sizeBytes) }}</td>
+          <td class="path">{{ imageLocation(img) }}</td>
           <td>
             <span class="state" :class="img.status === 'ready' ? 'ok' : img.status === 'error' ? 'bad' : 'warn'">
               <span class="ops-dot" :class="img.status === 'ready' ? 'ok' : img.status === 'error' ? 'bad' : 'warn pulse'"></span>
@@ -513,9 +550,7 @@ async function doDeleteImage() {
             <div v-if="usedByNames(img)" class="row-sub">{{ usedByNames(img) }}</div>
           </td>
           <td class="del">
-            <button type="button" class="icon-btn" aria-label="Delete" @click="deleteImage(img.id, img.name)">
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 3.5h10M5.5 3.5v-1h3v1M3.5 3.5l.5 8.5h6l.5-8.5M5.8 6v3.5M8.2 6v3.5"/></svg>
-            </button>
+            <AppButton size="sm" variant="danger" aria-label="Delete" @click="deleteImage(img.id, img.name)">Delete</AppButton>
           </td>
         </tr>
     </tbody>

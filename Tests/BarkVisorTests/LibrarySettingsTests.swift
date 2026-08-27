@@ -30,6 +30,25 @@ final class LibrarySettingsTests {
         #expect(LibrarySettings.isDefault(resolved))
     }
 
+    @Test func `unset library directory is not explicit`() throws {
+        let explicit = try dbPool.read { try LibrarySettings.hasExplicitDirectory(from: $0) }
+        #expect(!explicit)
+    }
+
+    @Test func `saving the default path still counts as explicit`() throws {
+        try dbPool.write { db in
+            try AppSetting(
+                key: LibrarySettings.imageDirectoryKey,
+                value: LibrarySettings.defaultDirectory.path,
+            )
+            .save(db, onConflict: .replace)
+        }
+        let resolved = try dbPool.read { try LibrarySettings.resolvedDirectory(from: $0) }
+        let explicit = try dbPool.read { try LibrarySettings.hasExplicitDirectory(from: $0) }
+        #expect(LibrarySettings.isDefault(resolved))
+        #expect(explicit)
+    }
+
     @Test func `custom library path is read from app_settings`() throws {
         let custom = tmpDir.appendingPathComponent("library")
         try dbPool.write { db in
@@ -148,7 +167,9 @@ final class LibrarySettingsTests {
                 .save(db, onConflict: .replace)
         }
         let resolved = try dbPool.read { try LibrarySettings.resolvedDirectory(from: $0) }
+        let explicit = try dbPool.read { try LibrarySettings.hasExplicitDirectory(from: $0) }
         #expect(LibrarySettings.isDefault(resolved))
+        #expect(!explicit)
     }
 
     @Test func `relative stored path is rejected on read`() throws {
