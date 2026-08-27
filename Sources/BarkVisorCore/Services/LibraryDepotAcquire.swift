@@ -42,9 +42,12 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
     }
 
     public func fetchMatching(_ request: LibraryDepotFetchRequest, db: DatabasePool) async -> VMImage? {
-        guard let depotHostId = try? await db.read({ try LibrarySettings.resolvedDepotHostId(from: $0) }),
-              depotHostId != localHostId
-        else {
+        let depotHostId = try? await db.read { db in
+            try LibrarySettings.resolvedDepotHostId(
+                from: db, devices: devices, localHostId: localHostId,
+            )
+        }
+        guard let depotHostId, depotHostId != localHostId else {
             return nil
         }
         switch await LibraryAcquire.resolveLocal(request: request, kind: .depot, db: db) {
@@ -62,7 +65,7 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         guard let client = await client(for: depotHostId, sourceUrl: request.sourceUrl, db: db) else {
             return nil
         }
-        guard let remote = await lookup(request.sourceUrl, client: client, db: db) else {
+        guard let remote = await lookup(request, client: client, db: db) else {
             return nil
         }
         let claim: LibraryAcquire.Claim
@@ -135,20 +138,25 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
     }
 
     private func lookup(
-        _ sourceUrl: String,
+        _ request: LibraryDepotFetchRequest,
         client: any LibraryDepotClient,
         db: DatabasePool,
     ) async -> LibraryDepotImageInfo? {
+        let sha256: String? = if request.sourceUrl.isEmpty, case let .sha256(hash) = request.expectedChecksum {
+            hash
+        } else {
+            nil
+        }
         do {
-            let listed = try await client.listImages(sourceUrl: sourceUrl)
+            let listed = try await client.listImages(sourceUrl: request.sourceUrl, sha256: sha256)
             if let match = listed.first(where: { $0.status == "ready" }) {
                 return match
             }
-            await fallback(db: db, sourceUrl: sourceUrl, reason: "depot has no matching image")
+            await fallback(db: db, sourceUrl: request.sourceUrl, reason: "depot has no matching image")
             return nil
         } catch {
             await fallback(
-                db: db, sourceUrl: sourceUrl,
+                db: db, sourceUrl: request.sourceUrl,
                 reason: "depot unreachable: \(error.localizedDescription)",
             )
             return nil
@@ -254,11 +262,19 @@ public struct LibraryDepotAcquire: LibraryDepotFetching {
         } catch {
             return false
         }
+        let storedSha: String? = if ImageService.isCompressedSource(job.request.sourceUrl) {
+            nil
+        } else if case let .sha256(hash) = job.request.expectedChecksum {
+            hash
+        } else {
+            nil
+        }
         await starter.start(
             imageID: job.imageId,
             url: url,
             destination: destination,
             expectedChecksum: job.request.expectedChecksum,
+            expectedStoredSha256: storedSha,
         )
         return true
     }

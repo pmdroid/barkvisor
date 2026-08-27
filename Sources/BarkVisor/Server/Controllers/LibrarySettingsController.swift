@@ -77,7 +77,11 @@ struct LibrarySettingsController: RouteCollection {
             try LibrarySettings.resolvedDirectory(from: db)
         }
         let depotHostId = try await req.db.read { db in
-            try LibrarySettings.resolvedDepotHostId(from: db)
+            try LibrarySettings.resolvedDepotHostId(
+                from: db,
+                devices: DeviceRegistry(dataDir: Config.dataDir),
+                localHostId: Config.hostId,
+            )
         }
         let usage = LibrarySettings.volumeUsage(at: dir)
         let totalBytes = usage?.total

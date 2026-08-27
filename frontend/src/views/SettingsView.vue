@@ -1279,6 +1279,7 @@ onUnmounted(() => {
         {{ DEVICE_LABEL }}s fetch from it first. If that {{ DEVICE_LABEL }} is
         down or the checksum does not match, they download from the internet.
         Starting a Workload on this {{ DEVICE_LABEL }} never waits on the Library depot.
+        If this is unset, a {{ DEVICE_LABEL }} with exactly one peer uses that peer as the depot.
       </p>
       <div class="form-group">
         <label>Library depot</label>

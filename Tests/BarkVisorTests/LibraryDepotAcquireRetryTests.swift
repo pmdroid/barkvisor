@@ -33,6 +33,12 @@ final class DepotRetryTests {
             agentHost: "192.168.10.8",
             agentPort: 7_778,
         )
+        try devices.upsert(
+            hostId: "other-device",
+            fingerprint: "bb",
+            agentHost: "192.168.10.9",
+            agentPort: 7_778,
+        )
         client = FakeLibraryDepotClient()
     }
 
@@ -384,7 +390,11 @@ private actor RecordingCatalogDownloader: ImageDownloadStarting {
     private(set) var startedURLs: [URL] = []
 
     func start(
-        imageID: String, url: URL, destination: URL, expectedChecksum: ExpectedChecksum?,
+        imageID: String,
+        url: URL,
+        destination: URL,
+        expectedChecksum: ExpectedChecksum?,
+        expectedStoredSha256: String?,
     ) {
         startedURLs.append(url)
     }
