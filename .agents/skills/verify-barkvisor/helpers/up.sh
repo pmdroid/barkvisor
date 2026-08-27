@@ -5,8 +5,8 @@ set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
-NAME="verify"
-ARGS=(--name "$NAME")
+NAME=""
+ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -15,6 +15,11 @@ while [[ $# -gt 0 ]]; do
     *) ARGS+=("$1"); shift ;;
   esac
 done
+
+if [[ -z "$NAME" ]]; then
+  NAME="verify-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
+  ARGS=(--name "$NAME" "${ARGS[@]}")
+fi
 
 mkdir -p "$SKILL_DIR/current"
 "$ROOT/scripts/dev-instance.sh" start "${ARGS[@]}" | tee "$SKILL_DIR/current/meta.json"

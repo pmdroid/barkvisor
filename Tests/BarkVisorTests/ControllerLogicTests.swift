@@ -161,6 +161,9 @@ struct ControllerLogicTests {
         #expect(DirectoryBrowser.isAllowed(NSHomeDirectory() + "/Documents"))
         #expect(DirectoryBrowser.isAllowed("/Volumes"))
         #expect(DirectoryBrowser.isAllowed("/Volumes/External"))
+        #expect(DirectoryBrowser.isAllowed("/mnt"))
+        #expect(DirectoryBrowser.isAllowed("/mnt/data"))
+        #expect(DirectoryBrowser.isAllowed("/media/usb"))
         #expect(DirectoryBrowser.isAllowed("/"))
         #expect(!DirectoryBrowser.isAllowed("/etc"))
         #expect(!DirectoryBrowser.isAllowed("/usr"))
@@ -168,6 +171,30 @@ struct ControllerLogicTests {
         #expect(DirectoryBrowser.isAllowed("/var/lib/barkvisor/images", extraRoots: ["/var/lib/barkvisor/images"]))
         #expect(DirectoryBrowser.isAllowed("/var/lib/barkvisor/images/ubuntu", extraRoots: ["/var/lib/barkvisor/images"]))
         #expect(!DirectoryBrowser.isAllowed("/var/lib/barkvisor", extraRoots: ["/var/lib/barkvisor/images"]))
+        #expect(DirectoryBrowser.isAllowed("/var/lib/barkvisor", extraRoots: ["/var/lib/barkvisor"]))
+        #expect(DirectoryBrowser.isAllowed("/var/lib/barkvisor/disks", extraRoots: ["/var/lib/barkvisor"]))
+    }
+
+    @Test func `directory browser lists roots and can leave an empty extra root`() {
+        let home = "/Users/pascal"
+        let dataDir = "/var/lib/barkvisor"
+        let disks = "/var/lib/barkvisor/disks"
+        let extra = [dataDir, disks]
+        let present: Set<String> = [home, "/mnt", dataDir, disks]
+        let roots = DirectoryBrowser.rootEntries(
+            extraRoots: extra,
+            home: home,
+            exists: { present.contains($0) },
+        )
+        #expect(roots.map(\.path).contains(home))
+        #expect(roots.map(\.path).contains("/mnt"))
+        #expect(roots.map(\.path).contains(dataDir))
+        #expect(roots.map(\.path).contains(disks))
+        #expect(!roots.map(\.path).contains("/Volumes"))
+        #expect(DirectoryBrowser.parentPath(of: disks, extraRoots: extra, home: home) == dataDir)
+        #expect(DirectoryBrowser.parentPath(of: dataDir, extraRoots: extra, home: home) == "")
+        #expect(DirectoryBrowser.parentPath(of: home, extraRoots: extra, home: home) == "")
+        #expect(DirectoryBrowser.parentPath(of: "/", extraRoots: extra, home: home) == nil)
     }
 
     // MARK: - Repo Type Validation

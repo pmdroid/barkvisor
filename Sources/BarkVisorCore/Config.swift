@@ -43,6 +43,23 @@ public struct DBLogger: Sendable {
 /// (Linux ICU SIGSEGV under parallel Swift Testing).
 public let iso8601 = LockedISO8601Formatter()
 
+private final class LockedPort: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bound: Int?
+
+    func snapshot(requested: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return bound ?? requested
+    }
+
+    func adopt(_ port: Int) {
+        lock.lock()
+        bound = port
+        lock.unlock()
+    }
+}
+
 public final class LockedISO8601Formatter: @unchecked Sendable {
     private let lock = NSLock()
     private let formatter = ISO8601DateFormatter()
@@ -90,22 +107,51 @@ public enum Config {
     }
 
     /// HTTP listen port (SPA + JWT). Override with `BARKVISOR_PORT` (1–65535).
-    public static let port: Int = {
-        if let raw = ProcessInfo.processInfo.environment["BARKVISOR_PORT"],
-           let value = Int(raw), value >= 1, value <= 65_535 {
-            return value
-        }
-        return 7_777
-    }()
+    public static var port: Int {
+        httpPortState.snapshot(requested: requestedHTTPPort)
+    }
 
     /// mTLS agent-plane listen port. Override with `BARKVISOR_AGENT_PORT` (1–65535).
-    public static let agentPort: Int = {
-        if let raw = ProcessInfo.processInfo.environment["BARKVISOR_AGENT_PORT"],
-           let value = Int(raw), value >= 1, value <= 65_535 {
-            return value
+    public static var agentPort: Int {
+        agentPortState.snapshot(requested: requestedAgentPort)
+    }
+
+    public static let requestedHTTPPort = listenPort(
+        from: ProcessInfo.processInfo.environment["BARKVISOR_PORT"],
+        fallback: 7_777,
+    )
+
+    public static let requestedAgentPort = listenPort(
+        from: ProcessInfo.processInfo.environment["BARKVISOR_AGENT_PORT"],
+        fallback: 7_778,
+    )
+
+    public static func listenPort(from raw: String?, fallback: Int) -> Int {
+        guard let raw else { return fallback }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int(trimmed), (0 ... 65_535).contains(value) else {
+            return fallback
         }
-        return 7_778
-    }()
+        return value
+    }
+
+    public static func adoptBoundHTTPPort(_ bound: Int) {
+        httpPortState.adopt(bound)
+        recordBoundPort(bound, fileName: "http.port")
+    }
+
+    public static func adoptBoundAgentPort(_ bound: Int) {
+        agentPortState.adopt(bound)
+        recordBoundPort(bound, fileName: "agent.port")
+    }
+
+    public static func recordBoundPort(_ port: Int, fileName: String) {
+        let url = dataDir.appendingPathComponent(fileName)
+        try? String(port).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static let httpPortState = LockedPort()
+    private static let agentPortState = LockedPort()
 
     /// Install prefix derived from binary location.
     /// `/usr/local/bin/barkvisor` → prefix = `/usr/local`

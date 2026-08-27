@@ -1,52 +1,62 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import api from '../api/client'
 import { apiErrorMessage } from '../api/errors'
+import type { DeviceApiTarget } from '../utils/homeDeviceApi'
+import {
+  asFolderEntries,
+  folderBrowseParams,
+  folderBrowseRequestPath,
+  type FolderEntry,
+} from '../utils/folderBrowse'
 import FormError from './ui/FormError.vue'
 
-type FolderEntry = { name: string; path: string; isDirectory: boolean }
-
-const props = defineProps<{ modelValue: string }>()
+const props = defineProps<{
+  modelValue: string
+  device?: DeviceApiTarget | null
+}>()
 const emit = defineEmits(['update:modelValue', 'close'])
 
-const currentPath = ref(props.modelValue || '')
+const currentPath = ref('')
 const entries = ref<FolderEntry[]>([])
 const loading = ref(false)
 const error = ref('')
 
 onMounted(() => {
-  browse(props.modelValue || '')
+  browse('')
 })
 
-function asEntries(data: unknown): FolderEntry[] {
-  if (!Array.isArray(data)) return []
-  return data.filter((row): row is FolderEntry => {
-    if (!row || typeof row !== 'object') return false
-    const item = row as FolderEntry
-    return typeof item.name === 'string' && typeof item.path === 'string'
-  })
-}
-
-function pathFromChild(child: FolderEntry): string {
-  const cut = child.path.lastIndexOf('/')
-  if (cut <= 0) return '/'
-  return child.path.slice(0, cut)
-}
+watch(
+  () => props.device?.hostId,
+  () => {
+    browse('')
+  },
+)
 
 async function browse(path: string) {
   loading.value = true
   error.value = ''
   try {
-    const { data } = await api.get('/system/browse', { params: { path: path || undefined } })
-    entries.value = asEntries(data)
-    if (path) {
-      currentPath.value = path
-      return
-    }
-    const child = entries.value.find((row) => row.name !== '..')
-    currentPath.value = child ? pathFromChild(child) : '/'
+    const { data } = await api.get(folderBrowseRequestPath(props.device), {
+      params: folderBrowseParams(path),
+    })
+    entries.value = asFolderEntries(data)
+    currentPath.value = path
   } catch (err) {
     error.value = apiErrorMessage(err, 'Unable to list folders')
+    if (path) {
+      try {
+        const { data } = await api.get(folderBrowseRequestPath(props.device), {
+          params: folderBrowseParams(''),
+        })
+        entries.value = asFolderEntries(data)
+        currentPath.value = ''
+      } catch {
+        entries.value = []
+      }
+    } else {
+      entries.value = []
+    }
   } finally {
     loading.value = false
   }
@@ -66,7 +76,7 @@ function select() {
         <section class="split-stage">
           <div class="split-head">
             <h2>Select Folder</h2>
-            <p class="folder-current">{{ currentPath || '/' }}</p>
+            <p class="folder-current">{{ currentPath || 'Places' }}</p>
           </div>
           <div class="split-body">
             <FormError v-if="error" :message="error" />
@@ -74,7 +84,7 @@ function select() {
             <div v-else class="folder-list">
               <button
                 v-for="entry in entries"
-                :key="entry.path"
+                :key="`${entry.name}:${entry.path}`"
                 type="button"
                 class="folder-item"
                 @click="browse(entry.path)"
@@ -89,7 +99,7 @@ function select() {
                 </svg>
                 <span>{{ entry.name }}</span>
               </button>
-              <div v-if="!entries.length" class="folder-empty">No subfolders</div>
+              <div v-if="!entries.length" class="folder-empty">No folders</div>
             </div>
           </div>
           <div class="split-foot">
