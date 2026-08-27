@@ -21,6 +21,7 @@ FROM swift:${SWIFT_VERSION}-noble AS build
 # Optional product version baked into Config.swift (About API / User-Agent).
 ARG BARKVISOR_VERSION=
 WORKDIR /src
+SHELL ["/bin/bash", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY Package.swift Package.resolved* .swift-version* ./
