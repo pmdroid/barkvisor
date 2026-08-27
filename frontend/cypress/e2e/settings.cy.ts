@@ -24,6 +24,16 @@ describe('Settings', () => {
     cy.contains('Catalog Download').should('not.exist')
   })
 
+  it('Disks tab opens a folder picker with places to choose', () => {
+    cy.contains('.tabs button', 'Disks').click()
+    cy.contains('Default VM disk directory').should('be.visible')
+    cy.contains('button', 'Browse').click()
+    cy.contains('h2', 'Select Folder').should('be.visible')
+    cy.get('.folder-item').should('have.length.gte', 1)
+    cy.get('.folder-empty').should('not.exist')
+    cy.contains('button', 'Cancel').click()
+  })
+
   // ==================== API Keys ====================
 
   describe('API Keys tab', () => {
