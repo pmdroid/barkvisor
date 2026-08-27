@@ -8,6 +8,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Create VM from a catalog OS recipe (AlmaLinux, Ubuntu, Debian, …) no longer dies on `users:` in the recipe user-data. The VM is created after the image is ready; a first click that only starts the download says so and lists the image under Images.
 - Packages ship two binaries: `barkvisor` (SPA Home Device) and `barkvisor-agent` (API-only Device, symlink). Linux has `barkvisor.service` and `barkvisor-agent.service`; they Conflict. One process per Device.
 - Swift toolchain is **6.3.3** locally (mise / `.swift-version`) and on Linux CI, guest-boot, and package Docker builds. `swift-tools-version` is 6.3.
 - Default VM disk directory is **Settings → Disks** (`?tab=disks`). The Disks list still creates disks and can pick a folder per disk.

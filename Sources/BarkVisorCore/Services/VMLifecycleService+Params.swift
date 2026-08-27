@@ -27,6 +27,7 @@ public struct CreateVMParams: Sendable {
     public let overrides: WorkloadOverrides?
     public let health: WorkloadHealthSpec?
     public let workloadClass: String?
+    public let allowCatalogIdentityKeys: Bool
 
     public init(
         id: String? = nil,
@@ -52,6 +53,7 @@ public struct CreateVMParams: Sendable {
         overrides: WorkloadOverrides? = nil,
         health: WorkloadHealthSpec? = nil,
         workloadClass: String? = nil,
+        allowCatalogIdentityKeys: Bool = false,
     ) {
         self.id = id
         self.name = name
@@ -76,6 +78,7 @@ public struct CreateVMParams: Sendable {
         self.overrides = overrides
         self.health = health
         self.workloadClass = workloadClass
+        self.allowCatalogIdentityKeys = allowCatalogIdentityKeys
     }
 }
 

@@ -274,6 +274,7 @@ public enum TemplateDeployService {
             description: "Deployed from template: \(template.name)",
             uefi: true,
             tpmEnabled: false,
+            allowCatalogIdentityKeys: true,
         )
 
         let result = try await VMLifecycleService.createVM(

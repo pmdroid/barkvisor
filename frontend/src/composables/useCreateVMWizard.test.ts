@@ -6,6 +6,7 @@ import type { Image, SSHKey } from '../api/types'
 import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
 import { useDevicesStore } from '../stores/devices'
 import { useSSHKeyStore } from '../stores/sshKeys'
+import { useToastStore } from '../stores/toast'
 import { cancelLivePlacementScores, useCreateVMWizard, WIZARD_STEP_LABELS } from './useCreateVMWizard'
 import { vmCpuCap, vmMemoryCapMB } from '../utils/hostBuffer'
 import type { HomeTemplate } from '../stores/homeLibrary'
@@ -397,6 +398,33 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(body.inputs.username).toBe('ubuntu')
     expect(body.inputs.ssh_keys).toContain('ssh-ed25519')
     expect(created).toBe(true)
+  })
+
+  test('template deploy downloading toasts Images', async () => {
+    patchSelfDevice()
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate()]
+    library.templates = catalogTemplates
+    useSSHKeyStore().keys = [demoKey()]
+    api.post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      if (url === '/templates/deploy' || url.endsWith('/templates/deploy')) {
+        return Promise.resolve({
+          data: { status: 'downloading', imageId: 'img-alma', vm: null },
+        })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    }) as typeof api.post
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    wizard.selectedSSHKeyId.value = 'k1'
+    wizard.goToDisk()
+    await waitReady(wizard)
+    await wizard.submit()
+    expect(useToastStore().toasts.some((t) => t.message.includes('Images'))).toBe(true)
   })
 
   test('new disk is the default Create path', async () => {
