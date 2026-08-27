@@ -602,21 +602,32 @@ extension VMLifecycleService {
         }
     }
 
-    /// vCPUs must be at least 1 and at most the host online logical CPU count.
+    static func maxAssignableCPUs() -> Int {
+        maxAssignableHostCPUs(PlatformHost.cpuCount)
+    }
+
+    static func maxAssignableMemoryMB() -> Int {
+        max(128, PlatformHost.physicalMemoryMB - 4_096)
+    }
+
+    /// vCPUs must be at least 1 and leave two logical CPUs for the host.
     static func validateCPUCount(_ cpuCount: Int) throws {
+        let maxCPUs = maxAssignableCPUs()
         let hostCPUs = PlatformHost.cpuCount
-        guard cpuCount >= 1, cpuCount <= hostCPUs else {
+        let reserved = hostCPUReserve(hostCPUs)
+        guard cpuCount >= 1, cpuCount <= maxCPUs else {
             throw BarkVisorError.badRequest(
-                "cpuCount must be between 1 and \(hostCPUs) (host has \(hostCPUs) logical CPU\(hostCPUs == 1 ? "" : "s"))",
+                "cpuCount must be between 1 and \(maxCPUs) (host has \(hostCPUs) logical CPU\(hostCPUs == 1 ? "" : "s"); \(reserved) reserved for the Device)",
             )
         }
     }
 
     static func validateMemoryMB(_ memoryMB: Int) throws {
+        let maxMemoryMB = maxAssignableMemoryMB()
         let hostMemoryMB = PlatformHost.physicalMemoryMB
-        guard memoryMB >= 128, memoryMB <= hostMemoryMB else {
+        guard memoryMB >= 128, memoryMB <= maxMemoryMB else {
             throw BarkVisorError.badRequest(
-                "memoryMB must be between 128 and \(hostMemoryMB) (host has \(hostMemoryMB) MB physical memory)",
+                "memoryMB must be between 128 and \(maxMemoryMB) (host has \(hostMemoryMB) MB physical memory; 4096 MB reserved for the Device)",
             )
         }
     }

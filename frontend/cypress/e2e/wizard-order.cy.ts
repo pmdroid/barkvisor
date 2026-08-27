@@ -1,75 +1,41 @@
-describe('Create VM wizard order (PAS-182)', () => {
+describe('Create VM wizard order (magazine)', () => {
   beforeEach(() => {
     cy.login()
   })
 
-  it('opens on Basics with no Device picker or arch lecture', () => {
+  it('opens on gallery with 3-step magazine frame', () => {
     cy.visit('/vms')
     cy.contains('button', 'Create VM').click()
-    cy.contains('h2', 'Create Virtual Machine').should('be.visible')
-    cy.get('.wizard-dot').should('have.length', 7)
-    cy.get('.wizard-dot.active').should('contain', '1')
-    cy.contains('h3', 'Basics').should('be.visible')
-    cy.get('.device-picker').should('not.exist')
-    cy.contains('device arch').should('not.exist')
-    cy.contains('Architecture details').should('not.exist')
-    cy.contains('Recommended').should('not.exist')
+    cy.get('.mag-frame').should('be.visible')
+    cy.contains('h2', 'What do you want to run?').should('be.visible')
+    cy.contains('.mag-step', 'Step 1 of 3').should('be.visible')
+    cy.get('.split-rail').should('not.exist')
+    cy.get('.mag-shelf').should('exist')
+    cy.contains('.mag-custom', 'Use your own image').should('be.visible')
   })
 
-  it('Windows card is selectable and has no device-arch badge', () => {
-    cy.visit('/vms')
-    cy.contains('button', 'Create VM').click()
-    cy.get('.os-card').contains('Windows').parent('.os-card').should('not.have.class', 'disabled')
-    cy.get('.os-card').contains('Windows').parent('.os-card').find('.os-soon').should('not.exist')
-    cy.get('.os-card').contains('Windows').click()
-    cy.get('.os-card').contains('Windows').parent('.os-card').should('have.class', 'selected')
-  })
-
-  it('walks Basics → Image → Place → Hardware', () => {
+  it('walks gallery to configure to disk', () => {
     cy.apiLogin().then((token) => {
       cy.request({
-        url: '/api/images',
+        url: '/api/templates',
         headers: { Authorization: `Bearer ${token}` },
       }).then((res) => {
-        const images = (res.body as Array<{ id: string; name: string; imageType: string; status: string }>)
-          .filter((i) => i.status === 'ready')
-        const iso = images.find((i) => i.imageType === 'iso')
-        const cloud = images.find((i) => i.imageType === 'cloud-image')
-        const image = iso || cloud
-        if (!image) {
-          cy.log('SKIP: no ready Home Library image')
+        const templates = res.body as Array<{ slug: string; name: string }>
+        if (!templates.length) {
+          cy.log('SKIP: no templates')
           return
         }
+        const template = templates[0]
 
         cy.visit('/vms')
         cy.contains('button', 'Create VM').click()
-        cy.contains('h3', 'Basics').should('be.visible')
-        cy.get('input[placeholder="my-vm"]').type('wizard-order-vm')
+        cy.contains('.mag-card', template.name).click()
+        cy.contains('h2', 'Name it and pick a size').should('be.visible')
+        cy.contains('.mag-step', 'Step 2 of 3').should('be.visible')
+        cy.get('input').first().should('not.have.value', '')
         cy.contains('button', 'Next').click()
-
-        cy.contains('h3', 'Image').should('be.visible')
-        cy.get('.device-picker').should('not.exist')
-        if (!iso && cloud) {
-          cy.contains('button', 'Cloud Image').click()
-        }
-        cy.get('select').then(($selects) => {
-          const imageSelect = $selects.filter(':has(option:contains("Select an image"))')
-          const match = [...imageSelect.find('option')].find((opt) => {
-            const value = opt.getAttribute('value') || ''
-            return value === image.id || value.includes(image.id) || (opt.textContent || '').includes(image.name)
-          })
-          cy.wrap(imageSelect).select(match?.getAttribute('value') || image.id)
-        })
-        cy.contains('button', 'Next').click()
-
-        cy.contains('h3', 'Place').should('be.visible')
-        cy.get('.device-picker').should('exist')
-        cy.contains('button', 'Next').click()
-
-        cy.contains('h3', 'Hardware').should('be.visible')
-        cy.contains('CPU Cores').should('exist')
-        cy.contains('Architecture details').should('exist')
-        cy.get('.arch-details').should('not.have.attr', 'open')
+        cy.contains('h2', 'Disk').should('be.visible')
+        cy.contains('button', 'Create').should('be.visible')
       })
     })
   })

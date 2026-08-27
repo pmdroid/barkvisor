@@ -1,5 +1,32 @@
 import Foundation
 
+/// RFC-style hostname slug from a display VM name (cloud-init local-hostname).
+public func hostCPUReserve(_ hostCpuCount: Int) -> Int {
+    if hostCpuCount <= 1 { return 0 }
+    if hostCpuCount < 4 { return 1 }
+    return 2
+}
+
+public func maxAssignableHostCPUs(_ hostCpuCount: Int) -> Int {
+    max(1, hostCpuCount - hostCPUReserve(hostCpuCount))
+}
+
+public func hostnameFromVMName(_ name: String) -> String {
+    var slug = name.trimmingCharacters(in: .whitespaces).lowercased()
+    slug = slug.replacingOccurrences(of: " ", with: "-")
+    slug = slug.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == "-" }
+        .map(String.init)
+        .joined()
+    while slug.contains("--") {
+        slug = slug.replacingOccurrences(of: "--", with: "-")
+    }
+    slug = slug.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    if slug.count > 63 {
+        slug = String(slug.prefix(63)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+    return slug.isEmpty ? "vm" : slug
+}
+
 /// Validate a VM name: must be 1-128 characters, alphanumeric, hyphens, underscores, dots, spaces.
 public func validateVMName(_ name: String) throws {
     let trimmed = name.trimmingCharacters(in: .whitespaces)

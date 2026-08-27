@@ -1,357 +1,230 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCreateVMWizard } from '../composables/useCreateVMWizard'
-import CreateVMOSStep from './create-vm/CreateVMOSStep.vue'
-import CreateVMHardwareStep from './create-vm/CreateVMHardwareStep.vue'
-import CreateVMImageStep from './create-vm/CreateVMImageStep.vue'
-import CreateVMPlaceStep from './create-vm/CreateVMPlaceStep.vue'
-import CreateVMDriversStep from './create-vm/CreateVMDriversStep.vue'
-import CreateVMStorageStep from './create-vm/CreateVMStorageStep.vue'
-import CreateVMNetworkStep from './create-vm/CreateVMNetworkStep.vue'
-import CreateVMSummaryStep from './create-vm/CreateVMSummaryStep.vue'
+import CreateVMGalleryStep from './create-vm/CreateVMGalleryStep.vue'
+import CreateVMConfigureStep from './create-vm/CreateVMConfigureStep.vue'
+import CreateVMMagazineDiskStep from './create-vm/CreateVMMagazineDiskStep.vue'
 
 const props = defineProps<{ initialHostId?: string }>()
 const emit = defineEmits(['close', 'created'])
 
-const {
-  step,
-  totalSteps,
-  currentStepLabel,
-  stepLabels,
-  canProceed,
-  next,
-  prev,
-  name,
-  osType,
-  workloadClass,
-  isAgent,
-  selectOS,
-  cpuCount,
-  hostCpuCount,
-  hostMemoryMB,
-  memoryMB,
-  displayResolution,
-  tpmEnabled,
-  uefi,
-  effectiveGuestArch,
-  archOptions,
-  machineType,
-  accelerator,
-  cpuModel,
-  alwaysShowArchDetails,
-  setGuestArch,
-  setAlwaysShowArchDetails,
-  setTpmEnabled,
-  mode,
-  selectedImageId,
-  selectedSSHKeyId,
-  showCloudInit,
-  cloudUserData,
-  openaiPreset,
-  byoOpenAIURL,
-  byoOpenAIAPIKey,
-  isCodingAgentSelected,
-  filteredImages,
-  selectedImage,
-  formatBytes,
-  sshKeys,
-  virtioWinAvailable,
-  virtioWinDownloading,
-  virtioWinProgress,
-  virtioWinStatus,
-  virtioWinError,
-  startVirtioWinDownload,
-  diskSource,
-  diskSizeGB,
-  existingDiskId,
-  availableDisks,
-  sharedPaths,
-  showFolderPicker,
-  hostUSBDevices,
-  selectedUSBDevices,
-  showUSBPicker,
-  fetchUSBDevices,
-  toggleUSBDevice,
-  isUSBSelected,
-  removeUSBDevice,
-  networks,
-  selectedNetworkId,
-  selectedNetwork,
-  portForwards,
-  newPFProto,
-  newPFHostPort,
-  newPFGuestPort,
-  addPortForward,
-  removePortForward,
-  isNAT,
-  archLabel,
-  revealArchOnSummary,
-  archProblemText,
-  error,
-  loading,
-  submit,
-  selectedHostId,
-  deviceOptions,
-  selectedDevice,
-  selectedDeviceIncompatibility,
-  selectedDeviceBlocksPlacement,
-  placementStepReached,
-} = useCreateVMWizard((e) => emit(e), { initialHostId: props.initialHostId })
+const wizard = useCreateVMWizard((e) => emit(e), { initialHostId: props.initialHostId })
 
-function openUSBPicker() {
-  showUSBPicker.value = true
-  fetchUSBDevices()
-}
-
-const stepHint: Record<string, string> = {
-  Basics: 'Name and type',
-  Image: 'ISO or cloud',
-  Place: 'Which Device',
-  Hardware: 'CPU · memory',
-  Drivers: 'Virtio ISO',
-  Storage: 'Disk size',
-  Network: 'NAT or bridge',
-  Summary: 'Create',
-}
-
-const stepBlurb: Record<string, string> = {
-  Basics: 'What this Workload is called, and whether it is Windows or Linux.',
-  Image: 'ISO or cloud image from the Library.',
-  Place: 'Which Device runs this Workload.',
-  Hardware: 'CPU, memory, and guest architecture.',
-  Drivers: 'Windows virtio drivers for this guest.',
-  Storage: 'Boot disk size and extra volumes.',
-  Network: 'NAT or bridge, plus port forwards.',
-  Summary: 'Review and create.',
-}
-
-const nextStepLabel = computed(() => stepLabels.value[step.value] || '')
+const stepLabel = computed(() => `Step ${wizard.step.value} of ${wizard.totalSteps.value}`)
+const showIsoDrop = computed(() => wizard.galleryKind.value === 'windows')
+const showCustomImage = computed(() =>
+  wizard.galleryKind.value === 'custom' || wizard.galleryKind.value === 'windows',
+)
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
-    <div class="split-frame">
-      <aside class="split-rail">
-        <h3>Create VM</h3>
-        <button
-          v-for="(label, i) in stepLabels"
-          :key="label"
-          type="button"
-          class="split-s"
-          :class="{ on: step === i + 1, done: step > i + 1 }"
-          @click="step > i + 1 ? (step = i + 1) : null"
-        >
-          <span class="wizard-dot" :class="{ active: step === i + 1, done: step > i + 1 }">{{ i + 1 }}</span>
-          <div>
-            <div class="t">{{ label }}</div>
-            <div class="d">{{ stepHint[label] }}</div>
-          </div>
+  <div class="mag-overlay" @click.self="emit('close')">
+    <div class="mag-frame">
+      <div class="mag-head">
+        <h2>{{ wizard.headTitle.value }}</h2>
+        <span class="mag-step">{{ stepLabel }}</span>
+      </div>
+      <div class="mag-body">
+        <CreateVMGalleryStep
+          v-if="wizard.currentStepLabel.value === 'Gallery'"
+          :templates="wizard.galleryTemplates.value"
+          :show-coding-agent="wizard.showCodingAgentCard.value"
+          :selected-kind="wizard.galleryKind.value"
+          :selected-template-slug="wizard.selectedTemplateSlug.value"
+          @select-template="wizard.selectGalleryTemplate"
+          @select-windows="wizard.selectGalleryWindows"
+          @select-custom="wizard.selectGalleryCustom"
+          @select-coding-agent="wizard.selectGalleryCodingAgent"
+        />
+
+        <CreateVMConfigureStep
+          v-else-if="wizard.currentStepLabel.value === 'Configure'"
+          :name="wizard.name.value"
+          :show-hostname-hint="wizard.showHostnameHint.value"
+          :selected-host-id="wizard.selectedHostId.value"
+          :device-options="wizard.deviceOptions.value"
+          :size-presets="wizard.sizePresets.value"
+          :selected-preset-id="wizard.selectedPresetId.value"
+          :dedicated="wizard.dedicated.value"
+          :leftover-text="wizard.leftoverText.value"
+          :shared-leftover-text="wizard.sharedLeftoverText.value"
+          :at-resource-cap="wizard.atResourceCap.value"
+          :cap-hint-text="wizard.capHintText.value"
+          :show-iso-drop="showIsoDrop"
+          :show-custom-image="showCustomImage"
+          :mode="wizard.mode.value"
+          :selected-image-id="wizard.selectedImageId.value"
+          :filtered-images="wizard.filteredImages.value"
+          :cpu-count="wizard.cpuCount.value"
+          :memory-m-b="wizard.memoryMB.value"
+          :cpu-cap="wizard.vmCpuCapValue.value"
+          :mem-cap-g-b="wizard.vmMemCapGB.value"
+          :network-bridged="wizard.networkBridged.value"
+          :uefi="wizard.uefi.value"
+          :tpm-enabled="wizard.tpmEnabled.value"
+          :tpm-why="wizard.tpmWhyText.value"
+          :show-ssh-key="wizard.showSshKeyRow.value"
+          :selected-s-s-h-key-id="wizard.selectedSSHKeyId.value"
+          :ssh-key-options="wizard.sshKeyOptions.value"
+          @update:name="wizard.name.value = $event"
+          @update:selected-host-id="wizard.selectedHostId.value = $event"
+          @update:selected-preset-id="wizard.applySizeFromPresetId($event)"
+          @update:dedicated="wizard.dedicated.value = $event"
+          @update:mode="wizard.mode.value = $event"
+          @update:selected-image-id="wizard.selectedImageId.value = $event"
+          @update:cpu-count="wizard.cpuCount.value = $event"
+          @update:memory-m-b="wizard.memoryMB.value = $event"
+          @update:network-bridged="wizard.networkBridged.value = $event"
+          @update:uefi="wizard.uefi.value = $event"
+          @update:tpm-enabled="wizard.setTpmEnabled($event)"
+          @update:selected-s-s-h-key-id="wizard.selectedSSHKeyId.value = $event"
+        />
+
+        <CreateVMMagazineDiskStep
+          v-else-if="wizard.currentStepLabel.value === 'Disk'"
+          :disk-source="wizard.diskSource.value"
+          :disk-size-g-b="wizard.diskSizeGB.value"
+          :existing-disk-id="wizard.existingDiskId.value"
+          :available-disks="wizard.availableDisks.value"
+          :selected-preset-label="wizard.selectedPreset.value?.label || 'Medium'"
+          :raw-available="wizard.rawDiskAvailable.value"
+          :raw-why="wizard.rawDiskWhy.value"
+          :block-devices="wizard.blockDevices.value"
+          :block-device-path="wizard.blockDevicePath.value"
+          :format-bytes="wizard.formatBytes"
+          @update:disk-source="wizard.diskSource.value = $event"
+          @update:disk-size-g-b="wizard.diskSizeGB.value = $event"
+          @update:existing-disk-id="wizard.existingDiskId.value = $event"
+          @update:block-device-path="wizard.blockDevicePath.value = $event"
+        />
+
+        <p v-if="wizard.error.value" class="mag-error">{{ wizard.error.value }}</p>
+      </div>
+      <div class="mag-foot">
+        <button type="button" class="mag-btn ghost" @click="wizard.step.value > 1 ? wizard.prev() : emit('close')">
+          {{ wizard.step.value > 1 ? 'Back' : 'Cancel' }}
         </button>
-      </aside>
-      <section class="split-stage">
-        <div class="split-head">
-          <h2>Create Virtual Machine</h2>
-          <p>{{ currentStepLabel }} · {{ stepBlurb[currentStepLabel] }}</p>
-        </div>
-        <div class="split-body">
-      <CreateVMOSStep
-        v-if="currentStepLabel === 'Basics'"
-        :name="name"
-        :osType="osType"
-        :workloadClass="workloadClass"
-        @update:name="name = $event"
-        @update:workloadClass="workloadClass = $event"
-        @selectOS="selectOS"
-        @next="next"
-      />
-
-      <CreateVMImageStep
-        v-else-if="currentStepLabel === 'Image'"
-        :osType="osType"
-        :mode="mode"
-        :selectedImageId="selectedImageId"
-        :selectedSSHKeyId="selectedSSHKeyId"
-        :showCloudInit="showCloudInit"
-        :cloudUserData="cloudUserData"
-        :filteredImages="filteredImages"
-        :sshKeys="sshKeys"
-        :formatBytes="formatBytes"
-        :isCodingAgentSelected="isCodingAgentSelected"
-        :openaiPreset="openaiPreset"
-        :byoOpenAIURL="byoOpenAIURL"
-        :byoOpenAIAPIKey="byoOpenAIAPIKey"
-        @update:mode="mode = $event"
-        @update:selectedImageId="selectedImageId = $event"
-        @update:selectedSSHKeyId="selectedSSHKeyId = $event"
-        @update:showCloudInit="showCloudInit = $event"
-        @update:cloudUserData="cloudUserData = $event"
-        @update:openaiPreset="openaiPreset = $event"
-        @update:byoOpenAIURL="byoOpenAIURL = $event"
-        @update:byoOpenAIAPIKey="byoOpenAIAPIKey = $event"
-      />
-
-      <CreateVMPlaceStep
-        v-else-if="currentStepLabel === 'Place'"
-        :selectedHostId="selectedHostId"
-        :deviceOptions="deviceOptions"
-        @update:selectedHostId="selectedHostId = $event"
-      />
-
-      <CreateVMHardwareStep
-        v-else-if="currentStepLabel === 'Hardware'"
-        :cpuCount="cpuCount"
-        :memoryMB="memoryMB"
-        :displayResolution="displayResolution"
-        :guestArch="effectiveGuestArch"
-        :archOptions="archOptions"
-        :machineType="machineType"
-        :accelerator="accelerator"
-        :cpuModel="cpuModel"
-        :uefi="uefi"
-        :tpmEnabled="tpmEnabled"
-        :alwaysShowArchDetails="alwaysShowArchDetails"
-        :archProblem="archProblemText"
-        :maxCpu="hostCpuCount"
-        :maxMemory="hostMemoryMB"
-        @update:cpuCount="cpuCount = $event"
-        @update:memoryMB="memoryMB = $event"
-        @update:displayResolution="displayResolution = $event"
-        @update:guestArch="setGuestArch"
-        @update:uefi="uefi = $event"
-        @update:tpmEnabled="setTpmEnabled"
-        @update:alwaysShowArchDetails="setAlwaysShowArchDetails"
-      />
-
-      <CreateVMDriversStep
-        v-else-if="currentStepLabel === 'Drivers'"
-        :virtioWinAvailable="virtioWinAvailable"
-        :virtioWinDownloading="virtioWinDownloading"
-        :virtioWinProgress="virtioWinProgress"
-        :virtioWinStatus="virtioWinStatus"
-        :virtioWinError="virtioWinError"
-        @download="startVirtioWinDownload"
-      />
-
-      <CreateVMStorageStep
-        v-else-if="currentStepLabel === 'Storage'"
-        :diskSource="diskSource"
-        :diskSizeGB="diskSizeGB"
-        :existingDiskId="existingDiskId"
-        :availableDisks="availableDisks"
-        :sharedPaths="sharedPaths"
-        :showFolderPicker="showFolderPicker"
-        :formatBytes="formatBytes"
-        :isAgent="isAgent"
-        @update:diskSource="diskSource = $event"
-        @update:diskSizeGB="diskSizeGB = $event"
-        @update:existingDiskId="existingDiskId = $event"
-        @update:sharedPaths="sharedPaths = $event"
-        @update:showFolderPicker="showFolderPicker = $event"
-      />
-
-      <CreateVMNetworkStep
-        v-else-if="currentStepLabel === 'Network'"
-        :networks="networks"
-        :selectedNetworkId="selectedNetworkId"
-        :selectedNetwork="selectedNetwork"
-        :isNAT="isNAT"
-        :portForwards="portForwards"
-        :newPFProto="newPFProto"
-        :newPFHostPort="newPFHostPort"
-        :newPFGuestPort="newPFGuestPort"
-        :selectedUSBDevices="selectedUSBDevices"
-        :showUSBPicker="showUSBPicker"
-        :hostUSBDevices="hostUSBDevices"
-        :isUSBSelected="isUSBSelected"
-        :isAgent="isAgent"
-        @update:selectedNetworkId="selectedNetworkId = $event"
-        @update:newPFProto="newPFProto = $event"
-        @update:newPFHostPort="newPFHostPort = $event"
-        @update:newPFGuestPort="newPFGuestPort = $event"
-        @update:showUSBPicker="showUSBPicker = $event"
-        @addPortForward="addPortForward"
-        @removePortForward="removePortForward"
-        @removeUSBDevice="removeUSBDevice"
-        @toggleUSBDevice="toggleUSBDevice"
-        @openUSBPicker="openUSBPicker"
-      />
-
-      <CreateVMSummaryStep
-        v-else-if="currentStepLabel === 'Summary'"
-        :name="name"
-        :osType="osType"
-        :archLabel="archLabel"
-        :cpuCount="cpuCount"
-        :memoryMB="memoryMB"
-        :displayResolution="displayResolution"
-        :tpmEnabled="tpmEnabled"
-        :uefi="uefi"
-        :revealArchDetails="revealArchOnSummary"
-        :archProblem="archProblemText"
-        :mode="mode"
-        :selectedImage="selectedImage"
-        :diskSource="diskSource"
-        :diskSizeGB="diskSizeGB"
-        :existingDiskId="existingDiskId"
-        :availableDisks="availableDisks"
-        :sharedPaths="sharedPaths"
-        :selectedUSBDevices="selectedUSBDevices"
-        :selectedNetwork="selectedNetwork"
-        :deviceLabel="selectedDevice ? (selectedDevice.displayName || selectedDevice.hostId) : ''"
-        :placementWarning="selectedDeviceIncompatibility()"
-        :placementBlocking="selectedDeviceBlocksPlacement()"
-        :workloadClass="workloadClass"
-      />
-
-      <p
-        v-if="placementStepReached && selectedDeviceIncompatibility() && currentStepLabel !== 'Summary'"
-        class="placement-override"
-      >
-        {{ selectedDeviceIncompatibility() }}
-        <template v-if="!selectedDeviceBlocksPlacement()"> You can still place the VM here.</template>
-      </p>
-
-      <!-- Error -->
-      <p
-        v-if="error"
-        style="color:var(--red);font-size:13px;margin-top:12px;background:var(--red-muted);padding:8px 12px;border-radius:var(--radius-xs)"
-      >
-        {{ error }}
-      </p>
-        </div>
-        <div class="split-foot">
-          <button class="btn-ghost" @click="step > 1 ? prev() : emit('close')">
-            {{ step > 1 ? 'Back' : 'Cancel' }}
-          </button>
-          <button
-            v-if="step < totalSteps"
-            class="btn-primary"
-            :disabled="!canProceed()"
-            @click="next"
-          >
-            Next · {{ nextStepLabel }}
-          </button>
-          <button
-            v-else
-            class="btn-primary"
-            :disabled="loading || !canProceed()"
-            @click="submit"
-          >
-            {{ loading ? 'Creating...' : 'Create VM' }}
-          </button>
-        </div>
-      </section>
+        <button
+          v-if="wizard.step.value < wizard.totalSteps.value && wizard.step.value > 1"
+          type="button"
+          class="mag-btn primary"
+          :disabled="!wizard.canProceed()"
+          @click="wizard.step.value === 2 ? wizard.goToDisk() : wizard.next()"
+        >
+          Next
+        </button>
+        <button
+          v-else-if="wizard.step.value === wizard.totalSteps.value"
+          type="button"
+          class="mag-btn primary"
+          :disabled="wizard.loading.value || !wizard.canProceed()"
+          @click="wizard.submit"
+        >
+          {{ wizard.loading.value ? 'Creating...' : 'Create' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.placement-override {
-  margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: var(--radius-xs);
-  background: rgba(217, 119, 6, 0.12);
-  color: var(--amber, #d97706);
+.mag-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: 24px;
+  --mag-bg: #0a0e14;
+  --mag-text: #e4e4e2;
+  --mag-dim: #6e6e6c;
+  --mag-accent: #0090f8;
+  --mag-line: rgba(255, 255, 255, 0.07);
+  --mag-panel: rgba(255, 255, 255, 0.03);
+  font-family: Inter, -apple-system, sans-serif;
+}
+.mag-frame {
+  width: 820px;
+  max-width: 100%;
+  height: 560px;
+  max-height: 90vh;
+  background: #0c1118;
+  border: 1px solid var(--mag-line);
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  color: var(--mag-text);
   font-size: 13px;
+}
+.mag-head {
+  padding: 18px 22px 12px;
+  border-bottom: 1px solid var(--mag-line);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.mag-head h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+}
+.mag-step {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--mag-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.mag-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 22px;
+}
+.mag-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--mag-line);
+}
+.mag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 2px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--mag-text);
+}
+.mag-btn.ghost {
+  border-color: var(--mag-line);
+  color: var(--mag-dim);
+}
+.mag-btn.ghost:hover { color: var(--mag-text); }
+.mag-btn.primary {
+  background: var(--mag-accent);
+  color: #fff;
+}
+.mag-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mag-error {
+  margin-top: 12px;
+  color: #f87171;
+  font-size: 13px;
+  background: rgba(248, 113, 113, 0.12);
+  padding: 8px 12px;
+  border-radius: 2px;
 }
 </style>
