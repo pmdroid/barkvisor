@@ -8,9 +8,17 @@ import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
 import { useDeviceWorkloadsStore } from '../stores/deviceWorkloads'
 import type { HomeWorkloadRow } from '../stores/deviceWorkloads'
+import { useCreateProgressStore } from '../stores/createProgress'
 import api from '../api/client'
 import type { GuestInfo, WorkloadHealth } from '../api/types'
 import { healthLabel, vmHealth, vmListEmptyKind } from '../utils/workloadHealth'
+import {
+  isPendingCreateId,
+  workloadListHealthBucket,
+  workloadListStatusClass,
+  workloadListStatusLabel,
+  workloadListStatusSub,
+} from '../utils/workloadListStatus'
 import { listBackendBadge, vmBackend } from '../utils/workloadBackend'
 
 import CreateVMDrawer from '../components/CreateVMDrawer.vue'
@@ -29,6 +37,7 @@ import { formatCores, formatMemoryMB, formatPortForwards } from '../utils/format
 
 const store = useVMStore()
 const homeWorkloads = useDeviceWorkloadsStore()
+const createProgress = useCreateProgressStore()
 const devicesStore = useDevicesStore()
 const deviceScope = useDeviceScopeStore()
 const toast = useToastStore()
@@ -51,18 +60,12 @@ const homeRows = computed(() => {
         role: 'self',
         reachable: true,
       }))
-  return scopeRows(rows, deviceScope.selectedHostId)
+  return scopeRows(createProgress.mergeInto(rows), deviceScope.selectedHostId)
 })
-
-function healthBucket(health: WorkloadHealth): 'running' | 'failed' | 'stopped' {
-  if (health === 'failed') return 'failed'
-  if (health === 'stopped' || health === 'unknown') return 'stopped'
-  return 'running'
-}
 
 const visibleRows = computed(() => {
   if (healthFilter.value === 'all') return homeRows.value
-  return homeRows.value.filter((row) => healthBucket(vmHealth(row.vm)) === healthFilter.value)
+  return homeRows.value.filter((row) => workloadListHealthBucket(row) === healthFilter.value)
 })
 
 const listKind = computed(() =>
@@ -78,7 +81,7 @@ const filteredEmptySubtitle = computed(() => {
 const healthStrip = computed(() => {
   const counts = { running: 0, failed: 0, stopped: 0 }
   for (const row of homeRows.value) {
-    counts[healthBucket(vmHealth(row.vm))] += 1
+    counts[workloadListHealthBucket(row)] += 1
   }
   return (['running', 'failed', 'stopped'] as const).map((key) => ({
     key,
@@ -126,6 +129,10 @@ async function fetchGuestInfo() {
   try {
     for (const row of homeRows.value) {
       const key = rowKey(row)
+      if (isPendingCreateId(row.vm.id)) {
+        delete guestInfoMap[key]
+        continue
+      }
       const path = guestInfoFetchPath(guestDeviceForRow(row), row.vm.id, row.vm.state)
       if (!path) {
         delete guestInfoMap[key]
@@ -168,23 +175,15 @@ function osLabel(row: HomeWorkloadRow) {
 }
 
 function listStatusLabel(row: HomeWorkloadRow) {
-  const health = vmHealth(row.vm)
-  if (health === 'guest_ready' || health === 'running' || health === 'starting' || health === 'degraded') {
-    return 'Running'
-  }
-  if (health === 'failed') return 'Failed'
-  if (health === 'stopped') return 'Stopped'
-  return healthLabel(health)
+  return workloadListStatusLabel(row)
 }
 
 function listStatusClass(row: HomeWorkloadRow) {
-  const bucket = healthBucket(vmHealth(row.vm))
-  if (bucket === 'failed') return 'bad'
-  if (bucket === 'stopped') return 'off'
-  return 'ok'
+  return workloadListStatusClass(row)
 }
 
 function statusSub(row: HomeWorkloadRow) {
+  if (row.createDetail) return workloadListStatusSub(row)
   if (!row.reachable) return 'Device unreachable'
   const health = vmHealth(row.vm)
   if (health === 'guest_ready') return 'guest ready'
@@ -193,7 +192,7 @@ function statusSub(row: HomeWorkloadRow) {
     const emu = emuBadge(row.vm)
     return [err, emu?.label].filter(Boolean).join(' · ')
   }
-  return ''
+  return workloadListStatusSub(row)
 }
 
 function emuBadge(vm: typeof store.vms[0]) {
@@ -209,6 +208,7 @@ function rowDevice(row: HomeWorkloadRow) {
 }
 
 function openRow(row: HomeWorkloadRow) {
+  if (isPendingCreateId(row.vm.id)) return
   openWorkloadRow((path) => { router.push(path) }, row)
 }
 
@@ -335,7 +335,7 @@ async function doStop() {
           v-for="row in visibleRows"
           :key="rowKey(row)"
           class="vm-row"
-          :class="{ failed: healthBucket(vmHealth(row.vm)) === 'failed' }"
+          :class="{ failed: workloadListHealthBucket(row) === 'failed', pending: isPendingCreateId(row.vm.id) }"
           @click="openRow(row)"
         >
           <td>
@@ -352,16 +352,16 @@ async function doStop() {
           <td>
             <span
               class="state status-pill"
-              :class="[listStatusClass(row), healthBucket(vmHealth(row.vm))]"
-              :title="row.vm.status?.healthError || undefined"
+              :class="[listStatusClass(row), workloadListHealthBucket(row)]"
+              :title="row.vm.status?.healthError || row.createDetail || undefined"
             >
-              <span class="ops-dot" :class="[listStatusClass(row) === 'ok' ? 'ok' : listStatusClass(row) === 'bad' ? 'bad pulse' : 'off']"></span>
+              <span class="ops-dot" :class="[listStatusClass(row) === 'ok' ? 'ok' : listStatusClass(row) === 'bad' ? 'bad pulse' : listStatusClass(row) === 'warn' ? 'warn' : 'off']"></span>
               {{ listStatusLabel(row) }}
             </span>
             <div
               v-if="statusSub(row)"
               class="row-sub"
-              :class="{ 'ops-bad-text': healthBucket(vmHealth(row.vm)) === 'failed', 'warn-text': !row.reachable }"
+              :class="{ 'ops-bad-text': workloadListHealthBucket(row) === 'failed', 'warn-text': !row.reachable }"
             >{{ statusSub(row) }}</div>
           </td>
           <td class="acts" @click.stop>
@@ -413,6 +413,9 @@ async function doStop() {
 <style scoped>
 .vm-row {
   cursor: pointer;
+}
+.vm-row.pending {
+  cursor: default;
 }
 .health-strip {
   display: flex;
