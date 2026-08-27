@@ -3,7 +3,11 @@ import { deviceBrowsePath } from './homeDeviceApi'
 
 export type FolderEntry = { name: string; path: string; isDirectory: boolean }
 
-export function folderBrowseRequestPath(device?: DeviceApiTarget | null): string {
+export function folderBrowseRequestPath(
+  device?: DeviceApiTarget | null,
+  source: 'system' | 'setup' = 'system',
+): string {
+  if (source === 'setup') return '/browse'
   return deviceBrowsePath(device)
 }
 

@@ -19,6 +19,12 @@ public enum LibrarySettings {
         url.standardizedFileURL.path == defaultDirectory.standardizedFileURL.path
     }
 
+    public static func hasExplicitDirectory(from db: Database) throws -> Bool {
+        let stored = try AppSetting.fetchOne(db, key: imageDirectoryKey)?.value ?? ""
+        let raw = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isAcceptableStoredPath(raw)
+    }
+
     /// Capacity of the volume that contains `url`.
     ///
     /// `nil` when the path is missing or FileManager cannot read filesystem

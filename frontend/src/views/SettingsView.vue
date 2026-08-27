@@ -61,6 +61,7 @@ import {
 } from '../utils/settingsTabs'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
+import LibraryFolderForm from '../components/LibraryFolderForm.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -368,7 +369,7 @@ const librarySettings = ref<LibrarySettings>({
   usedBytes: null,
 })
 const libraryDraft = ref('')
-const libraryLoading = ref(false)
+const libraryLoading = ref(true)
 const librarySaving = ref(false)
 const showLibraryPicker = ref(false)
 const depotDraft = ref('')
@@ -461,6 +462,12 @@ const depotOptions = computed(() => {
   return [none, ...devices]
 })
 
+function onLibraryFolderSaved(data: LibrarySettings) {
+  librarySettings.value = data
+  libraryDraft.value = data.imageDirectory
+  depotDraft.value = data.libraryDepotHostId ?? ''
+}
+
 async function fetchLibrarySettings() {
   libraryLoading.value = true
   try {
@@ -503,7 +510,7 @@ async function resetLibrarySettings() {
     libraryDraft.value = data.imageDirectory
     depotDraft.value = data.libraryDepotHostId ?? ''
     bumpLibrarySettingsEpoch()
-    toast.success('Library path reset to the default')
+    toast.success('Library folder cleared')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   } finally {
@@ -1352,6 +1359,12 @@ onUnmounted(() => {
 
   <!-- Library Tab -->
   <div v-if="tab === 'library'">
+    <LibraryFolderForm
+      v-if="!libraryLoading && librarySettings.isDefault"
+      source="system"
+      @saved="onLibraryFolderSaved"
+    />
+    <template v-else-if="!libraryLoading">
     <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0">
       Directory used for <strong>new</strong> image downloads and uploads on this
       {{ DEVICE_LABEL }}. Existing Library images are not migrated.
@@ -1370,7 +1383,7 @@ onUnmounted(() => {
         </AppButton>
       </div>
       <p style="color:var(--text-tertiary);font-size:12px;margin:8px 0 0 0">
-        {{ librarySettings.isDefault ? 'Using the default path on this Device.' : 'Using a custom Library path.' }}
+        Using a saved Library path.
         Absolute path required. Must be writable by the daemon and must not contain a comma.
       </p>
       <p
@@ -1406,9 +1419,10 @@ onUnmounted(() => {
         :disabled="libraryLoading || librarySaving || librarySettings.isDefault"
         @click="resetLibrarySettings"
       >
-        Reset to default
+        Clear saved folder
       </AppButton>
     </div>
+    </template>
     <div style="margin-top:28px;max-width:640px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0 0 10px 0">
         Catalog Download writes into this {{ DEVICE_LABEL }}’s Library. Other

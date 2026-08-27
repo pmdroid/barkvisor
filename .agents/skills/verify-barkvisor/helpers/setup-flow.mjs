@@ -66,16 +66,38 @@ try {
   await shot('02-admin')
   await page.click('button:has-text("Continue")')
 
+  await page.waitForSelector('h1:has-text("Image Library")', { timeout: 15000 })
+  await shot('03-library')
+  await page.click('button:has-text("Browse")')
+  await page.waitForSelector('h2:has-text("Select Folder")', { timeout: 10000 })
+  const folder = page.locator('.folder-item').filter({ hasNotText: '..' }).first()
+  await folder.click()
+  await page.waitForFunction(() => {
+    const btn = [...document.querySelectorAll('button')].find((el) =>
+      (el.textContent || '').includes('Select This Folder'),
+    )
+    return btn instanceof HTMLButtonElement && !btn.disabled
+  })
+  await page.click('button:has-text("Select This Folder")')
+  await page.click('button:has-text("Save folder")')
+  await page.waitForFunction(() => {
+    const btn = [...document.querySelectorAll('button')].find((el) =>
+      (el.textContent || '').trim() === 'Continue',
+    )
+    return btn instanceof HTMLButtonElement && !btn.disabled
+  })
+  await page.click('button:has-text("Continue")')
+
   await page.waitForSelector('h1:has-text("Image Catalog")', { timeout: 15000 })
-  await shot('03-catalog')
+  await shot('04-catalog')
   await page.click('button:has-text("Skip")')
 
   await page.waitForSelector('h1:has-text("All Set!")', { timeout: 15000 })
-  await shot('04-ready')
+  await shot('05-ready')
   await page.click('button:has-text("Launch Dashboard")')
 
   await page.waitForSelector('.sidebar-nav', { timeout: 20000 })
-  await shot('05-landed')
+  await shot('06-landed')
 
   const status = await (await fetch(`${base}/api/setup/status`)).json()
   writeFileSync(`${dir}/result.json`, JSON.stringify({ ok: status.complete === true, setupStatus: status, shots }, null, 2))

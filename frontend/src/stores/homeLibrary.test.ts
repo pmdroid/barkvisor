@@ -147,7 +147,7 @@ describe('homeLibrary store (PAS-34)', () => {
       if (url === '/images') {
         return Promise.resolve({
           data: [
-            img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64' }),
+            img({ id: 'local-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64', path: '/desk/ubuntu.iso' }),
             img({ id: 'local-only', name: 'extra.iso', arch: 'arm64' }),
           ],
         })
@@ -155,7 +155,7 @@ describe('homeLibrary store (PAS-34)', () => {
       if (url === '/home/devices/studio/v1/images') {
         return Promise.resolve({
           data: [
-            img({ id: 'peer-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64' }),
+            img({ id: 'peer-iso', name: 'ubuntu.iso', sha256: 'abc', arch: 'arm64', path: '/studio/ubuntu.iso' }),
             img({ id: 'peer-x86', name: 'debian.iso', arch: 'x86_64' }),
           ],
         })
@@ -171,6 +171,11 @@ describe('homeLibrary store (PAS-34)', () => {
     expect(store.deviceHasImage(ubuntuKey, 'desk')).toBe(true)
     expect(store.deviceHasImage(ubuntuKey, 'studio')).toBe(true)
     expect(store.imageForDevice(ubuntuKey, 'studio')?.id).toBe('peer-iso')
+    expect(store.imageForDevice(ubuntuKey, 'studio')?.path).toBe('/studio/ubuntu.iso')
+    expect(store.imageForDevice(ubuntuKey, 'desk')?.path).toBe('/desk/ubuntu.iso')
+    const ubuntu = store.images.find((row) => row.libraryKey === ubuntuKey)
+    expect(ubuntu?.copies.find((c) => c.hostId === 'desk')?.path).toBe('/desk/ubuntu.iso')
+    expect(ubuntu?.copies.find((c) => c.hostId === 'studio')?.path).toBe('/studio/ubuntu.iso')
     expect(store.deviceHasLibraryImage(ubuntuKey, self)).toBe(true)
     const x86Key = homeImageKey(img({ id: 'peer-x86', name: 'debian.iso', arch: 'x86_64' }))
     expect(store.deviceHasLibraryImage(x86Key, self)).toBe(false)

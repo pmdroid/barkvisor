@@ -271,6 +271,13 @@ setup_or_login() {
     code="$(api_code POST /api/setup/bridge/skip -d '{}')"
     [[ "$code" == "200" ]] || fail "POST /api/setup/bridge/skip returned HTTP $code"
 
+    local lib_json lib_dir
+    lib_json="$(api GET /api/setup/library)"
+    lib_dir="$(echo "$lib_json" | jq -r '.imageDirectory // empty')"
+    [[ -n "$lib_dir" && "$lib_dir" != "null" ]] || fail "GET /api/setup/library missing imageDirectory: $lib_json"
+    code="$(api_code PUT /api/setup/library -d "$(jq -n --arg d "$lib_dir" '{imageDirectory:$d}')")"
+    [[ "$code" == "200" ]] || fail "PUT /api/setup/library returned HTTP $code"
+
     complete_json="$(api POST /api/setup/complete -d '{}')"
     TOKEN="$(echo "$complete_json" | jq -r '.token // empty')"
     if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then

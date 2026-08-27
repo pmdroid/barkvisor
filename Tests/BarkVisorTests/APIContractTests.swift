@@ -196,7 +196,9 @@ struct APIContractTests {
         )
         let imageData = try JSONEncoder().encode(image)
         try assertRequiredKeys(named: "Image", in: imageData)
-        #expect(try JSONDecoder().decode(ImageResponse.self, from: imageData).arch == "arm64")
+        let decodedImage = try JSONDecoder().decode(ImageResponse.self, from: imageData)
+        #expect(decodedImage.arch == "arm64")
+        #expect(decodedImage.path == "/data/images/img-1.qcow2")
     }
 
     @Test func `reserved prefixes stay unimplemented in this spec`() throws {

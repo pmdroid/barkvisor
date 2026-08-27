@@ -15,6 +15,8 @@ describe('folderBrowse', () => {
     expect(folderBrowseRequestPath(null)).toBe('/system/browse')
     expect(folderBrowseRequestPath(self)).toBe('/system/browse')
     expect(folderBrowseRequestPath(member)).toBe('/home/devices/peer%2F1/v1/system/browse')
+    expect(folderBrowseRequestPath(undefined, 'setup')).toBe('/browse')
+    expect(folderBrowseRequestPath(member, 'setup')).toBe('/browse')
   })
 
   test('empty path omits the query so the host lists roots', () => {
