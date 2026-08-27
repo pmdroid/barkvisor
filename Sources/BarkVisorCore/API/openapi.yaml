@@ -1171,6 +1171,73 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/setup/library:
+    get:
+      tags: [evolving]
+      operationId: getSetupLibrary
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Library directory during first-run setup
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibrarySettings"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: updateSetupLibrary
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Save the Library folder during first-run setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LibrarySettingsRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibrarySettings"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/setup/browse:
+    get:
+      tags: [evolving]
+      operationId: browseSetupFolders
+      security: []
+      x-barkvisor-stability: evolving
+      summary: List folders during first-run setup
+      parameters:
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name, path, isDirectory]
+                  properties:
+                    name:
+                      type: string
+                    path:
+                      type: string
+                    isDirectory:
+                      type: boolean
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/library/settings:
     get:
       tags: [evolving]
@@ -3400,6 +3467,10 @@ components:
           type: string
         updatedAt:
           type: string
+        path:
+          type: string
+          nullable: true
+          description: Absolute file path of this image on the Device that stores it.
         downloadPercent:
           type: integer
           minimum: 0
@@ -3696,7 +3767,9 @@ components:
           description: Resolved Library directory used for new downloads
         isDefault:
           type: boolean
-          description: True when the path is the default `{dataDir}/images`
+          description: >
+            True when no Library folder has been saved yet. The daemon still
+            writes to `{dataDir}/images` until a folder is chosen.
         libraryDepotHostId:
           type: string
           nullable: true
@@ -3724,7 +3797,9 @@ components:
         imageDirectory:
           type: string
           nullable: true
-          description: Absolute writable path, or empty to reset to `{dataDir}/images`
+          description: >
+            Absolute writable path. Empty deletes the saved folder (`isDefault: true`);
+            the daemon still writes to `{dataDir}/images` until a folder is saved.
         libraryDepotHostId:
           type: string
           nullable: true

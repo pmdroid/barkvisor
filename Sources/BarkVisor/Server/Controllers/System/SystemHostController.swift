@@ -26,6 +26,10 @@ struct SystemHostController: RouteCollection {
 
     @Sendable
     func browseDirectory(req: Vapor.Request) async throws -> [BrowseEntry] {
+        try await Self.listDirectory(req: req)
+    }
+
+    static func listDirectory(req: Vapor.Request) async throws -> [BrowseEntry] {
         let extraRoots = try await req.db.read { db in
             try [
                 Config.dataDir.path,
@@ -34,42 +38,9 @@ struct SystemHostController: RouteCollection {
             ]
         }
         let rawPath = (try? req.query.get(String.self, at: "path")) ?? ""
-        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return DirectoryBrowser.rootEntries(extraRoots: extraRoots).map {
-                BrowseEntry(name: $0.name, path: $0.path, isDirectory: true)
-            }
+        return try DirectoryBrowser.list(path: rawPath, extraRoots: extraRoots).map {
+            BrowseEntry(name: $0.name, path: $0.path, isDirectory: true)
         }
-
-        let resolvedPath = (trimmed as NSString).resolvingSymlinksInPath
-        guard DirectoryBrowser.isAllowed(resolvedPath, extraRoots: extraRoots) else {
-            throw Abort(.forbidden, reason: "Access denied: path is outside allowed directories")
-        }
-
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir), isDir.boolValue
-        else {
-            throw Abort(.badRequest, reason: "Path is not a directory")
-        }
-
-        let contents = try FileManager.default.contentsOfDirectory(atPath: resolvedPath)
-        var entries: [BrowseEntry] = []
-
-        if let parent = DirectoryBrowser.parentPath(of: resolvedPath, extraRoots: extraRoots) {
-            entries.append(BrowseEntry(name: "..", path: parent, isDirectory: true))
-        }
-
-        for name in contents.sorted() {
-            if name.hasPrefix(".") { continue }
-            let fullPath = (resolvedPath as NSString).appendingPathComponent(name)
-            var childIsDir: ObjCBool = false
-            FileManager.default.fileExists(atPath: fullPath, isDirectory: &childIsDir)
-            guard childIsDir.boolValue else { continue }
-            guard DirectoryBrowser.isAllowed(fullPath, extraRoots: extraRoots) else { continue }
-            entries.append(BrowseEntry(name: name, path: fullPath, isDirectory: true))
-        }
-
-        return entries
     }
 
     // MARK: - Host Interfaces

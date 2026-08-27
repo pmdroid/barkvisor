@@ -28,6 +28,7 @@ export interface Image {
   sha256?: string | null
   createdAt: string
   updatedAt: string
+  path?: string | null
   /** Live 0-100 while transferring. Null when total size is unknown. */
   downloadPercent?: number | null
 }

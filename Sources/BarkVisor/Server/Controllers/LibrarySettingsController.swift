@@ -73,23 +73,28 @@ struct LibrarySettingsController: RouteCollection {
 
     @Sendable
     func getSettings(req: Vapor.Request) async throws -> LibrarySettingsResponse {
-        let dir = try await req.db.read { db in
-            try LibrarySettings.resolvedDirectory(from: db)
-        }
-        let depotHostId = try await req.db.read { db in
-            try LibrarySettings.resolvedDepotHostId(
-                from: db,
-                devices: DeviceRegistry(dataDir: Config.dataDir),
-                localHostId: Config.hostId,
+        try await Self.load(req: req)
+    }
+
+    static func load(req: Vapor.Request) async throws -> LibrarySettingsResponse {
+        let snapshot = try await req.db.read { db in
+            try (
+                dir: LibrarySettings.resolvedDirectory(from: db),
+                explicit: LibrarySettings.hasExplicitDirectory(from: db),
+                depotHostId: LibrarySettings.resolvedDepotHostId(
+                    from: db,
+                    devices: DeviceRegistry(dataDir: Config.dataDir),
+                    localHostId: Config.hostId,
+                ),
             )
         }
-        let usage = LibrarySettings.volumeUsage(at: dir)
+        let usage = LibrarySettings.volumeUsage(at: snapshot.dir)
         let totalBytes = usage?.total
         let freeBytes = usage?.free
         return LibrarySettingsResponse(
-            imageDirectory: dir.path,
-            isDefault: LibrarySettings.isDefault(dir),
-            libraryDepotHostId: depotHostId,
+            imageDirectory: snapshot.dir.path,
+            isDefault: !snapshot.explicit,
+            libraryDepotHostId: snapshot.depotHostId,
             totalBytes: totalBytes,
             freeBytes: freeBytes,
             usedBytes: LibrarySettings.usedBytes(total: totalBytes, free: freeBytes),
@@ -99,7 +104,13 @@ struct LibrarySettingsController: RouteCollection {
     @Sendable
     func updateSettings(req: Vapor.Request) async throws -> LibrarySettingsResponse {
         let body = try req.content.decode(LibrarySettingsRequest.self)
+        return try await Self.apply(req: req, body: body)
+    }
 
+    static func apply(
+        req: Vapor.Request,
+        body: LibrarySettingsRequest,
+    ) async throws -> LibrarySettingsResponse {
         if let imageDirectory = body.imageDirectory {
             let prepared = try LibrarySettings.validateAndPrepare(imageDirectory)
             try await req.db.write { db in
@@ -142,6 +153,6 @@ struct LibrarySettingsController: RouteCollection {
             }
         }
 
-        return try await getSettings(req: req)
+        return try await load(req: req)
     }
 }

@@ -3,8 +3,8 @@
 ## Sub-features
 
 - **Welcome** — intro + **Continue** into create-Home setup. Joining an existing Home is CLI-only: `barkvisor join --code`
-- Create path: **Create Admin Account** (username + password ≥10 chars + confirm) → **Image Catalog** sync (or Skip) → **All Set!** → **Launch Dashboard**
-- Ops-checklist rail tracks 01–04; setup is forced until `/api/setup/status` says `complete`
+- Create path: **Create Admin Account** (username + password ≥10 chars + confirm) → **Image Library** folder pick → **Image Catalog** sync (or Skip) → **All Set!** → **Launch Dashboard**
+- Ops-checklist rail tracks 01–05; setup is forced until `/api/setup/status` says `complete`. `/api/setup/complete` rejects until a Library folder is saved.
 
 ## How to get to it (user POV)
 
@@ -25,7 +25,7 @@ scripts/dev-instance.sh start --name setup-verify --no-provision
 bun helpers/setup-flow.mjs --base "$URL" --dir evidence/run-setup
 ```
 
-`setup-flow.mjs` walks the real user path (welcome → admin form → catalog skip → launch), screenshots every step into `--dir`, and exits nonzero unless `/api/setup/status` reports `complete:true`.
+`setup-flow.mjs` walks the real user path (welcome → admin form → library folder → catalog skip → launch), screenshots every step into `--dir`, and exits nonzero unless `/api/setup/status` reports `complete:true`.
 
 ## Gotchas
 

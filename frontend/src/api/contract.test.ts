@@ -65,6 +65,8 @@ describe('API contract (PAS-78)', () => {
       '/api/system/gpu-devices',
       '/api/system/pci-devices',
       '/api/system/library/settings',
+      '/api/setup/library',
+      '/api/setup/browse',
       '/api/system/disk/settings',
       '/api/system/block-devices',
       '/api/system/remote-access',
@@ -161,6 +163,7 @@ describe('API contract (PAS-78)', () => {
       sizeBytes: 1024,
       sourceUrl: null,
       error: null,
+      path: '/data/images/img-1.qcow2',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     }

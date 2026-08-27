@@ -114,6 +114,8 @@ describe('settings tab query', () => {
     expect(libraryBlock).toContain('Catalog Download')
     expect(libraryBlock).toContain('Save Library depot')
     expect(libraryBlock).toContain('Library path')
+    expect(libraryBlock).toContain('LibraryFolderForm')
+    expect(libraryBlock).toContain('librarySettings.isDefault')
   })
 
   test('Create VM SSH picker is on Configure and opens Settings sshkeys in a new tab', () => {

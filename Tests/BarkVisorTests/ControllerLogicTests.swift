@@ -197,6 +197,14 @@ struct ControllerLogicTests {
         #expect(DirectoryBrowser.parentPath(of: "/", extraRoots: extra, home: home) == nil)
     }
 
+    @Test func `directory browser list empty path returns roots`() throws {
+        let entries = try DirectoryBrowser.list(path: "")
+        #expect(entries.map(\.path).contains(NSHomeDirectory()))
+        #expect(throws: BarkVisorError.self) {
+            try DirectoryBrowser.list(path: "/etc")
+        }
+    }
+
     // MARK: - Repo Type Validation
 
     @Test func `repository type validation`() {

@@ -18,10 +18,17 @@ struct SetupController: RouteCollection {
         setup.post("bridge", "skip", use: skipBridge)
         setup.post("repositories", "sync", use: syncRepositories)
         setup.get("repositories", "status", use: repositorySyncStatus)
+        setup.get("library", use: getLibrary)
+        setup.put("library", use: updateLibrary)
+        setup.get("browse", use: browseDirectory)
         setup.post("complete", use: complete)
     }
 
-    static let mutatingSetupPaths = ["/api/setup/admin", "/api/setup/complete"]
+    static let mutatingSetupPaths = [
+        "/api/setup/admin",
+        "/api/setup/library",
+        "/api/setup/complete",
+    ]
 
     // MARK: - Status
 
@@ -30,6 +37,7 @@ struct SetupController: RouteCollection {
         /// Shared identity landed after a pairing join (admin exists). A receipt
         /// alone is not enough — applyTrust persists it before pin / identity.
         let joined: Bool
+        let admin: Bool
     }
 
     /// Resume join-ready only after identity is complete. A pairing receipt can
@@ -38,17 +46,34 @@ struct SetupController: RouteCollection {
         hasReceipt && hasAdmin
     }
 
+    static func isSetupFinished(
+        middlewareComplete: Bool,
+        joined: Bool,
+        libraryChosen: Bool,
+    ) -> Bool {
+        middlewareComplete && (joined || libraryChosen)
+    }
+
     @Sendable
     func getStatus(req: Request) async throws -> StatusResponse {
-        let hasAdmin = try await req.db.read { db in
-            try User.filter(User.Columns.password != "").fetchCount(db) > 0
+        let snapshot = try await req.db.read { db in
+            try (
+                hasAdmin: User.filter(User.Columns.password != "").fetchCount(db) > 0,
+                libraryChosen: LibrarySettings.hasExplicitDirectory(from: db),
+            )
         }
+        let joined = Self.shouldReportJoined(
+            hasReceipt: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
+            hasAdmin: snapshot.hasAdmin,
+        )
         return StatusResponse(
-            complete: setupMiddleware.isSetupComplete,
-            joined: Self.shouldReportJoined(
-                hasReceipt: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
-                hasAdmin: hasAdmin,
+            complete: Self.isSetupFinished(
+                middlewareComplete: setupMiddleware.isSetupComplete,
+                joined: joined,
+                libraryChosen: snapshot.libraryChosen,
             ),
+            joined: joined,
+            admin: snapshot.hasAdmin,
         )
     }
 
@@ -128,7 +153,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func listInterfaces(req: Request) async throws -> [InterfaceResponse] {
-        guard !setupMiddleware.isSetupComplete else {
+        if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
         let records = try await req.db.read { db in
@@ -157,7 +182,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func installBridge(req: Request) async throws -> BridgeResponse {
-        guard !setupMiddleware.isSetupComplete else {
+        if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
         guard PlatformCapabilities.supportsManagedBridgeDaemon else {
@@ -184,7 +209,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func skipBridge(req: Request) async throws -> BridgeResponse {
-        guard !setupMiddleware.isSetupComplete else {
+        if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
         return BridgeResponse(success: true, message: nil)
@@ -256,7 +281,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func syncRepositories(req: Request) async throws -> RepoSyncStatus {
-        guard !setupMiddleware.isSetupComplete else {
+        if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
 
@@ -289,7 +314,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func repositorySyncStatus(req: Request) async throws -> RepoSyncStatus {
-        guard !setupMiddleware.isSetupComplete else {
+        if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
         return Self.syncState.status
@@ -304,7 +329,7 @@ struct SetupController: RouteCollection {
 
     @Sendable
     func complete(req: Request) async throws -> CompleteResponse {
-        guard !setupMiddleware.isSetupComplete else {
+        if try await setupFinished(req: req) {
             throw Abort(.notFound)
         }
 
@@ -314,6 +339,13 @@ struct SetupController: RouteCollection {
         }
         guard let admin else {
             throw Abort(.badRequest, reason: "Admin user must be created before completing setup")
+        }
+
+        let libraryChosen = try await req.db.read { db in
+            try LibrarySettings.hasExplicitDirectory(from: db)
+        }
+        guard libraryChosen else {
+            throw Abort(.badRequest, reason: "Library folder must be chosen before completing setup")
         }
 
         // Generate a JWT so the frontend can auto-login
@@ -328,5 +360,53 @@ struct SetupController: RouteCollection {
         setupMiddleware.markComplete()
 
         return CompleteResponse(success: true, token: token)
+    }
+
+    @Sendable
+    func getLibrary(req: Request) async throws -> LibrarySettingsResponse {
+        if try await setupFinished(req: req) {
+            throw Abort(.notFound)
+        }
+        return try await LibrarySettingsController.load(req: req)
+    }
+
+    @Sendable
+    func updateLibrary(req: Request) async throws -> LibrarySettingsResponse {
+        if try await setupFinished(req: req) {
+            throw Abort(.notFound)
+        }
+        let body = try req.content.decode(LibrarySettingsRequest.self)
+        return try await LibrarySettingsController.apply(
+            req: req,
+            body: LibrarySettingsRequest(
+                imageDirectory: body.imageDirectory,
+                libraryDepotHostId: nil,
+            ),
+        )
+    }
+
+    @Sendable
+    func browseDirectory(req: Request) async throws -> [BrowseEntry] {
+        if try await setupFinished(req: req) {
+            throw Abort(.notFound)
+        }
+        return try await SystemHostController.listDirectory(req: req)
+    }
+
+    private func setupFinished(req: Request) async throws -> Bool {
+        let snapshot = try await req.db.read { db in
+            try (
+                hasAdmin: User.filter(User.Columns.password != "").fetchCount(db) > 0,
+                libraryChosen: LibrarySettings.hasExplicitDirectory(from: db),
+            )
+        }
+        return Self.isSetupFinished(
+            middlewareComplete: setupMiddleware.isSetupComplete,
+            joined: Self.shouldReportJoined(
+                hasReceipt: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
+                hasAdmin: snapshot.hasAdmin,
+            ),
+            libraryChosen: snapshot.libraryChosen,
+        )
     }
 }

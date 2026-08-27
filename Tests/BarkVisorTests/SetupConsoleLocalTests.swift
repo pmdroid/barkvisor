@@ -16,6 +16,37 @@ struct SetupConsoleLocalTests {
         return (dir, pool)
     }
 
+    @Test func `setup is unfinished after admin until library or join`() {
+        #expect(
+            !SetupController.isSetupFinished(
+                middlewareComplete: true,
+                joined: false,
+                libraryChosen: false,
+            ),
+        )
+        #expect(
+            SetupController.isSetupFinished(
+                middlewareComplete: true,
+                joined: false,
+                libraryChosen: true,
+            ),
+        )
+        #expect(
+            SetupController.isSetupFinished(
+                middlewareComplete: true,
+                joined: true,
+                libraryChosen: false,
+            ),
+        )
+        #expect(
+            !SetupController.isSetupFinished(
+                middlewareComplete: false,
+                joined: false,
+                libraryChosen: true,
+            ),
+        )
+    }
+
     @Test func `setup API path matches wizard routes only`() {
         #expect(SetupMiddleware.isSetupAPIPath("/api/setup"))
         #expect(SetupMiddleware.isSetupAPIPath("/api/setup/status"))
@@ -23,12 +54,16 @@ struct SetupConsoleLocalTests {
         #expect(SetupMiddleware.isSetupAPIPath("/api/setup/complete"))
         #expect(SetupMiddleware.isSetupAPIPath("/api/setup/bridge/skip"))
         #expect(SetupMiddleware.isSetupAPIPath("/api/setup/repositories/sync"))
+        #expect(SetupMiddleware.isSetupAPIPath("/api/setup/library"))
+        #expect(SetupMiddleware.isSetupAPIPath("/api/setup/browse"))
         #expect(!SetupMiddleware.isSetupAPIPath("/api/setupfoo"))
         #expect(!SetupMiddleware.isSetupAPIPath("/api/pairing/join"))
         #expect(!SetupMiddleware.isSetupAPIPath("/api/health"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/admin"))
+        #expect(SetupController.mutatingSetupPaths.contains("/api/setup/library"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/complete"))
         #expect(!SetupController.mutatingSetupPaths.contains("/api/setup/status"))
+        #expect(!SetupController.mutatingSetupPaths.contains("/api/setup/browse"))
         for path in SetupController.mutatingSetupPaths {
             #expect(SetupMiddleware.isSetupAPIPath(path))
         }

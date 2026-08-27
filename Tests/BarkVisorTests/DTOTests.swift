@@ -196,7 +196,7 @@ struct DTOTests {
 
     // MARK: - ImageResponse
 
-    @Test func `image response from VM image`() {
+    @Test func `image response from VM image`() throws {
         let image = VMImage(
             id: "img-1", name: "Ubuntu 24.04", imageType: "cloud-image", arch: "arm64",
             path: "/data/images/img-1.qcow2", sizeBytes: 1_073_741_824,
@@ -217,6 +217,10 @@ struct DTOTests {
         #expect(response.sourceUrl == "https://example.com/ubuntu.qcow2")
         #expect(response.error == nil)
         #expect(response.sha256 == "deadbeef")
+        #expect(response.path == "/data/images/img-1.qcow2")
+        let encoded = try JSONEncoder().encode(response)
+        let dict = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(dict["path"] as? String == "/data/images/img-1.qcow2")
     }
 
     @Test func `image response with error`() {

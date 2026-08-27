@@ -2,21 +2,45 @@ describe('Image Library', () => {
   beforeEach(() => {
     cy.login()
     cy.visit('/images')
+    cy.contains('h1', 'Images').should('be.visible')
+    cy.get('body').should(($b) => {
+      const pick = $b.text().includes('Choose where this')
+      const download = [...$b.find('.ops-actions button')].some((el) =>
+        (el.textContent || '').includes('Download'),
+      )
+      expect(pick || download).to.eq(true)
+    })
+    cy.get('body').then(($b) => {
+      if ($b.text().includes('Choose where this')) {
+        cy.contains('button', 'Save folder').click()
+        cy.contains('.ops-actions button', 'Download').should('be.visible')
+      }
+    })
   })
 
   it('shows page header with Upload and Download buttons', () => {
     cy.contains('h1', 'Images').should('be.visible')
-    cy.contains('button', 'Upload Image').should('exist')
-    cy.contains('button', 'Download Image').should('exist')
+    cy.get('body').then(($b) => {
+      if ($b.text().includes('Choose where this')) {
+        cy.contains('button', 'Browse').should('exist')
+        cy.contains('button', 'Save folder').should('exist')
+      } else {
+        cy.contains('button', 'Upload').should('exist')
+        cy.contains('button', 'Download').should('exist')
+      }
+    })
   })
 
   it('lists images in a table or shows empty state', () => {
     cy.get('body').then(($b) => {
-      if ($b.find('table').length) {
+      if ($b.text().includes('Choose where this')) {
+        cy.contains('Save folder').should('exist')
+      } else if ($b.find('table').length) {
         cy.get('table thead th').should('contain', 'Name')
         cy.get('table thead th').should('contain', 'Type')
         cy.get('table thead th').should('contain', 'Arch')
         cy.get('table thead th').should('contain', 'Size')
+        cy.get('table thead th').should('contain', 'Location')
         cy.get('table thead th').should('contain', 'Status')
       } else {
         cy.contains('No images yet').should('exist')
@@ -87,7 +111,7 @@ describe('Image Library', () => {
   // --- Download modal ---
 
   it('opens Download Image modal with name, URL, type, arch fields', () => {
-    cy.contains('button', 'Download Image').click()
+    cy.contains('.ops-actions button', 'Download').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('h2', 'Download Image').should('be.visible')
     cy.get('.modal input').should('have.length.gte', 2)
@@ -95,7 +119,7 @@ describe('Image Library', () => {
   })
 
   it('download modal has ISO and Cloud Image type options', () => {
-    cy.contains('button', 'Download Image').click()
+    cy.contains('.ops-actions button', 'Download').click()
     cy.get('.modal select').first().within(() => {
       cy.get('option').should('contain', 'ISO')
       cy.get('option').should('contain', 'Cloud Image')
@@ -104,20 +128,20 @@ describe('Image Library', () => {
   })
 
   it('download modal validates required fields', () => {
-    cy.contains('button', 'Download Image').click()
+    cy.contains('.ops-actions button', 'Download').click()
     cy.get('.modal').contains('button', 'Download').click()
     cy.contains('Name and URL required').should('be.visible')
   })
 
   it('download modal closes on Cancel', () => {
-    cy.contains('button', 'Download Image').click()
+    cy.contains('.ops-actions button', 'Download').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.get('.modal').contains('button', 'Cancel').click()
     cy.get('.modal-overlay').should('not.exist')
   })
 
   it('download button shows loading state', () => {
-    cy.contains('button', 'Download Image').click()
+    cy.contains('.ops-actions button', 'Download').click()
     cy.get('.modal input').first().type('test-image')
     cy.get('.modal input').last().type('https://example.com/test.iso')
     // The button text should change on click (briefly)
@@ -128,7 +152,7 @@ describe('Image Library', () => {
   // --- Upload modal ---
 
   it('opens Upload Image modal with file drop, name, type, arch', () => {
-    cy.contains('button', 'Upload Image').click()
+    cy.contains('.ops-actions button', 'Upload').click()
     cy.get('.modal-overlay').should('be.visible')
     cy.contains('h2', 'Upload Image').should('be.visible')
     cy.get('.file-drop').should('exist')
@@ -137,18 +161,18 @@ describe('Image Library', () => {
   })
 
   it('upload modal file drop shows instruction text', () => {
-    cy.contains('button', 'Upload Image').click()
+    cy.contains('.ops-actions button', 'Upload').click()
     cy.get('.file-drop').should('contain', 'Click or drag')
   })
 
   it('upload modal validates file is required', () => {
-    cy.contains('button', 'Upload Image').click()
+    cy.contains('.ops-actions button', 'Upload').click()
     cy.get('.modal').contains('button', 'Upload').click()
     cy.contains('Select a file').should('be.visible')
   })
 
   it('upload modal closes on Cancel', () => {
-    cy.contains('button', 'Upload Image').click()
+    cy.contains('.ops-actions button', 'Upload').click()
     cy.get('.modal').contains('button', 'Cancel').click()
     cy.get('.modal-overlay').should('not.exist')
   })

@@ -90,6 +90,7 @@ REQUIRED_ENDPOINTS=(
   "GET  /api/setup/status"
   "POST /api/setup/admin"
   "POST /api/setup/bridge/skip"
+  "PUT  /api/setup/library"
   "POST /api/setup/complete"
   "POST /api/auth/login"
   "GET  /api/networks"
@@ -118,6 +119,7 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
     "/api/setup/status" \
     "/api/setup/admin" \
     "/api/setup/bridge/skip" \
+    "/api/setup/library" \
     "/api/setup/complete" \
     "/api/auth/login" \
     "/api/networks" \
