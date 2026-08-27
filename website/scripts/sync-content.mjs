@@ -107,11 +107,6 @@ const map = {
     title: 'Ollama',
     description: 'Model runtime status per Device, pulling models, and API access.',
   },
-  'using-chat.md': {
-    out: 'using/chat.md',
-    title: 'Chat',
-    description: 'Talk to models served by Ollama on your Devices.',
-  },
   'using-images.md': {
     out: 'using/images.md',
     title: 'Images',
@@ -214,7 +209,6 @@ function fixLinks(body) {
     .replace(/\]\(using-vms\.md(#[^)]*)?\)/g, '](/docs/using/vms/$1)')
     .replace(/\]\(using-vm-details\.md(#[^)]*)?\)/g, '](/docs/using/vm-details/$1)')
     .replace(/\]\(using-ollama\.md(#[^)]*)?\)/g, '](/docs/using/ollama/$1)')
-    .replace(/\]\(using-chat\.md(#[^)]*)?\)/g, '](/docs/using/chat/$1)')
     .replace(/\]\(using-images\.md(#[^)]*)?\)/g, '](/docs/using/images/$1)')
     .replace(/\]\(using-disks\.md(#[^)]*)?\)/g, '](/docs/using/disks/$1)')
     .replace(/\]\(using-networks\.md(#[^)]*)?\)/g, '](/docs/using/networks/$1)')
