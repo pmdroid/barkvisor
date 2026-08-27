@@ -123,26 +123,26 @@ function pickRaw(path: string, attachable: boolean, event: Event) {
 <style scoped>
 .mag-dcards { display: flex; flex-direction: column; gap: 12px; }
 .mag-dcard {
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
-  background: var(--mag-panel, rgba(255, 255, 255, 0.03));
+  background: var(--mag-panel);
   padding: 16px;
   cursor: pointer;
 }
 .mag-dcard:hover { border-color: rgba(0, 144, 248, 0.5); }
-.mag-dcard.on { border-color: var(--mag-accent, #0090f8); background: rgba(0, 144, 248, 0.07); }
+.mag-dcard.on { border-color: var(--mag-accent); background: var(--accent-muted); }
 .mag-dcard.off { opacity: 0.5; cursor: not-allowed; }
-.mag-dcard.off:hover { border-color: var(--mag-line, rgba(255, 255, 255, 0.07)); }
+.mag-dcard.off:hover { border-color: var(--mag-line); }
 .mag-dtt { display: flex; align-items: baseline; gap: 10px; }
 .mag-dtt b { font-size: 14px; }
-.mag-dfm { margin-left: auto; font-size: 11px; color: var(--mag-dim, #6e6e6c); font-weight: 600; }
-.mag-dcard > p { font-size: 12px; color: var(--mag-dim, #6e6e6c); margin-top: 5px; line-height: 1.5; }
+.mag-dfm { margin-left: auto; font-size: 11px; color: var(--mag-dim); font-weight: 600; }
+.mag-dcard > p { font-size: 12px; color: var(--mag-dim); margin-top: 5px; line-height: 1.5; }
 .mag-dsize { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .mag-dsize label {
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -150,20 +150,20 @@ function pickRaw(path: string, attachable: boolean, event: Event) {
   width: 90px;
   font: inherit;
   font-size: 12.5px;
-  color: var(--mag-text, #e4e4e2);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  color: var(--mag-text);
+  background: var(--mag-input);
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
   padding: 8px 10px;
 }
-.mag-dsize span { font-size: 11px; color: var(--mag-dim, #6e6e6c); }
+.mag-dsize span { font-size: 11px; color: var(--mag-dim); }
 .mag-dlist { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
 .mag-dopt {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 11px;
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
   font-size: 12.5px;
   font-weight: 600;
@@ -173,11 +173,11 @@ function pickRaw(path: string, attachable: boolean, event: Event) {
   width: 100%;
   text-align: left;
 }
-.mag-dopt span { margin-left: auto; font-size: 11px; color: var(--mag-dim, #6e6e6c); font-weight: 500; }
-.mag-dopt.on { border-color: var(--mag-accent, #0090f8); background: rgba(0, 144, 248, 0.08); }
+.mag-dopt span { margin-left: auto; font-size: 11px; color: var(--mag-dim); font-weight: 500; }
+.mag-dopt.on { border-color: var(--mag-accent); background: var(--accent-muted); }
 .mag-dopt.off { opacity: 0.5; cursor: not-allowed; }
 .mag-dopt code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.mag-empty { margin-top: 8px; font-size: 12px; color: var(--mag-dim, #6e6e6c); }
+.mag-empty { margin-top: 8px; font-size: 12px; color: var(--mag-dim); }
 .mag-confirm {
   margin-top: 12px;
   display: flex;
@@ -189,7 +189,7 @@ function pickRaw(path: string, attachable: boolean, event: Event) {
   padding: 10px 12px;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--mag-text, #e4e4e2);
+  color: var(--mag-text);
 }
 .mag-confirm svg { flex-shrink: 0; color: #fbbf24; margin-top: 1px; }
 </style>

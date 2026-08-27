@@ -90,7 +90,7 @@ function paintRange(el: HTMLInputElement | null) {
   const max = Number(el.max)
   const val = Number(el.value)
   const p = max > min ? ((val - min) / (max - min)) * 100 : 0
-  el.style.background = `linear-gradient(90deg, var(--mag-accent, #0090f8) ${p}%, rgba(255,255,255,.1) ${p}%)`
+  el.style.background = `linear-gradient(90deg, var(--mag-accent) ${p}%, var(--mag-track) ${p}%)`
 }
 
 watch([() => props.cpuCount, () => props.memoryMB, advancedOpen], () => {
@@ -258,7 +258,7 @@ function onIsoPick(event: Event) {
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   font-weight: 600;
   margin: 14px 0 7px;
 }
@@ -267,16 +267,16 @@ input, select {
   width: 100%;
   font: inherit;
   font-size: 12.5px;
-  color: var(--mag-text, #e4e4e2);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  color: var(--mag-text);
+  background: var(--mag-input);
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
   padding: 8px 10px;
 }
 .mag-hostname {
   margin-top: 6px;
   font-size: 11.5px;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
 }
 .mag-dev {
   width: 100%;
@@ -284,7 +284,7 @@ input, select {
   align-items: center;
   gap: 9px;
   padding: 9px 11px;
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
   margin-bottom: 8px;
   cursor: pointer;
@@ -293,44 +293,44 @@ input, select {
   text-align: left;
 }
 .mag-dev b { font-size: 12.5px; }
-.mag-dev span { margin-left: auto; font-size: 11px; color: var(--mag-dim, #6e6e6c); }
-.mag-dev.on { border-color: var(--mag-accent, #0090f8); background: rgba(0, 144, 248, 0.07); }
+.mag-dev span { margin-left: auto; font-size: 11px; color: var(--mag-dim); }
+.mag-dev.on { border-color: var(--mag-accent); background: var(--accent-muted); }
 .mag-dev.off { opacity: 0.5; cursor: not-allowed; }
 .mag-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.mag-dot.ok { background: #34d399; }
-.mag-dot.off { background: var(--mag-dim, #6e6e6c); }
+.mag-dot.ok { background: var(--green); }
+.mag-dot.off { background: var(--mag-dim); }
 .mag-sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .mag-size {
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
-  background: var(--mag-panel, rgba(255, 255, 255, 0.03));
+  background: var(--mag-panel);
   padding: 14px;
   cursor: pointer;
   text-align: center;
   color: inherit;
 }
 .mag-size b { display: block; font-size: 13.5px; margin-bottom: 4px; }
-.mag-size span { font-size: 11px; color: var(--mag-dim, #6e6e6c); }
-.mag-size.on { border-color: var(--mag-accent, #0090f8); background: rgba(0, 144, 248, 0.1); }
+.mag-size span { font-size: 11px; color: var(--mag-dim); }
+.mag-size.on { border-color: var(--mag-accent); background: var(--accent-muted); }
 .mag-dedi {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 14px;
   padding: 11px 12px;
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
-  background: var(--mag-panel, rgba(255, 255, 255, 0.03));
+  background: var(--mag-panel);
 }
 .mag-dedi b { font-size: 12.5px; display: block; }
-.mag-dedi span { font-size: 11px; color: var(--mag-dim, #6e6e6c); display: block; margin-top: 2px; line-height: 1.45; }
+.mag-dedi span { font-size: 11px; color: var(--mag-dim); display: block; margin-top: 2px; line-height: 1.45; }
 .mag-tgl {
   position: relative;
   width: 34px;
   height: 19px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  background: var(--mag-track);
+  border: 1px solid var(--mag-line);
   cursor: pointer;
   flex-shrink: 0;
   padding: 0;
@@ -344,39 +344,39 @@ input, select {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--mag-dim, #6e6e6c);
+  background: var(--mag-dim);
   transition: left 0.15s;
 }
 .mag-tgl.on { background: rgba(0, 144, 248, 0.35); border-color: rgba(0, 144, 248, 0.55); }
-.mag-tgl.on::after { left: 17px; background: #fff; }
-.mag-leftover { margin-top: 8px; font-size: 11.5px; color: var(--mag-dim, #6e6e6c); }
+.mag-tgl.on::after { left: 17px; background: var(--accent-text); }
+.mag-leftover { margin-top: 8px; font-size: 11.5px; color: var(--mag-dim); }
 .mag-drop {
   margin-top: 14px;
   border: 1.5px dashed rgba(0, 144, 248, 0.45);
   border-radius: 2px;
-  background: rgba(0, 144, 248, 0.05);
+  background: var(--accent-muted);
   padding: 20px;
   text-align: center;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   font-size: 12.5px;
   cursor: pointer;
 }
-.mag-drop b { color: var(--mag-text, #e4e4e2); display: block; font-size: 13px; margin-bottom: 4px; }
+.mag-drop b { color: var(--mag-text); display: block; font-size: 13px; margin-bottom: 4px; }
 .mag-adv {
   margin-top: 16px;
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
-  background: var(--mag-panel, rgba(255, 255, 255, 0.03));
+  background: var(--mag-panel);
 }
 .mag-adv summary {
   cursor: pointer;
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   list-style: none;
 }
-.mag-adv summary::before { content: '+'; margin-right: 8px; color: var(--mag-accent, #0090f8); }
+.mag-adv summary::before { content: '+'; margin-right: 8px; color: var(--mag-accent); }
 .mag-adv[open] summary::before { content: '-'; }
 .mag-advbody { padding: 2px 12px 12px; }
 .mag-advgrid {
@@ -389,7 +389,7 @@ input, select {
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   font-weight: 600;
   display: block;
   margin-bottom: 5px;
@@ -401,7 +401,7 @@ input, select {
   appearance: none;
   height: 5px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--mag-track);
   padding: 0;
   border: 0;
   cursor: pointer;
@@ -411,23 +411,23 @@ input, select {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
-  border: 3px solid var(--mag-accent, #0090f8);
+  background: var(--modal-surface);
+  border: 3px solid var(--mag-accent);
   cursor: pointer;
 }
-.mag-cap { font-size: 10.5px; color: var(--mag-dim, #6e6e6c); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.mag-hint { display: none; margin-top: 10px; font-size: 11.5px; font-weight: 600; color: #fbbf24; }
+.mag-cap { font-size: 10.5px; color: var(--mag-dim); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.mag-hint { display: none; margin-top: 10px; font-size: 11.5px; font-weight: 600; color: var(--amber); }
 .mag-hint.on { display: block; }
 .mag-fwrow {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 0;
-  border-top: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border-top: 1px solid var(--mag-line);
 }
 .mag-fwrow:first-of-type { margin-top: 12px; }
 .mag-fwrow b { font-size: 12.5px; display: block; }
-.mag-fwrow span { font-size: 11px; color: var(--mag-dim, #6e6e6c); display: block; margin-top: 2px; }
+.mag-fwrow span { font-size: 11px; color: var(--mag-dim); display: block; margin-top: 2px; }
 .mag-fwrow :deep(select) { width: 220px; margin-left: auto; }
 .mag-image-pick { margin-top: 4px; }
 .mag-mode { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -435,15 +435,15 @@ input, select {
   font: inherit;
   font-size: 12px;
   padding: 6px 10px;
-  border: 1px solid var(--mag-line, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--mag-line);
   border-radius: 2px;
   background: none;
-  color: var(--mag-dim, #6e6e6c);
+  color: var(--mag-dim);
   cursor: pointer;
 }
 .mag-mode button.on {
-  color: var(--mag-text, #e4e4e2);
+  color: var(--mag-text);
   border-color: rgba(0, 144, 248, 0.55);
-  background: rgba(0, 144, 248, 0.1);
+  background: var(--accent-muted);
 }
 </style>
