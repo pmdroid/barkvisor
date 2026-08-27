@@ -30,27 +30,74 @@ export function isIPHostname(hostname: string): boolean {
   })
 }
 
-type PasskeyWindow = {
+export type PasskeyWindow = {
   isSecureContext: boolean
   PublicKeyCredential?: unknown
-  location: { hostname: string }
+  location: { hostname: string; port?: string }
+}
+
+export type PasskeyBlock = {
+  reason: string
+  fix: string
+}
+
+function servePort(win: PasskeyWindow): string {
+  const port = win.location.port
+  if (port && port !== '80' && port !== '443') return port
+  return '7777'
+}
+
+export function passkeyBlock(
+  win: PasskeyWindow | undefined = typeof window === 'undefined' ? undefined : window,
+): PasskeyBlock | null {
+  if (!win) {
+    return {
+      reason: 'Passkeys need a browser.',
+      fix: 'Open this page in Chrome, Safari, or Firefox.',
+    }
+  }
+  const host = win.location.hostname
+  const port = servePort(win)
+  const local = `http://localhost:${port}`
+  if (isIPHostname(host)) {
+    return {
+      reason: `This page is ${host} — a raw IP. Passkeys need a hostname.`,
+      fix: `On this Device open ${local}. Off-LAN use MagicDNS over https, not a 100.x address.\ntailscale serve --bg ${port}\nThen https://<magicdns>`,
+    }
+  }
+  if (!win.isSecureContext) {
+    if (host.endsWith('.ts.net') || host.endsWith('.tailscale.net')) {
+      return {
+        reason: `http://${host} is not https. Passkeys will not run here.`,
+        fix: `On this Device run:\ntailscale serve --bg ${port}\nThen open https://${host}`,
+      }
+    }
+    return {
+      reason: 'This page is not https or localhost. Passkeys will not run here.',
+      fix: `On this Device open ${local}, or put HTTPS in front:\ntailscale serve --bg ${port}\nThen https://${host}`,
+    }
+  }
+  if (typeof win.PublicKeyCredential === 'undefined') {
+    return {
+      reason: 'This browser cannot create passkeys.',
+      fix: 'Use current Chrome, Safari, or Firefox.',
+    }
+  }
+  return null
 }
 
 export function isPasskeyAvailable(
   win: PasskeyWindow | undefined = typeof window === 'undefined' ? undefined : window,
 ): boolean {
-  if (!win) return false
-  if (!win.isSecureContext) return false
-  if (typeof win.PublicKeyCredential === 'undefined') return false
-  if (isIPHostname(win.location.hostname)) return false
-  return true
+  return passkeyBlock(win) === null
 }
 
-const PASSKEY_UNAVAILABLE =
-  'Passkeys need https (or localhost) and a hostname, not a raw IP.'
-
-export function passkeyUnavailableMessage(): string {
-  return PASSKEY_UNAVAILABLE
+export function passkeyUnavailableMessage(
+  win: PasskeyWindow | undefined = typeof window === 'undefined' ? undefined : window,
+): string {
+  const block = passkeyBlock(win)
+  if (!block) return ''
+  return `${block.reason} ${block.fix}`
 }
 
 type JSONObject = Record<string, unknown>

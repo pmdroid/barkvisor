@@ -60,6 +60,8 @@ struct SetupConsoleLocalTests {
         #expect(!SetupMiddleware.isSetupAPIPath("/api/pairing/join"))
         #expect(!SetupMiddleware.isSetupAPIPath("/api/health"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/admin"))
+        #expect(SetupController.mutatingSetupPaths.contains("/api/setup/passkeys/register/begin"))
+        #expect(SetupController.mutatingSetupPaths.contains("/api/setup/passkeys/register/finish"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/library"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/complete"))
         #expect(!SetupController.mutatingSetupPaths.contains("/api/setup/status"))
@@ -127,5 +129,35 @@ struct SetupConsoleLocalTests {
             #expect(row?.password == "hashed-admin")
             #expect(row?.role == UserRole.admin.rawValue)
         }
+    }
+
+    @Test func `passkey-only admin provisions setup`() throws {
+        let (dir, pool) = try isolatedPool()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let setup = SetupMiddleware(dbPool: pool)
+        #expect(!setup.isSetupComplete)
+        try pool.write { db in
+            try User(
+                id: "u-passkey",
+                username: "admin",
+                password: "",
+                createdAt: "2026-01-01T00:00:00Z",
+                role: UserRole.admin.rawValue,
+            ).insert(db)
+            try PasskeyCredential(
+                id: "pk-1",
+                userId: "u-passkey",
+                credentialId: "cred-1",
+                publicKey: Data([1, 2, 3]),
+                signCount: 0,
+                name: "Laptop",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        #expect(!setup.isSetupComplete)
+        setup.refreshFromDatabase()
+        #expect(setup.isSetupComplete)
+        let admin = try pool.read { db in try User.fetchProvisionedAdmin(db) }
+        #expect(admin?.id == "u-passkey")
     }
 }

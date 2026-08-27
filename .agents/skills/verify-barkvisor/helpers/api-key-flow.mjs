@@ -40,15 +40,12 @@ let shotShown = null
 let shotModal = null
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
+  const tokenForPage = authHeader.Authorization.replace('Bearer ', '')
+  await page.addInitScript((t) => {
+    localStorage.setItem('token', t)
+    localStorage.setItem('userRole', 'admin')
+  }, tokenForPage)
   await page.goto(`${base}/settings?tab=apikeys`, { waitUntil: 'domcontentloaded' })
-  const loginCard = await page
-    .waitForSelector('.login-card', { state: 'visible', timeout: 8000 })
-    .catch(() => null)
-  if (loginCard) {
-    await page.fill('.login-card input[type=text]', user)
-    await page.fill('.login-card input[type=password]', pass)
-    await page.click('button:has-text("Sign In")')
-  }
   await page.waitForSelector('.sidebar-nav', { timeout: 15000 })
   await page.goto(`${base}/settings?tab=apikeys`, { waitUntil: 'networkidle' })
 

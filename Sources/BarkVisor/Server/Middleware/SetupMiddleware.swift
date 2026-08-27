@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 import Vapor
 
-/// Blocks all non-setup API routes when no admin user with a password exists.
+/// Blocks all non-setup API routes when no admin is provisioned (password or passkey).
 /// Static assets and the setup API are always allowed so the web-based setup wizard works.
 final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
     private let lock = NSLock()
@@ -16,10 +16,9 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
 
     init(dbPool: DatabasePool) {
         self.dbPool = dbPool
-        // Check if any user has a password set
         let hasAdmin =
             (try? dbPool.read { db in
-                try User.filter(User.Columns.password != "").fetchCount(db) > 0
+                try User.hasProvisionedAdmin(db)
             }) ?? false
         self._setupComplete = hasAdmin
     }
@@ -62,7 +61,7 @@ final class SetupMiddleware: AsyncMiddleware, @unchecked Sendable {
         let hasAdmin: Bool
         do {
             hasAdmin = try dbPool.read { db in
-                try User.filter(User.Columns.password != "").fetchCount(db) > 0
+                try User.hasProvisionedAdmin(db)
             }
         } catch {
             return

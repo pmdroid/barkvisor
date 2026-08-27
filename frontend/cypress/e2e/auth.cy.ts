@@ -16,60 +16,26 @@ describe('Authentication', () => {
     })
   })
 
-  it('shows login form with username, password and sign-in button', () => {
+  it('shows passkey sign-in', () => {
     cy.visit('/login')
     cy.contains('h1', 'BarkVisor').should('be.visible')
-    cy.get('input[type="text"]').should('exist')
-    cy.get('input[type="password"]').should('exist')
-    cy.contains('button', 'Sign In').should('exist')
+    cy.get('input[type="password"]').should('not.exist')
+    cy.contains('button', 'Sign in with passkey').should('be.visible')
   })
 
-  it('logs in with valid credentials and redirects to /vms', () => {
-    cy.visit('/login')
-    cy.get('input[type="text"]').type(Cypress.env('username'))
-    cy.get('input[type="password"]').type(Cypress.env('password'))
-    cy.contains('button', 'Sign In').click()
+  it('logs in via API and lands on /vms', () => {
+    cy.login()
+    cy.visit('/vms')
     cy.url().should('include', '/vms')
   })
 
-  it('stores JWT token in localStorage after login', () => {
-    cy.visit('/login')
-    cy.get('input[type="text"]').type(Cypress.env('username'))
-    cy.get('input[type="password"]').type(Cypress.env('password'))
-    cy.contains('button', 'Sign In').click()
-    cy.url().should('include', '/vms')
+  it('stores JWT token in localStorage after API login', () => {
+    cy.login()
+    cy.visit('/vms')
     cy.window().then((win) => {
       expect(win.localStorage.getItem('token')).to.not.be.null
       expect(win.localStorage.getItem('token')!.length).to.be.greaterThan(10)
     })
-  })
-
-  it('shows error on invalid credentials', () => {
-    cy.visit('/login')
-    cy.get('input[type="text"]').type('admin')
-    cy.get('input[type="password"]').type('wrongpassword123')
-    cy.contains('button', 'Sign In').click()
-    cy.get('.login-error').should('be.visible')
-  })
-
-  it('does not store token on failed login', () => {
-    cy.visit('/login')
-    cy.get('input[type="text"]').type('admin')
-    cy.get('input[type="password"]').type('wrongpassword123')
-    cy.contains('button', 'Sign In').click()
-    cy.get('.login-error').should('be.visible')
-    cy.window().then((win) => {
-      expect(win.localStorage.getItem('token')).to.be.null
-    })
-  })
-
-  it('disables button and shows loading text while logging in', () => {
-    cy.visit('/login')
-    cy.get('input[type="text"]').type(Cypress.env('username'))
-    cy.get('input[type="password"]').type(Cypress.env('password'))
-    cy.contains('button', 'Sign In').click()
-    // Login may be fast, but the final state proves it completed
-    cy.url().should('include', '/vms')
   })
 
   it('logs out via sidebar button', () => {

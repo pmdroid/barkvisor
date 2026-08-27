@@ -482,6 +482,33 @@ struct PairingIdentityTests {
         #expect(admin?.passwordHash == "hashed:first")
     }
 
+    @Test func `loadAdminUser returns passkey-only admin`() throws {
+        let dir = try isolatedDir("admin-passkey")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let db = try makeDB(dir)
+        try db.write { db in
+            try User(
+                id: "pk-admin",
+                username: "admin",
+                password: "",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+            try PasskeyCredential(
+                id: "pk-1",
+                userId: "pk-admin",
+                credentialId: "cred-1",
+                publicKey: Data([1, 2, 3]),
+                signCount: 0,
+                name: "Key",
+                createdAt: "2026-01-01T00:00:00Z",
+            ).insert(db)
+        }
+        let admin = try PairingService.loadAdminUser(db: db)
+        #expect(admin?.id == "pk-admin")
+        #expect(admin?.username == "admin")
+        #expect(admin?.passwordHash == "")
+    }
+
     @Test func `join copies identity through existing redeem`() async throws {
         let issuerDir = try isolatedDir("iss-join")
         let joinerDir = try isolatedDir("join-join")

@@ -4,6 +4,7 @@ import {
   bufferFromBase64url,
   isIPHostname,
   isPasskeyAvailable,
+  passkeyBlock,
   passkeyUnavailableMessage,
   toCreationOptions,
   toRequestOptions,
@@ -28,13 +29,59 @@ describe('webauthn helpers', () => {
     expect(isPasskeyAvailable(undefined)).toBe(false)
     expect(
       isPasskeyAvailable({
+        isSecureContext: true,
+        PublicKeyCredential: function PublicKeyCredential() {},
+        location: { hostname: 'localhost' },
+      }),
+    ).toBe(true)
+    expect(
+      isPasskeyAvailable({
         isSecureContext: false,
         PublicKeyCredential: function PublicKeyCredential() {},
         location: { hostname: 'localhost' },
       }),
     ).toBe(false)
-    expect(passkeyUnavailableMessage()).toContain('https')
-    expect(passkeyUnavailableMessage()).toContain('hostname')
+  })
+
+  test('explains IP, Tailscale http, and missing https', () => {
+    const cred = function PublicKeyCredential() {}
+    const ip = passkeyBlock({
+      isSecureContext: false,
+      PublicKeyCredential: cred,
+      location: { hostname: '127.0.0.1', port: '7777' },
+    })
+    expect(ip?.reason).toContain('127.0.0.1')
+    expect(ip?.fix).toContain('http://localhost:7777')
+    expect(ip?.fix).toContain('tailscale serve --bg 7777')
+
+    const ts = passkeyBlock({
+      isSecureContext: false,
+      PublicKeyCredential: cred,
+      location: { hostname: 'box.tail1234.ts.net', port: '7777' },
+    })
+    expect(ts?.reason).toContain('http://box.tail1234.ts.net')
+    expect(ts?.fix).toContain('tailscale serve --bg 7777')
+    expect(ts?.fix).toContain('https://box.tail1234.ts.net')
+
+    const http = passkeyBlock({
+      isSecureContext: false,
+      PublicKeyCredential: cred,
+      location: { hostname: 'barkvisor.local', port: '7777' },
+    })
+    expect(http?.reason).toContain('https or localhost')
+    expect(http?.fix).toContain('http://localhost:7777')
+
+    expect(passkeyBlock({
+      isSecureContext: true,
+      PublicKeyCredential: cred,
+      location: { hostname: 'box.tail1234.ts.net' },
+    })).toBeNull()
+
+    expect(passkeyUnavailableMessage({
+      isSecureContext: false,
+      PublicKeyCredential: cred,
+      location: { hostname: 'box.tail1234.ts.net', port: '7777' },
+    })).toContain('https://box.tail1234.ts.net')
   })
 
   test('converts creation and request options', () => {

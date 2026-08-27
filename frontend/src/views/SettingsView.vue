@@ -16,7 +16,8 @@ import { useToastStore } from '../stores/toast'
 import { useAuthStore } from '../stores/auth'
 import { useSSHKeyStore } from '../stores/sshKeys'
 import { usePasskeyStore } from '../stores/passkeys'
-import { isPasskeyAvailable, passkeyUnavailableMessage } from '../utils/webauthn'
+import { isPasskeyAvailable, passkeyBlock } from '../utils/webauthn'
+import PasskeyBlocked from '../components/PasskeyBlocked.vue'
 import {
   advertisedHostForOffer,
   CUSTOM_ADVERTISED_HOST,
@@ -73,7 +74,7 @@ const auth = useAuthStore()
 const sshKeyStore = useSSHKeyStore()
 const passkeyStore = usePasskeyStore()
 const passkeysAvailable = isPasskeyAvailable()
-const passkeyUnavailable = passkeyUnavailableMessage()
+const passkeyBlocked = passkeyBlock()
 const tab = ref<SettingsTab>(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
 
 const homeDeviceName = computed(() =>
@@ -1235,19 +1236,17 @@ onUnmounted(() => {
   />
 
   <div v-if="tab === 'passkeys'">
-    <div v-if="!passkeysAvailable" style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
-      {{ passkeyUnavailable }}
-    </div>
+    <PasskeyBlocked v-if="passkeyBlocked" :block="passkeyBlocked" />
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0">
-        Passkeys sign you in to this Home without a password. They stay on this user.
+        Passkeys sign you in to this Home. They stay on this user.
       </p>
       <div v-if="passkeysAvailable" style="display:flex;gap:8px;align-items:center">
         <input v-model="newPasskeyName" placeholder="Name (optional)" style="width:160px" />
         <AppButton variant="primary" icon="plus" :loading="addPasskeyLoading" loading-text="Waiting..." @click="addPasskey">Add passkey</AppButton>
       </div>
     </div>
-    <EmptyState v-if="passkeyStore.keys.length === 0" icon="key" title="No passkeys yet. Add one to sign in without a password." />
+    <EmptyState v-if="passkeyStore.keys.length === 0" icon="key" title="No passkeys yet. Add one to sign in." />
     <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'lastUsed', label: 'Last used' }, { key: 'created', label: 'Created' }, { key: 'actions', label: '', align: 'right' }]">
       <tr v-for="k in passkeyStore.keys" :key="k.id">
         <td style="font-weight:500">{{ k.name }}</td>

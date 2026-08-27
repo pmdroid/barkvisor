@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { LibrarySettings } from './types'
+import { createPasskey } from '../utils/webauthn'
 
 const setupApi = axios.create({ baseURL: '/api/setup' })
 
@@ -35,6 +36,19 @@ export async function getSetupStatus(): Promise<SetupStatus> {
 
 export async function createAdmin(username: string, password: string): Promise<void> {
   await setupApi.post('/admin', { username, password })
+}
+
+export async function registerSetupPasskey(name?: string): Promise<void> {
+  const { data: begin } = await setupApi.post<{ sessionId: string; publicKey: Record<string, unknown> }>(
+    '/passkeys/register/begin',
+    name ? { name } : {},
+  )
+  const credential = await createPasskey(begin.publicKey)
+  await setupApi.post('/passkeys/register/finish', {
+    sessionId: begin.sessionId,
+    credential,
+    name,
+  })
 }
 
 export async function listInterfaces(): Promise<InterfaceInfo[]> {
