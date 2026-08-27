@@ -32,22 +32,14 @@
           "placeholder": "ubuntu"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "pi-hole",
@@ -143,22 +135,14 @@
           "placeholder": "debian"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "rocky-cloud",
@@ -191,22 +175,14 @@
           "placeholder": "rocky"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "home-assistant",
@@ -310,22 +286,14 @@
           "placeholder": "debian"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "ubuntu-26-cloud",
@@ -358,22 +326,14 @@
           "placeholder": "ubuntu"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "fedora-cloud",
@@ -406,22 +366,14 @@
           "placeholder": "fedora"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "alpine-cloud",
@@ -454,22 +406,14 @@
           "placeholder": "alpine"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/ash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackages:\n  - qemu-guest-agent\nruncmd:\n  - rc-update add qemu-guest-agent default\n  - rc-service qemu-guest-agent start\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/ash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackages:\n  - qemu-guest-agent\nruncmd:\n  - rc-update add qemu-guest-agent default\n  - rc-service qemu-guest-agent start\n"
     },
     {
       "slug": "rocky-10-cloud",
@@ -502,22 +446,14 @@
           "placeholder": "rocky"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "alma-10-cloud",
@@ -550,22 +486,14 @@
           "placeholder": "alma"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "leap-cloud",
@@ -598,22 +526,14 @@
           "placeholder": "opensuse"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\npackage_update: true\npackages:\n  - qemu-guest-agent\nruncmd:\n  - systemctl enable --now qemu-guest-agent\n"
     },
     {
       "slug": "freebsd-cloud",
@@ -646,22 +566,14 @@
           "placeholder": "freebsd"
         },
         {
-          "id": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "placeholder": "Choose a strong password",
-          "minLength": 8
-        },
-        {
           "id": "ssh_keys",
           "label": "SSH Public Keys",
           "type": "textarea",
-          "required": false,
+          "required": true,
           "placeholder": "ssh-ed25519 AAAA... (one per line)"
         }
       ],
-      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/sh\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: false\n    passwd: {{password_hash}}\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\n"
+      "userDataTemplate": "#cloud-config\nusers:\n  - name: {{username}}\n    shell: /bin/sh\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n{{ssh_keys_yaml}}\n"
     },
     {
       "slug": "openwrt",

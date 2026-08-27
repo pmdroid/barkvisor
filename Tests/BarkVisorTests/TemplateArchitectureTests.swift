@@ -304,6 +304,24 @@ struct CatalogSlugResolutionTests {
         let row = try #require(catalog.templates.first { $0.slug == "pi-hole" })
         #expect(row.userDataTemplate.contains("{{ssh_keys_yaml}}"))
         #expect(row.inputs.contains { $0.id == "ssh_keys" && $0.required == false })
+        #expect(row.inputs.contains { $0.id == "password" && $0.required == true })
+    }
+
+    @Test func `cloud OS templates log in with SSH not a password`() throws {
+        let url = repoRoot().appendingPathComponent("repos/templates.json")
+        let catalog = try JSONDecoder().decode(TemplateCatalog.self, from: Data(contentsOf: url))
+        let slugs = [
+            "ubuntu-cloud", "debian-cloud", "debian-13-cloud", "ubuntu-26-cloud",
+            "rocky-cloud", "rocky-10-cloud", "alma-10-cloud", "fedora-cloud",
+            "alpine-cloud", "leap-cloud", "freebsd-cloud",
+        ]
+        for slug in slugs {
+            let row = try #require(catalog.templates.first { $0.slug == slug })
+            #expect(!row.inputs.contains { $0.id == "password" })
+            #expect(row.inputs.contains { $0.id == "ssh_keys" && $0.required == true })
+            #expect(row.userDataTemplate.contains("lock_passwd: true"))
+            #expect(!row.userDataTemplate.contains("{{password_hash}}"))
+        }
     }
 
     @Test func `checksum pins do not use rotating catalog URLs`() throws {

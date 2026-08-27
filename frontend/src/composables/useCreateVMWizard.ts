@@ -44,7 +44,11 @@ import {
 } from '../utils/hostBuffer'
 import { defaultVMNameFromLabel } from '../utils/hostnameFromVMName'
 import { useTemplateStore } from '../stores/templates'
-import { templateDeclaresSshKeys } from '../utils/templateDeploy'
+import {
+  collectTemplateDeployInputs,
+  templateDeclaresSshKeys,
+  templateRequiresSshKeys,
+} from '../utils/templateDeploy'
 import {
   deviceBlockDevicesPath,
   deviceDisksPath,
@@ -528,6 +532,12 @@ export function useCreateVMWizard(
       || galleryKind.value === 'coding-agent'
   })
 
+  const sshKeyRequired = computed(() =>
+    galleryKind.value === 'template' && selectedTemplate.value
+      ? templateRequiresSshKeys(selectedTemplate.value.inputs)
+      : false,
+  )
+
   async function loadBlockDevices() {
     blockDevices.value = []
     blockDevicePath.value = ''
@@ -743,6 +753,7 @@ export function useCreateVMWizard(
         if (galleryKind.value === 'custom' || galleryKind.value === 'windows') {
           return !!selectedImageId.value
         }
+        if (sshKeyRequired.value && !selectedSSHKeyId.value) return false
         return cpuCount.value >= 1
           && memoryMB.value >= 128
           && cpuCount.value <= vmCpuCapValue.value
@@ -790,15 +801,10 @@ export function useCreateVMWizard(
   function buildTemplateDeployRequest(): DeployTemplateRequest {
     const resolved = resolvedTemplate.value
     if (!resolved) throw new Error("Not in this Device's Library")
-    const inputs: Record<string, string> = {}
-    for (const input of resolved.inputs) {
-      if (input.id === 'ssh_keys') continue
-      inputs[input.id] = input.default ?? ''
-    }
-    if (templateDeclaresSshKeys(resolved.inputs)) {
-      const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
-      if (selectedKey) inputs.ssh_keys = authorizedKeyForCloudInit(selectedKey)
-    }
+    const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
+    const inputs = collectTemplateDeployInputs(resolved.inputs, {
+      sshAuthorizedKey: selectedKey ? authorizedKeyForCloudInit(selectedKey) : undefined,
+    })
     return {
       templateId: resolved.id,
       vmName: name.value.trim(),
@@ -953,13 +959,14 @@ export function useCreateVMWizard(
     return b + ' B'
   }
 
-  const sshKeyOptions = computed(() => [
-    ...sshKeyStore.keys.map((k) => ({
+  const sshKeyOptions = computed(() => {
+    const keys = sshKeyStore.keys.map((k) => ({
       value: k.id,
       label: k.isDefault ? `${k.name} (default)` : k.name,
-    })),
-    { value: '', label: 'none' },
-  ])
+    }))
+    if (sshKeyRequired.value) return keys
+    return [...keys, { value: '', label: 'none' }]
+  })
 
   return {
     sshKeys: computed(() => sshKeyStore.keys),
