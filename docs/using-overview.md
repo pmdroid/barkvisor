@@ -4,6 +4,8 @@ BarkVisor is a headless daemon that manages QEMU virtual machines and serves a w
 
 ![The BarkVisor sign-in screen](img/login.png)
 
+Sign in with username and password, or **Sign in with passkey** when the page is https (or localhost) on a hostname. Register passkeys under [Settings → Passkeys](settings-passkeys.md).
+
 ## First run
 
 Before sign-in, the setup wizard walks you through creating the **Home**:

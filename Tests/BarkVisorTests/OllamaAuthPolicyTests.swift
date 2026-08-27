@@ -60,6 +60,26 @@ struct OllamaAuthPolicyTests {
         )
         #expect(
             !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "GET", path: "/api/auth/passkeys",
+            ),
+        )
+        #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "POST", path: "/api/auth/passkeys/register/begin",
+            ),
+        )
+        #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "POST", path: "/api/auth/passkeys/register/finish",
+            ),
+        )
+        #expect(
+            !OllamaAuthPolicy.allows(
+                principal: .inferenceKey, method: "DELETE", path: "/api/auth/passkeys/abc",
+            ),
+        )
+        #expect(
+            !OllamaAuthPolicy.allows(
                 principal: .inferenceKey,
                 method: "GET",
                 path: "/api/home/devices/abc/v1/ollama/tags",

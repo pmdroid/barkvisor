@@ -788,6 +788,14 @@ export interface SSHKey {
   createdAt: string
 }
 
+export interface PasskeyCredential {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt: string | null
+  credentialId: string
+}
+
 export interface AuditEntry {
   id: number
   timestamp: string

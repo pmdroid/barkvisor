@@ -222,6 +222,8 @@ struct RemoteAccessTests {
         #expect(!RemoteAccessGate.isExempt("/api/pairing/join"))
         #expect(!RemoteAccessGate.isExempt("/api/pairing/redeem"))
         #expect(!RemoteAccessGate.isExempt("/api/auth/login"))
+        #expect(!RemoteAccessGate.isExempt("/api/auth/passkeys/login/begin"))
+        #expect(!RemoteAccessGate.isExempt("/api/auth/passkeys/login/finish"))
         #expect(!RemoteAccessGate.isExempt("/api/system/remote-access"))
         #expect(!RemoteAccessGate.isExempt("/api/vms/1/console"))
         #expect(!RemoteAccessGate.isExempt("/api/home/devices/x/v1/vms/y/vnc"))

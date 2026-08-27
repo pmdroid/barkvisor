@@ -8,12 +8,15 @@ import type {
   AuditEntry,
   DiskSettings,
   LibrarySettings,
+  PasskeyCredential,
   RemoteAccessStatus,
   SSHKey,
 } from '../api/types'
 import { useToastStore } from '../stores/toast'
 import { useAuthStore } from '../stores/auth'
 import { useSSHKeyStore } from '../stores/sshKeys'
+import { usePasskeyStore } from '../stores/passkeys'
+import { isPasskeyAvailable, passkeyUnavailableMessage } from '../utils/webauthn'
 import {
   advertisedHostForOffer,
   CUSTOM_ADVERTISED_HOST,
@@ -67,6 +70,9 @@ const route = useRoute()
 const toast = useToastStore()
 const auth = useAuthStore()
 const sshKeyStore = useSSHKeyStore()
+const passkeyStore = usePasskeyStore()
+const passkeysAvailable = isPasskeyAvailable()
+const passkeyUnavailable = passkeyUnavailableMessage()
 const tab = ref<SettingsTab>(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
 
 const homeDeviceName = computed(() =>
@@ -676,6 +682,10 @@ const newSSHKeyPublicKey = ref('')
 const addSSHKeyLoading = ref(false)
 const deleteSSHKeyTarget = ref<SSHKey | null>(null)
 const deletingSSHKey = ref(false)
+const addPasskeyLoading = ref(false)
+const newPasskeyName = ref('')
+const deletePasskeyTarget = ref<PasskeyCredential | null>(null)
+const deletingPasskey = ref(false)
 
 async function addSSHKey() {
   if (!newSSHKeyName.value.trim() || !newSSHKeyPublicKey.value.trim()) return
@@ -690,6 +700,33 @@ async function addSSHKey() {
     toast.error(apiErrorMessage(e))
   } finally {
     addSSHKeyLoading.value = false
+  }
+}
+
+async function addPasskey() {
+  addPasskeyLoading.value = true
+  try {
+    await passkeyStore.add(newPasskeyName.value.trim() || undefined)
+    toast.success('Passkey added')
+    newPasskeyName.value = ''
+  } catch (e: any) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    addPasskeyLoading.value = false
+  }
+}
+
+async function doDeletePasskey() {
+  if (!deletePasskeyTarget.value) return
+  deletingPasskey.value = true
+  try {
+    await passkeyStore.remove(deletePasskeyTarget.value.id)
+    toast.success('Passkey deleted')
+  } catch (e: any) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    deletingPasskey.value = false
+    deletePasskeyTarget.value = null
   }
 }
 
@@ -812,6 +849,11 @@ function applySettingsTab(next: SettingsTab) {
     sshKeyStore.fetchAll()
     return
   }
+  if (next === 'passkeys') {
+    tab.value = 'passkeys'
+    passkeyStore.fetchAll()
+    return
+  }
   if (next === 'audit') {
     tab.value = 'audit'
     fetchAudit()
@@ -855,6 +897,7 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'disks' }" @click="openDisksTab">Disks</button>
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
+    <button :class="{ active: tab === 'passkeys' }" @click="tab = 'passkeys'; passkeyStore.fetchAll()">Passkeys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
   </div>
 
@@ -1184,6 +1227,45 @@ onUnmounted(() => {
     @cancel="deleteSSHKeyTarget = null"
   />
 
+  <div v-if="tab === 'passkeys'">
+    <div v-if="!passkeysAvailable" style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">
+      {{ passkeyUnavailable }}
+    </div>
+    <template v-else>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px">
+        <p style="color:var(--text-secondary);font-size:13px;margin:0">
+          Passkeys sign you in to this Home without a password. They stay on this user.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input v-model="newPasskeyName" placeholder="Name (optional)" style="width:160px" />
+          <AppButton variant="primary" icon="plus" :loading="addPasskeyLoading" loadingText="Waiting..." @click="addPasskey">Add passkey</AppButton>
+        </div>
+      </div>
+      <EmptyState v-if="passkeyStore.keys.length === 0" icon="key" title="No passkeys yet. Add one to sign in without a password." />
+      <DataTable v-else :columns="[{ key: 'name', label: 'Name' }, { key: 'lastUsed', label: 'Last used' }, { key: 'created', label: 'Created' }, { key: 'actions', label: '', align: 'right' }]">
+        <tr v-for="k in passkeyStore.keys" :key="k.id">
+          <td style="font-weight:500">{{ k.name }}</td>
+          <td style="color:var(--text-secondary)">{{ k.lastUsedAt ? formatDate(k.lastUsedAt) : 'Never' }}</td>
+          <td style="color:var(--text-secondary)">{{ formatDate(k.createdAt) }}</td>
+          <td style="text-align:right">
+            <AppButton size="sm" style="color:var(--red)" @click="deletePasskeyTarget = k">Delete</AppButton>
+          </td>
+        </tr>
+      </DataTable>
+    </template>
+  </div>
+
+  <ConfirmDialog
+    v-if="deletePasskeyTarget"
+    title="Delete passkey"
+    :message="`Delete passkey &quot;${deletePasskeyTarget.name}&quot;? You will not be able to sign in with it.`"
+    confirm-label="Delete"
+    :danger="true"
+    :loading="deletingPasskey"
+    @confirm="doDeletePasskey"
+    @cancel="deletePasskeyTarget = null"
+  />
+
   <!-- Audit Log Tab -->
   <div v-if="tab === 'audit'">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -1219,6 +1301,11 @@ onUnmounted(() => {
         <optgroup label="SSH Key">
           <option value="ssh-key.create">ssh-key.create</option>
           <option value="ssh-key.delete">ssh-key.delete</option>
+        </optgroup>
+        <optgroup label="Passkey">
+          <option value="auth.passkey.register">auth.passkey.register</option>
+          <option value="auth.passkey.login">auth.passkey.login</option>
+          <option value="auth.passkey.delete">auth.passkey.delete</option>
         </optgroup>
         <optgroup label="System">
           <option value="app.start">app.start</option>

@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import AppButton from '../components/ui/AppButton.vue'
 import FormError from '../components/ui/FormError.vue'
+import { isPasskeyAvailable } from '../utils/webauthn'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -12,6 +13,8 @@ const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+const passkeyLoading = ref(false)
+const showPasskey = isPasskeyAvailable()
 
 async function submit() {
   error.value = ''
@@ -23,6 +26,19 @@ async function submit() {
     error.value = apiErrorMessage(e, 'Login failed')
   } finally {
     loading.value = false
+  }
+}
+
+async function signInWithPasskey() {
+  error.value = ''
+  passkeyLoading.value = true
+  try {
+    await auth.loginWithPasskey()
+    router.push('/vms')
+  } catch (e: any) {
+    error.value = apiErrorMessage(e, 'Passkey sign-in failed')
+  } finally {
+    passkeyLoading.value = false
   }
 }
 </script>
@@ -43,6 +59,16 @@ async function submit() {
       </div>
       <FormError v-if="error" :message="error" />
       <AppButton variant="primary" class="login-btn" :loading="loading" loading-text="Signing in...">Sign In</AppButton>
+      <template v-if="showPasskey">
+        <p class="login-or">or</p>
+        <AppButton
+          type="button"
+          class="login-btn"
+          :loading="passkeyLoading"
+          loading-text="Waiting for passkey..."
+          @click="signInWithPasskey"
+        >Sign in with passkey</AppButton>
+      </template>
     </form>
   </div>
 </template>
@@ -87,6 +113,11 @@ async function submit() {
   padding: 11px;
   font-size: 14px;
   margin-top: 4px;
+}
+.login-or {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 16px 0 8px;
 }
 .login-card .form-group { text-align: left; }
 </style>

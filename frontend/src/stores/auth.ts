@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../api/client'
 import type { AuthMe, LoginSession, UserRole } from '../api/types'
+import { getPasskey } from '../utils/webauthn'
 import { useLogStore } from './logs'
 import { useMetricsStore } from './metrics'
 
@@ -57,13 +58,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(username: string, password: string) {
-    const { data } = await api.post<LoginSession>('/auth/login', { username, password })
+  async function applyLogin(data: LoginSession) {
     const nextRefresh = typeof data.refreshToken === 'string' ? data.refreshToken : ''
     persistSession(data.token, nextRefresh)
     if (data.role === 'admin' || data.role === 'inference') persistRole(data.role)
     else if (typeof data.role === 'string' && data.role.length > 0) persistRole('inference')
     else await fetchMe()
+  }
+
+  async function login(username: string, password: string) {
+    const { data } = await api.post<LoginSession>('/auth/login', { username, password })
+    await applyLogin(data)
+  }
+
+  async function loginWithPasskey() {
+    const { data: begin } = await api.post<{ sessionId: string; publicKey: Record<string, unknown> }>(
+      '/auth/passkeys/login/begin',
+      {},
+    )
+    const credential = await getPasskey(begin.publicKey)
+    const { data } = await api.post<LoginSession>('/auth/passkeys/login/finish', {
+      sessionId: begin.sessionId,
+      credential,
+    })
+    await applyLogin(data)
   }
 
   async function logout() {
@@ -90,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     isInference,
     login,
+    loginWithPasskey,
     logout,
     fetchMe,
   }
