@@ -8,6 +8,7 @@ public enum BarkVisorError: Error, LocalizedError {
     case diskCreateFailed(String)
     /// Volume does not have room for the write (HTTP 507).
     case insufficientDiskSpace(freeBytes: Int64, neededBytes: Int64)
+    case insufficientDeviceDiskSpace(deviceName: String, shortfallBytes: Int64)
     case cloudInitFailed(String)
     case monitorError(String)
     case vmNotRunning(String)
@@ -53,6 +54,9 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .diskCreateFailed(msg): return msg
         case let .insufficientDiskSpace(free, needed):
             return "Not enough disk space: \(Self.bytesText(free)) free, need \(Self.bytesText(needed))."
+        case let .insufficientDeviceDiskSpace(deviceName, shortfallBytes):
+            return
+                "Not enough disk space on this Device \(deviceName). Need \(Self.bytesText(shortfallBytes)) more."
         case let .cloudInitFailed(msg): return msg
         case let .monitorError(msg): return msg
         case let .vmNotRunning(id): return "VM \(id) is not running"
@@ -100,7 +104,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .firmwareNotFound: return "firmware_not_found"
         case .unknownVMType: return "unknown_vm_type"
         case .diskCreateFailed: return "disk_create_failed"
-        case .insufficientDiskSpace: return "insufficient_disk_space"
+        case .insufficientDiskSpace, .insufficientDeviceDiskSpace: return "insufficient_disk_space"
         case .cloudInitFailed: return "cloud_init_failed"
         case .monitorError: return "monitor_error"
         case .vmNotRunning: return "vm_not_running"
@@ -150,7 +154,7 @@ public enum BarkVisorError: Error, LocalizedError {
             return 422
         case .badGateway:
             return 502
-        case .insufficientDiskSpace:
+        case .insufficientDiskSpace, .insufficientDeviceDiskSpace:
             return 507
         default:
             return 500

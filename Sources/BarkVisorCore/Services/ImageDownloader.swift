@@ -61,6 +61,35 @@ public protocol ImageProgressPublishing: Actor {
     func publish(_ event: ImageProgressEvent)
 }
 
+public enum ImageDownloadSpace {
+    public static let headroomBytes: Int64 = 64 * 1_048_576
+
+    public static func require(
+        sizeBytes: Int64?,
+        freeBytes: UInt64?,
+        deviceName: String,
+    ) throws {
+        guard let sizeBytes, sizeBytes > 0 else { return }
+        guard let freeBytes else { return }
+        let size = UInt64(sizeBytes)
+        let headroom = UInt64(clamping: headroomBytes)
+        let (needed, overflow) = size.addingReportingOverflow(headroom)
+        if !overflow, freeBytes >= needed {
+            return
+        }
+        let shortfall =
+            if overflow {
+                Int64.max
+            } else {
+                Int64(clamping: needed - freeBytes)
+            }
+        throw BarkVisorError.insufficientDeviceDiskSpace(
+            deviceName: deviceName,
+            shortfallBytes: max(shortfall, 1),
+        )
+    }
+}
+
 public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private var tasks: [String: Task<Void, Never>] = [:]
     private var continuations: [String: [UUID: AsyncStream<ImageProgressEvent>.Continuation]] = [:]

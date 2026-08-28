@@ -15,6 +15,7 @@ public struct DeployRecipeImage: Codable, Sendable {
     public let sha512: String?
     public let name: String?
     public let slug: String?
+    public let sizeBytes: Int64?
 
     public init(
         downloadUrl: String,
@@ -24,6 +25,7 @@ public struct DeployRecipeImage: Codable, Sendable {
         sha512: String? = nil,
         name: String? = nil,
         slug: String? = nil,
+        sizeBytes: Int64? = nil,
     ) {
         self.downloadUrl = downloadUrl
         self.arch = arch
@@ -32,6 +34,7 @@ public struct DeployRecipeImage: Codable, Sendable {
         self.sha512 = sha512
         self.name = name
         self.slug = slug
+        self.sizeBytes = sizeBytes
     }
 }
 
@@ -159,9 +162,7 @@ public enum TemplateDeployService {
             )
         }
 
-        let claim = try await startCatalogDownload(
-            repoImage: repoImage, imageDownloader: imageDownloader, db: db,
-        )
+        let claim = try await claimCatalogDownload(repoImage: repoImage, db: db)
         if let existing = try await existingPending(
             vmName: options.vmName, imageId: claim.image.id, db: db,
         ) {
@@ -182,6 +183,29 @@ public enum TemplateDeployService {
             imageId: claim.image.id,
             db: db,
         )
+        do {
+            try await ImageService.requireCatalogLibrarySpace(
+                sizeBytes: repoImage.sizeBytes, db: db,
+            )
+            _ = try await startClaimedDownload(
+                claim: claim,
+                repoImage: repoImage,
+                imageDownloader: imageDownloader,
+                db: db,
+            )
+        } catch {
+            let message = (error as? BarkVisorError)?.sanitizedDescription
+                ?? error.localizedDescription
+            if case .started = claim {
+                await LibraryAcquire.markFailed(
+                    imageId: claim.image.id,
+                    message: message,
+                    db: db,
+                )
+            }
+            await failPending(vmID: vm.id, message: message, db: db)
+            throw error
+        }
         await submitFinishTask(
             vm: vm,
             imageId: claim.image.id,
@@ -289,7 +313,7 @@ public enum TemplateDeployService {
             arch: recipe.image.arch,
             version: nil,
             downloadUrl: recipe.image.downloadUrl,
-            sizeBytes: nil,
+            sizeBytes: recipe.image.sizeBytes,
             sha256: recipe.image.sha256,
             sha512: recipe.image.sha512,
         )
@@ -369,17 +393,52 @@ public enum TemplateDeployService {
         return repoImage
     }
 
-    private static func startCatalogDownload(
-        repoImage: RepositoryImage,
-        imageDownloader: any ImageDownloadStarting,
-        db: DatabasePool,
-    ) async throws -> CatalogDownloadClaim {
+    private static func catalogSourceURL(_ repoImage: RepositoryImage) throws -> URL {
         guard let sourceURL = URL(string: repoImage.downloadUrl),
               let scheme = sourceURL.scheme?.lowercased(),
               Config.allowedURLSchemes.contains(scheme)
         else {
             throw BarkVisorError.badRequest("Invalid download URL for image")
         }
+        return sourceURL
+    }
+
+    private static func claimCatalogDownload(
+        repoImage: RepositoryImage,
+        db: DatabasePool,
+    ) async throws -> CatalogDownloadClaim {
+        let sourceURL = try catalogSourceURL(repoImage)
+        return try await ImageService.claimCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: .catalog(from: repoImage),
+            db: db,
+        )
+    }
+
+    private static func startClaimedDownload(
+        claim: CatalogDownloadClaim,
+        repoImage: RepositoryImage,
+        imageDownloader: any ImageDownloadStarting,
+        db: DatabasePool,
+    ) async throws -> CatalogDownloadClaim {
+        let sourceURL = try catalogSourceURL(repoImage)
+        return try await ImageService.startClaimedCatalogDownload(
+            claim: claim,
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: .catalog(from: repoImage),
+            downloader: imageDownloader,
+            db: db,
+        )
+    }
+
+    private static func startCatalogDownload(
+        repoImage: RepositoryImage,
+        imageDownloader: any ImageDownloadStarting,
+        db: DatabasePool,
+    ) async throws -> CatalogDownloadClaim {
+        let sourceURL = try catalogSourceURL(repoImage)
         return try await ImageService.startOrDetectCatalogDownload(
             repoImage: repoImage,
             sourceURL: sourceURL,

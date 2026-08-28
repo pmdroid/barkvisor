@@ -12,6 +12,7 @@ struct VirtUIErrorTests {
             .unknownVMType("bad-type"),
             .diskCreateFailed("failed"),
             .insufficientDiskSpace(freeBytes: 100, neededBytes: 1_073_741_824),
+            .insufficientDeviceDiskSpace(deviceName: "studio", shortfallBytes: 1_073_741_824),
             .cloudInitFailed("failed"),
             .monitorError("error"),
             .vmNotRunning("vm-1"),
@@ -108,6 +109,20 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.diskCreateFailed("").httpStatus == 500)
         #expect(BarkVisorError.insufficientDiskSpace(freeBytes: 1, neededBytes: 2).httpStatus == 507)
         #expect(BarkVisorError.insufficientDiskSpace(freeBytes: 1, neededBytes: 2).code == "insufficient_disk_space")
+        #expect(
+            BarkVisorError.insufficientDeviceDiskSpace(deviceName: "studio", shortfallBytes: 2)
+                .httpStatus == 507,
+        )
+        #expect(
+            BarkVisorError.insufficientDeviceDiskSpace(deviceName: "studio", shortfallBytes: 2)
+                .code == "insufficient_disk_space",
+        )
+        #expect(
+            BarkVisorError.insufficientDeviceDiskSpace(
+                deviceName: "studio", shortfallBytes: 1_073_741_824,
+            ).errorDescription
+                == "Not enough disk space on this Device studio. Need 1.0 GiB more.",
+        )
         #expect(BarkVisorError.monitorError("").httpStatus == 500)
         #expect(BarkVisorError.internalError("").httpStatus == 500)
     }
