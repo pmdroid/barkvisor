@@ -257,7 +257,7 @@ bun run test:e2e    # Alias for cy:run
 ```
 
 E2E specs cover authentication, dashboard, VM lifecycle, disks, images,
-networks, registry, settings, navigation, and logs.
+networks, settings, navigation, and logs.
 
 ### Guest-boot BDD (opt-in, not prepush)
 

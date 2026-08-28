@@ -2,7 +2,6 @@
 title: "Settings: Library"
 description: "Library path, capacity, and reset."
 ---
-
 The **Library** tab points this Device at its image store.
 
 ![Settings Library tab: path, capacity](/docs-img/settings-library.png)
@@ -20,5 +19,5 @@ Catalog Download writes into this Device's Library. Missing images download from
 ## Related
 
 - [Images](/docs/using/images/)
-- [Repositories](/docs/using/repositories/)
+- [Settings: Repositories](/docs/using/settings/repositories/)
 - [Settings: Disks](/docs/using/settings/disks/) — where VM disks go, not images

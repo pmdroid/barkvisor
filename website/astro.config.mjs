@@ -61,7 +61,6 @@ export default defineConfig({
             { label: 'Images', link: '/docs/using/images/' },
             { label: 'Disks', link: '/docs/using/disks/' },
             { label: 'Networks', link: '/docs/using/networks/' },
-            { label: 'Repositories', link: '/docs/using/repositories/' },
             { label: 'Logs', link: '/docs/using/logs/' },
             {
               label: 'Settings',
@@ -70,6 +69,7 @@ export default defineConfig({
                 { label: 'Home', link: '/docs/using/settings/home/' },
                 { label: 'Pairing', link: '/docs/using/settings/pairing/' },
                 { label: 'Library', link: '/docs/using/settings/library/' },
+                { label: 'Repositories', link: '/docs/using/settings/repositories/' },
                 { label: 'Disks', link: '/docs/using/settings/disks/' },
                 { label: 'API Keys', link: '/docs/using/settings/api-keys/' },
                 { label: 'SSH Keys', link: '/docs/using/settings/ssh-keys/' },

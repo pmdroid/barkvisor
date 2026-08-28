@@ -8,11 +8,9 @@ A **Workload** is a VM running on one **Device**. Create it from the Home dashbo
 
 1. Open the Home console (`http://<dashboard-device>:7777`).
 2. Click **Create VM**.
-3. Name the Workload and choose Linux or Windows.
-4. Pick an ISO or cloud image from the **Library**.
-5. Pick the **Device** that will run it. The recommended Device is pre-selected. Any **reachable** Device is still selectable — reasons (architecture, memory, missing image) stay as a warning. Unreachable Devices stay disabled.
-6. Set CPU, memory, disk, and network. Architecture details stay collapsed unless you open them.
-7. Create. Provisioning on a member Device is proxied through Home. The phone does not connect to the member’s IP.
+3. Pick what to run from the template gallery, Windows, or your own Library image.
+4. Name the VM, pick the Device, size, and disk options in the 3-step Create VM dialog.
+5. Create. Provisioning on a member Device is proxied through Home. The phone does not connect to the member’s IP.
 
 Windows on **arm64** Devices uses the `windows-arm64` guest (UEFI, TPM, virtio-win). Windows on **x86_64** is a guest profile in progress (`windows-amd64`); Linux guests already run on both arches.
 
@@ -42,5 +40,6 @@ The Workload lives in that Device’s SQLite. Start, stop, and console from the 
 
 - [Quickstart](/docs/getting-started/quickstart/)
 - [Home and pairing](/docs/guides/home-and-pairing/)
+- [Settings: Repositories](/docs/using/settings/repositories/)
 - [Ollama](/docs/guides/ollama/)
 - [Changelog](/docs/changelog/)

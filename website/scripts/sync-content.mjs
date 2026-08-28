@@ -122,10 +122,10 @@ const map = {
     title: 'Networks',
     description: 'NAT, bridged, and isolated networks plus host bridge setup.',
   },
-  'using-repositories.md': {
-    out: 'using/repositories.md',
-    title: 'Repositories',
-    description: 'Template and image catalogs you sync into the Library.',
+  'settings-repositories.md': {
+    out: 'using/settings/repositories.md',
+    title: 'Settings: Repositories',
+    description: 'Catalog URLs and sync for templates and images.',
   },
   'using-logs.md': {
     out: 'using/logs.md',
@@ -135,7 +135,7 @@ const map = {
   'using-settings.md': {
     out: 'using/settings/index.md',
     title: 'Settings',
-    description: 'The eight Settings tabs and what each one controls.',
+    description: 'The nine Settings tabs and what each one controls.',
   },
   'settings-home.md': {
     out: 'using/settings/home.md',
@@ -217,7 +217,8 @@ function fixLinks(body) {
     .replace(/\]\(using-images\.md(#[^)]*)?\)/g, '](/docs/using/images/$1)')
     .replace(/\]\(using-disks\.md(#[^)]*)?\)/g, '](/docs/using/disks/$1)')
     .replace(/\]\(using-networks\.md(#[^)]*)?\)/g, '](/docs/using/networks/$1)')
-    .replace(/\]\(using-repositories\.md(#[^)]*)?\)/g, '](/docs/using/repositories/$1)')
+    .replace(/\]\(using-repositories\.md(#[^)]*)?\)/g, '](/docs/using/settings/repositories/$1)')
+    .replace(/\]\(settings-repositories\.md(#[^)]*)?\)/g, '](/docs/using/settings/repositories/$1)')
     .replace(/\]\(using-logs\.md(#[^)]*)?\)/g, '](/docs/using/logs/$1)')
     .replace(/\]\(using-settings\.md(#[^)]*)?\)/g, '](/docs/using/settings/$1)')
     .replace(/\]\(settings-home\.md(#[^)]*)?\)/g, '](/docs/using/settings/home/$1)')

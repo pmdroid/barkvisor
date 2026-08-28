@@ -7,6 +7,7 @@
 | `home` | Device facts, Tailscale/WireGuard detection, Advertise URL picker, require-tailnet toggle |
 | `pairing` | Add-a-Device QR + expiry countdown, advertise-host picker, phone sign-in QR, Re-pair |
 | `library` | Library path + Browse folder picker, capacity |
+| `repositories` | Catalog URLs, add/sync/remove |
 | `disks` | Default VM disk directory |
 | `apikeys` (default) | Create/show-once/revoke API keys |
 | `sshkeys` | Add SSH key, Set Default/Delete |
