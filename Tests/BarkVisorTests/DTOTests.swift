@@ -387,7 +387,7 @@ struct DTOTests {
             name: "Ubuntu 24.04", description: "LTS release",
             imageType: "cloud-image", arch: "arm64",
             version: "24.04", downloadUrl: "https://example.com/ubuntu.qcow2",
-            sizeBytes: 1_073_741_824,
+            sizeBytes: 1_073_741_824, sha256: "abc123",
         )
 
         let response = RepositoryImageResponse(from: img)
@@ -398,6 +398,7 @@ struct DTOTests {
         #expect(response.name == "Ubuntu 24.04")
         #expect(response.imageType == "cloud-image")
         #expect(response.downloadUrl == "https://example.com/ubuntu.qcow2")
+        #expect(response.sha256 == "abc123")
     }
 
     // MARK: - GuestInfoResponse

@@ -18,6 +18,22 @@ export function catalogDownloadBlockedReason(opts: {
   return null
 }
 
+export function catalogAcquireBody(img: {
+  name: string
+  imageType: string
+  arch: string
+  downloadUrl: string
+  sha256?: string | null
+}) {
+  return {
+    sourceUrl: img.downloadUrl,
+    sha256: img.sha256 || undefined,
+    name: img.name,
+    imageType: img.imageType,
+    arch: img.arch,
+  }
+}
+
 export function deviceForCatalogImage<T extends CatalogDownloadDevice>(
   imageArch: string | null | undefined,
   devices: T[],

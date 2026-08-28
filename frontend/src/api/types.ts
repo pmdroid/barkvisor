@@ -494,6 +494,7 @@ export interface RepositoryImage {
   version: string | null
   downloadUrl: string
   sizeBytes: number | null
+  sha256?: string | null
 }
 
 export interface HostInterface {
