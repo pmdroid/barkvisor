@@ -867,8 +867,7 @@ export interface TailnetInfo {
 export interface RemoteAccessStatus {
   tailscale: TailnetInfo
   wireguard: { configured: boolean }
-  advertiseUrl: string | null
-  requireTailnetForRemote: boolean
+  deviceUrl: string | null
   advertisedHosts: string[]
 }
 

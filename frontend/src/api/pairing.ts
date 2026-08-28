@@ -39,10 +39,10 @@ export function advertisedHostForOffer(selectedHost: string, customHost: string)
 
 /** Settings advertise-URL picker: listed host, or Other / DNS name. */
 export function syncAdvertiseHostPicker(
-  advertiseUrl: string | null | undefined,
+  deviceUrl: string | null | undefined,
   advertisedHosts: string[],
 ): { selectedHost: string; customHost: string } {
-  const host = advertiseUrl?.trim() ?? ''
+  const host = deviceUrl?.trim() ?? ''
   if (host && advertisedHosts.includes(host)) {
     return { selectedHost: host, customHost: '' }
   }

@@ -4,7 +4,7 @@
 
 | Tab | What it controls |
 |-----|------------------|
-| Home | Device facts, remote access, advertise URL — [Settings: Home](settings-home.md) |
+| Home | Device facts and Device URL — [Settings: Home](settings-home.md) |
 | Pairing | Pairing QR to add Devices, phone sign-in — [Settings: Pairing](settings-pairing.md) |
 | Library | Library path — [Settings: Library](settings-library.md) |
 | Repositories | Catalog URLs and sync — [Settings: Repositories](settings-repositories.md) |

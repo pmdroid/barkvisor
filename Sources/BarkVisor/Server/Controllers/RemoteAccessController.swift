@@ -6,11 +6,9 @@ import Vapor
 extension RemoteAccessStatus: Content {}
 
 struct RemoteAccessUpdateRequest: Content {
-    var requireTailnetForRemote: Bool?
-    var advertiseUrl: String?
+    var deviceUrl: String?
 }
 
-/// GET `/api/system/remote-access` and PUT `/api/home/settings/remote-access` (PAS-89).
 struct RemoteAccessController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         routes.get("api", "system", "remote-access", use: getStatus)
@@ -30,14 +28,13 @@ struct RemoteAccessController: RouteCollection {
     func updateSettings(req: Vapor.Request) async throws -> RemoteAccessStatus {
         _ = try req.requireUser
         let body = try req.content.decode(RemoteAccessUpdateRequest.self)
-        if body.advertiseUrl != nil {
-            _ = try RemoteAccessSettings.parseAdvertiseHost(body.advertiseUrl)
+        if body.deviceUrl != nil {
+            _ = try RemoteAccessSettings.parseAdvertiseHost(body.deviceUrl)
         }
         try await req.db.write { db in
             _ = try RemoteAccessSettings.save(
-                requireTailnetForRemote: body.requireTailnetForRemote,
-                advertiseUrl: body.advertiseUrl,
-                updateAdvertiseUrl: body.advertiseUrl != nil,
+                deviceUrl: body.deviceUrl,
+                updateDeviceUrl: body.deviceUrl != nil,
                 db: db,
             )
         }

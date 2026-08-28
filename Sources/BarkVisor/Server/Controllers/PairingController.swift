@@ -43,16 +43,16 @@ struct PairingController: RouteCollection {
     func issue(req: Vapor.Request) async throws -> PairingIssueResponse {
         _ = try req.requireUser
         let advertised = (try? req.content.decode(IssueRequest.self))?.advertisedHost
-        let advertiseUrl = try await req.db.read { db in
-            try RemoteAccessSettings.load(from: db).advertiseUrl
+        let savedDeviceUrl = try await req.db.read { db in
+            try RemoteAccessSettings.load(from: db).deviceUrl
         }
-        let hosts = RemoteAccessSettings.advertisedHosts(advertiseUrl: advertiseUrl)
+        let hosts = RemoteAccessSettings.advertisedHosts(deviceUrl: savedDeviceUrl)
         do {
             let response = try PairingService.issue(
                 PairingService.IssueInput(
                     dataDir: Config.dataDir,
                     hostId: Config.hostId,
-                    advertisedHost: advertised,
+                    advertisedHost: advertised ?? savedDeviceUrl,
                     advertisedHosts: hosts,
                 ),
                 offers: offers,
@@ -73,10 +73,10 @@ struct PairingController: RouteCollection {
     func current(req: Vapor.Request) async throws -> PairingIssueResponse {
         _ = try req.requireUser
         do {
-            let advertiseUrl = try await req.db.read { db in
-                try RemoteAccessSettings.load(from: db).advertiseUrl
+            let savedDeviceUrl = try await req.db.read { db in
+                try RemoteAccessSettings.load(from: db).deviceUrl
             }
-            let hosts = RemoteAccessSettings.advertisedHosts(advertiseUrl: advertiseUrl)
+            let hosts = RemoteAccessSettings.advertisedHosts(deviceUrl: savedDeviceUrl)
             return try PairingService.currentOffer(
                 PairingService.IssueInput(
                     dataDir: Config.dataDir,

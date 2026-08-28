@@ -141,30 +141,16 @@ private struct RemoteAccessSection: View {
     @Environment(AppModel.self) private var model
     @State private var selectedHost = ""
     @State private var customHost = ""
-    @State private var requireTailnet = false
     @State private var saving = false
 
     var body: some View {
         Section {
             Text(
-                "LAN works without a VPN. For off-LAN, install Tailscale on this \(Copy.device) and the phone or laptop. BarkVisor does not bundle Tailscale. Pairing and inference URLs use the advertise URL, then the tailnet address, then a LAN IP.",
+                "Pairing, sign-in QRs, and Models inference use this host. Pick a detected host or enter a custom hostname, MagicDNS name, or tailnet IP.",
             )
             .foregroundStyle(.secondary)
             if let status = model.remoteAccess {
-                if status.tailscale.available {
-                    Text(tailscaleLine(status.tailscale))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Tailscale is not detected. Install tailscaled, sign in, then reload.")
-                        .foregroundStyle(.secondary)
-                }
-                Text(
-                    status.wireguard.configured
-                        ? "WireGuard: a tunnel interface is present. BarkVisor does not configure WireGuard."
-                        : "WireGuard: not detected.",
-                )
-                .foregroundStyle(.secondary)
-                Picker("Advertise URL", selection: $selectedHost) {
+                Picker("Device URL", selection: $selectedHost) {
                     ForEach(status.advertisedHosts, id: \.self) { host in
                         Text(host).tag(host)
                     }
@@ -180,19 +166,14 @@ private struct RemoteAccessSection: View {
                     #endif
                         .disabled(saving)
                 }
-                Toggle(
-                    "Require Tailscale (or LAN) for the Home API off this network",
-                    isOn: $requireTailnet,
-                )
-                .disabled(saving)
-                Button("Save remote access") { save() }
+                Button("Save") { save() }
                     .disabled(saving)
             } else {
-                Text("Could not load remote access.")
+                Text("Could not load Device URL.")
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Remote access")
+            Text("Device URL")
         }
         .task {
             await model.loadRemoteAccess()
@@ -206,12 +187,11 @@ private struct RemoteAccessSection: View {
     private func syncPicker() {
         guard let status = model.remoteAccess else { return }
         let picker = PairingAdvertisedHost.syncAdvertisePicker(
-            advertiseUrl: status.advertiseUrl,
+            deviceUrl: status.deviceUrl,
             listedHosts: status.advertisedHosts,
         )
         selectedHost = picker.selectedHost
         customHost = picker.customHost
-        requireTailnet = status.requireTailnetForRemote
     }
 
     private func save() {
@@ -232,22 +212,11 @@ private struct RemoteAccessSection: View {
         saving = true
         Task {
             _ = await model.saveRemoteAccess(
-                RemoteAccessUpdate(requireTailnetForRemote: requireTailnet, advertiseUrl: host),
+                RemoteAccessUpdate(deviceUrl: host),
             )
             saving = false
             syncPicker()
         }
-    }
-
-    private func tailscaleLine(_ tail: RemoteAccessTailnet) -> String {
-        var line = "Tailscale is up"
-        if let ip = tail.ip, !ip.isEmpty {
-            line += " — \(ip)"
-        }
-        if let dns = tail.dnsName, !dns.isEmpty {
-            line += " (\(dns))"
-        }
-        return line
     }
 }
 

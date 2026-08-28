@@ -78,20 +78,15 @@ See [Installation (Linux)](/docs/linux#api-only-device-no-spa).
 - **Library** — images live on each Device. You can point a Device at a custom Library directory. Missing images download from the internet. Used/free is that Library path’s volume (it can differ from the data dir). If capacity is unknown, the UI says so instead of showing zeros.
 - **Native console / phone** — allow Local Network so the app can reach the dashboard Device on `:7777`. It does not talk to members directly. Sign in from **Settings → Pairing**.
 
-## Remote access (Tailscale)
+## Device URL
 
-BarkVisor does not ship Tailscale. Install [tailscaled](https://tailscale.com/download) on the Device (and on the phone or laptop you use away from home). When `tailscale ip -4` works, the Device advertises that address and MagicDNS name in inventory and in the pairing/sign-in host picker.
+On **Settings → Home**, pick **Device URL**: hostname, LAN IP, Tailscale IP, or MagicDNS (or **Other / DNS name…**). That host is stamped on a new pairing or sign-in QR as `host=` when you do not pick another address, and Models inference how-to uses it for `OPENAI_BASE_URL`. You can paste `https://box.ts.net`; only the host is stored. LAN inference stays `http://<host>:7777`.
 
-On **Settings → Home**:
+BarkVisor does not ship Tailscale. Install [tailscaled](https://tailscale.com/download) on the Device (and on the phone or laptop you use away from home) if you want MagicDNS or a tailnet IP in the picker. When `tailscale ip -4` works, the Device still advertises that address and MagicDNS name in inventory and in the pairing/sign-in host picker.
 
-- **Advertise URL** — pick hostname, LAN IP, Tailscale IP, or MagicDNS (or **Other / DNS name…**). That host is stamped on a new pairing or sign-in QR as `host=` when you do not pick another address, and Models inference how-to uses it for `OPENAI_BASE_URL`. You can paste `https://box.ts.net`; only the host is stored. LAN inference stays `http://<host>:7777`.
-- **Require Tailscale (or LAN) for the Home API** — off by default. When on, requests to this Device from a public address return 403. Loopback, RFC1918, IPv6 unique-local, and `100.64.0.0/10` (except `100.100.100.200`) stay allowed. The gate uses the TCP peer on `:7777`, not `X-Forwarded-For`. Do not put a local reverse proxy in front of BarkVisor if you rely on this checkbox.
+Access is open. Device URL is which host we stamp and show, not a remote-access policy.
 
-LAN management never needs a VPN.
-
-### WireGuard (docs only)
-
-There is no in-app WireGuard control plane. If you already run `wg0` (or `wg`), BarkVisor reports that a tunnel is present. Point **Advertise URL** at the address the other Device or phone can reach through that tunnel. Do not port-forward `:7777` to the public internet.
+There is no in-app WireGuard control plane. If you already run `wg0` (or `wg`), pick that address as the Device URL so the other Device or phone can reach through that tunnel. Do not port-forward `:7777` to the public internet.
 
 ## Recovery
 

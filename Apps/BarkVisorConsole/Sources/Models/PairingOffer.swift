@@ -70,8 +70,8 @@ enum PairingAdvertisedHost {
     }
 
     /// Advertise URL picker: listed host, or Other / DNS name.
-    static func syncAdvertisePicker(advertiseUrl: String?, listedHosts: [String]) -> Picker {
-        let host = advertiseUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    static func syncAdvertisePicker(deviceUrl: String?, listedHosts: [String]) -> Picker {
+        let host = deviceUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !host.isEmpty, listedHosts.contains(host) {
             return Picker(selectedHost: host, customHost: "")
         }

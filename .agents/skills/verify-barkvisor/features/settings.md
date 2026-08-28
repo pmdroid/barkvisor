@@ -4,7 +4,7 @@
 
 | Tab id (`?tab=`) | Controls |
 |---|---|
-| `home` | Device facts, Tailscale/WireGuard detection, Advertise URL picker, require-tailnet toggle |
+| `home` | Device facts, Device URL picker |
 | `pairing` | Add-a-Device QR + expiry countdown, advertise-host picker, phone sign-in QR, Re-pair |
 | `library` | Library path + Browse folder picker, capacity |
 | `repositories` | Catalog URLs, add/sync/remove |

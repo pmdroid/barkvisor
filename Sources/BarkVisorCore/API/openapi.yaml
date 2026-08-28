@@ -1398,7 +1398,7 @@ paths:
       tags: [evolving]
       operationId: getRemoteAccess
       x-barkvisor-stability: evolving
-      summary: Tailscale detection and remote-access settings (PAS-89)
+      summary: Device URL and advertised hosts
       responses:
         "200":
           content:
@@ -1413,7 +1413,7 @@ paths:
       tags: [evolving]
       operationId: updateRemoteAccess
       x-barkvisor-stability: evolving
-      summary: Require tailnet for remote Home API and set advertise URL
+      summary: Set Device URL
       requestBody:
         required: true
         content:
@@ -3902,18 +3902,16 @@ components:
     RemoteAccessStatus:
       type: object
       additionalProperties: false
-      required: [tailscale, wireguard, advertiseUrl, requireTailnetForRemote, advertisedHosts]
+      required: [tailscale, wireguard, deviceUrl, advertisedHosts]
       properties:
         tailscale:
           $ref: "#/components/schemas/TailnetInfo"
         wireguard:
           $ref: "#/components/schemas/WireGuardInfo"
-        advertiseUrl:
+        deviceUrl:
           type: string
           nullable: true
           description: Host stamped on pairing/login QR when the operator does not pick another
-        requireTailnetForRemote:
-          type: boolean
         advertisedHosts:
           type: array
           items:
@@ -3924,9 +3922,7 @@ components:
       type: object
       additionalProperties: false
       properties:
-        requireTailnetForRemote:
-          type: boolean
-        advertiseUrl:
+        deviceUrl:
           type: string
           nullable: true
           description: Host or URL; empty clears. Omitted leaves the stored value.

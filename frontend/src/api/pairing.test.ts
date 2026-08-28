@@ -115,7 +115,7 @@ describe('PAS-51 pairing client', () => {
     expect(advertisedHostForOffer(CUSTOM_ADVERTISED_HOST, '   ')).toBeUndefined()
   })
 
-  test('advertise URL picker selects listed hosts or custom', () => {
+  test('Device URL picker selects listed hosts or custom', () => {
     const hosts = ['studio.local', '192.168.0.8', '100.64.0.8', 'box.tailnet.ts.net']
     expect(syncAdvertiseHostPicker('192.168.0.8', hosts)).toEqual({
       selectedHost: '192.168.0.8',
@@ -141,8 +141,11 @@ describe('PAS-51 pairing client', () => {
     expect(settings).toContain('syncAdvertiseHostPicker')
     expect(settings).toContain('advertiseHostOptions')
     expect(settings).toContain('advertiseSelected')
-    expect(settings).toContain('Advertise URL')
+    expect(settings).toContain('Device URL')
     expect(settings).not.toContain('advertiseDraft')
     expect(settings).toContain("api.put<RemoteAccessStatus>('/home/settings/remote-access'")
+    expect(settings).toContain('deviceUrl')
+    expect(settings).not.toContain('requireTailnet')
+    expect(settings).not.toContain('advertiseUrl')
   })
 })
