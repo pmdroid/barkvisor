@@ -125,6 +125,7 @@ struct TemplateController: RouteCollection {
     let vmManager: VMManager
     let imageDownloader: ImageDownloader
     let backgroundTasks: BackgroundTaskManager
+    let syncService: RepositorySyncService
 
     func boot(routes: any RoutesBuilder) throws {
         let templates = routes.grouped("api", "templates")
@@ -221,6 +222,7 @@ struct TemplateController: RouteCollection {
             imageDownloader: imageDownloader,
             backgroundTasks: backgroundTasks,
             db: req.db,
+            catalogSync: syncService,
         )
 
         switch result {

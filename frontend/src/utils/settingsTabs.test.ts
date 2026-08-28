@@ -122,6 +122,7 @@ describe('settings tab query', () => {
     expect(libraryBlock).toContain('Library path')
     expect(libraryBlock).toContain('LibraryFolderForm')
     expect(libraryBlock).toContain('librarySettings.isDefault')
+    expect(libraryBlock).toContain('lastSyncedAt')
   })
 
   test('Repository URLs and sync live on Settings Repositories, not a catalog page', () => {

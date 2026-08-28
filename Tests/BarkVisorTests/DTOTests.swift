@@ -305,6 +305,7 @@ struct DTOTests {
             totalBytes: nil,
             freeBytes: nil,
             usedBytes: nil,
+            lastSyncedAt: nil,
         )
         let object = try JSONSerialization.jsonObject(
             with: JSONEncoder().encode(response),
@@ -312,6 +313,7 @@ struct DTOTests {
         #expect(object?["totalBytes"] is NSNull)
         #expect(object?["freeBytes"] is NSNull)
         #expect(object?["usedBytes"] is NSNull)
+        #expect(object?["lastSyncedAt"] is NSNull)
         #expect(object?["totalBytes"] as? Int == nil)
         #expect((object?["totalBytes"] as? Int) != 0)
     }
@@ -323,6 +325,7 @@ struct DTOTests {
             totalBytes: 500,
             freeBytes: 120,
             usedBytes: 380,
+            lastSyncedAt: "2026-08-28T10:00:00Z",
         )
         let object = try JSONSerialization.jsonObject(
             with: JSONEncoder().encode(response),
@@ -330,6 +333,7 @@ struct DTOTests {
         #expect(object?["totalBytes"] as? Int == 500)
         #expect(object?["freeBytes"] as? Int == 120)
         #expect(object?["usedBytes"] as? Int == 380)
+        #expect(object?["lastSyncedAt"] as? String == "2026-08-28T10:00:00Z")
     }
 
     // MARK: - TemplateResponse

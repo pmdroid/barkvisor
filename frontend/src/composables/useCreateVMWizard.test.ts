@@ -86,6 +86,9 @@ describe('useCreateVMWizard (magazine)', () => {
       if (url === '/home/placement/score') {
         return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
       }
+      if (url.includes('/repositories/') && url.endsWith('/sync')) {
+        return Promise.resolve({ status: 202, data: { taskID: 'repo-sync' } })
+      }
       throw new Error(`unexpected POST ${url}`)
     }) as typeof api.post
   })

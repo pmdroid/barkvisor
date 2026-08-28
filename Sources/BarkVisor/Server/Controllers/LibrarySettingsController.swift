@@ -11,6 +11,7 @@ struct LibrarySettingsResponse: Content {
     let freeBytes: UInt64?
     /// `totalBytes - freeBytes` when both are present.
     let usedBytes: UInt64?
+    let lastSyncedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case imageDirectory
@@ -18,6 +19,7 @@ struct LibrarySettingsResponse: Content {
         case totalBytes
         case freeBytes
         case usedBytes
+        case lastSyncedAt
     }
 
     func encode(to encoder: Encoder) throws {
@@ -40,6 +42,11 @@ struct LibrarySettingsResponse: Content {
             try container.encode(usedBytes, forKey: .usedBytes)
         } else {
             try container.encodeNil(forKey: .usedBytes)
+        }
+        if let lastSyncedAt {
+            try container.encode(lastSyncedAt, forKey: .lastSyncedAt)
+        } else {
+            try container.encodeNil(forKey: .lastSyncedAt)
         }
     }
 }
@@ -72,6 +79,7 @@ struct LibrarySettingsController: RouteCollection {
             try (
                 dir: LibrarySettings.resolvedDirectory(from: db),
                 explicit: LibrarySettings.hasExplicitDirectory(from: db),
+                lastSyncedAt: ImageRepository.builtInLastSyncedAt(db),
             )
         }
         let usage = LibrarySettings.volumeUsage(at: snapshot.dir)
@@ -83,6 +91,7 @@ struct LibrarySettingsController: RouteCollection {
             totalBytes: totalBytes,
             freeBytes: freeBytes,
             usedBytes: LibrarySettings.usedBytes(total: totalBytes, free: freeBytes),
+            lastSyncedAt: snapshot.lastSyncedAt,
         )
     }
 

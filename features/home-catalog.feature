@@ -20,3 +20,16 @@ Feature: Home is the only GitHub catalog fetcher
     And the member has no route to GitHub
     When I deploy that template onto the member
     Then the member downloads the image from the recipe URL
+
+  Scenario: Built-in catalogs sync in the background
+    Given a Device that has completed setup
+    When the daemon starts
+    Then built-in catalogs sync without blocking listen
+    And a daily catalog sync is scheduled
+    And Library settings report lastSyncedAt
+
+  Scenario: Missing catalog image retries after one sync
+    Given a template whose image slug is absent from the catalog
+    When I deploy that template without a recipe
+    Then the daemon syncs built-in catalogs once
+    And deploy succeeds if the image appears

@@ -122,6 +122,7 @@ public enum TemplateDeployService {
         imageDownloader: any ImageDownloadStarting,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
+        catalogSync: (any BuiltInCatalogSyncing)? = nil,
     ) async throws -> DeployResult {
         let inventory = HostInventoryService.snapshot()
         let template: VMTemplate
@@ -137,7 +138,10 @@ public enum TemplateDeployService {
             try validateInputs(template: template, inputs: options.inputs)
             try enforceCompatibility(template: template, inventory: inventory, options: options)
             repoImage = try await resolveRepoImage(
-                template: template, hostArch: inventory.platform.arch, db: db,
+                template: template,
+                hostArch: inventory.platform.arch,
+                db: db,
+                catalogSync: catalogSync,
             )
             // PAS-48: reject before downloading a multi-hundred-MB foreign-arch image.
             // createVM also guards via validateCreateVMInputs; this is the early gate.
@@ -367,13 +371,31 @@ public enum TemplateDeployService {
 
     private static func resolveRepoImage(
         template: VMTemplate, hostArch: String, db: DatabasePool,
+        catalogSync: (any BuiltInCatalogSyncing)?,
     ) async throws -> RepositoryImage {
         guard let slug = template.resolvedImageSlug(forArch: hostArch) else {
             throw BarkVisorError.badRequest(
                 "Template '\(template.slug)' has no image for host architecture \(PlatformCapabilities.normalizedArch(hostArch)).",
             )
         }
-        let repoImage: RepositoryImage? = try await db.read { db in
+        if let repoImage = try await lookupRepoImage(slug: slug, template: template, db: db) {
+            return repoImage
+        }
+        if let catalogSync {
+            await catalogSync.syncBuiltIns()
+            if let repoImage = try await lookupRepoImage(slug: slug, template: template, db: db) {
+                return repoImage
+            }
+        }
+        throw BarkVisorError.badRequest(
+            "Image \(slug) not found in any repository. Please sync your repositories first.",
+        )
+    }
+
+    private static func lookupRepoImage(
+        slug: String, template: VMTemplate, db: DatabasePool,
+    ) async throws -> RepositoryImage? {
+        try await db.read { db in
             if let repoId = template.repositoryId {
                 if let img =
                     try RepositoryImage
@@ -385,12 +407,6 @@ public enum TemplateDeployService {
             }
             return try RepositoryImage.filter(Column("slug") == slug).fetchOne(db)
         }
-        guard let repoImage else {
-            throw BarkVisorError.badRequest(
-                "Image \(slug) not found in any repository. Please sync your repositories first.",
-            )
-        }
-        return repoImage
     }
 
     private static func catalogSourceURL(_ repoImage: RepositoryImage) throws -> URL {
