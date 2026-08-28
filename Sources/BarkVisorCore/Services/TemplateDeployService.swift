@@ -9,6 +9,80 @@ public enum DeployResult {
     case created(VM)
 }
 
+public struct DeployRecipeImage: Codable, Sendable {
+    public let downloadUrl: String
+    public let arch: String
+    public let imageType: String
+    public let sha256: String?
+    public let sha512: String?
+    public let name: String?
+    public let slug: String?
+
+    public init(
+        downloadUrl: String,
+        arch: String,
+        imageType: String,
+        sha256: String? = nil,
+        sha512: String? = nil,
+        name: String? = nil,
+        slug: String? = nil,
+    ) {
+        self.downloadUrl = downloadUrl
+        self.arch = arch
+        self.imageType = imageType
+        self.sha256 = sha256
+        self.sha512 = sha512
+        self.name = name
+        self.slug = slug
+    }
+}
+
+public struct DeployRecipe: Codable, Sendable {
+    public let name: String?
+    public let slug: String?
+    public let inputs: [TemplateInput]
+    public let userDataTemplate: String
+    public let cpuCount: Int
+    public let memoryMB: Int
+    public let diskSizeGB: Int
+    public let networkMode: String?
+    public let portForwards: [PortForwardRule]?
+    public let architectures: [String]?
+    public let minMemoryMB: Int?
+    public let requiredFeatures: [String]?
+    public let image: DeployRecipeImage
+
+    public init(
+        name: String? = nil,
+        slug: String? = nil,
+        inputs: [TemplateInput],
+        userDataTemplate: String,
+        cpuCount: Int,
+        memoryMB: Int,
+        diskSizeGB: Int,
+        networkMode: String? = nil,
+        portForwards: [PortForwardRule]? = nil,
+        architectures: [String]? = nil,
+        minMemoryMB: Int? = nil,
+        requiredFeatures: [String]? = nil,
+        image: DeployRecipeImage,
+    ) {
+        self.name = name
+        self.slug = slug
+        self.inputs = inputs
+        self.userDataTemplate = userDataTemplate
+        self.cpuCount = cpuCount
+        self.memoryMB = memoryMB
+        self.diskSizeGB = diskSizeGB
+        self.networkMode = networkMode
+        self.portForwards = portForwards
+        self.architectures = architectures
+        self.minMemoryMB = minMemoryMB
+        self.requiredFeatures = requiredFeatures
+        self.image = image
+    }
+}
+
 public struct DeployOptions {
     public let templateId: String
     public let vmName: String
@@ -17,6 +91,7 @@ public struct DeployOptions {
     public let memoryMB: Int?
     public let diskSizeGB: Int?
     public let networkId: String?
+    public let recipe: DeployRecipe?
 
     public init(
         templateId: String,
@@ -26,6 +101,7 @@ public struct DeployOptions {
         memoryMB: Int? = nil,
         diskSizeGB: Int? = nil,
         networkId: String? = nil,
+        recipe: DeployRecipe? = nil,
     ) {
         self.templateId = templateId
         self.vmName = vmName
@@ -34,6 +110,7 @@ public struct DeployOptions {
         self.memoryMB = memoryMB
         self.diskSizeGB = diskSizeGB
         self.networkId = networkId
+        self.recipe = recipe
     }
 }
 
@@ -45,16 +122,26 @@ public enum TemplateDeployService {
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
     ) async throws -> DeployResult {
-        let template = try await fetchTemplate(id: options.templateId, db: db)
-        try validateInputs(template: template, inputs: options.inputs)
         let inventory = HostInventoryService.snapshot()
-        try enforceCompatibility(template: template, inventory: inventory, options: options)
-        let repoImage = try await resolveRepoImage(
-            template: template, hostArch: inventory.platform.arch, db: db,
-        )
-        // PAS-48: reject before downloading a multi-hundred-MB foreign-arch image.
-        // createVM also guards via validateCreateVMInputs; this is the early gate.
-        try PlatformCapabilities.requireCompatibleGuestArch(repoImage.arch)
+        let template: VMTemplate
+        let repoImage: RepositoryImage
+        if let recipe = options.recipe {
+            template = try templateFromRecipe(recipe, id: options.templateId)
+            try validateInputs(template: template, inputs: options.inputs)
+            try enforceCompatibility(template: template, inventory: inventory, options: options)
+            try PlatformCapabilities.requireCompatibleGuestArch(recipe.image.arch)
+            repoImage = repositoryImage(from: recipe)
+        } else {
+            template = try await fetchTemplate(id: options.templateId, db: db)
+            try validateInputs(template: template, inputs: options.inputs)
+            try enforceCompatibility(template: template, inventory: inventory, options: options)
+            repoImage = try await resolveRepoImage(
+                template: template, hostArch: inventory.platform.arch, db: db,
+            )
+            // PAS-48: reject before downloading a multi-hundred-MB foreign-arch image.
+            // createVM also guards via validateCreateVMInputs; this is the early gate.
+            try PlatformCapabilities.requireCompatibleGuestArch(repoImage.arch)
+        }
 
         let checksum = ExpectedChecksum.catalog(from: repoImage)
         let localImage = try await db.read { db in
@@ -93,6 +180,61 @@ public enum TemplateDeployService {
             throw BarkVisorError.notFound("Template not found")
         }
         return template
+    }
+
+    private static func templateFromRecipe(_ recipe: DeployRecipe, id: String) throws -> VMTemplate {
+        let url = recipe.image.downloadUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else {
+            throw BarkVisorError.badRequest("Recipe image downloadUrl is required")
+        }
+        let now = iso8601.string(from: Date())
+        let inputsJSON = JSONColumnCoding.encode(recipe.inputs) ?? "[]"
+        let arches = recipe.architectures ?? [recipe.image.arch]
+        var imageByArch: [String: String] = [:]
+        if let slug = recipe.image.slug, !slug.isEmpty {
+            imageByArch[PlatformCapabilities.normalizedArch(recipe.image.arch)] = slug
+        }
+        return VMTemplate(
+            id: id,
+            slug: recipe.slug ?? "recipe",
+            name: recipe.name ?? "Template",
+            description: nil,
+            category: "general",
+            icon: "terminal",
+            imageSlug: recipe.image.slug ?? "",
+            cpuCount: recipe.cpuCount,
+            memoryMB: recipe.memoryMB,
+            diskSizeGB: recipe.diskSizeGB,
+            portForwards: JSONColumnCoding.encode(recipe.portForwards),
+            networkMode: recipe.networkMode ?? NetworkMode.nat.rawValue,
+            inputs: inputsJSON,
+            userDataTemplate: recipe.userDataTemplate,
+            isBuiltIn: false,
+            repositoryId: nil,
+            createdAt: now,
+            updatedAt: now,
+            architecturesJson: JSONColumnCoding.encode(arches),
+            minMemoryMB: recipe.minMemoryMB,
+            requiredFeaturesJson: JSONColumnCoding.encodeArrayOrNil(recipe.requiredFeatures),
+            imageByArchJson: imageByArch.isEmpty ? nil : JSONColumnCoding.encode(imageByArch),
+        )
+    }
+
+    private static func repositoryImage(from recipe: DeployRecipe) -> RepositoryImage {
+        RepositoryImage(
+            id: UUID().uuidString,
+            repositoryId: "recipe",
+            slug: recipe.image.slug ?? recipe.slug ?? "recipe",
+            name: recipe.image.name ?? recipe.name ?? "Image",
+            description: nil,
+            imageType: recipe.image.imageType,
+            arch: recipe.image.arch,
+            version: nil,
+            downloadUrl: recipe.image.downloadUrl,
+            sizeBytes: nil,
+            sha256: recipe.image.sha256,
+            sha512: recipe.image.sha512,
+        )
     }
 
     private static func validateInputs(

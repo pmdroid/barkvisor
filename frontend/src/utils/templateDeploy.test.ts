@@ -4,6 +4,7 @@ import {
   natWebUILinks,
   templateDeclaresSshKeys,
   templateRequiresSshKeys,
+  buildDeployRecipe,
 } from './templateDeploy'
 
 describe('templateDeploy', () => {
@@ -39,6 +40,45 @@ describe('templateDeploy', () => {
         { values: { username: 'pihole', password: 'secret' } },
       ),
     ).toEqual({ username: 'pihole', password: 'secret' })
+  })
+
+  test('recipe uses catalog image for the target arch', () => {
+    const template = {
+      name: 'Fedora Cloud',
+      slug: 'fedora-cloud',
+      inputs: [{ id: 'ssh_keys', label: 'SSH', type: 'textarea' as const, required: true }],
+      userDataTemplate: 'lock_passwd: true',
+      cpuCount: 2,
+      memoryMB: 2048,
+      diskSizeGB: 16,
+      networkMode: 'nat' as const,
+      portForwards: null,
+      architectures: ['arm64', 'x86_64'],
+      catalogImages: [
+        {
+          slug: 'fedora-arm64',
+          name: 'Fedora',
+          imageType: 'cloud-image',
+          arch: 'arm64',
+          downloadUrl: 'https://example.test/fedora-arm64.qcow2',
+          sha256: 'aaa',
+        },
+        {
+          slug: 'fedora-x86_64',
+          name: 'Fedora',
+          imageType: 'cloud-image',
+          arch: 'x86_64',
+          downloadUrl: 'https://example.test/fedora-x86_64.qcow2',
+          sha256: 'bbb',
+        },
+      ],
+    }
+    const recipe = buildDeployRecipe(template, 'aarch64')
+    expect(recipe?.image.downloadUrl).toBe('https://example.test/fedora-arm64.qcow2')
+    expect(recipe?.image.sha256).toBe('aaa')
+    expect(recipe?.image.arch).toBe('arm64')
+    expect(recipe?.inputs[0].id).toBe('ssh_keys')
+    expect(buildDeployRecipe(template, 'riscv64')).toBeUndefined()
   })
 
   test('Open links are This Device NAT with httpPath only', () => {

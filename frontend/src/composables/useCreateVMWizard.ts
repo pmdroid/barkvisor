@@ -47,6 +47,8 @@ import { useCreateProgressStore } from '../stores/createProgress'
 import {
   collectTemplateDeployInputs,
   templateDeclaresSshKeys,
+  buildDeployRecipe,
+  catalogImageForArch,
 } from '../utils/templateDeploy'
 import {
   deviceBlockDevicesPath,
@@ -293,6 +295,7 @@ export function useCreateVMWizard(
         const local = templateIncompatibilityReasons(row, template, {
           capabilities: row.hostId === selectedDevice.value?.hostId ? pickedCaps.value : undefined,
           hasTemplate: homeLibrary.deviceHasDeployableTemplate(template.slug, row),
+          fetchable: !!catalogImageForArch(template, row.platform?.arch),
         })
         const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
         const hard = (scored?.reasons ?? [])
@@ -816,10 +819,11 @@ export function useCreateVMWizard(
   })
 
   function buildTemplateDeployRequest(): DeployTemplateRequest {
-    const resolved = resolvedTemplate.value
-    if (!resolved) throw new Error("Not in this Device's Library")
+    const gallery = selectedTemplate.value
+    if (!gallery) throw new Error("Not in this Device's Library")
+    const resolved = resolvedTemplate.value ?? gallery
     const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
-    const inputs = collectTemplateDeployInputs(resolved.inputs, {
+    const inputs = collectTemplateDeployInputs(gallery.inputs, {
       sshAuthorizedKey: selectedKey ? authorizedKeyForCloudInit(selectedKey) : undefined,
     })
     return {
@@ -830,6 +834,7 @@ export function useCreateVMWizard(
       memoryMB: memoryMB.value,
       diskSizeGB: diskSizeGB.value,
       networkId: selectedNetworkId.value || undefined,
+      recipe: buildDeployRecipe(gallery, hostImageArch.value),
     }
   }
 
@@ -866,8 +871,12 @@ export function useCreateVMWizard(
     loading.value = true
     try {
       if (galleryKind.value === 'template') {
-        const resolved = resolvedTemplate.value
-        if (!resolved) {
+        const gallery = selectedTemplate.value
+        if (!gallery) {
+          error.value = "Not in this Device's Library"
+          return
+        }
+        if (!resolvedTemplate.value && !buildDeployRecipe(gallery, hostImageArch.value)) {
           error.value = "Not in this Device's Library"
           return
         }

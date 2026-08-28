@@ -88,10 +88,44 @@ describe('homeLibrary store (PAS-34)', () => {
     const local = tpl({ id: 'local-1', slug: 'ubuntu' })
     expect(store.resolveTemplateForDeploy('ubuntu', peer, local)?.id).toBe('peer-1')
     expect(store.resolveTemplateForDeploy('win', self, local)).toBeNull()
+    expect(store.templates.find((t) => t.slug === 'ubuntu')?.inputs).toEqual([])
     expect(get.mock.calls.map((c) => c[0])).toEqual([
       '/templates',
       '/home/devices/studio/v1/templates',
     ])
+  })
+
+  test('Home recipe wins over a stale member copy of the same slug', async () => {
+    const self = snapshot({ hostId: 'desk', role: 'self' })
+    const peer = snapshot({ hostId: 'studio', role: 'member' })
+    const get = mock((url: string) => {
+      if (url === '/home/devices/studio/v1/templates') {
+        return Promise.resolve({
+          data: [tpl({
+            id: 'peer-1',
+            slug: 'ubuntu',
+            inputs: [{ id: 'password', label: 'Password', type: 'password', required: true }],
+          })],
+        })
+      }
+      if (url === '/templates') {
+        return Promise.resolve({
+          data: [tpl({
+            id: 'local-1',
+            slug: 'ubuntu',
+            inputs: [{ id: 'ssh_keys', label: 'SSH', type: 'textarea', required: true }],
+          })],
+        })
+      }
+      throw new Error(`unexpected GET ${url}`)
+    })
+    api.get = get as typeof api.get
+    const store = useHomeLibraryStore()
+    await store.fetchAll([peer, self])
+    const row = store.templates.find((t) => t.slug === 'ubuntu')
+    expect(row?.inputs.map((i) => i.id)).toEqual(['ssh_keys'])
+    expect(store.templateForDevice('ubuntu', 'studio')?.id).toBe('peer-1')
+    expect(store.resolveTemplateForDeploy('fedora', peer, tpl({ id: 'home-f', slug: 'fedora' }))?.id).toBe('home-f')
   })
 
   test('empty library does not treat member Devices as having the local template', () => {

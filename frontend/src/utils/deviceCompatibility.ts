@@ -133,6 +133,7 @@ export function templateIncompatibilityReasons(
   opts: {
     capabilities?: CurrentHostCapabilities | null
     hasTemplate?: boolean
+    fetchable?: boolean
   } = {},
 ): string[] {
   if (!isSelfDevice(device) && device.reachability !== 'ok') {
@@ -163,7 +164,7 @@ export function templateIncompatibilityReasons(
   if (template.minMemoryMB != null && total != null && total < template.minMemoryMB) {
     reasons.push(`Needs at least ${template.minMemoryMB} MB memory.`)
   }
-  if (opts.hasTemplate === false) {
+  if (opts.hasTemplate === false && !opts.fetchable) {
     reasons.push(DEVICE_LIBRARY_MISSING_REASON)
   }
   return reasons

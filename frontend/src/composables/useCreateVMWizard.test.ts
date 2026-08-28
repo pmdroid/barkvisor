@@ -211,6 +211,14 @@ function ubuntuTemplate(overrides: Partial<HomeTemplate> = {}): HomeTemplate {
     userDataTemplate: 'lock_passwd: true',
     isBuiltIn: true,
     repositoryId: null,
+    catalogImages: [{
+      slug: 'ubuntu-24.04-arm64',
+      name: 'Ubuntu',
+      imageType: 'cloud-image',
+      arch: 'arm64',
+      downloadUrl: 'https://example.test/ubuntu-arm64.qcow2',
+      sha256: 'abc',
+    }],
     sourceHostIds: ['desk'],
     copies: [{ hostId: 'desk', templateId: 'tpl-1', repositoryId: null }],
     ...overrides,
@@ -484,10 +492,66 @@ describe('useCreateVMWizard magazine flows', () => {
       String(call[0]).includes('/templates/deploy'),
     )
     expect(deployCall).toBeTruthy()
-    const body = deployCall![1] as { inputs: Record<string, string>; vmName: string }
+    const body = deployCall![1] as {
+      inputs: Record<string, string>
+      vmName: string
+      recipe?: { image?: { downloadUrl?: string; sha256?: string }; inputs?: { id: string }[] }
+    }
     expect(body.inputs.password).toBeUndefined()
     expect(body.inputs.username).toBe('ubuntu')
     expect(body.inputs.ssh_keys).toContain('ssh-ed25519')
+    expect(body.recipe?.image?.downloadUrl).toBe('https://example.test/ubuntu-arm64.qcow2')
+    expect(body.recipe?.image?.sha256).toBe('abc')
+    expect(body.recipe?.inputs?.some((i) => i.id === 'ssh_keys')).toBe(true)
+    expect(created).toBe(true)
+  })
+
+  test('template deploy to a Device that never synced still sends the Home recipe', async () => {
+    healthDevices = [
+      macSelf(),
+      {
+        hostId: 'studio',
+        role: 'member',
+        agentPort: 7778,
+        reachability: 'ok',
+        platform: { os: 'macOS', arch: 'arm64' },
+      },
+    ]
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate({
+      sourceHostIds: ['desk'],
+      copies: [{ hostId: 'desk', templateId: 'tpl-1', repositoryId: null }],
+    })]
+    library.templates = catalogTemplates
+    const prevGet = api.get
+    api.get = mock((url: string) => {
+      if (url.includes('/home/devices/studio/') && url.endsWith('/templates')) {
+        return Promise.resolve({ data: [] })
+      }
+      return prevGet(url)
+    }) as typeof api.get
+    useSSHKeyStore().keys = [demoKey()]
+    const devices = useDevicesStore()
+    devices.$patch({
+      devices: healthDevices,
+      selfDevice: macSelf(),
+    })
+    let created = false
+    const wizard = useCreateVMWizard(() => { created = true }, { initialHostId: 'studio' })
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    wizard.selectedSSHKeyId.value = 'k1'
+    wizard.goToDisk()
+    await waitReady(wizard)
+    await wizard.submit()
+    expect(wizard.error.value).toBe('')
+    const deployCall = (api.post as ReturnType<typeof mock>).mock.calls.find((call) =>
+      String(call[0]).includes('/templates/deploy'),
+    )
+    expect(deployCall).toBeTruthy()
+    expect(String(deployCall![0])).toContain('/home/devices/studio/')
+    const body = deployCall![1] as { templateId: string; recipe?: { slug?: string } }
+    expect(body.recipe?.slug).toBe('ubuntu-cloud')
     expect(created).toBe(true)
   })
 
