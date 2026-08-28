@@ -30,43 +30,39 @@ struct APIDecodingTests {
         {
           "tailscale": { "available": true, "ip": "100.64.0.8", "dnsName": "box.tailnet.ts.net" },
           "wireguard": { "configured": false },
-          "advertiseUrl": "box.tailnet.ts.net",
-          "requireTailnetForRemote": false,
+          "deviceUrl": "box.tailnet.ts.net",
           "advertisedHosts": ["box.tailnet.ts.net", "100.64.0.8", "192.168.0.8"]
         }
         """.data(using: .utf8)!
         let status = try decoder.decode(RemoteAccessStatus.self, from: json)
-        #expect(status.advertiseUrl == "box.tailnet.ts.net")
+        #expect(status.deviceUrl == "box.tailnet.ts.net")
         #expect(status.advertisedHosts == ["box.tailnet.ts.net", "100.64.0.8", "192.168.0.8"])
         #expect(status.tailscale.available)
         #expect(
             PairingAdvertisedHost.syncAdvertisePicker(
-                advertiseUrl: status.advertiseUrl,
+                deviceUrl: status.deviceUrl,
                 listedHosts: status.advertisedHosts,
             ) == .init(selectedHost: "box.tailnet.ts.net", customHost: ""),
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let body = try encoder.encode(
-            RemoteAccessUpdate(requireTailnetForRemote: true, advertiseUrl: "192.168.0.8"),
+            RemoteAccessUpdate(deviceUrl: "192.168.0.8"),
         )
         let object = try decoder.decode(RemoteAccessUpdateJSON.self, from: body)
-        #expect(object.requireTailnetForRemote == true)
-        #expect(object.advertiseUrl == "192.168.0.8")
+        #expect(object.deviceUrl == "192.168.0.8")
     }
 
     @Test func `remote access status defaults advertised hosts when omitted`() throws {
         let json = """
         {
           "tailscale": { "available": false },
-          "wireguard": { "configured": false },
-          "requireTailnetForRemote": false
+          "wireguard": { "configured": false }
         }
         """.data(using: .utf8)!
         let status = try decoder.decode(RemoteAccessStatus.self, from: json)
         #expect(status.advertisedHosts.isEmpty)
-        #expect(status.advertiseUrl == nil)
-        #expect(!status.requireTailnetForRemote)
+        #expect(status.deviceUrl == nil)
     }
 
     @Test func `home device health report decodes`() throws {
@@ -700,6 +696,5 @@ struct APIDecodingTests {
 }
 
 private struct RemoteAccessUpdateJSON: Decodable {
-    var requireTailnetForRemote: Bool
-    var advertiseUrl: String
+    var deviceUrl: String
 }

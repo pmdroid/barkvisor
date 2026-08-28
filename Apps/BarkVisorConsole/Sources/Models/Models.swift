@@ -1103,27 +1103,24 @@ struct DiskSettingsUpdate: Encodable {
 struct RemoteAccessStatus: Decodable, Hashable {
     var tailscale: RemoteAccessTailnet
     var wireguard: RemoteAccessWireGuard
-    var advertiseUrl: String?
-    var requireTailnetForRemote: Bool
+    var deviceUrl: String?
     var advertisedHosts: [String]
 
     private enum CodingKeys: String, CodingKey {
-        case tailscale, wireguard, advertiseUrl, requireTailnetForRemote, advertisedHosts
+        case tailscale, wireguard, deviceUrl, advertisedHosts
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tailscale = try container.decode(RemoteAccessTailnet.self, forKey: .tailscale)
         wireguard = try container.decode(RemoteAccessWireGuard.self, forKey: .wireguard)
-        advertiseUrl = try container.decodeIfPresent(String.self, forKey: .advertiseUrl)
-        requireTailnetForRemote = try container.decode(Bool.self, forKey: .requireTailnetForRemote)
+        deviceUrl = try container.decodeIfPresent(String.self, forKey: .deviceUrl)
         advertisedHosts = try container.decodeIfPresent([String].self, forKey: .advertisedHosts) ?? []
     }
 }
 
 struct RemoteAccessUpdate: Encodable, Equatable {
-    var requireTailnetForRemote: Bool
-    var advertiseUrl: String
+    var deviceUrl: String
 }
 
 enum PairingExpiry {

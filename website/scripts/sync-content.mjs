@@ -140,7 +140,7 @@ const map = {
   'settings-home.md': {
     out: 'using/settings/home.md',
     title: 'Settings: Home',
-    description: 'Device facts, remote access, Tailscale detection, and advertise URL.',
+    description: 'Device facts and Device URL.',
   },
   'settings-pairing.md': {
     out: 'using/settings/pairing.md',

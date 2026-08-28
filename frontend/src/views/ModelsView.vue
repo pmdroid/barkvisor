@@ -70,7 +70,7 @@ const rechecking = ref(false)
 const howTo = computed(() =>
   inferenceHowToFromOrigin(window.location.origin, {
     role: 'self',
-    advertiseHost: remoteAccess.value?.advertiseUrl,
+    advertiseHost: remoteAccess.value?.deviceUrl,
     tailnetHost: tailnetListenHost(remoteAccess.value?.tailscale),
   }),
 )

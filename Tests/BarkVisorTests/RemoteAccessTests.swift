@@ -4,7 +4,7 @@ import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
 
-@Suite("Remote access (PAS-89)")
+@Suite("Device URL (PAS-89)")
 struct RemoteAccessTests {
     private func isolatedDB() throws -> (DatabasePool, URL) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -114,62 +114,40 @@ struct RemoteAccessTests {
         }
     }
 
-    @Test func `settings persist require flag and advertise host`() throws {
+    @Test func `settings persist Device URL host`() throws {
         let (pool, dir) = try isolatedDB()
         defer { try? FileManager.default.removeItem(at: dir) }
         let empty = try pool.read { try RemoteAccessSettings.load(from: $0) }
-        #expect(!empty.requireTailnetForRemote)
-        #expect(empty.advertiseUrl == nil)
+        #expect(empty.deviceUrl == nil)
         let saved = try pool.write { db in
             try RemoteAccessSettings.save(
-                requireTailnetForRemote: true,
-                advertiseUrl: "http://100.64.1.2:7777",
-                updateAdvertiseUrl: true,
+                deviceUrl: "http://100.64.1.2:7777",
+                updateDeviceUrl: true,
                 db: db,
             )
         }
-        #expect(saved.requireTailnetForRemote)
-        #expect(saved.advertiseUrl == "100.64.1.2")
+        #expect(saved.deviceUrl == "100.64.1.2")
         let cleared = try pool.write { db in
             try RemoteAccessSettings.save(
-                advertiseUrl: "  ",
-                updateAdvertiseUrl: true,
+                deviceUrl: "  ",
+                updateDeviceUrl: true,
                 db: db,
             )
         }
-        #expect(cleared.requireTailnetForRemote)
-        #expect(cleared.advertiseUrl == nil)
-        try pool.write { db in
-            _ = try RemoteAccessSettings.save(requireTailnetForRemote: true, db: db)
-        }
+        #expect(cleared.deviceUrl == nil)
         #expect(throws: BarkVisorError.self) {
             try pool.write { db in
                 _ = try RemoteAccessSettings.save(
-                    advertiseUrl: "8.8.8.8",
-                    updateAdvertiseUrl: true,
+                    deviceUrl: "8.8.8.8",
+                    updateDeviceUrl: true,
                     db: db,
                 )
             }
         }
-        #expect(try pool.read { try RemoteAccessSettings.load(from: $0).requireTailnetForRemote })
+        #expect(try pool.read { try RemoteAccessSettings.load(from: $0).deviceUrl == nil })
     }
 
-    @Test func `peer policy allows LAN tailnet and loopback, not public`() {
-        #expect(RemoteAccessSettings.allowsPeer("127.0.0.1"))
-        #expect(RemoteAccessSettings.allowsPeer("::1"))
-        #expect(RemoteAccessSettings.allowsPeer("192.168.1.9"))
-        #expect(RemoteAccessSettings.allowsPeer("10.0.0.2"))
-        #expect(RemoteAccessSettings.allowsPeer("100.64.1.2"))
-        #expect(RemoteAccessSettings.allowsPeer("fd12:3456:789a::1"))
-        #expect(!RemoteAccessSettings.allowsPeer("8.8.8.8"))
-        #expect(!RemoteAccessSettings.allowsPeer("100.100.100.200"))
-        #expect(!RemoteAccessSettings.allowsPeer(nil))
-        #expect(!RemoteAccessSettings.allowsPeer(""))
-        #expect(!RemoteAccessSettings.allowsPeer("box.ts.net"))
-        #expect(!RemoteAccessSettings.allowsPeer("not-an-ip"))
-    }
-
-    @Test func `advertised hosts prefer advertise URL then tailnet then LAN`() {
+    @Test func `advertised hosts prefer Device URL then tailnet then LAN`() {
         let ifaces = [
             HostInterfaceInfo(name: "en0", ipAddress: "192.168.0.4"),
             HostInterfaceInfo(name: "tun0", ipAddress: "100.64.12.34"),
@@ -208,40 +186,6 @@ struct RemoteAccessTests {
             PairingAddresses.advertisedHosts(from: ifaces, tailnet: down, advertiseUrl: nil)
                 == ["192.168.0.4", "100.64.12.34"],
         )
-    }
-
-    @Test func `gate exempts health contract and capabilities only`() {
-        #expect(RemoteAccessGate.isExempt("/"))
-        #expect(RemoteAccessGate.isExempt("/index.html"))
-        #expect(RemoteAccessGate.isExempt("/api/health"))
-        #expect(RemoteAccessGate.isExempt("/api/openapi.yaml"))
-        #expect(RemoteAccessGate.isExempt("/api/contract"))
-        #expect(RemoteAccessGate.isExempt("/api/workloadspec.schema.json"))
-        #expect(RemoteAccessGate.isExempt("/api/system/capabilities"))
-        #expect(!RemoteAccessGate.isExempt("/api/setup"))
-        #expect(!RemoteAccessGate.isExempt("/api/pairing/join"))
-        #expect(!RemoteAccessGate.isExempt("/api/pairing/redeem"))
-        #expect(!RemoteAccessGate.isExempt("/api/auth/login"))
-        #expect(!RemoteAccessGate.isExempt("/api/auth/passkeys/login/begin"))
-        #expect(!RemoteAccessGate.isExempt("/api/auth/passkeys/login/finish"))
-        #expect(!RemoteAccessGate.isExempt("/api/system/remote-access"))
-        #expect(!RemoteAccessGate.isExempt("/api/vms/1/console"))
-        #expect(!RemoteAccessGate.isExempt("/api/home/devices/x/v1/vms/y/vnc"))
-        #expect(!RemoteAccessGate.isExempt("/api/auth/ws-ticket"))
-    }
-
-    @Test func `require-tailnet cache hits without a database`() throws {
-        RemoteAccessSettings.resetRequireCache()
-        #expect(RemoteAccessSettings.cachedRequireTailnet() == nil)
-        let (pool, dir) = try isolatedDB()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try pool.write { db in
-            _ = try RemoteAccessSettings.save(requireTailnetForRemote: true, db: db)
-        }
-        #expect(RemoteAccessSettings.cachedRequireTailnet() == nil)
-        let loaded = try pool.read { try RemoteAccessSettings.cachedRequireTailnet(from: $0) }
-        #expect(loaded)
-        #expect(RemoteAccessSettings.cachedRequireTailnet() == true)
     }
 
     @Test func `inventory snapshot uses last-known tailnet without probing`() throws {

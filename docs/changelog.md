@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Settings Home is Device URL, not remote access. Pairing and login QR `host=` and Models `OPENAI_BASE_URL` use the saved Device URL. Require Tailscale for the Home API is gone.
 - Library depot is gone. Catalog Download writes into this Device. Missing images download from the internet.
 - Sentry is gone. Device logs stay on stdout / the Logs page; no DSN, no crash upload.
 - Create VM puts the SSH key on Configure when the recipe needs it (not under Advanced). First login requires a key. No key: an error and a Settings → SSH Keys link (new tab). Coming back refreshes the list.
