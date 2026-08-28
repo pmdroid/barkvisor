@@ -192,6 +192,48 @@ struct DTOTests {
         #expect(dict?["id"] as? String == "vm-1")
         #expect(dict?["memoryMB"] as? Int == 1_024)
         #expect(dict?["uefi"] as? Bool == true)
+        #expect(response.pendingImageId == nil)
+        #expect(response.downloadPercent == nil)
+    }
+
+    @Test func `vm response encodes pending image while downloading`() throws {
+        let vm = VM(
+            id: "vm-1", name: "pending", vmType: "linux-arm64", state: "provisioning",
+            cpuCount: 2, memoryMb: 1_024, bootDiskId: "disk-1", networkId: nil, cloudInitPath: nil,
+            description: nil, bootOrder: nil, displayResolution: nil, additionalDiskIds: nil,
+            uefi: true, tpmEnabled: false,
+            macAddress: nil, sharedPaths: nil, portForwards: nil,
+            autoCreated: false, pendingChanges: false,
+            createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z",
+        )
+        let response = VMResponse(from: vm, pendingImageId: "img-1", downloadPercent: 42)
+        #expect(response.state == "provisioning")
+        #expect(response.pendingImageId == "img-1")
+        #expect(response.downloadPercent == 42)
+        let data = try JSONEncoder().encode(response)
+        let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(dict?["pendingImageId"] as? String == "img-1")
+        #expect(dict?["downloadPercent"] as? Int == 42)
+        #expect(dict?["state"] as? String == "provisioning")
+    }
+
+    @Test func `vm state event decodes pending image keys`() throws {
+        let withKeys = VMStateEvent(
+            id: "vm-1", state: "provisioning", error: nil,
+            pendingImageId: "img-1", downloadPercent: 7,
+        )
+        let decoded = try JSONDecoder().decode(
+            VMStateEvent.self, from: JSONEncoder().encode(withKeys),
+        )
+        #expect(decoded.pendingImageId == "img-1")
+        #expect(decoded.downloadPercent == 7)
+        let legacy = try JSONDecoder().decode(
+            VMStateEvent.self,
+            from: Data(#"{"id":"vm-1","state":"running","error":null}"#.utf8),
+        )
+        #expect(legacy.pendingImageId == nil)
+        #expect(legacy.downloadPercent == nil)
+        #expect(legacy.state == "running")
     }
 
     // MARK: - ImageResponse

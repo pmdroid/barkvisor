@@ -374,6 +374,17 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
         lastEvents[imageID]
     }
 
+    public func lastProgress(imageIDs: [String]) -> [String: ImageProgressEvent] {
+        var out: [String: ImageProgressEvent] = [:]
+        out.reserveCapacity(imageIDs.count)
+        for id in imageIDs {
+            if let event = lastEvents[id] {
+                out[id] = event
+            }
+        }
+        return out
+    }
+
     public func progressStream(imageID: String) -> AsyncStream<ImageProgressEvent> {
         let id = UUID()
         if !Self.isTerminal(lastEvents[imageID]?.status) {

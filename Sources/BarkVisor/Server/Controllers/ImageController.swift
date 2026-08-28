@@ -224,12 +224,10 @@ struct ImageController: RouteCollection {
     }
 
     private func downloadPercent(for image: VMImage) async -> Int? {
-        switch image.status {
-        case "downloading", "decompressing", "uploading":
-            return await downloader.lastProgress(imageID: image.id)?.percent
-        default:
-            return nil
-        }
+        await ImageTransferPercent.current(
+            status: image.status,
+            lastProgress: downloader.lastProgress(imageID: image.id),
+        )
     }
 
     // MARK: - Tus Protocol

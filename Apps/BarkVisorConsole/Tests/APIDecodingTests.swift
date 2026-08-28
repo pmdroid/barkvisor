@@ -155,8 +155,31 @@ struct APIDecodingTests {
         #expect(workloads[0].memoryMB == 2_048)
         #expect(workloads[0].resolvedHealth == "guest_ready")
         #expect(workloads[0].canStop)
+        #expect(workloads[0].pendingImageId == nil)
+        #expect(workloads[0].downloadPercent == nil)
         #expect(workloads[1].resolvedHealth == "stopped")
         #expect(workloads[1].canStart)
+    }
+
+    @Test func `workload decodes pending image fields`() throws {
+        let json = """
+        {
+          "id": "vm-1",
+          "name": "pending",
+          "vmType": "linux-arm64",
+          "state": "provisioning",
+          "cpuCount": 2,
+          "memoryMB": 2048,
+          "bootDiskId": "disk-1",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "updatedAt": "2026-01-02T00:00:00Z",
+          "pendingImageId": "img-1",
+          "downloadPercent": 37
+        }
+        """.data(using: .utf8)!
+        let workload = try decoder.decode(Workload.self, from: json)
+        #expect(workload.pendingImageId == "img-1")
+        #expect(workload.downloadPercent == 37)
     }
 
     @Test func `error envelope and setup status decode`() throws {

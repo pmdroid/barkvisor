@@ -264,6 +264,8 @@ export interface VM {
   session?: CodingAgentSession | null
   createdAt: string
   updatedAt: string
+  pendingImageId?: string | null
+  downloadPercent?: number | null
 }
 
 export interface CodingAgentReceipt {

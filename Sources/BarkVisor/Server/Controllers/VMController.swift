@@ -38,8 +38,15 @@ struct VMResponse: Content {
     let session: CodingAgentSessionView?
     let createdAt: String
     let updatedAt: String
+    let pendingImageId: String?
+    let downloadPercent: Int?
 
-    init(from vm: VM, signals: WorkloadHealthSignals = .unobserved) {
+    init(
+        from vm: VM,
+        signals: WorkloadHealthSignals = .unobserved,
+        pendingImageId: String? = nil,
+        downloadPercent: Int? = nil,
+    ) {
         let spec = WorkloadSpecProjector.fromVM(vm)
         self.spec = spec
         let status = WorkloadSpecProjector.status(from: vm, signals: signals)
@@ -84,6 +91,8 @@ struct VMResponse: Content {
         } else {
             self.session = nil
         }
+        self.pendingImageId = pendingImageId
+        self.downloadPercent = downloadPercent
     }
 }
 
@@ -234,6 +243,7 @@ struct VMController: RouteCollection {
     let stateStreamService: VMStateStreamService
     let backgroundTasks: BackgroundTaskManager
     let healthProbes: HealthProbeService
+    let imageDownloader: ImageDownloader
 
     func boot(routes: any RoutesBuilder) throws {
         let vms = routes.grouped("api", "vms")
