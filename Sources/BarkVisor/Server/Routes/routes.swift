@@ -85,6 +85,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             vmManager: deps.vmManager,
             imageDownloader: deps.imageDownloader,
             backgroundTasks: deps.backgroundTasks,
+            syncService: deps.syncService,
         ),
     )
 

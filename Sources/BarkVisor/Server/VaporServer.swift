@@ -81,6 +81,7 @@ public final class VaporServer: @unchecked Sendable {
             pool: database.pool,
             backgroundTasks: services.backgroundTasks,
             imageDownloader: services.downloader,
+            syncService: services.syncService,
         )
         await schedulePeriodicTasks(
             pool: database.pool,
@@ -88,6 +89,7 @@ public final class VaporServer: @unchecked Sendable {
             vmManager: services.manager,
             imageDownloader: services.downloader,
             stateStreamService: services.stateStreamService,
+            syncService: services.syncService,
         )
 
         Log.server.info("BarkVisor server starting on port \(Config.port)")
@@ -137,12 +139,6 @@ public final class VaporServer: @unchecked Sendable {
         Task {
             if PairingService.hasPairedReceipt(dataDir: Config.dataDir) {
                 await HomeCatalogFanout.pullMissing()
-            }
-            let repos = try? await database.pool.read { db in
-                try ImageRepository.filter(Column("isBuiltIn") == true).fetchAll(db)
-            }
-            for repo in repos ?? [] {
-                try? await services.syncService.sync(repositoryID: repo.id)
             }
         }
 
@@ -389,6 +385,7 @@ public final class VaporServer: @unchecked Sendable {
         pool: DatabasePool,
         backgroundTasks: BackgroundTaskManager,
         imageDownloader: ImageDownloader,
+        syncService: RepositorySyncService,
     ) async {
         await AuditService.pruneOldEntries(db: pool)
         await AuditService.logSystem(action: "app.start", db: pool)
@@ -424,6 +421,10 @@ public final class VaporServer: @unchecked Sendable {
             backgroundTasks: backgroundTasks,
             db: pool,
         )
+        await BuiltInCatalogSync.submitStartup(
+            backgroundTasks: backgroundTasks,
+            syncService: syncService,
+        )
     }
 
     private func schedulePeriodicTasks(
@@ -432,6 +433,7 @@ public final class VaporServer: @unchecked Sendable {
         vmManager: VMManager,
         imageDownloader: ImageDownloader,
         stateStreamService: VMStateStreamService,
+        syncService: RepositorySyncService,
     ) async {
         await backgroundTasks.schedulePeriodicTask(
             id: "audit-prune", interval: 24 * 60 * 60 * 1_000_000_000,
@@ -495,6 +497,10 @@ public final class VaporServer: @unchecked Sendable {
                 Log.auth.error("Failed to clean up expired API keys: \(error.localizedDescription)")
             }
         }
+        await BuiltInCatalogSync.scheduleDaily(
+            backgroundTasks: backgroundTasks,
+            syncService: syncService,
+        )
     }
 
     private func configureRateLimit(
