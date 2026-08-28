@@ -20,7 +20,7 @@ The picker still lists detected LAN / Tailscale / hostname entries. Access is op
 
 ## Save changes
 
-The header button saves the Device URL.
+The header button saves Device name and Device URL.
 
 ## Related
 
