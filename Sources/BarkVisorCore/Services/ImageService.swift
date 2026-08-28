@@ -70,6 +70,27 @@ public enum ImageService {
         }
     }
 
+    public static func failInterruptedDownloads(db: DatabasePool) async throws {
+        try await db.write { db in
+            let rows = try VMImage.filter(
+                Column("status") == "downloading" || Column("status") == "decompressing",
+            ).fetchAll(db)
+            let now = iso8601.string(from: Date())
+            for row in rows {
+                if let path = row.path, FileManager.default.fileExists(atPath: path) {
+                    try? FileManager.default.removeItem(atPath: path)
+                }
+                try db.execute(
+                    sql: """
+                    UPDATE images SET status = 'error', error = ?, path = NULL, sizeBytes = NULL,
+                        updatedAt = ? WHERE id = ?
+                    """,
+                    arguments: ["Download interrupted", now, row.id],
+                )
+            }
+        }
+    }
+
     /// Start downloading an image from a URL.
     public static func startDownload(
         _ request: ImageDownloadRequest,

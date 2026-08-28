@@ -28,6 +28,7 @@ var testDependencies: [Target.Dependency] = [
     // For ImageChecksumTests (and any CryptoKit/Crypto usage) on Linux.
     .product(name: "Crypto", package: "swift-crypto"),
     .product(name: "X509", package: "swift-certificates"),
+    .product(name: "NIOCore", package: "swift-nio"),
     .product(name: "NIOSSL", package: "swift-nio-ssl"),
     .product(name: "NIOPosix", package: "swift-nio"),
     .product(name: "AsyncHTTPClient", package: "async-http-client"),
