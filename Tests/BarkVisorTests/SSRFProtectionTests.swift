@@ -7,6 +7,7 @@
     import FoundationNetworking
 #endif
 import Foundation
+import NIOCore
 import Testing
 @testable import BarkVisor
 @testable import BarkVisorCore
@@ -470,6 +471,93 @@ struct SSRFProtectionTests {
         #expect(!SSRFPinnedURLProtocol.pinnedURLs.contains { $0.contains(otherHost) })
     }
 
+    @Test func `pinned hop streams body to file`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let server = try SSRFHopHTTPServer { path in
+            if path.hasPrefix("/ok") {
+                return (200, [:], "pinned-ok")
+            }
+            return (404, [:], "missing")
+        }
+        defer { server.stop() }
+
+        let host = "ssrf-file.test"
+        pinLoopback(host: host)
+        let start = try #require(URL(string: "http://\(host):\(server.port)/ok"))
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ssrf-file-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: dest) }
+
+        let received = try await SSRFPinnedFileDownload.streamToFile(
+            from: start, to: dest, timeout: 5,
+        )
+        await waitForHopShutdown()
+        #expect(received == 9)
+        #expect(try String(contentsOf: dest, encoding: .utf8) == "pinned-ok")
+        #expect(server.hitCount() == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+    }
+
+    @Test func `file stream treats final HTTP error as downloadFailed`() async throws {
+        SSRFPinnedURLProtocol.resetTestHooks()
+        defer { SSRFPinnedURLProtocol.resetTestHooks() }
+
+        let server = try SSRFHopHTTPServer { _ in
+            (404, [:], "missing")
+        }
+        defer { server.stop() }
+
+        let host = "ssrf-file-404.test"
+        pinLoopback(host: host)
+        let start = try #require(URL(string: "http://\(host):\(server.port)/missing"))
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ssrf-file-404-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: dest) }
+
+        do {
+            _ = try await SSRFPinnedFileDownload.streamToFile(from: start, to: dest, timeout: 5)
+            Issue.record("expected downloadFailed")
+        } catch let BarkVisorError.downloadFailed(message) {
+            #expect(message.contains("HTTP 404"))
+        }
+        await waitForHopShutdown()
+        #expect(!FileManager.default.fileExists(atPath: dest.path))
+        #expect(SSRFPinnedURLProtocol.httpClientsCreated == 1)
+        #expect(SSRFPinnedURLProtocol.httpClientsShutdown == 1)
+    }
+
+    @Test func `writeBody streams buffers to file and reports progress`() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let dest = dir.appendingPathComponent("out.bin")
+        let chunk = ByteBuffer(repeating: 0x61, count: 1_024 * 1_024)
+        let tail = ByteBuffer(bytes: Array("z".utf8))
+        let stream = AsyncThrowingStream<ByteBuffer, Error> { continuation in
+            continuation.yield(chunk)
+            continuation.yield(tail)
+            continuation.finish()
+        }
+        let progress = ProgressBox()
+        let total = Int64(chunk.readableBytes + tail.readableBytes)
+        let received = try await SSRFPinnedFileDownload.writeBody(
+            stream, to: dest, totalBytes: total,
+        ) { rec, reportedTotal in
+            progress.append((rec, reportedTotal))
+        }
+        let data = try Data(contentsOf: dest)
+        let snapshots = progress.snapshots()
+        #expect(received == total)
+        #expect(data.count == Int(total))
+        #expect(data.last == 0x7A)
+        #expect(snapshots.count == 1)
+        #expect(snapshots[0].0 == 1_024 * 1_024)
+        #expect(snapshots[0].1 == total)
+    }
+
     @Test func `failed HTTPClient shutdown is not counted`() {
         SSRFPinnedURLProtocol.resetTestHooks()
         defer { SSRFPinnedURLProtocol.resetTestHooks() }
@@ -482,6 +570,23 @@ struct SSRFProtectionTests {
 
 private final class HopPortBox: @unchecked Sendable {
     var port = 0
+}
+
+private final class ProgressBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [(Int64, Int64?)] = []
+
+    func append(_ value: (Int64, Int64?)) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    func snapshots() -> [(Int64, Int64?)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
 }
 
 private func waitForHopShutdown() async {

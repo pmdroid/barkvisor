@@ -70,9 +70,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
     private var libraryPollers: [String: Task<Void, Never>] = [:]
     private let dbPool: () -> GRDB.DatabasePool
 
-    /// Shared session for all downloads (reuses connections, avoids per-download overhead).
-    /// Redirects are gated by SSRFGuard.validate so a public URL cannot 302 to loopback.
-    private static let downloadSession: URLSession = SSRFGuard.urlSession(resourceTimeout: 3_600)
+    #if !(canImport(FoundationNetworking) && !canImport(Darwin))
+        /// Shared session for all downloads (reuses connections, avoids per-download overhead).
+        /// Redirects are gated by SSRFGuard.validate so a public URL cannot 302 to loopback.
+        private static let downloadSession: URLSession = SSRFGuard.urlSession(resourceTimeout: 3_600)
+    #endif
 
     public init(dbPool: @escaping @Sendable () -> GRDB.DatabasePool) {
         self.dbPool = dbPool
@@ -194,23 +196,13 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
             throw BarkVisorError.downloadFailed(ssrfError)
         }
         #if canImport(FoundationNetworking) && !canImport(Darwin)
-            // Linux FoundationNetworking: use download(from:) (no URLSession.AsyncBytes).
-            let (tempURL, response) = try await Self.downloadSession.download(from: url)
-            let httpResponse = response as? HTTPURLResponse
-            if let statusCode = httpResponse?.statusCode, !(200 ... 299).contains(statusCode) {
-                throw BarkVisorError.downloadFailed("HTTP \(statusCode) from \(url)")
+            let received = try await SSRFPinnedFileDownload.streamToFile(
+                from: url,
+                to: destination,
+                timeout: 3_600,
+            ) { received, total in
+                await self.emitDownloading(imageID: imageID, received: received, total: total)
             }
-            let parentDir = destination.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: parentDir.path) {
-                try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
-            }
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.moveItem(at: tempURL, to: destination)
-            let received =
-                (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64)
-                    ?? 0
         #else
             let (asyncBytes, response) = try await Self.downloadSession.bytes(from: url)
             let httpResponse = response as? HTTPURLResponse
@@ -297,16 +289,11 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
                 if buffer.count >= chunkSize {
                     try handle.write(contentsOf: buffer)
                     buffer.removeAll(keepingCapacity: true)
-
-                    let event = ImageProgressEvent(
-                        id: imageID,
-                        status: "downloading",
-                        bytesReceived: received,
-                        totalBytes: total < 0 ? nil : total,
-                        percent: Self.clampedPercent(received: received, total: total),
-                        error: nil,
+                    emitDownloading(
+                        imageID: imageID,
+                        received: received,
+                        total: total < 0 ? nil : total,
                     )
-                    emit(imageID: imageID, event: event)
                 }
             }
 
@@ -316,6 +303,21 @@ public actor ImageDownloader: ImageDownloadStarting, ImageProgressPublishing {
             return received
         }
     #endif
+
+    private func emitDownloading(imageID: String, received: Int64, total: Int64?) {
+        let totalValue = total ?? -1
+        emit(
+            imageID: imageID,
+            event: ImageProgressEvent(
+                id: imageID,
+                status: "downloading",
+                bytesReceived: received,
+                totalBytes: total,
+                percent: Self.clampedPercent(received: received, total: totalValue),
+                error: nil,
+            ),
+        )
+    }
 
     private func verifyChecksum(
         imageID: String, destination: URL,
