@@ -1,8 +1,9 @@
 import Foundation
+import GRDB
+
 #if canImport(FoundationNetworking)
     import FoundationNetworking
 #endif
-import GRDB
 
 /// JSON schema for external repository catalogs
 public struct RepoCatalog: Codable, Sendable {
@@ -134,8 +135,8 @@ public actor RepositorySyncService {
         guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
 
         do {
-            let catalog = try await fetchCatalog(repo: repo)
-            try await applyCatalog(catalog, repositoryID: repositoryID, repoName: repo.name)
+            let decoded = try await fetchCatalog(repo: repo)
+            try await applyCatalog(decoded, repositoryID: repositoryID, repoName: repo.name)
         } catch {
             await rememberFailure(error, repositoryID: repositoryID)
             throw error
@@ -149,15 +150,18 @@ public actor RepositorySyncService {
         guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
 
         do {
-            let catalog = try RepositoryCatalogDecoder.decode(data, repoName: repo.name)
-            try await applyCatalog(catalog, repositoryID: repositoryID, repoName: repo.name)
+            let decoded = try RepositoryCatalogDecoder.decode(data, repoName: repo.name)
+            try await applyCatalog(decoded, repositoryID: repositoryID, repoName: repo.name)
         } catch {
             await rememberFailure(error, repositoryID: repositoryID)
             throw error
         }
     }
 
-    private func applyCatalog(_ catalog: RepoCatalog, repositoryID: String, repoName: String) async throws {
+    private func applyCatalog(
+        _ decoded: DecodedRepoCatalog, repositoryID: String, repoName: String,
+    ) async throws {
+        let catalog = decoded.catalog
         try await dbPool.write { db in
             try syncImages(db: db, repositoryID: repositoryID, catalog: catalog)
             try syncTemplates(db: db, repositoryID: repositoryID, catalog: catalog)
@@ -165,8 +169,8 @@ public actor RepositorySyncService {
             let now = iso8601.string(from: Date())
             try db.execute(
                 sql:
-                "UPDATE image_repositories SET lastSyncedAt = ?, lastError = NULL, updatedAt = ? WHERE id = ?",
-                arguments: [now, now, repositoryID],
+                "UPDATE image_repositories SET lastSyncedAt = ?, lastError = ?, updatedAt = ? WHERE id = ?",
+                arguments: [now, decoded.skippedTemplatesMessage, now, repositoryID],
             )
         }
 
@@ -174,6 +178,9 @@ public actor RepositorySyncService {
         Log.sync.info(
             "Synced repository '\(repoName)': \(catalog.images.count) images, \(templateCount) templates",
         )
+        if let skipped = decoded.skippedTemplatesMessage {
+            Log.sync.error("\(skipped)")
+        }
     }
 
     private func rememberFailure(_ error: Error, repositoryID: String) async {
@@ -186,7 +193,7 @@ public actor RepositorySyncService {
         }
     }
 
-    private func fetchCatalog(repo: ImageRepository) async throws -> RepoCatalog {
+    private func fetchCatalog(repo: ImageRepository) async throws -> DecodedRepoCatalog {
         guard let url = URL(string: repo.url) else {
             throw BarkVisorError.repositorySyncFailed("Invalid URL: \(repo.url)")
         }
@@ -303,14 +310,32 @@ public actor RepositorySyncService {
     }
 }
 
+struct DecodedRepoCatalog {
+    let catalog: RepoCatalog
+    let skippedTemplatesMessage: String?
+}
+
 enum RepositoryCatalogDecoder {
-    static func decode(_ data: Data, repoName: String) throws -> RepoCatalog {
+    private struct CatalogHead: Decodable {
+        let name: String?
+        let version: Int
+        let images: [RepoCatalogImage]?
+    }
+
+    static func decode(_ data: Data, repoName: String) throws -> DecodedRepoCatalog {
         do {
-            return try JSONDecoder().decode(RepoCatalog.self, from: data)
+            let catalog = try JSONDecoder().decode(RepoCatalog.self, from: data)
+            return DecodedRepoCatalog(catalog: catalog, skippedTemplatesMessage: nil)
         } catch let repoError {
+            if let decoded = decodePerTemplateEntry(data, repoName: repoName) {
+                return decoded
+            }
             do {
                 let templateCatalog = try JSONDecoder().decode(TemplateCatalog.self, from: data)
-                return mapTemplateCatalog(templateCatalog, repoName: repoName)
+                return DecodedRepoCatalog(
+                    catalog: mapTemplateCatalog(templateCatalog, repoName: repoName),
+                    skippedTemplatesMessage: nil,
+                )
             } catch let templateError {
                 logDecodeFailure(repoError: repoError, templateError: templateError)
                 throw BarkVisorError.repositorySyncFailed(
@@ -320,22 +345,90 @@ enum RepositoryCatalogDecoder {
         }
     }
 
-    private static func mapTemplateCatalog(_ catalog: TemplateCatalog, repoName: String) -> RepoCatalog {
+    private static func decodePerTemplateEntry(_ data: Data, repoName: String) -> DecodedRepoCatalog? {
+        let head: CatalogHead
+        do {
+            head = try JSONDecoder().decode(CatalogHead.self, from: data)
+        } catch {
+            return nil
+        }
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let templatesRaw = root["templates"] as? [Any]
+        else {
+            return nil
+        }
+
+        var templates: [RepoCatalogTemplate] = []
+        var skipped: [String] = []
+        for (index, item) in templatesRaw.enumerated() {
+            let slug = (item as? [String: Any])?["slug"] as? String
+            let slugText = slug ?? "templates.\(index)"
+            guard JSONSerialization.isValidJSONObject(item),
+                  let itemData = try? JSONSerialization.data(withJSONObject: item)
+            else {
+                let line = "\(slugText) (templates.\(index): not an object)"
+                skipped.append(line)
+                Log.sync.error("Skipped undecodable catalog template \(slugText)")
+                continue
+            }
+            do {
+                let entry = try JSONDecoder().decode(TemplateCatalogEntry.self, from: itemData)
+                templates.append(mapEntry(entry))
+            } catch {
+                let line = skipLine(index: index, slugText: slugText, error: error)
+                skipped.append(line)
+                Log.sync.error("Skipped undecodable catalog template \(slugText)")
+            }
+        }
+
+        let message: String? = if skipped.isEmpty {
+            nil
+        } else {
+            "Skipped undecodable templates: " + skipped.joined(separator: "; ")
+        }
+        return DecodedRepoCatalog(
+            catalog: RepoCatalog(
+                name: head.name ?? repoName,
+                version: head.version,
+                images: head.images ?? [],
+                templates: templates,
+            ),
+            skippedTemplatesMessage: message,
+        )
+    }
+
+    private static func skipLine(index: Int, slugText: String, error: Error) -> String {
+        guard let decoding = error as? DecodingError else {
+            return "\(slugText) (templates.\(index): \(error.localizedDescription))"
+        }
+        let nested = formatPath(decoding)
+        let path = if nested == "(root)" {
+            "templates.\(index)"
+        } else {
+            "templates.\(index).\(nested)"
+        }
+        return "\(slugText) (\(path): \(detail(decoding)))"
+    }
+
+    private static func mapEntry(_ entry: TemplateCatalogEntry) -> RepoCatalogTemplate {
+        RepoCatalogTemplate(
+            slug: entry.slug, name: entry.name, description: entry.description,
+            category: entry.category, icon: entry.icon, imageSlug: entry.imageSlug,
+            cpuCount: entry.cpuCount, memoryMB: entry.memoryMB, diskSizeGB: entry.diskSizeGB,
+            portForwards: entry.portForwards, networkMode: entry.networkMode,
+            inputs: entry.inputs, userDataTemplate: entry.userDataTemplate,
+            architectures: entry.architectures, imageByArch: entry.imageByArch,
+            minMemoryMB: entry.minMemoryMB, requiredFeatures: entry.requiredFeatures,
+        )
+    }
+
+    private static func mapTemplateCatalog(_ catalog: TemplateCatalog, repoName: String)
+        -> RepoCatalog {
         RepoCatalog(
             name: repoName,
             version: catalog.version,
             images: [],
-            templates: catalog.templates.map { entry in
-                RepoCatalogTemplate(
-                    slug: entry.slug, name: entry.name, description: entry.description,
-                    category: entry.category, icon: entry.icon, imageSlug: entry.imageSlug,
-                    cpuCount: entry.cpuCount, memoryMB: entry.memoryMB, diskSizeGB: entry.diskSizeGB,
-                    portForwards: entry.portForwards, networkMode: entry.networkMode,
-                    inputs: entry.inputs, userDataTemplate: entry.userDataTemplate,
-                    architectures: entry.architectures, imageByArch: entry.imageByArch,
-                    minMemoryMB: entry.minMemoryMB, requiredFeatures: entry.requiredFeatures,
-                )
-            },
+            templates: catalog.templates.map(mapEntry),
         )
     }
 
@@ -412,7 +505,8 @@ enum RepositoryCatalogDecoder {
 
     private static func context(_ error: DecodingError) -> DecodingError.Context {
         switch error {
-        case let .typeMismatch(_, context), let .valueNotFound(_, context), let .keyNotFound(_, context):
+        case let .typeMismatch(_, context), let .valueNotFound(_, context),
+             let .keyNotFound(_, context):
             return context
         case let .dataCorrupted(context):
             return context
