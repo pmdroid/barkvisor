@@ -105,6 +105,11 @@ async function addRepo() {
   </div>
   <EmptyState v-if="repoStore.loading" title="Loading repositories..." />
   <EmptyState
+    v-else-if="repoStore.error"
+    title="Could not load repositories"
+    :subtitle="repoStore.error"
+  />
+  <EmptyState
     v-else-if="repoStore.repositories.length === 0"
     title="No repositories configured"
     subtitle="Add a catalog URL to sync templates and images."

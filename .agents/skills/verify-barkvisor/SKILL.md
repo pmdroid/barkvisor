@@ -65,7 +65,7 @@ Stable handles (prefer these, never coordinates):
 |---|---|
 | Login | **Sign in with passkey** on `.login-card` (no username/password). Helpers inject a JWT from `POST /api/auth/login` on headless instances. |
 | Sidebar nav | `.sidebar-nav` links by label text: Dashboard, Devices, Virtual Machines, Ollama, Images, Disks, Networks, Logs, Settings |
-| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|disks\|apikeys\|sshkeys\|audit` |
+| Settings tabs | deep links `/settings?tab=home\|pairing\|library\|repositories\|disks\|apikeys\|sshkeys\|passkeys\|audit` |
 | Ticker | `.ops-ticker` (running/failed/stopped/unreachable counts) |
 | Toolbar buttons | exact text: **Create VM**, **Customize**, **Create Disk**, **Create Network**, **Live Tail**, **Diagnostics** |
 | Create Key modal | button **Create Key** → input placeholder `e.g. terraform, ci-pipeline` → **Create** → heading **API Key Created** |
