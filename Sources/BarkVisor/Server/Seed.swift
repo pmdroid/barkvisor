@@ -7,11 +7,8 @@ import GRDB
 import Vapor
 
 enum Seeder {
-    static let defaultRepoURL =
-        "https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/images.json"
-
-    static let defaultTemplatesURL =
-        "https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templates.json"
+    static let defaultRepoURL = HomeCatalogOrigin.githubImagesURL
+    static let defaultTemplatesURL = HomeCatalogOrigin.githubTemplatesURL
 
     /// Shared database pool for onboarding operations (avoids creating multiple pools)
     private nonisolated(unsafe) static var _sharedPool: DatabasePool?
@@ -71,7 +68,12 @@ enum Seeder {
     static func syncBuiltInRepositories(progress: @escaping @Sendable (String) -> Void) async throws
         -> Int {
         let db = try sharedPool()
-        let syncService = RepositorySyncService(dbPool: db)
+        let isMember = PairingService.hasPairedReceipt(dataDir: Config.dataDir)
+        let syncService = RepositorySyncService(
+            dbPool: db,
+            lastGood: LastGoodCatalogStore(directory: Config.dataDir),
+            memberCatalogFetchDisabled: isMember,
+        )
         let repos = try await db.read { database in
             try ImageRepository.filter(Column("isBuiltIn") == true).fetchAll(database)
         }
@@ -97,6 +99,27 @@ enum Seeder {
     /// Returns the number of templates synced.
     static func syncBuiltInTemplates(progress: @escaping @Sendable (String) -> Void) async throws
         -> Int {
+        if PairingService.hasPairedReceipt(dataDir: Config.dataDir) {
+            progress("Applying Home catalog...")
+            let db = try sharedPool()
+            let syncService = RepositorySyncService(
+                dbPool: db,
+                lastGood: LastGoodCatalogStore(directory: Config.dataDir),
+                memberCatalogFetchDisabled: true,
+            )
+            let repos = try await db.read { database in
+                try ImageRepository
+                    .filter(Column("isBuiltIn") == true)
+                    .filter(Column("repoType") == "templates")
+                    .fetchAll(database)
+            }
+            for repo in repos {
+                try? await syncService.sync(repositoryID: repo.id)
+            }
+            return await (try? db.read { try VMTemplate.filter(Column("isBuiltIn") == true).fetchCount($0) })
+                ?? 0
+        }
+
         progress("Fetching template catalog...")
 
         guard let catalog = try await loadTemplateCatalog() else { return 0 }
@@ -196,12 +219,10 @@ enum Seeder {
     /// `repos/templates.json` walking up from the working directory
     /// (`Server/Resources/templates.json` is unused).
     private static func loadTemplateCatalog() async throws -> TemplateCatalog? {
-        if let url = URL(string: defaultTemplatesURL) {
-            if let (data, response) = try? await URLSession.shared.data(from: url),
-               let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode),
-               let catalog = try? JSONDecoder().decode(TemplateCatalog.self, from: data) {
-                return catalog
-            }
+        if let url = URL(string: defaultTemplatesURL),
+           let data = try? await SSRFCatalogURLFetcher().fetch(url: url),
+           let catalog = try? JSONDecoder().decode(TemplateCatalog.self, from: data) {
+            return catalog
         }
         if let local = localTemplatesCatalogURL(),
            let data = try? Data(contentsOf: local),
@@ -259,9 +280,8 @@ enum Seeder {
         }
     }
 
-    static func seedDefaultRepository(db: DatabasePool) throws {
+    static func seedDefaultRepository(db: DatabasePool, isMember: Bool = false) throws {
         try db.write { database in
-            // Seed built-in images repo
             let imageRepoCount =
                 try ImageRepository
                     .filter(Column("isBuiltIn") == true)
@@ -272,7 +292,7 @@ enum Seeder {
                 let repo = ImageRepository(
                     id: UUID().uuidString,
                     name: "BarkVisor Official",
-                    url: defaultRepoURL,
+                    url: HomeCatalogOrigin.seedURL(repoType: "images", isMember: isMember),
                     isBuiltIn: true,
                     repoType: "images",
                     lastSyncedAt: nil,
@@ -285,7 +305,6 @@ enum Seeder {
                 Log.server.info("Seeded built-in image repository")
             }
 
-            // Seed built-in templates repo
             let templateRepoCount =
                 try ImageRepository
                     .filter(Column("isBuiltIn") == true)
@@ -296,7 +315,7 @@ enum Seeder {
                 let repo = ImageRepository(
                     id: UUID().uuidString,
                     name: "BarkVisor Templates",
-                    url: defaultTemplatesURL,
+                    url: HomeCatalogOrigin.seedURL(repoType: "templates", isMember: isMember),
                     isBuiltIn: true,
                     repoType: "templates",
                     lastSyncedAt: nil,
@@ -307,6 +326,10 @@ enum Seeder {
                 )
                 try repo.insert(database)
                 Log.server.info("Seeded built-in templates repository")
+            }
+
+            if isMember {
+                try HomeCatalogOrigin.flipGitHubBuiltIns(database)
             }
         }
     }
