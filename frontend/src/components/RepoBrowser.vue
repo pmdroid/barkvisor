@@ -2,13 +2,18 @@
 import { apiErrorMessage } from '../api/errors'
 import { ref, watch, computed } from 'vue'
 import { useRepositoryStore } from '../stores/repositories'
+import { useDevicesStore } from '../stores/devices'
 import { useToastStore } from '../stores/toast'
 import type { RepositoryImage } from '../api/types'
+import api from '../api/client'
+import { devicePath, isSelfDevice } from '../utils/homeDeviceApi'
+import { catalogAcquireBody, catalogDownloadBlockedReason, deviceForCatalogImage } from '../utils/libraryDownloadTarget'
 
 import AppSelect from './ui/AppSelect.vue'
 
 const props = defineProps<{ repoId: string }>()
 const store = useRepositoryStore()
+const devicesStore = useDevicesStore()
 const images = ref<RepositoryImage[]>([])
 const loading = ref(false)
 const filterType = ref<string>('')
@@ -42,11 +47,37 @@ function formatSize(bytes: number | null): string {
 
 const toast = useToastStore()
 
+async function downloadOnDevice(
+  device: NonNullable<ReturnType<typeof deviceForCatalogImage>>,
+  img: RepositoryImage,
+) {
+  await api.post(devicePath(device, '/images/acquire'), catalogAcquireBody(img))
+  toast.success(`Download started on ${device.displayName || device.hostId}`)
+}
+
 async function download(img: RepositoryImage) {
   downloading.value.add(img.id)
   try {
-    await store.downloadImage(img.id)
-    toast.success(`Download started for "${img.name}"`, { label: 'View in Images', to: '/images' })
+    await devicesStore.fetchHealth()
+    const blocked = catalogDownloadBlockedReason({
+      healthError: devicesStore.error,
+      hasReport: devicesStore.report !== null,
+    })
+    if (blocked) {
+      toast.error(blocked)
+      return
+    }
+    const device = deviceForCatalogImage(img.arch, devicesStore.devices)
+    if (!device) {
+      toast.error(`No reachable Device can run ${img.arch || 'this'} guests.`)
+      return
+    }
+    if (isSelfDevice(device)) {
+      await store.downloadImage(img.id)
+      toast.success(`Download started for "${img.name}"`, { label: 'View in Images', to: '/images' })
+    } else {
+      await downloadOnDevice(device, img)
+    }
   } catch (e: any) {
     toast.error(apiErrorMessage(e))
   } finally {

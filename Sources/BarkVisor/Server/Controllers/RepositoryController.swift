@@ -48,6 +48,7 @@ struct RepositoryImageResponse: Content {
     let version: String?
     let downloadUrl: String
     let sizeBytes: Int64?
+    let sha256: String?
 
     init(from img: RepositoryImage) {
         self.id = img.id
@@ -60,6 +61,7 @@ struct RepositoryImageResponse: Content {
         self.version = img.version
         self.downloadUrl = img.downloadUrl
         self.sizeBytes = img.sizeBytes
+        self.sha256 = img.sha256
     }
 }
 
