@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { apiErrorMessage } from '../api/errors'
+import { useDevicesStore } from '../stores/devices'
 import { useRepositoryStore } from '../stores/repositories'
 import { useToastStore } from '../stores/toast'
+import {
+  catalogDeviceHasError,
+  catalogHasDeviceError,
+  catalogIsSyncing,
+  syncStatusBadge,
+  syncStatusLabel,
+} from '../utils/repositoryCatalog'
 import AppButton from './ui/AppButton.vue'
 import AppModal from './ui/AppModal.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -11,6 +19,7 @@ import EmptyState from './ui/EmptyState.vue'
 import FormError from './ui/FormError.vue'
 
 const repoStore = useRepositoryStore()
+const devicesStore = useDevicesStore()
 const toast = useToastStore()
 
 const showAddRepo = ref(false)
@@ -21,31 +30,21 @@ const addLoading = ref(false)
 const confirmDeleteRepo = ref<{ id: string; name: string } | null>(null)
 const deletingRepo = ref(false)
 
-onMounted(() => {
-  void repoStore.fetchAll()
+onMounted(async () => {
+  await devicesStore.fetchHealth()
+  await repoStore.fetchAll()
 })
-
-function syncStatusLabel(status: string, lastError: string | null, lastSyncedAt: string | null) {
-  if (status === 'syncing') return 'syncing'
-  if (status === 'error' || lastError) return 'error'
-  if (lastSyncedAt) return 'synced'
-  return 'idle'
-}
-
-function syncStatusBadge(status: string, lastError: string | null, lastSyncedAt: string | null) {
-  if (status === 'syncing') return 'badge-amber'
-  if (status === 'error' || lastError) return 'badge-red'
-  if (lastSyncedAt) return 'badge-green'
-  return 'badge-gray'
-}
 
 async function syncRepo(id: string) {
   try {
     await repoStore.sync(id)
     const repo = repoStore.repositories.find((r) => r.id === id)
-    if (repo && repo.syncStatus !== 'error') {
-      toast.success('Repository synced')
+    if (repo && catalogHasDeviceError(repo)) {
+      const failed = repo.deviceSyncs.find((row) => catalogDeviceHasError(row))
+      toast.error(failed?.lastError || repo.lastError || 'Sync failed on a Device')
+      return
     }
+    toast.success('Repository synced')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e))
   }
@@ -98,7 +97,7 @@ async function addRepo() {
 
 <template>
   <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0;max-width:640px">
-    Catalog URLs this Home syncs. Templates and images from these catalogs show up in Create VM.
+    Catalog URLs each Device in this Home syncs. Member catalog errors show here, not only when Create VM fails.
   </p>
   <div style="margin-bottom:16px">
     <AppButton variant="primary" @click="openAdd">Add repository</AppButton>
@@ -130,14 +129,37 @@ async function addRepo() {
           <span>{{ r.name }}</span>
           <span v-if="r.isBuiltIn" class="badge badge-accent" style="font-size:10px">built-in</span>
         </div>
-        <div v-if="r.lastError" style="font-size:12px;color:var(--red, #ef4444);margin-top:2px">{{ r.lastError }}</div>
+        <div
+          v-if="!r.isBuiltIn && r.lastError"
+          style="font-size:12px;color:var(--red, #ef4444);margin-top:2px"
+        >{{ r.lastError }}</div>
       </td>
       <td><span class="badge badge-gray">{{ r.repoType }}</span></td>
       <td>
         <span class="mono" style="color:var(--text-secondary);font-size:12px;word-break:break-all">{{ r.url }}</span>
       </td>
       <td>
+        <div
+          v-if="r.deviceSyncs.length"
+          style="display:flex;flex-direction:column;gap:8px"
+        >
+          <div v-for="d in r.deviceSyncs" :key="d.hostId">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-size:12px">{{ d.label }}</span>
+              <span
+                class="badge"
+                :class="syncStatusBadge(d.syncStatus, d.lastError, d.lastSyncedAt)"
+                style="font-size:10px"
+              >{{ syncStatusLabel(d.syncStatus, d.lastError, d.lastSyncedAt) }}</span>
+            </div>
+            <div
+              v-if="d.lastError"
+              style="font-size:12px;color:var(--red, #ef4444);margin-top:2px"
+            >{{ d.lastError }}</div>
+          </div>
+        </div>
         <span
+          v-else
           class="badge"
           :class="syncStatusBadge(r.syncStatus, r.lastError, r.lastSyncedAt)"
           style="font-size:10px"
@@ -145,8 +167,8 @@ async function addRepo() {
       </td>
       <td style="text-align:right">
         <div style="display:flex;gap:6px;justify-content:flex-end">
-          <AppButton size="sm" :disabled="r.syncStatus === 'syncing'" @click="syncRepo(r.id)">
-            {{ r.syncStatus === 'syncing' ? 'Syncing...' : 'Sync' }}
+          <AppButton size="sm" :disabled="catalogIsSyncing(r)" @click="syncRepo(r.id)">
+            {{ catalogIsSyncing(r) ? 'Syncing...' : 'Sync' }}
           </AppButton>
           <AppButton v-if="!r.isBuiltIn" variant="danger" size="sm" @click="deleteRepo(r.id, r.name)">Remove</AppButton>
         </div>
@@ -157,7 +179,7 @@ async function addRepo() {
   <AppModal
     v-if="showAddRepo"
     title="Add Repository"
-    subtitle="A catalog URL your Home can sync."
+    subtitle="A catalog URL Devices in this Home can sync."
     rail-title="Source"
     @close="showAddRepo = false"
   >
