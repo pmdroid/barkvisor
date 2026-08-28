@@ -208,6 +208,10 @@ public actor BackgroundTaskManager {
         }
     }
 
+    public func hasPeriodicTask(_ id: String) -> Bool {
+        periodicTasks[id] != nil
+    }
+
     /// Emit a progress update for a running task from within the work closure
     public func reportProgress(_ id: String, progress: Double) {
         guard let event = latestEvents[id], event.status == .running else { return }

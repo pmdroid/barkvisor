@@ -71,6 +71,8 @@ import {
 import { authorizedKeyForCloudInit } from '../utils/homeSSHKey'
 import { usePlacement } from './usePlacement'
 import { useCreateVMPayload } from './useCreateVMPayload'
+import { nudgeBuiltInCatalogSync } from '../utils/catalogSyncOnOpen'
+import { useRepositoryStore } from '../stores/repositories'
 import {
   HOME_OLLAMA_GRANT_URL,
   isCodingAgentImage,
@@ -694,6 +696,14 @@ export function useCreateVMWizard(
     document.addEventListener('visibilitychange', onVisibilityChange)
     void refreshHomeLibrary()
     void refreshSSHKeys()
+    const repos = useRepositoryStore()
+    void nudgeBuiltInCatalogSync({
+      list: async () => {
+        await repos.fetchAll()
+        return repos.repositories
+      },
+      sync: (id) => api.post(`/repositories/${encodeURIComponent(id)}/sync`),
+    })
   })
 
   onUnmounted(() => {

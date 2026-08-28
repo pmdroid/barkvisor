@@ -148,6 +148,10 @@ public struct SSRFCatalogURLFetcher: CatalogURLFetching {
     }
 }
 
+public protocol BuiltInCatalogSyncing: Sendable {
+    func syncBuiltIns() async
+}
+
 public actor RepositorySyncService {
     private let dbPool: DatabasePool
     private let lastGood: LastGoodCatalogStore?
@@ -167,6 +171,27 @@ public actor RepositorySyncService {
         self.fetcher = fetcher
         self.memberCatalogFetchDisabled = memberCatalogFetchDisabled
         self.publish = publish
+    }
+
+    public func syncBuiltIns() async {
+        let repos: [ImageRepository]
+        do {
+            repos = try await dbPool.read { db in
+                try ImageRepository.filter(Column("isBuiltIn") == true).fetchAll(db)
+            }
+        } catch {
+            Log.sync.error("Failed to list built-in catalogs: \(error.localizedDescription)")
+            return
+        }
+        for repo in repos {
+            do {
+                try await sync(repositoryID: repo.id)
+            } catch {
+                Log.sync.error(
+                    "Built-in catalog '\(repo.name)' sync failed: \(error.localizedDescription)",
+                )
+            }
+        }
     }
 
     public func sync(repositoryID: String) async throws {

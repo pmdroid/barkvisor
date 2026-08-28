@@ -387,6 +387,7 @@ const librarySettings = ref<LibrarySettings>({
   totalBytes: null,
   freeBytes: null,
   usedBytes: null,
+  lastSyncedAt: null,
 })
 const libraryDraft = ref('')
 const libraryLoading = ref(true)
@@ -1415,6 +1416,13 @@ onUnmounted(() => {
       @update:model-value="libraryDraft = $event"
       @close="showLibraryPicker = false"
     />
+    <p
+      v-if="!libraryLoading"
+      style="color:var(--text-secondary);font-size:13px;margin:16px 0 0 0;max-width:640px"
+    >
+      Catalog last synced
+      {{ librarySettings.lastSyncedAt ? formatDate(librarySettings.lastSyncedAt) : 'never' }}
+    </p>
   </div>
 
   <div v-if="tab === 'repositories'">

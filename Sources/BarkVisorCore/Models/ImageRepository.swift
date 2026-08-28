@@ -38,4 +38,13 @@ public struct ImageRepository: Codable, Sendable, FetchableRecord, PersistableRe
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
+
+    public static func builtInLastSyncedAt(_ db: Database) throws -> String? {
+        let times = try ImageRepository
+            .filter(Column("isBuiltIn") == true)
+            .fetchAll(db)
+            .compactMap(\.lastSyncedAt)
+            .filter { !$0.isEmpty }
+        return times.max()
+    }
 }
