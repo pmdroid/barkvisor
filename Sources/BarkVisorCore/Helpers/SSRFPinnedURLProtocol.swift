@@ -12,7 +12,6 @@ import NIOHTTP1
 class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     static let timeoutHeader = "X-BarkVisor-SSRF-Timeout"
     static let allowedHostsHeader = "X-BarkVisor-SSRF-Allowed-Hosts"
-    private static let maxRedirects = 16
     private var work: Task<Void, Never>?
     private let finishLock = NSLock()
     private var didFinish = false
@@ -68,58 +67,22 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func fetch(request: URLRequest, url: URL, pin: PinnedEndpoint) async throws {
-        var currentRequest = request
-        var currentURL = url
-        var currentPin = pin
-        var seen: Set<String> = [url.absoluteString]
         let hopClient = SSRFPinnedHopClient(timeout: resourceTimeout(from: request))
-
         do {
-            for _ in 0 ... Self.maxRedirects {
-                try Task.checkCancellation()
-                if let next = try await performHop(
-                    request: currentRequest, url: currentURL, pin: currentPin, hopClient: hopClient,
-                ) {
-                    guard seen.insert(next.url.absoluteString).inserted else {
-                        throw URLError(.httpTooManyRedirects)
-                    }
-                    currentPin = next.pin
-                    currentURL = next.url
-                    currentRequest.url = next.url
-                    switch next.status {
-                    case 301, 302, 303:
-                        currentRequest.httpMethod = "GET"
-                        currentRequest.httpBody = nil
-                    default:
-                        break
-                    }
-                    continue
-                }
-                notifyFinish()
-                await hopClient.shutdown()
-                return
-            }
-            throw URLError(.httpTooManyRedirects)
+            let final = try await SSRFPinnedHopSession.finalResponse(
+                request: request,
+                url: url,
+                pin: pin,
+                allowedHosts: Self.allowedHosts(in: request),
+                hopClient: hopClient,
+            )
+            try await deliver(final)
+            notifyFinish()
+            await hopClient.shutdown()
         } catch {
             await hopClient.shutdown()
             throw error
         }
-    }
-
-    private struct RedirectHop {
-        let url: URL
-        let status: Int
-        let pin: PinnedEndpoint
-    }
-
-    /// Returns the next hop when following a 3xx; nil after delivering the final response.
-    private func performHop(
-        request: URLRequest, url: URL, pin: PinnedEndpoint, hopClient: SSRFPinnedHopClient,
-    ) async throws -> RedirectHop? {
-        try hopClient.prepare(for: pin)
-        return try await sendHop(
-            hopClient: hopClient, request: request, url: url, pin: pin,
-        )
     }
 
     static func allowedHosts(in request: URLRequest?) -> Set<String>? {
@@ -155,37 +118,21 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         return request.timeoutInterval > 0 ? request.timeoutInterval : 60
     }
 
-    private func sendHop(
-        hopClient: SSRFPinnedHopClient,
-        request: URLRequest,
-        url: URL,
-        pin: PinnedEndpoint,
-    ) async throws -> RedirectHop? {
-        let (head, body) = try await hopClient.execute(request: request, url: url, pin: pin)
+    private func deliver(_ final: SSRFPinnedHopSession.FinalResponse) async throws {
         try Task.checkCancellation()
-        let status = Int(head.status.code)
-        let location = head.headers.first(name: "location")
+        let status = Int(final.head.status.code)
+        let location = final.head.headers.first(name: "location")
         let nextURL = SSRFGuard.redirectTarget(
-            statusCode: status, location: location, from: url,
+            statusCode: status, location: location, from: final.url,
         )
-        let allowed = Self.allowedHosts(in: request)
-        if let nextURL,
-           SSRFGuard.shouldFollowRedirect(to: nextURL, allowedHosts: allowed),
-           let nextPin = try? Self.pinEndpoint(url: nextURL) {
-            for try await _ in body {
-                try Task.checkCancellation()
-            }
-            return RedirectHop(url: nextURL, status: status, pin: nextPin)
-        }
-
         let dropLocation = nextURL != nil
         var headerFields: [String: String] = [:]
-        for header in head.headers {
+        for header in final.head.headers {
             if dropLocation, header.name.lowercased() == "location" { continue }
             headerFields[header.name] = header.value
         }
         guard let httpResponse = HTTPURLResponse(
-            url: url,
+            url: final.url,
             statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: headerFields,
@@ -196,7 +143,7 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
         let protoClient = client
         protoClient?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
         var delivered = 0
-        for try await buffer in body {
+        for try await buffer in final.body {
             try Task.checkCancellation()
             let data = Data(buffer.readableBytesView)
             delivered += data.count
@@ -204,11 +151,10 @@ class SSRFPinnedURLProtocol: URLProtocol, @unchecked Sendable {
                 protoClient?.urlProtocol(self, didLoad: data)
             }
         }
-        if let expected = Int(head.headers.first(name: "content-length") ?? ""),
+        if let expected = Int(final.head.headers.first(name: "content-length") ?? ""),
            expected > 0, delivered == 0 {
             throw URLError(.cannotParseResponse)
         }
-        return nil
     }
 
     private func notifyFinish() {

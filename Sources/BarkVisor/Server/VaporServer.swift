@@ -397,6 +397,13 @@ public final class VaporServer: @unchecked Sendable {
             BackupService.performBackup(pool: pool)
         }
         await BridgeSyncService.syncOnce(db: pool)
+        do {
+            try await ImageService.failInterruptedDownloads(db: pool)
+        } catch {
+            Log.images.error(
+                "Failed to mark interrupted image downloads: \(error.localizedDescription)",
+            )
+        }
         _ = try? await APIKeyService.deleteExpired(db: pool)
         do {
             _ = try await APIKeyService.revokeUnverifiableKeysIfHmacSecretGenerated(

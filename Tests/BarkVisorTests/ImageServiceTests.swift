@@ -272,6 +272,44 @@ final class ImageServiceTests {
         #expect(miss == nil)
     }
 
+    @Test func `fail interrupted downloads marks stuck rows error`() async throws {
+        let now = "2026-01-01T00:00:00Z"
+        let readyFile = tmpDir.appendingPathComponent("ready.img")
+        try Data("ready-bytes".utf8).write(to: readyFile)
+        let missingPath = tmpDir.appendingPathComponent("gone.img").path
+        try await dbPool.write { db in
+            try VMImage(
+                id: "img-nil-path", name: "Stuck nil", imageType: "cloud-image", arch: "arm64",
+                path: nil, sizeBytes: nil, status: "downloading", error: nil,
+                sourceUrl: "https://example.com/a.qcow2", createdAt: now, updatedAt: now,
+            ).insert(db)
+            try VMImage(
+                id: "img-missing-path", name: "Stuck missing", imageType: "cloud-image", arch: "arm64",
+                path: missingPath, sizeBytes: 12, status: "downloading", error: nil,
+                sourceUrl: "https://example.com/b.qcow2", createdAt: now, updatedAt: now,
+            ).insert(db)
+            try VMImage(
+                id: "img-ready", name: "Ready", imageType: "cloud-image", arch: "arm64",
+                path: readyFile.path, sizeBytes: 11, status: "ready", error: nil,
+                sourceUrl: "https://example.com/c.qcow2", createdAt: now, updatedAt: now,
+            ).insert(db)
+        }
+
+        try await ImageService.failInterruptedDownloads(db: dbPool)
+
+        let nilPath = try await dbPool.read { db in try VMImage.fetchOne(db, key: "img-nil-path") }
+        let missing = try await dbPool.read { db in try VMImage.fetchOne(db, key: "img-missing-path") }
+        let ready = try await dbPool.read { db in try VMImage.fetchOne(db, key: "img-ready") }
+        #expect(nilPath?.status == "error")
+        #expect(nilPath?.error == "Download interrupted")
+        #expect(missing?.status == "error")
+        #expect(missing?.error == "Download interrupted")
+        #expect(missing?.path == nil)
+        #expect(ready?.status == "ready")
+        #expect(ready?.path == readyFile.path)
+        #expect(FileManager.default.fileExists(atPath: readyFile.path))
+    }
+
     @Test func `start download rejects private URL before inserting`() async throws {
         let pool = dbPool
         let downloader = ImageDownloader(dbPool: { pool })
