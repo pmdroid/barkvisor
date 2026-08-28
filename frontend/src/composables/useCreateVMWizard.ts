@@ -23,7 +23,7 @@ import { apiErrorMessage } from '../api/errors'
 import { useNetworkStore } from '../stores/networks'
 import { useDiskStore } from '../stores/disks'
 import { useDevicesStore } from '../stores/devices'
-import { homeImageKey, useHomeLibraryStore } from '../stores/homeLibrary'
+import { homeImageKey, useHomeLibraryStore, type HomeTemplate } from '../stores/homeLibrary'
 import { hostArchToImageArch, imageArchSupportedOnHost, normalizeImageArch } from '../utils/imageArch'
 import { guestProfile, resolveGuestType } from '../utils/guestType'
 import {
@@ -46,7 +46,10 @@ import { useTemplateStore } from '../stores/templates'
 import { useCreateProgressStore } from '../stores/createProgress'
 import {
   collectTemplateDeployInputs,
+  natWebUILinks,
   templateDeclaresSshKeys,
+  templateInputsComplete,
+  visibleTemplateInputs,
   buildDeployRecipe,
   catalogImageForArch,
 } from '../utils/templateDeploy'
@@ -59,6 +62,7 @@ import {
   defaultPickedHostId,
   deviceCapabilitiesPath,
   devicePath,
+  isSelfDevice,
   resolveSelectedDevice,
   selectedHostIsLive,
   usesLocalDeviceInventory,
@@ -376,6 +380,25 @@ export function useCreateVMWizard(
     if (preset) applyPreset(preset)
   }
 
+  const templateInputValues = ref<Record<string, string>>({})
+
+  function seedTemplateInputs(template: HomeTemplate | null) {
+    const values: Record<string, string> = {}
+    for (const input of template?.inputs ?? []) {
+      if (input.id === 'ssh_keys') continue
+      values[input.id] = input.default ?? ''
+    }
+    templateInputValues.value = values
+  }
+
+  const templateInputs = computed(() =>
+    visibleTemplateInputs(selectedTemplate.value?.inputs),
+  )
+
+  function setTemplateInput(id: string, value: string) {
+    templateInputValues.value = { ...templateInputValues.value, [id]: value }
+  }
+
   function selectGalleryTemplate(template: HomeTemplate) {
     galleryKind.value = 'template'
     selectedTemplateSlug.value = template.slug
@@ -387,6 +410,7 @@ export function useCreateVMWizard(
     diskSizeGB.value = template.diskSizeGB
     uefi.value = true
     tpmOverride.value = null
+    seedTemplateInputs(template)
     step.value = 2
     void enterConfigure()
   }
@@ -774,6 +798,12 @@ export function useCreateVMWizard(
           if (!selectedImageId.value) return false
         }
         if (sshKeyRequired.value && !selectedSSHKeyId.value) return false
+        if (
+          galleryKind.value === 'template'
+          && !templateInputsComplete(selectedTemplate.value?.inputs, templateInputValues.value)
+        ) {
+          return false
+        }
         return cpuCount.value >= 1
           && memoryMB.value >= 128
           && cpuCount.value <= vmCpuCapValue.value
@@ -824,6 +854,7 @@ export function useCreateVMWizard(
     const resolved = resolvedTemplate.value ?? gallery
     const selectedKey = sshKeyStore.keys.find((k) => k.id === selectedSSHKeyId.value)
     const inputs = collectTemplateDeployInputs(gallery.inputs, {
+      values: templateInputValues.value,
       sshAuthorizedKey: selectedKey ? authorizedKeyForCloudInit(selectedKey) : undefined,
     })
     return {
@@ -888,6 +919,7 @@ export function useCreateVMWizard(
           device: target ?? undefined,
           result,
         })
+        notifyTemplateWebUI(gallery)
         emit('created')
         return
       }
@@ -966,6 +998,26 @@ export function useCreateVMWizard(
       error.value = apiErrorMessage(e)
     } finally {
       loading.value = false
+    }
+  }
+
+  function notifyTemplateWebUI(gallery: HomeTemplate) {
+    const device = selectedDevice.value
+    const links = natWebUILinks({
+      templateName: gallery.name,
+      networkMode: gallery.networkMode,
+      isSelfDevice: device ? isSelfDevice(device) : true,
+      portForwards: gallery.portForwards,
+    })
+    if (links.length) {
+      const first = links[0]
+      toast.success(`${gallery.name} is deployed.`, { label: first.label, href: first.href })
+      return
+    }
+    if (gallery.networkMode === 'nat' && device && !isSelfDevice(device)) {
+      toast.info(
+        'Open the web UI on the Device that hosts this Workload. 127.0.0.1 in this browser is the wrong machine.',
+      )
     }
   }
 
@@ -1057,6 +1109,9 @@ export function useCreateVMWizard(
     rawDiskWhy,
     showSshKeyRow,
     sshKeyRequired,
+    templateInputs,
+    templateInputValues,
+    setTemplateInput,
     refreshSSHKeys,
     networkBridged,
     isNAT,

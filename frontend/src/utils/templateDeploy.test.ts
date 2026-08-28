@@ -3,8 +3,10 @@ import {
   collectTemplateDeployInputs,
   natWebUILinks,
   templateDeclaresSshKeys,
+  templateInputsComplete,
   templateRequiresSshKeys,
   buildDeployRecipe,
+  visibleTemplateInputs,
 } from './templateDeploy'
 
 describe('templateDeploy', () => {
@@ -18,6 +20,24 @@ describe('templateDeploy', () => {
     expect(templateRequiresSshKeys([{ id: 'ssh_keys', required: true }])).toBe(true)
     expect(templateRequiresSshKeys([{ id: 'ssh_keys', required: false }])).toBe(false)
     expect(templateRequiresSshKeys([{ id: 'password', required: true }])).toBe(false)
+  })
+
+  test('visible inputs hide ssh_keys', () => {
+    expect(visibleTemplateInputs([
+      { id: 'password' },
+      { id: 'ssh_keys' },
+    ]).map((input) => input.id)).toEqual(['password'])
+  })
+
+  test('required template input blocks until filled', () => {
+    const defs = [
+      { id: 'username', default: 'ubuntu', required: true },
+      { id: 'password', required: true, minLength: 8 },
+      { id: 'ssh_keys', required: true },
+    ]
+    expect(templateInputsComplete(defs, { username: 'ubuntu', password: '' })).toBe(false)
+    expect(templateInputsComplete(defs, { username: 'ubuntu', password: 'short' })).toBe(false)
+    expect(templateInputsComplete(defs, { username: 'ubuntu', password: 'secret12' })).toBe(true)
   })
 
   test('deploy inputs skip empty password and attach SSH', () => {

@@ -5,7 +5,7 @@ export interface Toast {
   id: number
   message: string
   type: 'success' | 'error' | 'info'
-  link?: { label: string; to: string }
+  link?: { label: string; to?: string; href?: string }
 }
 
 let nextId = 0

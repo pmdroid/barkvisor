@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AppSelect from '../ui/AppSelect.vue'
 import type { DevicePickOption } from '../../utils/deviceCompatibility'
-import type { Image } from '../../api/types'
+import type { Image, TemplateInput } from '../../api/types'
 import type { SizePreset } from '../../utils/hostBuffer'
 import { hostnameFromVMName } from '../../utils/hostnameFromVMName'
 import { SSH_KEYS_SETTINGS_HREF } from '../../utils/settingsTabs'
@@ -35,6 +35,8 @@ const props = defineProps<{
   showSshKey: boolean
   selectedSSHKeyId: string
   sshKeyOptions: Array<{ value: string; label: string }>
+  templateInputs: TemplateInput[]
+  templateInputValues: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -50,6 +52,7 @@ const emit = defineEmits<{
   'update:uefi': [value: boolean]
   'update:tpmEnabled': [value: boolean]
   'update:selectedSSHKeyId': [value: string]
+  'set-template-input': [id: string, value: string]
   isoSelected: [file: File]
 }>()
 
@@ -144,20 +147,47 @@ function onIsoPick(event: Event) {
       >{{ sshKeyOptions.length ? 'Add another key' : 'Add an SSH key' }}</a>
     </div>
 
+    <div v-if="templateInputs.length" class="mag-tpl">
+      <div v-for="input in templateInputs" :key="input.id" class="mag-tpl-field">
+        <label class="mag-flabel">
+          {{ input.label }}
+          <span v-if="input.required" class="mag-req">*</span>
+        </label>
+        <textarea
+          v-if="input.type === 'textarea'"
+          :value="templateInputValues[input.id]"
+          :placeholder="input.placeholder"
+          rows="3"
+          @input="emit('set-template-input', input.id, ($event.target as HTMLTextAreaElement).value)"
+        />
+        <input
+          v-else
+          :value="templateInputValues[input.id]"
+          :type="input.type"
+          :placeholder="input.placeholder"
+          @input="emit('set-template-input', input.id, ($event.target as HTMLInputElement).value)"
+        />
+        <span v-if="input.minLength" class="mag-tpl-hint">
+          Minimum {{ input.minLength }} characters
+        </span>
+      </div>
+    </div>
+
     <label class="mag-flabel">Device</label>
-    <button
-      v-for="option in deviceOptions"
-      :key="option.hostId"
-      type="button"
-      class="mag-dev"
-      :class="{ on: selectedHostId === option.hostId, off: !option.reachable }"
-      :disabled="!option.reachable"
-      @click="option.reachable && emit('update:selectedHostId', option.hostId)"
-    >
-      <span class="mag-dot" :class="option.reachable ? 'ok' : 'off'" />
-      <b>{{ option.label }}</b>
-      <span>{{ deviceLine(option) }}</span>
-    </button>
+    <div v-for="option in deviceOptions" :key="option.hostId" class="mag-devwrap">
+      <button
+        type="button"
+        class="mag-dev"
+        :class="{ on: selectedHostId === option.hostId, off: !option.reachable }"
+        :disabled="!option.reachable"
+        @click="option.reachable && emit('update:selectedHostId', option.hostId)"
+      >
+        <span class="mag-dot" :class="option.reachable ? 'ok' : 'off'" />
+        <b>{{ option.label }}</b>
+        <span>{{ deviceLine(option) }}</span>
+      </button>
+      <p v-if="option.reasons.length" class="mag-dev-reason">{{ option.reasons.join(' ') }}</p>
+    </div>
 
     <div v-if="showCustomImage" class="mag-image-pick">
       <label class="mag-flabel">Image</label>
@@ -272,7 +302,7 @@ function onIsoPick(event: Event) {
   margin: 14px 0 7px;
 }
 .mag-flabel:first-child { margin-top: 0; }
-input, select {
+input, select, textarea {
   width: 100%;
   font: inherit;
   font-size: 12.5px;
@@ -302,6 +332,22 @@ input, select {
   text-decoration: none;
 }
 .mag-ssh-link:hover { text-decoration: underline; }
+.mag-req { color: var(--red, #e5484d); }
+.mag-tpl { margin-top: 2px; }
+.mag-tpl-field { margin-bottom: 8px; }
+.mag-tpl-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--mag-dim);
+}
+.mag-devwrap { margin-bottom: 8px; }
+.mag-dev-reason {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--mag-dim);
+  line-height: 1.45;
+}
 .mag-dev {
   width: 100%;
   display: flex;
@@ -310,7 +356,7 @@ input, select {
   padding: 9px 11px;
   border: 1px solid var(--mag-line);
   border-radius: 2px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   cursor: pointer;
   background: none;
   color: inherit;

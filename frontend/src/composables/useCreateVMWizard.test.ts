@@ -390,6 +390,66 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(wizard.canProceed()).toBe(true)
   })
 
+  test('required template input blocks Create until filled', async () => {
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate({
+      inputs: [
+        { id: 'username', label: 'Username', type: 'text', required: true, default: 'ubuntu' },
+        { id: 'password', label: 'Password', type: 'password', required: true, minLength: 8 },
+        { id: 'ssh_keys', label: 'SSH Public Keys', type: 'textarea', required: true },
+      ],
+    })]
+    library.templates = catalogTemplates
+    useSSHKeyStore().keys = [demoKey()]
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    wizard.selectedSSHKeyId.value = 'k1'
+    expect(wizard.templateInputs.value.some((input) => input.id === 'password')).toBe(true)
+    expect(wizard.canProceed()).toBe(false)
+    wizard.setTemplateInput('password', 'short')
+    expect(wizard.canProceed()).toBe(false)
+    wizard.setTemplateInput('password', 'secret12')
+    expect(wizard.canProceed()).toBe(true)
+  })
+
+  test('template architecture reasons surface on the picked Device', async () => {
+    healthDevices = [
+      macSelf(),
+      {
+        hostId: 'pc',
+        role: 'member',
+        agentPort: 7778,
+        reachability: 'ok',
+        platform: { os: 'linux', arch: 'x86_64' },
+      },
+    ]
+    const prevGet = api.get
+    api.get = mock((url: string) => {
+      if (url.includes('/home/devices/pc/') && url.endsWith('/system/capabilities')) {
+        return Promise.resolve({
+          data: { hostArch: 'x86_64', hostCpuCount: 8, maxMemoryMB: 16384 },
+        })
+      }
+      return prevGet(url)
+    }) as typeof api.get
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate({ architectures: ['arm64'] })]
+    library.templates = catalogTemplates
+    const devices = useDevicesStore()
+    devices.$patch({
+      devices: healthDevices,
+      selfDevice: macSelf(),
+    })
+    const wizard = useCreateVMWizard(() => {}, { initialHostId: 'pc' })
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    const pc = wizard.deviceOptions.value.find((option) => option.hostId === 'pc')
+    expect(pc?.reasons.some((reason) => reason.includes('Architecture'))).toBe(true)
+    expect(wizard.selectedHostId.value).toBe('pc')
+    expect(wizard.selectedDeviceIncompatibility()).toMatch(/Architecture/)
+  })
+
   test('SSH-needed template with no keys cannot proceed', async () => {
     api.get = mock((url: string) => {
       if (url.includes('/ssh-keys')) return Promise.resolve({ data: [] })
@@ -504,6 +564,32 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(body.recipe?.image?.sha256).toBe('abc')
     expect(body.recipe?.inputs?.some((i) => i.id === 'ssh_keys')).toBe(true)
     expect(created).toBe(true)
+  })
+
+  test('template create toasts NAT web UI links on This Device', async () => {
+    patchSelfDevice()
+    const library = useHomeLibraryStore()
+    catalogTemplates = [ubuntuTemplate({
+      name: 'Onyx',
+      portForwards: [{ protocol: 'tcp', hostPort: 80, guestPort: 80, httpPath: '/' }],
+    })]
+    library.templates = catalogTemplates
+    useSSHKeyStore().keys = [demoKey()]
+    const devices = useDevicesStore()
+    devices.$patch({
+      devices: [macSelf()],
+      selfDevice: macSelf(),
+    })
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryTemplate(library.templates[0])
+    await waitReady(wizard)
+    wizard.selectedSSHKeyId.value = 'k1'
+    wizard.goToDisk()
+    await waitReady(wizard)
+    await wizard.submit()
+    const toast = useToastStore().toasts.find((t) => t.message.includes('Onyx is deployed'))
+    expect(toast).toBeTruthy()
+    expect(toast?.link).toEqual({ label: 'Open Onyx', href: 'http://127.0.0.1/' })
   })
 
   test('template deploy to a Device that never synced still sends the Home recipe', async () => {

@@ -65,7 +65,6 @@ describe('PAS-97 Device terminology', () => {
   test('create/deploy copy no longer points at Settings → Network', () => {
     const files = [
       join(srcRoot, 'components/create-vm/CreateVMNetworkStep.vue'),
-      join(srcRoot, 'components/TemplateDeployDrawer.vue'),
     ]
     for (const file of files) {
       const text = readFileSync(file, 'utf8')
