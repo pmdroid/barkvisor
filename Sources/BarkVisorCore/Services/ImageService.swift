@@ -192,14 +192,14 @@ public enum ImageService {
         if let ssrfError = SSRFGuard.fetchRejection(for: sourceURL) {
             throw BarkVisorError.badRequest(ssrfError)
         }
-        let request = LibraryDepotFetchRequest(
+        let request = LibraryFetchRequest(
             sourceUrl: repoImage.downloadUrl,
             name: repoImage.name,
             imageType: repoImage.imageType,
             arch: repoImage.arch,
             expectedChecksum: checksum,
         )
-        switch try await LibraryAcquire.claim(request: request, kind: .internet, db: db) {
+        switch try await LibraryAcquire.claim(request: request, db: db) {
         case let .ready(image), let .inFlight(image):
             return .existing(image)
         case .sourceFailed:
@@ -224,7 +224,6 @@ public enum ImageService {
                 await LibraryAcquire.markFailed(
                     imageId: image.id,
                     message: error.localizedDescription,
-                    kind: .internet,
                     db: db,
                 )
                 throw error

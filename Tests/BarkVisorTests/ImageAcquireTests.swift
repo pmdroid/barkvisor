@@ -38,36 +38,4 @@ struct ImageAcquireTests {
         }
         #expect(found?.id == "img-1")
     }
-
-    @Test func `depot catalog lists by sha256`() throws {
-        let (dbPool, tmp) = try pool()
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let file = tmp.appendingPathComponent("disk.img")
-        try Data("x".utf8).write(to: file)
-        let now = "2026-01-01T00:00:00Z"
-        try dbPool.write { db in
-            try VMImage(
-                id: "img-1",
-                name: "upload",
-                imageType: "iso",
-                arch: "arm64",
-                path: file.path,
-                sizeBytes: 1,
-                status: "ready",
-                error: nil,
-                sourceUrl: nil,
-                sha256: "deadbeef",
-                createdAt: now,
-                updatedAt: now,
-            ).insert(db)
-        }
-        let listed = try dbPool.read { db in
-            try LibraryDepotCatalog.list(db: db, sourceUrl: nil, sha256: "deadbeef")
-        }
-        #expect(listed.map(\.id) == ["img-1"])
-        let mixed = try dbPool.read { db in
-            try LibraryDepotCatalog.list(db: db, sourceUrl: nil, sha256: "DEADBEEF")
-        }
-        #expect(mixed.map(\.id) == ["img-1"])
-    }
 }

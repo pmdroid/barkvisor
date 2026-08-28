@@ -835,7 +835,6 @@ export interface RemoteAccessStatus {
 export interface LibrarySettings {
   imageDirectory: string
   isDefault: boolean
-  libraryDepotHostId: string | null
   /** Volume that contains imageDirectory. Null when unreadable — never 0 as a stand-in. */
   totalBytes?: number | null
   freeBytes?: number | null

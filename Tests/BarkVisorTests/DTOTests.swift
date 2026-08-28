@@ -260,7 +260,6 @@ struct DTOTests {
         let response = LibrarySettingsResponse(
             imageDirectory: "/tmp/images",
             isDefault: false,
-            libraryDepotHostId: nil,
             totalBytes: nil,
             freeBytes: nil,
             usedBytes: nil,
@@ -271,7 +270,6 @@ struct DTOTests {
         #expect(object?["totalBytes"] is NSNull)
         #expect(object?["freeBytes"] is NSNull)
         #expect(object?["usedBytes"] is NSNull)
-        #expect(object?["libraryDepotHostId"] is NSNull)
         #expect(object?["totalBytes"] as? Int == nil)
         #expect((object?["totalBytes"] as? Int) != 0)
     }
@@ -280,7 +278,6 @@ struct DTOTests {
         let response = LibrarySettingsResponse(
             imageDirectory: "/tmp/images",
             isDefault: true,
-            libraryDepotHostId: "depot-1",
             totalBytes: 500,
             freeBytes: 120,
             usedBytes: 380,
@@ -291,7 +288,6 @@ struct DTOTests {
         #expect(object?["totalBytes"] as? Int == 500)
         #expect(object?["freeBytes"] as? Int == 120)
         #expect(object?["usedBytes"] as? Int == 380)
-        #expect(object?["libraryDepotHostId"] as? String == "depot-1")
     }
 
     // MARK: - TemplateResponse

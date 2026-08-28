@@ -8,7 +8,7 @@ The full board is [BarkVisor product ideas](https://linear.app/kyku/project/bark
 
 ## Shipping now
 
-A Home of one or more Devices: pair with a code, one login, place a Workload on a picked Device, Library plus optional depot, API-only worker. Each Device keeps its own QEMU and SQLite if the others go away.
+A Home of one or more Devices: pair with a code, one login, place a Workload on a picked Device, Library, API-only worker. Each Device keeps its own QEMU and SQLite if the others go away.
 
 ## Next
 

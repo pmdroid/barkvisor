@@ -1395,61 +1395,6 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
-  /api/agent/library/images:
-    get:
-      tags: [out-of-band]
-      operationId: listAgentLibraryImages
-      x-barkvisor-stability: out-of-band
-      summary: Ready Library images on this Device (agent port 7778 only)
-      description: |
-        Served only on the mTLS agent plane. Members look up a catalog
-        `sourceUrl` here before streaming bytes. Not the Home proxy.
-      security: []
-      parameters:
-        - name: sourceUrl
-          in: query
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Ready Library images this Device can serve
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/LibraryDepotImage"
-        default:
-          $ref: "#/components/responses/Error"
-
-  /api/agent/library/images/{id}/content:
-    get:
-      tags: [out-of-band]
-      operationId: getAgentLibraryImageContent
-      x-barkvisor-stability: out-of-band
-      summary: Stream Library image bytes (agent port 7778 only)
-      description: |
-        Streamed file body on the mTLS listener. Must not go through the
-        10 MiB Home proxy or the public URL downloader.
-      security: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Image bytes
-          content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-        default:
-          $ref: "#/components/responses/Error"
-
   /api/pairing/codes:
     post:
       tags: [evolving]
@@ -3760,7 +3705,7 @@ components:
     LibrarySettings:
       type: object
       additionalProperties: false
-      required: [imageDirectory, isDefault, libraryDepotHostId, totalBytes, freeBytes, usedBytes]
+      required: [imageDirectory, isDefault, totalBytes, freeBytes, usedBytes]
       properties:
         imageDirectory:
           type: string
@@ -3770,10 +3715,6 @@ components:
           description: >
             True when no Library folder has been saved yet. The daemon still
             writes to `{dataDir}/images` until a folder is chosen.
-        libraryDepotHostId:
-          type: string
-          nullable: true
-          description: Paired Device to fetch missing Library images from first
         totalBytes:
           type: integer
           minimum: 0
@@ -3800,10 +3741,6 @@ components:
           description: >
             Absolute writable path. Empty deletes the saved folder (`isDefault: true`);
             the daemon still writes to `{dataDir}/images` until a folder is saved.
-        libraryDepotHostId:
-          type: string
-          nullable: true
-          description: Paired Device host id, or empty to clear (internet only)
 
     DiskSettings:
       type: object
@@ -3903,38 +3840,6 @@ components:
           type: string
           nullable: true
           description: Host or URL; empty clears. Omitted leaves the stored value.
-
-    LibraryDepotImage:
-      type: object
-      additionalProperties: false
-      required: [id, name, imageType, arch, status]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        imageType:
-          type: string
-        arch:
-          type: string
-        status:
-          type: string
-        sizeBytes:
-          type: integer
-          format: int64
-          nullable: true
-        sourceUrl:
-          type: string
-          nullable: true
-        sha256:
-          type: string
-          nullable: true
-        slug:
-          type: string
-          nullable: true
-        filename:
-          type: string
-          nullable: true
 
     PairingIssue:
       type: object
