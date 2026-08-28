@@ -32,8 +32,23 @@ export type CatalogMemberFetch = {
   error?: string
 }
 
+const githubImagesURL =
+  'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/images.json'
+const githubTemplatesURL =
+  'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templates.json'
+const memberImagesURL = 'barkvisor://home/catalog/images'
+const memberTemplatesURL = 'barkvisor://home/catalog/templates'
+
+const catalogUrlAliases: Record<string, string> = {
+  [githubImagesURL]: memberImagesURL,
+  [memberImagesURL]: memberImagesURL,
+  [githubTemplatesURL]: memberTemplatesURL,
+  [memberTemplatesURL]: memberTemplatesURL,
+}
+
 export function catalogUrlKey(url: string): string {
-  return url.trim()
+  const key = url.trim()
+  return catalogUrlAliases[key] ?? key
 }
 
 export function matchRepoByUrl(
