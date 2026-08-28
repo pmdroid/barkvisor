@@ -38,5 +38,6 @@ The Workload lives in that Device’s SQLite. Start, stop, and console from the 
 
 - [Quickstart](getting-started-quickstart.md)
 - [Home and pairing](home-and-pairing.md)
+- [Settings: Repositories](settings-repositories.md)
 - [Ollama](ollama.md)
 - [Changelog](changelog.md)

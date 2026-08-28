@@ -17,5 +17,5 @@ Catalog Download writes into this Device's Library. Missing images download from
 ## Related
 
 - [Images](using-images.md)
-- [Repositories](using-repositories.md)
+- [Settings: Repositories](settings-repositories.md)
 - [Settings: Disks](settings-disks.md) — where VM disks go, not images

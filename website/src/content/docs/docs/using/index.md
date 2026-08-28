@@ -42,7 +42,6 @@ Around every page sit four shared pieces of chrome:
 | Images | [Images](/docs/using/images/) |
 | Disks | [Disks](/docs/using/disks/) |
 | Networks | [Networks](/docs/using/networks/) |
-| Repositories | [Repositories](/docs/using/repositories/) |
 | Logs | [Logs](/docs/using/logs/) |
 | Settings | [Settings](/docs/using/settings/) — one page per tab |
 

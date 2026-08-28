@@ -11,7 +11,7 @@ The capacity bar shows used/free space for the Library path's volume. That volum
 ## Upload and download
 
 - **Upload** opens a split-rail wizard modal: pick a file (or paste a URL), review name/arch, and confirm. Archives are decompressed automatically.
-- **Download** pulls an image from a configured catalog — see [Repositories](using-repositories.md).
+- **Download** pulls an image from a URL. Catalog images land through [Create VM](create-workload.md); catalog URLs live under [Settings → Repositories](settings-repositories.md).
 
 Catalog downloads follow this Device's architecture by default; you can still download the other arch when it will deploy on a matching Device.
 
@@ -21,6 +21,6 @@ Name · Type · Arch · Size · Status, with a delete action per row. Deleting f
 
 ## Related
 
-- [Repositories](using-repositories.md)
+- [Settings: Repositories](settings-repositories.md)
 - [Settings: Library](settings-library.md)
 - [Virtual Machines](using-vms.md)

@@ -9,6 +9,7 @@ import {
   settingsTabFromQuery,
   shouldRunPairingTick,
   SSH_KEYS_SETTINGS_HREF,
+  REPOSITORIES_SETTINGS_HREF,
 } from './settingsTabs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -18,15 +19,18 @@ describe('settings tab query', () => {
     expect(SETTINGS_TABS).toContain('pairing')
     expect(SETTINGS_TABS).toContain('home')
     expect(SETTINGS_TABS).toContain('disks')
+    expect(SETTINGS_TABS).toContain('repositories')
     expect(DEFAULT_SETTINGS_TAB).toBe('apikeys')
 
     expect(settingsTabFromQuery('pairing')).toBe('pairing')
     expect(settingsTabFromQuery('home')).toBe('home')
     expect(settingsTabFromQuery('library')).toBe('library')
+    expect(settingsTabFromQuery('repositories')).toBe('repositories')
     expect(settingsTabFromQuery('disks')).toBe('disks')
     expect(settingsTabFromQuery('apikeys')).toBe('apikeys')
     expect(settingsTabFromQuery('sshkeys')).toBe('sshkeys')
     expect(SSH_KEYS_SETTINGS_HREF).toBe('/settings?tab=sshkeys')
+    expect(REPOSITORIES_SETTINGS_HREF).toBe('/settings?tab=repositories')
     expect(settingsTabFromQuery('passkeys')).toBe('passkeys')
     expect(settingsTabFromQuery('audit')).toBe('audit')
 
@@ -106,16 +110,31 @@ describe('settings tab query', () => {
   test('Catalog Download lives on Settings Library, not Home', () => {
     const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
     const libraryStart = settings.indexOf('v-if="tab === \'library\'"')
+    const reposStart = settings.indexOf('v-if="tab === \'repositories\'"')
     const disksStart = settings.indexOf('v-if="tab === \'disks\'"')
     expect(libraryStart).toBeGreaterThan(-1)
-    expect(disksStart).toBeGreaterThan(libraryStart)
-    const libraryBlock = settings.slice(libraryStart, disksStart)
+    expect(reposStart).toBeGreaterThan(libraryStart)
+    expect(disksStart).toBeGreaterThan(reposStart)
+    const libraryBlock = settings.slice(libraryStart, reposStart)
     expect(libraryBlock).toContain('Catalog Download')
     expect(libraryBlock).not.toContain('Save Library depot')
     expect(libraryBlock).not.toContain('Library depot')
     expect(libraryBlock).toContain('Library path')
     expect(libraryBlock).toContain('LibraryFolderForm')
     expect(libraryBlock).toContain('librarySettings.isDefault')
+  })
+
+  test('Repository URLs and sync live on Settings Repositories, not a catalog page', () => {
+    const settings = readFileSync(join(here, '../views/SettingsView.vue'), 'utf8')
+    const app = readFileSync(join(here, '../App.vue'), 'utf8')
+    const router = readFileSync(join(here, '../router/index.ts'), 'utf8')
+    expect(settings).toContain('openRepositoriesTab')
+    expect(settings).toContain("tab === 'repositories'")
+    expect(settings).toContain('RepositorySettings')
+    expect(app).not.toContain('/registry')
+    expect(app).not.toContain('nav-label">Repositories')
+    expect(router).toContain('REPOSITORIES_SETTINGS_HREF')
+    expect(router).not.toContain('RegistryView')
   })
 
   test('Create VM SSH picker is on Configure and opens Settings sshkeys in a new tab', () => {
