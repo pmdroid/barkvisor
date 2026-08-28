@@ -27,6 +27,26 @@ export function templateRequiresSshKeys(
   return (inputs ?? []).some((input) => input.id === 'ssh_keys' && !!input.required)
 }
 
+export function visibleTemplateInputs<T extends { id: string }>(
+  inputs: T[] | null | undefined,
+): T[] {
+  return (inputs ?? []).filter((input) => input.id !== 'ssh_keys')
+}
+
+export function templateInputsComplete(
+  defs: Array<{ id: string; required?: boolean; minLength?: number }> | null | undefined,
+  values: Record<string, string>,
+): boolean {
+  return visibleTemplateInputs(defs)
+    .filter((input) => input.required)
+    .every((input) => {
+      const val = values[input.id] ?? ''
+      if (!val) return false
+      if (input.minLength && val.length < input.minLength) return false
+      return true
+    })
+}
+
 export function collectTemplateDeployInputs(
   defs: TemplateInputDef[] | null | undefined,
   opts: { values?: Record<string, string>; sshAuthorizedKey?: string } = {},

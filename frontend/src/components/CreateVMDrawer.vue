@@ -66,6 +66,8 @@ const showCustomImage = computed(() =>
           :show-ssh-key="wizard.showSshKeyRow.value"
           :selected-s-s-h-key-id="wizard.selectedSSHKeyId.value"
           :ssh-key-options="wizard.sshKeyOptions.value"
+          :template-inputs="wizard.templateInputs.value"
+          :template-input-values="wizard.templateInputValues.value"
           @update:name="wizard.name.value = $event"
           @update:selected-host-id="wizard.selectedHostId.value = $event"
           @update:selected-preset-id="wizard.applySizeFromPresetId($event)"
@@ -78,6 +80,7 @@ const showCustomImage = computed(() =>
           @update:uefi="wizard.uefi.value = $event"
           @update:tpm-enabled="wizard.setTpmEnabled($event)"
           @update:selected-s-s-h-key-id="wizard.selectedSSHKeyId.value = $event"
+          @set-template-input="wizard.setTemplateInput"
         />
 
         <CreateVMMagazineDiskStep

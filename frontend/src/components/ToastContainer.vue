@@ -25,7 +25,19 @@ function navigate(to: string, id: number) {
           </div>
           <div class="toast-body">
             <span>{{ toast.message }}</span>
-            <a v-if="toast.link" class="toast-link" @click.stop="navigate(toast.link.to, toast.id)">
+            <a
+              v-if="toast.link?.href"
+              class="toast-link"
+              :href="toast.link.href"
+              target="_blank"
+              rel="noopener"
+              @click.stop
+            >{{ toast.link.label }}</a>
+            <a
+              v-else-if="toast.link?.to"
+              class="toast-link"
+              @click.stop="navigate(toast.link.to, toast.id)"
+            >
               {{ toast.link.label }}
             </a>
           </div>
