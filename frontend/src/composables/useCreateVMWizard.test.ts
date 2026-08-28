@@ -567,7 +567,33 @@ describe('useCreateVMWizard magazine flows', () => {
       }
       if (url === '/templates/deploy' || url.endsWith('/templates/deploy')) {
         return Promise.resolve({
-          data: { status: 'downloading', imageId: 'img-alma', vm: null },
+          data: { status: 'downloading', imageId: 'img-alma', vm: {
+            id: 'vm-alma',
+            name: 'alma',
+            state: 'provisioning',
+            health: 'starting',
+            vmType: 'linux-arm64',
+            cpuCount: 2,
+            memoryMB: 2048,
+            bootDiskId: 'd1',
+            isoId: null,
+            isoIds: null,
+            networkId: null,
+            cloudInitPath: null,
+            description: null,
+            bootOrder: null,
+            displayResolution: null,
+            additionalDiskIds: null,
+            uefi: true,
+            tpmEnabled: false,
+            macAddress: null,
+            sharedPaths: null,
+            portForwards: null,
+            usbDevices: null,
+            pendingChanges: false,
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          } },
         })
       }
       throw new Error(`unexpected POST ${url}`)

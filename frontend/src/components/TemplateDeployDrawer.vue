@@ -35,6 +35,7 @@ import {
   devicePath,
   deviceTaskPath,
   deviceVmActionPath,
+  deviceVmPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import {
@@ -410,7 +411,7 @@ function applyImageRowProgress(data: { status?: string; downloadPercent?: number
     : 'Downloading image on the picked Device...'
 }
 
-async function pollRemoteImage(imageId: string) {
+async function pollRemoteImage(imageId: string, vm: NonNullable<DeployTemplateResponse['vm']>) {
   const device = selectedDevice.value
   if (!device || drawerClosed) return
   phase.value = 'downloading'
@@ -422,7 +423,7 @@ async function pollRemoteImage(imageId: string) {
       const { data } = await api.get(deviceImagePath(device, imageId))
       if (drawerClosed) return
       if (data.status === 'ready') {
-        await doDeploy()
+        await continueAfterImage(vm)
         return
       }
       if (data.status === 'error') {
@@ -443,10 +444,10 @@ async function pollRemoteImage(imageId: string) {
   }
 }
 
-function watchDownload(imageId: string) {
+function watchDownload(imageId: string, vm: NonNullable<DeployTemplateResponse['vm']>) {
   const device = selectedDevice.value
   if (device && !isSelfDevice(device)) {
-    void pollRemoteImage(imageId)
+    void pollRemoteImage(imageId, vm)
     return
   }
   phase.value = 'downloading'
@@ -458,7 +459,7 @@ function watchDownload(imageId: string) {
     if (settled || drawerClosed) return
     settled = true
     imageProgress.stop()
-    void doDeploy()
+    void continueAfterImage(vm)
   }
   const finishError = (message: string) => {
     if (settled || drawerClosed) return
@@ -523,10 +524,60 @@ function watchDownload(imageId: string) {
   })
 }
 
+async function continueAfterImage(vm: NonNullable<DeployTemplateResponse['vm']>) {
+  if (drawerClosed) return
+  const device = selectedDevice.value
+  const localList = !device || isSelfDevice(device)
+  if (localList && !vmStore.vms.find(v => v.id === vm.id)) {
+    vmStore.vms.push(vm)
+  }
+  phase.value = 'deploying'
+  downloadStatus.value = 'Provisioning disk from cloud image...'
+  const path = device ? deviceVmPath(device, vm.id) : `/vms/${vm.id}`
+  try {
+    for (let i = 0; i < 600; i++) {
+      if (drawerClosed) return
+      const { data } = await api.get(path)
+      if (drawerClosed) return
+      if (data.state === 'error') {
+        error.value = data.description || 'Image download failed'
+        phase.value = 'form'
+        return
+      }
+      if (data.state !== 'provisioning' && data.state !== 'starting') {
+        try {
+          if (device && !isSelfDevice(device)) {
+            await api.post(deviceVmActionPath(device, vm.id, 'start'))
+          } else {
+            await vmStore.start(vm.id)
+          }
+        } catch {
+        }
+        if (drawerClosed) return
+        phase.value = 'done'
+        emit('deployed', vm, device?.hostId)
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    error.value = 'Timed out waiting for provisioning'
+    phase.value = 'form'
+  } catch (e: unknown) {
+    if (drawerClosed) return
+    error.value = apiErrorMessage(e, 'Provisioning failed')
+    phase.value = 'form'
+  }
+}
+
 async function finishDeploy(result: DeployTemplateResponse) {
   if (drawerClosed) return
   if (result.status === 'downloading' && result.imageId) {
-    watchDownload(result.imageId)
+    if (!result.vm) {
+      error.value = 'Create did not return a VM'
+      phase.value = 'form'
+      return
+    }
+    watchDownload(result.imageId, result.vm)
     return
   }
 
