@@ -261,6 +261,11 @@ public final class AgentTLSServer: @unchecked Sendable {
         app.middleware.use(APIVersionMiddleware(), at: .beginning)
         app.middleware.use(MTLSMiddleware(homeCAPEM: homeCAPEM, pins: pinStore))
         try app.register(collection: AgentMTLSController())
+        if let database, let dataDir {
+            try app.register(
+                collection: AgentCatalogController(database: database, dataDir: dataDir),
+            )
+        }
         let localProxy = AgentLocalProxyController(vmState: vmState, consoleBuffers: consoleBuffers)
         try app.register(collection: localProxy)
         localProxy.registerConsoleTunnels(app: app)
