@@ -343,7 +343,7 @@ async function doStop() {
           </td>
           <td class="dev-cell">
             {{ row.label }}
-            <span v-else-if="!row.reachable" class="tag-amber">Unreachable</span>
+            <span v-if="!row.reachable" class="tag-amber">Unreachable</span>
           </td>
           <td>{{ osLabel(row) }}</td>
           <td class="num">{{ formatCores(row.vm.cpuCount) }} · {{ formatMemoryMB(row.vm.memoryMB) }}</td>
