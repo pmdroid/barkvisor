@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { REPOSITORIES_SETTINGS_HREF } from '../utils/settingsTabs'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -34,7 +35,7 @@ const router = createRouter({
     { path: '/chat', redirect: '/dashboard' },
     { path: '/disks', name: 'disks', component: () => import('../views/DiskView.vue') },
     { path: '/networks', name: 'networks', component: () => import('../views/NetworkView.vue') },
-    { path: '/registry', name: 'registry', component: () => import('../views/RegistryView.vue') },
+    { path: '/registry', redirect: REPOSITORIES_SETTINGS_HREF },
     { path: '/logs', name: 'logs', component: () => import('../views/LogView.vue') },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', redirect: '/dashboard' },

@@ -94,7 +94,7 @@ Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (
 
 ## Catalog Sync
 
-Image and template catalogs from built-in repositories are synced automatically in the background on each startup. You can also trigger a manual sync from the Repositories page, or add custom repositories from the web UI.
+Image and template catalogs from built-in repositories are synced automatically in the background on each startup. You can also trigger a manual sync from **Settings → Repositories**, or add custom catalog URLs there.
 
 ## Shutdown Behavior
 

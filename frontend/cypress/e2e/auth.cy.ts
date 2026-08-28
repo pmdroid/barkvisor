@@ -9,7 +9,7 @@ describe('Authentication', () => {
   })
 
   it('redirects all protected routes to login', () => {
-    const routes = ['/dashboard', '/vms', '/images', '/disks', '/networks', '/registry', '/logs', '/settings']
+    const routes = ['/dashboard', '/vms', '/images', '/disks', '/networks', '/logs', '/settings']
     routes.forEach((route) => {
       cy.visit(route)
       cy.url().should('include', '/login')

@@ -11,7 +11,6 @@ describe('Navigation', () => {
     { href: '/images', label: 'Images' },
     { href: '/disks', label: 'Disks' },
     { href: '/networks', label: 'Networks' },
-    { href: '/registry', label: 'Repositories' },
     { href: '/logs', label: 'Logs' },
     { href: '/settings', label: 'Settings' },
   ]
@@ -47,6 +46,12 @@ describe('Navigation', () => {
   it('redirects / to /dashboard', () => {
     cy.visit('/')
     cy.url().should('include', '/dashboard')
+  })
+
+  it('has no Repositories sidebar link', () => {
+    cy.visit('/dashboard')
+    cy.get('.sidebar-nav a').should('not.contain', 'Repositories')
+    cy.get('.sidebar-nav a[href="/registry"]').should('not.exist')
   })
 
   it('each sidebar link has an icon', () => {

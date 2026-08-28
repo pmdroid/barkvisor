@@ -63,6 +63,7 @@ import {
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import LibraryFolderForm from '../components/LibraryFolderForm.vue'
+import RepositorySettings from '../components/RepositorySettings.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -352,6 +353,10 @@ function openLibraryTab() {
   tab.value = 'library'
   fetchLibrarySettings()
   devicesStore.fetchHealth()
+}
+
+function openRepositoriesTab() {
+  tab.value = 'repositories'
 }
 
 function openDisksTab() {
@@ -802,6 +807,10 @@ function applySettingsTab(next: SettingsTab) {
     openLibraryTab()
     return
   }
+  if (next === 'repositories') {
+    openRepositoriesTab()
+    return
+  }
   if (next === 'disks') {
     openDisksTab()
     return
@@ -856,6 +865,7 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'home' }" @click="openHomeTab">{{ HOME_LABEL }}</button>
     <button :class="{ active: isPairingTab(tab) }" @click="openPairingTab">Pairing</button>
     <button :class="{ active: tab === 'library' }" @click="openLibraryTab">Library</button>
+    <button :class="{ active: tab === 'repositories' }" @click="openRepositoriesTab">Repositories</button>
     <button :class="{ active: tab === 'disks' }" @click="openDisksTab">Disks</button>
     <button :class="{ active: tab === 'apikeys' }" @click="tab = 'apikeys'">API Keys</button>
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
@@ -1381,6 +1391,10 @@ onUnmounted(() => {
     />
   </div>
 
+  <div v-if="tab === 'repositories'">
+    <RepositorySettings />
+  </div>
+
   <div v-if="tab === 'disks'">
     <p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px 0">
       New disks go here on the selected {{ DEVICE_LABEL }}.
@@ -1509,6 +1523,7 @@ onUnmounted(() => {
   gap: 2px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border-glass);
+  overflow-x: auto;
 }
 .tabs button {
   padding: 8px 14px;
@@ -1521,6 +1536,8 @@ onUnmounted(() => {
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tabs button.active {
   background: transparent;
