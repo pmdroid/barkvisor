@@ -102,6 +102,14 @@ export function deviceTemplatesPath(device: DeviceApiTarget): string {
   return devicePath(device, '/templates')
 }
 
+export function deviceRepositoriesPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/repositories')
+}
+
+export function deviceRepositorySyncPath(device: DeviceApiTarget, repoId: string): string {
+  return devicePath(device, `/repositories/${encodeURIComponent(repoId)}/sync`)
+}
+
 export function deviceTemplateDeployPath(device: DeviceApiTarget): string {
   return devicePath(device, '/templates/deploy')
 }

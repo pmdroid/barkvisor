@@ -125,7 +125,7 @@ const map = {
   'settings-repositories.md': {
     out: 'using/settings/repositories.md',
     title: 'Settings: Repositories',
-    description: 'Catalog URLs and sync for templates and images.',
+    description: 'Catalog URLs and per-Device sync for templates and images.',
   },
   'using-logs.md': {
     out: 'using/logs.md',

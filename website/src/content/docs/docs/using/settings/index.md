@@ -9,7 +9,7 @@ description: "The nine Settings tabs and what each one controls."
 | Home | Device facts and Device URL — [Settings: Home](/docs/using/settings/home/) |
 | Pairing | Pairing QR to add Devices, phone sign-in — [Settings: Pairing](/docs/using/settings/pairing/) |
 | Library | Library path — [Settings: Library](/docs/using/settings/library/) |
-| Repositories | Catalog URLs and sync — [Settings: Repositories](/docs/using/settings/repositories/) |
+| Repositories | Catalog URLs and per-Device sync — [Settings: Repositories](/docs/using/settings/repositories/) |
 | Disks | Default VM disk directory — [Settings: Disks](/docs/using/settings/disks/) |
 | API Keys | API keys for scripts and inference clients — [Settings: API Keys](/docs/using/settings/api-keys/) |
 | SSH Keys | SSH keys injected into guests — [Settings: SSH Keys](/docs/using/settings/ssh-keys/) |
