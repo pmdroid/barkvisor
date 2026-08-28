@@ -135,32 +135,54 @@ public actor RepositorySyncService {
 
         do {
             let catalog = try await fetchCatalog(repo: repo)
-
-            try await dbPool.write { db in
-                try syncImages(db: db, repositoryID: repositoryID, catalog: catalog)
-                try syncTemplates(db: db, repositoryID: repositoryID, catalog: catalog)
-
-                let now = iso8601.string(from: Date())
-                try db.execute(
-                    sql:
-                    "UPDATE image_repositories SET lastSyncedAt = ?, lastError = NULL, updatedAt = ? WHERE id = ?",
-                    arguments: [now, now, repositoryID],
-                )
-            }
-
-            let templateCount = catalog.templates?.count ?? 0
-            Log.sync.info(
-                "Synced repository '\(repo.name)': \(catalog.images.count) images, \(templateCount) templates",
-            )
+            try await applyCatalog(catalog, repositoryID: repositoryID, repoName: repo.name)
         } catch {
-            let now = iso8601.string(from: Date())
-            try? await dbPool.write { db in
-                try db.execute(
-                    sql: "UPDATE image_repositories SET lastError = ?, updatedAt = ? WHERE id = ?",
-                    arguments: [error.localizedDescription, now, repositoryID],
-                )
-            }
+            await rememberFailure(error, repositoryID: repositoryID)
             throw error
+        }
+    }
+
+    func syncCatalogData(_ data: Data, repositoryID: String) async throws {
+        let repo = try await dbPool.read { db in
+            try ImageRepository.fetchOne(db, key: repositoryID)
+        }
+        guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
+
+        do {
+            let catalog = try RepositoryCatalogDecoder.decode(data, repoName: repo.name)
+            try await applyCatalog(catalog, repositoryID: repositoryID, repoName: repo.name)
+        } catch {
+            await rememberFailure(error, repositoryID: repositoryID)
+            throw error
+        }
+    }
+
+    private func applyCatalog(_ catalog: RepoCatalog, repositoryID: String, repoName: String) async throws {
+        try await dbPool.write { db in
+            try syncImages(db: db, repositoryID: repositoryID, catalog: catalog)
+            try syncTemplates(db: db, repositoryID: repositoryID, catalog: catalog)
+
+            let now = iso8601.string(from: Date())
+            try db.execute(
+                sql:
+                "UPDATE image_repositories SET lastSyncedAt = ?, lastError = NULL, updatedAt = ? WHERE id = ?",
+                arguments: [now, now, repositoryID],
+            )
+        }
+
+        let templateCount = catalog.templates?.count ?? 0
+        Log.sync.info(
+            "Synced repository '\(repoName)': \(catalog.images.count) images, \(templateCount) templates",
+        )
+    }
+
+    private func rememberFailure(_ error: Error, repositoryID: String) async {
+        let now = iso8601.string(from: Date())
+        try? await dbPool.write { db in
+            try db.execute(
+                sql: "UPDATE image_repositories SET lastError = ?, updatedAt = ? WHERE id = ?",
+                arguments: [error.localizedDescription, now, repositoryID],
+            )
         }
     }
 
@@ -191,27 +213,7 @@ public actor RepositorySyncService {
             )
         }
 
-        if let full = try? JSONDecoder().decode(RepoCatalog.self, from: data) {
-            return full
-        }
-
-        let templateCatalog = try JSONDecoder().decode(TemplateCatalog.self, from: data)
-        return RepoCatalog(
-            name: repo.name,
-            version: templateCatalog.version,
-            images: [],
-            templates: templateCatalog.templates.map { entry in
-                RepoCatalogTemplate(
-                    slug: entry.slug, name: entry.name, description: entry.description,
-                    category: entry.category, icon: entry.icon, imageSlug: entry.imageSlug,
-                    cpuCount: entry.cpuCount, memoryMB: entry.memoryMB, diskSizeGB: entry.diskSizeGB,
-                    portForwards: entry.portForwards, networkMode: entry.networkMode,
-                    inputs: entry.inputs, userDataTemplate: entry.userDataTemplate,
-                    architectures: entry.architectures, imageByArch: entry.imageByArch,
-                    minMemoryMB: entry.minMemoryMB, requiredFeatures: entry.requiredFeatures,
-                )
-            },
-        )
+        return try RepositoryCatalogDecoder.decode(data, repoName: repo.name)
     }
 
     private nonisolated func syncImages(
@@ -298,5 +300,150 @@ public actor RepositorySyncService {
                 try template.insert(db)
             }
         }
+    }
+}
+
+enum RepositoryCatalogDecoder {
+    static func decode(_ data: Data, repoName: String) throws -> RepoCatalog {
+        do {
+            return try JSONDecoder().decode(RepoCatalog.self, from: data)
+        } catch let repoError {
+            do {
+                let templateCatalog = try JSONDecoder().decode(TemplateCatalog.self, from: data)
+                return mapTemplateCatalog(templateCatalog, repoName: repoName)
+            } catch let templateError {
+                logDecodeFailure(repoError: repoError, templateError: templateError)
+                throw BarkVisorError.repositorySyncFailed(
+                    lastErrorMessage(repoError: repoError, templateError: templateError, data: data),
+                )
+            }
+        }
+    }
+
+    private static func mapTemplateCatalog(_ catalog: TemplateCatalog, repoName: String) -> RepoCatalog {
+        RepoCatalog(
+            name: repoName,
+            version: catalog.version,
+            images: [],
+            templates: catalog.templates.map { entry in
+                RepoCatalogTemplate(
+                    slug: entry.slug, name: entry.name, description: entry.description,
+                    category: entry.category, icon: entry.icon, imageSlug: entry.imageSlug,
+                    cpuCount: entry.cpuCount, memoryMB: entry.memoryMB, diskSizeGB: entry.diskSizeGB,
+                    portForwards: entry.portForwards, networkMode: entry.networkMode,
+                    inputs: entry.inputs, userDataTemplate: entry.userDataTemplate,
+                    architectures: entry.architectures, imageByArch: entry.imageByArch,
+                    minMemoryMB: entry.minMemoryMB, requiredFeatures: entry.requiredFeatures,
+                )
+            },
+        )
+    }
+
+    private static func logDecodeFailure(repoError: Error, templateError: Error) {
+        Log.sync.error("RepoCatalog decode failed: \(String(describing: repoError))")
+        Log.sync.error("TemplateCatalog decode failed: \(String(describing: templateError))")
+    }
+
+    private static func lastErrorMessage(repoError: Error, templateError: Error, data: Data) -> String {
+        let chosen = preferredError(repoError: repoError, templateError: templateError)
+        if let decoding = chosen as? DecodingError {
+            return format(decoding, data: data)
+        }
+        return chosen.localizedDescription
+    }
+
+    private static func preferredError(repoError: Error, templateError: Error) -> Error {
+        let repoPath = codingPathLength(repoError)
+        let templatePath = codingPathLength(templateError)
+        if templatePath >= repoPath {
+            return templateError
+        }
+        return repoError
+    }
+
+    private static func codingPathLength(_ error: Error) -> Int {
+        guard let decoding = error as? DecodingError else { return -1 }
+        return formatPath(decoding).split(separator: ".").count
+    }
+
+    private static func format(_ error: DecodingError, data: Data) -> String {
+        let path = formatPath(error)
+        let slug = templateSlug(data: data, codingPath: context(error).codingPath)
+        var message = "Catalog decode failed at \(path)"
+        if let slug {
+            message += " (template slug: \(slug))"
+        }
+        message += ": \(detail(error))"
+        return message
+    }
+
+    private static func formatPath(_ error: DecodingError) -> String {
+        var keys = context(error).codingPath
+        if case let .keyNotFound(key, _) = error {
+            keys.append(key)
+        }
+        let parts = keys.map { key -> String in
+            if let index = key.intValue {
+                return String(index)
+            }
+            let raw = key.stringValue
+            if raw.hasPrefix("Index "), let index = Int(raw.dropFirst(6)) {
+                return String(index)
+            }
+            return raw
+        }
+        return parts.isEmpty ? "(root)" : parts.joined(separator: ".")
+    }
+
+    private static func detail(_ error: DecodingError) -> String {
+        switch error {
+        case let .keyNotFound(key, _):
+            return "missing key '\(key.stringValue)'"
+        case let .typeMismatch(type, context):
+            return "type mismatch (\(type)) \(context.debugDescription)"
+        case let .valueNotFound(type, context):
+            return "value not found (\(type)) \(context.debugDescription)"
+        case let .dataCorrupted(context):
+            return context.debugDescription
+        @unknown default:
+            return String(describing: error)
+        }
+    }
+
+    private static func context(_ error: DecodingError) -> DecodingError.Context {
+        switch error {
+        case let .typeMismatch(_, context), let .valueNotFound(_, context), let .keyNotFound(_, context):
+            return context
+        case let .dataCorrupted(context):
+            return context
+        @unknown default:
+            return DecodingError.Context(codingPath: [], debugDescription: String(describing: error))
+        }
+    }
+
+    private static func templateSlug(data: Data, codingPath: [CodingKey]) -> String? {
+        var sawTemplates = false
+        var index: Int?
+        for key in codingPath {
+            if key.stringValue == "templates" {
+                sawTemplates = true
+                continue
+            }
+            if sawTemplates {
+                if let value = key.intValue {
+                    index = value
+                } else if key.stringValue.hasPrefix("Index "),
+                          let value = Int(key.stringValue.dropFirst(6)) {
+                    index = value
+                }
+                break
+            }
+        }
+        guard let index,
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let templates = root["templates"] as? [[String: Any]],
+              templates.indices.contains(index)
+        else { return nil }
+        return templates[index]["slug"] as? String
     }
 }
