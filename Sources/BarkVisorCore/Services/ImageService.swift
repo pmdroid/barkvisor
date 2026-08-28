@@ -200,14 +200,25 @@ public enum ImageService {
         }
     }
 
-    /// Insert a downloading Library row or reuse one already in flight for this
-    /// catalog URL. The ready/downloading check and insert run in one write so
-    /// concurrent catalog downloads share a single internet fetch.
-    public static func startOrDetectCatalogDownload(
+    public static func requireCatalogLibrarySpace(
+        sizeBytes: Int64?,
+        db: DatabasePool,
+        deviceName: String? = nil,
+    ) async throws {
+        let dir = try await db.read { try LibrarySettings.resolvedDirectory(from: $0) }
+        let free = LibrarySettings.volumeUsage(at: dir)?.free
+        let name = deviceName ?? HostInventoryService.snapshot().displayName
+        try ImageDownloadSpace.require(
+            sizeBytes: sizeBytes,
+            freeBytes: free,
+            deviceName: name,
+        )
+    }
+
+    public static func claimCatalogDownload(
         repoImage: RepositoryImage,
         sourceURL: URL,
         checksum: ExpectedChecksum?,
-        downloader: any ImageDownloadStarting,
         db: DatabasePool,
     ) async throws -> CatalogDownloadClaim {
         if let ssrfError = SSRFGuard.fetchRejection(for: sourceURL) {
@@ -226,30 +237,71 @@ public enum ImageService {
         case .sourceFailed:
             throw BarkVisorError.downloadFailed("Library row is not usable for this catalog URL")
         case let .started(image):
-            do {
-                let destination = try await LibraryAcquire.destination(
-                    imageId: image.id,
-                    sourceUrl: repoImage.downloadUrl,
-                    imageType: repoImage.imageType,
-                    db: db,
-                )
-                await downloader.start(
-                    imageID: image.id,
-                    url: sourceURL,
-                    destination: destination,
-                    expectedChecksum: checksum,
-                    expectedStoredSha256: nil,
-                )
-                return .started(image)
-            } catch {
-                await LibraryAcquire.markFailed(
-                    imageId: image.id,
-                    message: error.localizedDescription,
-                    db: db,
-                )
-                throw error
-            }
+            return .started(image)
         }
+    }
+
+    public static func startClaimedCatalogDownload(
+        claim: CatalogDownloadClaim,
+        repoImage: RepositoryImage,
+        sourceURL: URL,
+        checksum: ExpectedChecksum?,
+        downloader: any ImageDownloadStarting,
+        db: DatabasePool,
+    ) async throws -> CatalogDownloadClaim {
+        guard case let .started(image) = claim else {
+            return claim
+        }
+        do {
+            let destination = try await LibraryAcquire.destination(
+                imageId: image.id,
+                sourceUrl: repoImage.downloadUrl,
+                imageType: repoImage.imageType,
+                db: db,
+            )
+            await downloader.start(
+                imageID: image.id,
+                url: sourceURL,
+                destination: destination,
+                expectedChecksum: checksum,
+                expectedStoredSha256: nil,
+            )
+            return .started(image)
+        } catch {
+            await LibraryAcquire.markFailed(
+                imageId: image.id,
+                message: error.localizedDescription,
+                db: db,
+            )
+            throw error
+        }
+    }
+
+    /// Insert a downloading Library row or reuse one already in flight for this
+    /// catalog URL. The ready/downloading check and insert run in one write so
+    /// concurrent catalog downloads share a single internet fetch.
+    public static func startOrDetectCatalogDownload(
+        repoImage: RepositoryImage,
+        sourceURL: URL,
+        checksum: ExpectedChecksum?,
+        downloader: any ImageDownloadStarting,
+        db: DatabasePool,
+    ) async throws -> CatalogDownloadClaim {
+        try await requireCatalogLibrarySpace(sizeBytes: repoImage.sizeBytes, db: db)
+        let claim = try await claimCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: checksum,
+            db: db,
+        )
+        return try await startClaimedCatalogDownload(
+            claim: claim,
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: checksum,
+            downloader: downloader,
+            db: db,
+        )
     }
 
     /// Finalize a completed tus upload: move chunk file to final location, decompress if needed, and update DB.

@@ -404,6 +404,91 @@ final class ImageServiceTests {
         let started = await downloader.startedIDs
         #expect(started.isEmpty)
     }
+
+    @Test func `catalog download skips space check when sizeBytes is unknown`() async throws {
+        let library = tmpDir.appendingPathComponent("library-unknown-size")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: library.path)
+                .save(db, onConflict: .replace)
+        }
+        let downloader = RecordingCatalogStartDownloader()
+        let source = "https://example.com/catalog-unknown-size.img"
+        let sourceURL = try #require(URL(string: source))
+        let repoImage = RepositoryImage(
+            id: "ri-unknown-size", repositoryId: "repo-1", slug: "cloud",
+            name: "Cloud", description: nil, imageType: "cloud-image", arch: "arm64",
+            version: "1", downloadUrl: source, sizeBytes: nil,
+        )
+        let claim = try await ImageService.startOrDetectCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: nil,
+            downloader: downloader,
+            db: dbPool,
+        )
+        #expect(claim.image.status == "downloading")
+        #expect(await downloader.startedIDs == [claim.image.id])
+    }
+
+    @Test func `catalog download starts when sizeBytes fits Library free space`() async throws {
+        let library = tmpDir.appendingPathComponent("library-fits")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: library.path)
+                .save(db, onConflict: .replace)
+        }
+        let downloader = RecordingCatalogStartDownloader()
+        let source = "https://example.com/catalog-fits.img"
+        let sourceURL = try #require(URL(string: source))
+        let repoImage = RepositoryImage(
+            id: "ri-fits", repositoryId: "repo-1", slug: "cloud",
+            name: "Cloud", description: nil, imageType: "cloud-image", arch: "arm64",
+            version: "1", downloadUrl: source, sizeBytes: 1,
+        )
+        let claim = try await ImageService.startOrDetectCatalogDownload(
+            repoImage: repoImage,
+            sourceURL: sourceURL,
+            checksum: nil,
+            downloader: downloader,
+            db: dbPool,
+        )
+        #expect(claim.image.status == "downloading")
+        #expect(await downloader.startedIDs == [claim.image.id])
+    }
+
+    @Test func `catalog download refuses when sizeBytes exceeds Library free space`() async throws {
+        let library = tmpDir.appendingPathComponent("library-full")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try await dbPool.write { db in
+            try AppSetting(key: LibrarySettings.imageDirectoryKey, value: library.path)
+                .save(db, onConflict: .replace)
+        }
+        let downloader = RecordingCatalogStartDownloader()
+        let source = "https://example.com/catalog-too-big.img"
+        let sourceURL = try #require(URL(string: source))
+        let repoImage = RepositoryImage(
+            id: "ri-too-big", repositoryId: "repo-1", slug: "cloud",
+            name: "Cloud", description: nil, imageType: "cloud-image", arch: "arm64",
+            version: "1", downloadUrl: source, sizeBytes: 1_000_000_000_000_000,
+        )
+        do {
+            _ = try await ImageService.startOrDetectCatalogDownload(
+                repoImage: repoImage,
+                sourceURL: sourceURL,
+                checksum: nil,
+                downloader: downloader,
+                db: dbPool,
+            )
+            Issue.record("expected Library space error")
+        } catch let BarkVisorError.insufficientDeviceDiskSpace(deviceName, shortfallBytes) {
+            #expect(deviceName == HostInventoryService.snapshot().displayName)
+            #expect(shortfallBytes > 0)
+        }
+        let count = try await dbPool.read { db in try VMImage.fetchCount(db) }
+        #expect(count == 0)
+        #expect(await downloader.startedIDs.isEmpty)
+    }
 }
 
 private actor RecordingCatalogStartDownloader: ImageDownloadStarting {
