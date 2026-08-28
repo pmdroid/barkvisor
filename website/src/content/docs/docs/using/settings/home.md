@@ -30,7 +30,7 @@ Pairing and sign-in QRs encode hosts in order: advertise URL first, then the tai
 
 ## Save changes
 
-The header button saves remote access and depot settings together.
+The header button saves remote access settings.
 
 ## Related
 

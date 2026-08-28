@@ -150,7 +150,7 @@ const map = {
   'settings-library.md': {
     out: 'using/settings/library.md',
     title: 'Settings: Library',
-    description: 'Library path, capacity, reset, and the depot Device.',
+    description: 'Library path, capacity, and reset.',
   },
   'settings-disks.md': {
     out: 'using/settings/disks.md',

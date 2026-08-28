@@ -278,15 +278,6 @@ struct RepositoryController: RouteCollection {
             return try Self.imageJSON(existing)
         }
 
-        if let fetched = await LibraryDepotClients.acquire(downloader: imageDownloader).fetchMatching(
-            LibraryDepotFetchRequest(repoImage: repoImage),
-            db: req.db,
-        ) {
-            return try Self.imageJSON(fetched)
-        }
-
-        // After a depot miss, claim the internet download in one write so two
-        // concurrent requests cannot each insert a downloading row.
         let claim = try await ImageService.startOrDetectCatalogDownload(
             repoImage: repoImage,
             sourceURL: sourceURL,

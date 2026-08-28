@@ -169,18 +169,6 @@ struct ImageController: RouteCollection {
         }) {
             return await response(existing)
         }
-        let request = LibraryDepotFetchRequest(
-            sourceUrl: source,
-            name: body.name,
-            imageType: body.imageType,
-            arch: body.arch,
-            expectedChecksum: checksum,
-        )
-        if let fetched = await LibraryDepotClients.acquire(downloader: downloader).fetchMatching(
-            request, db: req.db,
-        ) {
-            return await response(fetched)
-        }
         if source.isEmpty {
             throw Abort(.badRequest, reason: "Image cannot be copied without a source URL")
         }

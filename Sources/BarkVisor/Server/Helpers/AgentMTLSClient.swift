@@ -1,8 +1,3 @@
-#if canImport(CryptoKit)
-    import CryptoKit
-#else
-    import Crypto
-#endif
 import AsyncHTTPClient
 import BarkVisorCore
 import Foundation
@@ -10,20 +5,6 @@ import NIOCore
 import NIOHTTP1
 import NIOPosix
 import NIOSSL
-
-public struct LibraryDepotStreamResult: Sendable {
-    public var status: Int
-    public var headers: [(String, String)]
-    public var bytesWritten: Int64
-    public var sha256: String
-
-    public init(status: Int, headers: [(String, String)], bytesWritten: Int64, sha256: String) {
-        self.status = status
-        self.headers = headers
-        self.bytesWritten = bytesWritten
-        self.sha256 = sha256
-    }
-}
 
 /// AsyncThrowingStream whose producer Task is cancelled when the consumer
 /// drops the stream (client disconnect, `break`, or Task cancel).
@@ -123,103 +104,6 @@ public struct AgentMTLSClient: HomeDeviceProxyClient {
                 continuation.finish(throwing: HomeDeviceProxyError.classify(error))
             }
         }
-    }
-
-    /// Stream a GET onto disk. Used only for Library depot bytes (PAS-176).
-    /// Does not collect the body into the 10 MiB proxy buffer.
-    public func streamGet(
-        url: URL,
-        to destination: URL,
-        connectTimeoutSeconds: Int64 = 10,
-        readTimeoutSeconds: Int64 = 1_800,
-        maxBytes: Int64 = LibraryDepotStreamLimits.defaultMaxBytes,
-    ) async throws -> LibraryDepotStreamResult {
-        let client = try AgentMTLSRuntime.shared.client(
-            for: material,
-            presentationCertificatePEM: presentationCertificatePEM,
-            trustCertificatePEMs: trustCertificatePEMs,
-            timeoutSeconds: connectTimeoutSeconds,
-            readTimeoutSeconds: readTimeoutSeconds,
-        )
-        var outbound = HTTPClientRequest(url: url.absoluteString)
-        outbound.method = .GET
-        outbound.headers.replaceOrAdd(name: "Accept", value: "application/octet-stream")
-        outbound.headers.replaceOrAdd(
-            name: APIContract.versionHeaderName,
-            value: String(APIContract.version),
-        )
-        let response: HTTPClientResponse
-        do {
-            response = try await client.execute(outbound, timeout: .seconds(readTimeoutSeconds))
-        } catch {
-            throw HomeDeviceProxyError.classify(error)
-        }
-        let headers = response.headers.map { ($0.name, $0.value) }
-        let status = Int(response.status.code)
-        guard status == 200 else {
-            _ = try? await collectProxyBody(response.body, maxBytes: 65_536)
-            return LibraryDepotStreamResult(
-                status: status, headers: headers, bytesWritten: 0, sha256: "",
-            )
-        }
-
-        let part = destination.appendingPathExtension("part")
-        if FileManager.default.fileExists(atPath: part.path) {
-            try FileManager.default.removeItem(at: part)
-        }
-        FileManager.default.createFile(atPath: part.path, contents: nil)
-        let handle: FileHandle
-        do {
-            handle = try FileHandle(forWritingTo: part)
-        } catch {
-            throw HomeDeviceProxyError.classify(error)
-        }
-        defer { try? handle.close() }
-
-        let contentLength: Int64? = response.headers.first(name: "Content-Length").flatMap { Int64($0) }
-        let cap: Int64
-        do {
-            cap = try LibraryDepotStreamLimits.writeCap(contentLength: contentLength, maxBytes: maxBytes)
-        } catch {
-            try? FileManager.default.removeItem(at: part)
-            throw error
-        }
-
-        var hasher = SHA256()
-        var written: Int64 = 0
-        do {
-            for try await buffer in response.body {
-                let data = Data(buffer.readableBytesView)
-                written += Int64(data.count)
-                if written > cap {
-                    try? FileManager.default.removeItem(at: part)
-                    throw BarkVisorError.downloadFailed(
-                        "depot stream exceeded size cap (\(written) > \(cap))",
-                    )
-                }
-                try handle.write(contentsOf: data)
-                hasher.update(data: data)
-            }
-        } catch let error as BarkVisorError {
-            try? FileManager.default.removeItem(at: part)
-            throw error
-        } catch {
-            try? FileManager.default.removeItem(at: part)
-            throw HomeDeviceProxyError.classify(error)
-        }
-        let digest = hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        do {
-            try FileManager.default.moveItem(at: part, to: destination)
-        } catch {
-            try? FileManager.default.removeItem(at: part)
-            throw HomeDeviceProxyError.classify(error)
-        }
-        return LibraryDepotStreamResult(
-            status: status, headers: headers, bytesWritten: written, sha256: digest,
-        )
     }
 
     private func execute(

@@ -4,53 +4,74 @@ import Foundation
 #endif
 import GRDB
 
-/// Catalog reference → local Library row. Depot and internet are byte-source adapters.
-public enum LibraryAcquire {
-    public enum Kind: Sendable, Equatable {
-        case internet
-        case depot
+public struct LibraryFetchRequest: Sendable {
+    public var sourceUrl: String
+    public var name: String
+    public var imageType: String
+    public var arch: String
+    public var expectedChecksum: ExpectedChecksum?
+
+    public init(
+        sourceUrl: String,
+        name: String,
+        imageType: String,
+        arch: String,
+        expectedChecksum: ExpectedChecksum?,
+    ) {
+        self.sourceUrl = sourceUrl
+        self.name = name
+        self.imageType = imageType
+        self.arch = arch
+        self.expectedChecksum = expectedChecksum
     }
 
+    public init(repoImage: RepositoryImage) {
+        self.init(
+            sourceUrl: repoImage.downloadUrl,
+            name: repoImage.name,
+            imageType: repoImage.imageType,
+            arch: repoImage.arch,
+            expectedChecksum: .catalog(from: repoImage),
+        )
+    }
+}
+
+public enum LibraryAcquire {
     public enum Claim: Sendable {
         case ready(VMImage)
         case inFlight(VMImage)
         case started(VMImage)
         case sourceFailed
+
+        var imageId: String {
+            switch self {
+            case let .ready(image), let .inFlight(image), let .started(image):
+                image.id
+            case .sourceFailed:
+                ""
+            }
+        }
     }
 
-    /// Prefix so a later acquire can tell a depot copy failure from an internet error.
-    public static let depotFailurePrefix = "Library depot: "
-    /// In-progress marker on a depot downloading row so restart can reclaim it.
-    public static let depotCopyingMarker = depotFailurePrefix + "copying"
-
-    public static func isDepotCopyFailure(_ message: String?) -> Bool {
-        message?.hasPrefix(depotFailurePrefix) == true
-            && message != depotCopyingMarker
-    }
-
-    /// Local ready / in-flight / failed row. Reclaims a dead depot copy.
     public static func resolveLocal(
-        request: LibraryDepotFetchRequest,
-        kind: Kind,
+        request: LibraryFetchRequest,
         db: DatabasePool,
     ) async -> Claim? {
         do {
             return try await db.write { db in
-                try decide(request: request, kind: kind, insertIfMissing: false, db: db)
+                try decide(request: request, insertIfMissing: false, db: db)
             }
         } catch {
             return nil
         }
     }
 
-    /// Insert or reuse the Library row for this catalog URL in one write.
     public static func claim(
-        request: LibraryDepotFetchRequest,
-        kind: Kind,
+        request: LibraryFetchRequest,
         db: DatabasePool,
     ) async throws -> Claim {
         try await db.write { db in
-            try decide(request: request, kind: kind, insertIfMissing: true, db: db)
+            try decide(request: request, insertIfMissing: true, db: db)
                 ?? .sourceFailed
         }
     }
@@ -73,18 +94,10 @@ public enum LibraryAcquire {
 
     public static func verify(
         destination: URL,
-        kind: Kind,
-        request: LibraryDepotFetchRequest,
+        request: LibraryFetchRequest,
         fetched: LibraryFetchedBytes,
     ) throws {
-        if kind == .depot, let reported = fetched.reportedSha256, !reported.isEmpty,
-           fetched.sha256.lowercased() != reported.lowercased() {
-            throw BarkVisorError.downloadFailed(
-                "SHA256 mismatch: expected \(reported.lowercased()), got \(fetched.sha256)",
-            )
-        }
         guard let expected = request.expectedChecksum else { return }
-        if kind == .depot, ImageService.isCompressedSource(request.sourceUrl) { return }
         try ImageFileChecksum.verify(
             ofFile: destination,
             expected: expected,
@@ -117,29 +130,20 @@ public enum LibraryAcquire {
     public static func markFailed(
         imageId: String,
         message: String,
-        kind: Kind,
         db: DatabasePool,
     ) async {
-        let tagged: String =
-            if kind == .depot {
-                message.hasPrefix(depotFailurePrefix) ? message : depotFailurePrefix + message
-            } else {
-                message
-            }
         try? await db.write { db in
             try db.execute(
                 sql: "UPDATE images SET status = 'error', error = ?, updatedAt = ? WHERE id = ?",
-                arguments: [tagged, iso8601.string(from: Date()), imageId],
+                arguments: [message, iso8601.string(from: Date()), imageId],
             )
         }
     }
 
-    /// Fetch → verify → persist. Both adapters use this path.
     public static func finish(
         imageId: String,
         source: any LibraryByteSource,
-        request: LibraryDepotFetchRequest,
-        kind: Kind,
+        request: LibraryFetchRequest,
         filename: String? = nil,
         db: DatabasePool,
     ) async throws -> VMImage {
@@ -154,7 +158,6 @@ public enum LibraryAcquire {
             let fetched = try await source.copyBytes(to: destination)
             try verify(
                 destination: destination,
-                kind: kind,
                 request: request,
                 fetched: fetched,
             )
@@ -177,36 +180,8 @@ public enum LibraryAcquire {
         }
     }
 
-    public static func beginLive(_ id: String) {
-        LiveLibraryJobs.begin(id)
-    }
-
-    public static func endLive(_ id: String) {
-        LiveLibraryJobs.end(id)
-    }
-
-    public static func hasLive(_ id: String) -> Bool {
-        LiveLibraryJobs.contains(id)
-    }
-
-    private static func isDepotCopy(_ image: VMImage) -> Bool {
-        image.error?.hasPrefix(depotFailurePrefix) == true
-    }
-
-    private static func markInterrupted(_ imageId: String, db: Database) throws {
-        try db.execute(
-            sql: "UPDATE images SET status = 'error', error = ?, updatedAt = ? WHERE id = ?",
-            arguments: [
-                depotFailurePrefix + "copy interrupted",
-                iso8601.string(from: Date()),
-                imageId,
-            ],
-        )
-    }
-
     private static func decide(
-        request: LibraryDepotFetchRequest,
-        kind: Kind,
+        request: LibraryFetchRequest,
         insertIfMissing: Bool,
         db: Database,
     ) throws -> Claim? {
@@ -223,15 +198,7 @@ public enum LibraryAcquire {
             return .ready(ready)
         }
         if let downloading = rows.first(where: { $0.status == "downloading" }) {
-            if kind == .depot, isDepotCopy(downloading), !LiveLibraryJobs.contains(downloading.id) {
-                try markInterrupted(downloading.id, db: db)
-                return .sourceFailed
-            }
             return .inFlight(downloading)
-        }
-        if kind == .depot,
-           rows.contains(where: { $0.status == "error" && isDepotCopyFailure($0.error) }) {
-            return .sourceFailed
         }
         guard insertIfMissing else { return nil }
         let now = iso8601.string(from: Date())
@@ -243,19 +210,16 @@ public enum LibraryAcquire {
             path: nil,
             sizeBytes: nil,
             status: "downloading",
-            error: kind == .depot ? depotCopyingMarker : nil,
+            error: nil,
             sourceUrl: key,
             createdAt: now,
             updatedAt: now,
         )
         try image.insert(db)
-        if kind == .depot {
-            LiveLibraryJobs.begin(image.id)
-        }
         return .started(image)
     }
 
-    private static func claimSourceUrl(_ request: LibraryDepotFetchRequest) -> String {
+    private static func claimSourceUrl(_ request: LibraryFetchRequest) -> String {
         if !request.sourceUrl.isEmpty { return request.sourceUrl }
         if case let .sha256(hash) = request.expectedChecksum {
             return "sha256:" + hash.lowercased()
@@ -264,7 +228,6 @@ public enum LibraryAcquire {
     }
 }
 
-/// Bytes already on disk after an adapter copy. sha256 is of those bytes.
 public struct LibraryFetchedBytes: Sendable {
     public var sha256: String
     public var bytesWritten: Int64
@@ -277,32 +240,10 @@ public struct LibraryFetchedBytes: Sendable {
     }
 }
 
-/// Copy catalog bytes onto this Device. Depot and internet implement this.
 public protocol LibraryByteSource: Sendable {
     func copyBytes(to destination: URL) async throws -> LibraryFetchedBytes
 }
 
-/// Adapter: another Device's Library over the agent plane.
-public struct DepotLibrarySource: LibraryByteSource {
-    public var client: any LibraryDepotClient
-    public var remoteImageId: String
-
-    public init(client: any LibraryDepotClient, remoteImageId: String) {
-        self.client = client
-        self.remoteImageId = remoteImageId
-    }
-
-    public func copyBytes(to destination: URL) async throws -> LibraryFetchedBytes {
-        let fetched = try await client.fetchBytes(imageId: remoteImageId, to: destination)
-        return LibraryFetchedBytes(
-            sha256: fetched.sha256,
-            bytesWritten: fetched.bytesWritten,
-            reportedSha256: fetched.reportedSha256,
-        )
-    }
-}
-
-/// Adapter: public catalog URL.
 public struct InternetLibrarySource: LibraryByteSource {
     public var url: URL
     public var session: URLSession
@@ -330,45 +271,5 @@ public struct InternetLibrarySource: LibraryByteSource {
                 ?? 0
         let sha = try ImageFileChecksum.sha256Hex(ofFile: destination)
         return LibraryFetchedBytes(sha256: sha, bytesWritten: size)
-    }
-}
-
-/// Process-lifetime in-flight depot copies. Empty after restart so orphans fall back.
-private enum LiveLibraryJobs {
-    private static let shared = LiveLibraryJobSet()
-
-    static func begin(_ id: String) {
-        shared.begin(id)
-    }
-
-    static func end(_ id: String) {
-        shared.end(id)
-    }
-
-    static func contains(_ id: String) -> Bool {
-        shared.contains(id)
-    }
-}
-
-private final class LiveLibraryJobSet: @unchecked Sendable {
-    private let lock = NSLock()
-    private var ids = Set<String>()
-
-    func begin(_ id: String) {
-        lock.lock()
-        ids.insert(id)
-        lock.unlock()
-    }
-
-    func end(_ id: String) {
-        lock.lock()
-        ids.remove(id)
-        lock.unlock()
-    }
-
-    func contains(_ id: String) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return ids.contains(id)
     }
 }

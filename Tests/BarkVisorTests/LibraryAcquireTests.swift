@@ -62,8 +62,8 @@ final class LibraryAcquireTests {
     private func request(
         _ source: String,
         expectedChecksum: ExpectedChecksum? = nil,
-    ) -> LibraryDepotFetchRequest {
-        LibraryDepotFetchRequest(
+    ) -> LibraryFetchRequest {
+        LibraryFetchRequest(
             sourceUrl: source,
             name: "Cloud",
             imageType: "cloud-image",
@@ -72,15 +72,14 @@ final class LibraryAcquireTests {
         )
     }
 
-    @Test func `depot and internet adapters share claim verify persist`() async throws {
+    @Test func `claim verify persist writes a ready row`() async throws {
         let bytes = Data("shared-acquire-bytes".utf8)
         let digest = SHA256.hash(data: bytes).compactMap { String(format: "%02x", $0) }.joined()
         let internetSource = "https://example.com/shared-internet.img"
-        let depotSource = "https://example.com/shared-depot.img"
 
         let internetReq = request(internetSource, expectedChecksum: .sha256(digest))
         let internetClaim = try await LibraryAcquire.claim(
-            request: internetReq, kind: .internet, db: dbPool,
+            request: internetReq, db: dbPool,
         )
         guard case let .started(internetRow) = internetClaim else {
             Issue.record("expected internet claim to start, got \(internetClaim)")
@@ -90,56 +89,21 @@ final class LibraryAcquireTests {
             imageId: internetRow.id,
             source: MemoryLibrarySource(bytes: bytes),
             request: internetReq,
-            kind: .internet,
             db: dbPool,
         )
         #expect(internetReady.status == "ready")
         #expect(internetReady.sha256 == digest)
         #expect(internetReady.sourceUrl == internetSource)
-
-        let client = FakeLibraryDepotClient()
-        client.bytes = bytes
-        let depotReq = request(depotSource, expectedChecksum: .sha256(digest))
-        let depotClaim = try await LibraryAcquire.claim(
-            request: depotReq, kind: .depot, db: dbPool,
-        )
-        guard case let .started(depotRow) = depotClaim else {
-            Issue.record("expected depot claim to start, got \(depotClaim)")
-            return
-        }
-        let depotReady = try await LibraryAcquire.finish(
-            imageId: depotRow.id,
-            source: DepotLibrarySource(client: client, remoteImageId: "remote-shared"),
-            request: depotReq,
-            kind: .depot,
-            db: dbPool,
-        )
-        #expect(depotReady.status == "ready")
-        #expect(depotReady.sha256 == digest)
-        #expect(depotReady.sourceUrl == depotSource)
-        #expect(client.fetchedIds == ["remote-shared"])
-
-        let internetStored = try await dbPool.read { db in
-            try VMImage.fetchOne(db, key: internetRow.id)
-        }
-        let depotStored = try await dbPool.read { db in
-            try VMImage.fetchOne(db, key: depotRow.id)
-        }
-        #expect(internetStored?.status == depotStored?.status)
-        #expect(internetStored?.sha256 == depotStored?.sha256)
-        #expect(internetStored?.path != nil)
-        #expect(depotStored?.path != nil)
-        #expect(LibraryAcquire.hasLive(depotRow.id) == true)
-        LibraryAcquire.endLive(depotRow.id)
+        #expect(internetReady.path != nil)
     }
 
-    @Test func `concurrent claims share one row for both kinds`() async throws {
+    @Test func `concurrent claims share one row`() async throws {
         let source = "https://example.com/shared-claim.img"
         let req = request(source)
         let pool = dbPool
         let claims = try await withThrowingTaskGroup(of: LibraryAcquire.Claim.self) { group in
-            group.addTask { try await LibraryAcquire.claim(request: req, kind: .internet, db: pool) }
-            group.addTask { try await LibraryAcquire.claim(request: req, kind: .depot, db: pool) }
+            group.addTask { try await LibraryAcquire.claim(request: req, db: pool) }
+            group.addTask { try await LibraryAcquire.claim(request: req, db: pool) }
             var rows: [LibraryAcquire.Claim] = []
             for try await claim in group {
                 rows.append(claim)
@@ -151,12 +115,6 @@ final class LibraryAcquireTests {
         #expect(ids[0] == ids[1])
         let count = try await dbPool.read { db in try VMImage.fetchCount(db) }
         #expect(count == 1)
-        if case let .started(image) = claims.first(where: {
-            if case .started = $0 { return true }
-            return false
-        }) {
-            LibraryAcquire.endLive(image.id)
-        }
     }
 
     @Test func `claim returns later ready row when first ready checksum is stale`() async throws {
@@ -176,7 +134,6 @@ final class LibraryAcquireTests {
         }
         let claim = try await LibraryAcquire.claim(
             request: request(source, expectedChecksum: .sha256("bbb")),
-            kind: .internet,
             db: dbPool,
         )
         guard case let .ready(image) = claim else {
@@ -189,7 +146,7 @@ final class LibraryAcquireTests {
     @Test func `finish deletes destination when the byte source throws after writing`() async throws {
         let source = "https://example.com/copy-fail.img"
         let req = request(source)
-        let claim = try await LibraryAcquire.claim(request: req, kind: .internet, db: dbPool)
+        let claim = try await LibraryAcquire.claim(request: req, db: dbPool)
         guard case let .started(row) = claim else {
             Issue.record("expected claim to start, got \(claim)")
             return
@@ -202,7 +159,6 @@ final class LibraryAcquireTests {
                 imageId: row.id,
                 source: WritingThenFailingSource(bytes: Data("partial".utf8)),
                 request: req,
-                kind: .internet,
                 db: dbPool,
             )
         }
@@ -212,12 +168,10 @@ final class LibraryAcquireTests {
     @Test func `empty sourceUrl claims are keyed by sha256`() async throws {
         let first = try await LibraryAcquire.claim(
             request: request("", expectedChecksum: .sha256("aaa")),
-            kind: .internet,
             db: dbPool,
         )
         let second = try await LibraryAcquire.claim(
             request: request("", expectedChecksum: .sha256("bbb")),
-            kind: .internet,
             db: dbPool,
         )
         guard case let .started(a) = first, case let .started(b) = second else {
@@ -229,7 +183,6 @@ final class LibraryAcquireTests {
         #expect(b.sourceUrl == "sha256:bbb")
         let again = try await LibraryAcquire.claim(
             request: request("", expectedChecksum: .sha256("aaa")),
-            kind: .internet,
             db: dbPool,
         )
         guard case let .inFlight(same) = again else {
