@@ -34,12 +34,14 @@ struct SystemAboutController: RouteCollection {
 
     @Sendable
     func getAbout(req: Vapor.Request) async throws -> AppInfoResponse {
-        AppInfoResponse(
+        let displayName = try await req.db.read { try DeviceNameSettings.resolved(from: $0) }
+        return AppInfoResponse(
             version: Config.version,
             platform: PlatformHost.platformName,
             hostArch: PlatformCapabilities.hostArch,
             accelerator: PlatformCapabilities.accelerator,
             processUptimeSeconds: Int(Config.processUptimeSeconds.rounded(.down)),
+            displayName: displayName,
             licenses: [
                 LicenseEntry(
                     name: "QEMU",

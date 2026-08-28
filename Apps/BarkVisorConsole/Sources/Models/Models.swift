@@ -182,7 +182,7 @@ struct HomeDeviceHealthSnapshot: Decodable, Identifiable, Hashable {
         HomeDeviceHealthSnapshot(
             hostId: "self",
             role: "self",
-            displayName: "This Device",
+            displayName: "Device",
             fingerprint: nil,
             agentHost: nil,
             agentPort: DeviceURL.defaultPort,
@@ -708,6 +708,7 @@ struct SystemAbout: Decodable {
     var hostArch: String
     var accelerator: String
     var processUptimeSeconds: Int
+    var displayName: String?
 }
 
 struct CapabilityDetail: Decodable, Equatable {
@@ -750,11 +751,11 @@ struct SystemCapabilities: Decodable, Equatable {
 enum GPUPassthroughCopy {
     static let guestOllamaPath = "http://127.0.0.1:11434/v1"
     static let attachReady =
-        "This Device has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is \(guestOllamaPath). The same card cannot be host and guest."
+        "This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is \(guestOllamaPath). The same card cannot be host and guest."
     static let iommuNotReady =
-        "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
+        "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready."
     static let singleDisplayWarning =
-        "This Device lists one GPU. Passing it through can blank the host display."
+        "This machine lists one GPU. Passing it through can blank the host display."
 
     static func groupMatesLabel(pciAddress: String, groupAddresses: [String]?) -> String {
         let mates = (groupAddresses ?? []).filter { !$0.isEmpty && $0 != pciAddress }

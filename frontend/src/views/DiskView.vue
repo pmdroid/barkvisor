@@ -26,7 +26,6 @@ import { diskAttachments, isDiskInUse } from '../utils/diskAttachment'
 import {
   canCallDeviceAPI,
   deviceBlockDevicesPath,
-  isSelfDevice,
 } from '../utils/homeDeviceApi'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { scopeRows } from '../utils/deviceScope'
@@ -123,7 +122,7 @@ const unreachableCards = computed(() => {
     .filter((device) => !covered.has(device.hostId) && !isReachabilityOk(device.reachability))
     .map((device) => ({
       hostId: device.hostId,
-      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+      label: deviceDisplayLabel(device),
     }))
 })
 
@@ -135,7 +134,7 @@ const formDevice = computed(() => {
 const formDeviceOptions = computed(() =>
   scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
-    label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    label: deviceDisplayLabel(device),
     disabled: !canCallDeviceAPI(device),
   })),
 )
@@ -434,8 +433,7 @@ async function resizeDisk() {
   >
     <div class="use-top">
       <span class="ops-dot" :class="card.reachable ? 'ok' : 'off'"></span>
-      <span class="use-name">{{ card.role === 'self' ? (card.label || `This ${DEVICE_LABEL}`) : card.label }}</span>
-      <span v-if="card.role === 'self'" class="tag">This {{ DEVICE_LABEL }}</span>
+      <span class="use-name">{{ card.label }}</span>
       <span class="use-val"><b>{{ formatBytes(card.summary.volumeTotalBytes - card.summary.volumeAvailableBytes) }}</b> used of {{ formatBytes(card.summary.volumeTotalBytes) }}</span>
     </div>
     <div class="ops-track big"><div class="ops-fill cpu" :style="{ width: barPct(card.summary.volumeTotalBytes - card.summary.volumeAvailableBytes, card.summary.volumeTotalBytes) + '%' }"></div></div>
@@ -476,7 +474,7 @@ async function resizeDisk() {
     <tbody>
     <tr v-for="row in homeRows" :key="rowKey(row)">
       <td><span class="d-name">{{ row.disk.name }}</span></td>
-      <td>{{ row.role === 'self' ? (row.label || `This ${DEVICE_LABEL}`) : row.label }}</td>
+      <td>{{ row.label }}</td>
       <td><span class="path" :title="row.disk.path">{{ row.disk.path }}</span></td>
       <td><span class="fmt">{{ row.disk.format }}</span></td>
       <td class="num">{{ formatBytes(row.disk.sizeBytes) }}</td>

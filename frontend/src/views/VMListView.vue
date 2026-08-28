@@ -342,8 +342,7 @@ async function doStop() {
             <div class="vm">{{ row.vm.name }}</div>
           </td>
           <td class="dev-cell">
-            {{ row.role === 'self' ? (row.label || `This ${DEVICE_LABEL}`) : row.label }}
-            <span v-if="row.role === 'self'" class="tag">This {{ DEVICE_LABEL }}</span>
+            {{ row.label }}
             <span v-else-if="!row.reachable" class="tag-amber">Unreachable</span>
           </td>
           <td>{{ osLabel(row) }}</td>

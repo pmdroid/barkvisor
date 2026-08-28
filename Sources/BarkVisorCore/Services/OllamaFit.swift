@@ -16,7 +16,7 @@ public enum OllamaFit {
         guard let total = memoryTotalMB, let used = memoryUsedMB, total > 0 else {
             return OllamaFitResult(
                 ok: false,
-                reason: "This Device did not report memory, so Ollama cannot load the model yet.",
+                reason: "this Device did not report memory, so Ollama cannot load the model yet.",
             )
         }
         let freeBytes = Int64(max(0, total - used)) * 1_024 * 1_024

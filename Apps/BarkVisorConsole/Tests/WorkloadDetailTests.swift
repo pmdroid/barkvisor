@@ -166,7 +166,7 @@ struct WorkloadDetailTests {
         #expect(studio.isSelf)
         #expect(!living.isSelf)
         #expect(HomeDeviceHealthSnapshot.placeholderSelf.isSelf)
-        #expect(HomeDeviceHealthSnapshot.placeholderSelf.title == "This Device")
+        #expect(HomeDeviceHealthSnapshot.placeholderSelf.title == "Device")
     }
 
     @Test func `home list start and ACPI stop hide when unreachable or in flight`() {

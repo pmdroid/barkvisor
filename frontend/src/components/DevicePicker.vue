@@ -44,8 +44,6 @@ function pick(option: DevicePickOption) {
         <div class="device-picker-top">
           <span class="device-picker-name">{{ option.label }}</span>
           <span v-if="option.recommended" class="device-chip recommended">Recommended</span>
-          <span v-if="option.role === 'self'" class="device-chip self">This {{ DEVICE_LABEL }}</span>
-          <span v-else class="device-chip">{{ DEVICE_LABEL }}</span>
         </div>
         <div class="device-picker-meta">
           <span v-if="option.platformLine">{{ option.platformLine }}</span>

@@ -89,15 +89,19 @@ export const linuxBridgeFallbackReadiness: HostBridgeReadiness = {
   ready: false,
 }
 
-export function linuxBridgeStatusSummary(ready: HostBridgeReadiness): string {
+export function linuxBridgeStatusSummary(
+  ready: HostBridgeReadiness,
+  deviceName?: string,
+): string {
+  const name = deviceName?.trim() || 'This machine'
   if (ready.ready) {
     const names = ready.bridges.map((b) => b.name).join(', ')
-    return `This Device is ready for Bridged networks (${names || ready.suggestedBridge}).`
+    return `${name} is ready for Bridged networks (${names || ready.suggestedBridge}).`
   }
   if (ready.onlyUplink) {
-    return 'This Device has a single uplink. Do not enslave it into a bridge (you can lose SSH). Prefer NAT, or add another NIC first.'
+    return `${name} has a single uplink. Do not enslave it into a bridge (you can lose SSH). Prefer NAT, or add another NIC first.`
   }
-  return 'This Device is not ready for Bridged networks yet. Run the steps below, then Re-check.'
+  return `${name} is not ready for Bridged networks yet. Run the steps below, then Re-check.`
 }
 
 /** Copyable macOS socket_vmnet steps. Prefer remediations from HostBridgeFacts. */
@@ -123,15 +127,17 @@ export function macosSocketVmnetSetupGroups(
 
 export function macosSocketVmnetStatusSummary(
   ready?: HostBridgeReadiness | null,
+  deviceName?: string,
 ): string {
+  const name = deviceName?.trim() || 'This machine'
   if (!ready) {
-    return 'Could not read socket_vmnet status on this Device. Run the steps below, then Re-check.'
+    return `Could not read socket_vmnet status on ${name}. Run the steps below, then Re-check.`
   }
   if (ready.ready) {
     const names = ready.bridges.map((b) => b.name).join(', ')
-    return `This Device is ready for Bridged networks (${names || 'socket_vmnet'}).`
+    return `${name} is ready for Bridged networks (${names || 'socket_vmnet'}).`
   }
-  return 'This Device is not ready for Bridged networks yet. Install socket_vmnet with Homebrew, then Re-check.'
+  return `${name} is not ready for Bridged networks yet. Install socket_vmnet with Homebrew, then Re-check.`
 }
 
 export function hostBridgeSetupPending(args: {

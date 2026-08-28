@@ -180,9 +180,25 @@ describe('PAS-82 Home terminology', () => {
     const text = readFileSync(join(srcRoot, 'views/SetupView.vue'), 'utf8')
     expect(text).toContain('HOME_LABEL')
     expect(text).toContain('DEVICE_LABEL')
-    expect(text).toContain('This {{ DEVICE_LABEL }} is operational')
+    expect(text).toContain('deviceName.trim() || DEVICE_LABEL')
+    expect(text).toContain('setup-device-name')
+    expect(text).not.toContain('This {{ DEVICE_LABEL }} is operational')
     expect(text).toContain('barkvisor join --code')
     expect(text).not.toMatch(forbiddenTemplateRe)
+  })
+
+  test('SPA templates do not use This Device as a name', () => {
+    const offenders: string[] = []
+    for (const file of walkVue(srcRoot)) {
+      const text = readFileSync(file, 'utf8')
+      const templates = [...text.matchAll(/<template[\s\S]*?<\/template>/g)].map((m) => m[0])
+      for (const block of templates) {
+        if (block.includes('This Device') || block.includes('This ${DEVICE_LABEL}') || block.includes('This {{ DEVICE_LABEL }}')) {
+          offenders.push(file.replace(`${srcRoot}/`, ''))
+        }
+      }
+    }
+    expect(offenders).toEqual([])
   })
 
   test('orphaned onboarding overlay and unrouted About view are gone', () => {

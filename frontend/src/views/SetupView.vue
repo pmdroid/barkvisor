@@ -16,6 +16,7 @@ import {
   type RepoSyncStatus,
   type SetupStatus,
 } from '../api/setup'
+import { getSetupDeviceName, saveSetupDeviceName } from '../api/deviceName'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilitiesStore } from '../stores/capabilities'
 import { clearSetupCache } from '../router'
@@ -37,6 +38,8 @@ const panel = computed(() => {
 })
 const error = ref('')
 const loading = ref(false)
+const deviceName = ref('')
+const deviceHostname = ref('')
 
 const passkeysAvailable = isPasskeyAvailable()
 const passkeyBlocked = passkeyBlock()
@@ -80,11 +83,17 @@ const railState = computed(() => {
 
 onMounted(async () => {
   await caps.fetchCapabilities()
+  try {
+    const named = await getSetupDeviceName()
+    deviceName.value = named.displayName
+    deviceHostname.value = named.hostname
+  } catch {
+    deviceName.value = ''
+  }
   let status: SetupStatus = { complete: false }
   try {
     status = await getSetupStatus()
   } catch {
-    // Server may not be ready yet
   }
   if (status.complete) {
     router.replace('/login')
@@ -93,15 +102,36 @@ onMounted(async () => {
   }
 })
 
+async function saveWelcomeName() {
+  const name = deviceName.value.trim() || deviceHostname.value.trim()
+  if (!name) {
+    error.value = 'Enter a Device name'
+    return false
+  }
+  loading.value = true
+  try {
+    const saved = await saveSetupDeviceName(name)
+    deviceName.value = saved.displayName
+    deviceHostname.value = saved.hostname
+    return true
+  } catch (e: any) {
+    error.value = apiErrorMessage(e, 'Failed to save Device name')
+    return false
+  } finally {
+    loading.value = false
+  }
+}
+
 async function nextStep() {
   error.value = ''
-  // Leaving admin: record NAT-only skip for setup progress.
-  // Bridge setup lives on the Networks page, not in first-run.
+  if (step.value === 1) {
+    const ok = await saveWelcomeName()
+    if (!ok) return
+  }
   if (step.value === 2) {
     try {
       await skipBridge()
     } catch {
-      // Already skipped or endpoint unavailable — continue wizard.
     }
   }
   step.value++
@@ -213,7 +243,7 @@ async function finishSetup() {
           </div>
           <div class="rail-foot">
             <div>
-              <span class="k">device&nbsp;&nbsp;</span><span class="v">unassigned</span>
+              <span class="k">device&nbsp;&nbsp;</span><span class="v">{{ deviceName.trim() || 'unassigned' }}</span>
             </div>
             <div>
               <span class="k">state&nbsp;&nbsp;&nbsp;&nbsp;</span
@@ -233,9 +263,24 @@ async function finishSetup() {
               {{ HOME_LABEL }} on this {{ DEVICE_LABEL }}. To join an existing
               {{ HOME_LABEL }}, run <code>barkvisor join --code</code> on the CLI.
             </p>
+            <div class="field">
+              <label for="setup-device-name">Device name</label>
+              <input
+                id="setup-device-name"
+                v-model="deviceName"
+                type="text"
+                maxlength="64"
+                autocomplete="off"
+                spellcheck="false"
+                :placeholder="deviceHostname || 'Studio Mac'"
+              />
+            </div>
+            <FormError v-if="error" :message="error" />
             <div class="actions">
               <div class="spacer"></div>
-              <AppButton variant="primary" @click="nextStep">Continue</AppButton>
+              <AppButton variant="primary" :loading="loading" loading-text="Saving..." @click="nextStep">
+                Continue
+              </AppButton>
             </div>
           </div>
 
@@ -333,7 +378,7 @@ async function finishSetup() {
           <div v-if="panel === 'ready'" class="pane">
             <div class="eyebrow">Step 05 — Ready</div>
             <h1>All Set!</h1>
-            <p class="sub">Commissioning complete. This {{ DEVICE_LABEL }} is operational.</p>
+            <p class="sub">Commissioning complete. {{ deviceName.trim() || DEVICE_LABEL }} is operational.</p>
             <div class="result">
               <div class="badge">&#10003;</div>
               <div>
@@ -346,7 +391,7 @@ async function finishSetup() {
                 home&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">created</span>
               </div>
               <div>
-                device&nbsp;&nbsp;&nbsp;<span class="v">this machine (primary)</span>
+                device&nbsp;&nbsp;&nbsp;<span class="v">{{ deviceName.trim() || 'this machine' }}</span>
               </div>
               <div>
                 catalog&nbsp;&nbsp;<span class="v">{{ catalogSummary }}</span>
@@ -373,7 +418,7 @@ async function finishSetup() {
       <div class="ticker">
         <span class="cell live">DAEMON UP</span>
         <span class="cell">HOME <span class="v">—</span></span>
-        <span class="cell">DEVICE <span class="v">unassigned</span></span>
+        <span class="cell">DEVICE <span class="v">{{ deviceName.trim() || 'unassigned' }}</span></span>
         <span class="cell grow"></span>
         <span class="cell">QEMU <span class="v">10.0.2</span></span>
         <span class="cell">BARKVISOR <span class="v">v0.4.1</span></span>
