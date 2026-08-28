@@ -6,7 +6,7 @@ struct DashboardView: View {
     var body: some View {
         List {
             if let stats = model.stats {
-                Section("This Device") {
+                Section(model.devices.first(where: \.isSelf)?.title ?? "Device") {
                     LabeledContent("CPU", value: String(format: "%.0f%%", stats.hostCpuPercent))
                     LabeledContent("Memory", value: memoryLabel(used: stats.hostMemoryUsedMB, total: stats.hostMemoryTotalMB))
                     LabeledContent("Workloads running", value: "\(stats.runningVMs) / \(stats.totalVMs)")

@@ -5,10 +5,10 @@ public enum GPUPassthroughService {
     public static let guestOllamaPath = "http://127.0.0.1:11434/v1"
 
     public static let iommuNotReadyMessage =
-        "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready."
+        "GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready."
 
     public static let pciPassthroughNotReadyMessage =
-        "PCI passthrough needs IOMMU, vfio-pci, and KVM. This Device is not ready."
+        "PCI passthrough needs IOMMU, vfio-pci, and KVM. This machine is not ready."
 
     public static let hostGuestExclusiveMessage =
         "This GPU is bound to a host driver. Attaching it takes the card from the host. The same card cannot be host and guest."

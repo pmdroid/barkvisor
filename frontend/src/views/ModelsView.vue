@@ -100,7 +100,7 @@ const pickerRows = computed(() => {
     const selfId = devices.selfDevice?.hostId || ''
     return [{
       hostId: selfId,
-      name: `This ${DEVICE_LABEL}`,
+      name: devices.selfDevice ? deviceDisplayLabel(devices.selfDevice) : DEVICE_LABEL,
       isSelf: true,
       deviceReachable: true,
       platform: '',
@@ -123,7 +123,7 @@ const selectedRow = computed(() =>
   pickerRows.value.find((row) => row.hostId === selectedHostId.value) ?? pickerRows.value[0] ?? null,
 )
 
-const selectedName = computed(() => selectedRow.value?.name || `This ${DEVICE_LABEL}`)
+const selectedName = computed(() => selectedRow.value?.name || DEVICE_LABEL)
 
 function modelCountFor(hostId: string): number {
   return store.models.filter((model) => model.locations.some((loc) => loc.hostId === hostId)).length
@@ -459,7 +459,7 @@ function exportPs() {
         <span class="pick-top">
           <span class="ops-dot" :class="pickerDot(row)"></span>
           <span class="pick-name">{{ row.name }}</span>
-          <span v-if="row.isSelf" class="pick-tag">This {{ DEVICE_LABEL }}</span>
+
           <span class="pick-state" :class="pickerState(row).cls">{{ pickerState(row).label }}</span>
         </span>
         <span class="pick-meta">{{ row.platform || row.ollama?.installHint || '' }}</span>

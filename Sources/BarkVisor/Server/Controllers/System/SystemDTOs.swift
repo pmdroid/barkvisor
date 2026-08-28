@@ -35,6 +35,7 @@ struct AppInfoResponse: Content {
     let hostArch: String
     let accelerator: String
     let processUptimeSeconds: Int
+    let displayName: String
     let licenses: [LicenseEntry]
 }
 

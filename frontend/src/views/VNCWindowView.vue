@@ -9,6 +9,7 @@ import type { VM } from '../api/types'
 import { apiErrorMessage, isNotFoundError } from '../api/errors'
 import { canConnectDeviceConsole } from '../utils/consoleHome'
 import { isSelfDevice } from '../utils/homeDeviceApi'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,7 +45,7 @@ async function refresh() {
       }
       if (!isSelfDevice(target)) {
         if (!canConnectDeviceConsole(target)) {
-          error.value = 'This Device did not answer. Connect is hidden until it is reachable.'
+          error.value = `${deviceDisplayLabel(target)} did not answer. Connect is hidden until it is reachable.`
           vm.value = null
           return
         }

@@ -250,10 +250,11 @@ struct HomeOllamaController: RouteCollection {
     }
 
     func listSettings(db: DatabasePool) async throws -> OllamaSettingsSnapshot {
+        let displayName = try await db.read { try DeviceNameSettings.resolved(from: $0) }
         let listed = HomeDeviceDirectory.list(
             dataDir: dataDir,
             hostId: hostId,
-            displayName: ProcessInfo.processInfo.hostName,
+            displayName: displayName,
             devices: devices,
         )
         return try await db.write { db in
@@ -380,10 +381,11 @@ struct HomeOllamaController: RouteCollection {
     }
 
     func refresh(db: DatabasePool, user: AuthenticatedUser? = nil) async throws -> OllamaHomeCatalog {
+        let displayName = try await db.read { try DeviceNameSettings.resolved(from: $0) }
         let listed = HomeDeviceDirectory.list(
             dataDir: dataDir,
             hostId: hostId,
-            displayName: ProcessInfo.processInfo.hostName,
+            displayName: displayName,
             devices: devices,
         )
         var snapshots: [OllamaDeviceSnapshot] = []

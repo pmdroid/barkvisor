@@ -2,15 +2,14 @@ import type { HostGPUDevice, OllamaCatalogModel, OllamaDeviceStatus } from '../a
 import { shouldFetchDeviceStatsHistory } from './deviceStatsHistory'
 import { gpuGroupMatesLabel, gpuHostOccupancyLabel } from './gpuPassthrough'
 import type { DeviceApiTarget } from './homeDeviceApi'
-import { DEVICE_LABEL } from './terminology'
-
 export { mapStatsHistorySamples, shouldFetchDeviceStatsHistory } from './deviceStatsHistory'
 
 /** Occupancy list copy when `/system/gpu-devices` is empty. Never a blank chart. */
-export const OLLAMA_GPU_EMPTY_COPY = `This ${DEVICE_LABEL} has no GPU.`
+export const OLLAMA_GPU_EMPTY_COPY = 'This machine has no GPU.'
 
-export function ollamaStatsUnreachableCopy(): string {
-  return `This ${DEVICE_LABEL.toLowerCase()} did not answer. GPU is unknown.`
+export function ollamaStatsUnreachableCopy(deviceName?: string): string {
+  const name = deviceName?.trim() || 'This machine'
+  return `${name} did not answer. GPU is unknown.`
 }
 
 type RunningLocation = { hostId: string; running: boolean; reachable?: boolean }

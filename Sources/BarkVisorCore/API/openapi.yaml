@@ -1171,6 +1171,40 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/device-name:
+    get:
+      tags: [evolving]
+      operationId: getDeviceName
+      x-barkvisor-stability: evolving
+      summary: Display name for this Device
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceName"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: updateDeviceName
+      x-barkvisor-stability: evolving
+      summary: Rename this Device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceNameRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceName"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/setup/library:
     get:
       tags: [evolving]
@@ -1204,6 +1238,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LibrarySettings"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/setup/device-name:
+    get:
+      tags: [evolving]
+      operationId: getSetupDeviceName
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Display name during first-run setup
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceName"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: updateSetupDeviceName
+      security: []
+      x-barkvisor-stability: evolving
+      summary: Set the Device name during first-run setup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceNameRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceName"
         default:
           $ref: "#/components/responses/Error"
 
@@ -3701,6 +3771,26 @@ components:
           type: string
         processUptimeSeconds:
           type: integer
+        displayName:
+          type: string
+
+    DeviceName:
+      type: object
+      additionalProperties: false
+      required: [displayName, hostname]
+      properties:
+        displayName:
+          type: string
+        hostname:
+          type: string
+
+    DeviceNameRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
 
     LibrarySettings:
       type: object

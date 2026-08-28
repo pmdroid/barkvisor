@@ -616,6 +616,7 @@ export interface SystemAbout {
   hostArch: string
   accelerator: string
   processUptimeSeconds: number
+  displayName?: string
 }
 
 export interface TemplateInput {

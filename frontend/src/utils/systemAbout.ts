@@ -11,11 +11,15 @@ export function parseSystemAbout(data: unknown): SystemAbout | null {
   if (typeof row.processUptimeSeconds !== 'number' || !Number.isFinite(row.processUptimeSeconds)) {
     return null
   }
-  return {
+  const about: SystemAbout = {
     version: row.version,
     platform: row.platform,
     hostArch: row.hostArch,
     accelerator: row.accelerator,
     processUptimeSeconds: Math.trunc(row.processUptimeSeconds),
   }
+  if (typeof row.displayName === 'string' && row.displayName.trim()) {
+    about.displayName = row.displayName.trim()
+  }
+  return about
 }

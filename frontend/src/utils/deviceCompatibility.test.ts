@@ -4,6 +4,7 @@ import { defaultCapabilities } from './capabilitiesParse'
 import {
   createVMIncompatibilityReasons,
   DEVICE_LIBRARY_MISSING_REASON,
+  deviceDisplayLabel,
   guestTypesSupportWindows,
   templateIncompatibilityReasons,
   toPickOption,
@@ -64,6 +65,12 @@ const template = (partial: Partial<VMTemplate> = {}): VMTemplate => ({
 })
 
 describe('deviceCompatibility (PAS-34)', () => {
+  test('display label prefers a name over hostId', () => {
+    expect(deviceDisplayLabel({ hostId: 'abc', displayName: 'Studio Mac' })).toBe('Studio Mac')
+    expect(deviceDisplayLabel({ hostId: 'abc', displayName: '  ' })).toBe('abc')
+    expect(deviceDisplayLabel({ hostId: 'abc', displayName: null })).toBe('abc')
+  })
+
   test('unreachable members are disabled; self stays selectable', () => {
     const self = device({ hostId: 'desk', role: 'self', reachability: 'unreachable' })
     const peer = device({ hostId: 'studio', role: 'member', reachability: 'unreachable' })

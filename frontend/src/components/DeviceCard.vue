@@ -83,7 +83,6 @@ function onClick() {
     <span class="ops-dev-top">
       <span class="ops-dot" :class="[reachable ? 'ok' : 'bad', { pulse: !reachable }]"></span>
       <span class="ops-dev-name">{{ title }}</span>
-      <span v-if="device.role === 'self'" class="ops-dev-tag">This {{ DEVICE_LABEL }}</span>
       <span v-if="!reachable" class="ops-dev-tag-bad">{{ reachLabel }}</span>
       <span v-else-if="failedCount > 0" class="ops-dev-pill-bad">{{ failedCount }} failed</span>
       <span class="ops-dev-count">{{ countLabel }}</span>

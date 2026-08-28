@@ -58,7 +58,7 @@ describe('ollama live Device stats', () => {
     expect(shouldFetchOllamaDeviceStats(desk, null)).toBe(true)
     expect(shouldFetchOllamaDeviceStats(null, { hostId: 'desk', role: 'self', reachability: 'ok' })).toBe(false)
     expect(ollamaStatsUnreachableCopy()).toContain('unknown')
-    expect(ollamaStatsUnreachableCopy().toLowerCase()).toContain('device')
+    expect(ollamaStatsUnreachableCopy()).toContain('This machine')
     expect(ollamaStatsUnreachableCopy().toLowerCase()).not.toContain('node')
   })
 

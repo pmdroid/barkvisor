@@ -15,6 +15,7 @@ import {
 } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
+import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
   AuditEntry,
@@ -716,7 +717,7 @@ async function patchWorkload(body: Parameters<typeof store.update>[1]) {
   if (isMemberDetail.value) {
     const device = memberDevice.value
     if (!device || !canFetchDeviceWorkloads(device)) {
-      throw new Error('This Device did not answer')
+      throw new Error(`${deviceDisplayLabel(device)} did not answer`)
     }
     await homeWorkloads.update(device, vmId.value, body)
     return
