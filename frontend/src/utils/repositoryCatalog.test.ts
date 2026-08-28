@@ -52,6 +52,89 @@ describe('repositoryCatalog helpers', () => {
     expect(matchRepoByUrl(rows, 'https://missing.example/catalog.json')).toBeUndefined()
   })
 
+  test('GitHub built-in URLs alias Home-origin member catalogs', () => {
+    const githubImages =
+      'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/images.json'
+    const githubTemplates =
+      'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templates.json'
+    const memberImages = 'barkvisor://home/catalog/images'
+    const memberTemplates = 'barkvisor://home/catalog/templates'
+    const rows = [
+      repo({ id: 'img', url: memberImages, repoType: 'images' }),
+      repo({ id: 'tpl', url: memberTemplates, repoType: 'templates' }),
+    ]
+    expect(matchRepoByUrl(rows, githubImages)?.id).toBe('img')
+    expect(matchRepoByUrl(rows, githubTemplates)?.id).toBe('tpl')
+    expect(matchRepoByUrl(rows, githubImages)?.id).not.toBe('tpl')
+    expect(catalogUrlKey(githubImages)).toBe(catalogUrlKey(memberImages))
+    expect(catalogUrlKey(githubTemplates)).toBe(catalogUrlKey(memberTemplates))
+    expect(catalogUrlKey(githubImages)).not.toBe(catalogUrlKey(githubTemplates))
+  })
+
+  test('member Home-origin catalogs keep real sync status for built-in GitHub rows', () => {
+    const githubImages =
+      'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/images.json'
+    const githubTemplates =
+      'https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templates.json'
+    const homeImages = repo({
+      id: 'home-images',
+      url: githubImages,
+      repoType: 'images',
+      lastSyncedAt: '2026-08-28T10:00:00Z',
+    })
+    const homeTemplates = repo({
+      id: 'home-templates',
+      url: githubTemplates,
+      repoType: 'templates',
+      lastSyncedAt: '2026-08-28T10:00:00Z',
+    })
+    const member = {
+      device: {
+        hostId: '3E91D9E1-79F7-42F5-AFB7-BBBFC518656A',
+        role: 'member',
+        displayName: 'agentbox',
+      },
+      reachable: true,
+      repos: [
+        repo({
+          id: 'agentbox-images',
+          url: 'barkvisor://home/catalog/images',
+          repoType: 'images',
+          syncStatus: 'idle',
+          lastSyncedAt: '2026-08-27T18:00:00Z',
+        }),
+        repo({
+          id: 'agentbox-templates',
+          url: 'barkvisor://home/catalog/templates',
+          repoType: 'templates',
+          syncStatus: 'error',
+          lastError: null,
+        }),
+      ],
+    }
+    const attached = attachDeviceSyncs(
+      [homeImages, homeTemplates],
+      { hostId: 'desk', role: 'self', displayName: 'Desk' },
+      [member],
+    )
+    const imagesMember = attached[0]?.deviceSyncs.find(
+      (d) => d.hostId === member.device.hostId,
+    )
+    const templatesMember = attached[1]?.deviceSyncs.find(
+      (d) => d.hostId === member.device.hostId,
+    )
+    expect(imagesMember?.repoId).toBe('agentbox-images')
+    expect(imagesMember?.syncStatus).toBe('idle')
+    expect(imagesMember?.lastSyncedAt).toBe('2026-08-27T18:00:00Z')
+    expect(imagesMember?.lastError).toBeNull()
+    expect(templatesMember?.repoId).toBe('agentbox-templates')
+    expect(templatesMember?.syncStatus).toBe('error')
+    expect(templatesMember?.lastError).toBeNull()
+    expect(attached.flatMap((row) => row.deviceSyncs.map((d) => d.lastError))).not.toContain(
+      'Catalog missing on this Device',
+    )
+  })
+
   test('built-in member lastError stays visible without Create VM', () => {
     const home = repo({
       id: 'home-1',
