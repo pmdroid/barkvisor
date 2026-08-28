@@ -336,7 +336,7 @@ enum OllamaInstall {
 }
 
 enum OllamaDeviceStats {
-    static let gpuEmptyCopy = "This Device has no GPU."
+    static let gpuEmptyCopy = "This machine has no GPU."
 
     static var unreachableCopy: String {
         "This \(Copy.device.lowercased()) did not answer. GPU is unknown."

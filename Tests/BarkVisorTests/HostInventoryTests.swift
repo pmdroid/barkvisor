@@ -70,6 +70,12 @@ struct HostInventoryTests {
         #expect(inv.displayName == inv.platform.hostname)
     }
 
+    @Test func `snapshot uses an explicit display name`() {
+        let inv = HostInventoryService.snapshot(hostId: Self.testHostId, displayName: "Studio Mac")
+        #expect(inv.displayName == "Studio Mac")
+        #expect(inv.platform.hostname == ProcessInfo.processInfo.hostName)
+    }
+
     @Test func `snapshot includes guest types and agent`() {
         let inv = snapshot(version: "1.2.3-test")
         #expect(inv.agent.role == "colocal")

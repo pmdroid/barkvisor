@@ -52,16 +52,17 @@ struct HomeDevicesController: RouteCollection {
     }
 
     @Sendable
-    func list(req: Vapor.Request) throws -> HomeDeviceList {
+    func list(req: Vapor.Request) async throws -> HomeDeviceList {
         _ = try req.requireUser
-        return listedDevices()
+        return try await listedDevices(db: req.db)
     }
 
     @Sendable
     func health(req: Vapor.Request) async throws -> HomeDeviceHealthReport {
         _ = try req.requireUser
+        let listed = try await listedDevices(db: req.db)
         return await healthReport(
-            listed: listedDevices(),
+            listed: listed,
             local: resolvedLocalFacts(db: req.db),
             bearer: req.headers.bearerAuthorization?.token,
         )
@@ -71,9 +72,10 @@ struct HomeDevicesController: RouteCollection {
     func scorePlacement(req: Vapor.Request) async throws -> HomePlacementScoreResponse {
         _ = try req.requireUser
         let body = try req.content.decode(HomePlacementScoreRequest.self)
+        let listed = try await listedDevices(db: req.db)
         return await scorePlacement(
             request: body,
-            listed: listedDevices(),
+            listed: listed,
             local: resolvedLocalFacts(db: req.db),
             bearer: req.headers.bearerAuthorization?.token,
         )
@@ -114,11 +116,16 @@ struct HomeDevicesController: RouteCollection {
         return HomeDeviceHealthAggregator.report(listed: listed, local: local, members: probed)
     }
 
-    private func listedDevices() -> HomeDeviceList {
+    private func listedDevices(db: DatabasePool) async throws -> HomeDeviceList {
+        let displayName = try await db.read { try DeviceNameSettings.resolved(from: $0) }
+        return listedDevices(displayName: displayName)
+    }
+
+    private func listedDevices(displayName: String) -> HomeDeviceList {
         HomeDeviceDirectory.list(
             dataDir: dataDir,
             hostId: hostId,
-            displayName: ProcessInfo.processInfo.hostName,
+            displayName: displayName,
             devices: devices,
         )
     }
@@ -170,7 +177,7 @@ struct HomeDevicesController: RouteCollection {
             } catch {
                 throw Abort(
                     .serviceUnavailable,
-                    reason: "This Device cannot reach members yet; local runtime continues",
+                    reason: "Cannot reach members yet; local runtime continues",
                 )
             }
         }
@@ -238,8 +245,14 @@ struct HomeDevicesController: RouteCollection {
                 summary = nil
             }
         }
+        let displayName: String
+        do {
+            displayName = try await db.read { try DeviceNameSettings.resolved(from: $0) }
+        } catch {
+            displayName = ProcessInfo.processInfo.hostName
+        }
         return HomeDeviceLiveFacts(
-            displayName: ProcessInfo.processInfo.hostName,
+            displayName: displayName,
             collectedAt: slice.collectedAt,
             platform: HomeDevicePlatformSummary(
                 os: PlatformHost.platformName,
@@ -310,7 +323,7 @@ struct HomeDevicesController: RouteCollection {
             do {
                 client = try HomeDevicesMTLS.client(dataDir: dataDir, hostId: hostId)
             } catch {
-                return .unreachable("This Device cannot reach members yet; local runtime continues")
+                return .unreachable("Cannot reach members yet; local runtime continues")
             }
         }
         let inventoryURL: URL

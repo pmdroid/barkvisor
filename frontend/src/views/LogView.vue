@@ -15,7 +15,6 @@ import { useToastStore } from '../stores/toast'
 import { useVMStore } from '../stores/vms'
 import { requestDiagnosticsBundle, saveBlob } from '../utils/diagnosticsBundle'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
-import { isSelfDevice } from '../utils/homeDeviceApi'
 import { formatLogClock, parseLogDate } from '../utils/format'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import { isDeviceScopeAll, scopeRows } from '../utils/deviceScope'
@@ -66,7 +65,7 @@ function fetchParams() {
 const deviceOptions = computed(() =>
   scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
-    label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    label: deviceDisplayLabel(device),
   })),
 )
 
@@ -318,7 +317,7 @@ onUnmounted(() => {
         <span class="lt">{{ formatLogClock(row.entry.ts) }}</span>
         <span class="lv" :class="levelClass(row.entry.level)">{{ row.entry.level.toUpperCase() }}</span>
         <span class="lsrc">{{ row.entry.cat }}</span>
-        <span v-if="useHomeUnion" class="ldev">{{ row.role === 'self' ? `This ${DEVICE_LABEL}` : row.label }}</span>
+        <span v-if="useHomeUnion" class="ldev">{{ row.label }}</span>
         <span class="lmsg">{{ row.entry.msg }}<template v-if="row.entry.err"> — {{ row.entry.err }}</template></span>
         <span v-if="row.entry.vm" class="lvm">[{{ vmName(row) }}]</span>
       </div>

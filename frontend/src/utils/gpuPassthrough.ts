@@ -56,10 +56,10 @@ export function groupGpusByVendor<T extends { vendorId: string }>(
 export const GUEST_OLLAMA_PATH = 'http://127.0.0.1:11434/v1'
 
 export const GPU_IOMMU_NOT_READY =
-  'GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This Device is not ready.'
+  'GPU passthrough needs IOMMU, vfio-pci, KVM, and a GPU in an IOMMU group. This machine is not ready.'
 
 export const GPU_SINGLE_DISPLAY_WARNING =
-  'This Device lists one GPU. Passing it through can blank the host display.'
+  'This machine lists one GPU. Passing it through can blank the host display.'
 
 /** Other PCI addresses in the same IOMMU group (not the GPU itself). */
 export function gpuGroupMateAddresses(
@@ -89,7 +89,7 @@ export function gpuPassthroughExplanation(
 ): string {
   const row = gpuPassthroughDetail(caps)
   if (row?.supported) {
-    return `This Device has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is ${GUEST_OLLAMA_PATH}. The same card cannot be host and guest.`
+    return `This machine has IOMMU, vfio-pci, and KVM. Attach a GPU like USB. Guest Ollama is ${GUEST_OLLAMA_PATH}. The same card cannot be host and guest.`
   }
   if (row?.remediation) return row.remediation
   const platform = caps?.platform ?? ''

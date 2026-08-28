@@ -73,7 +73,7 @@ public enum HomePlacementScorer {
             guard let features = device.features else {
                 reasons.append(.hard(
                     featureMissingCode,
-                    "This Device did not report kvm, bridged, or USB features.",
+                    "\(device.label) did not report kvm, bridged, or USB features.",
                 ))
                 return finish(device: device, reasons: reasons)
             }
@@ -81,7 +81,7 @@ public enum HomePlacementScorer {
                 let name = HomeDeviceFeatureSummary.canonicalFeature(feature)
                 reasons.append(.hard(
                     featureMissingCode,
-                    "This Device is missing required feature \(name).",
+                    "\(device.label) is missing required feature \(name).",
                 ))
             }
         }
@@ -92,7 +92,7 @@ public enum HomePlacementScorer {
             guard let free else {
                 reasons.append(.hard(
                     memoryCode,
-                    "Needs at least \(memoryFloor) MB free memory; this Device did not report memory.",
+                    "Needs at least \(memoryFloor) MB free memory; \(device.label) did not report memory.",
                 ))
                 return finish(device: device, reasons: reasons)
             }

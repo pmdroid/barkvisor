@@ -63,6 +63,7 @@ struct SetupConsoleLocalTests {
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/passkeys/register/begin"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/passkeys/register/finish"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/library"))
+        #expect(SetupController.mutatingSetupPaths.contains("/api/setup/device-name"))
         #expect(SetupController.mutatingSetupPaths.contains("/api/setup/complete"))
         #expect(!SetupController.mutatingSetupPaths.contains("/api/setup/status"))
         #expect(!SetupController.mutatingSetupPaths.contains("/api/setup/browse"))

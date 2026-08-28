@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { DEVICE_LABEL } from '../../utils/terminology'
-
 defineProps<{
   label: string
   self?: boolean
@@ -10,7 +8,7 @@ defineProps<{
 
 <template>
   <span class="device-chip" :class="{ self, down: reachable === false }">
-    {{ self ? `This ${DEVICE_LABEL}` : label }}
+    {{ label }}
     <span v-if="reachable === false" class="device-chip-down">unreachable</span>
   </span>
 </template>

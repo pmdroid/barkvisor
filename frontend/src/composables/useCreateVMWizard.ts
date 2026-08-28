@@ -734,7 +734,7 @@ export function useCreateVMWizard(
   function selectedDeviceIncompatibility(): string | null {
     const option = deviceOptions.value.find((o) => o.hostId === selectedHostId.value)
     if (option && !option.compatible) {
-      return option.reasons[0] || 'This Device is not recommended for this VM.'
+      return option.reasons[0] || `${option.label} is not recommended for this VM.`
     }
     return null
   }

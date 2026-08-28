@@ -13,6 +13,7 @@ struct AgentInventoryController: RouteCollection {
 
     @Sendable
     func getInventory(req: Vapor.Request) async throws -> HostInventory {
-        HostInventoryService.snapshot()
+        let displayName = try await req.db.read { try DeviceNameSettings.resolved(from: $0) }
+        return HostInventoryService.snapshot(displayName: displayName)
     }
 }

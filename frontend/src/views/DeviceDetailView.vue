@@ -98,7 +98,7 @@ const osFact = computed(() => {
   if (deviceAbout.value) return `${deviceAbout.value.platform} · ${deviceAbout.value.hostArch}`
   return platformLabel.value
 })
-const roleFact = computed(() => (device.value?.role === 'self' ? `This ${DEVICE_LABEL}` : 'Member'))
+const roleFact = computed(() => (device.value?.role === 'self' ? '' : 'Member'))
 const cpuFact = computed(() => {
   const count = device.value?.resources?.cpuCount
   if (count == null) return ''
@@ -384,9 +384,8 @@ async function doStop() {
         <span class="ops-dot" :class="device.reachability === 'ok' ? 'ok' : 'bad'"></span>
         {{ reachLabel }}
       </span>
-      <span v-if="device" class="ops-sub">
-        <template v-if="platformLabel">{{ platformLabel }} · </template>
-        {{ roleFact }}
+      <span v-if="device && (platformLabel || roleFact)" class="ops-sub">
+        {{ [platformLabel, roleFact].filter(Boolean).join(' · ') }}
       </span>
       <div v-if="device" class="ops-actions">
         <AppButton
@@ -497,7 +496,7 @@ async function doStop() {
             <span class="k">OS</span>
             <span class="v">{{ osFact }}</span>
           </div>
-          <div class="fact">
+          <div v-if="roleFact" class="fact">
             <span class="k">Role</span>
             <span class="v">{{ roleFact }}</span>
           </div>

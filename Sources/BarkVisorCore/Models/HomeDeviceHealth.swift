@@ -190,6 +190,11 @@ public struct HomeDeviceHealthSnapshot: Codable, Sendable, Equatable {
         self.workloadCount = workloadCount
         self.healthCounts = healthCounts
     }
+
+    public var label: String {
+        let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? hostId : name
+    }
 }
 
 public struct HomeDeviceHealthTotals: Codable, Sendable, Equatable {

@@ -39,11 +39,11 @@ import {
 import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
+import { getDeviceName, saveDeviceName } from '../api/deviceName'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
   deviceDiskSettingsPath,
-  isSelfDevice,
 } from '../utils/homeDeviceApi'
 import { reachabilityLabel } from '../utils/homeDeviceHealth'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
@@ -77,11 +77,19 @@ const passkeysAvailable = isPasskeyAvailable()
 const passkeyBlocked = passkeyBlock()
 const tab = ref<SettingsTab>(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
 
-const homeDeviceName = computed(() =>
-  devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : `This ${DEVICE_LABEL}`,
-)
-const homeToolbarSub = computed(() =>
-  devicesStore.selfDevice ? `${homeDeviceName.value} · This ${DEVICE_LABEL}` : '',
+const deviceNameDraft = ref('')
+const deviceNameHostname = ref('')
+const deviceNameLoading = ref(false)
+const deviceNameSaving = ref(false)
+const homeDeviceName = computed(() => {
+  const draft = deviceNameDraft.value.trim()
+  if (draft) return draft
+  return devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : DEVICE_LABEL
+})
+const homeToolbarSub = computed(() => homeDeviceName.value)
+const homeSaving = computed(() => remoteAccessSaving.value || deviceNameSaving.value)
+const homeSaveDisabled = computed(
+  () => deviceNameLoading.value || remoteAccessLoading.value || !deviceNameDraft.value.trim(),
 )
 const advertisedHostChips = computed(() => remoteAccess.value?.advertisedHosts ?? [])
 const roleTag = computed(() => (auth.isAdmin ? 'admin' : 'member'))
@@ -170,6 +178,7 @@ async function loadPairingCode() {
 function openHomeTab() {
   tab.value = 'home'
   fetchRemoteAccess()
+  fetchDeviceName()
   devicesStore.fetchHealth()
 }
 
@@ -340,7 +349,7 @@ async function rejoinThisDevice() {
   try {
     await joinHome(payload)
     rejoinPayload.value = ''
-    toast.success(`Trust restored. This ${DEVICE_LABEL} still runs if peers are unreachable.`)
+    toast.success(`Trust restored. ${homeDeviceName.value} still runs if peers are unreachable.`)
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e, `Could not re-pair this ${DEVICE_LABEL}`))
   } finally {
@@ -415,6 +424,44 @@ async function fetchRemoteAccess() {
   }
 }
 
+async function fetchDeviceName() {
+  deviceNameLoading.value = true
+  try {
+    const data = await getDeviceName()
+    deviceNameDraft.value = data.displayName
+    deviceNameHostname.value = data.hostname
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not load Device name'))
+  } finally {
+    deviceNameLoading.value = false
+  }
+}
+
+async function saveHomeSettings() {
+  const name = deviceNameDraft.value.trim()
+  if (!name) {
+    toast.error('Device name must not be empty')
+    return
+  }
+  deviceNameSaving.value = true
+  try {
+    const named = await saveDeviceName(name)
+    deviceNameDraft.value = named.displayName
+    deviceNameHostname.value = named.hostname
+    await devicesStore.fetchHealth()
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not save Device name'))
+    deviceNameSaving.value = false
+    return
+  }
+  deviceNameSaving.value = false
+  if (remoteAccess.value) {
+    await saveRemoteAccess()
+    return
+  }
+  toast.success('Device name saved')
+}
+
 async function saveRemoteAccess() {
   if (!remoteAccess.value) return
   const advertiseUrl = advertisedHostForOffer(advertiseSelected.value, advertiseCustom.value) ?? ''
@@ -425,7 +472,7 @@ async function saveRemoteAccess() {
       advertiseUrl,
     })
     applyRemoteAccess(data)
-    toast.success('Remote access saved')
+    toast.success('Saved')
   } catch (e: unknown) {
     toast.error(apiErrorMessage(e, 'Could not save remote access'))
   } finally {
@@ -501,9 +548,7 @@ const diskSettingsDevice = computed(() => {
 
 const diskDeviceOptions = computed(() =>
   devicesStore.devices.map((device) => {
-    const name = isSelfDevice(device)
-      ? `This ${DEVICE_LABEL}`
-      : deviceDisplayLabel(device)
+    const name = deviceDisplayLabel(device)
     const reach = canCallDeviceAPI(device)
       ? ''
       : ` — ${reachabilityLabel(device.reachability).toLowerCase()}`
@@ -844,9 +889,9 @@ onUnmounted(() => {
       <AppButton
         v-if="tab === 'home'"
         variant="primary"
-        :loading="remoteAccessSaving"
-        :disabled="!remoteAccess || remoteAccessLoading"
-        @click="saveRemoteAccess()"
+        :loading="homeSaving"
+        :disabled="homeSaveDisabled"
+        @click="saveHomeSettings()"
       >Save changes</AppButton>
     </div>
   </div>
@@ -868,7 +913,19 @@ onUnmounted(() => {
     <div class="facts">
       <div class="fact">
         <span class="k">Device name<span>How this Device appears in the Home</span></span>
-        <span class="v">{{ homeDeviceName }}</span>
+        <span class="v">
+          <input
+            v-model="deviceNameDraft"
+            class="pairing-input"
+            type="text"
+            maxlength="64"
+            autocomplete="off"
+            spellcheck="false"
+            :disabled="deviceNameLoading || homeSaving"
+            :placeholder="deviceNameHostname || 'Device name'"
+            @keydown.enter.prevent="saveHomeSettings"
+          />
+        </span>
       </div>
       <div class="fact">
         <span class="k">Advertised hosts<span>Addresses other Devices use to reach this one</span></span>

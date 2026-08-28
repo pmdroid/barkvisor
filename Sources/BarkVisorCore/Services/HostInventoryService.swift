@@ -16,9 +16,12 @@ public enum HostInventoryService {
         dataDir: URL = Config.dataDir,
         version: String = Config.version,
         hostId: String? = nil,
+        displayName: String? = nil,
     ) -> HostInventory {
         let resolvedHostId = hostId ?? HostIdentity.loadOrCreate(dataDir: dataDir).uuidString
         let hostname = ProcessInfo.processInfo.hostName
+        let trimmedName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let resolvedName = trimmedName.isEmpty ? hostname : trimmedName
         let arch = PlatformCapabilities.hostArch
         let accelerator = PlatformCapabilities.accelerator
 
@@ -67,7 +70,7 @@ public enum HostInventoryService {
         return HostInventory(
             schemaVersion: currentSchemaVersion,
             hostId: resolvedHostId,
-            displayName: hostname,
+            displayName: resolvedName,
             agent: AgentInfo(version: version),
             platform: PlatformInfo(
                 os: osName,

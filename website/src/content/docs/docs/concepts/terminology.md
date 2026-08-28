@@ -27,7 +27,7 @@ USB **device** still means a peripheral. A BarkVisor **Device** is the computer.
 ## SPA rules
 
 - No “node”, “cluster”, “datacenter”, or “quorum” in user-visible strings (`frontend/src/**/*.vue` templates).
-- Say **Device** (or “this device”) when you mean the machine running the daemon.
+- Say **Device** (or “this device”) when you mean the machine running the daemon. Do not use **This Device** as a stand-in name; show the Device’s display name.
 - Say **Home** when you mean the person’s set of Devices. One Device is already a Home.
 - Networks live at **Networks** (`/networks`), not Settings → Network.
 - First-run setup is `SetupView` (`/setup`). Do not add a second overlay wizard.

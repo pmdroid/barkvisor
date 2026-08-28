@@ -100,7 +100,11 @@ struct APIClient {
         return HomeDeviceHealthSnapshot(
             hostId: "self",
             role: "self",
-            displayName: about.map { "This Device · \($0.platform)" } ?? "This Device",
+            displayName: {
+                let name = about?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !name.isEmpty { return name }
+                return about.map(\.platform) ?? "Device"
+            }(),
             fingerprint: nil,
             agentHost: baseURL.host,
             agentPort: baseURL.port ?? DeviceURL.defaultPort,

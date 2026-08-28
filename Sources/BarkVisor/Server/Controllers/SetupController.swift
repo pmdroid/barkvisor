@@ -22,6 +22,8 @@ struct SetupController: RouteCollection {
         setup.get("repositories", "status", use: repositorySyncStatus)
         setup.get("library", use: getLibrary)
         setup.put("library", use: updateLibrary)
+        setup.get("device-name", use: getDeviceName)
+        setup.put("device-name", use: updateDeviceName)
         setup.get("browse", use: browseDirectory)
         setup.post("complete", use: complete)
     }
@@ -31,6 +33,7 @@ struct SetupController: RouteCollection {
         "/api/setup/passkeys/register/begin",
         "/api/setup/passkeys/register/finish",
         "/api/setup/library",
+        "/api/setup/device-name",
         "/api/setup/complete",
     ]
 
@@ -435,6 +438,23 @@ struct SetupController: RouteCollection {
         setupMiddleware.markComplete()
 
         return CompleteResponse(success: true, token: token)
+    }
+
+    @Sendable
+    func getDeviceName(req: Request) async throws -> DeviceNameResponse {
+        if try await setupFinished(req: req) {
+            throw Abort(.notFound)
+        }
+        return try await DeviceNameController.load(req: req)
+    }
+
+    @Sendable
+    func updateDeviceName(req: Request) async throws -> DeviceNameResponse {
+        if try await setupFinished(req: req) {
+            throw Abort(.notFound)
+        }
+        let body = try req.content.decode(DeviceNameRequest.self)
+        return try await DeviceNameController.apply(req: req, displayName: body.displayName)
     }
 
     @Sendable

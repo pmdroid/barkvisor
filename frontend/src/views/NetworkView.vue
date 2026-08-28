@@ -132,7 +132,7 @@ const formBridgedExplanation = computed(() => {
 const formDeviceOptions = computed(() =>
   scopeRows(devicesStore.devices, deviceScope.selectedHostId).map((device) => ({
     value: device.hostId,
-    label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+    label: deviceDisplayLabel(device),
     disabled: !canCallDeviceAPI(device) || Boolean(editingId.value),
   })),
 )
@@ -224,7 +224,7 @@ const bridgeDeviceOptions = computed(() =>
     .filter((device) => canCallDeviceAPI(device))
     .map((device) => ({
       value: device.hostId,
-      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+      label: deviceDisplayLabel(device),
     })),
 )
 
@@ -248,7 +248,7 @@ const pendingBridges = computed<PendingBridge[]>(() => {
     items.push({
       key: `pending:${device.hostId}`,
       hostId: device.hostId,
-      label: isSelfDevice(device) ? `This ${DEVICE_LABEL}` : deviceDisplayLabel(device),
+      label: deviceDisplayLabel(device),
       role: isSelfDevice(device) ? 'self' : 'member',
     })
   }
@@ -398,7 +398,6 @@ function modeCopy(row: HomeNetworkRow): string {
 }
 
 function deviceLine(row: HomeNetworkRow): string {
-  if (row.role === 'self') return `This ${DEVICE_LABEL}`
   return row.label
 }
 
@@ -778,7 +777,7 @@ async function doDeleteNetwork() {
     <div class="detail-head">
       <div>
         <h2>{{ selectedRow.network.name }}</h2>
-        <div class="detail-meta">{{ deviceLine(selectedRow) }}<template v-if="selectedRow.role === 'self'"> · This {{ DEVICE_LABEL }}</template> · <span class="ops-ok-text">{{ selectedRow.reachable ? 'Active' : 'Unreachable' }}</span></div>
+        <div class="detail-meta">{{ deviceLine(selectedRow) }} · <span class="ops-ok-text">{{ selectedRow.reachable ? 'Active' : 'Unreachable' }}</span></div>
       </div>
       <div class="chips">
         <span class="chip">Mode <b>{{ modeLabel(selectedRow.network.mode) }}</b></span>
