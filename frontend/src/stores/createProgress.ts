@@ -78,6 +78,22 @@ function pendingVM(job: CreateJob): VM {
   }
 }
 
+function overlayFromVM(vm: VM): Pick<HomeWorkloadRow, 'createPhase' | 'createDetail' | 'createPercent'> | null {
+  if (!vm.pendingImageId) return null
+  if (vm.state === 'error') {
+    return {
+      createPhase: 'error',
+      createDetail: vm.description || 'Image download failed',
+      createPercent: null,
+    }
+  }
+  return {
+    createPhase: 'downloading',
+    createDetail: 'Downloading image',
+    createPercent: vm.downloadPercent ?? null,
+  }
+}
+
 function jobRow(job: CreateJob): HomeWorkloadRow {
   return {
     vm: pendingVM(job),
@@ -159,38 +175,6 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     return device ? deviceVmPath(device, vmId) : `/vms/${vmId}`
   }
 
-  async function waitImage(id: string, imageId: string, device: DeviceApiTarget | undefined) {
-    for (let i = 0; i < 600; i++) {
-      if (!living(id)) return
-      const { data } = await api.get(imagePath(device, imageId))
-      if (!living(id)) return
-      const image = data as Image
-      if (!image || typeof image !== 'object' || Array.isArray(image)) {
-        await sleep(intervalMs.value)
-        continue
-      }
-      if (image.status === 'ready') return
-      if (image.status === 'error') {
-        throw new Error(image.error || 'Image download failed')
-      }
-      if (image.status === 'decompressing') {
-        patchJob(id, {
-          phase: 'decompressing',
-          percent: null,
-          detail: 'Decompressing image',
-        })
-      } else {
-        patchJob(id, {
-          phase: 'downloading',
-          percent: imageRowDownloadPercent(image),
-          detail: 'Downloading image',
-        })
-      }
-      await sleep(intervalMs.value)
-    }
-    throw new Error('Timed out waiting for the image download')
-  }
-
   async function waitTask(id: string, taskID: string, device: DeviceApiTarget | undefined) {
     for (let i = 0; i < 600; i++) {
       if (!living(id)) return
@@ -206,7 +190,12 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     throw new Error('Timed out waiting for provisioning')
   }
 
-  async function waitVM(id: string, vmId: string, device: DeviceApiTarget | undefined) {
+  async function waitVM(
+    id: string,
+    vmId: string,
+    device: DeviceApiTarget | undefined,
+    fallbackImageId?: string,
+  ) {
     for (let i = 0; i < 600; i++) {
       if (!living(id)) return
       const { data } = await api.get(vmPath(device, vmId))
@@ -219,6 +208,45 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
       applyVM(device, vm)
       if (vm.state === 'error') {
         throw new Error(vm.description || 'Image download failed')
+      }
+      const pendingId = vm.pendingImageId || fallbackImageId
+      if (pendingId && (vm.state === 'provisioning' || vm.state === 'starting')) {
+        let percent = vm.downloadPercent ?? null
+        let phase: CreateListPhase = 'downloading'
+        let detail = 'Downloading image'
+        if (percent == null) {
+          const { data: imageData } = await api.get(imagePath(device, pendingId))
+          if (!living(id)) return
+          const image = imageData as Image
+          if (image?.status === 'ready') {
+            patchJob(id, {
+              phase: 'provisioning',
+              detail: 'Provisioning disk',
+              percent: null,
+              vmId: vm.id,
+            })
+            await sleep(intervalMs.value)
+            continue
+          }
+          if (image?.status === 'error') {
+            throw new Error(image.error || 'Image download failed')
+          }
+          if (image?.status === 'decompressing') {
+            phase = 'decompressing'
+            percent = null
+            detail = 'Decompressing image'
+          } else {
+            percent = imageRowDownloadPercent(image)
+          }
+        }
+        patchJob(id, {
+          phase,
+          detail,
+          percent,
+          vmId: vm.id,
+        })
+        await sleep(intervalMs.value)
+        continue
       }
       if (vm.state !== 'provisioning' && vm.state !== 'starting') {
         return
@@ -248,20 +276,13 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
       patchJob(id, {
         phase: 'downloading',
         detail: 'Downloading image',
-        percent: null,
+        percent: result.vm?.downloadPercent ?? null,
       })
-      await waitImage(id, result.imageId, device)
-      if (!living(id)) return
       const vmId = result.vm?.id
       if (!vmId) {
         throw new Error('Create did not return a VM')
       }
-      patchJob(id, {
-        phase: 'provisioning',
-        detail: 'Provisioning disk',
-        percent: null,
-      })
-      await waitVM(id, vmId, device)
+      await waitVM(id, vmId, device, result.imageId)
       if (!living(id)) return
       dropJob(id)
       return
@@ -345,14 +366,18 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
 
   function mergeInto(rows: HomeWorkloadRow[]): HomeWorkloadRow[] {
     const overlaid = rows.map((row) => {
+      const fromVM = overlayFromVM(row.vm)
       const job = jobs.value.find((item) => item.vmId === row.vm.id)
-      if (!job) return row
-      return {
-        ...row,
-        createPhase: job.phase,
-        createDetail: job.detail,
-        createPercent: job.percent,
+      if (job) {
+        return {
+          ...row,
+          createPhase: job.phase,
+          createDetail: job.detail,
+          createPercent: job.percent ?? fromVM?.createPercent ?? null,
+        }
       }
+      if (fromVM) return { ...row, ...fromVM }
+      return row
     })
     const known = new Set(overlaid.map((row) => row.vm.id))
     const pending = jobs.value

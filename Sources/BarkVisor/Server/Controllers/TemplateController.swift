@@ -228,8 +228,16 @@ struct TemplateController: RouteCollection {
             AuditService.log(
                 action: "vm.deploy", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
+            let image = try await req.db.read { db in try VMImage.fetchOne(db, key: imageId) }
+            let percent = await ImageTransferPercent.current(
+                status: image?.status,
+                lastProgress: imageDownloader.lastProgress(imageID: imageId),
+            )
             let body = DeployTemplateResponse(
-                status: "downloading", imageId: imageId, taskID: nil, vm: VMResponse(from: vm),
+                status: "downloading",
+                imageId: imageId,
+                taskID: nil,
+                vm: VMResponse(from: vm, pendingImageId: imageId, downloadPercent: percent),
             )
             return try Response.json(body, status: .accepted)
 

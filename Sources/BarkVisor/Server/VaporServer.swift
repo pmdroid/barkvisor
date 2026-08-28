@@ -86,6 +86,8 @@ public final class VaporServer: @unchecked Sendable {
             pool: database.pool,
             backgroundTasks: services.backgroundTasks,
             vmManager: services.manager,
+            imageDownloader: services.downloader,
+            stateStreamService: services.stateStreamService,
         )
 
         Log.server.info("BarkVisor server starting on port \(Config.port)")
@@ -418,7 +420,11 @@ public final class VaporServer: @unchecked Sendable {
     }
 
     private func schedulePeriodicTasks(
-        pool: DatabasePool, backgroundTasks: BackgroundTaskManager, vmManager: VMManager,
+        pool: DatabasePool,
+        backgroundTasks: BackgroundTaskManager,
+        vmManager: VMManager,
+        imageDownloader: ImageDownloader,
+        stateStreamService: VMStateStreamService,
     ) async {
         await backgroundTasks.schedulePeriodicTask(
             id: "audit-prune", interval: 24 * 60 * 60 * 1_000_000_000,
@@ -463,6 +469,14 @@ public final class VaporServer: @unchecked Sendable {
             id: "coding-agent-ttl", interval: 30 * 1_000_000_000,
         ) {
             await CodingAgentLifecycleService.tick(now: Date(), vmManager: vmManager, db: pool)
+        }
+        let pendingProgress = PendingVMProgressTicker()
+        await backgroundTasks.schedulePeriodicTask(
+            id: "pending-vm-progress", interval: 1_000_000_000,
+        ) {
+            await pendingProgress.tick(
+                db: pool, downloader: imageDownloader, stream: stateStreamService,
+            )
         }
         await backgroundTasks.schedulePeriodicTask(
             id: "api-key-expiry", interval: 60 * 60 * 1_000_000_000,

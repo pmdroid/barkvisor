@@ -294,6 +294,8 @@ struct Workload: Decodable, Identifiable, Hashable {
     var startOnBoot: Bool? = nil
     var gpuDevices: [GPUPassthroughDevice]?
     var usbDevices: [USBPassthroughDevice]? = nil
+    var pendingImageId: String? = nil
+    var downloadPercent: Int? = nil
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }

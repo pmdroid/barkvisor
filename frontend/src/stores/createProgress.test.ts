@@ -96,11 +96,73 @@ describe('createProgress', () => {
     expect(imageGets).toBeGreaterThan(0)
   })
 
+  test('VM downloadPercent drives percent without GET /images', async () => {
+    let vmGets = 0
+    api.get = mock((url: string) => {
+      if (String(url).includes('/images/')) {
+        throw new Error(`unexpected image poll ${url}`)
+      }
+      if (String(url).includes('/vms/vm-alma')) {
+        vmGets += 1
+        if (vmGets === 1) {
+          return Promise.resolve({
+            data: { ...provisionVm(), pendingImageId: 'img-1', downloadPercent: 41 },
+          })
+        }
+        return Promise.resolve({
+          data: {
+            ...provisionVm(),
+            state: 'stopped',
+            pendingImageId: null,
+            downloadPercent: null,
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    }) as typeof api.get
+    api.post = mock((url: string) => {
+      throw new Error(`unexpected POST ${url}`)
+    }) as typeof api.post
+
+    const store = useCreateProgressStore()
+    await store.followTemplate({
+      name: 'alma',
+      request: { templateId: 'tpl', vmName: 'alma', inputs: {}, cpuCount: 2, memoryMB: 2048 },
+      result: {
+        status: 'downloading',
+        imageId: 'img-1',
+        vm: { ...provisionVm(), pendingImageId: 'img-1', downloadPercent: 41 },
+      },
+    })
+    expect(store.jobs).toHaveLength(0)
+    expect(vmGets).toBeGreaterThan(0)
+    expect((api.post as ReturnType<typeof mock>).mock.calls.length).toBe(0)
+  })
+
+  test('mergeInto uses downloadPercent from the VM row', () => {
+    const store = useCreateProgressStore()
+    const vm = { ...provisionVm(), pendingImageId: 'img-1', downloadPercent: 12 }
+    const merged = store.mergeInto([{
+      vm,
+      hostId: 'desk',
+      label: 'Desk',
+      role: 'self',
+      reachable: true,
+    }])
+    expect(merged[0]?.createPhase).toBe('downloading')
+    expect(merged[0]?.createPercent).toBe(12)
+  })
+
   test('image error stays on the list as failed', async () => {
     api.get = mock((url: string) => {
       if (String(url).includes('/images/img-bad')) {
         return Promise.resolve({
           data: { id: 'img-bad', status: 'error', error: 'checksum mismatch' },
+        })
+      }
+      if (String(url).includes('/vms/')) {
+        return Promise.resolve({
+          data: { ...provisionVm(), id: 'vm-box', name: 'box', pendingImageId: 'img-bad' },
         })
       }
       return Promise.resolve({ data: {} })

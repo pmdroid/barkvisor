@@ -935,7 +935,13 @@ function connectStateSSE() {
     maxDelayMs: 30_000,
     onMessage: (e) => {
       try {
-        const event = JSON.parse(e.data) as { id: string; state: string; error?: string | null }
+        const event = JSON.parse(e.data) as {
+          id: string
+          state: string
+          error?: string | null
+          pendingImageId?: string | null
+          downloadPercent?: number | null
+        }
         const v = store.vms.find(v => v.id === event.id)
         if (v) applyVMStateEvent(v, event)
         fetchGuestInfo()

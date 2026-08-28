@@ -73,6 +73,20 @@ describe('applyVMStateEvent', () => {
     }
   }
 
+  test('copies pending image fields from the state event', () => {
+    const machine = vm({ state: 'provisioning' })
+    applyVMStateEvent(machine, {
+      state: 'provisioning',
+      pendingImageId: 'img-1',
+      downloadPercent: 18,
+    })
+    expect(machine.pendingImageId).toBe('img-1')
+    expect(machine.downloadPercent).toBe(18)
+    applyVMStateEvent(machine, { state: 'stopped', pendingImageId: null, downloadPercent: null })
+    expect(machine.pendingImageId).toBe(null)
+    expect(machine.downloadPercent).toBe(null)
+  })
+
   test('overwrites stale health so a kernel-panic SSE updates the pill', () => {
     const machine = vm({
       state: 'running',
