@@ -195,6 +195,9 @@ describe('deviceCompatibility (PAS-34)', () => {
     expect(templateIncompatibilityReasons(peer, template(), { hasTemplate: false })).toEqual([
       "Not in this Device's Library",
     ])
+    expect(
+      templateIncompatibilityReasons(peer, template(), { hasTemplate: false, fetchable: true }),
+    ).toEqual([])
     expect(createVMIncompatibilityReasons(peer, { hasImage: false })).toEqual([
       "Not in this Device's Library",
     ])

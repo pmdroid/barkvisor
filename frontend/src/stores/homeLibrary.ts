@@ -210,8 +210,12 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
   ): VMTemplate | null {
     if (!device) return localTemplate
     const fromLibrary = templateForDevice(slug, device.hostId)
-    if (fromLibrary) return fromLibrary
+    if (fromLibrary) {
+      return { ...localTemplate, id: fromLibrary.id, repositoryId: fromLibrary.repositoryId }
+    }
     if (templates.value.length === 0 && isSelfDevice(device)) return localTemplate
+    if (templates.value.length === 0) return null
+    if (localTemplate.slug === slug) return localTemplate
     return null
   }
 
@@ -258,6 +262,13 @@ export const useHomeLibraryStore = defineStore('homeLibrary', () => {
               copies: [copy],
             })
             continue
+          }
+          if (device.role === 'self') {
+            Object.assign(existing, {
+              ...tpl,
+              sourceHostIds: existing.sourceHostIds,
+              copies: existing.copies,
+            })
           }
           if (!existing.copies.some((c) => c.hostId === device.hostId)) {
             existing.sourceHostIds.push(device.hostId)
