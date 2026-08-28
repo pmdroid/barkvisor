@@ -62,7 +62,10 @@ public final class VaporServer: @unchecked Sendable {
         }
 
         try Seeder.seedDefaultNetwork(db: database.pool)
-        try Seeder.seedDefaultRepository(db: database.pool)
+        try Seeder.seedDefaultRepository(
+            db: database.pool,
+            isMember: PairingService.hasPairedReceipt(dataDir: Config.dataDir),
+        )
 
         let setup = SetupMiddleware(dbPool: database.pool)
         self.setupMiddleware = setup
@@ -126,6 +129,9 @@ public final class VaporServer: @unchecked Sendable {
         )
 
         Task {
+            if PairingService.hasPairedReceipt(dataDir: Config.dataDir) {
+                await HomeCatalogFanout.pullMissing()
+            }
             let repos = try? await database.pool.read { db in
                 try ImageRepository.filter(Column("isBuiltIn") == true).fetchAll(db)
             }
@@ -302,7 +308,22 @@ public final class VaporServer: @unchecked Sendable {
         let downloader = ImageDownloader(dbPool: { pool })
         imageDownloader = downloader
 
-        let syncService = RepositorySyncService(dbPool: pool)
+        let lastGood = LastGoodCatalogStore(directory: Config.dataDir)
+        let isMember = PairingService.hasPairedReceipt(dataDir: Config.dataDir)
+        let publish: (@Sendable (String, Data) async -> Void)? = if isMember {
+            nil
+        } else {
+            { repoType, data in
+                await HomeCatalogFanout.publish(repoType: repoType, data: data)
+            }
+        }
+        let syncService = RepositorySyncService(
+            dbPool: pool,
+            lastGood: lastGood,
+            fetcher: SSRFCatalogURLFetcher(),
+            memberCatalogFetchDisabled: isMember,
+            publish: publish,
+        )
         repositorySyncService = syncService
 
         let collector = MetricsCollector()

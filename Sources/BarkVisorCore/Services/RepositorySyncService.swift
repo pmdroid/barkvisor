@@ -120,12 +120,53 @@ public struct RepoCatalogImage: Codable, Sendable {
     }
 }
 
-/// Fetches repository JSON catalogs and upserts catalog rows into the database
+public protocol CatalogURLFetching: Sendable {
+    func fetch(url: URL) async throws -> Data
+}
+
+public struct SSRFCatalogURLFetcher: CatalogURLFetching {
+    public init() {}
+
+    public func fetch(url: URL) async throws -> Data {
+        if let ssrfError = SSRFGuard.fetchRejection(for: url) {
+            throw BarkVisorError.repositorySyncFailed(ssrfError)
+        }
+
+        let maxCatalogSize = 10 * 1_024 * 1_024
+        let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200 ... 299).contains(httpResponse.statusCode)
+        else {
+            throw BarkVisorError.repositorySyncFailed("HTTP error fetching \(url.absoluteString)")
+        }
+        guard data.count <= maxCatalogSize else {
+            throw BarkVisorError.repositorySyncFailed(
+                "Catalog exceeds \(maxCatalogSize / (1_024 * 1_024)) MB size limit",
+            )
+        }
+        return data
+    }
+}
+
 public actor RepositorySyncService {
     private let dbPool: DatabasePool
+    private let lastGood: LastGoodCatalogStore?
+    private let fetcher: any CatalogURLFetching
+    private let memberCatalogFetchDisabled: Bool
+    private let publish: (@Sendable (String, Data) async -> Void)?
 
-    public init(dbPool: DatabasePool) {
+    public init(
+        dbPool: DatabasePool,
+        lastGood: LastGoodCatalogStore? = nil,
+        fetcher: any CatalogURLFetching = SSRFCatalogURLFetcher(),
+        memberCatalogFetchDisabled: Bool = false,
+        publish: (@Sendable (String, Data) async -> Void)? = nil,
+    ) {
         self.dbPool = dbPool
+        self.lastGood = lastGood
+        self.fetcher = fetcher
+        self.memberCatalogFetchDisabled = memberCatalogFetchDisabled
+        self.publish = publish
     }
 
     public func sync(repositoryID: String) async throws {
@@ -135,8 +176,24 @@ public actor RepositorySyncService {
         guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
 
         do {
-            let decoded = try await fetchCatalog(repo: repo)
-            try await applyCatalog(decoded, repositoryID: repositoryID, repoName: repo.name)
+            if HomeCatalogOrigin.shouldFetchRemote(
+                url: repo.url, memberCatalogFetchDisabled: memberCatalogFetchDisabled,
+            ) {
+                let data = try await fetchRemoteCatalog(repo: repo)
+                try await ingestCatalog(
+                    data, repositoryID: repositoryID, repoName: repo.name, repoType: repo.repoType,
+                    persistLastGood: true, distribute: true,
+                )
+            } else {
+                guard let lastGood, let data = lastGood.load(repoType: repo.repoType), !data.isEmpty
+                else {
+                    throw BarkVisorError.repositorySyncFailed("No applied catalog")
+                }
+                try await ingestCatalog(
+                    data, repositoryID: repositoryID, repoName: repo.name, repoType: repo.repoType,
+                    persistLastGood: false, distribute: false,
+                )
+            }
         } catch {
             await rememberFailure(error, repositoryID: repositoryID)
             throw error
@@ -150,10 +207,31 @@ public actor RepositorySyncService {
         guard let repo else { throw BarkVisorError.repositoryNotFound(repositoryID) }
 
         do {
-            let decoded = try RepositoryCatalogDecoder.decode(data, repoName: repo.name)
-            try await applyCatalog(decoded, repositoryID: repositoryID, repoName: repo.name)
+            try await ingestCatalog(
+                data, repositoryID: repositoryID, repoName: repo.name, repoType: repo.repoType,
+                persistLastGood: true, distribute: false,
+            )
         } catch {
             await rememberFailure(error, repositoryID: repositoryID)
+            throw error
+        }
+    }
+
+    public func applyCatalogBytes(_ data: Data, repoType: String) async throws {
+        let repo = try await dbPool.read { db in
+            try ImageRepository
+                .filter(Column("isBuiltIn") == true)
+                .filter(Column("repoType") == repoType)
+                .fetchOne(db)
+        }
+        guard let repo else { throw BarkVisorError.repositoryNotFound(repoType) }
+        do {
+            try await ingestCatalog(
+                data, repositoryID: repo.id, repoName: repo.name, repoType: repo.repoType,
+                persistLastGood: true, distribute: false,
+            )
+        } catch {
+            await rememberFailure(error, repositoryID: repo.id)
             throw error
         }
     }
@@ -193,34 +271,29 @@ public actor RepositorySyncService {
         }
     }
 
-    private func fetchCatalog(repo: ImageRepository) async throws -> DecodedRepoCatalog {
+    private func ingestCatalog(
+        _ data: Data,
+        repositoryID: String,
+        repoName: String,
+        repoType: String,
+        persistLastGood: Bool,
+        distribute: Bool,
+    ) async throws {
+        let decoded = try RepositoryCatalogDecoder.decode(data, repoName: repoName)
+        try await applyCatalog(decoded, repositoryID: repositoryID, repoName: repoName)
+        if persistLastGood {
+            try lastGood?.save(repoType: repoType, data: data)
+        }
+        if distribute {
+            await publish?(repoType, data)
+        }
+    }
+
+    private func fetchRemoteCatalog(repo: ImageRepository) async throws -> Data {
         guard let url = URL(string: repo.url) else {
             throw BarkVisorError.repositorySyncFailed("Invalid URL: \(repo.url)")
         }
-
-        // SSRF protection: validate URL does not target private/internal hosts.
-        // This check runs at sync time (not just repo creation) to defend against
-        // DNS rebinding where a hostname's resolution changes after initial validation.
-        if let ssrfError = SSRFGuard.fetchRejection(for: url) {
-            throw BarkVisorError.repositorySyncFailed(ssrfError)
-        }
-
-        let maxCatalogSize = 10 * 1_024 * 1_024
-        // Do not use URLSession.shared: it follows redirects without
-        // re-running SSRFGuard.validate / pinEndpoint.
-        let (data, response) = try await SSRFGuard.defaultSession.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200 ... 299).contains(httpResponse.statusCode)
-        else {
-            throw BarkVisorError.repositorySyncFailed("HTTP error fetching \(repo.url)")
-        }
-        guard data.count <= maxCatalogSize else {
-            throw BarkVisorError.repositorySyncFailed(
-                "Catalog exceeds \(maxCatalogSize / (1_024 * 1_024)) MB size limit",
-            )
-        }
-
-        return try RepositoryCatalogDecoder.decode(data, repoName: repo.name)
+        return try await fetcher.fetch(url: url)
     }
 
     private nonisolated func syncImages(

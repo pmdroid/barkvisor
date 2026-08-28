@@ -56,6 +56,11 @@ extension PairingService {
         // downstream agent/mTLS. A later pin failure can retry; a pin
         // without a receipt cannot.
         try persistReceipt(receipt, dataDir: dataDir)
+        if let db {
+            try await db.write { database in
+                try HomeCatalogOrigin.flipGitHubBuiltIns(database)
+            }
+        }
 
         let pinStore = pins ?? PeerPinStore(dataDir: dataDir)
         do {
