@@ -77,6 +77,8 @@ import { usePlacement } from './usePlacement'
 import { useCreateVMPayload } from './useCreateVMPayload'
 import { nudgeBuiltInCatalogSync } from '../utils/catalogSyncOnOpen'
 import { useRepositoryStore } from '../stores/repositories'
+import { useVirtioDownload } from './useVirtioDownload'
+import { useCreateVMImagePin } from './useCreateVMImagePin'
 import {
   HOME_OLLAMA_GRANT_URL,
   isCodingAgentImage,
@@ -281,6 +283,12 @@ export function useCreateVMWizard(
   } = placement
 
   const { buildCreateVMPayload } = useCreateVMPayload()
+  const virtio = useVirtioDownload({
+    selectedHostId,
+    selectedDevice,
+    osType,
+  })
+  const imagePin = useCreateVMImagePin({ hostArch })
 
   const sizePresets = computed(() =>
     availableSizePresets(vmCpuCapValue.value, vmMemCapMB.value),
@@ -422,14 +430,15 @@ export function useCreateVMWizard(
     osType.value = 'windows'
     workloadClass.value = 'house'
     name.value = 'Windows 11'
-    const iso = homeLibrary.images.find((row) => row.imageType === 'iso' && row.status === 'ready')
-    selectedImageId.value = iso ? (iso.libraryKey || homeImageKey(iso)) : ''
+    selectedImageId.value = ''
     mode.value = 'iso'
     applyPreset(sizePresets.value.find((p) => p.id === 'medium') || sizePresets.value[0])
     uefi.value = true
     tpmOverride.value = true
     step.value = 2
-    void enterConfigure()
+    void enterConfigure().then(() => {
+      void virtio.startVirtioWinDownload()
+    })
   }
 
   function selectGalleryCustom() {
@@ -732,6 +741,7 @@ export function useCreateVMWizard(
 
   onUnmounted(() => {
     placement.cancelPlacementScore()
+    imagePin.abort()
     window.removeEventListener('focus', onWindowFocus)
     document.removeEventListener('visibilitychange', onVisibilityChange)
   })
@@ -751,6 +761,30 @@ export function useCreateVMWizard(
     if (programmatic) return
     await loadPickedDevice()
   })
+
+  const pinnedImageLabel = computed(() => selectedImage.value?.name ?? '')
+
+  function applyPinnedImage(img: Image) {
+    mode.value = img.imageType === 'cloud-image' ? 'cloud' : 'iso'
+    const fromLibrary = homeLibrary.images.find((row) => row.id === img.id)
+    selectedImageId.value = fromLibrary?.libraryKey || homeImageKey(img)
+    if (!deviceImages.value.some((row) => row.id === img.id)) {
+      deviceImages.value = [...deviceImages.value, img]
+    }
+  }
+
+  async function pinLocalFile(file: File) {
+    selectedImageId.value = ''
+    const type = galleryKind.value === 'windows' ? 'iso' : undefined
+    const img = await imagePin.pinFile(file, type).catch(() => null)
+    if (img) applyPinnedImage(img)
+  }
+
+  async function pinRemoteUrl(url: string) {
+    selectedImageId.value = ''
+    const img = await imagePin.pinUrl(url).catch(() => null)
+    if (img) applyPinnedImage(img)
+  }
 
   const filteredImages = computed(() => {
     const type = mode.value === 'iso' ? 'iso' : 'cloud-image'
@@ -803,6 +837,7 @@ export function useCreateVMWizard(
       case 'Gallery':
         return galleryKind.value != null
       case 'Configure':
+        if (imagePin.busy.value) return false
         if (!name.value.trim() || !selectedDevicePlaceable()) return false
         if (galleryKind.value === 'custom' || galleryKind.value === 'windows') {
           if (!selectedImageId.value) return false
@@ -1082,6 +1117,13 @@ export function useCreateVMWizard(
     selectGalleryWindows,
     selectGalleryCustom,
     selectGalleryCodingAgent,
+    pinLocalFile,
+    pinRemoteUrl,
+    imagePinBusy: imagePin.busy,
+    imagePinProgress: imagePin.progress,
+    imagePinError: imagePin.error,
+    pinnedImageLabel,
+    virtioWinDownloading: virtio.virtioWinDownloading,
     cpuCount,
     memoryMB,
     displayResolution,

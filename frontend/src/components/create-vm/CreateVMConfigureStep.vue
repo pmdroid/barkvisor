@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import AppSelect from '../ui/AppSelect.vue'
+import CreateVMCustomImage from './CreateVMCustomImage.vue'
 import type { DevicePickOption } from '../../utils/deviceCompatibility'
-import type { Image, TemplateInput } from '../../api/types'
+import type { TemplateInput } from '../../api/types'
 import type { SizePreset } from '../../utils/hostBuffer'
 import { hostnameFromVMName } from '../../utils/hostnameFromVMName'
 import { SSH_KEYS_SETTINGS_HREF } from '../../utils/settingsTabs'
@@ -19,11 +20,12 @@ const props = defineProps<{
   sharedLeftoverText: string
   atResourceCap: boolean
   capHintText: string
-  showIsoDrop: boolean
-  showCustomImage: boolean
-  mode: 'iso' | 'cloud'
-  selectedImageId: string
-  filteredImages: Image[]
+  showImagePin: boolean
+  imagePinVariant: 'iso' | 'custom'
+  pinBusy: boolean
+  pinProgress: number | null
+  pinError: string
+  pinnedLabel: string
   cpuCount: number
   memoryMB: number
   cpuCap: number
@@ -44,8 +46,6 @@ const emit = defineEmits<{
   'update:selectedHostId': [value: string]
   'update:selectedPresetId': [value: string]
   'update:dedicated': [value: boolean]
-  'update:mode': [value: 'iso' | 'cloud']
-  'update:selectedImageId': [value: string]
   'update:cpuCount': [value: number]
   'update:memoryMB': [value: number]
   'update:networkBridged': [value: boolean]
@@ -53,11 +53,11 @@ const emit = defineEmits<{
   'update:tpmEnabled': [value: boolean]
   'update:selectedSSHKeyId': [value: string]
   'set-template-input': [id: string, value: string]
-  isoSelected: [file: File]
+  pinFile: [file: File]
+  pinUrl: [url: string]
 }>()
 
 const advancedOpen = ref(false)
-const fileInput = ref<HTMLInputElement | null>(null)
 
 const hostnameSlug = computed(() => hostnameFromVMName(props.name))
 const memCount = computed(() => Math.max(1, Math.round(props.memoryMB / 1024)))
@@ -110,11 +110,6 @@ function deviceLine(option: DevicePickOption): string {
   return parts.join(' · ')
 }
 
-function onIsoPick(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) emit('isoSelected', file)
-}
 </script>
 
 <template>
@@ -189,19 +184,16 @@ function onIsoPick(event: Event) {
       <p v-if="option.reasons.length" class="mag-dev-reason">{{ option.reasons.join(' ') }}</p>
     </div>
 
-    <div v-if="showCustomImage" class="mag-image-pick">
-      <label class="mag-flabel">Image</label>
-      <div class="mag-mode">
-        <button type="button" :class="{ on: mode === 'iso' }" @click="emit('update:mode', 'iso')">ISO</button>
-        <button type="button" :class="{ on: mode === 'cloud' }" @click="emit('update:mode', 'cloud')">Cloud image</button>
-      </div>
-      <AppSelect
-        :model-value="selectedImageId"
-        placeholder="Select an image"
-        :options="filteredImages.map((img) => ({ value: img.libraryKey || img.id, label: img.name }))"
-        @update:model-value="emit('update:selectedImageId', $event as string)"
-      />
-    </div>
+    <CreateVMCustomImage
+      v-if="showImagePin"
+      :variant="imagePinVariant"
+      :busy="pinBusy"
+      :progress="pinProgress"
+      :error="pinError"
+      :pinned-label="pinnedLabel"
+      @pin-file="emit('pinFile', $event)"
+      @pin-url="emit('pinUrl', $event)"
+    />
 
     <label class="mag-flabel">Size</label>
     <div class="mag-sizes">
@@ -232,12 +224,6 @@ function onIsoPick(event: Event) {
       />
     </div>
     <p class="mag-leftover" v-html="dedicated ? leftoverText : sharedLeftoverText" />
-
-    <div v-if="showIsoDrop" class="mag-drop" @click="fileInput?.click()">
-      <input ref="fileInput" type="file" accept=".iso" style="display:none" @change="onIsoPick" />
-      <b>Drop your Windows installer here</b>
-      An ISO file you downloaded from Microsoft. We take it from there.
-    </div>
 
     <details class="mag-adv">
       <summary>Advanced</summary>
@@ -420,18 +406,6 @@ input, select, textarea {
 .mag-tgl.on { background: rgba(0, 144, 248, 0.35); border-color: rgba(0, 144, 248, 0.55); }
 .mag-tgl.on::after { left: 17px; background: var(--accent-text); }
 .mag-leftover { margin-top: 8px; font-size: 11.5px; color: var(--mag-dim); }
-.mag-drop {
-  margin-top: 14px;
-  border: 1.5px dashed rgba(0, 144, 248, 0.45);
-  border-radius: 2px;
-  background: var(--accent-muted);
-  padding: 20px;
-  text-align: center;
-  color: var(--mag-dim);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.mag-drop b { color: var(--mag-text); display: block; font-size: 13px; margin-bottom: 4px; }
 .mag-adv {
   margin-top: 16px;
   border: 1px solid var(--mag-line);
@@ -499,21 +473,4 @@ input, select, textarea {
 .mag-fwrow b { font-size: 12.5px; display: block; }
 .mag-fwrow span { font-size: 11px; color: var(--mag-dim); display: block; margin-top: 2px; }
 .mag-fwrow :deep(select) { width: 220px; margin-left: auto; }
-.mag-image-pick { margin-top: 4px; }
-.mag-mode { display: flex; gap: 8px; margin-bottom: 8px; }
-.mag-mode button {
-  font: inherit;
-  font-size: 12px;
-  padding: 6px 10px;
-  border: 1px solid var(--mag-line);
-  border-radius: 2px;
-  background: none;
-  color: var(--mag-dim);
-  cursor: pointer;
-}
-.mag-mode button.on {
-  color: var(--mag-text);
-  border-color: rgba(0, 144, 248, 0.55);
-  background: var(--accent-muted);
-}
 </style>

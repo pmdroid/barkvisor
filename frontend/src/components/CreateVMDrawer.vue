@@ -11,10 +11,10 @@ const emit = defineEmits(['close', 'created'])
 const wizard = useCreateVMWizard((e) => emit(e), { initialHostId: props.initialHostId })
 
 const stepLabel = computed(() => `Step ${wizard.step.value} of ${wizard.totalSteps.value}`)
-const showIsoDrop = computed(() => wizard.galleryKind.value === 'windows')
-const showCustomImage = computed(() =>
-  wizard.galleryKind.value === 'custom' || wizard.galleryKind.value === 'windows',
+const showImagePin = computed(() =>
+  wizard.galleryKind.value === 'windows' || wizard.galleryKind.value === 'custom',
 )
+const imagePinVariant = computed(() => wizard.galleryKind.value === 'windows' ? 'iso' : 'custom')
 </script>
 
 <template>
@@ -50,11 +50,12 @@ const showCustomImage = computed(() =>
           :shared-leftover-text="wizard.sharedLeftoverText.value"
           :at-resource-cap="wizard.atResourceCap.value"
           :cap-hint-text="wizard.capHintText.value"
-          :show-iso-drop="showIsoDrop"
-          :show-custom-image="showCustomImage"
-          :mode="wizard.mode.value"
-          :selected-image-id="wizard.selectedImageId.value"
-          :filtered-images="wizard.filteredImages.value"
+          :show-image-pin="showImagePin"
+          :image-pin-variant="imagePinVariant"
+          :pin-busy="wizard.imagePinBusy.value"
+          :pin-progress="wizard.imagePinProgress.value"
+          :pin-error="wizard.imagePinError.value"
+          :pinned-label="wizard.pinnedImageLabel.value"
           :cpu-count="wizard.cpuCount.value"
           :memory-m-b="wizard.memoryMB.value"
           :cpu-cap="wizard.vmCpuCapValue.value"
@@ -72,8 +73,6 @@ const showCustomImage = computed(() =>
           @update:selected-host-id="wizard.selectedHostId.value = $event"
           @update:selected-preset-id="wizard.applySizeFromPresetId($event)"
           @update:dedicated="wizard.dedicated.value = $event"
-          @update:mode="wizard.mode.value = $event"
-          @update:selected-image-id="wizard.selectedImageId.value = $event"
           @update:cpu-count="wizard.cpuCount.value = $event"
           @update:memory-m-b="wizard.memoryMB.value = $event"
           @update:network-bridged="wizard.networkBridged.value = $event"
@@ -81,6 +80,8 @@ const showCustomImage = computed(() =>
           @update:tpm-enabled="wizard.setTpmEnabled($event)"
           @update:selected-s-s-h-key-id="wizard.selectedSSHKeyId.value = $event"
           @set-template-input="wizard.setTemplateInput"
+          @pin-file="wizard.pinLocalFile"
+          @pin-url="wizard.pinRemoteUrl"
         />
 
         <CreateVMMagazineDiskStep

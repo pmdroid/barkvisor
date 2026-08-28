@@ -16,6 +16,22 @@ const originalGet = api.get
 const originalPost = api.post
 const originalFetch = globalThis.fetch
 
+function stubEventSource() {
+  if (typeof (globalThis as { EventSource?: unknown }).EventSource === 'function') return
+  ;(globalThis as { EventSource: unknown }).EventSource = class {
+    url: string
+    onopen: ((ev: Event) => void) | null = null
+    onmessage: ((ev: MessageEvent) => void) | null = null
+    onerror: ((ev: Event) => void) | null = null
+    constructor(url: string) {
+      this.url = url
+    }
+    close() {}
+    addEventListener() {}
+    removeEventListener() {}
+  }
+}
+
 function mockCapabilitiesFetch() {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input)
@@ -64,6 +80,7 @@ function readyImage(partial: Partial<Image> & Pick<Image, 'id' | 'name' | 'arch'
 describe('useCreateVMWizard (magazine)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    stubEventSource()
     mockCapabilitiesFetch()
     api.get = mock((url: string) => {
       if (url === '/system/capabilities' || url.endsWith('/system/capabilities')) {
@@ -80,6 +97,9 @@ describe('useCreateVMWizard (magazine)', () => {
       ) {
         return Promise.resolve({ data: [] })
       }
+      if (String(url).includes('/system/virtio-win/status')) {
+        return Promise.resolve({ data: { available: false } })
+      }
       return Promise.resolve({ data: [] })
     }) as typeof api.get
     api.post = mock((url: string) => {
@@ -88,6 +108,12 @@ describe('useCreateVMWizard (magazine)', () => {
       }
       if (url.includes('/repositories/') && url.endsWith('/sync')) {
         return Promise.resolve({ status: 202, data: { taskID: 'repo-sync' } })
+      }
+      if (String(url).includes('/system/virtio-win/download')) {
+        return Promise.resolve({ data: { imageId: 'virtio-bg' } })
+      }
+      if (String(url).includes('/ws-ticket')) {
+        return Promise.resolve({ data: { ticket: 'ws-ticket' } })
       }
       throw new Error(`unexpected POST ${url}`)
     }) as typeof api.post
@@ -104,6 +130,8 @@ describe('useCreateVMWizard (magazine)', () => {
   test('wizard order is Gallery → Configure → Disk', () => {
     const wizard = useCreateVMWizard(() => {})
     expect(wizard.stepLabels.value).toEqual([...WIZARD_STEP_LABELS])
+    expect(WIZARD_STEP_LABELS).toEqual(['Gallery', 'Configure', 'Disk'])
+    expect(WIZARD_STEP_LABELS).not.toContain('Drivers')
     expect(wizard.totalSteps.value).toBe(3)
     expect(wizard.currentStepLabel.value).toBe('Gallery')
   })
@@ -147,6 +175,22 @@ describe('useCreateVMWizard (magazine)', () => {
     await nextTick()
     expect(wizard.showHostnameHint.value).toBe(false)
     expect(wizard.galleryKind.value).toBe('windows')
+  })
+
+  test('Windows card pick starts virtio download without a Drivers step', async () => {
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryWindows()
+    await waitReady(wizard)
+    let virtioCall: unknown[] | undefined
+    for (let i = 0; i < 40; i++) {
+      virtioCall = (api.post as ReturnType<typeof mock>).mock.calls.find((call) =>
+        String(call[0]).includes('/system/virtio-win/download'),
+      )
+      if (virtioCall) break
+      await new Promise((resolve) => setTimeout(resolve, 15))
+    }
+    expect(virtioCall).toBeTruthy()
+    expect(wizard.stepLabels.value).not.toContain('Drivers')
   })
 
   test('host buffer reserves two cores and four GB', () => {
@@ -269,6 +313,7 @@ function patchSelfDevice() {
 describe('useCreateVMWizard magazine flows', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    stubEventSource()
     mockCapabilitiesFetch()
     healthDevices = [macSelf()]
     catalogTemplates = []
@@ -298,11 +343,17 @@ describe('useCreateVMWizard magazine flows', () => {
       if (url.includes('/ssh-keys')) {
         return Promise.resolve({ data: [demoKey()] })
       }
+      if (String(url).includes('/system/virtio-win/status')) {
+        return Promise.resolve({ data: { available: false } })
+      }
       return Promise.resolve({ data: [] })
     }) as typeof api.get
     api.post = mock((url: string) => {
       if (url === '/home/placement/score') {
         return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      if (url.includes('/repositories/') && url.endsWith('/sync')) {
+        return Promise.resolve({ status: 202, data: { taskID: 'repo-sync' } })
       }
       if (url === '/templates/deploy' || url.endsWith('/templates/deploy')) {
         return Promise.resolve({
@@ -326,6 +377,12 @@ describe('useCreateVMWizard magazine flows', () => {
           status: 201,
           data: { id: 'vm-2', name: 'custom-vm-1' },
         })
+      }
+      if (String(url).includes('/system/virtio-win/download')) {
+        return Promise.resolve({ data: { imageId: 'virtio-bg' } })
+      }
+      if (String(url).includes('/ws-ticket')) {
+        return Promise.resolve({ data: { ticket: 'ws-ticket' } })
       }
       throw new Error(`unexpected POST ${url}`)
     }) as typeof api.post
@@ -359,6 +416,37 @@ describe('useCreateVMWizard magazine flows', () => {
     expect(wizard.mode.value).toBe('iso')
     expect(wizard.canProceed()).toBe(false)
     wizard.selectedImageId.value = 'win-iso'
+    expect(wizard.canProceed()).toBe(true)
+    wizard.goToDisk()
+    await waitReady(wizard)
+    expect(wizard.currentStepLabel.value).toBe('Disk')
+    expect(wizard.canProceed()).toBe(true)
+  })
+
+  test('Create is not blocked while virtio is still downloading', async () => {
+    api.post = mock((url: string) => {
+      if (url === '/home/placement/score') {
+        return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      if (url.includes('/repositories/') && url.endsWith('/sync')) {
+        return Promise.resolve({ status: 202, data: { taskID: 'repo-sync' } })
+      }
+      if (String(url).includes('/system/virtio-win/download')) {
+        return new Promise(() => {})
+      }
+      if (String(url).includes('/ws-ticket')) {
+        return Promise.resolve({ data: { ticket: 'ws-ticket' } })
+      }
+      throw new Error(`unexpected POST ${url}`)
+    }) as typeof api.post
+    const wizard = useCreateVMWizard(() => {})
+    wizard.selectGalleryWindows()
+    await waitReady(wizard)
+    wizard.selectedImageId.value = 'win-iso'
+    expect(wizard.canProceed()).toBe(true)
+    wizard.goToDisk()
+    await waitReady(wizard)
+    expect(wizard.currentStepLabel.value).toBe('Disk')
     expect(wizard.canProceed()).toBe(true)
   })
 
@@ -653,6 +741,9 @@ describe('useCreateVMWizard magazine flows', () => {
     api.post = mock((url: string) => {
       if (url === '/home/placement/score') {
         return Promise.resolve({ data: { recommendedHostId: null, candidates: [] } })
+      }
+      if (url.includes('/repositories/') && url.endsWith('/sync')) {
+        return Promise.resolve({ status: 202, data: { taskID: 'repo-sync' } })
       }
       if (url === '/templates/deploy' || url.endsWith('/templates/deploy')) {
         return Promise.resolve({
