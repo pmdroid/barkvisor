@@ -6,7 +6,7 @@ description: "The nine Settings tabs and what each one controls."
 
 | Tab | What it controls |
 |-----|------------------|
-| Home | Device facts, remote access, advertise URL — [Settings: Home](/docs/using/settings/home/) |
+| Home | Device facts and Device URL — [Settings: Home](/docs/using/settings/home/) |
 | Pairing | Pairing QR to add Devices, phone sign-in — [Settings: Pairing](/docs/using/settings/pairing/) |
 | Library | Library path — [Settings: Library](/docs/using/settings/library/) |
 | Repositories | Catalog URLs and sync — [Settings: Repositories](/docs/using/settings/repositories/) |

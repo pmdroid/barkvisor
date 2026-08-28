@@ -67,7 +67,6 @@ public final class VaporServer: @unchecked Sendable {
         let setup = SetupMiddleware(dbPool: database.pool)
         self.setupMiddleware = setup
         app.middleware.use(setup)
-        app.middleware.use(RemoteAccessGateMiddleware())
 
         let services = await createServices(app: app, database: database)
         await services.processMonitor.reconnectOrCleanup()

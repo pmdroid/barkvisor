@@ -47,6 +47,7 @@ import {
 } from '../utils/homeDeviceApi'
 import { reachabilityLabel } from '../utils/homeDeviceHealth'
 import { bumpLibrarySettingsEpoch, librarySpaceCopy } from '../utils/librarySpace'
+import { formatListenHost } from '../utils/inferenceApiHowTo'
 import { DEVICE_LABEL, HOME_LABEL } from '../utils/terminology'
 import {
   isCurrentPairingSeq,
@@ -93,6 +94,11 @@ const homeSaveDisabled = computed(
   () => deviceNameLoading.value || remoteAccessLoading.value || !deviceNameDraft.value.trim(),
 )
 const advertisedHostChips = computed(() => remoteAccess.value?.advertisedHosts ?? [])
+const deviceUrlDisplay = computed(() => {
+  const host = remoteAccess.value?.deviceUrl?.trim()
+  if (!host) return ''
+  return `http://${formatListenHost(host)}:7777`
+})
 const roleTag = computed(() => (auth.isAdmin ? 'admin' : 'member'))
 const roleNote = computed(() =>
   auth.isAdmin ? 'Full control on this Home' : 'Standard access on this Home',
@@ -399,7 +405,6 @@ const remoteAccessLoading = ref(false)
 const remoteAccessSaving = ref(false)
 const advertiseSelected = ref('')
 const advertiseCustom = ref('')
-const requireTailnetDraft = ref(false)
 
 const advertiseHostOptions = computed(() => {
   const hosts = remoteAccess.value?.advertisedHosts ?? pairingOffer.value?.advertisedHosts ?? []
@@ -411,8 +416,7 @@ const advertiseHostOptions = computed(() => {
 
 function applyRemoteAccess(data: RemoteAccessStatus) {
   remoteAccess.value = data
-  requireTailnetDraft.value = data.requireTailnetForRemote
-  const picker = syncAdvertiseHostPicker(data.advertiseUrl, data.advertisedHosts ?? [])
+  const picker = syncAdvertiseHostPicker(data.deviceUrl, data.advertisedHosts ?? [])
   advertiseSelected.value = picker.selectedHost
   advertiseCustom.value = picker.customHost
 }
@@ -423,7 +427,7 @@ async function fetchRemoteAccess() {
     const { data } = await api.get<RemoteAccessStatus>('/system/remote-access')
     applyRemoteAccess(data)
   } catch (e: unknown) {
-    toast.error(apiErrorMessage(e, 'Could not load remote access'))
+    toast.error(apiErrorMessage(e, 'Could not load Device URL'))
   } finally {
     remoteAccessLoading.value = false
   }
@@ -469,17 +473,16 @@ async function saveHomeSettings() {
 
 async function saveRemoteAccess() {
   if (!remoteAccess.value) return
-  const advertiseUrl = advertisedHostForOffer(advertiseSelected.value, advertiseCustom.value) ?? ''
+  const deviceUrl = advertisedHostForOffer(advertiseSelected.value, advertiseCustom.value) ?? ''
   remoteAccessSaving.value = true
   try {
     const { data } = await api.put<RemoteAccessStatus>('/home/settings/remote-access', {
-      requireTailnetForRemote: requireTailnetDraft.value,
-      advertiseUrl,
+      deviceUrl,
     })
     applyRemoteAccess(data)
-    toast.success('Saved')
+    toast.success('Device URL saved')
   } catch (e: unknown) {
-    toast.error(apiErrorMessage(e, 'Could not save remote access'))
+    toast.error(apiErrorMessage(e, 'Could not save Device URL'))
   } finally {
     remoteAccessSaving.value = false
   }
@@ -918,7 +921,6 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
   </div>
 
-  <!-- Home — remote access, advertise URL. Pairing QR lives on the Pairing tab. -->
   <div v-if="tab === 'home'">
     <div class="facts">
       <div class="fact">
@@ -936,6 +938,10 @@ onUnmounted(() => {
             @keydown.enter.prevent="saveHomeSettings"
           />
         </span>
+      </div>
+      <div class="fact">
+        <span class="k">Device URL<span>Host other Devices and phones use to reach this one</span></span>
+        <span class="v">{{ deviceUrlDisplay || '—' }}</span>
       </div>
       <div class="fact">
         <span class="k">Advertised hosts<span>Addresses other Devices use to reach this one</span></span>
@@ -961,32 +967,15 @@ onUnmounted(() => {
       </div>
     </div>
     <div class="pairing-card" style="margin-bottom:16px;text-align:left">
-      <h3 class="login-offer-title">Remote access</h3>
+      <h3 class="login-offer-title">Device URL</h3>
       <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
-        LAN works without a VPN. For off-LAN, install
-        <a href="https://tailscale.com/download" target="_blank" rel="noopener">Tailscale</a>
-        on this {{ DEVICE_LABEL }} and the phone or laptop. BarkVisor does not bundle Tailscale.
-        Pairing and sign-in QRs use the advertise URL, then the tailnet address, then a LAN IP
-        as <code>host=</code>.
-      </p>
-      <p v-if="remoteAccess?.tailscale.available" class="pairing-hint" style="text-align:left;margin:0 0 12px">
-        Tailscale is up
-        <span v-if="remoteAccess.tailscale.ip"> — {{ remoteAccess.tailscale.ip }}</span>
-        <span v-if="remoteAccess.tailscale.dnsName"> ({{ remoteAccess.tailscale.dnsName }})</span>
-      </p>
-      <p v-else class="pairing-hint" style="text-align:left;margin:0 0 12px">
-        Tailscale is not detected. Install tailscaled, sign in, then reload this page.
-      </p>
-      <p class="pairing-hint" style="text-align:left;margin:0 0 12px">
-        WireGuard:
-        {{ remoteAccess?.wireguard.configured ? 'a tunnel interface is present' : 'not detected' }}.
-        BarkVisor does not configure WireGuard. If you run your own tunnel, pick that address
-        as the advertise URL.
+        Pairing and sign-in QRs stamp this host as <code>host=</code> when you do not pick another
+        address. Models inference how-to uses it for <code>OPENAI_BASE_URL</code>.
       </p>
       <div class="form-group" style="margin:0 0 12px;text-align:left">
-        <label for="advertise-url">Advertise URL</label>
+        <label for="device-url">Device URL</label>
         <AppSelect
-          id="advertise-url"
+          id="device-url"
           :modelValue="advertiseSelected"
           :options="advertiseHostOptions"
           :disabled="!remoteAccess || remoteAccessLoading || remoteAccessSaving"
@@ -1004,26 +993,6 @@ onUnmounted(() => {
             @keydown.enter.prevent="saveRemoteAccess"
           />
         </div>
-      </div>
-      <label class="pairing-hint" style="display:flex;gap:8px;align-items:center;text-align:left;margin:0 0 12px">
-        <input
-          type="checkbox"
-          v-model="requireTailnetDraft"
-          :disabled="!remoteAccess || remoteAccessLoading || remoteAccessSaving"
-          style="width:16px;height:16px;cursor:pointer"
-        />
-        Require Tailscale (or LAN) for the Home API off this network
-      </label>
-      <div style="display:flex;justify-content:flex-end">
-        <AppButton
-          size="sm"
-          variant="primary"
-          :loading="remoteAccessSaving"
-          :disabled="!remoteAccess || remoteAccessLoading"
-          @click="saveRemoteAccess"
-        >
-          Save remote access
-        </AppButton>
       </div>
     </div>
   </div>

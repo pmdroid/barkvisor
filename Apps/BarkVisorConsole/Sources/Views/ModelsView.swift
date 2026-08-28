@@ -141,7 +141,7 @@ struct ModelsView: View {
             role: isMember ? .member : .thisDevice,
             origin: model.connectedURL,
             memberHost: isMember ? device?.agentHost : nil,
-            advertiseHost: model.remoteAccess?.advertiseUrl,
+            advertiseHost: model.remoteAccess?.deviceUrl,
             tailnetHost: InferenceAPIHowTo.tailnetListenHost(model.remoteAccess?.tailscale),
         )
     }
