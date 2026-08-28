@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { catalogDownloadBlockedReason, deviceForCatalogImage } from './libraryDownloadTarget'
+import { catalogAcquireBody, catalogDownloadBlockedReason, deviceForCatalogImage } from './libraryDownloadTarget'
 
 const agentbox = {
   hostId: 'x86',
@@ -34,6 +34,24 @@ describe('deviceForCatalogImage', () => {
 
   test('unknown image arch does not guess a Device', () => {
     expect(deviceForCatalogImage(null, [agentbox, ubuntu])).toBeNull()
+  })
+})
+
+describe('catalogAcquireBody', () => {
+  test('posts sourceUrl and checksum for a member acquire', () => {
+    expect(catalogAcquireBody({
+      name: 'Ubuntu',
+      imageType: 'cloud-image',
+      arch: 'x86_64',
+      downloadUrl: 'https://example.test/ubuntu.img',
+      sha256: 'deadbeef',
+    })).toEqual({
+      sourceUrl: 'https://example.test/ubuntu.img',
+      sha256: 'deadbeef',
+      name: 'Ubuntu',
+      imageType: 'cloud-image',
+      arch: 'x86_64',
+    })
   })
 })
 
