@@ -35,6 +35,14 @@ public enum VMLifecycleService {
         let requestedID = params.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let vmID = requestedID.isEmpty ? UUID().uuidString : requestedID
 
+        if !requestedID.isEmpty {
+            if let completed = try await completePlaceholderIfNeeded(
+                params: params, vmID: vmID, now: now, db: db, backgroundTasks: backgroundTasks,
+            ) {
+                return completed
+            }
+        }
+
         let bootDisk = try await resolveBootDisk(
             params: params, vmID: vmID, vmName: params.name, now: now, db: db,
         )
@@ -552,6 +560,104 @@ extension VMLifecycleService {
         }
 
         return taskID
+    }
+
+    fileprivate static func completePlaceholderIfNeeded(
+        params: CreateVMParams,
+        vmID: String,
+        now: String,
+        db: DatabasePool,
+        backgroundTasks: BackgroundTaskManager,
+    ) async throws -> CreateVMResult? {
+        let placeholder = try await db.read { db -> (VM, Disk)? in
+            guard try PendingDeploy.filter(PendingDeploy.Columns.vmId == vmID).fetchOne(db) != nil
+            else {
+                return nil
+            }
+            guard let vm = try VM.fetchOne(db, key: vmID) else { return nil }
+            guard let disk = try Disk.fetchOne(db, key: vm.bootDiskId) else { return nil }
+            return (vm, disk)
+        }
+        guard let (existing, disk) = placeholder else { return nil }
+
+        let bootDisk: BootDiskResult
+        if params.cloudImageId != nil {
+            let resolved = try await resolveCloudImageDisk(
+                params: params, vmID: vmID, vmName: params.name, now: now, db: db,
+            )
+            bootDisk = BootDiskResult(
+                diskID: disk.id,
+                newDisk: nil,
+                isCloudImageMode: true,
+                cloudImagePath: resolved.cloudImagePath,
+            )
+        } else {
+            if let isoId = params.isoId {
+                let iso = try await db.read { db in
+                    try VMImage.fetchOne(db, key: isoId)
+                }
+                guard let iso, iso.imageType == "iso", iso.status == "ready" else {
+                    throw BarkVisorError.badRequest("ISO image not found or not ready")
+                }
+                if let profile = GuestProfiles.profile(for: params.vmType) {
+                    let imageArchNorm = PlatformCapabilities.normalizedArch(iso.arch)
+                    guard imageArchNorm == profile.arch else {
+                        throw BarkVisorError.badRequest(
+                            "ISO arch (\(iso.arch)) does not match VM type (\(params.vmType))",
+                        )
+                    }
+                }
+            }
+            if let sizeGB = params.diskSizeGB, sizeGB >= 1,
+               !FileManager.default.fileExists(atPath: disk.path) {
+                try DiskService.createBlank(
+                    path: URL(fileURLWithPath: disk.path), sizeGB: sizeGB,
+                )
+            }
+            try await db.write { db in
+                try db.execute(
+                    sql: "UPDATE disks SET status = 'ready' WHERE id = ?",
+                    arguments: [disk.id],
+                )
+            }
+            bootDisk = BootDiskResult(
+                diskID: disk.id,
+                newDisk: nil,
+                isCloudImageMode: false,
+                cloudImagePath: nil,
+            )
+        }
+
+        let cloudInitPath = try resolveCloudInitPath(
+            params: params, vmID: vmID, isCloudImageMode: bootDisk.isCloudImageMode,
+        )
+        let isoIdsJSON = try await resolveISOIds(params: params, db: db)
+        var vm = buildVM(
+            id: vmID, params: params, now: now,
+            bootDisk: bootDisk, cloudInitPath: cloudInitPath,
+            isoIdsJSON: isoIdsJSON,
+        )
+        vm.name = existing.name
+        vm.macAddress = existing.macAddress
+        vm.createdAt = existing.createdAt
+        vm.bootDiskId = disk.id
+        vm.syncSpecProjection(bumpGeneration: true)
+        let row = vm
+
+        try await db.write { db in
+            try row.update(db)
+        }
+
+        if bootDisk.isCloudImageMode {
+            let destPath = URL(fileURLWithPath: disk.path)
+            let taskID = try await submitProvisioningTask(
+                vmID: vmID, params: params, diskID: disk.id,
+                destPath: destPath,
+                cloudImagePath: bootDisk.cloudImagePath ?? "", db: db, backgroundTasks: backgroundTasks,
+            )
+            return .provisioning(taskID: taskID, vm: row)
+        }
+        return .created(row)
     }
 }
 

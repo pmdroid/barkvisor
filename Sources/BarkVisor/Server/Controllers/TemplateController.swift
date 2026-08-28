@@ -111,7 +111,7 @@ struct DeployTemplateResponse: Content {
     let status: String // "downloading" | "provisioning" | "created"
     let imageId: String? // set when status == "downloading"
     let taskID: String? // set when status == "provisioning"
-    let vm: VMResponse? // set when status == "created" | "provisioning"
+    let vm: VMResponse?
 }
 
 struct DeployDryRunRequest: Content {
@@ -224,11 +224,14 @@ struct TemplateController: RouteCollection {
         )
 
         switch result {
-        case let .downloading(imageId):
-            let body = DeployTemplateResponse(
-                status: "downloading", imageId: imageId, taskID: nil, vm: nil,
+        case let .downloading(imageId, vm):
+            AuditService.log(
+                action: "vm.deploy", resourceType: "vm", resourceId: vm.id, resourceName: vm.name, req: req,
             )
-            return try Response.json(body, status: .ok)
+            let body = DeployTemplateResponse(
+                status: "downloading", imageId: imageId, taskID: nil, vm: VMResponse(from: vm),
+            )
+            return try Response.json(body, status: .accepted)
 
         case let .created(vm):
             AuditService.log(

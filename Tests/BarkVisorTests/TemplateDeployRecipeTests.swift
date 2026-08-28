@@ -23,10 +23,15 @@ struct TemplateDeployRecipeTests {
             backgroundTasks: BackgroundTaskManager(),
             db: pool,
         )
-        guard case .downloading = result else {
+        guard case let .downloading(imageId, vm) = result else {
             Issue.record("expected download from recipe URL, got \(result)")
             return
         }
+        #expect(!imageId.isEmpty)
+        #expect(vm.state == "provisioning")
+        let stored = try await pool.read { db in try VM.fetchOne(db, key: vm.id) }
+        #expect(stored != nil)
+        #expect(stored?.bootDiskId.isEmpty == false)
         let started = await downloader.startedURLs
         #expect(started.contains { $0.absoluteString == url })
         let templateCount = try await pool.read { db in try VMTemplate.fetchCount(db) }
@@ -68,6 +73,8 @@ struct TemplateDeployRecipeTests {
             #expect(message == "Missing required input: Password")
         }
         #expect(await downloader.startedURLs.isEmpty)
+        let vmCount = try await pool.read { db in try VM.fetchCount(db) }
+        #expect(vmCount == 0)
     }
 
     @Test func `recipe enforces min and max input length from the payload`() async throws {
@@ -119,6 +126,8 @@ struct TemplateDeployRecipeTests {
         } catch let BarkVisorError.badRequest(message) {
             #expect(message == "Password must be at most 12 characters")
         }
+        let vmCount = try await pool.read { db in try VM.fetchCount(db) }
+        #expect(vmCount == 0)
     }
 
     @Test func `recipe rejects foreign arch before download`() async throws {
@@ -150,6 +159,8 @@ struct TemplateDeployRecipeTests {
                 || message.lowercased().contains("cross-architecture"))
         }
         #expect(await downloader.startedURLs.isEmpty)
+        let vmCount = try await pool.read { db in try VM.fetchCount(db) }
+        #expect(vmCount == 0)
     }
 
     @Test func `legacy deploy JSON ignores recipe fields`() throws {

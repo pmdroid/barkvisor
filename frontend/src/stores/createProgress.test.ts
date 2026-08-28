@@ -50,9 +50,10 @@ describe('createProgress', () => {
     api.post = originalPost
   })
 
-  test('downloading row then provision after image ready', async () => {
+    test('downloading row then provision after image ready', async () => {
     let imageStatus = 'downloading'
     let imageGets = 0
+    let vmState = 'provisioning'
     api.get = mock((url: string) => {
       if (String(url).includes('/images/img-1')) {
         imageGets += 1
@@ -65,22 +66,16 @@ describe('createProgress', () => {
           },
         })
       }
+      if (String(url).includes('/vms/vm-alma')) {
+        if (imageStatus === 'ready') vmState = 'stopped'
+        return Promise.resolve({ data: { ...provisionVm(), state: vmState } })
+      }
       if (String(url).includes('/tasks/task-1')) {
         return Promise.resolve({ data: { status: 'completed', error: null } })
       }
       return Promise.resolve({ data: {} })
     }) as typeof api.get
     api.post = mock((url: string) => {
-      if (String(url).includes('/templates/deploy')) {
-        return Promise.resolve({
-          data: {
-            status: 'provisioning',
-            imageId: null,
-            taskID: 'task-1',
-            vm: provisionVm(),
-          },
-        })
-      }
       throw new Error(`unexpected POST ${url}`)
     }) as typeof api.post
 
@@ -88,15 +83,17 @@ describe('createProgress', () => {
     const pending = store.followTemplate({
       name: 'alma',
       request: { templateId: 'tpl', vmName: 'alma', inputs: {}, cpuCount: 2, memoryMB: 2048 },
-      result: { status: 'downloading', imageId: 'img-1', vm: null },
+      result: { status: 'downloading', imageId: 'img-1', vm: provisionVm() },
     })
     expect(store.jobs[0]?.phase).toBe('downloading')
-    expect(store.mergeInto([]).some((row) => row.vm.name === 'alma' && row.createPhase === 'downloading')).toBe(true)
+    expect(store.jobs[0]?.vmId).toBe('vm-alma')
+    expect(store.mergeInto([]).some((row) => row.vm.id === 'vm-alma' && row.createPhase === 'downloading')).toBe(true)
     await pending
     expect(store.jobs).toHaveLength(0)
     const home = useDeviceWorkloadsStore()
     expect(home.vmsFor(home.selfHostId || 'self').some((vm) => vm.id === 'vm-alma')).toBe(true)
-    expect((api.post as ReturnType<typeof mock>).mock.calls.length).toBe(1)
+    expect((api.post as ReturnType<typeof mock>).mock.calls.length).toBe(0)
+    expect(imageGets).toBeGreaterThan(0)
   })
 
   test('image error stays on the list as failed', async () => {
@@ -113,12 +110,14 @@ describe('createProgress', () => {
     await store.followTemplate({
       name: 'box',
       request: { templateId: 'tpl', vmName: 'box', inputs: {} },
-      result: { status: 'downloading', imageId: 'img-bad', vm: null },
+      result: { status: 'downloading', imageId: 'img-bad', vm: { ...provisionVm(), id: 'vm-box', name: 'box' } },
     })
     expect(store.jobs[0]?.phase).toBe('error')
+    expect(store.jobs[0]?.vmId).toBe('vm-box')
     expect(store.jobs[0]?.detail).toContain('checksum')
     expect(useToastStore().toasts.some((t) => t.type === 'error')).toBe(true)
     expect(store.mergeInto([])[0]?.createPhase).toBe('error')
+    expect(store.mergeInto([])[0]?.vm.id).toBe('vm-box')
   })
 
   test('provisioning overlays a real VM until the task completes', async () => {

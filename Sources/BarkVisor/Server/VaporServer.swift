@@ -77,7 +77,11 @@ public final class VaporServer: @unchecked Sendable {
 
         app.middleware.use(RequestLogMiddleware())
 
-        await runStartupTasks(pool: database.pool, backgroundTasks: services.backgroundTasks)
+        await runStartupTasks(
+            pool: database.pool,
+            backgroundTasks: services.backgroundTasks,
+            imageDownloader: services.downloader,
+        )
         await schedulePeriodicTasks(
             pool: database.pool,
             backgroundTasks: services.backgroundTasks,
@@ -379,7 +383,11 @@ public final class VaporServer: @unchecked Sendable {
         )
     }
 
-    private func runStartupTasks(pool: DatabasePool, backgroundTasks: BackgroundTaskManager) async {
+    private func runStartupTasks(
+        pool: DatabasePool,
+        backgroundTasks: BackgroundTaskManager,
+        imageDownloader: ImageDownloader,
+    ) async {
         await AuditService.pruneOldEntries(db: pool)
         await AuditService.logSystem(action: "app.start", db: pool)
         await LogService.shared.pruneOldLogs()
@@ -402,6 +410,11 @@ public final class VaporServer: @unchecked Sendable {
         let ollama = OllamaController(backgroundTasks: backgroundTasks)
         let home = HomeOllamaController(backgroundTasks: backgroundTasks, localOllama: ollama)
         _ = try? await home.refresh(db: pool)
+        await TemplateDeployService.resumePending(
+            imageDownloader: imageDownloader,
+            backgroundTasks: backgroundTasks,
+            db: pool,
+        )
     }
 
     private func schedulePeriodicTasks(
