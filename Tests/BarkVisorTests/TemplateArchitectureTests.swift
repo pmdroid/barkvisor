@@ -185,10 +185,11 @@ struct TemplateArchitectureTests {
             backgroundTasks: BackgroundTaskManager(),
             db: pool,
         )
-        guard case .downloading = result else {
+        guard case let .downloading(_, vm) = result else {
             Issue.record("expected download of host-arch image, got \(result)")
             return
         }
+        #expect(vm.state == "provisioning")
 
         let started = await downloader.startedURLs
         #expect(started.contains { $0.absoluteString.contains(hostSlug) })

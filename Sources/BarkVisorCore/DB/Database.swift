@@ -119,6 +119,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M015_Passkeys.identifier) { db in
             try M015_Passkeys.migrate(db)
         }
+        migrator.registerMigration(M016_PendingDeploys.identifier) { db in
+            try M016_PendingDeploys.migrate(db)
+        }
     }
 }
 

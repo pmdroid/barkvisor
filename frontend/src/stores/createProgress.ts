@@ -6,6 +6,7 @@ import type { DeployTemplateRequest, DeployTemplateResponse, Image, TaskEvent, V
 import {
   deviceImagePath,
   deviceTaskPath,
+  deviceVmPath,
   type DeviceApiTarget,
 } from '../utils/homeDeviceApi'
 import { imageRowDownloadPercent } from '../utils/imageProgress'
@@ -17,7 +18,6 @@ import {
 import { thisDeviceTarget } from './homeInventory'
 import { useDeviceWorkloadsStore, type HomeWorkloadRow } from './deviceWorkloads'
 import { useDevicesStore } from './devices'
-import { useTemplateStore } from './templates'
 import { useToastStore } from './toast'
 
 export type CreateJob = {
@@ -155,6 +155,10 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     useToastStore().error(message)
   }
 
+  function vmPath(device: DeviceApiTarget | undefined, vmId: string) {
+    return device ? deviceVmPath(device, vmId) : `/vms/${vmId}`
+  }
+
   async function waitImage(id: string, imageId: string, device: DeviceApiTarget | undefined) {
     for (let i = 0; i < 600; i++) {
       if (!living(id)) return
@@ -202,14 +206,45 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     throw new Error('Timed out waiting for provisioning')
   }
 
+  async function waitVM(id: string, vmId: string, device: DeviceApiTarget | undefined) {
+    for (let i = 0; i < 600; i++) {
+      if (!living(id)) return
+      const { data } = await api.get(vmPath(device, vmId))
+      if (!living(id)) return
+      const vm = data as VM
+      if (!vm || typeof vm !== 'object' || Array.isArray(vm)) {
+        await sleep(intervalMs.value)
+        continue
+      }
+      applyVM(device, vm)
+      if (vm.state === 'error') {
+        throw new Error(vm.description || 'Image download failed')
+      }
+      if (vm.state !== 'provisioning' && vm.state !== 'starting') {
+        return
+      }
+      patchJob(id, {
+        phase: 'provisioning',
+        detail: 'Provisioning disk',
+        percent: null,
+        vmId: vm.id,
+      })
+      await sleep(intervalMs.value)
+    }
+    throw new Error('Timed out waiting for provisioning')
+  }
+
   async function handleResult(
     id: string,
-    request: DeployTemplateRequest,
     device: DeviceApiTarget | undefined,
     result: DeployTemplateResponse,
   ) {
     if (!living(id)) return
     if (result.status === 'downloading' && result.imageId) {
+      if (result.vm) {
+        applyVM(device, result.vm)
+        patchJob(id, { vmId: result.vm.id })
+      }
       patchJob(id, {
         phase: 'downloading',
         detail: 'Downloading image',
@@ -217,8 +252,18 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
       })
       await waitImage(id, result.imageId, device)
       if (!living(id)) return
-      const next = await useTemplateStore().deploy(request, device)
-      await handleResult(id, request, device, next)
+      const vmId = result.vm?.id
+      if (!vmId) {
+        throw new Error('Create did not return a VM')
+      }
+      patchJob(id, {
+        phase: 'provisioning',
+        detail: 'Provisioning disk',
+        percent: null,
+      })
+      await waitVM(id, vmId, device)
+      if (!living(id)) return
+      dropJob(id)
       return
     }
     if (result.vm) {
@@ -263,7 +308,7 @@ export const useCreateProgressStore = defineStore('createProgress', () => {
     })
     if (opts.result.vm) applyVM(opts.device, opts.result.vm)
     try {
-      await handleResult(job.id, opts.request, opts.device, opts.result)
+      await handleResult(job.id, opts.device, opts.result)
     } catch (e: unknown) {
       fail(job.id, apiErrorMessage(e))
     }

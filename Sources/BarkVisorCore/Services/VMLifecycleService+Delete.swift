@@ -109,8 +109,14 @@ extension VMLifecycleService {
         try validateVMName(params.name)
         if let id = params.id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
             try validateVMID(id)
-            let taken = try await db.read { db in try VM.fetchOne(db, key: id) }
-            if taken != nil {
+            let taken = try await db.read { db -> Bool in
+                guard try VM.fetchOne(db, key: id) != nil else { return false }
+                let pending = try PendingDeploy
+                    .filter(PendingDeploy.Columns.vmId == id)
+                    .fetchOne(db)
+                return pending == nil
+            }
+            if taken {
                 throw BarkVisorError.conflict("Workload \(id) already exists")
             }
         }

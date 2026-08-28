@@ -2,10 +2,8 @@ import Foundation
 import GRDB
 
 public enum DeployResult {
-    case downloading(imageId: String)
-    /// Disk clone / cloud-init still running (async task).
+    case downloading(imageId: String, vm: VM)
     case provisioning(taskID: String, vm: VM)
-    /// Immediate create (no async provision) — rare for templates (cloud images).
     case created(VM)
 }
 
@@ -83,7 +81,7 @@ public struct DeployRecipe: Codable, Sendable {
     }
 }
 
-public struct DeployOptions {
+public struct DeployOptions: Codable, Sendable {
     public let templateId: String
     public let vmName: String
     public let inputs: [String: String]
@@ -150,25 +148,85 @@ public enum TemplateDeployService {
             )
         }
 
-        if localImage == nil {
-            return try await startOrDetectDownload(
-                repoImage: repoImage, imageDownloader: imageDownloader, db: db,
+        if let localImage {
+            return try await createViaLifecycle(
+                options: options,
+                template: template,
+                localImage: localImage,
+                vmID: nil,
+                backgroundTasks: backgroundTasks,
+                db: db,
             )
         }
 
-        guard let localImage else {
-            throw BarkVisorError.internalError("Local image unexpectedly nil")
+        let claim = try await startCatalogDownload(
+            repoImage: repoImage, imageDownloader: imageDownloader, db: db,
+        )
+        if let existing = try await existingPending(
+            vmName: options.vmName, imageId: claim.image.id, db: db,
+        ) {
+            await submitFinishTask(
+                vm: existing,
+                imageId: claim.image.id,
+                imageDownloader: imageDownloader,
+                backgroundTasks: backgroundTasks,
+                db: db,
+            )
+            return .downloading(imageId: claim.image.id, vm: existing)
         }
-        return try await createViaLifecycle(
+
+        let vm = try await insertPlaceholder(
             options: options,
             template: template,
-            localImage: localImage,
+            repoImage: repoImage,
+            imageId: claim.image.id,
+            db: db,
+        )
+        await submitFinishTask(
+            vm: vm,
+            imageId: claim.image.id,
+            imageDownloader: imageDownloader,
             backgroundTasks: backgroundTasks,
             db: db,
         )
+        return .downloading(imageId: claim.image.id, vm: vm)
     }
 
-    // MARK: - Private
+    public static func deployTaskID(vmID: String) -> String {
+        "template-deploy:\(vmID)"
+    }
+
+    public static func resumePending(
+        imageDownloader: any ImageDownloadStarting,
+        backgroundTasks: BackgroundTaskManager,
+        db: DatabasePool,
+    ) async {
+        let rows: [PendingDeploy]
+        do {
+            rows = try await db.read { db in
+                try PendingDeploy.fetchAll(db)
+            }
+        } catch {
+            Log.vm.error("Failed to load pending template deploys: \(error.localizedDescription)")
+            return
+        }
+        for row in rows {
+            let vm: VM?
+            do {
+                vm = try await db.read { db in try VM.fetchOne(db, key: row.vmId) }
+            } catch {
+                continue
+            }
+            guard let vm else { continue }
+            await submitFinishTask(
+                vm: vm,
+                imageId: row.imageId,
+                imageDownloader: imageDownloader,
+                backgroundTasks: backgroundTasks,
+                db: db,
+            )
+        }
+    }
 
     private static func fetchTemplate(
         id: String, db: DatabasePool,
@@ -311,32 +369,215 @@ public enum TemplateDeployService {
         return repoImage
     }
 
-    private static func startOrDetectDownload(
+    private static func startCatalogDownload(
         repoImage: RepositoryImage,
         imageDownloader: any ImageDownloadStarting,
         db: DatabasePool,
-    ) async throws -> DeployResult {
+    ) async throws -> CatalogDownloadClaim {
         guard let sourceURL = URL(string: repoImage.downloadUrl),
               let scheme = sourceURL.scheme?.lowercased(),
               Config.allowedURLSchemes.contains(scheme)
         else {
             throw BarkVisorError.badRequest("Invalid download URL for image")
         }
-        let claim = try await ImageService.startOrDetectCatalogDownload(
+        return try await ImageService.startOrDetectCatalogDownload(
             repoImage: repoImage,
             sourceURL: sourceURL,
             checksum: .catalog(from: repoImage),
             downloader: imageDownloader,
             db: db,
         )
-        return .downloading(imageId: claim.image.id)
     }
 
-    /// Build `CreateVMParams` and delegate to the shared create pipeline (async disk clone).
+    private static func existingPending(
+        vmName: String, imageId: String, db: DatabasePool,
+    ) async throws -> VM? {
+        try await db.read { db in
+            guard let vm = try VM.filter(Column("name") == vmName).fetchOne(db) else {
+                return nil
+            }
+            let pending = try PendingDeploy
+                .filter(PendingDeploy.Columns.vmId == vm.id)
+                .filter(PendingDeploy.Columns.imageId == imageId)
+                .fetchOne(db)
+            return pending == nil ? nil : vm
+        }
+    }
+
+    private static func insertPlaceholder(
+        options: DeployOptions,
+        template: VMTemplate,
+        repoImage: RepositoryImage,
+        imageId: String,
+        db: DatabasePool,
+    ) async throws -> VM {
+        let now = iso8601.string(from: Date())
+        let vmID = UUID().uuidString
+        let diskID = UUID().uuidString
+        let vmType = GuestProfiles.defaultLinuxID(forImageArch: repoImage.arch)
+        let cpu = options.cpuCount ?? template.cpuCount
+        let mem = options.memoryMB ?? template.memoryMB
+        let diskGB = options.diskSizeGB ?? template.diskSizeGB
+        let estimatedSize = Int64(diskGB) * 1_024 * 1_024 * 1_024
+        let resolvedNetworkId = try await resolveNetwork(
+            requestedId: options.networkId, templateMode: template.networkMode,
+            vmName: options.vmName, db: db,
+        )
+        let disksDir = try await db.read { try DiskSettings.resolvedDirectory(from: $0) }
+        let diskPath = DiskSettings.fileURL(id: diskID, format: "qcow2", directory: disksDir)
+        let payload = try PendingDeploy.encodePayload(
+            PendingDeployPayload(options: options, template: template, repoImage: repoImage),
+        )
+        let disk = Disk(
+            id: diskID, name: "\(options.vmName)-disk",
+            path: diskPath.path, sizeBytes: estimatedSize,
+            format: "qcow2", vmId: vmID, autoCreated: false,
+            status: "creating", createdAt: now,
+        )
+        var vm = VM(
+            id: vmID, name: options.vmName, vmType: vmType,
+            state: "provisioning",
+            cpuCount: cpu, memoryMb: mem,
+            bootDiskId: diskID, isoIds: nil,
+            networkId: resolvedNetworkId,
+            cloudInitPath: nil,
+            description: "Deployed from template: \(template.name)",
+            bootOrder: nil,
+            displayResolution: nil, additionalDiskIds: nil,
+            uefi: true,
+            tpmEnabled: false,
+            macAddress: MACAddress.generateQemu(),
+            sharedPaths: nil,
+            portForwards: template.portForwards,
+            usbDevices: nil,
+            autoCreated: false,
+            pendingChanges: false,
+            createdAt: now, updatedAt: now,
+        )
+        vm.syncSpecProjection(bumpGeneration: false)
+        let row = vm
+        let pending = PendingDeploy(
+            vmId: vmID, imageId: imageId, payload: payload, createdAt: now,
+        )
+        do {
+            try await db.write { db in
+                try disk.insert(db)
+                try row.insert(db)
+                try pending.insert(db)
+            }
+        } catch {
+            let existing = try await existingPending(
+                vmName: options.vmName, imageId: imageId, db: db,
+            )
+            if let existing { return existing }
+            throw error
+        }
+        return row
+    }
+
+    private static func submitFinishTask(
+        vm: VM,
+        imageId: String,
+        imageDownloader: any ImageDownloadStarting,
+        backgroundTasks: BackgroundTaskManager,
+        db: DatabasePool,
+    ) async {
+        let vmID = vm.id
+        let taskID = deployTaskID(vmID: vmID)
+        await backgroundTasks.submit(taskID, kind: .vmProvision) { @Sendable in
+            do {
+                let pending = try await db.read { db in
+                    try PendingDeploy
+                        .filter(PendingDeploy.Columns.vmId == vmID)
+                        .fetchOne(db)
+                }
+                guard let pending else { return nil }
+                let payload = try pending.decodedPayload()
+                _ = try await startCatalogDownload(
+                    repoImage: payload.repoImage,
+                    imageDownloader: imageDownloader,
+                    db: db,
+                )
+                let localImage = try await waitUntilImageReady(imageId: imageId, db: db)
+                _ = try await createViaLifecycle(
+                    options: payload.options,
+                    template: payload.template,
+                    localImage: localImage,
+                    vmID: vmID,
+                    backgroundTasks: backgroundTasks,
+                    db: db,
+                )
+                try await clearPending(vmID: vmID, db: db)
+                return nil
+            } catch {
+                await failPending(
+                    vmID: vmID,
+                    message: retryableMessage(error),
+                    db: db,
+                )
+                throw error
+            }
+        }
+    }
+
+    private static func waitUntilImageReady(
+        imageId: String, db: DatabasePool,
+    ) async throws -> VMImage {
+        while true {
+            try Task.checkCancellation()
+            let image = try await db.read { db in
+                try VMImage.fetchOne(db, key: imageId)
+            }
+            guard let image else {
+                throw BarkVisorError.downloadFailed("Image download failed. Retry the template deploy.")
+            }
+            if image.status == "ready", image.path != nil {
+                return image
+            }
+            if image.status == "error" {
+                let detail = image.error?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if detail.isEmpty {
+                    throw BarkVisorError.downloadFailed(
+                        "Image download failed. Retry the template deploy.",
+                    )
+                }
+                throw BarkVisorError.downloadFailed(
+                    "\(detail). Retry the template deploy.",
+                )
+            }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+    }
+
+    private static func retryableMessage(_ error: Error) -> String {
+        let text = (error as? BarkVisorError)?.sanitizedDescription
+            ?? error.localizedDescription
+        if text.lowercased().contains("retry") { return text }
+        return "\(text). Retry the template deploy."
+    }
+
+    private static func failPending(vmID: String, message: String, db: DatabasePool) async {
+        let now = iso8601.string(from: Date())
+        try? await db.write { db in
+            try db.execute(
+                sql: "UPDATE vms SET state = 'error', description = ?, updatedAt = ? WHERE id = ?",
+                arguments: [message, now, vmID],
+            )
+            try PendingDeploy.filter(PendingDeploy.Columns.vmId == vmID).deleteAll(db)
+        }
+    }
+
+    private static func clearPending(vmID: String, db: DatabasePool) async throws {
+        try await db.write { db in
+            try PendingDeploy.filter(PendingDeploy.Columns.vmId == vmID).deleteAll(db)
+        }
+    }
+
     private static func createViaLifecycle(
         options: DeployOptions,
         template: VMTemplate,
         localImage: VMImage,
+        vmID: String?,
         backgroundTasks: BackgroundTaskManager,
         db: DatabasePool,
     ) async throws -> DeployResult {
@@ -385,6 +626,7 @@ public enum TemplateDeployService {
         }
 
         let params = CreateVMParams(
+            id: vmID,
             name: options.vmName,
             vmType: vmType,
             cpuCount: cpu,
