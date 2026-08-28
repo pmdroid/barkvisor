@@ -7,7 +7,7 @@
 | `home` | Device facts, Device URL picker |
 | `pairing` | Add-a-Device QR + expiry countdown, advertise-host picker, phone sign-in QR, Re-pair |
 | `library` | Library path + Browse folder picker, capacity |
-| `repositories` | Catalog URLs, add/sync/remove |
+| `repositories` | Catalog URLs, per-Device sync, add/remove |
 | `disks` | Default VM disk directory |
 | `apikeys` (default) | Create/show-once/revoke API keys |
 | `sshkeys` | Add SSH key, Set Default/Delete |

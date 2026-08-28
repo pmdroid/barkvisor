@@ -7,7 +7,7 @@
 | Home | Device facts and Device URL — [Settings: Home](settings-home.md) |
 | Pairing | Pairing QR to add Devices, phone sign-in — [Settings: Pairing](settings-pairing.md) |
 | Library | Library path — [Settings: Library](settings-library.md) |
-| Repositories | Catalog URLs and sync — [Settings: Repositories](settings-repositories.md) |
+| Repositories | Catalog URLs and per-Device sync — [Settings: Repositories](settings-repositories.md) |
 | Disks | Default VM disk directory — [Settings: Disks](settings-disks.md) |
 | API Keys | API keys for scripts and inference clients — [Settings: API Keys](settings-api-keys.md) |
 | SSH Keys | SSH keys injected into guests — [Settings: SSH Keys](settings-ssh-keys.md) |

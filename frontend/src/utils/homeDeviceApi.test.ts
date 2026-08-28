@@ -20,6 +20,8 @@ import {
   devicePath,
   deviceStatsHistoryPath,
   deviceTaskPath,
+  deviceRepositoriesPath,
+  deviceRepositorySyncPath,
   deviceTemplateDeployPath,
   deviceTemplateDryRunPath,
   deviceTemplatesPath,
@@ -86,7 +88,13 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(deviceAboutPath(self)).toBe('/system/about')
     expect(deviceVmsBasePath(self)).toBe('/vms')
 
+    expect(deviceRepositoriesPath(self)).toBe('/repositories')
+    expect(deviceRepositorySyncPath(self, 'repo-1')).toBe('/repositories/repo-1/sync')
     expect(deviceTemplatesPath(member)).toBe('/home/devices/peer%2F1/v1/templates')
+    expect(deviceRepositoriesPath(member)).toBe('/home/devices/peer%2F1/v1/repositories')
+    expect(deviceRepositorySyncPath(member, 'repo/1')).toBe(
+      '/home/devices/peer%2F1/v1/repositories/repo%2F1/sync',
+    )
     expect(deviceTemplateDeployPath(member)).toBe('/home/devices/peer%2F1/v1/templates/deploy')
     expect(deviceTemplateDryRunPath(member, 'tpl/1')).toBe(
       '/home/devices/peer%2F1/v1/templates/tpl%2F1/deploy/dry-run',

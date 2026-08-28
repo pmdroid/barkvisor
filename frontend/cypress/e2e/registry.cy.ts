@@ -6,7 +6,7 @@ describe('Settings / Repositories', () => {
 
   it('opens the Repositories tab from the query', () => {
     cy.get('.tabs button.active').should('contain', 'Repositories')
-    cy.contains('Catalog URLs this Home syncs').should('be.visible')
+    cy.contains('Catalog URLs each Device in this Home syncs').should('be.visible')
     cy.contains('button', 'Add repository').should('exist')
   })
 
