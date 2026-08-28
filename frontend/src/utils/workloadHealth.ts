@@ -30,10 +30,17 @@ export function healthFromState(state: string): WorkloadHealth {
 
 /** Apply an SSE VM state event so health pills do not keep a stale API health field. */
 export function applyVMStateEvent(
-  vm: Pick<VM, 'state' | 'health' | 'status'>,
-  event: { state: string; error?: string | null },
+  vm: Pick<VM, 'state' | 'health' | 'status' | 'pendingImageId' | 'downloadPercent'>,
+  event: {
+    state: string
+    error?: string | null
+    pendingImageId?: string | null
+    downloadPercent?: number | null
+  },
 ): void {
   vm.state = event.state
+  if ('pendingImageId' in event) vm.pendingImageId = event.pendingImageId ?? null
+  if ('downloadPercent' in event) vm.downloadPercent = event.downloadPercent ?? null
   const derived = healthFromState(event.state)
   const previous = vm.health ?? vm.status?.health
   // SSE only carries lifecycle state. Keep API probe rollups while the guest

@@ -45,11 +45,19 @@ extension VMController {
 
     func respond(_ vm: VM, db: DatabasePool) async throws -> VMResponse {
         let signals = try await healthSignals(for: vm, db: db)
-        return VMResponse(from: vm, signals: signals)
+        let overlays = try await pendingOverlays(vmIDs: [vm.id], db: db)
+        let overlay = overlays[vm.id]
+        return VMResponse(
+            from: vm,
+            signals: signals,
+            pendingImageId: overlay?.pendingImageId,
+            downloadPercent: overlay?.downloadPercent,
+        )
     }
 
     func respond(_ vms: [VM], db: DatabasePool) async throws -> [VMResponse] {
         let lastSeen = try await GuestHealthStore.lastSeen(ids: vms.map(\.id), db: db)
+        let overlays = try await pendingOverlays(vmIDs: vms.map(\.id), db: db)
         var responses: [VMResponse] = []
         responses.reserveCapacity(vms.count)
         for vm in vms {
@@ -57,9 +65,28 @@ extension VMController {
             let signals = await vmManager.healthSignals(
                 for: vm, lastSeenAt: lastSeen[vm.id], probes: probes,
             )
-            responses.append(VMResponse(from: vm, signals: signals))
+            let overlay = overlays[vm.id]
+            responses.append(
+                VMResponse(
+                    from: vm,
+                    signals: signals,
+                    pendingImageId: overlay?.pendingImageId,
+                    downloadPercent: overlay?.downloadPercent,
+                ),
+            )
         }
         return responses
+    }
+
+    func pendingOverlays(vmIDs: [String], db: DatabasePool) async throws -> [String: PendingVMImageOverlay] {
+        if vmIDs.isEmpty { return [:] }
+        let pending = try await db.read { db in
+            try PendingDeploy.filter(vmIDs.contains(PendingDeploy.Columns.vmId)).fetchAll(db)
+        }
+        let lastProgress = await imageDownloader.lastProgress(imageIDs: pending.map(\.imageId))
+        return try await db.read { db in
+            try PendingVMImageOverlay.load(db: db, vmIDs: vmIDs, lastProgress: lastProgress)
+        }
     }
 
     private func projectHealth(_ vm: VM, db: DatabasePool) async throws -> WorkloadHealthStatus {

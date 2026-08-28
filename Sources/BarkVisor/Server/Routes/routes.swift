@@ -52,6 +52,7 @@ func registerRoutes(_ app: Vapor.Application, deps: RouteDependencies) throws {
             stateStreamService: deps.stateStreamService,
             backgroundTasks: deps.backgroundTasks,
             healthProbes: deps.healthProbes,
+            imageDownloader: deps.imageDownloader,
         ),
     )
 
