@@ -43,6 +43,21 @@ Feature: Create VM magazine wizard
     When I choose Use your own image
     Then Next should stay disabled until I pick an image
 
+  Scenario: Windows install ISO is on configure and VirtIO is background
+    Given the Create VM dialog is open on step 1
+    When I pick Windows
+    Then the guest should be Windows on ISO mode
+    And step 2 should show Install ISO
+    And there should be no Drivers wizard step
+    And Next should stay disabled until an ISO is picked
+    And Create should not wait for VirtIO to finish downloading
+
+  Scenario: Use your own image pins a file or URL for this VM
+    Given the Create VM dialog is open on step 1
+    When I choose Use your own image
+    Then step 2 should let me upload a file or pin a URL
+    And that image is the selected image for this VM only
+
   Scenario: Windows flow is ISO only
     Given the Create VM dialog is open on step 1
     When I pick Windows
