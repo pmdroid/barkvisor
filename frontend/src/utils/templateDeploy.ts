@@ -1,5 +1,14 @@
 /** Catalog recipe helpers for Template deploy (no extra schema). */
 
+import { normalizeImageArch } from './imageArch'
+import type {
+  DeployTemplateRecipe,
+  PortForwardRule,
+  TemplateCatalogImage,
+  TemplateInput,
+  VMTemplate,
+} from '../api/types'
+
 type TemplateInputDef = {
   id: string
   required?: boolean
@@ -30,6 +39,65 @@ export function collectTemplateDeployInputs(
   }
   if (opts.sshAuthorizedKey) inputs.ssh_keys = opts.sshAuthorizedKey
   return inputs
+}
+
+export function catalogImageForArch(
+  template: {
+    catalogImages?: TemplateCatalogImage[] | null
+  },
+  hostArch: string | null | undefined,
+): TemplateCatalogImage | null {
+  const want = normalizeImageArch(hostArch)
+  if (!want) return null
+  const match = (template.catalogImages ?? []).find((img) => normalizeImageArch(img.arch) === want)
+  if (!match?.downloadUrl?.trim()) return null
+  return match
+}
+
+export function buildDeployRecipe(
+  template: Pick<
+    VMTemplate,
+    | 'name'
+    | 'slug'
+    | 'inputs'
+    | 'userDataTemplate'
+    | 'cpuCount'
+    | 'memoryMB'
+    | 'diskSizeGB'
+    | 'networkMode'
+    | 'portForwards'
+    | 'architectures'
+    | 'minMemoryMB'
+    | 'requiredFeatures'
+    | 'catalogImages'
+  >,
+  hostArch: string | null | undefined,
+): DeployTemplateRecipe | undefined {
+  const image = catalogImageForArch(template, hostArch)
+  if (!image) return undefined
+  return {
+    name: template.name,
+    slug: template.slug,
+    inputs: template.inputs as TemplateInput[],
+    userDataTemplate: template.userDataTemplate,
+    cpuCount: template.cpuCount,
+    memoryMB: template.memoryMB,
+    diskSizeGB: template.diskSizeGB,
+    networkMode: template.networkMode,
+    portForwards: (template.portForwards ?? undefined) as PortForwardRule[] | undefined,
+    architectures: template.architectures,
+    minMemoryMB: template.minMemoryMB ?? undefined,
+    requiredFeatures: template.requiredFeatures,
+    image: {
+      downloadUrl: image.downloadUrl,
+      sha256: image.sha256 ?? undefined,
+      sha512: image.sha512 ?? undefined,
+      arch: image.arch,
+      imageType: image.imageType,
+      name: image.name,
+      slug: image.slug,
+    },
+  }
 }
 
 export type TemplateWebForward = {

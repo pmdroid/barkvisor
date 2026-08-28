@@ -28,8 +28,13 @@ struct TemplateResponse: Content {
     let requiredFeatures: [String]
     let resolvedImageSlug: String?
     let compatible: Bool
+    let catalogImages: [TemplateCatalogImageRef]
 
-    init(from t: VMTemplate, host: HostInventory? = nil) {
+    init(
+        from t: VMTemplate,
+        host: HostInventory? = nil,
+        catalogImages: [TemplateCatalogImageRef] = [],
+    ) {
         self.id = t.id
         self.slug = t.slug
         self.name = t.name
@@ -50,6 +55,7 @@ struct TemplateResponse: Content {
         self.imageByArch = t.imageByArch
         self.minMemoryMB = t.minMemoryMB
         self.requiredFeatures = t.requiredFeatures
+        self.catalogImages = catalogImages
         if let host {
             // Same checks as dry-run/deploy: arch, image, requiredFeatures, minMemoryMB.
             let report = TemplateCompatibility.evaluate(template: t, host: host)
@@ -62,6 +68,29 @@ struct TemplateResponse: Content {
     }
 }
 
+struct TemplateCatalogImageRef: Content {
+    let slug: String
+    let name: String
+    let imageType: String
+    let arch: String
+    let downloadUrl: String
+    let sha256: String?
+    let sha512: String?
+
+    init(from img: RepositoryImage) {
+        self.slug = img.slug
+        self.name = img.name
+        self.imageType = img.imageType
+        self.arch = img.arch
+        self.downloadUrl = img.downloadUrl
+        self.sha256 = img.sha256
+        self.sha512 = img.sha512
+    }
+}
+
+extension DeployRecipe: Content {}
+extension DeployRecipeImage: Content {}
+
 struct DeployTemplateRequest: Content, Validatable {
     let templateId: String
     let vmName: String
@@ -70,6 +99,7 @@ struct DeployTemplateRequest: Content, Validatable {
     let memoryMB: Int?
     let diskSizeGB: Int?
     let networkId: String?
+    let recipe: DeployRecipe?
 
     static func validations(_ validations: inout Validations) {
         validations.add("templateId", as: String.self, is: !.empty)
@@ -114,9 +144,10 @@ struct TemplateController: RouteCollection {
         let filterArch = req.query[String.self, at: "arch"]
             ?? (req.query[String.self, at: "hostId"] != nil ? inventory.platform.arch : nil)
 
-        var templates = try await req.db.read { db in
-            try VMTemplate.fetchAll(db)
+        let (loaded, repoImages) = try await req.db.read { db -> ([VMTemplate], [RepositoryImage]) in
+            try (VMTemplate.fetchAll(db), RepositoryImage.fetchAll(db))
         }
+        var templates = loaded
         if let filterArch {
             templates = templates.filter {
                 TemplateArchitecture.supports(
@@ -124,19 +155,31 @@ struct TemplateController: RouteCollection {
                 )
             }
         }
-        return templates.map { TemplateResponse(from: $0, host: inventory) }
+        return templates.map {
+            TemplateResponse(
+                from: $0,
+                host: inventory,
+                catalogImages: catalogImages(for: $0, from: repoImages),
+            )
+        }
     }
 
     @Sendable
     func get(req: Vapor.Request) async throws -> TemplateResponse {
         guard let id = req.parameters.get("id") else { throw Abort(.badRequest) }
-        guard let template = try await req.db.read({ db in
-            try VMTemplate.fetchOne(db, key: id)
-        })
-        else {
+        let row = try await req.db.read { db -> (VMTemplate, [RepositoryImage])? in
+            guard let template = try VMTemplate.fetchOne(db, key: id) else { return nil }
+            let images = try RepositoryImage.fetchAll(db)
+            return (template, images)
+        }
+        guard let (template, repoImages) = row else {
             throw Abort(.notFound)
         }
-        return TemplateResponse(from: template, host: HostInventoryService.snapshot())
+        return TemplateResponse(
+            from: template,
+            host: HostInventoryService.snapshot(),
+            catalogImages: catalogImages(for: template, from: repoImages),
+        )
     }
 
     @Sendable
@@ -171,6 +214,7 @@ struct TemplateController: RouteCollection {
             memoryMB: body.memoryMB,
             diskSizeGB: body.diskSizeGB,
             networkId: body.networkId,
+            recipe: body.recipe,
         )
         let result = try await TemplateDeployService.deploy(
             options: options,
@@ -206,4 +250,33 @@ struct TemplateController: RouteCollection {
             return try Response.json(body, status: .accepted)
         }
     }
+}
+
+private func catalogImages(
+    for template: VMTemplate, from all: [RepositoryImage],
+) -> [TemplateCatalogImageRef] {
+    var slugs = Set<String>()
+    if !template.imageSlug.isEmpty {
+        slugs.insert(template.imageSlug)
+    }
+    for slug in template.imageByArch.values where !slug.isEmpty {
+        slugs.insert(slug)
+    }
+    let matches = all.filter { slugs.contains($0.slug) }
+    let scoped: [RepositoryImage]
+    if let repoId = template.repositoryId {
+        let inRepo = matches.filter { $0.repositoryId == repoId }
+        scoped = inRepo.isEmpty ? matches : inRepo
+    } else {
+        scoped = matches
+    }
+    var seen = Set<String>()
+    var out: [TemplateCatalogImageRef] = []
+    for img in scoped {
+        let arch = PlatformCapabilities.normalizedArch(img.arch)
+        if arch.isEmpty || seen.contains(arch) { continue }
+        seen.insert(arch)
+        out.append(TemplateCatalogImageRef(from: img))
+    }
+    return out
 }

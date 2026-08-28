@@ -627,6 +627,7 @@ export interface TemplateInput {
   required: boolean
   placeholder?: string
   minLength?: number
+  maxLength?: number
 }
 
 export interface VMTemplate {
@@ -652,6 +653,17 @@ export interface VMTemplate {
   requiredFeatures?: string[]
   resolvedImageSlug?: string | null
   compatible?: boolean
+  catalogImages?: TemplateCatalogImage[]
+}
+
+export interface TemplateCatalogImage {
+  slug: string
+  name: string
+  imageType: string
+  arch: string
+  downloadUrl: string
+  sha256?: string | null
+  sha512?: string | null
 }
 
 export interface TemplateCompatibilityReason {
@@ -670,6 +682,32 @@ export interface TemplateCompatibilityReport {
   minMemoryMB: number | null
 }
 
+export interface DeployTemplateRecipeImage {
+  downloadUrl: string
+  arch: string
+  imageType: string
+  sha256?: string
+  sha512?: string
+  name?: string
+  slug?: string
+}
+
+export interface DeployTemplateRecipe {
+  name?: string
+  slug?: string
+  inputs: TemplateInput[]
+  userDataTemplate: string
+  cpuCount: number
+  memoryMB: number
+  diskSizeGB: number
+  networkMode?: string
+  portForwards?: PortForwardRule[] | null
+  architectures?: string[]
+  minMemoryMB?: number
+  requiredFeatures?: string[]
+  image: DeployTemplateRecipeImage
+}
+
 export interface DeployTemplateRequest {
   templateId: string
   vmName: string
@@ -678,6 +716,7 @@ export interface DeployTemplateRequest {
   memoryMB?: number
   diskSizeGB?: number
   networkId?: string
+  recipe?: DeployTemplateRecipe
 }
 
 export interface DeployTemplateResponse {

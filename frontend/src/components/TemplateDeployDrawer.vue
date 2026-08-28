@@ -52,6 +52,8 @@ import {
   natWebUILinks,
   templateDeclaresSshKeys,
   templateRequiresSshKeys,
+  buildDeployRecipe,
+  catalogImageForArch,
 } from '../utils/templateDeploy'
 
 const props = defineProps<{ template: VMTemplate; initialHostId?: string }>()
@@ -103,6 +105,7 @@ const deviceOptions = computed<DevicePickOption[]>(() => {
         ? (pickedCaps.value ?? defaultCapabilities)
         : undefined,
       hasTemplate: homeLibrary.deviceHasDeployableTemplate(props.template.slug, row),
+      fetchable: !!catalogImageForArch(props.template, row.platform?.arch),
     })
     const scored = placementScore.value?.candidates.find((candidate) => candidate.hostId === row.hostId)
     const hard = (scored?.reasons ?? [])
@@ -368,15 +371,17 @@ function prev() {
   if (step.value > 1) step.value--
 }
 
+const deployHostArch = computed(
+  () => pickedCaps.value?.hostArch || selectedDevice.value?.platform?.arch || null,
+)
+
 function buildRequest(): DeployTemplateRequest {
-  const resolved = resolvedTemplate.value
-  if (!resolved) {
-    throw new Error("Not in this Device's Library")
-  }
+  const gallery = props.template
+  const resolved = resolvedTemplate.value ?? gallery
   const selectedKey = showsSshPicker.value
     ? sshKeyStore.keys.find(k => k.id === selectedSSHKeyId.value)
     : undefined
-  const inputs = collectTemplateDeployInputs(resolved.inputs, {
+  const inputs = collectTemplateDeployInputs(gallery.inputs, {
     values: inputValues.value,
     sshAuthorizedKey: selectedKey ? authorizedKeyForCloudInit(selectedKey) : undefined,
   })
@@ -387,6 +392,7 @@ function buildRequest(): DeployTemplateRequest {
     cpuCount: cpuCount.value !== props.template.cpuCount ? cpuCount.value : undefined,
     memoryMB: memoryMB.value !== props.template.memoryMB ? memoryMB.value : undefined,
     diskSizeGB: diskSizeGB.value !== props.template.diskSizeGB ? diskSizeGB.value : undefined,
+    recipe: buildDeployRecipe(gallery, deployHostArch.value),
   }
 }
 
@@ -579,7 +585,7 @@ async function finishDeploy(result: DeployTemplateResponse) {
 
 async function doDeploy() {
   if (drawerClosed) return
-  if (!resolvedTemplate.value) {
+  if (!resolvedTemplate.value && !buildDeployRecipe(props.template, deployHostArch.value)) {
     error.value = "Not in this Device's Library"
     phase.value = 'form'
     return
@@ -601,7 +607,7 @@ async function doDeploy() {
 
 async function submit() {
   error.value = ''
-  if (!resolvedTemplate.value) {
+  if (!resolvedTemplate.value && !buildDeployRecipe(props.template, deployHostArch.value)) {
     error.value = "Not in this Device's Library"
     return
   }
@@ -857,7 +863,7 @@ async function submit() {
           <button v-if="step < totalSteps" class="btn-primary" :disabled="!canProceed()" @click="next">
             Next
           </button>
-          <button v-else class="btn-primary" :disabled="!canProceed() || loading || !resolvedTemplate || (template.networkMode === 'bridged' && !bridgeAvailable) || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.reachable))" @click="submit">
+          <button v-else class="btn-primary" :disabled="!canProceed() || loading || (!resolvedTemplate && !buildDeployRecipe(template, deployHostArch)) || (template.networkMode === 'bridged' && !bridgeAvailable) || memoryBelowMinimum || (deviceOptions.length > 0 && !deviceOptions.some(o => o.hostId === selectedHostId && o.reachable))" @click="submit">
             {{ loading ? 'Deploying...' : 'Deploy' }}
           </button>
         </div>

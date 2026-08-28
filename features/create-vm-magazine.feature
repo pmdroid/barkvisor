@@ -67,3 +67,9 @@ Feature: Create VM magazine wizard
     Then the request must not include an empty password
     And the magazine should close
     And the Workloads list should show downloading or provisioning for that VM
+
+  Scenario: Create from a recipe the Device never synced still deploys
+    Given the gallery shows a Home template the picked Device has not synced
+    When I click Create
+    Then the deploy request includes the Home recipe
+    And the Device downloads the image bytes itself
