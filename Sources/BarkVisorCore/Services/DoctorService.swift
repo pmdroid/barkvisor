@@ -458,7 +458,8 @@ enum DoctorProcessList {
     static func live() -> [DoctorProcess] {
         let result = try? PlatformProcess.run(
             path: "/bin/ps",
-            arguments: ["-axo", "pid=", "uid=", "command="],
+            // Darwin and procps reject split `pid=` `uid=` tokens; keep one format list.
+            arguments: ["-axo", "pid=,uid=,command="],
             timeout: 5,
         )
         guard let result, result.succeeded else { return [] }

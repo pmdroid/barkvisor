@@ -310,6 +310,8 @@ struct DoctorServiceTests {
         )
         #expect(doctor.contains("HostBridgeFactsService.probe"))
         #expect(doctor.contains("DoctorDaemonProcess.uid"))
+        #expect(doctor.contains(#""-axo", "pid=,uid=,command=""#))
+        #expect(!doctor.contains(#""pid=", "uid=", "command=""#))
         #expect(doctor.contains("never applies") || doctor.contains("Never applies") || doctor.contains("never starts"))
         #expect(!doctor.contains("HelperXPCClient"))
         #expect(!doctor.contains("SMJobBless"))
