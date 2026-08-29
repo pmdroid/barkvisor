@@ -48,8 +48,9 @@ ProtectSystem=strict
 ProtectHome=true
 # Optional host-net apply paths (#378). Dash prefix: missing dirs do not fail the unit.
 ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu
-# Allow reading the installed SPA + optional custom frontend dir + compat libs
-ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
+# In-app `dpkg -i` + `apt-get -f` from UpdateService (#387). The .deb writes
+# /usr/local/{bin,share,lib} and the systemd unit. Do not mark those ReadOnly.
+ReadWritePaths=/usr/local /var/lib/dpkg /var/cache/apt /var/lib/apt /var/cache/debconf /var/log/apt -/var/log/dpkg.log /usr/lib/systemd/system /etc/barkvisor -/etc/systemd/system
 LimitNOFILE=65536
 
 [Install]

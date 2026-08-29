@@ -417,6 +417,22 @@ struct APIClient {
         try await send(method: "PUT", path: "/api/system/disk/settings", body: body, as: DiskSettingsSnapshot.self)
     }
 
+    func checkUpdates() async throws -> UpdateCheckResponse {
+        try await get("/api/system/updates/check")
+    }
+
+    func installUpdate(version: String) async throws -> UpdateTaskAccepted {
+        try await post("/api/system/updates/install", body: UpdateInstallRequest(version: version))
+    }
+
+    func taskStatus(taskID: String) async throws -> BackgroundTaskSnapshot {
+        try await get("/api/tasks/\(taskID)")
+    }
+
+    func processHealth() async throws -> ProcessHealthSnapshot {
+        try await get("/api/health")
+    }
+
     func streamChatCompletions(
         model: String,
         messages: [ChatWireMessage],

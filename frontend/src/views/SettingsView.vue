@@ -64,6 +64,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FolderPicker from '../components/FolderPicker.vue'
 import LibraryFolderForm from '../components/LibraryFolderForm.vue'
 import RepositorySettings from '../components/RepositorySettings.vue'
+import SettingsUpdatesTab from '../components/SettingsUpdatesTab.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import DataTable from '../components/ui/DataTable.vue'
@@ -872,6 +873,7 @@ onUnmounted(() => {
     <button :class="{ active: tab === 'sshkeys' }" @click="tab = 'sshkeys'; sshKeyStore.fetchAll()">SSH Keys</button>
     <button :class="{ active: tab === 'passkeys' }" @click="tab = 'passkeys'; passkeyStore.fetchAll()">Passkeys</button>
     <button :class="{ active: tab === 'audit' }" @click="tab = 'audit'; fetchAudit()">Audit Log</button>
+    <button :class="{ active: tab === 'updates' }" @click="tab = 'updates'">Updates</button>
   </div>
 
   <div v-if="tab === 'home'">
@@ -1198,6 +1200,10 @@ onUnmounted(() => {
   />
 
   <!-- Audit Log Tab -->
+  <div v-if="tab === 'updates'">
+    <SettingsUpdatesTab />
+  </div>
+
   <div v-if="tab === 'audit'">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <p style="color:var(--text-secondary);font-size:13px;margin:0">
