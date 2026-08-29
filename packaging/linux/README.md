@@ -11,8 +11,8 @@ Metadata and helpers for multi-format BarkVisor packages (**arm64** and **amd64*
 | `barkvisor-*-linux-{x86_64,aarch64}.tar.gz` | Any glibc host (+ `install.sh`) |
 | `arch/PKGBUILD` | Arch / Arch ARM (`makepkg`) |
 
-Packages target **glibc** hosts (Debian, Ubuntu, Fedora, RHEL-family, Arch, …).
-Use the tarball + `install.sh` or Docker if your environment is unusual.
+The appliance channel for operators is **Ubuntu / Debian `.deb`**. rpm / tarball / Arch
+are still produced for builders. They are not the getting-started path.
 
 ## Layout (all formats)
 

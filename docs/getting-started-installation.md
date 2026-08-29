@@ -1,53 +1,93 @@
 # Installation (macOS)
 
-This page covers **macOS** package install (Apple Silicon `.pkg` / standalone archive).
+This page is the Apple Silicon appliance. Install the signed `.pkg`. The Device daemon runs as **root**.
+
+This milestone is **Ubuntu / Debian `.deb`** and **macOS `.pkg`**. Not rpm, not Fedora, not a Homebrew keg for the app (`#381` is closed). Homebrew is only for Mac **runtime** `qemu` / `swtpm` / `socket_vmnet`.
 
 | Platform | Guide |
 |----------|--------|
 | **macOS** | This page |
-| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — `.deb` / `.rpm` / tarball + systemd |
+| **Linux** | **[getting-started-linux.md](getting-started-linux.md)** — Ubuntu / Debian `.deb` + systemd |
 
-## System Requirements
+After install, open `http://localhost:7777` and finish the web setup. First Workload: [Quickstart](getting-started-quickstart.md) and [First launch](getting-started-first-launch.md). Words: **Home**, **Device**, **Workload**, **Library**. See [Product terminology](product-terminology.md).
 
-- **macOS 26.0 or later** -- enforced via Swift Package Manager platform minimum.
-- **Apple Silicon (aarch64 only)** -- BarkVisor bundles `qemu-system-aarch64` compiled with HVF (Hypervisor.framework) support. Intel Macs are not supported for the macOS product package.
-- **Disk space:** at least 2 GB free for the application itself. Plan for additional space depending on the number and size of VM disk images you intend to create. Each cloud image download is typically 500 MB -- 2 GB, and user-created disks can grow up to the size you allocate.
-- **RAM:** 8 GB minimum; 16 GB or more recommended. Each running VM reserves its configured memory from the host.
+## Bootstrap (inspect, then run)
 
-## Installing from Package Installer
+Do not pipe a script into `sudo bash`. Download it, read it, then run it.
 
-1. Download the latest `BarkVisor-<version>.pkg` from the releases page.
-2. Run the installer: `sudo installer -pkg BarkVisor-<version>.pkg -target /`
-3. The installer places files under `/usr/local/` and registers launchd services.
+```sh
+curl -fsSL https://raw.githubusercontent.com/pmdroid/barkvisor/main/scripts/get-barkvisor.sh -o get-barkvisor.sh
+less get-barkvisor.sh
+sudo bash get-barkvisor.sh
+```
 
-Alternatively, download the standalone `BarkVisor-<version>-standalone.tar.gz` and extract it manually.
+SSH / non-TTY:
+
+```sh
+sudo bash get-barkvisor.sh --yes
+```
+
+The script picks the matching GitHub release `.pkg`, checks the `.sha256` sidecar, then `installer -pkg … -target /`. It starts the root LaunchDaemon and waits for `/api/health`. Intel Macs are refused. It never runs `sudo brew` or `brew upgrade barkvisor`.
+
+Pin a release with `--version v1.2.3`. Print the plan with `--dry-run`.
+
+## System requirements
+
+- **macOS 26.0 or later** (Swift Package Manager platform minimum).
+- **Apple Silicon only.** Intel Macs are not a product package.
+- **Disk space:** at least 2 GB for the app. Cloud images are typically 500 MB to 2 GB; guest disks grow to the size you allocate.
+- **RAM:** 8 GB minimum; 16 GB or more recommended. Each running Workload reserves its configured memory.
+
+## Installing from the `.pkg`
+
+If you already have the asset:
+
+```sh
+sudo installer -pkg BarkVisor-<version>.pkg -target /
+```
+
+The installer places files under `/usr/local/` and loads `dev.barkvisor`. Open `http://<device>:7777`.
 
 ### Installing over SSH
-
-BarkVisor is a headless daemon with no GUI dependencies, so it can be installed entirely over SSH on a remote Mac:
 
 ```sh
 scp BarkVisor-<version>.pkg user@remote-mac:~/
 ssh user@remote-mac 'sudo installer -pkg ~/BarkVisor-<version>.pkg -target /'
 ```
 
-After installation, open `http://<remote-mac-ip>:7777` in a browser to complete the web-based setup.
+Off-LAN: install [Tailscale](https://tailscale.com/download) yourself. BarkVisor can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
 
-Off-LAN: install [Tailscale](https://tailscale.com/download) separately. BarkVisor detects `tailscale` and can advertise the tailnet address; it does not bundle the Tailscale app. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
+### Gatekeeper and notarization
 
-### Gatekeeper and Notarization
+Release builds are Developer ID signed and notarized. If Gatekeeper blocks an unsigned development `.pkg`, open **System Settings → Privacy & Security** and choose **Open Anyway**.
 
-Release builds are code-signed with a Developer ID certificate and notarized with Apple. On first launch, macOS Gatekeeper will verify the notarization ticket. If you see a "cannot be opened" warning (e.g. from an unsigned development build), right-click the app and choose **Open**, then confirm.
+Entitlements on the QEMU/runtime bits:
 
-The app requires the following entitlements:
+- `com.apple.security.hypervisor` — HVF
+- `com.apple.security.network.server` — listen on `:7777`
+- `com.apple.security.network.client` — catalogs, image downloads, guest NAT
 
-- `com.apple.security.hypervisor` -- required by QEMU to use Apple's Hypervisor.framework for hardware-accelerated virtualization.
-- `com.apple.security.network.server` -- the built-in web server listens on port 7777.
-- `com.apple.security.network.client` -- used for repository sync, image downloads, and outbound VM networking.
+## Homebrew runtime (not the app)
 
-## What Gets Installed
+The `.pkg` does **not** ship QEMU, swtpm, or socket_vmnet. Install them as your user:
 
-BarkVisor is installed as a system daemon under `/usr/local/`. The install layout:
+```sh
+brew install qemu swtpm socket_vmnet
+```
+
+Do not `sudo brew install`. Do not `brew upgrade barkvisor`. The Homebrew keg is not the appliance channel. App updates are [Settings → Updates](settings-updates.md).
+
+The root Device daemon starts `socket_vmnet` through a BarkVisor-owned LaunchDaemon. NAT Workloads do not need that service.
+
+## Root daemon
+
+`/Library/LaunchDaemons/dev.barkvisor.plist` has no `UserName`. The control plane is root. There is no XPC helper and no SMJobBless.
+
+On Linux, QEMU drops to `barkvisor` / `qemu` with `kvm` / `disk`. On macOS, HVF and USB have not been proven after a uid drop, so QEMU stays the daemon uid.
+
+`barkvisor-agent` is a symlink to `barkvisor`. launchd still starts `barkvisor` (SPA). For an API-only Mac, point `Program` at `/usr/local/bin/barkvisor-agent` and join with `barkvisor-agent join --code`. One process per Device.
+
+## What gets installed
 
 ```
 /usr/local/
@@ -56,93 +96,65 @@ BarkVisor is installed as a system daemon under `/usr/local/`. The install layou
     barkvisor-agent             # API-only Device (symlink; no SPA)
   libexec/barkvisor/            # unused for QEMU (Homebrew); leftover-safe
   lib/barkvisor/
-    *.dylib                     # daemon dylibs if any
+    *.dylib
   share/barkvisor/
-    templates.json              # Built-in VM template catalog
-    frontend/
-      dist/
-        index.html              # Vue.js single-page application
-        assets/                 # JS, CSS, and other frontend assets
+    templates.json
+    frontend/dist/
 /Library/
   LaunchDaemons/
-    dev.barkvisor.plist              # launchd plist for the main daemon
+    dev.barkvisor.plist
 ```
 
-QEMU, swtpm, and socket_vmnet are **not** in the pkg. Install them with Homebrew before starting Workloads:
+## Data directory
 
-```sh
-brew install qemu swtpm socket_vmnet
-```
-
-Do not run `brew install` as root against a user Homebrew prefix. The Device daemon is a root LaunchDaemon and starts `socket_vmnet` itself via launchctl (a BarkVisor-owned plist). NAT Workloads do not need that service. QEMU on macOS stays the daemon uid; HVF and USB passthrough have not been proven after a drop.
-
-`barkvisor-agent` is a symlink to `barkvisor`. launchd still starts `barkvisor` (SPA). For an API-only Mac, point `Program` at `/usr/local/bin/barkvisor-agent` and join with `barkvisor-agent join --code`. One process per Device. Do not run both names as daemons.
-
-## Data Directory
-
-On first launch, BarkVisor creates its data directory. For installed daemon builds, the data directory is:
+Installed appliance:
 
 ```
 /var/lib/barkvisor/
 ```
 
-For development builds (`swift run`), the data directory is `~/Library/Application Support/BarkVisor/`.
-
-This path is determined by `Config.dataDir` based on whether the binary is running from an installed layout or a development build. The directory contains:
+`swift run` uses `~/Library/Application Support/BarkVisor/`.
 
 | Path | Purpose |
 |------|---------|
-| `db.sqlite` | SQLite database (users, VMs, disks, networks, images, templates, audit log, etc.) |
-| `jwt-secret` | 256-bit random secret for signing JWT tokens. Auto-generated on first launch. |
-| `disks/` | VM disk images (qcow2 and raw). |
-| `images/` | Downloaded OS images (ISOs and cloud images). |
-| `logs/` | Server log files. Override with the `BARKVISOR_LOG_DIR` environment variable. |
-| `logs/vms/` | Per-VM log files. |
-| `backups/` | Automatic and manual database backups. Configurable location via Settings. |
-| `cloud-init/` | Generated cloud-init seed ISOs. |
-| `efivars/` | Per-VM UEFI variable stores (NVRAM). |
-| `monitor/` | QEMU monitor (QMP) unix sockets. |
-| `tus-uploads/` | Temporary storage for resumable file uploads (tus protocol). |
-| `pids/` | PID files for running QEMU processes. |
-| `console/` | Serial console unix sockets. |
+| `db.sqlite` | SQLite (users, Workloads, disks, networks, images, templates, audit log) |
+| `jwt-secret` | JWT signing secret |
+| `disks/` | Guest disks |
+| `images/` | Downloaded ISOs and cloud images (Library) |
+| `logs/` | Server logs (`BARKVISOR_LOG_DIR` overrides) |
+| `logs/vms/` | Per-Workload logs |
+| `backups/` | Database backups |
+| `cloud-init/` | Seed ISOs (`user-data` + `meta-data` only) |
+| `efivars/` | UEFI NVRAM |
+| `monitor/` | QMP sockets |
+| `tus-uploads/` | Resumable uploads |
+| `pids/` | QEMU PID files |
+| `console/` | Serial sockets |
 
-Additionally, short-lived unix sockets for QMP communication are stored in a shorter directory to stay within the 104-byte unix socket path limit. For installed builds, this is `/var/run/barkvisor/`; for dev builds, `$TMPDIR/barkvisor/`.
+Short unix sockets live under `/var/run/barkvisor/` (installed) or `$TMPDIR/barkvisor/` (dev).
+
+## Updates
+
+On a root `.pkg` appliance, open **Settings → Updates**. The Device downloads the newer checksummed `.pkg` and runs `installer -pkg … -target /`, then reloads the LaunchDaemon. `/var/lib/barkvisor` stays put. GRDB migrates on start. Workloads stay up across the daemon restart (`AbandonProcessGroup`).
+
+`swift run`, smoke instances, and a leftover Homebrew keg do not get this path.
+
+Do not `brew upgrade barkvisor`.
 
 ## Uninstalling
 
-1. Stop the daemon: `sudo launchctl bootout system/dev.barkvisor`
-2. Remove installed files:
-   ```
-   sudo rm -f /usr/local/bin/barkvisor /usr/local/bin/barkvisor-agent
-   sudo rm -rf /usr/local/libexec/barkvisor /usr/local/lib/barkvisor /usr/local/share/barkvisor
-   sudo rm -f /Library/LaunchDaemons/dev.barkvisor.plist
-   ```
-3. **(Optional)** Remove the data directory to delete all VMs, disk images, and configuration:
-   ```
-   sudo rm -rf /var/lib/barkvisor
-   ```
-4. **(Optional)** Remove a leftover privileged helper from older installs:
-   ```
-   sudo launchctl bootout system/dev.barkvisor.helper
-   sudo rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
-   sudo rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
-   ```
-
-## Upgrading
-
-Preferred on macOS with Homebrew:
-
 ```sh
-brew upgrade barkvisor
-sudo brew services restart barkvisor
+sudo ./scripts/uninstall.sh
 ```
 
-From a `.pkg` or standalone archive:
+That stops the LaunchDaemon, removes binaries and the plist, strips leftover `dev.barkvisor.helper`, and stops `socket_vmnet` if this Device started it. Appliance data under `/var/lib/barkvisor` stays unless you pass `--purge`.
 
-1. Stop the daemon: `sudo launchctl bootout system/dev.barkvisor`
-2. Install the new version using the `.pkg` installer or by extracting the standalone archive.
-3. Start the daemon: `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.barkvisor.plist`
+`--uninstall-socket-vmnet` is the only way the script runs `brew uninstall socket_vmnet`. It never default-deletes a Linux `br0` (see [Linux uninstall](getting-started-linux.md#uninstalling)).
 
-Your data directory is preserved across upgrades. Database migrations run automatically on startup -- BarkVisor uses GRDB's `DatabaseMigrator`, which tracks which migrations have already been applied and only runs new ones. No manual intervention is required.
+Older leftover helper files:
 
-Older installs may still have `dev.barkvisor.helper`. New builds do not use it; remove it with the uninstall steps above.
+```sh
+sudo launchctl bootout system/dev.barkvisor.helper
+sudo rm -f /Library/LaunchDaemons/dev.barkvisor.helper.plist
+sudo rm -f /Library/PrivilegedHelperTools/dev.barkvisor.helper
+```

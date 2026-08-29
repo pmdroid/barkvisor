@@ -80,11 +80,11 @@ journalctl -u barkvisor.service -f
 
 Linux install guide: [Installation (Linux)](getting-started-linux.md).
 
-- **QEMU not found:** install distro QEMU (see the Linux install checklist). On Rocky/Alma/RHEL the binary is often `/usr/libexec/qemu-kvm` — BarkVisor resolves that path.
+- **QEMU not found:** install distro QEMU (see the Linux install checklist).
 - **UEFI guest fails to boot:** ensure OVMF/AAVMF packages are installed; HAOS needs a real VARS template (not an empty file).
-- **Bridge fails:** configure `/etc/qemu/bridge.conf` (`allow br0`) and setuid on `qemu-bridge-helper`. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
+- **Bridge fails:** use **Networks → Bridge setup → Apply**, or run the equivalent commands on that page. Rollback is a host timer. Under systemd, do not set `NoNewPrivileges=true` on the unit (packaged unit allows the setuid helper).
 - **Blank SPA after package install:** confirm `/usr/local/share/barkvisor/frontend/dist` has `index.html` (or `BARKVISOR_FRONTEND_DIR`).
-- **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. Add the `barkvisor` user to group `kvm` when KVM is present, then restart the service.
+- **Slow guests:** many nested/cloud hosts lack `/dev/kvm` → TCG. The daemon is root; dropped QEMU needs group `kvm` when KVM is present.
 - **Stop / restart (systemd):** `sudo systemctl restart barkvisor.service` and `journalctl -u barkvisor.service -f`. The unit uses `KillMode=process`, so a restart signals only the daemon — running Workloads stay up and are reattached. Use Workload Stop to shut a guest down.
 
 ## Onboarding issues
@@ -137,7 +137,7 @@ https://raw.githubusercontent.com/pmdroid/barkvisor/refs/heads/main/repos/templa
 brew install qemu
 ```
 
-**Linux** uses distro QEMU on `$PATH` (Rocky/RHEL often ship `/usr/libexec/qemu-kvm`). Install QEMU from the distro using [System Requirements](getting-started-linux.md#system-requirements) in the Linux install guide.
+**Linux** uses distro QEMU on `$PATH`. Install QEMU from the distro using [System Requirements](getting-started-linux.md#system-requirements) in the Linux install guide.
 
 ### Firmware not found
 
@@ -212,7 +212,7 @@ NAT Workloads do not need `socket_vmnet`.
 
 ### Linux: host bridge
 
-On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. See [Bridged networking](getting-started-linux.md#bridged-networking-optional).
+On **Linux**, bridged VMs use QEMU `-netdev bridge` with a host `br*` interface and `qemu-bridge-helper` ACL in `/etc/qemu/bridge.conf`. Prefer **Networks → Bridge setup → Apply**. See [Bridged networking](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
 
 ## Frontend
 

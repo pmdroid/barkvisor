@@ -174,8 +174,8 @@ swift build -c release --product BarkVisorApp
 
 | Format | Typical targets |
 |--------|-----------------|
-| `.deb` | Ubuntu, Debian |
-| `.rpm` | Fedora, Rocky, Alma, RHEL |
+| `.deb` | Ubuntu, Debian (appliance channel) |
+| `.rpm` | Fedora, Rocky, Alma, RHEL (builder artifact; not this milestone) |
 | `.tar.gz` | Any glibc host (+ `install.sh`) |
 | Arch `PKGBUILD` | Arch / Arch ARM |
 
