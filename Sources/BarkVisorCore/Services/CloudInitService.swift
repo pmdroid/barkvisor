@@ -58,17 +58,28 @@ public enum CloudInitService {
         sshKeys: [String],
         userData: String?,
         instanceID: String? = nil,
+        macAddress: String? = nil,
+        addressing: GuestAddressing? = nil,
     ) throws -> URL {
         let dir = generatedISOURL(vmID: vmID).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let hostname = hostnameFromVMName(vmName)
         let trimmedID = instanceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let resolvedID = trimmedID.isEmpty ? vmID : trimmedID
+        let baseID = trimmedID.isEmpty ? vmID : trimmedID
+        let resolvedID = GuestAddressing.composeInstanceID(base: baseID, addressing: addressing)
         let metaData = "instance-id: \(resolvedID)\nlocal-hostname: \(hostname)\n"
         try metaData.write(
             to: dir.appendingPathComponent("meta-data"), atomically: true, encoding: .utf8,
         )
+
+        let networkConfigURL = dir.appendingPathComponent("network-config")
+        let networkYAML = try addressing?.networkConfigYAML(macAddress: macAddress)
+        if let networkYAML {
+            try networkYAML.write(to: networkConfigURL, atomically: true, encoding: .utf8)
+        } else {
+            try? FileManager.default.removeItem(at: networkConfigURL)
+        }
 
         // Validate SSH keys
         for key in sshKeys {
@@ -129,15 +140,20 @@ public enum CloudInitService {
 
         let tool = try resolveCloudInitISOTool()
         // genisoimage accepts the same option set as classic mkisofs for this use.
+        var isoFiles = [
+            dir.appendingPathComponent("meta-data").path,
+            dir.appendingPathComponent("user-data").path,
+        ]
+        if networkYAML != nil {
+            isoFiles.append(networkConfigURL.path)
+        }
         let result = try PlatformProcess.run(
             executable: tool,
             arguments: [
                 "-output", isoURL.path,
                 "-volid", "cidata",
                 "-joliet", "-rock",
-                dir.appendingPathComponent("meta-data").path,
-                dir.appendingPathComponent("user-data").path,
-            ],
+            ] + isoFiles,
             timeout: 60,
         )
 
@@ -157,9 +173,22 @@ public enum CloudInitService {
 
     /// user-data written next to the generated ISO, if present.
     public static func storedUserData(vmID: String) -> String? {
+        storedSeedFile(vmID: vmID, name: "user-data")
+    }
+
+    /// NoCloud network-config written next to the generated ISO, if present.
+    public static func storedNetworkConfig(vmID: String) -> String? {
+        storedSeedFile(vmID: vmID, name: "network-config")
+    }
+
+    public static func storedMetaData(vmID: String) -> String? {
+        storedSeedFile(vmID: vmID, name: "meta-data")
+    }
+
+    private static func storedSeedFile(vmID: String, name: String) -> String? {
         let url = generatedISOURL(vmID: vmID)
             .deletingLastPathComponent()
-            .appendingPathComponent("user-data")
+            .appendingPathComponent(name)
         return try? String(contentsOf: url, encoding: .utf8)
     }
 

@@ -122,6 +122,9 @@ public final class AppDatabase: Sendable {
         migrator.registerMigration(M016_PendingDeploys.identifier) { db in
             try M016_PendingDeploys.migrate(db)
         }
+        migrator.registerMigration(M017_GuestAddressing.identifier) { db in
+            try M017_GuestAddressing.migrate(db)
+        }
     }
 }
 

@@ -296,6 +296,9 @@ struct Workload: Decodable, Identifiable, Hashable {
     var usbDevices: [USBPassthroughDevice]? = nil
     var pendingImageId: String? = nil
     var downloadPercent: Int? = nil
+    var macAddress: String? = nil
+    var cloudInitPath: String? = nil
+    var guestAddressing: GuestAddressingInfo? = nil
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -504,6 +507,26 @@ struct GuestListeningPort: Decodable, Hashable {
     ]
 }
 
+struct GuestAddressingInfo: Decodable, Hashable {
+    var mode: String
+    var ipv4: String?
+    var prefixLength: Int?
+    var gateway: String?
+    var nameservers: [String]?
+
+    var isStatic: Bool {
+        mode == "static"
+    }
+
+    var summary: String {
+        if isStatic, let ipv4 {
+            if let prefixLength { return "Static \(ipv4)/\(prefixLength)" }
+            return "Static \(ipv4)"
+        }
+        return "DHCP (LAN)"
+    }
+}
+
 struct GuestInfo: Decodable, Hashable {
     var available: Bool
     var ipAddresses: [String]
@@ -512,6 +535,7 @@ struct GuestInfo: Decodable, Hashable {
     var hostname: String?
     var listeningPorts: [GuestListeningPort]?
     var portsCollectedAt: String?
+    var macAddress: String?
 
     init(
         available: Bool,
@@ -521,6 +545,7 @@ struct GuestInfo: Decodable, Hashable {
         hostname: String? = nil,
         listeningPorts: [GuestListeningPort]? = nil,
         portsCollectedAt: String? = nil,
+        macAddress: String? = nil,
     ) {
         self.available = available
         self.ipAddresses = ipAddresses
@@ -529,6 +554,7 @@ struct GuestInfo: Decodable, Hashable {
         self.hostname = hostname
         self.listeningPorts = listeningPorts
         self.portsCollectedAt = portsCollectedAt
+        self.macAddress = macAddress
     }
 
     init(from decoder: Decoder) throws {
@@ -540,6 +566,7 @@ struct GuestInfo: Decodable, Hashable {
         hostname = try container.decodeIfPresent(String.self, forKey: .hostname)
         listeningPorts = try container.decodeIfPresent([GuestListeningPort].self, forKey: .listeningPorts)
         portsCollectedAt = try container.decodeIfPresent(String.self, forKey: .portsCollectedAt)
+        macAddress = try container.decodeIfPresent(String.self, forKey: .macAddress)
     }
 
     var osLabel: String? {
@@ -554,7 +581,7 @@ struct GuestInfo: Decodable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case available, ipAddresses, osName, osVersion, hostname
-        case listeningPorts, portsCollectedAt
+        case listeningPorts, portsCollectedAt, macAddress
     }
 }
 
