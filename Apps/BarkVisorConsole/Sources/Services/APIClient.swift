@@ -287,6 +287,19 @@ struct APIClient {
         try await get(scoped("/system/about", on: device))
     }
 
+    func deviceName(on device: HomeDeviceHealthSnapshot) async throws -> DeviceNameSnapshot {
+        try await get(scoped("/system/device-name", on: device))
+    }
+
+    func saveDeviceName(_ displayName: String, on device: HomeDeviceHealthSnapshot) async throws -> DeviceNameSnapshot {
+        try await send(
+            method: "PUT",
+            path: scoped("/system/device-name", on: device),
+            body: DeviceNameUpdate(displayName: displayName),
+            as: DeviceNameSnapshot.self,
+        )
+    }
+
     func capabilities(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemCapabilities {
         try await get(scoped("/system/capabilities", on: device))
     }

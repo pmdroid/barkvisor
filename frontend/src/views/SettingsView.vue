@@ -39,7 +39,6 @@ import {
 import { loginOfferSvg } from '../utils/qrSvg'
 import { useDevicesStore } from '../stores/devices'
 import { useDeviceScopeStore } from '../stores/deviceScope'
-import { getDeviceName, saveDeviceName } from '../api/deviceName'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
@@ -79,20 +78,12 @@ const passkeysAvailable = isPasskeyAvailable()
 const passkeyBlocked = passkeyBlock()
 const tab = ref<SettingsTab>(settingsTabFromQuery(route.query) ?? DEFAULT_SETTINGS_TAB)
 
-const deviceNameDraft = ref('')
-const deviceNameHostname = ref('')
-const deviceNameLoading = ref(false)
-const deviceNameSaving = ref(false)
-const homeDeviceName = computed(() => {
-  const draft = deviceNameDraft.value.trim()
-  if (draft) return draft
-  return devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : DEVICE_LABEL
-})
-const homeToolbarSub = computed(() => homeDeviceName.value)
-const homeSaving = computed(() => remoteAccessSaving.value || deviceNameSaving.value)
-const homeSaveDisabled = computed(
-  () => deviceNameLoading.value || remoteAccessLoading.value || !deviceNameDraft.value.trim(),
+const homeDeviceName = computed(() =>
+  devicesStore.selfDevice ? deviceDisplayLabel(devicesStore.selfDevice) : DEVICE_LABEL,
 )
+const homeToolbarSub = computed(() => homeDeviceName.value)
+const homeSaving = computed(() => remoteAccessSaving.value)
+const homeSaveDisabled = computed(() => remoteAccessLoading.value || !remoteAccess.value)
 const advertisedHostChips = computed(() => remoteAccess.value?.advertisedHosts ?? [])
 const deviceUrlDisplay = computed(() => {
   const host = remoteAccess.value?.deviceUrl?.trim()
@@ -185,7 +176,6 @@ async function loadPairingCode() {
 function openHomeTab() {
   tab.value = 'home'
   fetchRemoteAccess()
-  fetchDeviceName()
   devicesStore.fetchHealth()
 }
 
@@ -432,44 +422,6 @@ async function fetchRemoteAccess() {
   } finally {
     remoteAccessLoading.value = false
   }
-}
-
-async function fetchDeviceName() {
-  deviceNameLoading.value = true
-  try {
-    const data = await getDeviceName()
-    deviceNameDraft.value = data.displayName
-    deviceNameHostname.value = data.hostname
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e, 'Could not load Device name'))
-  } finally {
-    deviceNameLoading.value = false
-  }
-}
-
-async function saveHomeSettings() {
-  const name = deviceNameDraft.value.trim()
-  if (!name) {
-    toast.error('Device name must not be empty')
-    return
-  }
-  deviceNameSaving.value = true
-  try {
-    const named = await saveDeviceName(name)
-    deviceNameDraft.value = named.displayName
-    deviceNameHostname.value = named.hostname
-    await devicesStore.fetchHealth()
-  } catch (e: unknown) {
-    toast.error(apiErrorMessage(e, 'Could not save Device name'))
-    deviceNameSaving.value = false
-    return
-  }
-  deviceNameSaving.value = false
-  if (remoteAccess.value) {
-    await saveRemoteAccess()
-    return
-  }
-  toast.success('Device name saved')
 }
 
 async function saveRemoteAccess() {
@@ -904,7 +856,7 @@ onUnmounted(() => {
         variant="primary"
         :loading="homeSaving"
         :disabled="homeSaveDisabled"
-        @click="saveHomeSettings()"
+        @click="saveRemoteAccess()"
       >Save changes</AppButton>
     </div>
   </div>
@@ -924,22 +876,6 @@ onUnmounted(() => {
 
   <div v-if="tab === 'home'">
     <div class="facts">
-      <div class="fact">
-        <span class="k">Device name<span>How this Device appears in the Home</span></span>
-        <span class="v">
-          <input
-            v-model="deviceNameDraft"
-            class="pairing-input"
-            type="text"
-            maxlength="64"
-            autocomplete="off"
-            spellcheck="false"
-            :disabled="deviceNameLoading || homeSaving"
-            :placeholder="deviceNameHostname || 'Device name'"
-            @keydown.enter.prevent="saveHomeSettings"
-          />
-        </span>
-      </div>
       <div class="fact">
         <span class="k">Device URL<span>Host other Devices and phones use to reach this one</span></span>
         <span class="v">{{ deviceUrlDisplay || '—' }}</span>
