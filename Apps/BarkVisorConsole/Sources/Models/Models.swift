@@ -649,6 +649,21 @@ struct DeviceStatsChartPoint: Identifiable, Equatable {
     }
 }
 
+enum DeviceRename {
+    static let maxLength = 64
+
+    /// Self always; members only when the hop can reach them.
+    static func canRename(_ device: HomeDeviceHealthSnapshot) -> Bool {
+        device.isSelf || device.isReachable
+    }
+
+    static func parse(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLength else { return nil }
+        return trimmed
+    }
+}
+
 enum DeviceStatsHistory {
     static let minutes = 30
     static let maxPoints = 60
@@ -702,6 +717,15 @@ enum DeviceStatsHistory {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+}
+
+struct DeviceNameSnapshot: Decodable, Equatable {
+    var displayName: String
+    var hostname: String
+}
+
+struct DeviceNameUpdate: Encodable, Equatable {
+    var displayName: String
 }
 
 struct SystemAbout: Decodable {

@@ -187,6 +187,17 @@ describe('homeDeviceApi (device about)', () => {
   })
 })
 
+describe('homeDeviceApi (device name)', () => {
+  test('self stays local; members hop PUT /system/device-name', () => {
+    expect(devicePath(self, '/system/device-name')).toBe('/system/device-name')
+    expect(devicePath(member, '/system/device-name')).toBe(
+      '/home/devices/peer%2F1/v1/system/device-name',
+    )
+    expect(devicePath(member, '/system/device-name')).not.toContain('targetHostId')
+    expect(canFetchDeviceWorkloads(down)).toBe(false)
+  })
+})
+
 describe('homeDeviceApi (device stats history)', () => {
   test('self stays local; members use the Home proxy minutes query', () => {
     expect(deviceStatsHistoryPath(self)).toBe('/system/stats/history?minutes=30')
