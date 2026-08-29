@@ -307,6 +307,9 @@ struct LinuxGuestScriptsTests {
         #expect(prepushDeps == ["lint", "test", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("guest-smoke"))
+        #expect(!prepushTable.contains("linux-ci"))
+        #expect(mise.contains("[tasks.linux-ci]"))
+        #expect(mise.contains("./scripts/ci-linux.sh"))
 
         let docs = try String(
             contentsOf: repoRoot.appendingPathComponent("docs/getting-started-development.md"),
@@ -612,6 +615,33 @@ struct LinuxGuestScriptsTests {
         #expect(prepushDeps == ["lint", "test", "frontend-test"])
         let prepushTable = try #require(miseTaskTable(mise, name: "prepush"))
         #expect(!prepushTable.contains("guest-smoke"))
+        #expect(!prepushTable.contains("linux-ci"))
+    }
+
+    @Test func `pre-push hook runs GitHub linux-build after Mac prepush`() throws {
+        let hook = try String(
+            contentsOf: repoRoot.appendingPathComponent(".githooks/pre-push"),
+            encoding: .utf8,
+        )
+        #expect(hook.contains("mise run prepush"))
+        #expect(hook.contains("mise run linux-ci"))
+        let prepushRange = try #require(hook.range(of: "mise run prepush"))
+        let linuxRange = try #require(hook.range(of: "mise run linux-ci"))
+        #expect(prepushRange.lowerBound < linuxRange.lowerBound)
+
+        let script = repoRoot.appendingPathComponent("scripts/ci-linux.sh")
+        #expect(FileManager.default.isExecutableFile(atPath: script.path))
+        let body = try String(contentsOf: script, encoding: .utf8)
+        for needle in [
+            "swift build --product BarkVisorApp",
+            "swift test --skip-update",
+            "swift:6.3.3-noble",
+            "barkvisor-ci-linux-build",
+            "SKIP_LINUX_CI",
+        ] {
+            #expect(body.contains(needle), "ci-linux.sh should mention \(needle)")
+        }
+        #expect(!body.localizedCaseInsensitiveContains("cluster"))
     }
 
     @Test func `starlight changelog and terminology keep Roadmap links`() throws {

@@ -14,4 +14,7 @@ if ! command -v mise >/dev/null 2>&1; then
 fi
 
 echo "pre-push: mise run prepush (lint + swift test + frontend test)" >&2
-exec mise run prepush
+mise run prepush
+
+echo "pre-push: mise run linux-ci (GitHub linux-build: Ubuntu swift build + test)" >&2
+exec mise run linux-ci

@@ -97,7 +97,8 @@ mise run test       # swift test
 mise run lint       # swiftlint + swiftformat --lint
 swiftformat Sources/ Tests/   # apply formatting
 # CI equivalent: mise run lint && mise run test
-# Default push gate: mise run prepush   (lint + test + frontend-test)
+# Default push gate: mise run prepush (lint + test + frontend-test)
+# then mise run linux-ci (GitHub linux-build via Docker on macOS)
 ```
 
 Guest-boot BDD is **opt-in** (`features/guest-boot.feature` → existing

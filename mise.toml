@@ -31,8 +31,14 @@ dir = "frontend"
 run = ["bun install", "bun test"]
 
 [tasks.prepush]
-description = "Local CI gate: lint + Swift tests + frontend tests (must pass before push)"
+description = "Local Mac CI gate: lint + Swift tests + frontend tests (must pass before push)"
 depends = ["lint", "test", "frontend-test"]
+
+# GitHub linux-build (ubuntu-24.04 swift build + swift test). Not in [tasks.prepush]
+# so Mac iterate stays fast. The pre-push hook runs this after prepush.
+[tasks.linux-ci]
+description = "GitHub linux-build locally (native on Linux, Docker on macOS)"
+run = "./scripts/ci-linux.sh"
 
 # PAS-183 guest-boot BDD is opt-in. Do not add these to [tasks.prepush]:
 # TCG Ubuntu boots can take ~15 minutes (SSH_WAIT_SECS=900).
