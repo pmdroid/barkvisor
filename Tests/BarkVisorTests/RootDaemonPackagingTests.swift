@@ -35,6 +35,23 @@ struct RootDaemonPackagingTests {
         }
     }
 
+    @Test func `linux device unit can apply a deb in-process`() throws {
+        for relative in [
+            "packaging/linux/barkvisor.service",
+            "Resources/barkvisor.service",
+        ] {
+            let unit = try read(relative)
+            #expect(unit.contains("ProtectSystem=strict"), "\(relative)")
+            #expect(unit.contains("/usr/local"), "\(relative) must allow dpkg to write the payload")
+            #expect(unit.contains("/var/lib/dpkg"), "\(relative) must allow the dpkg database")
+            #expect(unit.contains("/var/cache/apt"), "\(relative) must allow apt-get -f")
+            #expect(
+                !unit.contains("ReadOnlyPaths=/usr/local/share/barkvisor"),
+                "\(relative) must not keep the .deb payload read-only",
+            )
+        }
+    }
+
     @Test func `macos appliance plist is root without _barkvisor`() throws {
         let plist = try read("Resources/dev.barkvisor.plist")
         #expect(!plist.contains("<key>UserName</key>"))

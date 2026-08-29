@@ -54,8 +54,10 @@ public struct InAppUpdateFacts: Sendable, Equatable {
 
 /// True only for a root appliance with the known `/var/lib/barkvisor` layout.
 ///
-/// False for `swift run`, smoke (`BARKVISOR_DATA_DIR`), Homebrew kegs, Fedora/rpm,
+/// False for `swift run`, smoke temp data dirs, Homebrew kegs, Fedora/rpm,
 /// Intel Mac, and Windows. Ubuntu/Debian apply a `.deb`; Apple Silicon applies a `.pkg`.
+/// The packaged Linux unit sets `BARKVISOR_DATA_DIR=/var/lib/barkvisor`; that is
+/// the appliance path, not an override.
 public enum InAppUpdateEligibility {
     public static let applianceDataDir = "/var/lib/barkvisor"
 
@@ -148,7 +150,7 @@ public enum InAppUpdateEligibility {
                 binaryDirectoryIsBin: binDir.lastPathComponent == "bin",
             ),
             dataDirIsVarLib: isApplianceDataDir(Config.dataDir.path),
-            dataDirOverridden: !override.isEmpty,
+            dataDirOverridden: !override.isEmpty && !isApplianceDataDir(override),
             hostArch: PlatformCapabilities.hostArch,
             os: PlatformHost.platformName,
             installPrefix: prefix,

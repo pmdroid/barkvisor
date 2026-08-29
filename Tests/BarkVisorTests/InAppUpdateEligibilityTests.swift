@@ -102,6 +102,21 @@ struct InAppUpdateEligibilityTests {
         #expect(!InAppUpdateEligibility.isApplianceDataDir("/tmp/barkvisor-smoke"))
     }
 
+    @Test func `packaged linux data dir env is not an override`() {
+        let applianceDir = InAppUpdateEligibility.liveFacts(
+            environment: ["BARKVISOR_DATA_DIR": "/var/lib/barkvisor"],
+        )
+        #expect(!applianceDir.dataDirOverridden)
+        let privateVar = InAppUpdateEligibility.liveFacts(
+            environment: ["BARKVISOR_DATA_DIR": "/private/var/lib/barkvisor"],
+        )
+        #expect(!privateVar.dataDirOverridden)
+        let smoke = InAppUpdateEligibility.liveFacts(
+            environment: ["BARKVISOR_DATA_DIR": "/tmp/barkvisor-smoke"],
+        )
+        #expect(smoke.dataDirOverridden)
+    }
+
     @Test func `live facts on this process are not an appliance`() {
         let facts = InAppUpdateEligibility.liveFacts()
         #expect(!InAppUpdateEligibility.evaluate(facts))
