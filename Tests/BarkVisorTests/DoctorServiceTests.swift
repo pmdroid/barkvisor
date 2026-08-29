@@ -263,6 +263,31 @@ struct DoctorServiceTests {
         #expect(rows[1].uid == 107)
     }
 
+    @Test func `device daemon matcher accepts serve and packaged argv0`() {
+        #expect(DoctorDaemonProcess.matches("/usr/local/bin/barkvisor"))
+        #expect(DoctorDaemonProcess.matches("/usr/local/bin/barkvisor serve"))
+        #expect(DoctorDaemonProcess.matches("/usr/local/bin/barkvisor-agent"))
+        #expect(DoctorDaemonProcess.matches("/opt/homebrew/opt/barkvisor/bin/barkvisor"))
+        #expect(DoctorDaemonProcess.matches("/opt/homebrew/bin/barkvisor --port 7777"))
+        #expect(DoctorDaemonProcess.matches(".build/arm64-apple-macosx/debug/barkvisor"))
+        #expect(!DoctorDaemonProcess.matches("/usr/local/bin/barkvisor doctor"))
+        #expect(!DoctorDaemonProcess.matches("/usr/local/bin/barkvisor doctor --json"))
+        #expect(!DoctorDaemonProcess.matches("/usr/local/bin/barkvisor join --code x"))
+        #expect(!DoctorDaemonProcess.matches("/usr/local/libexec/barkvisor/qemu-system-aarch64"))
+    }
+
+    @Test func `live daemon uid prefers Device process over caller euid`() {
+        let rows = [
+            DoctorProcess(pid: 9, uid: 501, command: "/usr/local/bin/barkvisor doctor"),
+            DoctorProcess(pid: 1, uid: 0, command: "/usr/local/bin/barkvisor"),
+        ]
+        #expect(DoctorDaemonProcess.uid(from: rows, fallback: 501) == 0)
+        #expect(DoctorDaemonProcess.uid(
+            from: [DoctorProcess(pid: 9, uid: 501, command: "/usr/local/bin/barkvisor doctor")],
+            fallback: 501,
+        ) == 501)
+    }
+
     @Test func `cli is registered and stays read only`() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -284,6 +309,7 @@ struct DoctorServiceTests {
             encoding: .utf8,
         )
         #expect(doctor.contains("HostBridgeFactsService.probe"))
+        #expect(doctor.contains("DoctorDaemonProcess.uid"))
         #expect(doctor.contains("never applies") || doctor.contains("Never applies") || doctor.contains("never starts"))
         #expect(!doctor.contains("HelperXPCClient"))
         #expect(!doctor.contains("SMJobBless"))

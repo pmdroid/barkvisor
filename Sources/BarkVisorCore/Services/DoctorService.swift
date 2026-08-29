@@ -135,7 +135,7 @@ public struct LiveDoctorFactSource: DoctorFactSource {
         let trimmed = address?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return DoctorFactInputs(
             os: PlatformHost.platformName,
-            uid: UInt32(geteuid()),
+            uid: DoctorDaemonProcess.uid(from: processes, fallback: UInt32(geteuid())),
             qemuPath: qemuPath,
             qemuProcesses: qemuProcesses,
             kvmPresent: HostInventoryService.kvmDevicePresent(),
@@ -476,5 +476,23 @@ enum DoctorProcessList {
             else { return nil }
             return DoctorProcess(pid: pid, uid: uid, command: String(parts[2]))
         }
+    }
+}
+
+/// Device daemon rows from `ps`. Excludes CLI `doctor` / `join`.
+enum DoctorDaemonProcess {
+    static func matches(_ command: String) -> Bool {
+        let parts = command.split(whereSeparator: \.isWhitespace)
+        guard let argv0 = parts.first else { return false }
+        let name = URL(fileURLWithPath: String(argv0)).lastPathComponent
+        guard name == "barkvisor" || name == "barkvisor-agent" else { return false }
+        guard let first = parts.dropFirst().first else { return true }
+        let arg = String(first)
+        if arg.hasPrefix("-") { return true }
+        return arg == "serve"
+    }
+
+    static func uid(from processes: [DoctorProcess], fallback: UInt32) -> UInt32 {
+        processes.first { matches($0.command) }?.uid ?? fallback
     }
 }
