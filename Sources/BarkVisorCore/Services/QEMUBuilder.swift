@@ -351,6 +351,7 @@ public enum QEMUBuilder {
 
     private static func bootDiskArgs(disk: Disk, windows: Bool, diskFirst: Bool) throws -> [String] {
         try BlockDeviceService.requireHostDeviceReadWrite(paths: [disk.path])
+        try WorkloadPrivilegeDrop.handoffWritable(URL(fileURLWithPath: disk.path))
         let diskBootIndex = diskFirst ? 0 : 1
         let driveArgs = [
             "-drive",
@@ -406,7 +407,7 @@ public enum QEMUBuilder {
         guard spec.spec.firmware?.tpm == true else { return ([], nil, nil, nil) }
         let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vmID)")
         try FileManager.default.createDirectory(at: tpmStateDir, withIntermediateDirectories: true)
-        try WorkloadPrivilegeDrop.handoffForDroppedUser(tpmStateDir)
+        try WorkloadPrivilegeDrop.handoffWritable(tpmStateDir)
         let tpmSock = tpmStateDir.appendingPathComponent("swtpm.sock")
         let exe = try resolveSwtpm()
         let swtpmArgs = [
@@ -439,6 +440,7 @@ public enum QEMUBuilder {
                 paths: [sanitizedPath],
                 openReadWrite: openReadWrite,
             )
+            try WorkloadPrivilegeDrop.handoffWritable(URL(fileURLWithPath: sanitizedPath))
             args += [
                 "-drive",
                 "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=\(diskCacheMode(path: sanitizedPath)),id=\(QEMUDeviceNames.extraDrive(i))",
@@ -679,48 +681,47 @@ public enum QEMUBuilder {
         let profile = try GuestProfiles.require(vmType)
         let fwDir = Config.dataDir.appendingPathComponent("efivars/\(vmID)")
         try FileManager.default.createDirectory(at: fwDir, withIntermediateDirectories: true)
-        try WorkloadPrivilegeDrop.handoffForDroppedUser(fwDir)
         let varsFile = fwDir.appendingPathComponent("vars.fd")
 
+        let codeFile: URL
         switch profile.firmware {
         case .aavmfSecureBoot:
             // Windows ARM64 needs AAVMF secure boot firmware.
-            let codeFile = try resolveAAVMFSecureBoot()
+            codeFile = try resolveAAVMFSecureBoot()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.aavmfVarsCandidates,
                 zeroFillBytes: 67_108_864,
             )
-            return (codeFile, varsFile)
         case .edk2ARM64:
-            let codeFile = try resolveEDK2ARM64()
+            codeFile = try resolveEDK2ARM64()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.aavmfVarsCandidates,
                 zeroFillBytes: 67_108_864,
             )
-            return (codeFile, varsFile)
         case .edk2X86:
-            let codeFile = try resolveEDK2X86_64()
+            codeFile = try resolveEDK2X86_64()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.edk2X86VarsCandidates,
                 zeroFillBytes: 540_672,
             )
-            return (codeFile, varsFile)
         case .ovmfSecureBoot:
-            let codeFile = try resolveOVMFSecureBoot()
+            codeFile = try resolveOVMFSecureBoot()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.ovmfSecureBootVarsCandidates,
                 zeroFillBytes: 540_672,
             )
-            return (codeFile, varsFile)
         }
+        try WorkloadPrivilegeDrop.handoffWritable(fwDir)
+        try WorkloadPrivilegeDrop.handoffWritable(varsFile)
+        return (codeFile, varsFile)
     }
 
     /// Create per-VM NVRAM from the distro OVMF/AAVMF template when possible.
@@ -731,20 +732,18 @@ public enum QEMUBuilder {
         templateCandidates: [String],
         zeroFillBytes: Int,
     ) throws {
-        if !FileManager.default.fileExists(atPath: varsFile.path) {
-            // Prefer a VARS file that matches the CODE variant (4M / secboot).
-            var candidates = templateCandidates
-            candidates = preferMatchingFirmwareToken("secboot", in: candidates, codePath: codePath)
-            candidates = preferMatchingFirmwareToken("4M", in: candidates, codePath: codePath)
+        guard !FileManager.default.fileExists(atPath: varsFile.path) else { return }
 
-            if let template = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
-                try FileManager.default.copyItem(atPath: template, toPath: varsFile.path)
-            } else {
-                FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: zeroFillBytes))
-            }
+        // Prefer a VARS file that matches the CODE variant (4M / secboot).
+        var candidates = templateCandidates
+        candidates = preferMatchingFirmwareToken("secboot", in: candidates, codePath: codePath)
+        candidates = preferMatchingFirmwareToken("4M", in: candidates, codePath: codePath)
+
+        if let template = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            try FileManager.default.copyItem(atPath: template, toPath: varsFile.path)
+            return
         }
-        // copyItem keeps the template's 0644; umask 0022 is group-read only.
-        try WorkloadPrivilegeDrop.handoffForDroppedUser(varsFile)
+        FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: zeroFillBytes))
     }
 
     // MARK: - socket_vmnet resolution

@@ -76,6 +76,49 @@ struct DeviceDetailTests {
         #expect(DeviceStatsHistory.unavailableCopy(ok) != DeviceStatsHistory.unreachableCopy)
     }
 
+    @Test func `rename is offered on this Device and reachable members only`() {
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio", reachable: false)
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
+        let garage = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)
+        #expect(DeviceRename.canRename(studio))
+        #expect(DeviceRename.canRename(living))
+        #expect(!DeviceRename.canRename(garage))
+        #expect(DeviceRename.parse("  Studio Mac  ") == "Studio Mac")
+        #expect(DeviceRename.parse("   ") == nil)
+        #expect(DeviceRename.parse(String(repeating: "n", count: DeviceRename.maxLength)) != nil)
+        #expect(DeviceRename.parse(String(repeating: "n", count: DeviceRename.maxLength + 1)) == nil)
+    }
+
+    @Test func `device name path uses local api or home proxy`() throws {
+        let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")))
+        let studio = snapshot(hostId: "self", role: "self", title: "Studio")
+        let living = snapshot(hostId: "peer", role: "member", title: "Living Room")
+        #expect(client.scoped("/system/device-name", on: studio) == "/api/system/device-name")
+        #expect(
+            client.scoped("/system/device-name", on: living)
+                == "/api/home/devices/peer/v1/system/device-name",
+        )
+        let slashMember = snapshot(hostId: "peer/1", role: "member", title: "Slash")
+        #expect(
+            client.scoped("/system/device-name", on: slashMember)
+                == "/api/home/devices/peer%2F1/v1/system/device-name",
+        )
+    }
+
+    @Test func `device detail offers rename next to the title`() throws {
+        let tests = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: tests.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/DeviceDetailView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("DeviceRename.canRename"))
+        #expect(source.contains("Button(\"Rename\")"))
+        #expect(source.contains("saveDeviceName"))
+        #expect(source.contains("Device name"))
+        #expect(source.contains("DeviceRename.canRename(device)"))
+    }
+
     @Test func `history path uses local api or home proxy`() throws {
         let client = try APIClient(baseURL: #require(URL(string: "http://127.0.0.1:7777")))
         let studio = snapshot(hostId: "self", role: "self", title: "Studio")

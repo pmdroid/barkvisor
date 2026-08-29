@@ -8,6 +8,7 @@ struct SystemHostController: RouteCollection {
         let system = routes.grouped("api", "system")
         system.get("interfaces", use: listInterfaces)
         system.get("host-bridge-readiness", use: getHostBridgeReadiness)
+        system.get("doctor", use: getDoctor)
         system.get("browse", use: browseDirectory)
         system.get("usb-devices", use: listUSBDevices)
         system.get("usb", use: listUSBDevices)
@@ -20,6 +21,11 @@ struct SystemHostController: RouteCollection {
     @Sendable
     func getHostBridgeReadiness(req _: Vapor.Request) async throws -> HostBridgeReadiness {
         HostBridgeFactsService.readiness()
+    }
+
+    @Sendable
+    func getDoctor(req _: Vapor.Request) async throws -> DoctorReport {
+        DoctorService.probe()
     }
 
     // MARK: - Directory Browser

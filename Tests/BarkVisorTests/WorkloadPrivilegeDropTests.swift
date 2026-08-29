@@ -1,10 +1,5 @@
 import Foundation
 import Testing
-#if canImport(Darwin)
-    import Darwin
-#elseif canImport(Glibc)
-    import Glibc
-#endif
 @testable import BarkVisorCore
 
 struct WorkloadPrivilegeDropTests {
@@ -126,98 +121,95 @@ struct WorkloadPrivilegeDropTests {
         }
     }
 
-    @Test func `drop user is chosen only when linux root has an account`() {
+    @Test func `drop user is barkvisor when linux root and the account exists`() {
         #expect(
-            WorkloadPrivilegeDrop.dropUserIfNeeded(
-                euid: 0,
-                dropsOnPlatform: false,
-                userExists: { _ in true },
-            ) == nil,
-        )
-        #expect(
-            WorkloadPrivilegeDrop.dropUserIfNeeded(
-                euid: 501,
-                dropsOnPlatform: true,
-                userExists: { $0 == "barkvisor" },
-            ) == nil,
-        )
-        #expect(
-            WorkloadPrivilegeDrop.dropUserIfNeeded(
-                euid: 0,
-                dropsOnPlatform: true,
-                userExists: { _ in false },
-            ) == nil,
-        )
-        #expect(
-            WorkloadPrivilegeDrop.dropUserIfNeeded(
+            WorkloadPrivilegeDrop.dropUser(
                 euid: 0,
                 dropsOnPlatform: true,
                 userExists: { $0 == "barkvisor" || $0 == "qemu" },
             ) == "barkvisor",
         )
         #expect(
-            WorkloadPrivilegeDrop.dropUserIfNeeded(
+            WorkloadPrivilegeDrop.dropUser(
                 euid: 0,
                 dropsOnPlatform: true,
                 userExists: { $0 == "qemu" },
             ) == "qemu",
         )
+        #expect(
+            WorkloadPrivilegeDrop.dropUser(
+                euid: 501,
+                dropsOnPlatform: true,
+                userExists: { _ in true },
+            ) == nil,
+        )
+        #expect(
+            WorkloadPrivilegeDrop.dropUser(
+                euid: 0,
+                dropsOnPlatform: false,
+                userExists: { _ in true },
+            ) == nil,
+        )
+        #expect(
+            WorkloadPrivilegeDrop.dropUser(
+                euid: 0,
+                dropsOnPlatform: true,
+                userExists: { _ in false },
+            ) == nil,
+        )
     }
 
-    @Test func `handoff mode is group-writable for files and dirs`() {
-        #expect(WorkloadPrivilegeDrop.handoffMode(isDirectory: false) == 0o660)
-        #expect(WorkloadPrivilegeDrop.handoffMode(isDirectory: true) == 0o770)
+    @Test func `writable modes match dropped QEMU and swtpm needs`() {
+        #expect(WorkloadPrivilegeDrop.writableMode(isDirectory: false) == 0o660)
+        #expect(WorkloadPrivilegeDrop.writableMode(isDirectory: true) == 0o770)
     }
 
-    @Test func `handoff applies group-writable mode`() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    @Test func `handoff skips host devices and missing paths`() throws {
+        try WorkloadPrivilegeDrop.applyOwnership(
+            URL(fileURLWithPath: "/dev/null"),
+            user: "nobody",
+        )
+        try WorkloadPrivilegeDrop.applyOwnership(
+            URL(fileURLWithPath: "/tmp/barkvisor-missing-\(UUID().uuidString)"),
+            user: "nobody",
+        )
+    }
+
+    @Test func `handoff chmods a regular file and directory`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-handoff-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("disk.qcow2")
-        #expect(
-            FileManager.default.createFile(
-                atPath: file.path,
-                contents: Data("qcow".utf8),
-                attributes: [.posixPermissions: 0o644],
-            ),
-        )
+        FileManager.default.createFile(atPath: file.path, contents: Data("x".utf8))
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
 
-        try WorkloadPrivilegeDrop.applyHandoff(
-            file,
-            uid: getuid(),
-            gid: getgid(),
-            mode: WorkloadPrivilegeDrop.handoffMode(isDirectory: false),
-        )
-        try WorkloadPrivilegeDrop.applyHandoff(
-            dir,
-            uid: getuid(),
-            gid: getgid(),
-            mode: WorkloadPrivilegeDrop.handoffMode(isDirectory: true),
-        )
+        let me = NSUserName()
+        try WorkloadPrivilegeDrop.applyOwnership(file, user: me)
+        try WorkloadPrivilegeDrop.applyOwnership(dir, user: me)
 
         let fileMode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
         let dirMode = try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber
-        #expect(fileMode?.intValue == 0o660)
-        #expect(dirMode?.intValue == 0o770)
+        #expect((fileMode?.intValue ?? 0) & 0o777 == 0o660)
+        #expect((dirMode?.intValue ?? 0) & 0o777 == 0o770)
     }
 
-    @Test func `handoff is a no-op when this process would not drop`() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    @Test func `live handoff is a no-op when this process will not drop`() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bv-handoff-live-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("vars.fd")
-        #expect(
-            FileManager.default.createFile(
-                atPath: file.path,
-                contents: Data(count: 16),
-                attributes: [.posixPermissions: 0o644],
-            ),
-        )
-        try WorkloadPrivilegeDrop.handoffForDroppedUser(file)
-        if !WorkloadPrivilegeDrop.dropsOnThisPlatform || WorkloadPrivilegeDrop.currentEUID() != 0 {
-            let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
-            #expect(mode?.intValue == 0o644)
-        }
+        FileManager.default.createFile(atPath: file.path, contents: Data("x".utf8))
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+
+        try WorkloadPrivilegeDrop.handoffWritable(file)
+
+        guard !WorkloadPrivilegeDrop.dropsOnThisPlatform
+            || WorkloadPrivilegeDrop.currentEUID() != 0
+        else { return }
+        let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber
+        #expect((mode?.intValue ?? 0) & 0o777 == 0o644)
     }
 }

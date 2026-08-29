@@ -342,6 +342,7 @@ public enum CodingAgentImage {
             health: params.health,
             workloadClass: klass,
             allowCatalogIdentityKeys: params.allowCatalogIdentityKeys,
+            guestAddressing: params.guestAddressing,
         )
     }
 }
