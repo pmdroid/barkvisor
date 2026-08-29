@@ -31,6 +31,7 @@ struct RootDaemonPackagingTests {
             #expect(unit.contains("-/etc/NetworkManager"))
             #expect(unit.contains("-/etc/qemu"))
             #expect(unit.contains("RuntimeDirectoryMode=0770"))
+            #expect(unit.contains("UMask=0007"))
             #expect(unit.contains("Group=barkvisor"))
         }
     }
