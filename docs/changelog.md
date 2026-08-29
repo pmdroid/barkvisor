@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Appliance getting-started is Ubuntu / Debian `.deb` and macOS Apple Silicon `.pkg`. Bootstrap is inspect-then-run (`get-barkvisor.sh`). Updates are **Settings → Updates**, not `brew upgrade barkvisor`. Networks **Bridge setup** Applies Linux `br0` and starts macOS `socket_vmnet`; equivalent commands stay on the page. Uninstall reverts tagged files and never default-deletes shared `br0`. Homebrew is runtime `qemu` / `swtpm` / `socket_vmnet` only.
 - Device daemon runs as root on Linux (`User=root`) and macOS (LaunchDaemon without `UserName`). QEMU drops to `barkvisor`/`qemu` with kvm/disk on Linux. macOS HVF/USB stay the daemon uid until a drop is proven. The root daemon starts socket_vmnet via launchctl. No XPC helper.
 - Settings Home is Device URL, not remote access. Pairing and login QR `host=` and Models `OPENAI_BASE_URL` use the saved Device URL. Require Tailscale for the Home API is gone.
 - Library depot is gone. Catalog Download writes into this Device. Missing images download from the internet.
@@ -25,7 +26,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Library used/free is the Library path volume (not always the data dir). Unknown capacity is not shown as zeros. Create Disk can override the default directory; Linux can attach a host block device as raw (macOS has no block-device option). Image download progress is a real percent in web and Console.
 - Linux GPU list labels NVIDIA / Intel / AMD and can show several cards per vendor. Workload detail has a PCI picker for VFIO beyond GPUs (boot disk and last uplink excluded). Hidden on macOS.
 - Settings: pairing offer and phone sign-in QR live on **Settings → Pairing** (`?tab=pairing`).
-- Networks **Bridge setup** is install guides only: Linux keeps the qemu-bridge-helper / host-bridge checklist; macOS shows copyable `socket_vmnet` Homebrew commands. Setup / Start / Stop / Remove no longer change the host. Daemon endpoints stay; VM-on-bridge wiring is unchanged.
+- Networks **Bridge setup** Applies Linux `br0` (host timer rollback, refuse Wi-Fi) and starts macOS `socket_vmnet` from the root daemon. Equivalent commands stay on the page. Guest static IP is a Workload setting.
 - Logs: SQLITE_FULL no longer tight-loops Device stderr. Prune logs (and extra DB backups) on disk-full writes, skip the insert, and warn once. Homebrew/pkg postinstall boots out leftover privileged helper files so they cannot reconnect every 15s.
 - Template **Onyx** (Lite) in `repos/templates.json`: Ubuntu 24.04, NAT `:80`, cloud-init installs Onyx Lite. Ollama URL is a deploy input (default `http://10.0.2.2:11434`). After deploy on This Device, **Open Onyx** is `http://127.0.0.1/`. SSH key picker only when the recipe declares `ssh_keys` (Pi-hole now does). The in-app Chat page is gone (`/chat`, Console tab). Completions stay on `/v1/chat/completions`; talk via Library Onyx.
 - Models inference how-to `OPENAI_BASE_URL` uses the saved Device URL, then MagicDNS/tailnet IP, then LAN. HTTPS Tailscale Serve origins contribute hostname only; LAN stays `http://<host>:7777`. Cage URL is still `http://10.0.2.2:11434/v1`.
@@ -33,8 +34,8 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 - Home hop errors no longer all say **Device is unreachable**. A connect timeout, cancel, or TLS failure is **Home cannot hop**; a member HTTP 5xx is the Device answering badly (Ollama down on that hop); HTTP 4xx on that hop is the Device rejecting the request, not Ollama down. Only a failed health probe is offline. Web and Console Device pills use those `reachability` codes (`memberHTTP` is **HTTP error**, not Unreachable). The same codes land on `/api/home/devices/health` `reachability` / `reachabilityError`.
 - Ollama Models: **Export JSON** (web download and Console share sheet) is a point-in-time snapshot of `/api/ps` fields already on the catalog — `name`, `size`, `sizeVRAM`, `running`, `host`. No history table.
 - Ollama Models shows the Home completions URL (`:7777/v1/chat/completions`), not Device `:11434`. Coding Agent cloud-init still writes a real inference key when a grant is supplied.
-- In-app software updates are removed. Upgrade with Homebrew (`brew upgrade barkvisor`) on macOS, or your distro package on Linux. The Settings Updates tab, `/api/system/updates`, and the helper PKG installer are gone.
-- macOS no longer ships a privileged XPC helper. Bridged/vmnet attaches to Homebrew `socket_vmnet` (`brew install socket_vmnet && sudo brew services start socket_vmnet`). BarkVisor does not install, start, or stop that daemon.
+- Settings → Updates applies a checksummed Ubuntu / Debian `.deb` or macOS `.pkg` on a root appliance. `swift run` and a leftover Homebrew keg stay fail-closed. Do not `brew upgrade barkvisor`.
+- macOS no longer ships a privileged XPC helper. Install Homebrew `socket_vmnet` as your user (`brew install socket_vmnet`). Do not `sudo brew install`. The root Device daemon starts the service.
 - Bridged start on Linux denies when `/etc/qemu/bridge.conf` is missing or unreadable (same as the Networks UI).
 - GPU attach (PAS-275): Linux Devices list GPUs with their IOMMU group and attach/detach them like USB (`GET /api/system/gpu-devices`, `POST/DELETE /api/vms/{id}/gpu`). Fail closed if IOMMU/vfio/KVM is not ready. Occupancy is the host GPU driver, not an Ollama TCP probe. Detach, stop, and delete unbind vfio-pci so the host can reclaim the card. Attaching a GPU to a Coding Agent Workload rewrites cloud-init for guest Ollama at `http://127.0.0.1:11434/v1`. Vue and the native console offer attach when the Device is ready.
 - GPU passthrough (PAS-274): Linux Devices probe IOMMU groups, vfio-pci, and KVM and report `gpuPassthrough` / `vfio` on capabilities. macOS always explains that GPU passthrough is unavailable.
@@ -98,7 +99,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 - Restarting the Device daemon no longer stops Workloads. systemd signals only BarkVisor; QEMU stays up and is reattached. Use Workload Stop to shut a guest down.
 
-- Linux packages (`.deb` / `.rpm` / tarball), systemd, NAT and bridged networking, USB passthrough.
+- Linux packages (appliance channel is `.deb`; builders still emit `.rpm` / tarball), systemd, NAT and bridged networking, USB passthrough.
 - Native console app talks to the dashboard Device only (Local Network permission is for `:7777`).
 - Phone and Mac Console / Display open a Workload on a reachable member the same way the Home web UI does (Home WebSocket tunnel). Create VM stays web-only.
 

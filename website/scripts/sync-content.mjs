@@ -17,13 +17,13 @@ const map = {
   'getting-started-installation.md': {
     out: 'getting-started/installation.md',
     title: 'Installation (macOS)',
-    description: 'Install BarkVisor on macOS with the .pkg or standalone archive.',
+    description: 'Install BarkVisor on Apple Silicon with the .pkg. Updates from Settings.',
   },
   'getting-started-linux.md': {
     out: 'linux.md',
     title: 'Installation (Linux)',
     description:
-      'Install BarkVisor on Linux with .deb / .rpm / tarball packages and systemd.',
+      'Install BarkVisor on Ubuntu or Debian with the .deb. Root systemd unit.',
   },
   'getting-started-first-launch.md': {
     out: 'getting-started/first-launch.md',
@@ -49,7 +49,7 @@ const map = {
   'getting-started-building-releases.md': {
     out: 'getting-started/building-releases.md',
     title: 'Building releases',
-    description: 'macOS release packages and Linux .deb / .rpm / tarball builds.',
+    description: 'macOS .pkg and Linux package builds. Appliance channel is .deb + .pkg.',
   },
   'getting-started-troubleshooting.md': {
     out: 'getting-started/troubleshooting.md',
@@ -135,7 +135,12 @@ const map = {
   'using-settings.md': {
     out: 'using/settings/index.md',
     title: 'Settings',
-    description: 'The nine Settings tabs and what each one controls.',
+    description: 'The Settings tabs, including Updates on a root appliance.',
+  },
+  'settings-updates.md': {
+    out: 'using/settings/updates.md',
+    title: 'Settings: Updates',
+    description: 'Apply a checksummed .deb or .pkg on a root Device.',
   },
   'settings-home.md': {
     out: 'using/settings/home.md',
@@ -225,6 +230,7 @@ function fixLinks(body) {
     .replace(/\]\(settings-pairing\.md(#[^)]*)?\)/g, '](/docs/using/settings/pairing/$1)')
     .replace(/\]\(settings-library\.md(#[^)]*)?\)/g, '](/docs/using/settings/library/$1)')
     .replace(/\]\(settings-disks\.md(#[^)]*)?\)/g, '](/docs/using/settings/disks/$1)')
+    .replace(/\]\(settings-updates\.md(#[^)]*)?\)/g, '](/docs/using/settings/updates/$1)')
     .replace(/\]\(settings-api-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/api-keys/$1)')
     .replace(/\]\(settings-ssh-keys\.md(#[^)]*)?\)/g, '](/docs/using/settings/ssh-keys/$1)')
     .replace(/\]\(settings-passkeys\.md(#[^)]*)?\)/g, '](/docs/using/settings/passkeys/$1)')

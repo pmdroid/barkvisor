@@ -8,7 +8,7 @@
 
 A headless daemon for managing QEMU virtual machines through a web UI.
 
-**Platforms:** **macOS** (`.pkg` / HVF) and **Linux** (packages + systemd / KVM). See [Linux install](docs/getting-started-linux.md).
+**Platforms:** **macOS Apple Silicon** (`.pkg` / HVF) and **Ubuntu / Debian** (`.deb` + systemd / KVM). See [Linux install](docs/getting-started-linux.md).
 
 In the UI, the machine running BarkVisor is a **Device** in your **Home** — not a node or a cluster. [Product terminology](docs/product-terminology.md).
 
@@ -47,12 +47,12 @@ brew install meson ninja pkg-config glib pixman dylibbundler \
 
 ### Linux
 
-Install a **prebuilt** `.deb` / `.rpm` / tarball from [Releases](https://github.com/pmdroid/barkvisor/releases), plus distro QEMU/firmware. Full steps: **[Installation (Linux)](docs/getting-started-linux.md)**.
+Install a **prebuilt** Ubuntu / Debian `.deb` from [Releases](https://github.com/pmdroid/barkvisor/releases), plus distro QEMU/firmware. Prefer inspect-then-run bootstrap. Full steps: **[Installation (Linux)](docs/getting-started-linux.md)**.
 
 ```bash
-# Example (Debian/Ubuntu amd64) after installing QEMU/OVMF from the distro:
-sudo dpkg -i barkvisor_*_amd64.deb
-sudo systemctl enable --now barkvisor.service
+curl -fsSL https://raw.githubusercontent.com/pmdroid/barkvisor/main/scripts/get-barkvisor.sh -o get-barkvisor.sh
+less get-barkvisor.sh
+sudo bash get-barkvisor.sh
 # → http://localhost:7777
 # API-only Device: enable barkvisor-agent.service instead (do not run both)
 ```
@@ -196,8 +196,8 @@ The server listens on port **7777** by default, bound to `0.0.0.0`.
 
 ### Getting Started (source Markdown)
 
-- [Installation (macOS)](docs/getting-started-installation.md) — System requirements, `.pkg` install, SSH install, data directory
-- [Installation (Linux)](docs/getting-started-linux.md) — System requirements, `.deb` / `.rpm` / tarball, systemd, data directory
+- [Installation (macOS)](docs/getting-started-installation.md) — Apple Silicon `.pkg`, inspect-then-run bootstrap, Settings → Updates
+- [Installation (Linux)](docs/getting-started-linux.md) — Ubuntu / Debian `.deb`, root systemd, Networks Apply
 - [First Launch and Setup](docs/getting-started-first-launch.md) — Web-based setup, admin account, socket_vmnet (macOS) vs host bridge (Linux)
 - [Quickstart](docs/getting-started-quickstart.md) — Create and run your first VM (arm64 / x86_64)
 - [Home and pairing](docs/home-and-pairing.md) — Add a Device from Settings → Pairing

@@ -71,6 +71,7 @@ export default defineConfig({
                 { label: 'Library', link: '/docs/using/settings/library/' },
                 { label: 'Repositories', link: '/docs/using/settings/repositories/' },
                 { label: 'Disks', link: '/docs/using/settings/disks/' },
+                { label: 'Updates', link: '/docs/using/settings/updates/' },
                 { label: 'API Keys', link: '/docs/using/settings/api-keys/' },
                 { label: 'SSH Keys', link: '/docs/using/settings/ssh-keys/' },
                 { label: 'Passkeys', link: '/docs/using/settings/passkeys/' },

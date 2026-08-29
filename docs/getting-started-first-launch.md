@@ -17,7 +17,7 @@ When BarkVisor starts for the first time:
 
 Open your browser and navigate to `http://localhost:7777`. Use **localhost** (or https + a DNS name), not a raw IP — passkeys reject `127.0.0.1`. Since no admin exists yet, the UI presents a setup wizard.
 
-Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, bridged/vmnet is Homebrew `socket_vmnet` (install it yourself; BarkVisor does not start that daemon). Linux uses a host bridge. NAT works without either.
+Screenshots below were captured from a first-run setup on **Linux** (OrbStack). On **macOS**, install Homebrew `socket_vmnet` as your user. The root Device daemon starts it. Linux applies `br0` from **Networks → Bridge setup**. NAT works without either.
 
 ### 1. Welcome
 
@@ -89,7 +89,7 @@ NAT Workloads work without this.
 
 ### Linux
 
-Bridged networking uses a host Linux bridge plus QEMU’s `qemu-bridge-helper` (see [Installation (Linux)](getting-started-linux.md#bridged-networking-optional)). No separate BarkVisor helper install is required.
+Open **Networks → Bridge setup → Apply**. Equivalent commands stay on that page. Rollback is a host timer, not a browser Confirm after the uplink dies. See [Installation (Linux)](getting-started-linux.md#bridged-networking) and [Networks](using-networks.md).
 
 ## Catalog Sync
 

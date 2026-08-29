@@ -15,7 +15,7 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
   <LinkCard title="Using the web UI" href="/docs/using/" description="Run BarkVisor, sign in, roles, and a map of every menu point." />
   <LinkCard title="Dashboard" href="/docs/using/dashboard/" description="Triage inbox: incidents, feed columns, and vitals." />
   <LinkCard title="Virtual Machines" href="/docs/using/vms/" description="Every Workload, health filters, and the detail-page tabs: console, VNC, metrics, logs." />
-  <LinkCard title="Settings" href="/docs/using/settings/" description="All seven tabs: Home, Pairing, Library, Disks, API Keys, SSH Keys, Audit Log." />
+  <LinkCard title="Settings" href="/docs/using/settings/" description="Home, Pairing, Library, Updates, and the rest of the Settings tabs." />
 </CardGrid>
 
 ## Get started
@@ -27,9 +27,9 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
   <LinkCard title="Ollama" href="/docs/guides/ollama/" description="Install Ollama, pull, Start on the Device that has the weights, search the library." />
   <LinkCard title="Create a Workload" href="/docs/guides/create-workload/" description="Place a VM on this Device or another reachable Device." />
   <LinkCard title="Changelog" href="/docs/changelog/" description="What shipped for Home, pairing, Library, and Create VM." />
-  <LinkCard title="Roadmap" href="/docs/roadmap/" description="What we want to build next: HA, quorum, Ceph, live migration, apps." />
-  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="System requirements, .pkg install, SSH install, data directory." />
-  <LinkCard title="Installation (Linux)" href="/docs/linux/" description="System requirements, .deb/.rpm/tarball, systemd, data directory." />
+  <LinkCard title="Roadmap" href="/docs/roadmap/" description="What we want to build next: Home failover, live migration, apps." />
+  <LinkCard title="Installation (macOS)" href="/docs/getting-started/installation/" description="Apple Silicon .pkg, inspect-then-run bootstrap, Settings → Updates." />
+  <LinkCard title="Installation (Linux)" href="/docs/linux/" description="Ubuntu / Debian .deb, root systemd, Networks Apply." />
   <LinkCard title="Development" href="/docs/getting-started/development/" description="Build from source on macOS or Linux." />
   <LinkCard title="Troubleshooting" href="/docs/getting-started/troubleshooting/" description="Port conflicts, QEMU paths, SPA, bridge, and Linux-specific fixes." />
 </CardGrid>
@@ -38,8 +38,8 @@ BarkVisor is a **headless daemon** plus Vue SPA for managing QEMU VMs through a 
 
 | Platform | Packaging | Acceleration | Bridged networking |
 |----------|-----------|--------------|--------------------|
-| **macOS** (Apple Silicon) | `.pkg` / standalone | HVF | Homebrew `socket_vmnet` (BarkVisor does not start it) |
-| **Linux** | `.deb` / `.rpm` / tarball | KVM (or TCG) | host bridge + `qemu-bridge-helper` |
+| **macOS** (Apple Silicon) | `.pkg` | HVF | Homebrew `socket_vmnet` (root daemon starts it) |
+| **Linux** (Ubuntu / Debian) | `.deb` | KVM (or TCG) | host `br0` Apply + `qemu-bridge-helper` |
 
 Same product on both: daemon + SPA, NAT, bridge, USB, images, cloud-init, console/VNC. Host differences (accel, packaging) are by design.
 
