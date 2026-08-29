@@ -722,6 +722,7 @@ struct CapabilityDetail: Decodable, Equatable {
 
 struct SystemCapabilities: Decodable, Equatable {
     var platform: String
+    var supportsManagedBridgeDaemon: Bool?
     var supportsHostBridgeManagement: Bool?
     var supportsHostMutation: Bool?
     var supportsUSBPassthrough: Bool?
@@ -739,9 +740,18 @@ struct SystemCapabilities: Decodable, Equatable {
     }
 
     var linuxHostBridgeApplySupported: Bool {
-        if supportsHostMutation == true { return true }
+        if platform.caseInsensitiveCompare("macOS") == .orderedSame { return false }
+        if platform.caseInsensitiveCompare("darwin") == .orderedSame { return false }
         if supportsHostBridgeManagement == true { return true }
+        if supportsHostMutation == true { return true }
         return platform.caseInsensitiveCompare("Linux") == .orderedSame
+    }
+
+    var macosSocketVmnetSupported: Bool {
+        if platform.caseInsensitiveCompare("Linux") == .orderedSame { return false }
+        if supportsManagedBridgeDaemon == true { return true }
+        return platform.caseInsensitiveCompare("macOS") == .orderedSame
+            || platform.caseInsensitiveCompare("darwin") == .orderedSame
     }
 
     var gpuPassthroughSupported: Bool {

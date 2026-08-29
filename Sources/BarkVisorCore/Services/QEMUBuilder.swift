@@ -754,7 +754,7 @@ public enum QEMUBuilder {
         SocketVmnetDiscovery.candidates(bridgeInterface: bridgeInterface)
     }
 
-    /// Resolve an existing `socket_vmnet` socket. BarkVisor does not start the daemon.
+    /// Resolve an existing `socket_vmnet` socket. The Device starts the service from Networks.
     static func resolveSocketVmnetSocketPath(
         bridgeInterface: String?,
         dbSocketPath: String? = nil,

@@ -89,13 +89,23 @@ if [ -d /Applications/BarkVisor.app ]; then
     rm -rf /Applications/BarkVisor.app
 fi
 
-# ---- Remove socket_vmnet bridge plists installed by the helper ----
+# ---- Remove leftover helper-era bridge plists (PAS-294) ----
 
 for plist in /Library/LaunchDaemons/dev.barkvisor.bridge.*.plist; do
     [ -f "$plist" ] || continue
     svc="$(basename "$plist" .plist)"
     launchctl bootout "system/$svc" 2>/dev/null || true
-    log "Removing bridge plist $plist"
+    log "Removing leftover helper bridge plist $plist"
+    rm -f "$plist"
+done
+
+# ---- Remove BarkVisor-owned socket_vmnet plists (#379) ----
+
+for plist in /Library/LaunchDaemons/dev.barkvisor.socket-vmnet.*.plist; do
+    [ -f "$plist" ] || continue
+    svc="$(basename "$plist" .plist)"
+    launchctl bootout "system/$svc" 2>/dev/null || true
+    log "Removing socket_vmnet plist $plist"
     rm -f "$plist"
 done
 

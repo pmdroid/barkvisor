@@ -125,7 +125,7 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
 /// Alias used by call sites / tests that prefer a no-op name.
 public typealias NoopPrivilegeService = LinuxPrivilegeService
 
-/// Pre-PAS-294 SMJobBless leftover. Never reconnect; warn once if files remain.
+/// Pre-PAS-294 privileged-helper leftover. Never reconnect; warn once if files remain.
 public enum LeftoverHelperInventory {
     public static let launchdLabel = "dev.barkvisor.helper"
 

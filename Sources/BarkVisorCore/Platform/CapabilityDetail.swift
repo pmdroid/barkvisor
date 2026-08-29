@@ -221,7 +221,7 @@ public enum CapabilityDetailBuilder {
                 code: .managedBridgeDaemon,
                 supported: false,
                 reason: .homebrewService,
-                remediation: "Install the socket_vmnet package with Homebrew, then let the Device start it. "
+                remediation: "Install socket_vmnet with Homebrew as your user, then Setup or Start it from Networks. "
                     + SocketVmnetDiscovery.installHint + ".",
             )
         }

@@ -526,6 +526,8 @@ struct APIDecodingTests {
         }
         """.data(using: .utf8)!
         let caps = try decoder.decode(SystemCapabilities.self, from: macos)
+        #expect(caps.macosSocketVmnetSupported)
+        #expect(!caps.linuxHostBridgeApplySupported)
         #expect(!caps.gpuPassthroughSupported)
         #expect(caps.gpuPassthroughExplanation.contains("macOS"))
         #expect(!caps.gpuPassthroughExplanation.localizedCaseInsensitiveContains("node"))
@@ -544,6 +546,7 @@ struct APIDecodingTests {
         let ready = try decoder.decode(SystemCapabilities.self, from: linux)
         #expect(ready.gpuPassthroughSupported)
         #expect(ready.linuxHostBridgeApplySupported)
+        #expect(!ready.macosSocketVmnetSupported)
         #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
         #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
     }
@@ -568,6 +571,33 @@ struct APIDecodingTests {
         #expect(row.commands?.joined().contains("linux-bridge-apply.sh") == true)
         #expect(!(row.message ?? "").localizedCaseInsensitiveContains("cluster"))
         #expect(!(row.warnings ?? []).joined().localizedCaseInsensitiveContains("node"))
+    }
+
+    @Test func `macOS hostMutation is socket_vmnet not Linux br0`() throws {
+        let json = """
+        {
+          "platform": "macOS",
+          "supportsManagedBridgeDaemon": true,
+          "supportsHostMutation": true,
+          "supportsHostBridgeManagement": false
+        }
+        """.data(using: .utf8)!
+        let caps = try decoder.decode(SystemCapabilities.self, from: json)
+        #expect(caps.macosSocketVmnetSupported)
+        #expect(!caps.linuxHostBridgeApplySupported)
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/LibraryView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("macosSocketVmnetSupported"))
+        #expect(source.contains("Button(\"Setup\")"))
+        #expect(source.contains("Button(\"Start\")"))
+        #expect(source.contains("Button(\"Stop\")"))
+        #expect(!source.localizedCaseInsensitiveContains("cluster"))
+        #expect(!source.localizedCaseInsensitiveContains("quorum"))
     }
 
     @Test func `host gpu device decodes iommu group and guest ollama path`() throws {

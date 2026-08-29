@@ -36,6 +36,7 @@ import {
   linuxBridgeFallbackReadiness,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
+  macosSocketVmnetCanManage,
   macosSocketVmnetSetupGroups,
   macosSocketVmnetStatusSummary,
   readinessAppliesTo,
@@ -213,6 +214,20 @@ const canApplyLinuxBridge = computed(() => linuxBridgeCanApply({
   supportsHostMutation: bridgeCaps.value.supportsHostMutation,
   supportsHostBridgeManagement: bridgeCaps.value.supportsHostBridgeManagement,
 }))
+
+const canManageMacosSocket = computed(() => macosSocketVmnetCanManage({
+  platform: bridgeCaps.value.platform,
+  supportsManagedBridgeDaemon: bridgeCaps.value.supportsManagedBridgeDaemon,
+  supportsHostMutation: bridgeCaps.value.supportsHostMutation,
+}))
+
+const macInterface = computed(() => {
+  const fromFacts = appliedReadiness.value?.defaultRouteInterface
+    || appliedReadiness.value?.bridges[0]?.name
+  if (fromFacts) return fromFacts
+  const fromHost = hostInterfaces.value.find((iface) => iface.name && iface.name !== 'lo0' && iface.name !== 'lo')
+  return fromHost?.name || 'en0'
+})
 
 const appliedReadiness = computed(() => {
   if (!readinessAppliesTo(
@@ -683,6 +698,41 @@ async function confirmLinuxBridge() {
   await runLinuxBridge(action, true)
 }
 
+async function runMacosSocket(action: 'setup' | 'start' | 'stop') {
+  linuxApplyResult.value = null
+  linuxApplyLoading.value = true
+  try {
+    const pending = showBridges.value ? null : selectedPending.value
+    const device = pending
+      ? devicesStore.deviceByHostId(pending.hostId)
+      : bridgeDevice.value
+    const iface = pending
+      ? (pendingReadiness.value?.defaultRouteInterface
+        || pendingReadiness.value?.bridges[0]?.name
+        || macInterface.value)
+      : macInterface.value
+    const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+    const data = action === 'stop'
+      ? await api.post<BridgeActionResponse>(
+        `${path}/${encodeURIComponent(iface)}/stop`,
+        { interface: iface, action: 'stop' },
+      ).then((r) => r.data)
+      : await api.post<BridgeActionResponse>(path, { interface: iface, action }).then((r) => r.data)
+    linuxApplyResult.value = data
+    if (data.success) {
+      toast.success(data.message || (action === 'stop' ? 'Stopped socket_vmnet.' : 'Started socket_vmnet.'))
+      if (pending) await fetchHostReadiness(device)
+      else await fetchLinuxReadiness()
+    } else if (data.message) {
+      toast.error(data.message)
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    linuxApplyLoading.value = false
+  }
+}
+
 function resetForm() {
   newName.value = ''
   newMode.value = 'nat'
@@ -962,6 +1012,11 @@ async function doDeleteNetwork() {
           :groups="pendingMacosGroups"
           :initial-open="pendingMacosGroups[0]?.id ?? null"
         />
+        <div v-if="canManageMacosSocket" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <AppButton size="sm" :disabled="linuxApplyLoading" :loading="linuxApplyLoading" @click="runMacosSocket('setup')">Setup</AppButton>
+          <AppButton size="sm" :disabled="linuxApplyLoading" @click="runMacosSocket('start')">Start</AppButton>
+          <AppButton size="sm" :disabled="linuxApplyLoading" @click="runMacosSocket('stop')">Stop</AppButton>
+        </div>
       </template>
       <p v-else style="color:var(--text-secondary);font-size:13px;margin:0">
         Could not read host-bridge status on this Device.
@@ -983,7 +1038,7 @@ async function doDeleteNetwork() {
   </template>
   </div>
 
-  <!-- Bridge setup: Linux apply/revert + commands; macOS socket_vmnet guide -->
+  <!-- Bridge setup: Linux apply/revert; macOS socket_vmnet Setup/Start/Stop -->
   <AppModal v-if="showBridges" title="Bridge setup" max-width="800px" @close="showBridges = false">
     <div v-if="bridgeDeviceOptions.length > 0" class="form-group">
       <label>{{ DEVICE_LABEL }}</label>
@@ -1039,6 +1094,12 @@ async function doDeleteNetwork() {
           :groups="macosSetupGroups"
           :initial-open="macosSetupGroups[0]?.id ?? null"
         />
+        <div v-if="linuxApplyResult" style="margin-top:12px;font-size:13px">
+          <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
+          <ul v-if="linuxApplyResult.changes?.length" style="margin:0;padding-left:18px">
+            <li v-for="change in linuxApplyResult.changes" :key="change">{{ change }}</li>
+          </ul>
+        </div>
         <DataTable
           v-if="hostInterfaces.length"
           style="margin-top:16px"
@@ -1079,6 +1140,22 @@ async function doDeleteNetwork() {
         :disabled="linuxApplyLoading || linuxReadinessLoading"
         @click="revertLinuxBridge"
       >Revert</AppButton>
+      <AppButton
+        v-if="selectedBridgeMode === 'macos-guide' && canManageMacosSocket"
+        :disabled="linuxApplyLoading || linuxReadinessLoading"
+        :loading="linuxApplyLoading"
+        @click="runMacosSocket('setup')"
+      >Setup</AppButton>
+      <AppButton
+        v-if="selectedBridgeMode === 'macos-guide' && canManageMacosSocket"
+        :disabled="linuxApplyLoading || linuxReadinessLoading"
+        @click="runMacosSocket('start')"
+      >Start</AppButton>
+      <AppButton
+        v-if="selectedBridgeMode === 'macos-guide' && canManageMacosSocket"
+        :disabled="linuxApplyLoading || linuxReadinessLoading"
+        @click="runMacosSocket('stop')"
+      >Stop</AppButton>
       <AppButton
         v-if="selectedBridgeMode !== 'hidden'"
         :disabled="linuxReadinessLoading"

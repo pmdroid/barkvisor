@@ -67,6 +67,46 @@ public enum SocketVmnetLaunchd {
         ["kickstart", "-k", "system/\(label)"]
     }
 
+    public static let homebrewServiceLabel = "homebrew.mxcl.socket_vmnet"
+
+    public static let homebrewPlistCandidates = [
+        "/Library/LaunchDaemons/homebrew.mxcl.socket_vmnet.plist",
+        "/opt/homebrew/opt/socket_vmnet/homebrew.mxcl.socket_vmnet.plist",
+        "/usr/local/opt/socket_vmnet/homebrew.mxcl.socket_vmnet.plist",
+    ]
+
+    public static let brewBinaryCandidates = [
+        "/opt/homebrew/bin/brew",
+        "/usr/local/bin/brew",
+    ]
+
+    public static let binaryCandidates = [
+        "/opt/homebrew/opt/socket_vmnet/bin/socket_vmnet",
+        "/opt/homebrew/bin/socket_vmnet",
+        "/usr/local/opt/socket_vmnet/bin/socket_vmnet",
+        "/usr/local/bin/socket_vmnet",
+        "/opt/socket_vmnet/bin/socket_vmnet",
+    ]
+
+    public static func printArguments(label: String) -> [String] {
+        ["print", "system/\(label)"]
+    }
+
+    public static func brewServicesStartArguments() -> [String] {
+        ["services", "start", "socket_vmnet"]
+    }
+
+    public static func brewServicesStopArguments() -> [String] {
+        ["services", "stop", "socket_vmnet"]
+    }
+
+    public static func firstExisting(
+        _ paths: [String],
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) -> String? {
+        paths.first(where: fileExists)
+    }
+
     #if os(macOS)
         public static func install(interface: String) throws {
             try validateBridgeName(interface)
@@ -113,11 +153,59 @@ public enum SocketVmnetLaunchd {
             }
         }
 
-        private static func apply(interface: String, plistPath: String) throws {
-            let service = label(interface: interface)
+        /// Already-installed Homebrew formula. Never `brew install`.
+        public static func startHomebrewService() throws {
+            if let plist = firstExisting(homebrewPlistCandidates) {
+                try bootstrap(plistPath: plist, label: homebrewServiceLabel)
+                return
+            }
+            guard let brew = firstExisting(brewBinaryCandidates) else {
+                throw BarkVisorError.preconditionFailed(SocketVmnetDiscovery.installHint)
+            }
+            let result = try PlatformProcess.run(
+                path: brew,
+                arguments: brewServicesStartArguments(),
+                timeout: 30,
+            )
+            guard result.succeeded else {
+                throw BarkVisorError.processSpawnFailed(
+                    "brew services start socket_vmnet failed: \(result.stderrString)",
+                )
+            }
+        }
+
+        public static func stopHomebrewService() throws {
             _ = try? PlatformProcess.run(
                 path: "/bin/launchctl",
-                arguments: bootoutArguments(label: service),
+                arguments: bootoutArguments(label: homebrewServiceLabel),
+                timeout: 15,
+            )
+            if let brew = firstExisting(brewBinaryCandidates) {
+                _ = try? PlatformProcess.run(
+                    path: brew,
+                    arguments: brewServicesStopArguments(),
+                    timeout: 30,
+                )
+            }
+        }
+
+        public static func serviceLoaded(_ label: String) -> Bool {
+            let result = try? PlatformProcess.run(
+                path: "/bin/launchctl",
+                arguments: printArguments(label: label),
+                timeout: 8,
+            )
+            return result?.succeeded == true
+        }
+
+        private static func apply(interface: String, plistPath: String) throws {
+            try bootstrap(plistPath: plistPath, label: label(interface: interface))
+        }
+
+        private static func bootstrap(plistPath: String, label: String) throws {
+            _ = try? PlatformProcess.run(
+                path: "/bin/launchctl",
+                arguments: bootoutArguments(label: label),
                 timeout: 15,
             )
             let result = try PlatformProcess.run(
@@ -127,7 +215,7 @@ public enum SocketVmnetLaunchd {
             )
             guard result.succeeded else {
                 throw BarkVisorError.processSpawnFailed(
-                    "launchctl bootstrap \(service) failed: \(result.stderrString)",
+                    "launchctl bootstrap \(label) failed: \(result.stderrString)",
                 )
             }
         }

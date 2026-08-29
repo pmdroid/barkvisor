@@ -14,7 +14,7 @@ import Foundation
 /// privileged operations (XPC / host bridge registration), not capability checks.
 public enum PlatformCapabilities {
     /// Product capability: attach VMs to a host bridge / bridged network.
-    /// - macOS: operator-managed Homebrew `socket_vmnet` (no BarkVisor helper)
+    /// - macOS: Homebrew `socket_vmnet` started by the root Device daemon (no XPC helper)
     /// - Linux: QEMU `-netdev bridge` against an existing host bridge (e.g. br0)
     public static var supportsBridgedNetworking: Bool {
         #if os(macOS) || os(Linux)
