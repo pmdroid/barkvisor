@@ -1,4 +1,7 @@
 import Foundation
+#if os(Linux)
+    import Glibc
+#endif
 
 /// Host-mutating apply. Planner stays in `LinuxHostBridgeApply`; this writes files.
 public enum LinuxHostBridgeApplyLive {
@@ -85,6 +88,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             guard !nic.isEmpty else {
                 throw BarkVisorError.badRequest("No wired uplink for \(request.bridge).")
             }
+            var pendingNetplan: Process?
             switch probe.backend {
             case .netplan:
                 try writeAtomically(
@@ -98,7 +102,7 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                         dns: request.dns,
                     ),
                 )
-                try runNetplanTry()
+                pendingNetplan = try beginNetplanTry()
             case .networkManager:
                 try applyNetworkManager(request: request, nic: nic)
                 try startRollbackTimer(bridge: request.bridge)
@@ -116,15 +120,17 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 )
             }
             try writeACL(bridge: request.bridge, existing: probe.aclContents)
-            try setuidHelpers(probe.helperPaths)
+            // Marker before setuid so Revert can clean up if chmod hits EROFS.
             try writeOwnerMarker(bridge: request.bridge, createdBridge: probe.facts.bridges.isEmpty)
+            try setuidHelpers(probe.helperPaths)
+            try commitApply(bridge: request.bridge, netplan: pendingNetplan)
         }
 
         private func revert(request: LinuxHostBridgeApplyRequest, probe: LinuxHostBridgeApplyProbe) throws {
             switch probe.backend {
             case .netplan:
                 try? FileManager.default.removeItem(atPath: LinuxHostBridgeApply.netplanPath)
-                try runNetplanTry()
+                try commitNetplanTry(beginNetplanTry())
             case .networkManager:
                 _ = try? PlatformProcess.run(
                     path: "/usr/bin/nmcli",
@@ -152,6 +158,9 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             }
             try? FileManager.default.removeItem(
                 at: LinuxHostBridgeApply.ownerMarkerURL(bridge: request.bridge),
+            )
+            try? FileManager.default.removeItem(
+                atPath: LinuxHostBridgeApply.commitStampPath(bridge: request.bridge),
             )
         }
 
@@ -280,20 +289,58 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
             )
         }
 
-        private func runNetplanTry() throws {
-            let result = try PlatformProcess.run(
-                path: "/usr/sbin/netplan",
-                arguments: ["try", "--timeout", String(LinuxHostBridgeApply.rollbackSeconds)],
-                timeout: TimeInterval(LinuxHostBridgeApply.rollbackSeconds + 30),
-            )
-            if !result.succeeded {
+        /// Start `netplan try` without waiting. Persist needs SIGUSR1 (netplan-try(8));
+        /// waiting for exit always hits the timeout and reverts.
+        private func beginNetplanTry() throws -> Process {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/netplan")
+            process.arguments = ["try", "--timeout", String(LinuxHostBridgeApply.rollbackSeconds)]
+            process.standardInput = FileHandle.nullDevice
+            let err = Pipe()
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = err
+            try process.run()
+            let readyDeadline = Date().addingTimeInterval(5)
+            while process.isRunning, Date() < readyDeadline {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if !process.isRunning, process.terminationStatus != 0 {
+                let msg = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+                    ?? ""
                 throw BarkVisorError.internalError(
-                    "netplan try failed: \(result.stderrString.trimmingCharacters(in: .whitespacesAndNewlines))",
+                    "netplan try failed: \(msg.trimmingCharacters(in: .whitespacesAndNewlines))",
                 )
+            }
+            return process
+        }
+
+        private func commitNetplanTry(_ process: Process) throws {
+            if process.isRunning {
+                if kill(process.processIdentifier, SIGUSR1) != 0 {
+                    throw BarkVisorError.internalError("Could not SIGUSR1 netplan try to keep the config.")
+                }
+            }
+            let deadline = Date().addingTimeInterval(30)
+            while process.isRunning, Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if process.isRunning {
+                throw BarkVisorError.timeout("netplan try did not exit after SIGUSR1.")
+            }
+            if process.terminationStatus != 0 {
+                throw BarkVisorError.internalError("netplan try failed after commit.")
+            }
+        }
+
+        private func commitApply(bridge: String, netplan: Process?) throws {
+            try writeAtomically(LinuxHostBridgeApply.commitStampPath(bridge: bridge), "")
+            if let netplan {
+                try commitNetplanTry(netplan)
             }
         }
 
         /// Host timer. Do not wait for the SPA after the uplink moves.
+        /// Apply must write the commit stamp or this unit always reverts.
         private func startRollbackTimer(bridge: String) throws {
             let unit = "barkvisor-\(bridge)-rollback"
             _ = try? PlatformProcess.run(
@@ -301,20 +348,14 @@ public final class RecordingLinuxHostBridgeMutator: LinuxHostBridgeMutating, @un
                 arguments: ["stop", "\(unit).timer"],
                 timeout: 10,
             )
-            let stamp = "/run/barkvisor/\(bridge)-commit"
+            let stamp = LinuxHostBridgeApply.commitStampPath(bridge: bridge)
             try FileManager.default.createDirectory(
                 atPath: "/run/barkvisor",
                 withIntermediateDirectories: true,
             )
             try? FileManager.default.removeItem(atPath: stamp)
-            let script = """
-            #!/bin/sh
-            if [ -f \(stamp) ]; then exit 0; fi
-            /usr/bin/nmcli connection down barkvisor-\(bridge) >/dev/null 2>&1 || true
-            /usr/bin/networkctl reload >/dev/null 2>&1 || true
-            """
             let helper = "/run/barkvisor/\(bridge)-rollback.sh"
-            try writeAtomically(helper, script)
+            try writeAtomically(helper, LinuxHostBridgeApply.rollbackHelperScript(bridge: bridge))
             _ = try? PlatformProcess.run(path: "/bin/chmod", arguments: ["0755", helper], timeout: 5)
             _ = try? PlatformProcess.run(
                 path: "/usr/bin/systemd-run",

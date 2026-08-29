@@ -30,6 +30,10 @@ struct RootDaemonPackagingTests {
             #expect(unit.contains("-/etc/netplan"))
             #expect(unit.contains("-/etc/NetworkManager"))
             #expect(unit.contains("-/etc/qemu"))
+            #expect(unit.contains("-/etc/systemd/network"))
+            #expect(unit.contains("-/usr/lib/qemu/qemu-bridge-helper"))
+            #expect(unit.contains("-/usr/libexec/qemu-bridge-helper"))
+            #expect(unit.contains("-/usr/local/libexec/qemu/qemu-bridge-helper"))
             #expect(unit.contains("RuntimeDirectoryMode=0770"))
             #expect(unit.contains("Group=barkvisor"))
         }

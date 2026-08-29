@@ -28,7 +28,7 @@ SupplementaryGroups=kvm
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu -/etc/systemd/network -/usr/lib/qemu/qemu-bridge-helper -/usr/libexec/qemu-bridge-helper -/usr/local/libexec/qemu/qemu-bridge-helper
 ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
 LimitNOFILE=65536
 

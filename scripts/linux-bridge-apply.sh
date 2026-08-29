@@ -85,6 +85,12 @@ is_wifi() {
 print_changes() {
   local backend="$1" nic="$2"
   echo "CHANGE persist ${BRIDGE} via ${backend} (Device ${ADDRESSING} on ${BRIDGE}, not guest)"
+  if [[ "$ADDRESSING" == "static" ]]; then
+    echo "CHANGE Device address ${ADDRESS} gateway ${GATEWAY} on ${BRIDGE}"
+    if [[ -n "$DNS" ]]; then
+      echo "CHANGE nameservers ${DNS} on ${BRIDGE}"
+    fi
+  fi
   echo "CHANGE marker-tagged allow ${BRIDGE} in ${ACL_PATH} (${ACL_MARKER})"
   echo "CHANGE setuid qemu-bridge-helper on known paths"
   case "$backend" in
@@ -99,6 +105,54 @@ print_changes() {
       ;;
   esac
   echo "CMD sudo linux-bridge-apply.sh --apply --nic ${nic} --${ADDRESSING} --confirm"
+}
+
+# Same fields as LinuxHostBridgeApply.netplanYAML (Device address on the bridge).
+emit_netplan() {
+  if [[ "$ADDRESSING" == "dhcp" ]]; then
+    cat <<EOF
+# managed-by: barkvisor
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ${NIC}:
+      dhcp4: false
+  bridges:
+    ${BRIDGE}:
+      interfaces: [${NIC}]
+      dhcp4: true
+EOF
+    return
+  fi
+  cat <<EOF
+# managed-by: barkvisor
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ${NIC}:
+      dhcp4: false
+  bridges:
+    ${BRIDGE}:
+      interfaces: [${NIC}]
+      addresses: [${ADDRESS}]
+EOF
+  if [[ -n "$GATEWAY" ]]; then
+    cat <<EOF
+      routes:
+        - to: default
+          via: ${GATEWAY}
+EOF
+  fi
+  if [[ -n "$DNS" ]]; then
+    local dns_list
+    dns_list="$(printf '%s' "$DNS" | sed 's/, */, /g')"
+    cat <<EOF
+      nameservers:
+        addresses: [${dns_list}]
+EOF
+  fi
 }
 
 BACKEND="$(detect_backend)"
@@ -184,6 +238,9 @@ fi
 print_changes "$BACKEND" "$NIC"
 
 if [[ "$ACTION" == "check" || "$ACTION" == "dry-run" ]]; then
+  if [[ "$ACTION" == "dry-run" && "$BACKEND" == "netplan" ]]; then
+    emit_netplan
+  fi
   echo "ok: ${ACTION} (${BRIDGE} via ${BACKEND} on ${NIC})"
   exit 0
 fi
@@ -197,26 +254,25 @@ DATA_DIR="${BARKVISOR_DATA_DIR:-/var/lib/barkvisor}"
 mkdir -p "$DATA_DIR" "$(dirname "$ACL_PATH")"
 case "$BACKEND" in
   netplan)
-    cat >"$NETPLAN_PATH" <<EOF
-# managed-by: barkvisor
-network:
-  version: 2
-  renderer: networkd
-  ethernets:
-    ${NIC}:
-      dhcp4: false
-  bridges:
-    ${BRIDGE}:
-      interfaces: [${NIC}]
-      dhcp4: $([ "$ADDRESSING" = dhcp ] && echo true || echo false)
-EOF
+    emit_netplan >"$NETPLAN_PATH"
     if command -v netplan >/dev/null 2>&1; then
       netplan try --timeout "$ROLLBACK_SEC"
     fi
     ;;
   network-manager)
-    nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
-      ipv4.method "$([ "$ADDRESSING" = dhcp ] && echo auto || echo manual)" || true
+    if [[ "$ADDRESSING" == "static" ]]; then
+      if [[ -n "$DNS" ]]; then
+        nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
+          ipv4.method manual ipv4.addresses "$ADDRESS" ipv4.gateway "$GATEWAY" \
+          ipv4.dns "$DNS" || true
+      else
+        nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
+          ipv4.method manual ipv4.addresses "$ADDRESS" ipv4.gateway "$GATEWAY" || true
+      fi
+    else
+      nmcli connection add type bridge ifname "$BRIDGE" con-name "barkvisor-${BRIDGE}" \
+        ipv4.method auto || true
+    fi
     systemd-run --on-active="${ROLLBACK_SEC}s" --unit="barkvisor-${BRIDGE}-rollback" \
       /bin/true >/dev/null 2>&1 || true
     ;;
@@ -227,6 +283,25 @@ EOF
 Name=${BRIDGE}
 Kind=bridge
 EOF
+    {
+      echo "# managed-by: barkvisor"
+      echo "[Match]"
+      echo "Name=${BRIDGE}"
+      echo
+      echo "[Network]"
+      if [[ "$ADDRESSING" == "dhcp" ]]; then
+        echo "DHCP=yes"
+      else
+        echo "Address=${ADDRESS}"
+        echo "Gateway=${GATEWAY}"
+        if [[ -n "$DNS" ]]; then
+          IFS=',' read -ra _dns <<< "$DNS"
+          for d in "${_dns[@]}"; do
+            echo "DNS=${d// /}"
+          done
+        fi
+      fi
+    } >"/etc/systemd/network/90-barkvisor-${BRIDGE}.network"
     systemd-run --on-active="${ROLLBACK_SEC}s" --unit="barkvisor-${BRIDGE}-rollback" \
       /bin/true >/dev/null 2>&1 || true
     ;;
