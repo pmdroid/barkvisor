@@ -29,6 +29,7 @@ struct SettingsView: View {
                 APIKeysSection()
                 RemoteAccessSection()
                 DiskDirectorySection()
+                DeviceUpdatesSection()
             }
 
             #if os(macOS)
@@ -133,6 +134,58 @@ private struct DiskDirectorySection: View {
         .task {
             await model.refreshDiskSettings()
             draft = model.diskSettings?.diskDirectory ?? ""
+        }
+    }
+}
+
+private struct DeviceUpdatesSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Section {
+            if model.capabilities?.inAppUpdateSupported != true {
+                Text(model.capabilities?.inAppUpdateExplanation
+                    ?? "In-app updates run on a root Ubuntu/Debian .deb or Apple Silicon .pkg Device.")
+                    .foregroundStyle(.secondary)
+            } else if let check = model.updateCheck {
+                LabeledContent("Current", value: "v\(check.currentVersion)")
+                if let update = check.update {
+                    LabeledContent("Available", value: "v\(update.version) (\(update.packageKind))")
+                    if !update.changelog.isEmpty {
+                        Text(update.changelog)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Install v\(update.version)") {
+                        Task { _ = await model.applyUpdate(update.version) }
+                    }
+                    .disabled(model.updateBusy)
+                } else {
+                    Text("This Device is on the latest version.")
+                        .foregroundStyle(.secondary)
+                }
+                if !model.updatePhase.isEmpty {
+                    Text(model.updatePhase)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Check for updates") {
+                    Task { await model.refreshUpdates() }
+                }
+                .disabled(model.updateBusy)
+            } else {
+                Text("Could not load updates for this Device.")
+                    .foregroundStyle(.secondary)
+                Button("Check for updates") {
+                    Task { await model.refreshUpdates() }
+                }
+            }
+        } header: {
+            Text("Updates")
+        }
+        .task {
+            if model.capabilities?.inAppUpdateSupported == true {
+                await model.refreshUpdates()
+            }
         }
     }
 }

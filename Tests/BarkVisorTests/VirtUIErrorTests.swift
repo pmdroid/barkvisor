@@ -83,6 +83,8 @@ struct VirtUIErrorTests {
         #expect(BarkVisorError.invalidArgument("").httpStatus == 400)
         #expect(BarkVisorError.invalidPortForward("").httpStatus == 400)
         #expect(BarkVisorError.unknownVMType("").httpStatus == 400)
+        #expect(BarkVisorError.updateFailed("checksum").httpStatus == 400)
+        #expect(BarkVisorError.updateFailed("checksum").code == "update_failed")
         #expect(BarkVisorError.unauthorized().httpStatus == 401)
         #expect(BarkVisorError.forbidden("").httpStatus == 403)
         #expect(BarkVisorError.notFound().httpStatus == 404)

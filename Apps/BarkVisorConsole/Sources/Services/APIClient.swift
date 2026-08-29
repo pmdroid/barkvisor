@@ -287,6 +287,19 @@ struct APIClient {
         try await get(scoped("/system/about", on: device))
     }
 
+    func deviceName(on device: HomeDeviceHealthSnapshot) async throws -> DeviceNameSnapshot {
+        try await get(scoped("/system/device-name", on: device))
+    }
+
+    func saveDeviceName(_ displayName: String, on device: HomeDeviceHealthSnapshot) async throws -> DeviceNameSnapshot {
+        try await send(
+            method: "PUT",
+            path: scoped("/system/device-name", on: device),
+            body: DeviceNameUpdate(displayName: displayName),
+            as: DeviceNameSnapshot.self,
+        )
+    }
+
     func capabilities(on device: HomeDeviceHealthSnapshot? = nil) async throws -> SystemCapabilities {
         try await get(scoped("/system/capabilities", on: device))
     }
@@ -419,6 +432,22 @@ struct APIClient {
 
     func saveDiskSettings(_ body: DiskSettingsUpdate) async throws -> DiskSettingsSnapshot {
         try await send(method: "PUT", path: "/api/system/disk/settings", body: body, as: DiskSettingsSnapshot.self)
+    }
+
+    func checkUpdates() async throws -> UpdateCheckResponse {
+        try await get("/api/system/updates/check")
+    }
+
+    func installUpdate(version: String) async throws -> UpdateTaskAccepted {
+        try await post("/api/system/updates/install", body: UpdateInstallRequest(version: version))
+    }
+
+    func taskStatus(taskID: String) async throws -> BackgroundTaskSnapshot {
+        try await get("/api/tasks/\(taskID)")
+    }
+
+    func processHealth() async throws -> ProcessHealthSnapshot {
+        try await get("/api/health")
     }
 
     func streamChatCompletions(

@@ -65,10 +65,18 @@ public enum PlatformCapabilities {
         #endif
     }
 
-    /// In-app signed PKG update flow. Always false: the privileged helper is gone;
-    /// upgrade with Homebrew / the distro package.
+    /// In-app .deb / .pkg updates. True only for a root appliance with the
+    /// known `/var/lib/barkvisor` layout (Ubuntu/Debian or Apple Silicon .pkg).
+    /// False for `swift run`, smoke, Homebrew kegs, Fedora/rpm, and Intel Mac.
     public static var supportsInAppUpdate: Bool {
-        false
+        InAppUpdateEligibility.evaluate(InAppUpdateEligibility.liveFacts())
+    }
+
+    /// Throw when this Device cannot apply an in-app package update.
+    public static func requireInAppUpdate() throws {
+        guard supportsInAppUpdate else {
+            throw BarkVisorError.unsupportedFeature(.inAppUpdate)
+        }
     }
 
     /// QEMU accelerator name for this host.

@@ -116,6 +116,15 @@ describe('editHome (PAS-203)', () => {
     })).toEqual({ cpuCount: 2, memoryMB: 1024 })
   })
 
+  test('hardware PATCH keeps guest addressing', () => {
+    expect(hardwarePatchBody({
+      guestAddressing: { mode: 'static', ipv4: '192.168.1.40', prefixLength: 24, gateway: '192.168.1.1' },
+      targetHostId: 'foreign',
+    })).toEqual({
+      guestAddressing: { mode: 'static', ipv4: '192.168.1.40', prefixLength: 24, gateway: '192.168.1.1' },
+    })
+  })
+
   test('member detail uses editHome and polls instead of Upgrade', () => {
     const detail = readFileSync(join(here, '../views/VMDetailView.vue'), 'utf8')
     const logs = readFileSync(join(here, '../stores/logs.ts'), 'utf8')

@@ -23,6 +23,32 @@ struct APIDecodingTests {
         #expect(source.contains("Default VM disk directory"))
         #expect(source.contains("DiskDirectorySection"))
         #expect(source.contains("refreshDiskSettings"))
+        #expect(source.contains("DeviceUpdatesSection"))
+        #expect(source.contains("inAppUpdateSupported"))
+        #expect(source.contains("Install v"))
+        #expect(!source.contains("brew upgrade"))
+    }
+
+    @Test func `update check decodes current and available`() throws {
+        let json = """
+        {
+          "currentVersion": "1.0.0",
+          "update": {
+            "version": "1.1.0",
+            "packageURL": "https://example.test/barkvisor_1.1.0_arm64.deb",
+            "checksumURL": "https://example.test/barkvisor_1.1.0_arm64.deb.sha256",
+            "packageKind": "deb",
+            "changelog": "fixes",
+            "publishedAt": "2026-08-01T00:00:00Z",
+            "isPrerelease": false
+          }
+        }
+        """.data(using: .utf8)!
+        let check = try decoder.decode(UpdateCheckResponse.self, from: json)
+        #expect(check.currentVersion == "1.0.0")
+        #expect(check.update?.version == "1.1.0")
+        #expect(check.update?.packageKind == "deb")
+        #expect(check.update?.packageURL.contains(".rpm") == false)
     }
 
     @Test func `remote access status decodes advertised hosts`() throws {

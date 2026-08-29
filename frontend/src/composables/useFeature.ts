@@ -13,7 +13,7 @@ export { BRIDGE_MUTATION_ACTION_KEYS } from '../utils/linuxBridgeSetup'
  * | hostBridgeManagement  | NetworkView Bridge setup (Linux apply + commands)             |
  * | usbPassthrough        | CreateVM network step, CreateVM summary, VMDetail attach USB  |
  * | gpuPassthrough        | Device/Workload GPU copy. No QEMU vfio-pci attach (PAS-274).  |
- * | inAppUpdate           | Always off — upgrade via Homebrew or the distro package        |
+ * | inAppUpdate           | Settings → Updates on a root .deb / .pkg appliance             |
  *
  * Prefer disable + server remediation over hide. Setup omits the macOS-only
  * bridge-install step instead of showing a dead wizard page.

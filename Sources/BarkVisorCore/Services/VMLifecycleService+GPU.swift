@@ -90,6 +90,34 @@ extension VMLifecycleService {
             sshKeys: keys,
             userData: userData,
             instanceID: CodingAgentImage.cloudInitInstanceID(vmID: vm.id, gpuAttached: gpuAttached),
+            macAddress: vm.macAddress,
+            addressing: vm.decodedGuestAddressing,
+        )
+    }
+
+    static func syncGuestAddressingCloudInit(vm: VM) throws {
+        guard vm.cloudInitPath != nil || CloudInitService.storedUserData(vmID: vm.id) != nil else {
+            return
+        }
+        let stored = CloudInitService.storedUserData(vmID: vm.id)
+        let keys = CloudInitService.sshAuthorizedKeys(from: stored)
+        let body: String? = {
+            guard let stored else { return nil }
+            guard stored.hasPrefix("#cloud-config") else { return stored }
+            var rest = String(stored.dropFirst("#cloud-config".count))
+            if rest.hasPrefix("\n") { rest = String(rest.dropFirst()) }
+            return rest
+        }()
+        _ = try CloudInitService.generateISO(
+            vmID: vm.id,
+            vmName: vm.name,
+            sshKeys: keys,
+            userData: body,
+            instanceID: CodingAgentImage.cloudInitInstanceID(
+                vmID: vm.id, userData: stored, gpuDevices: vm.decodedGPUDevices,
+            ),
+            macAddress: vm.macAddress,
+            addressing: vm.decodedGuestAddressing,
         )
     }
 

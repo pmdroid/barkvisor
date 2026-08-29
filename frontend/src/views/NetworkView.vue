@@ -1103,7 +1103,7 @@ async function doDeleteNetwork() {
       </div>
       <div class="split-s">
         <span class="wizard-dot">2</span>
-        <div><div class="t">Addressing</div><div class="d">DNS · DHCP</div></div>
+        <div><div class="t">Addressing</div><div class="d">NAT DNS · guest DHCP</div></div>
       </div>
     </template>
     <div v-if="formDeviceOptions.length > 0" class="form-group">
@@ -1171,6 +1171,9 @@ async function doDeleteNetwork() {
       <label>DNS Server</label>
       <input v-model="newDns" placeholder="8.8.8.8 (optional)" />
     </div>
+    <p v-if="newMode === 'bridged'" style="color:var(--text-dim);font-size:12px;margin:0">
+      Bridged Workloads get a LAN address from your router (DHCP) unless you set a static IPv4 on the Workload. Host bridge addressing is not configured here.
+    </p>
     <FormError v-if="error" :message="error" />
     <template #actions>
       <AppButton @click="showCreate = false">Cancel</AppButton>

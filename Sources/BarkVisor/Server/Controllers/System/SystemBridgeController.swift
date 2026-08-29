@@ -43,7 +43,8 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    /// macOS socket_vmnet install/start/stop/remove. Linux host-net apply is #378.
+    /// install/start/stop/remove require a managed bridge daemon (macOS root
+    /// daemon + launchctl). Linux host-net apply is #378.
     private static func requireManagedBridgeDaemon() throws {
         try PlatformCapabilities.requireManagedBridgeDaemon()
     }
