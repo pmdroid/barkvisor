@@ -28,6 +28,7 @@ public enum CapabilityReasonCode: String, Codable, Sendable {
     case linuxOsManaged = "linux_os_managed"
     case linuxPkgUpdate = "linux_pkg_update"
     case homebrewService = "homebrew_service"
+    case notAppliance = "not_appliance"
     case iommuMissing = "iommu_missing"
     case vfioMissing = "vfio_missing"
     case gpuMissing = "gpu_missing"
@@ -267,30 +268,33 @@ public enum CapabilityDetailBuilder {
         )
     }
 
-    private static func inAppUpdate(os: String, supported _: Bool) -> CapabilityDetail {
+    private static func inAppUpdate(os: String, supported: Bool) -> CapabilityDetail {
+        guard !supported else {
+            return CapabilityDetail(code: .inAppUpdate, supported: true)
+        }
         if isLinux(os) {
             return CapabilityDetail(
                 code: .inAppUpdate,
                 supported: false,
                 reason: .linuxPkgUpdate,
-                remediation: "In-app software updates are not supported. "
-                    + "Update BarkVisor using your package manager or release artifacts.",
+                remediation: "In-app updates run on a root Ubuntu or Debian Device installed from the .deb. "
+                    + "Fedora/rpm and smoke/`swift run` are out of scope.",
             )
         }
         if isMac(os) {
             return CapabilityDetail(
                 code: .inAppUpdate,
                 supported: false,
-                reason: .homebrewService,
-                remediation: "In-app updates are not supported. Upgrade with Homebrew: brew upgrade barkvisor.",
+                reason: .notAppliance,
+                remediation: "In-app updates run on an Apple Silicon Device installed from the signed .pkg. "
+                    + "Homebrew is not the Device update channel.",
             )
         }
         return CapabilityDetail(
             code: .inAppUpdate,
             supported: false,
             reason: .osUnsupported,
-            remediation: "In-app software updates are not supported. "
-                + "Update with Homebrew: brew upgrade barkvisor.",
+            remediation: "In-app updates are available on Ubuntu/Debian (.deb) and Apple Silicon (.pkg) Devices.",
         )
     }
 

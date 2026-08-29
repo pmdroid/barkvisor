@@ -142,6 +142,9 @@ final class AppModel {
     var ollamaSettings: OllamaSettingsSnapshot?
     var remoteAccess: RemoteAccessStatus?
     var diskSettings: DiskSettingsSnapshot?
+    var updateCheck: UpdateCheckResponse?
+    var updateBusy = false
+    var updatePhase = ""
 
     var showsChat: Bool {
         ChatAvailability.visible(catalog: ollamaCatalog)
@@ -456,6 +459,53 @@ final class AppModel {
     }
 
     @discardableResult
+    func refreshUpdates() async {
+        do {
+            updateCheck = try await requireClient().checkUpdates()
+        } catch {
+            updateCheck = nil
+            banner = error.localizedDescription
+        }
+    }
+
+    func applyUpdate(_ version: String) async -> Bool {
+        updateBusy = true
+        updatePhase = "Installing v\(version)…"
+        defer { updateBusy = false }
+        do {
+            let accepted = try await requireClient().installUpdate(version: version)
+            updatePhase = "Waiting for this Device…"
+            for _ in 0 ..< 60 {
+                try? await Task.sleep(for: .seconds(2))
+                if let task = try? await requireClient().taskStatus(taskID: accepted.taskID) {
+                    if task.status == "failed" {
+                        banner = task.error ?? "Update failed"
+                        updatePhase = ""
+                        return false
+                    }
+                    if task.status == "completed" { break }
+                }
+                if let health = try? await requireClient().processHealth(), health.status == "ok" {
+                    await refreshUpdates()
+                    updatePhase = ""
+                    return true
+                }
+            }
+            if let health = try? await requireClient().processHealth(), health.status == "ok" {
+                await refreshUpdates()
+                updatePhase = ""
+                return true
+            }
+            banner = "Timed out waiting for /api/health after the update."
+            updatePhase = ""
+            return false
+        } catch {
+            banner = error.localizedDescription
+            updatePhase = ""
+            return false
+        }
+    }
+
     func saveDiskSettings(_ directory: String) async -> Bool {
         do {
             diskSettings = try await requireClient().saveDiskSettings(

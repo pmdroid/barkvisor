@@ -725,6 +725,7 @@ struct SystemCapabilities: Decodable, Equatable {
     var supportsUSBPassthrough: Bool?
     var supportsGPUPassthrough: Bool?
     var supportsVFIO: Bool?
+    var supportsInAppUpdate: Bool?
     var details: [CapabilityDetail]?
 
     func detail(code: String) -> CapabilityDetail? {
@@ -739,6 +740,17 @@ struct SystemCapabilities: Decodable, Equatable {
     var gpuPassthroughSupported: Bool {
         if supportsGPUPassthrough == true { return true }
         return detail(code: "gpuPassthrough")?.supported == true
+    }
+
+    var inAppUpdateSupported: Bool {
+        if supportsInAppUpdate == true { return true }
+        return detail(code: "inAppUpdate")?.supported == true
+    }
+
+    var inAppUpdateExplanation: String {
+        let trimmed = detail(code: "inAppUpdate")?.remediation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty { return trimmed }
+        return "In-app updates run on a root Ubuntu/Debian .deb or Apple Silicon .pkg Device."
     }
 
     var gpuPassthroughExplanation: String {
@@ -1100,6 +1112,40 @@ struct DiskSettingsSnapshot: Decodable, Equatable {
 
 struct DiskSettingsUpdate: Encodable {
     var diskDirectory: String
+}
+
+struct UpdateInfo: Decodable, Equatable {
+    var version: String
+    var packageURL: String
+    var checksumURL: String
+    var packageKind: String
+    var changelog: String
+    var publishedAt: String
+    var isPrerelease: Bool
+}
+
+struct UpdateCheckResponse: Decodable, Equatable {
+    var currentVersion: String
+    var update: UpdateInfo?
+}
+
+struct UpdateInstallRequest: Encodable {
+    var version: String
+}
+
+struct UpdateTaskAccepted: Decodable, Equatable {
+    var taskID: String
+}
+
+struct ProcessHealthSnapshot: Decodable, Equatable {
+    var status: String
+}
+
+struct BackgroundTaskSnapshot: Decodable, Equatable {
+    var taskID: String
+    var status: String
+    var progress: Double?
+    var error: String?
 }
 
 struct RemoteAccessStatus: Decodable, Hashable {
