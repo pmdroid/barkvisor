@@ -123,6 +123,28 @@ struct WorkloadDetailTests {
         #expect(WorkloadGuestSummary.osLabel(workload: linux, guest: guest) == "Fedora")
     }
 
+    @Test func `mac guidance does not pretend installer ISOs were configured`() {
+        var iso = fixtureWorkload()
+        iso.macAddress = "52:54:00:12:34:56"
+        iso.cloudInitPath = nil
+        #expect(WorkloadGuestSummary.macLabel(workload: iso, guest: nil) == "52:54:00:12:34:56")
+        #expect(WorkloadGuestSummary.addressingSummary(workload: iso) == "DHCP (LAN)")
+        #expect(
+            WorkloadGuestSummary.macGuidance(bridged: true, cloudInit: false)
+                .contains("did not configure the OS"),
+        )
+        iso.cloudInitPath = "/data/cidata.iso"
+        iso.guestAddressing = GuestAddressingInfo(
+            mode: "static", ipv4: "192.168.1.40", prefixLength: 24, gateway: "192.168.1.1",
+            nameservers: nil,
+        )
+        #expect(WorkloadGuestSummary.addressingSummary(workload: iso).contains("192.168.1.40/24"))
+        #expect(
+            WorkloadGuestSummary.macGuidance(bridged: true, cloudInit: true)
+                .contains("DHCP reservation"),
+        )
+    }
+
     @Test func `member console and display match this device when reachable`() {
         let living = snapshot(hostId: "peer", role: "member", title: "Living Room", reachable: true)
         let down = snapshot(hostId: "down", role: "member", title: "Garage", reachable: false)

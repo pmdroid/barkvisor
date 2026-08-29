@@ -34,6 +34,12 @@ KillMode=process
 RuntimeDirectory=barkvisor
 RuntimeDirectoryMode=0770
 RuntimeDirectoryPreserve=yes
+# Ubuntu qemu packages often omit /etc/qemu. Create it at start so
+# ReadWritePaths=-/etc/qemu is not ignored under ProtectSystem=strict.
+ConfigurationDirectory=qemu
+# 0007 + Group=barkvisor so qemu-img disks and TPM dirs are group-writable
+# after QEMU drops. Copied NVRAM still needs WorkloadPrivilegeDrop.handoff.
+UMask=0007
 # QEMU bridged networking launches setuid qemu-bridge-helper. NoNewPrivileges=true
 # blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
 # Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.
@@ -44,9 +50,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 # Optional host-net apply paths (#378). Dash prefix: missing dirs do not fail the unit.
-ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu
-# Allow reading the installed SPA + optional custom frontend dir + compat libs
-ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu -/etc/systemd/network -/usr/lib/qemu/qemu-bridge-helper -/usr/libexec/qemu-bridge-helper -/usr/local/libexec/qemu/qemu-bridge-helper
+# In-app `dpkg -i` + `apt-get -f` from UpdateService (#387). The .deb writes
+# /usr/local/{bin,share,lib} and the systemd unit. Do not mark those ReadOnly.
+ReadWritePaths=/usr/local /var/lib/dpkg /var/cache/apt /var/lib/apt /var/cache/debconf /var/log/apt -/var/log/dpkg.log /usr/lib/systemd/system /etc/barkvisor -/etc/systemd/system
 LimitNOFILE=65536
 
 [Install]

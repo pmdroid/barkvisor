@@ -112,7 +112,7 @@ fi
 
 need_root
 
-run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR" "$COMPAT_DST"
+run install -d "$PREFIX/bin" "$DATA_DIR" "$RUN_DIR" "$(dirname "$UNIT_DST")" "$ENV_DIR" "$COMPAT_DST" /etc/qemu
 run install -m 0755 "$BIN_SRC" "$BIN_DST"
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY_RUN: ln -sfn barkvisor $AGENT_BIN_DST"

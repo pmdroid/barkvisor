@@ -351,6 +351,7 @@ public enum QEMUBuilder {
 
     private static func bootDiskArgs(disk: Disk, windows: Bool, diskFirst: Bool) throws -> [String] {
         try BlockDeviceService.requireHostDeviceReadWrite(paths: [disk.path])
+        try WorkloadPrivilegeDrop.handoffWritable(URL(fileURLWithPath: disk.path))
         let diskBootIndex = diskFirst ? 0 : 1
         let driveArgs = [
             "-drive",
@@ -406,6 +407,7 @@ public enum QEMUBuilder {
         guard spec.spec.firmware?.tpm == true else { return ([], nil, nil, nil) }
         let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vmID)")
         try FileManager.default.createDirectory(at: tpmStateDir, withIntermediateDirectories: true)
+        try WorkloadPrivilegeDrop.handoffWritable(tpmStateDir)
         let tpmSock = tpmStateDir.appendingPathComponent("swtpm.sock")
         let exe = try resolveSwtpm()
         let swtpmArgs = [
@@ -438,6 +440,7 @@ public enum QEMUBuilder {
                 paths: [sanitizedPath],
                 openReadWrite: openReadWrite,
             )
+            try WorkloadPrivilegeDrop.handoffWritable(URL(fileURLWithPath: sanitizedPath))
             args += [
                 "-drive",
                 "file=\(sanitizedPath),format=\(sanitizedFormat),if=virtio,cache=\(diskCacheMode(path: sanitizedPath)),id=\(QEMUDeviceNames.extraDrive(i))",
@@ -680,45 +683,45 @@ public enum QEMUBuilder {
         try FileManager.default.createDirectory(at: fwDir, withIntermediateDirectories: true)
         let varsFile = fwDir.appendingPathComponent("vars.fd")
 
+        let codeFile: URL
         switch profile.firmware {
         case .aavmfSecureBoot:
             // Windows ARM64 needs AAVMF secure boot firmware.
-            let codeFile = try resolveAAVMFSecureBoot()
+            codeFile = try resolveAAVMFSecureBoot()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.aavmfVarsCandidates,
                 zeroFillBytes: 67_108_864,
             )
-            return (codeFile, varsFile)
         case .edk2ARM64:
-            let codeFile = try resolveEDK2ARM64()
+            codeFile = try resolveEDK2ARM64()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.aavmfVarsCandidates,
                 zeroFillBytes: 67_108_864,
             )
-            return (codeFile, varsFile)
         case .edk2X86:
-            let codeFile = try resolveEDK2X86_64()
+            codeFile = try resolveEDK2X86_64()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.edk2X86VarsCandidates,
                 zeroFillBytes: 540_672,
             )
-            return (codeFile, varsFile)
         case .ovmfSecureBoot:
-            let codeFile = try resolveOVMFSecureBoot()
+            codeFile = try resolveOVMFSecureBoot()
             try ensureVarsStore(
                 at: varsFile,
                 codePath: codeFile.path,
                 templateCandidates: PlatformQEMU.ovmfSecureBootVarsCandidates,
                 zeroFillBytes: 540_672,
             )
-            return (codeFile, varsFile)
         }
+        try WorkloadPrivilegeDrop.handoffWritable(fwDir)
+        try WorkloadPrivilegeDrop.handoffWritable(varsFile)
+        return (codeFile, varsFile)
     }
 
     /// Create per-VM NVRAM from the distro OVMF/AAVMF template when possible.

@@ -3,6 +3,7 @@ import {
   canCallDeviceAPI,
   canFetchDeviceWorkloads,
   deviceAboutPath,
+  deviceDoctorPath,
   deviceBridgesPath,
   deviceCapabilitiesPath,
   deviceDiskPath,
@@ -86,6 +87,7 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(deviceTaskPath(self, 'task-9')).toBe('/tasks/task-9')
     expect(deviceCapabilitiesPath(self)).toBe('/system/capabilities')
     expect(deviceAboutPath(self)).toBe('/system/about')
+    expect(deviceDoctorPath(self)).toBe('/system/doctor')
     expect(deviceVmsBasePath(self)).toBe('/vms')
 
     expect(deviceRepositoriesPath(self)).toBe('/repositories')
@@ -102,6 +104,8 @@ describe('homeDeviceApi (PAS-34 remainder)', () => {
     expect(deviceTaskPath(member, 'task-9')).toBe('/home/devices/peer%2F1/v1/tasks/task-9')
     expect(deviceCapabilitiesPath(member)).toBe('/home/devices/peer%2F1/v1/system/capabilities')
     expect(deviceAboutPath(member)).toBe('/home/devices/peer%2F1/v1/system/about')
+    expect(deviceDoctorPath(member)).toBe('/home/devices/peer%2F1/v1/system/doctor')
+    expect(deviceDoctorPath(member)).not.toContain('cluster')
     expect(devicePath(member, '/images')).toBe('/home/devices/peer%2F1/v1/images')
   })
 
@@ -179,6 +183,17 @@ describe('homeDeviceApi (device about)', () => {
     expect(deviceAboutPath(self)).toBe('/system/about')
     expect(deviceAboutPath(member)).toBe('/home/devices/peer%2F1/v1/system/about')
     expect(deviceAboutPath(member)).not.toContain('targetHostId')
+    expect(canFetchDeviceWorkloads(down)).toBe(false)
+  })
+})
+
+describe('homeDeviceApi (device name)', () => {
+  test('self stays local; members hop PUT /system/device-name', () => {
+    expect(devicePath(self, '/system/device-name')).toBe('/system/device-name')
+    expect(devicePath(member, '/system/device-name')).toBe(
+      '/home/devices/peer%2F1/v1/system/device-name',
+    )
+    expect(devicePath(member, '/system/device-name')).not.toContain('targetHostId')
     expect(canFetchDeviceWorkloads(down)).toBe(false)
   })
 })

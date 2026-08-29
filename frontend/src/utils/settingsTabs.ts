@@ -9,6 +9,7 @@ export const SETTINGS_TABS = [
   'sshkeys',
   'passkeys',
   'audit',
+  'updates',
 ] as const
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number]

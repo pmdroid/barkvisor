@@ -156,6 +156,21 @@ public enum LinuxHostBridgeApply {
     public static let networkdNetdevPath = "/etc/systemd/network/90-barkvisor-br0.netdev"
     public static let networkdNetworkPath = "/etc/systemd/network/90-barkvisor-br0.network"
 
+    public static func commitStampPath(bridge: String) -> String {
+        "/run/barkvisor/\(bridge)-commit"
+    }
+
+    /// Host-timer helper. Exits 0 when apply wrote the commit stamp.
+    public static func rollbackHelperScript(bridge: String) -> String {
+        let stamp = commitStampPath(bridge: bridge)
+        return """
+        #!/bin/sh
+        if [ -f \(stamp) ]; then exit 0; fi
+        /usr/bin/nmcli connection down barkvisor-\(bridge) >/dev/null 2>&1 || true
+        /usr/bin/networkctl reload >/dev/null 2>&1 || true
+        """
+    }
+
     public static func evaluate(
         request: LinuxHostBridgeApplyRequest,
         probe: LinuxHostBridgeApplyProbe,

@@ -96,7 +96,7 @@ struct GuestTypeInfo: Content {
     let qemuBinary: String
 }
 
-/// Platform feature flags for UI gating (bridged networking, USB, package-manager updates).
+/// Platform feature flags for UI gating (bridged networking, USB, appliance updates).
 struct SystemCapabilitiesResponse: Content {
     let platform: String
     /// VMs may use bridged networking (Linux host bridge or macOS socket_vmnet).
@@ -137,6 +137,9 @@ extension NetworkModeCapability: Content {}
 extension HostBridgeReadiness: Content {}
 extension HostBridgeSnapshot: Content {}
 extension HostBridgeRemediation: Content {}
+extension DoctorReport: Content {}
+extension DoctorCheck: Content {}
+extension DoctorCheckStatus: Content {}
 
 struct HostGPUDeviceResponse: Content {
     let id: String

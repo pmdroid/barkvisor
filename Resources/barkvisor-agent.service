@@ -24,12 +24,18 @@ KillMode=process
 RuntimeDirectory=barkvisor
 RuntimeDirectoryMode=0770
 RuntimeDirectoryPreserve=yes
+# Ubuntu qemu packages often omit /etc/qemu. Create it at start so
+# ReadWritePaths=-/etc/qemu is not ignored under ProtectSystem=strict.
+ConfigurationDirectory=qemu
+# 0007 + Group=barkvisor so qemu-img disks and TPM dirs are group-writable
+# after QEMU drops. Copied NVRAM still needs WorkloadPrivilegeDrop.handoff.
+UMask=0007
 NoNewPrivileges=false
 SupplementaryGroups=kvm
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu -/etc/systemd/network -/usr/lib/qemu/qemu-bridge-helper -/usr/libexec/qemu-bridge-helper -/usr/local/libexec/qemu/qemu-bridge-helper
 ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
 LimitNOFILE=65536
 

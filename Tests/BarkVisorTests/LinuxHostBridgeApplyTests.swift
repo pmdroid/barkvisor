@@ -59,6 +59,29 @@ struct LinuxHostBridgeApplyTests {
         #expect(result.message.contains("Wi-Fi"))
     }
 
+    @Test func `netplanYAML writes Device static address`() {
+        let yaml = LinuxHostBridgeApply.netplanYAML(
+            bridge: "br0",
+            nic: "eth0",
+            addressing: .staticIP,
+            address: "192.168.1.10/24",
+            gateway: "192.168.1.1",
+            dns: ["1.1.1.1"],
+        )
+        #expect(yaml.contains("addresses: [192.168.1.10/24]"))
+        #expect(yaml.contains("via: 192.168.1.1"))
+        #expect(yaml.contains("addresses: [1.1.1.1]"))
+        #expect(!yaml.contains("dhcp4: true"))
+    }
+
+    @Test func `rollback helper keeps config only after commit stamp`() {
+        #expect(LinuxHostBridgeApply.commitStampPath(bridge: "br0") == "/run/barkvisor/br0-commit")
+        let script = LinuxHostBridgeApply.rollbackHelperScript(bridge: "br0")
+        #expect(script.contains("/run/barkvisor/br0-commit"))
+        #expect(script.contains("then exit 0"))
+        #expect(script.contains("nmcli connection down barkvisor-br0"))
+    }
+
     @Test func `static host address is Device not guest`() {
         let missing = LinuxHostBridgeApply.evaluate(
             request: LinuxHostBridgeApplyRequest(action: .dryRun, nic: "eth0", addressing: .staticIP),
@@ -241,6 +264,24 @@ struct LinuxHostBridgeApplyTests {
         #expect(dry.exitCode == 0)
         #expect(dry.stdout.contains("barkvisor:allow-br0"))
         #expect(dry.stdout.contains("netplan try"))
+
+        let staticDry = try Self.runScript(
+            script,
+            args: [
+                "--dry-run", "--nic", "eth0", "--static",
+                "--address", "192.168.1.10/24", "--gateway", "192.168.1.1",
+                "--dns", "1.1.1.1", "--confirm",
+            ],
+            env: [
+                "BARKVISOR_BRIDGE_BACKEND": "netplan",
+                "BARKVISOR_BRIDGE_SESSION_RISK": "0",
+            ],
+        )
+        #expect(staticDry.exitCode == 0)
+        #expect(staticDry.stdout.contains("addresses: [192.168.1.10/24]"))
+        #expect(staticDry.stdout.contains("via: 192.168.1.1"))
+        #expect(staticDry.stdout.contains("addresses: [1.1.1.1]"))
+        #expect(staticDry.stdout.contains("Device address 192.168.1.10/24"))
     }
 
     @Test func `wireless sysfs helper`() {

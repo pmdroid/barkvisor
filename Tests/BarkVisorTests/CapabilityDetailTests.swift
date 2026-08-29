@@ -48,7 +48,8 @@ struct CapabilityDetailTests {
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
         #expect(!update.supported)
         #expect(update.reasonCode == CapabilityReasonCode.linuxPkgUpdate.rawValue)
-        #expect(update.remediation?.localizedCaseInsensitiveContains("package manager") == true)
+        #expect(update.remediation?.localizedCaseInsensitiveContains(".deb") == true)
+        #expect(update.remediation?.localizedCaseInsensitiveContains("brew upgrade") != true)
 
         let helper = CapabilityDetailBuilder.detail(for: .qemuBridgeHelper, inventory: inv)
         #expect(!helper.supported)
@@ -85,8 +86,9 @@ struct CapabilityDetailTests {
         #expect(!tcg.supported)
 
         let update = CapabilityDetailBuilder.detail(for: .inAppUpdate, inventory: inv)
-        #expect(!update.supported)
-        #expect(update.remediation?.localizedCaseInsensitiveContains("brew") == true)
+        #expect(update.supported)
+        #expect(update.reasonCode == nil)
+        #expect(update.remediation == nil)
 
         let usb = CapabilityDetailBuilder.detail(for: .usbPassthrough, inventory: inv)
         #expect(usb.supported)
@@ -162,6 +164,7 @@ struct CapabilityDetailTests {
             #expect(byCode[.hostBridgeManagement]?.supported == true)
             #expect(byCode[.inAppUpdate]?.supported == false)
             #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.linuxPkgUpdate.rawValue)
+            #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains(".deb") == true)
             if caps.accelerator == "tcg" {
                 #expect(byCode[.kvmDevice]?.supported == false)
                 #expect(byCode[.kvmDevice]?.reasonCode == CapabilityReasonCode.kvmMissing.rawValue)
@@ -177,8 +180,9 @@ struct CapabilityDetailTests {
             #expect(byCode[.managedBridgeDaemon]?.supported == true)
             #expect(byCode[.managedBridgeDaemon]?.reasonCode == nil)
             #expect(byCode[.inAppUpdate]?.supported == false)
-            #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
-            #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains("brew") == true)
+            #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.notAppliance.rawValue)
+            #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains(".pkg") == true)
+            #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains("brew upgrade") != true)
             #expect(byCode[.bridgedNetworking]?.supported == true)
             #expect(byCode[.gpuPassthrough]?.supported == false)
             #expect(byCode[.gpuPassthrough]?.reasonCode == CapabilityReasonCode.osUnsupported.rawValue)
