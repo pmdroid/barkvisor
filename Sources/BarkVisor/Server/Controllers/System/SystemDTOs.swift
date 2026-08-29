@@ -84,7 +84,7 @@ struct SystemCapabilitiesResponse: Content {
     let platform: String
     /// VMs may use bridged networking (Linux host bridge or macOS socket_vmnet).
     let supportsBridgedNetworking: Bool
-    /// Install/start/stop privileged bridge daemons (macOS socket_vmnet helper only).
+    /// Install/start/stop socket_vmnet via the root Device daemon (macOS).
     let supportsManagedBridgeDaemon: Bool
     /// Linux Bridge setup shows host-bridge install guidance (no mutation).
     let supportsHostBridgeManagement: Bool

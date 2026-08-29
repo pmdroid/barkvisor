@@ -1,43 +1,9 @@
 #!/bin/bash
 set -e
 
-BARKVISOR_USER="_barkvisor"
-BARKVISOR_GID=300
-
-# --- Find next available UID/GID (starting from 300) ---
-find_available_id() {
-    local start=$1
-    local id=$start
-    while dscl . -list /Users UniqueID 2>/dev/null | awk '{print $2}' | grep -q "^${id}$" || \
-          dscl . -list /Groups PrimaryGroupID 2>/dev/null | awk '{print $2}' | grep -q "^${id}$"; do
-        id=$((id + 1))
-    done
-    echo "$id"
-}
-
-# --- Create system group ---
-if ! dscl . -read /Groups/$BARKVISOR_USER &>/dev/null; then
-    GID=$(find_available_id $BARKVISOR_GID)
-    dscl . -create /Groups/$BARKVISOR_USER
-    dscl . -create /Groups/$BARKVISOR_USER PrimaryGroupID "$GID"
-    dscl . -create /Groups/$BARKVISOR_USER RealName "BarkVisor Service"
-    echo "Created group $BARKVISOR_USER with GID $GID"
-else
-    GID=$(dscl . -read /Groups/$BARKVISOR_USER PrimaryGroupID | awk '{print $2}')
-fi
-
-# --- Create system user ---
-if ! dscl . -read /Users/$BARKVISOR_USER &>/dev/null; then
-    UID_VAL=$(find_available_id $BARKVISOR_GID)
-    dscl . -create /Users/$BARKVISOR_USER
-    dscl . -create /Users/$BARKVISOR_USER UniqueID "$UID_VAL"
-    dscl . -create /Users/$BARKVISOR_USER PrimaryGroupID "$GID"
-    dscl . -create /Users/$BARKVISOR_USER UserShell /usr/bin/false
-    dscl . -create /Users/$BARKVISOR_USER NFSHomeDirectory /var/empty
-    dscl . -create /Users/$BARKVISOR_USER RealName "BarkVisor Service"
-    dscl . -create /Users/$BARKVISOR_USER IsHidden 1
-    echo "Created user $BARKVISOR_USER with UID $UID_VAL"
-fi
+# Appliance LaunchDaemon runs as root. Do not create a dedicated daemon user.
+# Data dirs are owned by root. Leftover system users from older pkgs are
+# removed only by scripts/uninstall.sh --purge.
 
 # --- Create directories ---
 mkdir -p /var/lib/barkvisor/backups
@@ -53,9 +19,8 @@ mkdir -p /var/lib/barkvisor/console
 mkdir -p /var/log/barkvisor
 mkdir -p /var/run/barkvisor
 
-chown -R $BARKVISOR_USER:$BARKVISOR_USER /var/lib/barkvisor
-chown -R $BARKVISOR_USER:$BARKVISOR_USER /var/log/barkvisor
-chown -R $BARKVISOR_USER:$BARKVISOR_USER /var/run/barkvisor
+chmod 0755 /var/lib/barkvisor /var/log/barkvisor
+chmod 0700 /var/run/barkvisor
 
 # --- Clean up downloaded update packages ---
 rm -f /var/lib/barkvisor/updates/*.pkg

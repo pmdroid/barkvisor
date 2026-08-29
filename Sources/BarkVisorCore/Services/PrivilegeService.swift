@@ -4,9 +4,9 @@ import Foundation
 
 /// Abstracts privileged host operations that used to go through XPC.
 ///
-/// macOS no longer ships a privileged XPC helper. Bridged/vmnet is Homebrew
-/// `socket_vmnet` (`sudo brew services start socket_vmnet`). Linux uses host
-/// bridges. In-app PKG updates are unsupported (`PlatformCapabilities`).
+/// macOS no longer ships a privileged XPC helper (PAS-294). The root Device
+/// daemon starts/stops BarkVisor-owned `socket_vmnet` plists via launchctl.
+/// Linux uses host bridges. In-app PKG updates are unsupported (`PlatformCapabilities`).
 ///
 /// Controllers and other call sites must use `PrivilegeService.shared` only
 /// (enforced by PrivilegeBoundaryTests).
@@ -38,7 +38,7 @@ public enum PrivilegeService {
 // MARK: - macOS implementation
 
 #if os(macOS)
-    /// Probe-only: never load LaunchDaemons or bless a helper (PAS-294).
+    /// Root daemon: launchctl for BarkVisor-owned socket_vmnet plists (PAS-294: no XPC).
     public struct MacOSPrivilegeService: PrivilegeServicing {
         public var isAvailable: Bool {
             true
@@ -47,23 +47,23 @@ public enum PrivilegeService {
         public init() {}
 
         public func installBridge(interface: String) async throws {
-            _ = interface
             try PlatformCapabilities.requireManagedBridgeDaemon()
+            try SocketVmnetLaunchd.install(interface: interface)
         }
 
         public func removeBridge(interface: String) async throws {
-            _ = interface
             try PlatformCapabilities.requireManagedBridgeDaemon()
+            try SocketVmnetLaunchd.remove(interface: interface)
         }
 
         public func startBridge(interface: String) async throws {
-            _ = interface
             try PlatformCapabilities.requireManagedBridgeDaemon()
+            try SocketVmnetLaunchd.start(interface: interface)
         }
 
         public func stopBridge(interface: String) async throws {
-            _ = interface
             try PlatformCapabilities.requireManagedBridgeDaemon()
+            try SocketVmnetLaunchd.stop(interface: interface)
         }
 
         public func bridgeStatus(interface: String) async throws -> String {
@@ -155,7 +155,7 @@ public enum LeftoverHelperInventory {
     public static func warningMessage(paths: [String]) -> String {
         let joined = paths.joined(separator: " ")
         return """
-        Leftover privileged helper is unused; macOS uses Homebrew socket_vmnet. \
+        Leftover privileged helper is unused; the Device starts socket_vmnet as root. \
         A loaded leftover may log XPC invalidation about every 15s. Remove with: \
         sudo launchctl bootout system/\(launchdLabel) && sudo rm -f \(joined)
         """

@@ -42,7 +42,8 @@ struct HostBridgeReadinessTests {
         #expect(facts.bridges.isEmpty)
         #expect(facts.remediations.map(\.id) == ["homebrew-socket-vmnet"])
         #expect(facts.remediations[0].commands.contains("brew install socket_vmnet"))
-        #expect(facts.remediations[0].commands.contains("brew services start socket_vmnet"))
+        #expect(facts.remediations[0].commands.contains("do not sudo brew install"))
+        #expect(facts.remediations[0].commands.contains("Device starts socket_vmnet"))
     }
 
     @Test func `mac socket_vmnet present is ready without linux remediations`() {
@@ -53,6 +54,30 @@ struct HostBridgeReadinessTests {
         #expect(facts.ready)
         #expect(facts.remediations.isEmpty)
         #expect(facts.bridges.map(\.name) == ["en0"])
+    }
+
+    @Test func `macOS managed records win when present`() throws {
+        #if os(macOS)
+            let record = BridgeRecord(
+                id: nil,
+                interface: "en1",
+                socketPath: "/var/run/socket_vmnet.bridged.en1",
+                plistExists: true,
+                daemonRunning: true,
+                status: "active",
+                updatedAt: "now",
+            )
+            let iface = try HostBridgeFactsService.activeBridgedInterface(
+                records: [record],
+                source: StubHostBridgeFacts(),
+            )
+            #expect(iface == "en1")
+            let map = HostBridgeFactsService.statusByInterface(
+                records: [record],
+                source: StubHostBridgeFacts(),
+            )
+            #expect(map == ["en1": "active"])
+        #endif
     }
 
     @Test func `bridged template deploy uses socket uplink not vmnet`() throws {
@@ -138,18 +163,20 @@ struct HostBridgeReadinessTests {
     }
 
     @Test func `status map on Linux uses facts not fabricated records`() {
-        let fromDB = HostBridgeFactsService.statusByInterface(records: [
-            BridgeRecord(
-                id: nil,
-                interface: "ghost0",
-                socketPath: nil,
-                plistExists: true,
-                daemonRunning: true,
-                status: "active",
-                updatedAt: "now",
-            ),
-        ])
-        #expect(fromDB["ghost0"] == nil)
+        #if os(Linux)
+            let fromDB = HostBridgeFactsService.statusByInterface(records: [
+                BridgeRecord(
+                    id: nil,
+                    interface: "ghost0",
+                    socketPath: nil,
+                    plistExists: true,
+                    daemonRunning: true,
+                    status: "active",
+                    updatedAt: "now",
+                ),
+            ])
+            #expect(fromDB["ghost0"] == nil)
+        #endif
     }
 
     @Test func `unused bridged interface uniqueness lives in facts`() {
@@ -184,34 +211,36 @@ struct HostBridgeReadinessTests {
     }
 
     @Test func `bridged template deploy uses facts not BridgeRecord`() throws {
-        let ghost = BridgeRecord(
-            id: nil,
-            interface: "ghost0",
-            socketPath: nil,
-            plistExists: true,
-            daemonRunning: true,
-            status: "active",
-            updatedAt: "now",
-        )
-        var stub = StubHostBridgeFacts()
-        stub.helperSetuid = true
-        stub.aclAllowsSuggested = true
-        stub.bridges = [
-            HostBridgeSnapshot(name: "virbr0", enslaved: []),
-            HostBridgeSnapshot(name: "br0", enslaved: ["eth1"]),
-        ]
-
-        let iface = try HostBridgeFactsService.activeBridgedInterface(
-            records: [ghost], source: stub,
-        )
-        #expect(iface == "br0")
-
-        let missing = #expect(throws: BarkVisorError.self) {
-            try HostBridgeFactsService.activeBridgedInterface(
-                records: [ghost], source: StubHostBridgeFacts(),
+        #if os(Linux)
+            let ghost = BridgeRecord(
+                id: nil,
+                interface: "ghost0",
+                socketPath: nil,
+                plistExists: true,
+                daemonRunning: true,
+                status: "active",
+                updatedAt: "now",
             )
-        }
-        #expect(missing?.httpStatus == 412)
-        #expect(missing?.errorDescription?.contains("Helper") != true)
+            var stub = StubHostBridgeFacts()
+            stub.helperSetuid = true
+            stub.aclAllowsSuggested = true
+            stub.bridges = [
+                HostBridgeSnapshot(name: "virbr0", enslaved: []),
+                HostBridgeSnapshot(name: "br0", enslaved: ["eth1"]),
+            ]
+
+            let iface = try HostBridgeFactsService.activeBridgedInterface(
+                records: [ghost], source: stub,
+            )
+            #expect(iface == "br0")
+
+            let missing = #expect(throws: BarkVisorError.self) {
+                try HostBridgeFactsService.activeBridgedInterface(
+                    records: [ghost], source: StubHostBridgeFacts(),
+                )
+            }
+            #expect(missing?.httpStatus == 412)
+            #expect(missing?.errorDescription?.contains("Helper") != true)
+        #endif
     }
 }

@@ -19,7 +19,7 @@ After install, open `http://localhost:7777` (or the host IP) and complete the we
 - **Disk space:** at least 2 GB free for BarkVisor itself. Plan for additional space for VM disk images. Each cloud image download is typically 500 MB–2 GB; guest disks grow up to the size you allocate.
 - **RAM:** 8 GB minimum; 16 GB or more recommended. Each running VM reserves its configured memory from the host.
 - **QEMU and firmware from the distro** — unlike macOS, the Linux package does **not** bundle QEMU. The `.deb` / `.rpm` / Arch package **depends on** distro QEMU, UEFI firmware, ISO tools, and `usbutils`, so the package manager installs them with BarkVisor.
-- **KVM (recommended)** — `/dev/kvm` readable by the `barkvisor` service user for hardware acceleration. Without KVM, BarkVisor still runs using TCG (slower).
+- **KVM (recommended)** — `/dev/kvm` readable by the `barkvisor` user (QEMU drops to that account). Without KVM, BarkVisor still runs using TCG (slower). The Device daemon itself runs as root.
 
 ### Distro packages (pulled in by the BarkVisor package)
 
@@ -38,7 +38,7 @@ Optional for Windows guests with TPM: install your distro’s **`swtpm`** packag
 
 Optional for off-LAN access: install **Tailscale** (`tailscaled`) from your distro or [tailscale.com/download](https://tailscale.com/download). BarkVisor detects it and can advertise the tailnet address. It does not bundle Tailscale. See [Home and pairing](home-and-pairing.md#remote-access-tailscale).
 
-KVM and raw-disk group membership (after the package creates the `barkvisor` user). systemd `SupplementaryGroups=kvm` replaces other groups from `usermod`. The package writes `barkvisor.service.d/disk.conf` when group **disk** exists.
+The Device daemon runs as root. QEMU is launched as `barkvisor` (then `qemu`) with that user's `kvm` / `disk` groups so guests do not inherit uid 0. The package still creates the `barkvisor` user for that drop. The package writes `barkvisor.service.d/disk.conf` when group **disk** exists.
 
 ```sh
 ls -l /dev/kvm /dev/sda
@@ -128,7 +128,7 @@ Common overrides in `/etc/barkvisor/barkvisor.env`:
 
 After edits: `sudo systemctl restart barkvisor.service`.
 
-The unit does **not** enable `NoNewPrivileges` so QEMU can run setuid `qemu-bridge-helper` for bridged networking. Do not re-harden the unit with `NoNewPrivileges=true` if you need bridging.
+The unit does **not** enable `NoNewPrivileges` so dropped QEMU can still run setuid `qemu-bridge-helper` for bridged networking. Do not re-harden the unit with `NoNewPrivileges=true` if you need bridging. `KillMode=process` so a daemon restart does not SIGTERM QEMU.
 
 ---
 
@@ -333,7 +333,7 @@ If passthrough is unavailable, the UI says why. Do not invent a macOS VFIO path.
 
 ## Host block devices (optional)
 
-Create Disk on Linux can attach a host block device as **raw**. BarkVisor refuses devices the host already uses (mounted filesystems, swap, the data-dir volume). The `barkvisor` service user needs the **disk** group (`/dev/sdX` is `root:disk`). Install writes `barkvisor.service.d/disk.conf` when that group exists and restarts a running unit. macOS has no block-device option. See [Create a Workload](create-workload.md#disks).
+Create Disk on Linux can attach a host block device as **raw**. BarkVisor refuses devices the host already uses (mounted filesystems, swap, the data-dir volume). The dropped QEMU process (`barkvisor` user) needs the **disk** group (`/dev/sdX` is `root:disk`). Install writes `barkvisor.service.d/disk.conf` when that group exists and restarts a running unit. macOS has no block-device option. See [Create a Workload](create-workload.md#disks).
 
 ---
 

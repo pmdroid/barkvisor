@@ -112,8 +112,15 @@ extension VMManager {
         }
 
         let tpmProc = Process()
-        tpmProc.executableURL = swtpmExe
-        tpmProc.arguments = swtpmArgs
+        let tpmLaunch = WorkloadPrivilegeDrop.apply(executable: swtpmExe, arguments: swtpmArgs)
+        tpmProc.executableURL = tpmLaunch.executable
+        tpmProc.arguments = tpmLaunch.arguments
+        if tpmLaunch.dropped {
+            Log.vm.info(
+                "swtpm privilege drop: \(tpmLaunch.reason)",
+                vm: vmID,
+            )
+        }
         tpmProc.standardOutput = FileHandle.nullDevice
         let swtpmStderrPipe = Pipe()
         tpmProc.standardError = swtpmStderrPipe
@@ -188,8 +195,15 @@ extension VMManager {
         launch: QEMULaunchConfig, vmID: String,
     ) -> (Process, Pipe, Pipe) {
         let process = Process()
-        process.executableURL = launch.executable
-        process.arguments = launch.arguments
+        let dropped = WorkloadPrivilegeDrop.apply(
+            executable: launch.executable,
+            arguments: launch.arguments,
+        )
+        process.executableURL = dropped.executable
+        process.arguments = dropped.arguments
+        if dropped.dropped {
+            Log.vm.info("QEMU privilege drop: \(dropped.reason)", vm: vmID)
+        }
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()

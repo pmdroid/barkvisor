@@ -235,7 +235,7 @@ public enum HostBridgeFactsService {
         records: [BridgeRecord],
         source: any HostBridgeFactSource = LiveHostBridgeFactSource(),
     ) -> [String: String] {
-        if PlatformCapabilities.supportsManagedBridgeDaemon {
+        if PlatformCapabilities.supportsManagedBridgeDaemon, !records.isEmpty {
             return Dictionary(
                 records.map { ($0.interface, $0.status) },
                 uniquingKeysWith: { _, last in last },
@@ -264,7 +264,7 @@ public enum HostBridgeFactsService {
         records: [BridgeRecord],
         source: any HostBridgeFactSource = LiveHostBridgeFactSource(),
     ) throws -> String {
-        if PlatformCapabilities.supportsManagedBridgeDaemon {
+        if PlatformCapabilities.supportsManagedBridgeDaemon, !records.isEmpty {
             guard let name = records.first(where: { $0.status == "active" })?.interface else {
                 throw BarkVisorError.preconditionFailed(
                     """

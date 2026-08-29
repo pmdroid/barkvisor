@@ -6,6 +6,7 @@ Unreleased items live on stacked draft PRs and may change before they land on `m
 
 ## Unreleased
 
+- Device daemon runs as root on Linux (`User=root`) and macOS (LaunchDaemon without `UserName`). QEMU drops to `barkvisor`/`qemu` with kvm/disk on Linux. macOS HVF/USB stay the daemon uid until a drop is proven. The root daemon starts socket_vmnet via launchctl. No XPC helper.
 - Settings Home is Device URL, not remote access. Pairing and login QR `host=` and Models `OPENAI_BASE_URL` use the saved Device URL. Require Tailscale for the Home API is gone.
 - Library depot is gone. Catalog Download writes into this Device. Missing images download from the internet.
 - Sentry is gone. Device logs stay on stdout / the Logs page; no DSN, no crash upload.

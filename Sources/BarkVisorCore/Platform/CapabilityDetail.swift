@@ -221,7 +221,7 @@ public enum CapabilityDetailBuilder {
                 code: .managedBridgeDaemon,
                 supported: false,
                 reason: .homebrewService,
-                remediation: "BarkVisor does not install or start socket_vmnet. "
+                remediation: "Install the socket_vmnet package with Homebrew, then let the Device start it. "
                     + SocketVmnetDiscovery.installHint + ".",
             )
         }

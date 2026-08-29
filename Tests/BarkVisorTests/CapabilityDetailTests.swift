@@ -174,8 +174,8 @@ struct CapabilityDetailTests {
                 #expect(byCode[.bridgedNetworking]?.remediation?.contains("qemu-bridge-helper") == true)
             }
         #elseif os(macOS)
-            #expect(byCode[.managedBridgeDaemon]?.supported == false)
-            #expect(byCode[.managedBridgeDaemon]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
+            #expect(byCode[.managedBridgeDaemon]?.supported == true)
+            #expect(byCode[.managedBridgeDaemon]?.reasonCode == nil)
             #expect(byCode[.inAppUpdate]?.supported == false)
             #expect(byCode[.inAppUpdate]?.reasonCode == CapabilityReasonCode.homebrewService.rawValue)
             #expect(byCode[.inAppUpdate]?.remediation?.localizedCaseInsensitiveContains("brew") == true)

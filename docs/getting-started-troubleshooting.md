@@ -188,12 +188,10 @@ sudo launchctl kickstart system/dev.barkvisor
 
 ### macOS: Homebrew socket_vmnet
 
-On **macOS**, bridged/vmnet networking uses Homebrew `socket_vmnet`. BarkVisor does not install or start it and does not ship a privileged helper.
+On **macOS**, bridged/vmnet networking uses Homebrew `socket_vmnet`. Install the package as your user (`brew install socket_vmnet`). Do not `sudo brew install`. The root Device daemon starts a BarkVisor-owned plist via launchctl. There is no XPC helper.
 
 ```sh
 brew install socket_vmnet
-sudo brew services start socket_vmnet
-sudo brew services info socket_vmnet
 ```
 
 The default service socket is `/opt/homebrew/var/run/socket_vmnet` (Intel Homebrew: `/usr/local/var/run/socket_vmnet`). If a Workload cannot attach:

@@ -1,10 +1,10 @@
 import Foundation
 
-/// Operator-managed `socket_vmnet` sockets (Homebrew or lima). BarkVisor never
-/// installs, starts, or stops these daemons (PAS-294).
+/// `socket_vmnet` sockets (Homebrew package or lima). The root Device daemon
+/// starts a BarkVisor-owned plist via launchctl. Do not `sudo brew install`.
 public enum SocketVmnetDiscovery {
     public static let installHint =
-        "brew install socket_vmnet && sudo brew services start socket_vmnet"
+        "brew install socket_vmnet (do not sudo brew install). The Device starts socket_vmnet as root"
 
     public static let sharedSocketPaths = [
         "/opt/homebrew/var/run/socket_vmnet",
