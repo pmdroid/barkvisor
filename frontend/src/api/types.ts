@@ -980,6 +980,22 @@ export type HostBridgeReadiness = {
   remediations?: HostBridgeRemediation[]
 }
 
+export type DoctorCheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
+
+export type DoctorCheck = {
+  id: string
+  status: DoctorCheckStatus
+  detail: string
+}
+
+/** GET /api/system/doctor and `barkvisor doctor --json`. */
+export type DoctorReport = {
+  ok: boolean
+  privileged: boolean
+  checks: DoctorCheck[]
+  hostBridge: HostBridgeReadiness
+}
+
 /** Alias: capabilities for the host running this BarkVisor process. */
 export type CurrentHostCapabilities = SystemCapabilities
 
