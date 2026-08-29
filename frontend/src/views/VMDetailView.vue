@@ -15,6 +15,13 @@ import {
 } from '../utils/homeDeviceApi'
 import { isReachabilityOk, reachabilityLabel } from '../utils/homeDeviceHealth'
 import { DEVICE_LABEL } from '../utils/terminology'
+import {
+  cloudInitApplies,
+  isBridgedNetwork,
+  macReservationCopy,
+  staticRefusedCopy,
+  validateGuestAddressing,
+} from '../utils/guestAddressing'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import { useTicketedEventSource } from '../composables/useTicketedEventSource'
 import type {
@@ -1282,6 +1289,60 @@ const currentNetwork = computed(() => {
   return localNetworkForDetail(false, vm.value?.networkId, allNetworks.value)
 })
 
+const guestCloudInit = computed(() => cloudInitApplies({ cloudInitPath: vm.value?.cloudInitPath }))
+const guestBridged = computed(() => isBridgedNetwork(currentNetwork.value))
+const guestMacCopy = computed(() => macReservationCopy({
+  bridged: guestBridged.value,
+  cloudInit: guestCloudInit.value,
+}))
+const showGuestStaticForm = computed(() => guestBridged.value && guestCloudInit.value && !isMemberDetail.value)
+const editingAddressing = ref(false)
+const addrMode = ref<'dhcp' | 'static'>('dhcp')
+const addrIPv4 = ref('')
+const addrPrefix = ref<number | null>(24)
+const addrGateway = ref('')
+const addrDNS = ref('')
+const addrError = ref('')
+const addrSaving = ref(false)
+
+function beginAddressingEdit() {
+  const current = vm.value?.guestAddressing
+  addrMode.value = current?.mode === 'static' ? 'static' : 'dhcp'
+  addrIPv4.value = current?.ipv4 || ''
+  addrPrefix.value = current?.prefixLength ?? 24
+  addrGateway.value = current?.gateway || ''
+  addrDNS.value = (current?.nameservers ?? []).join(', ')
+  addrError.value = ''
+  editingAddressing.value = true
+}
+
+async function saveAddressing() {
+  const body = addrMode.value === 'static'
+    ? {
+        mode: 'static' as const,
+        ipv4: addrIPv4.value.trim(),
+        prefixLength: addrPrefix.value ?? undefined,
+        gateway: addrGateway.value.trim(),
+        nameservers: addrDNS.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean),
+      }
+    : { mode: 'dhcp' as const }
+  const invalid = validateGuestAddressing(body)
+  if (invalid) {
+    addrError.value = invalid
+    return
+  }
+  addrSaving.value = true
+  addrError.value = ''
+  try {
+    await patchWorkload({ guestAddressing: body })
+    editingAddressing.value = false
+  } catch (e: unknown) {
+    addrError.value = apiErrorMessage(e)
+  } finally {
+    addrSaving.value = false
+  }
+}
+
 const backend = computed(() => (vm.value ? vmBackend(vm.value) : null))
 
 const toolbarSub = computed(() => {
@@ -1629,7 +1690,40 @@ onMounted(fetchVMEvents)
             </div>
             <div class="detail-row">
               <span class="detail-label">MAC Address</span>
-              <span class="mono dim-text">{{ vm.macAddress || '—' }}</span>
+              <span>
+                <span class="mono">{{ vm.macAddress || '—' }}</span>
+                <span class="dim-text" style="display:block;font-size:11px;margin-top:4px">{{ guestMacCopy }}</span>
+              </span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Addressing</span>
+              <span v-if="showGuestStaticForm" class="detail-editable">
+                <template v-if="!editingAddressing">
+                  <span v-if="vm.guestAddressing?.mode === 'static'">
+                    Static {{ vm.guestAddressing.ipv4 }}/{{ vm.guestAddressing.prefixLength }}
+                  </span>
+                  <span v-else>DHCP (LAN)</span>
+                  <button type="button" class="fact-edit" @click="beginAddressingEdit">Edit</button>
+                </template>
+                <div v-else style="display:flex;flex-direction:column;gap:8px;min-width:240px">
+                  <AppSelect v-model="addrMode">
+                    <option value="dhcp">DHCP (LAN)</option>
+                    <option value="static">Static IPv4</option>
+                  </AppSelect>
+                  <template v-if="addrMode === 'static'">
+                    <input v-model="addrIPv4" placeholder="IPv4" />
+                    <input v-model.number="addrPrefix" type="number" min="1" max="32" placeholder="Prefix" />
+                    <input v-model="addrGateway" placeholder="Gateway" />
+                    <input v-model="addrDNS" placeholder="DNS (comma-separated)" />
+                  </template>
+                  <span v-if="addrError" style="color:var(--red);font-size:12px">{{ addrError }}</span>
+                  <span style="display:flex;gap:6px">
+                    <AppButton size="sm" variant="primary" :loading="addrSaving" @click="saveAddressing">Save</AppButton>
+                    <AppButton size="sm" @click="editingAddressing = false">Cancel</AppButton>
+                  </span>
+                </div>
+              </span>
+              <span v-else class="dim-text">{{ staticRefusedCopy({ bridged: guestBridged, cloudInit: guestCloudInit }) || 'DHCP (LAN)' }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">IP Address</span>

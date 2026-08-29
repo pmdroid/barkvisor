@@ -37,6 +37,7 @@ public struct CreateWorkloadExtras: Sendable {
     public var requireBootMedia: Bool
     /// When an ISO is present and `diskSizeGB` is omitted (declarative apply).
     public var defaultISODiskSizeGB: Int?
+    public var guestAddressing: GuestAddressing?
 
     public init(
         diskSizeGB: Int? = nil,
@@ -56,6 +57,7 @@ public struct CreateWorkloadExtras: Sendable {
         tpmEnabled: Bool? = nil,
         requireBootMedia: Bool = false,
         defaultISODiskSizeGB: Int? = nil,
+        guestAddressing: GuestAddressing? = nil,
     ) {
         self.diskSizeGB = diskSizeGB
         self.isoId = isoId
@@ -74,6 +76,7 @@ public struct CreateWorkloadExtras: Sendable {
         self.tpmEnabled = tpmEnabled
         self.requireBootMedia = requireBootMedia
         self.defaultISODiskSizeGB = defaultISODiskSizeGB
+        self.guestAddressing = guestAddressing
     }
 
     public static var apply: CreateWorkloadExtras {
@@ -270,6 +273,7 @@ public enum EffectiveWorkloadPipeline {
             overrides: spec.overrides,
             health: spec.spec.health,
             workloadClass: spec.spec.workloadClass,
+            guestAddressing: extras.guestAddressing ?? spec.spec.networks.first?.addressing,
         )
     }
 
