@@ -43,9 +43,8 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    /// install/start/stop/remove require a managed bridge daemon (unsupported;
-    /// macOS uses operator-managed Homebrew socket_vmnet).
-    /// Product bridged networking on Linux uses host bridges without these lifecycle routes.
+    /// install/start/stop/remove require a managed bridge daemon (macOS root
+    /// daemon + launchctl). Linux host-net apply is #378.
     private static func requireManagedBridgeDaemon() throws {
         try PlatformCapabilities.requireManagedBridgeDaemon()
     }

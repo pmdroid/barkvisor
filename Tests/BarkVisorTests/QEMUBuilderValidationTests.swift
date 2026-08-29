@@ -385,7 +385,8 @@ struct QEMUBuilderValidationTests {
         }
         #expect(err?.code == "process_spawn_failed")
         #expect(err?.errorDescription?.contains("brew install socket_vmnet") == true)
-        #expect(err?.errorDescription?.contains("brew services start socket_vmnet") == true)
+        #expect(err?.errorDescription?.contains("do not sudo brew install") == true)
+        #expect(err?.errorDescription?.contains("Device starts socket_vmnet") == true)
     }
 
     @Test func `per-iface socket_vmnet is used when present`() throws {

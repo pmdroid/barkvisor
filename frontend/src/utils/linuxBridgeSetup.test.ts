@@ -75,7 +75,8 @@ describe('macosSocketVmnetSetup', () => {
     expect(groups.map((g) => g.id)).toEqual(['homebrew-socket-vmnet'])
     expect(groups[0].commands).toBe(SOCKET_VMNET_INSTALL_COMMANDS)
     expect(groups[0].commands).toContain('brew install socket_vmnet')
-    expect(groups[0].commands).toContain('brew services start socket_vmnet')
+    expect(groups[0].commands).not.toContain('brew services start')
+    expect(groups[0].commands).not.toContain('sudo brew install')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
     }
@@ -87,7 +88,7 @@ describe('macosSocketVmnetSetup', () => {
         remediations: [{
           id: 'homebrew-socket-vmnet',
           label: 'Install and start socket_vmnet',
-          commands: 'brew install socket_vmnet\nsudo brew services start socket_vmnet',
+          commands: 'brew install socket_vmnet',
         }],
       }),
     )

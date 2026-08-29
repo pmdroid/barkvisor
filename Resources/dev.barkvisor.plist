@@ -7,10 +7,6 @@
     <string>dev.barkvisor</string>
     <key>Program</key>
     <string>/usr/local/bin/barkvisor</string>
-    <key>UserName</key>
-    <string>_barkvisor</string>
-    <key>GroupName</key>
-    <string>_barkvisor</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

@@ -699,8 +699,7 @@ DIST
 <ul>
 <li>Install the BarkVisor server daemon</li>
 <li>Requires Homebrew: <code>brew install qemu swtpm socket_vmnet</code></li>
-<li>Create the <code>_barkvisor</code> system user</li>
-<li>Start the server as a LaunchDaemon</li>
+<li>Start the server as a root LaunchDaemon</li>
 </ul>
 <p>After installation, open <strong>http://localhost:7777</strong> to complete setup.</p>
 <p>Can also be installed headlessly via SSH:</p>

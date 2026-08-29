@@ -7,7 +7,7 @@ Conflicts=barkvisor.service
 
 [Service]
 Type=simple
-User=barkvisor
+User=root
 Group=barkvisor
 WorkingDirectory=/var/lib/barkvisor
 Environment=HOME=/var/lib/barkvisor
@@ -21,14 +21,14 @@ Restart=on-failure
 RestartSec=3
 KillMode=process
 RuntimeDirectory=barkvisor
-RuntimeDirectoryMode=0700
+RuntimeDirectoryMode=0770
 RuntimeDirectoryPreserve=yes
 NoNewPrivileges=false
 SupplementaryGroups=kvm
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu
 ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
 LimitNOFILE=65536
 

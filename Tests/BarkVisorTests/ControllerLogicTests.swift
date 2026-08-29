@@ -271,7 +271,7 @@ struct ControllerLogicTests {
         #expect(caps.runnableArches == [caps.hostArch])
         #expect(caps.inventorySchemaVersion == HostInventoryService.currentSchemaVersion)
         #if os(macOS)
-            #expect(!caps.supportsManagedBridgeDaemon)
+            #expect(caps.supportsManagedBridgeDaemon)
             #expect(!caps.supportsHostBridgeManagement)
         #elseif os(Linux)
             #expect(caps.supportsBridgedNetworking == HostInventoryService.qemuBridgeHelperPresent())

@@ -7,7 +7,7 @@ Conflicts=barkvisor-agent.service
 
 [Service]
 Type=simple
-User=barkvisor
+User=root
 Group=barkvisor
 WorkingDirectory=/var/lib/barkvisor
 Environment=HOME=/var/lib/barkvisor
@@ -25,21 +25,21 @@ RestartSec=3
 KillMode=process
 # Recreate /run/barkvisor after reboot (/run is tmpfs). Preserve=yes keeps
 # QEMU sockets across daemon restart so reconnectOrCleanup can reattach.
+# 0770 + Group=barkvisor so dropped QEMU can create sockets.
 RuntimeDirectory=barkvisor
-RuntimeDirectoryMode=0700
+RuntimeDirectoryMode=0770
 RuntimeDirectoryPreserve=yes
 # QEMU bridged networking launches setuid qemu-bridge-helper. NoNewPrivileges=true
 # blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
 # Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.
 NoNewPrivileges=false
-# kvm = /dev/kvm. Raw /dev/sdX needs group disk; postinst writes
-# barkvisor.service.d/disk.conf when that group exists so a host without
-# disk still starts. systemd replaces usermod groups with this list.
+# Daemon is root. kvm/disk on the barkvisor user are for the dropped QEMU process.
 SupplementaryGroups=kvm
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor
+# Optional host-net apply paths (#378). Dash prefix: missing dirs do not fail the unit.
+ReadWritePaths=/var/lib/barkvisor /var/run/barkvisor -/etc/netplan -/etc/NetworkManager -/etc/qemu
 ReadOnlyPaths=/usr/local/share/barkvisor /usr/local/lib/barkvisor
 LimitNOFILE=65536
 

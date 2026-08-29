@@ -25,10 +25,9 @@ export function readinessAppliesTo(
   return true
 }
 
-/** Matches SocketVmnetDiscovery.installHint with one command per line. */
+/** Matches SocketVmnetDiscovery.installHint. Never `sudo brew install`. */
 export const SOCKET_VMNET_INSTALL_COMMANDS = [
   'brew install socket_vmnet',
-  'sudo brew services start socket_vmnet',
 ].join('\n')
 
 /** Copyable Linux host-bridge steps (PAS-222). Prefer remediations from HostBridgeFacts. */
@@ -119,7 +118,7 @@ export function macosSocketVmnetSetupGroups(
   return [
     {
       id: 'homebrew-socket-vmnet',
-      label: 'Install and start socket_vmnet',
+      label: 'Install socket_vmnet (the Device starts the service)',
       commands: SOCKET_VMNET_INSTALL_COMMANDS,
     },
   ]
@@ -137,7 +136,7 @@ export function macosSocketVmnetStatusSummary(
     const names = ready.bridges.map((b) => b.name).join(', ')
     return `${name} is ready for Bridged networks (${names || 'socket_vmnet'}).`
   }
-  return `${name} is not ready for Bridged networks yet. Install socket_vmnet with Homebrew, then Re-check.`
+  return `${name} is not ready for Bridged networks yet. Install socket_vmnet with Homebrew (not sudo brew install). The Device starts the service. Then Re-check.`
 }
 
 export function hostBridgeSetupPending(args: {

@@ -60,10 +60,11 @@ class Barkvisor < Formula
       system "/bin/bash", script
     else
       opoo <<~EOS
-        Creating _barkvisor and /var/lib/barkvisor requires root.
+        Creating /var/lib/barkvisor requires root.
         Run:
           sudo #{opt_pkgshare}/postinstall
           sudo brew services start barkvisor
+        Do not run brew install as root against a user Homebrew prefix.
       EOS
     end
   end
@@ -78,10 +79,11 @@ class Barkvisor < Formula
 
   def caveats
     <<~EOS
-      BarkVisor is a root LaunchDaemon running as _barkvisor.
+      BarkVisor is a root LaunchDaemon.
       Data: /var/lib/barkvisor
       Sockets: /var/run/barkvisor
       UI: http://localhost:7777
+      Do not run brew install as root against a user Homebrew prefix.
 
       This formula currently builds from source (head). Prebuilt GitHub
       release artifacts use the pkg/standalone layout, not this keg; when a
@@ -107,7 +109,8 @@ class Barkvisor < Formula
     assert_path_exists libexec/"barkvisor"
     plist = (prefix/"homebrew.mxcl.barkvisor.plist").read
     assert_match "AbandonProcessGroup", plist
-    assert_match "_barkvisor", plist
+    refute_match "_barkvisor", plist
+    refute_match "UserName", plist
     assert_match "BARKVISOR_DATA_DIR", plist
     assert_match "/var/lib/barkvisor", plist
     assert_match "BARKVISOR_SOCKET_DIR", plist

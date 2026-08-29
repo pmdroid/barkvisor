@@ -72,10 +72,9 @@ QEMU, swtpm, and socket_vmnet are **not** in the pkg. Install them with Homebrew
 
 ```sh
 brew install qemu swtpm socket_vmnet
-sudo brew services start socket_vmnet   # only if you want bridged/vmnet
 ```
 
-BarkVisor does not ship a privileged helper. Bridged/vmnet attaches to the Homebrew `socket_vmnet` service. NAT Workloads do not need that service.
+Do not run `brew install` as root against a user Homebrew prefix. The Device daemon is a root LaunchDaemon and starts `socket_vmnet` itself via launchctl (a BarkVisor-owned plist). NAT Workloads do not need that service. QEMU on macOS stays the daemon uid; HVF and USB passthrough have not been proven after a drop.
 
 `barkvisor-agent` is a symlink to `barkvisor`. launchd still starts `barkvisor` (SPA). For an API-only Mac, point `Program` at `/usr/local/bin/barkvisor-agent` and join with `barkvisor-agent join --code`. One process per Device. Do not run both names as daemons.
 

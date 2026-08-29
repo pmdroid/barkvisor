@@ -65,9 +65,9 @@ struct HomebrewFormulaTests {
     @Test func `shipped plist keeps Workloads alive across daemon restart`() throws {
         let plist = try read("packaging/homebrew/homebrew.mxcl.barkvisor.plist")
         #expect(plist.contains("<key>AbandonProcessGroup</key>"))
-        #expect(plist.contains("<key>UserName</key>"))
-        #expect(plist.contains("<string>_barkvisor</string>"))
-        #expect(plist.contains("<key>GroupName</key>\n    <string>_barkvisor</string>"))
+        #expect(!plist.contains("<key>UserName</key>"))
+        #expect(!plist.contains("<key>GroupName</key>"))
+        #expect(!plist.contains("_barkvisor"))
         #expect(plist.contains("<key>WorkingDirectory</key>\n    <string>/var/lib/barkvisor</string>"))
         #expect(plist.contains("<key>BARKVISOR_DATA_DIR</key>"))
         #expect(plist.contains("<key>BARKVISOR_SOCKET_DIR</key>"))
@@ -79,19 +79,22 @@ struct HomebrewFormulaTests {
         #expect(!plist.contains("PrivilegedHelperTools"))
     }
 
-    @Test func `postinstall creates the system user and data dirs`() throws {
+    @Test func `postinstall creates data dirs as root without _barkvisor`() throws {
         let script = try read("packaging/homebrew/postinstall.sh")
-        #expect(script.contains("_barkvisor"))
-        #expect(script.contains("dscl"))
+        #expect(!script.contains("_barkvisor"))
+        #expect(!script.contains("dscl"))
         #expect(script.contains("/var/lib/barkvisor"))
         #expect(script.contains("/var/run/barkvisor"))
         #expect(script.contains("/var/log/barkvisor"))
         #expect(!script.contains("launchctl bootstrap"))
+        #expect(!script.contains("brew install barkvisor"))
 
         let formula = try read("packaging/homebrew/barkvisor.rb")
         #expect(formula.contains("def post_install"))
         #expect(formula.contains("pkgshare/\"postinstall\""))
-        #expect(formula.contains("_barkvisor"))
+        #expect(!formula.contains("running as _barkvisor"))
+        #expect(formula.contains("root LaunchDaemon"))
+        #expect(formula.contains("Do not run brew install as root"))
         #expect(formula.contains("/var/lib/barkvisor"))
     }
 

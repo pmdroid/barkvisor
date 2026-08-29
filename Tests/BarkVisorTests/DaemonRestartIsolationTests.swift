@@ -76,6 +76,8 @@ struct DaemonRestartIsolationTests {
     @Test func `systemd unit only kills the daemon process`() throws {
         let text = try Self.readRepoFile("Resources/barkvisor.service")
         #expect(text.contains("KillMode=process"))
+        #expect(text.contains("User=root"))
+        #expect(!text.contains("User=barkvisor"))
         #expect(text.contains("BARKVISOR_SOCKET_DIR=/var/run/barkvisor"))
         #expect(text.contains("RuntimeDirectory=barkvisor"))
         #expect(text.contains("RuntimeDirectoryPreserve=yes"))
@@ -84,6 +86,8 @@ struct DaemonRestartIsolationTests {
         #expect(!text.contains("KillMode=control-group"))
         let packaged = try Self.readRepoFile("packaging/linux/barkvisor.service")
         #expect(packaged.contains("KillMode=process"))
+        #expect(packaged.contains("User=root"))
+        #expect(!packaged.contains("User=barkvisor"))
         #expect(packaged.contains("BARKVISOR_SOCKET_DIR=/var/run/barkvisor"))
         #expect(packaged.contains("RuntimeDirectory=barkvisor"))
         #expect(packaged.contains("RuntimeDirectoryPreserve=yes"))

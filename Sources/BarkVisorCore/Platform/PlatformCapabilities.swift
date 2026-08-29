@@ -24,10 +24,25 @@ public enum PlatformCapabilities {
         #endif
     }
 
-    /// Whether BarkVisor can install/start/stop a privileged bridge helper daemon.
-    /// Always false: macOS uses Homebrew `socket_vmnet`; Linux host bridges are OS-managed.
+    /// Whether the root Device daemon can install/start/stop socket_vmnet via launchctl.
+    /// macOS: true (BarkVisor-owned plist, not an XPC helper). Linux: false — host
+    /// bridges stay OS-managed; host-net apply is #378 (`supportsHostMutation`).
     public static var supportsManagedBridgeDaemon: Bool {
-        false
+        #if os(macOS)
+            true
+        #else
+            false
+        #endif
+    }
+
+    /// Root control plane may mutate host network (netplan/NM) or start socket_vmnet.
+    /// Linux apply routes land in #378. This flag is the gate after the daemon is root.
+    public static var supportsHostMutation: Bool {
+        #if os(macOS) || os(Linux)
+            true
+        #else
+            false
+        #endif
     }
 
     /// Linux Bridge setup shows host-bridge install guidance (no mutation).

@@ -3,7 +3,7 @@ import Testing
 @testable import BarkVisorCore
 
 struct LinuxBridgeUSBTests {
-    @Test func `capabilities enable bridge and usb on supported hosts`() {
+    @Test func `capabilities enable bridge and usb on supported hosts`() throws {
         #if os(Linux) || os(macOS)
             #expect(PlatformCapabilities.supportsBridgedNetworking)
             #expect(PlatformCapabilities.supportsUSBPassthrough)
@@ -11,6 +11,7 @@ struct LinuxBridgeUSBTests {
         #if os(Linux)
             // Linux uses host bridges + QEMU -netdev bridge — not a managed daemon.
             #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(PlatformCapabilities.supportsHostMutation)
             #expect(PlatformCapabilities.supportsHostBridgeManagement)
             let err = #expect(throws: BarkVisorError.self) {
                 try PlatformCapabilities.requireManagedBridgeDaemon()
@@ -18,13 +19,10 @@ struct LinuxBridgeUSBTests {
             #expect(err?.httpStatus == 422)
             #expect(err?.code == "managed_bridge_daemon")
         #elseif os(macOS)
-            #expect(!PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
+            #expect(PlatformCapabilities.supportsHostMutation)
             #expect(!PlatformCapabilities.supportsHostBridgeManagement)
-            let err = #expect(throws: BarkVisorError.self) {
-                try PlatformCapabilities.requireManagedBridgeDaemon()
-            }
-            #expect(err?.httpStatus == 422)
-            #expect(err?.code == "managed_bridge_daemon")
+            try PlatformCapabilities.requireManagedBridgeDaemon()
         #endif
     }
 
