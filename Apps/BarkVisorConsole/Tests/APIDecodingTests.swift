@@ -23,32 +23,6 @@ struct APIDecodingTests {
         #expect(source.contains("Default VM disk directory"))
         #expect(source.contains("DiskDirectorySection"))
         #expect(source.contains("refreshDiskSettings"))
-        #expect(source.contains("DeviceUpdatesSection"))
-        #expect(source.contains("inAppUpdateSupported"))
-        #expect(source.contains("Install v"))
-        #expect(!source.contains("brew upgrade"))
-    }
-
-    @Test func `update check decodes current and available`() throws {
-        let json = """
-        {
-          "currentVersion": "1.0.0",
-          "update": {
-            "version": "1.1.0",
-            "packageURL": "https://example.test/barkvisor_1.1.0_arm64.deb",
-            "checksumURL": "https://example.test/barkvisor_1.1.0_arm64.deb.sha256",
-            "packageKind": "deb",
-            "changelog": "fixes",
-            "publishedAt": "2026-08-01T00:00:00Z",
-            "isPrerelease": false
-          }
-        }
-        """.data(using: .utf8)!
-        let check = try decoder.decode(UpdateCheckResponse.self, from: json)
-        #expect(check.currentVersion == "1.0.0")
-        #expect(check.update?.version == "1.1.0")
-        #expect(check.update?.packageKind == "deb")
-        #expect(check.update?.packageURL.contains(".rpm") == false)
     }
 
     @Test func `remote access status decodes advertised hosts`() throws {
@@ -552,6 +526,8 @@ struct APIDecodingTests {
         }
         """.data(using: .utf8)!
         let caps = try decoder.decode(SystemCapabilities.self, from: macos)
+        #expect(caps.macosSocketVmnetSupported)
+        #expect(!caps.linuxHostBridgeApplySupported)
         #expect(!caps.gpuPassthroughSupported)
         #expect(caps.gpuPassthroughExplanation.contains("macOS"))
         #expect(!caps.gpuPassthroughExplanation.localizedCaseInsensitiveContains("node"))
@@ -570,6 +546,7 @@ struct APIDecodingTests {
         let ready = try decoder.decode(SystemCapabilities.self, from: linux)
         #expect(ready.gpuPassthroughSupported)
         #expect(ready.linuxHostBridgeApplySupported)
+        #expect(!ready.macosSocketVmnetSupported)
         #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
         #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
     }
@@ -594,6 +571,33 @@ struct APIDecodingTests {
         #expect(row.commands?.joined().contains("linux-bridge-apply.sh") == true)
         #expect(!(row.message ?? "").localizedCaseInsensitiveContains("cluster"))
         #expect(!(row.warnings ?? []).joined().localizedCaseInsensitiveContains("node"))
+    }
+
+    @Test func `macOS hostMutation is socket_vmnet not Linux br0`() throws {
+        let json = """
+        {
+          "platform": "macOS",
+          "supportsManagedBridgeDaemon": true,
+          "supportsHostMutation": true,
+          "supportsHostBridgeManagement": false
+        }
+        """.data(using: .utf8)!
+        let caps = try decoder.decode(SystemCapabilities.self, from: json)
+        #expect(caps.macosSocketVmnetSupported)
+        #expect(!caps.linuxHostBridgeApplySupported)
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Views/LibraryView.swift"),
+            encoding: .utf8,
+        )
+        #expect(source.contains("macosSocketVmnetSupported"))
+        #expect(source.contains("Button(\"Setup\")"))
+        #expect(source.contains("Button(\"Start\")"))
+        #expect(source.contains("Button(\"Stop\")"))
+        #expect(!source.localizedCaseInsensitiveContains("cluster"))
+        #expect(!source.localizedCaseInsensitiveContains("quorum"))
     }
 
     @Test func `host gpu device decodes iommu group and guest ollama path`() throws {

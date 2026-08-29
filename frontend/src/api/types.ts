@@ -103,20 +103,11 @@ export interface WorkloadPortForward {
   proto: string
 }
 
-export interface GuestAddressing {
-  mode: 'dhcp' | 'static' | string
-  ipv4?: string | null
-  prefixLength?: number | null
-  gateway?: string | null
-  nameservers?: string[] | null
-}
-
 export interface WorkloadNetwork {
   mode?: string | null
   networkId?: string | null
   mac?: string | null
   portForwards?: WorkloadPortForward[]
-  addressing?: GuestAddressing | null
 }
 
 export interface WorkloadCloudInit {
@@ -262,7 +253,6 @@ export interface VM {
   uefi: boolean
   tpmEnabled: boolean
   macAddress: string | null
-  guestAddressing?: GuestAddressing | null
   sharedPaths: string[] | null
   portForwards: PortForwardRule[] | null
   usbDevices: USBPassthroughDevice[] | null
@@ -435,7 +425,6 @@ export interface CreateVMRequest {
     sshAuthorizedKeys?: string[]
     userData?: string
   }
-  guestAddressing?: GuestAddressing
   usbDevices?: USBPassthroughDevice[]
   sharedPaths?: string[]
   portForwards?: PortForwardRule[]
@@ -484,33 +473,11 @@ export type UpdateVMRequest = Partial<Pick<VM,
   'name' | 'cpuCount' | 'memoryMB' | 'networkId' | 'description' |
   'bootOrder' | 'displayResolution' | 'uefi' | 'tpmEnabled' |
   'sharedPaths' | 'additionalDiskIds' | 'portForwards' | 'usbDevices' |
-  'startOnBoot' | 'guestAddressing'
+  'startOnBoot'
 >> & { spec?: WorkloadSpec }
 
 export interface TaskAcceptedResponse {
   taskID: string
-}
-
-export interface UpdateInfo {
-  version: string
-  packageURL: string
-  checksumURL: string
-  packageKind: 'deb' | 'pkg'
-  changelog: string
-  publishedAt: string
-  isPrerelease: boolean
-}
-
-export interface UpdateCheckResponse {
-  currentVersion: string
-  update: UpdateInfo | null
-}
-
-export interface UpdateSettings {
-  channel: 'stable' | 'beta'
-  autoCheck: boolean
-  isDevBuild: boolean
-  updateURL?: string | null
 }
 
 export interface VMTaskAcceptedResponse {
@@ -562,7 +529,7 @@ export interface BridgeActionResponse {
 export interface HostBridgeApplyRequest {
   interface?: string
   bridge?: string
-  action?: 'apply' | 'check' | 'dry-run' | 'revert'
+  action?: 'apply' | 'check' | 'dry-run' | 'revert' | 'setup' | 'start' | 'stop'
   addressing?: 'dhcp' | 'static'
   address?: string
   gateway?: string
@@ -1031,22 +998,6 @@ export type HostBridgeReadiness = {
   onlyUplink: boolean
   ready: boolean
   remediations?: HostBridgeRemediation[]
-}
-
-export type DoctorCheckStatus = 'ok' | 'warn' | 'fail' | 'skip'
-
-export type DoctorCheck = {
-  id: string
-  status: DoctorCheckStatus
-  detail: string
-}
-
-/** GET /api/system/doctor and `barkvisor doctor --json`. */
-export type DoctorReport = {
-  ok: boolean
-  privileged: boolean
-  checks: DoctorCheck[]
-  hostBridge: HostBridgeReadiness
 }
 
 /** Alias: capabilities for the host running this BarkVisor process. */

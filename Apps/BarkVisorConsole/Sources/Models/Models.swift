@@ -296,9 +296,6 @@ struct Workload: Decodable, Identifiable, Hashable {
     var usbDevices: [USBPassthroughDevice]? = nil
     var pendingImageId: String? = nil
     var downloadPercent: Int? = nil
-    var macAddress: String? = nil
-    var cloudInitPath: String? = nil
-    var guestAddressing: GuestAddressingInfo? = nil
 
     var resolvedHealth: String {
         if let health, !health.isEmpty { return health }
@@ -507,26 +504,6 @@ struct GuestListeningPort: Decodable, Hashable {
     ]
 }
 
-struct GuestAddressingInfo: Decodable, Hashable {
-    var mode: String
-    var ipv4: String?
-    var prefixLength: Int?
-    var gateway: String?
-    var nameservers: [String]?
-
-    var isStatic: Bool {
-        mode == "static"
-    }
-
-    var summary: String {
-        if isStatic, let ipv4 {
-            if let prefixLength { return "Static \(ipv4)/\(prefixLength)" }
-            return "Static \(ipv4)"
-        }
-        return "DHCP (LAN)"
-    }
-}
-
 struct GuestInfo: Decodable, Hashable {
     var available: Bool
     var ipAddresses: [String]
@@ -535,7 +512,6 @@ struct GuestInfo: Decodable, Hashable {
     var hostname: String?
     var listeningPorts: [GuestListeningPort]?
     var portsCollectedAt: String?
-    var macAddress: String?
 
     init(
         available: Bool,
@@ -545,7 +521,6 @@ struct GuestInfo: Decodable, Hashable {
         hostname: String? = nil,
         listeningPorts: [GuestListeningPort]? = nil,
         portsCollectedAt: String? = nil,
-        macAddress: String? = nil,
     ) {
         self.available = available
         self.ipAddresses = ipAddresses
@@ -554,7 +529,6 @@ struct GuestInfo: Decodable, Hashable {
         self.hostname = hostname
         self.listeningPorts = listeningPorts
         self.portsCollectedAt = portsCollectedAt
-        self.macAddress = macAddress
     }
 
     init(from decoder: Decoder) throws {
@@ -566,7 +540,6 @@ struct GuestInfo: Decodable, Hashable {
         hostname = try container.decodeIfPresent(String.self, forKey: .hostname)
         listeningPorts = try container.decodeIfPresent([GuestListeningPort].self, forKey: .listeningPorts)
         portsCollectedAt = try container.decodeIfPresent(String.self, forKey: .portsCollectedAt)
-        macAddress = try container.decodeIfPresent(String.self, forKey: .macAddress)
     }
 
     var osLabel: String? {
@@ -581,7 +554,7 @@ struct GuestInfo: Decodable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case available, ipAddresses, osName, osVersion, hostname
-        case listeningPorts, portsCollectedAt, macAddress
+        case listeningPorts, portsCollectedAt
     }
 }
 
@@ -676,21 +649,6 @@ struct DeviceStatsChartPoint: Identifiable, Equatable {
     }
 }
 
-enum DeviceRename {
-    static let maxLength = 64
-
-    /// Self always; members only when the hop can reach them.
-    static func canRename(_ device: HomeDeviceHealthSnapshot) -> Bool {
-        device.isSelf || device.isReachable
-    }
-
-    static func parse(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= maxLength else { return nil }
-        return trimmed
-    }
-}
-
 enum DeviceStatsHistory {
     static let minutes = 30
     static let maxPoints = 60
@@ -746,15 +704,6 @@ enum DeviceStatsHistory {
     }()
 }
 
-struct DeviceNameSnapshot: Decodable, Equatable {
-    var displayName: String
-    var hostname: String
-}
-
-struct DeviceNameUpdate: Encodable, Equatable {
-    var displayName: String
-}
-
 struct SystemAbout: Decodable {
     var version: String
     var platform: String
@@ -773,12 +722,12 @@ struct CapabilityDetail: Decodable, Equatable {
 
 struct SystemCapabilities: Decodable, Equatable {
     var platform: String
+    var supportsManagedBridgeDaemon: Bool?
     var supportsHostBridgeManagement: Bool?
     var supportsHostMutation: Bool?
     var supportsUSBPassthrough: Bool?
     var supportsGPUPassthrough: Bool?
     var supportsVFIO: Bool?
-    var supportsInAppUpdate: Bool?
     var details: [CapabilityDetail]?
 
     func detail(code: String) -> CapabilityDetail? {
@@ -791,25 +740,23 @@ struct SystemCapabilities: Decodable, Equatable {
     }
 
     var linuxHostBridgeApplySupported: Bool {
-        if supportsHostMutation == true { return true }
+        if platform.caseInsensitiveCompare("macOS") == .orderedSame { return false }
+        if platform.caseInsensitiveCompare("darwin") == .orderedSame { return false }
         if supportsHostBridgeManagement == true { return true }
+        if supportsHostMutation == true { return true }
         return platform.caseInsensitiveCompare("Linux") == .orderedSame
+    }
+
+    var macosSocketVmnetSupported: Bool {
+        if platform.caseInsensitiveCompare("Linux") == .orderedSame { return false }
+        if supportsManagedBridgeDaemon == true { return true }
+        return platform.caseInsensitiveCompare("macOS") == .orderedSame
+            || platform.caseInsensitiveCompare("darwin") == .orderedSame
     }
 
     var gpuPassthroughSupported: Bool {
         if supportsGPUPassthrough == true { return true }
         return detail(code: "gpuPassthrough")?.supported == true
-    }
-
-    var inAppUpdateSupported: Bool {
-        if supportsInAppUpdate == true { return true }
-        return detail(code: "inAppUpdate")?.supported == true
-    }
-
-    var inAppUpdateExplanation: String {
-        let trimmed = detail(code: "inAppUpdate")?.remediation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty { return trimmed }
-        return "In-app updates run on a root Ubuntu/Debian .deb or Apple Silicon .pkg Device."
     }
 
     var gpuPassthroughExplanation: String {
@@ -1189,56 +1136,6 @@ struct DiskSettingsSnapshot: Decodable, Equatable {
 
 struct DiskSettingsUpdate: Encodable {
     var diskDirectory: String
-}
-
-struct UpdateInfo: Decodable, Equatable {
-    var version: String
-    var packageURL: String
-    var checksumURL: String
-    var packageKind: String
-    var changelog: String
-    var publishedAt: String
-    var isPrerelease: Bool
-}
-
-struct UpdateCheckResponse: Decodable, Equatable {
-    var currentVersion: String
-    var update: UpdateInfo?
-}
-
-struct UpdateInstallRequest: Encodable {
-    var version: String
-}
-
-struct UpdateTaskAccepted: Decodable, Equatable {
-    var taskID: String
-}
-
-struct ProcessHealthSnapshot: Decodable, Equatable {
-    var status: String
-}
-
-struct BackgroundTaskSnapshot: Decodable, Equatable {
-    var taskID: String
-    var status: String
-    var progress: Double?
-    var error: String?
-}
-
-enum ApplianceUpdateApply {
-    static let consecutiveTaskMissesBeforeHealthPoll = 3
-
-    static func isConnectionLoss(_ error: Error) -> Bool {
-        guard let api = error as? APIError else { return true }
-        switch api {
-        case .transport, .invalidURL:
-            return true
-        case let .http(status, _) where status >= 500:
-            return true
-        default:
-            return false
-        }
-    }
 }
 
 struct RemoteAccessStatus: Decodable, Hashable {

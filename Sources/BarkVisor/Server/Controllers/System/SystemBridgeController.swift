@@ -43,8 +43,7 @@ struct SystemBridgeController: RouteCollection {
         )
     }
 
-    /// install/start/stop/remove require a managed bridge daemon (macOS root
-    /// daemon + launchctl). Linux host-net apply is #378.
+    /// macOS socket_vmnet install/start/stop/remove. Linux host-net apply is #378.
     private static func requireManagedBridgeDaemon() throws {
         try PlatformCapabilities.requireManagedBridgeDaemon()
     }
@@ -54,54 +53,11 @@ struct SystemBridgeController: RouteCollection {
         if PlatformCapabilities.supportsHostBridgeManagement {
             return try Self.linuxApply(req: req, defaultAction: .apply)
         }
+        if PlatformCapabilities.supportsManagedBridgeDaemon {
+            return try await Self.socketVmnetApply(req: req, defaultAction: .setup)
+        }
         try Self.requireManagedBridgeDaemon()
-
-        let body = try req.content.decode(BridgeRequest.self)
-        guard let iface = body.interface, !iface.isEmpty else {
-            throw Abort(.badRequest, reason: "Interface is required")
-        }
-
-        // Validate interface exists on the host
-        guard HostInfoService.interfaceExists(iface) else {
-            throw Abort(.badRequest, reason: "Interface '\(iface)' not found on this host")
-        }
-
-        // Check if a bridge already exists for this interface
-        let existingBridge = try await req.db.read { db in
-            try BridgeRecord.filter(Column("interface") == iface).fetchOne(db)
-        }
-        if let existingBridge, existingBridge.status != "not_configured" {
-            throw Abort(
-                .conflict,
-                reason: "Bridge already exists for interface '\(iface)' (status: \(existingBridge.status))",
-            )
-        }
-
-        do {
-            try await PrivilegeService.shared.installBridge(interface: iface)
-            let db = req.db
-            Task { await BridgeSyncService.syncOnce(db: db) }
-
-            let before = try await req.db.read { db in
-                try Network.filter(Column("bridge") == iface).fetchOne(db)
-            }
-            let network = try await NetworkService.ensureBridgedNetwork(for: iface, db: req.db)
-            if before == nil {
-                AuditService.log(
-                    action: "network.create", resourceType: "network", resourceId: network.id,
-                    resourceName: network.name, req: req,
-                )
-            }
-
-            return BridgeActionResponse(success: true, message: "Bridge installed for \(iface)")
-        } catch let error as BarkVisorError {
-            throw error
-        } catch {
-            Log.server.error("Failed to install bridge for \(iface): \(error)")
-            throw Abort(
-                .internalServerError, reason: "Failed to install bridge: \(error.localizedDescription)",
-            )
-        }
+        throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
     }
 
     @Sendable
@@ -111,27 +67,11 @@ struct SystemBridgeController: RouteCollection {
                 "Linux host bridges use apply and revert, not start or stop.",
             )
         }
+        if PlatformCapabilities.supportsManagedBridgeDaemon {
+            return try await Self.socketVmnetApply(req: req, defaultAction: .start)
+        }
         try Self.requireManagedBridgeDaemon()
-
-        guard let iface = req.parameters.get("interface") else {
-            throw Abort(.badRequest, reason: "Missing interface parameter")
-        }
-        guard HostInfoService.interfaceExists(iface) else {
-            throw Abort(.badRequest, reason: "Interface '\(iface)' not found on this host")
-        }
-
-        do {
-            try await PrivilegeService.shared.startBridge(interface: iface)
-            await BridgeSyncService.syncOnce(db: req.db)
-            return BridgeActionResponse(success: true, message: "Bridge started for \(iface)")
-        } catch let error as BarkVisorError {
-            throw error
-        } catch {
-            Log.server.error("Failed to start bridge for \(iface): \(error)")
-            throw Abort(
-                .internalServerError, reason: "Failed to start bridge: \(error.localizedDescription)",
-            )
-        }
+        throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
     }
 
     @Sendable
@@ -141,27 +81,11 @@ struct SystemBridgeController: RouteCollection {
                 "Linux host bridges use apply and revert, not start or stop.",
             )
         }
+        if PlatformCapabilities.supportsManagedBridgeDaemon {
+            return try await Self.socketVmnetApply(req: req, defaultAction: .stop)
+        }
         try Self.requireManagedBridgeDaemon()
-
-        guard let iface = req.parameters.get("interface") else {
-            throw Abort(.badRequest, reason: "Missing interface parameter")
-        }
-        guard HostInfoService.interfaceExists(iface) else {
-            throw Abort(.badRequest, reason: "Interface '\(iface)' not found on this host")
-        }
-
-        do {
-            try await PrivilegeService.shared.stopBridge(interface: iface)
-            await BridgeSyncService.syncOnce(db: req.db)
-            return BridgeActionResponse(success: true, message: "Bridge stopped for \(iface)")
-        } catch let error as BarkVisorError {
-            throw error
-        } catch {
-            Log.server.error("Failed to stop bridge for \(iface): \(error)")
-            throw Abort(
-                .internalServerError, reason: "Failed to stop bridge: \(error.localizedDescription)",
-            )
-        }
+        throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
     }
 
     @Sendable
@@ -169,27 +93,11 @@ struct SystemBridgeController: RouteCollection {
         if PlatformCapabilities.supportsHostBridgeManagement {
             return try Self.linuxApply(req: req, defaultAction: .revert)
         }
+        if PlatformCapabilities.supportsManagedBridgeDaemon {
+            return try await Self.socketVmnetApply(req: req, defaultAction: .stop)
+        }
         try Self.requireManagedBridgeDaemon()
-
-        guard let iface = req.parameters.get("interface") else {
-            throw Abort(.badRequest, reason: "Missing interface parameter")
-        }
-        guard HostInfoService.interfaceExists(iface) else {
-            throw Abort(.badRequest, reason: "Interface '\(iface)' not found on this host")
-        }
-
-        do {
-            try await PrivilegeService.shared.removeBridge(interface: iface)
-            await BridgeSyncService.syncOnce(db: req.db)
-            return BridgeActionResponse(success: true, message: "Bridge removed for \(iface)")
-        } catch let error as BarkVisorError {
-            throw error
-        } catch {
-            Log.server.error("Failed to remove bridge for \(iface): \(error)")
-            throw Abort(
-                .internalServerError, reason: "Failed to remove bridge: \(error.localizedDescription)",
-            )
-        }
+        throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
     }
 
     private static func linuxApply(
@@ -243,6 +151,64 @@ struct SystemBridgeController: RouteCollection {
         if body.dryRun == true { return .dryRun }
         if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
             return LinuxHostBridgeApplyAction(rawValue: raw) ?? defaultAction
+        }
+        return defaultAction
+    }
+
+    private static func socketVmnetApply(
+        req: Vapor.Request,
+        defaultAction: SocketVmnetApplyAction,
+    ) async throws -> BridgeActionResponse {
+        try PlatformCapabilities.requireManagedBridgeDaemon()
+        let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
+        let action = parseSocketAction(body, default: defaultAction)
+        let iface = body.interface ?? req.parameters.get("interface")
+        let result = try SocketVmnetApplyLive.run(
+            request: SocketVmnetApplyRequest(action: action, interface: iface),
+        )
+        if result.applied {
+            await BridgeSyncService.syncOnce(db: req.db)
+            if action == .setup || action == .start, let name = iface, !name.isEmpty {
+                let before = try await req.db.read { db in
+                    try Network.filter(Column("bridge") == name).fetchOne(db)
+                }
+                let network = try await NetworkService.ensureBridgedNetwork(for: name, db: req.db)
+                if before == nil {
+                    AuditService.log(
+                        action: "network.create",
+                        resourceType: "network",
+                        resourceId: network.id,
+                        resourceName: network.name,
+                        req: req,
+                    )
+                }
+            }
+            AuditService.log(
+                action: "socket-vmnet.\(action.rawValue)",
+                resourceType: "socket-vmnet",
+                resourceId: iface ?? SocketVmnetLaunchd.homebrewServiceLabel,
+                resourceName: iface ?? "socket_vmnet",
+                req: req,
+            )
+        }
+        return BridgeActionResponse(
+            success: result.success,
+            message: result.message,
+            applied: result.applied,
+            needsConfirm: result.needsConfirm,
+            backend: result.backend,
+            changes: result.changes,
+            warnings: result.warnings,
+            commands: result.commands,
+        )
+    }
+
+    private static func parseSocketAction(
+        _ body: BridgeRequest,
+        default defaultAction: SocketVmnetApplyAction,
+    ) -> SocketVmnetApplyAction {
+        if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            return SocketVmnetApplyAction(rawValue: raw) ?? defaultAction
         }
         return defaultAction
     }
