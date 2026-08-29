@@ -139,9 +139,11 @@ After installation, open `http://<host-ip>:7777` in a browser to complete setup.
 To uninstall:
 
 ```bash
-sudo ./scripts/uninstall.sh          # keep data
-sudo ./scripts/uninstall.sh --purge  # remove everything
+sudo ./scripts/uninstall.sh          # keep data; keep shared br0
+sudo ./scripts/uninstall.sh --purge  # remove /var/lib/barkvisor; still keep br0
 ```
+
+Uninstall removes marker-tagged `bridge.conf` / netplan / NetworkManager files only. Shared `br0` stays unless you pass `--remove-bridge` after `--purge` or `--revert` offered it. socket_vmnet is stopped, not `brew uninstall`ed, unless you ask.
 
 ### Linux
 
