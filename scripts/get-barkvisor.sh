@@ -117,6 +117,11 @@ linux_distro_like() {
     echo "$BARKVISOR_BOOTSTRAP_DISTRO_LIKE"
     return
   fi
+  # An explicit DISTRO is the whole identity. Mixing it with the runner's
+  # ID_LIKE lets Ubuntu CI accept DISTRO=fedora (ID_LIKE=debian).
+  if [[ -n "${BARKVISOR_BOOTSTRAP_DISTRO:-}" ]]; then
+    return
+  fi
   if [[ -f /etc/os-release ]]; then
     # shellcheck source=/dev/null
     . /etc/os-release

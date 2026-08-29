@@ -118,6 +118,7 @@ struct GetBarkvisorBootstrapTests {
     }
 
     @Test func `refuses fedora and intel mac`() throws {
+        // DISTRO=fedora must fail on Ubuntu CI too: do not inherit host ID_LIKE=debian.
         let fedora = try run(args: ["--dry-run"], extraEnv: [
             "BARKVISOR_BOOTSTRAP_OS": "Linux",
             "BARKVISOR_BOOTSTRAP_ARCH": "x86_64",
