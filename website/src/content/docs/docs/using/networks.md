@@ -10,7 +10,7 @@ Words: **Home**, **Device**, **Workload**. Host addressing on `br0` is this Devi
 
 ## Toolbar
 
-- **Bridge setup** — apply the host path on this Device, and still show the equivalent commands
+- **Bridge setup** — Linux Apply/Revert for `br0`; macOS Setup/Start/Stop for `socket_vmnet`. Copyable commands stay on the sheet.
 - **Create Network** — opens the create modal
 
 ## The list
@@ -26,7 +26,7 @@ Selecting a network shows:
 - Attached Workloads
 - Interfaces table
 
-Selecting a pending bridge shows the host commands for that Device and **Re-check**.
+Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) plus **Setup / Start / Stop** on a Mac Device, then **Re-check**. NAT still works when `socket_vmnet` is down.
 
 ## Bridge setup
 

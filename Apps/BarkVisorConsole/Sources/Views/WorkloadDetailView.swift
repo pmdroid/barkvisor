@@ -31,6 +31,20 @@ struct WorkloadDetailView: View {
                     LabeledContent("IP", value: ip)
                         .textSelection(.enabled)
                 }
+                if let mac = WorkloadGuestSummary.macLabel(workload: workload, guest: guest) {
+                    LabeledContent("MAC", value: mac)
+                        .textSelection(.enabled)
+                }
+                LabeledContent(
+                    "Addressing",
+                    value: WorkloadGuestSummary.addressingSummary(workload: workload),
+                )
+                Text(WorkloadGuestSummary.macGuidance(
+                    bridged: networkMode == "bridged",
+                    cloudInit: workload.cloudInitPath != nil,
+                ))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
 
             if guest?.available == true, device.isReachable {

@@ -11,6 +11,7 @@ import {
   Filler,
 } from 'chart.js'
 import { apiErrorMessage } from '../api/errors'
+import { saveDeviceName } from '../api/deviceName'
 import api from '../api/client'
 import type { HomeDeviceHealthSnapshot, SystemAbout, SystemStats, SystemStatsSample } from '../api/types'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -79,6 +80,14 @@ const stopConfirm = ref<{ id: string; name: string; method: 'acpi' | 'force' } |
 const showCreate = ref(false)
 const deviceAbout = ref<SystemAbout | null>(null)
 const deviceStats = ref<SystemStats | null>(null)
+const renaming = ref(false)
+const nameDraft = ref('')
+const nameSaving = ref(false)
+const canRename = computed(() => {
+  const row = device.value
+  if (!row) return false
+  return canFetchDeviceWorkloads(row)
+})
 
 const failedVms = computed(() => vms.value.filter((vm) => vmHealth(vm) === 'failed'))
 
@@ -282,8 +291,44 @@ async function refreshHistory(row: HomeDeviceHealthSnapshot | null = device.valu
 
 function clearHostTransientState() {
   stopConfirm.value = null
+  renaming.value = false
+  nameDraft.value = ''
+  nameSaving.value = false
   for (const id of Object.keys(restartLoading)) {
     delete restartLoading[id]
+  }
+}
+
+function startRename() {
+  if (!device.value || !canRename.value) return
+  nameDraft.value = title.value
+  renaming.value = true
+}
+
+function cancelRename() {
+  renaming.value = false
+  nameDraft.value = ''
+}
+
+async function saveRename() {
+  const row = device.value
+  if (!row || !canRename.value || nameSaving.value) return
+  const name = nameDraft.value.trim()
+  if (!name) {
+    toast.error('Device name must not be empty')
+    return
+  }
+  nameSaving.value = true
+  try {
+    const named = await saveDeviceName(name, row)
+    nameDraft.value = named.displayName
+    renaming.value = false
+    await devices.fetchHealth()
+    toast.success('Device name saved')
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e, 'Could not save Device name'))
+  } finally {
+    nameSaving.value = false
   }
 }
 
@@ -379,7 +424,33 @@ async function doStop() {
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 1.5L3 6l4.5 4.5"/></svg>
         {{ DEVICE_LABEL }}s
       </button>
-      <h1>{{ device ? title : hostId }}</h1>
+      <form v-if="renaming && device" class="rename-form" @submit.prevent="saveRename">
+        <input
+          v-model="nameDraft"
+          class="rename-input"
+          type="text"
+          maxlength="64"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Device name"
+          :disabled="nameSaving"
+        />
+        <AppButton variant="primary" :loading="nameSaving" :disabled="!nameDraft.trim()">Save</AppButton>
+        <button type="button" class="mini" :disabled="nameSaving" @click="cancelRename">Cancel</button>
+      </form>
+      <template v-else>
+        <h1
+          :class="{ renameable: canRename }"
+          :title="canRename ? 'Rename this Device' : undefined"
+          @click="canRename && startRename()"
+        >{{ device ? title : hostId }}</h1>
+        <button
+          v-if="canRename"
+          type="button"
+          class="mini"
+          @click="startRename"
+        >Rename</button>
+      </template>
       <span v-if="device" :class="device.reachability === 'ok' ? 'pill-ok' : 'pill-bad'">
         <span class="ops-dot" :class="device.reachability === 'ok' ? 'ok' : 'bad'"></span>
         {{ reachLabel }}
@@ -730,6 +801,29 @@ async function doStop() {
 .mono {
   font-family: var(--font-mono);
   font-size: 12px;
+}
+.renameable {
+  cursor: pointer;
+}
+.renameable:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rename-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.rename-input {
+  width: min(240px, 42vw);
+  padding: 6px 10px;
+  background: var(--bg-input, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  font-size: 14px;
+  font-weight: 600;
 }
 @media (max-width: 768px) {
   .stat-grid { grid-template-columns: 1fr; }

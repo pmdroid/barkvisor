@@ -98,6 +98,7 @@ public enum DiskService {
             }
             throw BarkVisorError.diskCreateFailed("qemu-img create failed: \(result.stderrString)")
         }
+        try WorkloadPrivilegeDrop.handoffWritable(path)
     }
 
     /// Clone a cloud image and optionally resize
@@ -143,6 +144,7 @@ public enum DiskService {
         // HAOS and some cloud images ship with backup GPT not at the end of a
         // larger virtual disk; UEFI then fails with BdsDxe "No bootable option".
         repairGPTBackupHeaderIfPossible(path: destPath.path)
+        try WorkloadPrivilegeDrop.handoffWritable(destPath)
     }
 
     /// Relocate GPT secondary header to the end of the image when `sgdisk` exists.

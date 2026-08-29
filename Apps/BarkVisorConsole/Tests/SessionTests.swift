@@ -193,3 +193,14 @@ struct SessionTests {
         return formatter.date(from: raw)!
     }
 }
+
+struct ApplianceUpdateApplyTests {
+    @Test func `health is not treated as done while the install task is reachable`() {
+        #expect(ApplianceUpdateApply.consecutiveTaskMissesBeforeHealthPoll == 3)
+        #expect(!ApplianceUpdateApply.isConnectionLoss(APIError.http(status: 400, reason: "bad version")))
+        #expect(!ApplianceUpdateApply.isConnectionLoss(APIError.unauthorized))
+        #expect(ApplianceUpdateApply.isConnectionLoss(APIError.transport("offline")))
+        #expect(ApplianceUpdateApply.isConnectionLoss(APIError.http(status: 502, reason: "bad gateway")))
+        #expect(ApplianceUpdateApply.isConnectionLoss(NSError(domain: NSURLErrorDomain, code: -1_005)))
+    }
+}

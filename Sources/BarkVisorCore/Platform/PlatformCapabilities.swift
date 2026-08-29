@@ -14,7 +14,7 @@ import Foundation
 /// privileged operations (XPC / host bridge registration), not capability checks.
 public enum PlatformCapabilities {
     /// Product capability: attach VMs to a host bridge / bridged network.
-    /// - macOS: operator-managed Homebrew `socket_vmnet` (no BarkVisor helper)
+    /// - macOS: Homebrew `socket_vmnet` started by the root Device daemon (no XPC helper)
     /// - Linux: QEMU `-netdev bridge` against an existing host bridge (e.g. br0)
     public static var supportsBridgedNetworking: Bool {
         #if os(macOS) || os(Linux)
@@ -65,10 +65,18 @@ public enum PlatformCapabilities {
         #endif
     }
 
-    /// In-app signed PKG update flow. Always false: the privileged helper is gone;
-    /// upgrade with Homebrew / the distro package.
+    /// In-app .deb / .pkg updates. True only for a root appliance with the
+    /// known `/var/lib/barkvisor` layout (Ubuntu/Debian or Apple Silicon .pkg).
+    /// False for `swift run`, smoke, Homebrew kegs, Fedora/rpm, and Intel Mac.
     public static var supportsInAppUpdate: Bool {
-        false
+        InAppUpdateEligibility.evaluate(InAppUpdateEligibility.liveFacts())
+    }
+
+    /// Throw when this Device cannot apply an in-app package update.
+    public static func requireInAppUpdate() throws {
+        guard supportsInAppUpdate else {
+            throw BarkVisorError.unsupportedFeature(.inAppUpdate)
+        }
     }
 
     /// QEMU accelerator name for this host.

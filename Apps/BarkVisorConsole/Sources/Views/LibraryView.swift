@@ -207,6 +207,29 @@ struct NetworksView: View {
                     .disabled(applyBusy)
                 }
             }
+            if model.capabilities?.macosSocketVmnetSupported == true {
+                Section("socket_vmnet") {
+                    Text("The Device starts Homebrew socket_vmnet. NAT still works when the service is down.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if let applyNote {
+                        Text(applyNote)
+                            .font(.footnote)
+                    }
+                    Button("Setup") {
+                        Task { await runBridge(action: "setup") }
+                    }
+                    .disabled(applyBusy)
+                    Button("Start") {
+                        Task { await runBridge(action: "start") }
+                    }
+                    .disabled(applyBusy)
+                    Button("Stop") {
+                        Task { await runBridge(action: "stop") }
+                    }
+                    .disabled(applyBusy)
+                }
+            }
         }
         .platformListStyle()
     }

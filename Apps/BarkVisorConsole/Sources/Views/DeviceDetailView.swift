@@ -9,6 +9,9 @@ struct DeviceDetailView: View {
     @State private var deviceAbout: SystemAbout?
     @State private var deviceCaps: SystemCapabilities?
     @State private var hostGPUs: [HostGPUDevice] = []
+    @State private var showRename = false
+    @State private var nameDraft = ""
+    @State private var renaming = false
 
     var body: some View {
         List {
@@ -154,6 +157,24 @@ struct DeviceDetailView: View {
         }
         .platformListStyle()
         .navigationTitle(device.title)
+        .toolbar {
+            if DeviceRename.canRename(device) {
+                Button("Rename") {
+                    nameDraft = device.title
+                    showRename = true
+                }
+                .disabled(renaming)
+            }
+        }
+        .alert("Device name", isPresented: $showRename) {
+            TextField("Device name", text: $nameDraft)
+            Button("Save") {
+                Task { await saveRename() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("How this Device appears in the Home.")
+        }
         .task(id: "\(deviceID)-\(device.role)-\(device.reachability)") {
             await model.select(device)
             await loadHistory()
@@ -234,5 +255,12 @@ struct DeviceDetailView: View {
         deviceAbout = about
         deviceCaps = caps
         hostGPUs = gpus
+    }
+
+    private func saveRename() async {
+        guard DeviceRename.canRename(device), let name = DeviceRename.parse(nameDraft) else { return }
+        renaming = true
+        defer { renaming = false }
+        _ = await model.saveDeviceName(name, on: device)
     }
 }

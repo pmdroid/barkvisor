@@ -36,6 +36,7 @@ struct RootDaemonPackagingTests {
             #expect(unit.contains("-/usr/libexec/qemu-bridge-helper"))
             #expect(unit.contains("-/usr/local/libexec/qemu/qemu-bridge-helper"))
             #expect(unit.contains("RuntimeDirectoryMode=0770"))
+            #expect(unit.contains("UMask=0007"))
             #expect(unit.contains("Group=barkvisor"))
         }
     }
@@ -62,6 +63,40 @@ struct RootDaemonPackagingTests {
 
         let sourceInstall = try read("scripts/install-linux.sh")
         #expect(sourceInstall.contains("/etc/qemu"))
+    }
+
+    @Test func `linux device unit can apply a deb in-process`() throws {
+        for relative in [
+            "packaging/linux/barkvisor.service",
+            "Resources/barkvisor.service",
+        ] {
+            let unit = try read(relative)
+            #expect(unit.contains("ProtectSystem=strict"), "\(relative)")
+            #expect(unit.contains("/usr/local"), "\(relative) must allow dpkg to write the payload")
+            #expect(unit.contains("/var/lib/dpkg"), "\(relative) must allow the dpkg database")
+            #expect(unit.contains("/var/cache/apt"), "\(relative) must allow apt-get -f")
+            #expect(
+                !unit.contains("ReadOnlyPaths=/usr/local/share/barkvisor"),
+                "\(relative) must not keep the .deb payload read-only",
+            )
+        }
+    }
+
+    @Test func `prerm does not stop barkvisor on upgrade`() throws {
+        let prerm = try read("packaging/linux/debian/prerm")
+        guard let upgradeRange = prerm.range(of: "upgrade)"),
+              let removeRange = prerm.range(of: "remove|deconfigure")
+        else {
+            Issue.record("prerm must split upgrade from remove|deconfigure")
+            return
+        }
+        #expect(upgradeRange.lowerBound < removeRange.lowerBound)
+        let upgradeBody = String(prerm[upgradeRange.upperBound ..< removeRange.lowerBound])
+        #expect(!upgradeBody.contains("stop barkvisor.service"))
+        #expect(upgradeBody.contains("stop_agent") || upgradeBody.contains("barkvisor-agent.service"))
+        let removeBody = String(prerm[removeRange.upperBound...])
+        #expect(removeBody.contains("stop barkvisor.service") || removeBody.contains("stop_units"))
+        #expect(prerm.contains("systemctl stop barkvisor.service"))
     }
 
     @Test func `macos appliance plist is root without _barkvisor`() throws {

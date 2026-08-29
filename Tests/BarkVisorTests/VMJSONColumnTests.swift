@@ -38,6 +38,18 @@ struct VMJSONColumnTests {
         )
     }
 
+    @Test func `guest addressing json round trip`() {
+        var vm = makeVM()
+        vm.setGuestAddressing(
+            GuestAddressing(
+                mode: "static", ipv4: "10.0.0.8", prefixLength: 24, gateway: "10.0.0.1",
+            ),
+        )
+        #expect(vm.decodedGuestAddressing?.ipv4 == "10.0.0.8")
+        vm.setGuestAddressing(nil)
+        #expect(vm.decodedGuestAddressing == nil)
+    }
+
     @Test func `health json round trip`() {
         var vm = makeVM()
         vm.setHealth(

@@ -20,6 +20,7 @@ public enum BarkVisorError: Error, LocalizedError {
     case invalidPortForward(String)
     case decompressFailed(String)
     case downloadFailed(String)
+    case updateFailed(String)
     case bridgeNotReady(String)
     /// Host interface does not exist (PAS-57 preflight). HTTP 422 + `interface_missing`.
     case interfaceMissing(String)
@@ -68,6 +69,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case let .invalidPortForward(msg): return msg
         case let .decompressFailed(msg): return msg
         case let .downloadFailed(msg): return msg
+        case let .updateFailed(msg): return msg
         case let .bridgeNotReady(msg): return msg
         case let .interfaceMissing(name):
             if PlatformHost.platformName.caseInsensitiveCompare("Linux") == .orderedSame {
@@ -116,6 +118,7 @@ public enum BarkVisorError: Error, LocalizedError {
         case .invalidPortForward: return "invalid_port_forward"
         case .decompressFailed: return "decompress_failed"
         case .downloadFailed: return "download_failed"
+        case .updateFailed: return "update_failed"
         case .bridgeNotReady: return "bridge_not_ready"
         case .interfaceMissing: return "interface_missing"
         case .bridgeHelperDenied: return "bridge_acl"
@@ -138,7 +141,8 @@ public enum BarkVisorError: Error, LocalizedError {
     /// HTTP status code for the error middleware to use.
     public var httpStatus: UInt {
         switch self {
-        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType, .invalidBridgeName:
+        case .badRequest, .invalidArgument, .invalidPortForward, .unknownVMType, .invalidBridgeName,
+             .updateFailed:
             return 400
         case .unauthorized:
             return 401

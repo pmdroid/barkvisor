@@ -529,7 +529,7 @@ export interface BridgeActionResponse {
 export interface HostBridgeApplyRequest {
   interface?: string
   bridge?: string
-  action?: 'apply' | 'check' | 'dry-run' | 'revert'
+  action?: 'apply' | 'check' | 'dry-run' | 'revert' | 'setup' | 'start' | 'stop'
   addressing?: 'dhcp' | 'static'
   address?: string
   gateway?: string

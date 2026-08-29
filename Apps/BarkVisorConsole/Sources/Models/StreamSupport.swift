@@ -107,6 +107,23 @@ enum WorkloadGuestSummary {
     static func ipLabel(guest: GuestInfo?) -> String? {
         guest?.primaryIP
     }
+
+    static func macLabel(workload: Workload, guest: GuestInfo?) -> String? {
+        let raw = workload.macAddress ?? guest?.macAddress
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func addressingSummary(workload: Workload) -> String {
+        workload.guestAddressing?.summary ?? "DHCP (LAN)"
+    }
+
+    static func macGuidance(bridged: Bool, cloudInit: Bool) -> String {
+        if bridged, cloudInit {
+            return "Paste this MAC into your router for a DHCP reservation. Or set a static IPv4 on the Workload in the web UI."
+        }
+        return "Set the address in the guest or on the router. BarkVisor did not configure the OS."
+    }
 }
 
 enum GuestInfoRefresh {

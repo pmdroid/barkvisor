@@ -6,9 +6,10 @@ import {
   HOST_BRIDGE_SUGGESTED,
 } from './hostBridgeFacts'
 
-/** Legacy host-daemon keys the Networks UI must never render. Apply/revert are #378. */
+/** Linux must not render these. macOS Setup/Start/Stop are #379. Remove stays gone. */
 export const BRIDGE_MUTATION_ACTION_KEYS = ['setup', 'start', 'stop', 'remove'] as const
 export type BridgeMutationActionKey = (typeof BRIDGE_MUTATION_ACTION_KEYS)[number]
+export const MACOS_SOCKET_VMNET_ACTION_KEYS = ['setup', 'start', 'stop'] as const
 
 export const LINUX_BRIDGE_APPLY_SCRIPT = 'linux-bridge-apply.sh'
 
@@ -156,9 +157,22 @@ export function linuxBridgeCanApply(caps: {
   supportsHostMutation?: boolean | null
   supportsHostBridgeManagement?: boolean | null
 }): boolean {
-  if (caps.supportsHostMutation === true) return true
   const platform = (caps.platform || '').toLowerCase()
+  if (platform === 'macos' || platform === 'darwin') return false
+  if (caps.supportsHostMutation === true) return true
   return caps.supportsHostBridgeManagement === true || platform === 'linux'
+}
+
+/** Root Device daemon may Setup/Start/Stop socket_vmnet on a Mac Device. */
+export function macosSocketVmnetCanManage(caps: {
+  platform?: string | null
+  supportsManagedBridgeDaemon?: boolean | null
+  supportsHostMutation?: boolean | null
+}): boolean {
+  const platform = (caps.platform || '').toLowerCase()
+  if (platform === 'linux') return false
+  if (caps.supportsManagedBridgeDaemon === true) return true
+  return platform === 'macos' || platform === 'darwin'
 }
 
 export function hostBridgeSetupPending(args: {

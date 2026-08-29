@@ -1,18 +1,27 @@
 import api from './client'
 import { setupApi } from './setup'
+import { devicePath, type DeviceApiTarget } from '../utils/homeDeviceApi'
 
 export interface DeviceName {
   displayName: string
   hostname: string
 }
 
-export async function getDeviceName(): Promise<DeviceName> {
-  const { data } = await api.get<DeviceName>('/system/device-name')
+/** Local `/system/device-name`. Members hop through Home. */
+export function deviceNamePath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/device-name')
+}
+
+export async function getDeviceName(device: DeviceApiTarget): Promise<DeviceName> {
+  const { data } = await api.get<DeviceName>(deviceNamePath(device))
   return data
 }
 
-export async function saveDeviceName(displayName: string): Promise<DeviceName> {
-  const { data } = await api.put<DeviceName>('/system/device-name', { displayName })
+export async function saveDeviceName(
+  displayName: string,
+  device: DeviceApiTarget,
+): Promise<DeviceName> {
+  const { data } = await api.put<DeviceName>(deviceNamePath(device), { displayName })
   return data
 }
 

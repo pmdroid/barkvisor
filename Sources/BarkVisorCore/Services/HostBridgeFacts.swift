@@ -74,6 +74,7 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
             let sockets = SocketVmnetDiscovery.existingSockets()
             return HostBridgeFactInputs(
                 bridges: sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) },
+                defaultRouteInterface: SocketVmnetDiscovery.sharedUplinkInterface(),
                 macSocketVmnet: true,
             )
         #endif
