@@ -113,6 +113,7 @@ barkvisor_stage_install_tree() {
     "$stage/usr/local/lib/barkvisor/compat" \
     "$stage/usr/lib/systemd/system" \
     "$stage/etc/barkvisor" \
+    "$stage/etc/qemu" \
     "$stage/var/lib/barkvisor" \
     "$stage/var/run/barkvisor"
 

@@ -51,10 +51,15 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func installBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        if PlatformCapabilities.supportsHostBridgeManagement {
+            return try Self.linuxApply(req: req, defaultAction: .apply)
+        }
         try Self.requireManagedBridgeDaemon()
 
         let body = try req.content.decode(BridgeRequest.self)
-        let iface = body.interface
+        guard let iface = body.interface, !iface.isEmpty else {
+            throw Abort(.badRequest, reason: "Interface is required")
+        }
 
         // Validate interface exists on the host
         guard HostInfoService.interfaceExists(iface) else {
@@ -72,7 +77,6 @@ struct SystemBridgeController: RouteCollection {
             )
         }
 
-        // PrivilegeService on macOS is probe-only (PAS-294); this route still 501s.
         do {
             try await PrivilegeService.shared.installBridge(interface: iface)
             let db = req.db
@@ -102,6 +106,11 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func startBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        if PlatformCapabilities.supportsHostBridgeManagement {
+            throw BarkVisorError.badRequest(
+                "Linux host bridges use apply and revert, not start or stop.",
+            )
+        }
         try Self.requireManagedBridgeDaemon()
 
         guard let iface = req.parameters.get("interface") else {
@@ -127,6 +136,11 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func stopBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        if PlatformCapabilities.supportsHostBridgeManagement {
+            throw BarkVisorError.badRequest(
+                "Linux host bridges use apply and revert, not start or stop.",
+            )
+        }
         try Self.requireManagedBridgeDaemon()
 
         guard let iface = req.parameters.get("interface") else {
@@ -152,6 +166,9 @@ struct SystemBridgeController: RouteCollection {
 
     @Sendable
     func removeBridge(req: Vapor.Request) async throws -> BridgeActionResponse {
+        if PlatformCapabilities.supportsHostBridgeManagement {
+            return try Self.linuxApply(req: req, defaultAction: .revert)
+        }
         try Self.requireManagedBridgeDaemon()
 
         guard let iface = req.parameters.get("interface") else {
@@ -173,5 +190,60 @@ struct SystemBridgeController: RouteCollection {
                 .internalServerError, reason: "Failed to remove bridge: \(error.localizedDescription)",
             )
         }
+    }
+
+    private static func linuxApply(
+        req: Vapor.Request,
+        defaultAction: LinuxHostBridgeApplyAction,
+    ) throws -> BridgeActionResponse {
+        try PlatformCapabilities.requireHostMutation()
+        let body = (try? req.content.decode(BridgeRequest.self)) ?? BridgeRequest()
+        let action = parseAction(body, default: defaultAction)
+        let addressing: LinuxHostBridgeAddressing =
+            body.addressing == LinuxHostBridgeAddressing.staticIP.rawValue ? .staticIP : .dhcp
+        let nic = body.interface
+            ?? req.parameters.get("interface").flatMap { $0 == HostBridgeFactsService.suggestedBridgeName ? nil : $0 }
+        let request = LinuxHostBridgeApplyRequest(
+            action: action,
+            bridge: body.bridge ?? HostBridgeFactsService.suggestedBridgeName,
+            nic: nic,
+            addressing: addressing,
+            address: body.address,
+            gateway: body.gateway,
+            dns: body.dns ?? [],
+            confirm: body.confirm == true,
+            deleteBridge: body.deleteBridge == true,
+        )
+        let result = try LinuxHostBridgeApplyLive.run(request: request)
+        if result.applied {
+            AuditService.log(
+                action: action == .revert ? "host-bridge.revert" : "host-bridge.apply",
+                resourceType: "host-bridge",
+                resourceId: request.bridge,
+                resourceName: request.bridge,
+                req: req,
+            )
+        }
+        return BridgeActionResponse(
+            success: result.success,
+            message: result.message,
+            applied: result.applied,
+            needsConfirm: result.needsConfirm,
+            backend: result.backend,
+            changes: result.changes,
+            warnings: result.warnings,
+            commands: result.commands,
+        )
+    }
+
+    private static func parseAction(
+        _ body: BridgeRequest,
+        default defaultAction: LinuxHostBridgeApplyAction,
+    ) -> LinuxHostBridgeApplyAction {
+        if body.dryRun == true { return .dryRun }
+        if let raw = body.action?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            return LinuxHostBridgeApplyAction(rawValue: raw) ?? defaultAction
+        }
+        return defaultAction
     }
 }

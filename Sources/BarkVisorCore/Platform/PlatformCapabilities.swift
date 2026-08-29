@@ -36,7 +36,7 @@ public enum PlatformCapabilities {
     }
 
     /// Root control plane may mutate host network (netplan/NM) or start socket_vmnet.
-    /// Linux apply routes land in #378. This flag is the gate after the daemon is root.
+    /// Linux host-bridge apply (#378) uses this flag, not `supportsManagedBridgeDaemon`.
     public static var supportsHostMutation: Bool {
         #if os(macOS) || os(Linux)
             true
@@ -172,6 +172,15 @@ public enum PlatformCapabilities {
     public static func requireManagedBridgeDaemon() throws {
         guard supportsManagedBridgeDaemon else {
             throw BarkVisorError.unsupportedFeature(.managedBridgeDaemon)
+        }
+    }
+
+    /// Throw when the root Device daemon cannot mutate host networking.
+    public static func requireHostMutation() throws {
+        guard supportsHostMutation else {
+            throw BarkVisorError.forbidden(
+                "Host network apply needs a root Device daemon.",
+            )
         }
     }
 

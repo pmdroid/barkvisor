@@ -560,6 +560,8 @@ struct APIDecodingTests {
         let linux = """
         {
           "platform": "Linux",
+          "supportsHostBridgeManagement": true,
+          "supportsHostMutation": true,
           "supportsGPUPassthrough": true,
           "supportsVFIO": true,
           "details": [{ "code": "gpuPassthrough", "supported": true }]
@@ -567,8 +569,31 @@ struct APIDecodingTests {
         """.data(using: .utf8)!
         let ready = try decoder.decode(SystemCapabilities.self, from: linux)
         #expect(ready.gpuPassthroughSupported)
+        #expect(ready.linuxHostBridgeApplySupported)
         #expect(ready.gpuPassthroughExplanation.contains(GPUPassthroughCopy.guestOllamaPath))
         #expect(ready.gpuPassthroughExplanation.contains("same card cannot be host and guest"))
+    }
+
+    @Test func `host bridge apply response decodes change list`() throws {
+        let json = """
+        {
+          "success": true,
+          "message": "Dry-run: persist br0",
+          "applied": false,
+          "needsConfirm": false,
+          "backend": "netplan",
+          "changes": ["Persist br0 via netplan"],
+          "warnings": ["SSH looks active on the default-route NIC (eth0)."],
+          "commands": ["sudo linux-bridge-apply.sh --apply --nic eth0 --dhcp --confirm"]
+        }
+        """.data(using: .utf8)!
+        let row = try decoder.decode(HostBridgeApplyResponse.self, from: json)
+        #expect(row.success)
+        #expect(row.backend == "netplan")
+        #expect(row.changes == ["Persist br0 via netplan"])
+        #expect(row.commands?.joined().contains("linux-bridge-apply.sh") == true)
+        #expect(!(row.message ?? "").localizedCaseInsensitiveContains("cluster"))
+        #expect(!(row.warnings ?? []).joined().localizedCaseInsensitiveContains("node"))
     }
 
     @Test func `host gpu device decodes iommu group and guest ollama path`() throws {

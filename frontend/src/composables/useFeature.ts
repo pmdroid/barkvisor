@@ -9,8 +9,8 @@ export { BRIDGE_MUTATION_ACTION_KEYS } from '../utils/linuxBridgeSetup'
  * | Feature               | Surfaces                                                      |
  * | --------------------- | ------------------------------------------------------------- |
  * | bridgedNetworking     | NetworkView, TemplateDeploy, CreateVM network pick            |
- * | managedBridgeDaemon   | SetupView skip. Networks never mutate the host daemon.        |
- * | hostBridgeManagement  | NetworkView Bridge setup (Linux checklist)                    |
+ * | managedBridgeDaemon   | SetupView skip. macOS socket_vmnet lifecycle.                 |
+ * | hostBridgeManagement  | NetworkView Bridge setup (Linux apply + commands)             |
  * | usbPassthrough        | CreateVM network step, CreateVM summary, VMDetail attach USB  |
  * | gpuPassthrough        | Device/Workload GPU copy. No QEMU vfio-pci attach (PAS-274).  |
  * | inAppUpdate           | Settings → Updates on a root .deb / .pkg appliance             |
@@ -18,6 +18,7 @@ export { BRIDGE_MUTATION_ACTION_KEYS } from '../utils/linuxBridgeSetup'
  * Prefer disable + server remediation over hide. Setup omits the macOS-only
  * bridge-install step instead of showing a dead wizard page.
  * Networks Bridge setup is `bridgeManagementMode` (linux-guide / macos-guide).
+ * Linux apply/revert uses the root daemon; setup/start/stop/remove stay hidden.
  */
 export const FEATURE_CODES = [
   'bridgedNetworking',

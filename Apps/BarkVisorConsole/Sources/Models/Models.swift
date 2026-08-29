@@ -773,6 +773,8 @@ struct CapabilityDetail: Decodable, Equatable {
 
 struct SystemCapabilities: Decodable, Equatable {
     var platform: String
+    var supportsHostBridgeManagement: Bool?
+    var supportsHostMutation: Bool?
     var supportsUSBPassthrough: Bool?
     var supportsGPUPassthrough: Bool?
     var supportsVFIO: Bool?
@@ -786,6 +788,12 @@ struct SystemCapabilities: Decodable, Equatable {
     var usbPassthroughSupported: Bool {
         if supportsUSBPassthrough == true { return true }
         return detail(code: "usbPassthrough")?.supported == true
+    }
+
+    var linuxHostBridgeApplySupported: Bool {
+        if supportsHostMutation == true { return true }
+        if supportsHostBridgeManagement == true { return true }
+        return platform.caseInsensitiveCompare("Linux") == .orderedSame
     }
 
     var gpuPassthroughSupported: Bool {
@@ -1120,6 +1128,24 @@ struct NetworkRecord: Decodable, Identifiable, Hashable {
     var mode: String
     var bridge: String?
     var isDefault: Bool
+}
+
+struct HostBridgeApplyBody: Encodable {
+    var interface: String?
+    var action: String
+    var addressing: String
+    var confirm: Bool
+}
+
+struct HostBridgeApplyResponse: Decodable, Equatable {
+    var success: Bool
+    var message: String?
+    var applied: Bool?
+    var needsConfirm: Bool?
+    var backend: String?
+    var changes: [String]?
+    var warnings: [String]?
+    var commands: [String]?
 }
 
 struct ServerLogEntry: Decodable, Hashable {

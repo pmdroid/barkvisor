@@ -17,12 +17,29 @@ struct BridgeInfo: Content {
 }
 
 struct BridgeRequest: Content {
-    let interface: String
+    var interface: String?
+    var bridge: String?
+    var action: String?
+    var addressing: String?
+    var address: String?
+    var gateway: String?
+    var dns: [String]?
+    var confirm: Bool?
+    var dryRun: Bool?
+    var deleteBridge: Bool?
+
+    init() {}
 }
 
 struct BridgeActionResponse: Content {
-    let success: Bool
-    let message: String?
+    var success: Bool
+    var message: String?
+    var applied: Bool?
+    var needsConfirm: Bool?
+    var backend: String?
+    var changes: [String]?
+    var warnings: [String]?
+    var commands: [String]?
 }
 
 struct OnboardingStatus: Content {
@@ -86,8 +103,10 @@ struct SystemCapabilitiesResponse: Content {
     let supportsBridgedNetworking: Bool
     /// Install/start/stop socket_vmnet via the root Device daemon (macOS).
     let supportsManagedBridgeDaemon: Bool
-    /// Linux Bridge setup shows host-bridge install guidance (no mutation).
+    /// Linux Bridge setup can apply/revert host br0 from the root daemon (#378).
     let supportsHostBridgeManagement: Bool
+    /// Root Device daemon may mutate host networking (netplan/NM or socket_vmnet).
+    let supportsHostMutation: Bool
     let supportsUSBPassthrough: Bool
     let supportsInAppUpdate: Bool
     /// Linux IOMMU + vfio-pci + KVM + a GPU in a group. Not QEMU vfio-pci attach (PAS-274).

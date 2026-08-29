@@ -88,6 +88,8 @@ export const useCapabilitiesStore = defineStore('capabilities', () => {
         return currentHost.value.supportsManagedBridgeDaemon
       case 'hostBridgeManagement':
         return currentHost.value.supportsHostBridgeManagement === true
+      case 'hostMutation':
+        return currentHost.value.supportsHostMutation === true
       case 'usbPassthrough':
         return currentHost.value.supportsUSBPassthrough
       case 'inAppUpdate':

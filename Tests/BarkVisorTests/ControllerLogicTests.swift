@@ -253,6 +253,7 @@ struct ControllerLogicTests {
         )
         #expect(caps.supportsManagedBridgeDaemon == PlatformCapabilities.supportsManagedBridgeDaemon)
         #expect(caps.supportsHostBridgeManagement == PlatformCapabilities.supportsHostBridgeManagement)
+        #expect(caps.supportsHostMutation == PlatformCapabilities.supportsHostMutation)
         #expect(caps.supportsUSBPassthrough == PlatformCapabilities.supportsUSBPassthrough)
         #expect(caps.supportsInAppUpdate == PlatformCapabilities.supportsInAppUpdate)
         let vfioFacts = VFIOProbe.live()

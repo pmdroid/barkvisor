@@ -18,11 +18,13 @@ struct LinuxBridgeUSBTests {
             }
             #expect(err?.httpStatus == 422)
             #expect(err?.code == "managed_bridge_daemon")
+            try PlatformCapabilities.requireHostMutation()
         #elseif os(macOS)
             #expect(PlatformCapabilities.supportsManagedBridgeDaemon)
             #expect(PlatformCapabilities.supportsHostMutation)
             #expect(!PlatformCapabilities.supportsHostBridgeManagement)
             try PlatformCapabilities.requireManagedBridgeDaemon()
+            try PlatformCapabilities.requireHostMutation()
         #endif
     }
 

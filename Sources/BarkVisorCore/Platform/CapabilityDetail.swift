@@ -213,7 +213,7 @@ public enum CapabilityDetailBuilder {
                 supported: false,
                 reason: .linuxOsManaged,
                 remediation: "Managed bridge daemon lifecycle is not supported on Linux. "
-                    + "Create a host bridge with ip/netplan (e.g. br0), then attach VMs "
+                    + "Apply host br0 from Networks (or linux-bridge-apply.sh), then attach VMs "
                     + "via a Bridged network record.",
             )
         }
@@ -236,7 +236,12 @@ public enum CapabilityDetailBuilder {
 
     private static func hostBridgeManagement(os: String) -> CapabilityDetail {
         if isLinux(os) {
-            return CapabilityDetail(code: .hostBridgeManagement, supported: true)
+            return CapabilityDetail(
+                code: .hostBridgeManagement,
+                supported: true,
+                remediation: "Networks can apply or revert host br0 via the root Device daemon. "
+                    + "Equivalent commands stay visible. Rollback is a host timer, not a browser Confirm.",
+            )
         }
         return CapabilityDetail(
             code: .hostBridgeManagement,

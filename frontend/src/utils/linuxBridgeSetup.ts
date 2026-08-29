@@ -6,9 +6,11 @@ import {
   HOST_BRIDGE_SUGGESTED,
 } from './hostBridgeFacts'
 
-/** Host-mutating action keys the Networks UI must never render. */
+/** Legacy host-daemon keys the Networks UI must never render. Apply/revert are #378. */
 export const BRIDGE_MUTATION_ACTION_KEYS = ['setup', 'start', 'stop', 'remove'] as const
 export type BridgeMutationActionKey = (typeof BRIDGE_MUTATION_ACTION_KEYS)[number]
+
+export const LINUX_BRIDGE_APPLY_SCRIPT = 'linux-bridge-apply.sh'
 
 /**
  * Cached host-bridge facts belong to the Device (and guide mode) currently shown.
@@ -48,12 +50,7 @@ export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommand
     groups.push({
       id: 'create-bridge',
       label: `Create ${br}`,
-      commands: [
-        `sudo ip link add name ${br} type bridge`,
-        `sudo ip link set ${br} up`,
-        `# Then put the host IP/DHCP on ${br}, not the physical NIC.`,
-        `# sudo ip link set <nic> master ${br}`,
-      ].join('\n'),
+      commands: linuxBridgeApplyCommands(ready).join('\n'),
     })
   }
 
@@ -61,7 +58,10 @@ export function linuxBridgeSetupGroups(ready: HostBridgeReadiness): GuestCommand
     groups.push({
       id: 'allow-acl',
       label: `Allow ${br} in qemu-bridge.conf`,
-      commands: `echo 'allow ${br}' | sudo tee ${HOST_BRIDGE_ACL_PATH}`,
+      commands: [
+        '# barkvisor:allow-br0',
+        `printf '%s\\n%s\\n' '# barkvisor:allow-br0' 'allow ${br}' | sudo tee -a ${HOST_BRIDGE_ACL_PATH}`,
+      ].join('\n'),
     })
   }
 
@@ -137,6 +137,28 @@ export function macosSocketVmnetStatusSummary(
     return `${name} is ready for Bridged networks (${names || 'socket_vmnet'}).`
   }
   return `${name} is not ready for Bridged networks yet. Install socket_vmnet with Homebrew (not sudo brew install). The Device starts the service. Then Re-check.`
+}
+
+/** Equivalent apply commands. Addressing stays on the script, not the SPA. */
+export function linuxBridgeApplyCommands(ready: HostBridgeReadiness): string[] {
+  const br = ready.suggestedBridge || HOST_BRIDGE_SUGGESTED
+  const nic = ready.defaultRouteInterface || '<wired-uplink>'
+  return [
+    `# Persist ${br} with NetworkManager, netplan, or systemd-networkd. Refuse Wi-Fi.`,
+    `# Host address on ${br} is this Device (DHCP or static). Guest static IP is separate.`,
+    `sudo ${LINUX_BRIDGE_APPLY_SCRIPT} --apply --nic ${nic} --dhcp`,
+    '# Rollback is a host timer (netplan try). Do not Confirm in the browser after the uplink dies.',
+  ]
+}
+
+export function linuxBridgeCanApply(caps: {
+  platform?: string | null
+  supportsHostMutation?: boolean | null
+  supportsHostBridgeManagement?: boolean | null
+}): boolean {
+  if (caps.supportsHostMutation === true) return true
+  const platform = (caps.platform || '').toLowerCase()
+  return caps.supportsHostBridgeManagement === true || platform === 'linux'
 }
 
 export function hostBridgeSetupPending(args: {

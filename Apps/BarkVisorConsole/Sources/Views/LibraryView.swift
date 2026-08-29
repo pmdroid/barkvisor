@@ -171,25 +171,61 @@ struct DisksView: View {
 
 struct NetworksView: View {
     @Environment(AppModel.self) private var model
+    @State private var applyBusy = false
+    @State private var applyNote: String?
 
     var body: some View {
-        Group {
+        List {
             if model.networks.isEmpty {
-                ContentUnavailableView(
-                    "No networks",
-                    systemImage: "globe",
-                    description: Text("NAT, bridged, and isolated networks show up here."),
-                )
+                Text("NAT, bridged, and isolated networks show up here.")
+                    .foregroundStyle(.secondary)
             } else {
-                List(model.networks) { network in
+                ForEach(model.networks) { network in
                     LabeledContent {
                         Text(network.isDefault ? "\(network.mode) · Default" : network.mode)
                     } label: {
                         Text(network.name)
                     }
                 }
-                .platformListStyle()
             }
+            if model.capabilities?.linuxHostBridgeApplySupported == true {
+                Section("Host bridge") {
+                    Text("Apply persists br0 on this Device. Equivalent commands stay in the web UI. Rollback is a host timer.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if let applyNote {
+                        Text(applyNote)
+                            .font(.footnote)
+                    }
+                    Button("Apply br0") {
+                        Task { await runBridge(action: "apply") }
+                    }
+                    .disabled(applyBusy)
+                    Button("Revert BarkVisor files") {
+                        Task { await runBridge(action: "revert") }
+                    }
+                    .disabled(applyBusy)
+                }
+            }
+        }
+        .platformListStyle()
+    }
+
+    private func runBridge(action: String) async {
+        guard let client = model.client else { return }
+        applyBusy = true
+        defer { applyBusy = false }
+        do {
+            var result = try await client.applyHostBridge(interface: nil, action: action, confirm: false)
+            if result.needsConfirm == true {
+                result = try await client.applyHostBridge(interface: nil, action: action, confirm: true)
+            }
+            applyNote = result.message
+            if let changes = result.changes, !changes.isEmpty {
+                applyNote = ([result.message].compactMap { $0 } + changes).joined(separator: "\n")
+            }
+        } catch {
+            applyNote = error.localizedDescription
         }
     }
 }

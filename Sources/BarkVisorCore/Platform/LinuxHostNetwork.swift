@@ -130,4 +130,14 @@ public enum LinuxHostNetwork {
             throw BarkVisorError.interfaceMissing(name)
         }
     }
+
+    /// Wi-Fi if sysfs has a `wireless` subtree (nl80211). Refuse for host br0.
+    public static func isWirelessInterface(_ name: String, netClass: String = netClassPath) -> Bool {
+        guard !name.isEmpty, !name.contains("/"), !name.contains("\0") else {
+            return false
+        }
+        var isDir: ObjCBool = false
+        let path = "\(netClass)/\(name)/wireless"
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+    }
 }
