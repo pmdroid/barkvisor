@@ -23,6 +23,9 @@ KillMode=process
 RuntimeDirectory=barkvisor
 RuntimeDirectoryMode=0770
 RuntimeDirectoryPreserve=yes
+# Ubuntu qemu packages often omit /etc/qemu. Create it at start so
+# ReadWritePaths=-/etc/qemu is not ignored under ProtectSystem=strict.
+ConfigurationDirectory=qemu
 NoNewPrivileges=false
 SupplementaryGroups=kvm
 PrivateTmp=true

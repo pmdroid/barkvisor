@@ -39,6 +39,7 @@ cp -a %{_sourcedir}/root/. %{buildroot}/
 /usr/lib/systemd/system/barkvisor.service
 /usr/lib/systemd/system/barkvisor-agent.service
 %config(noreplace) /etc/barkvisor/barkvisor.env
+%dir /etc/qemu
 
 %pre
 getent passwd barkvisor >/dev/null 2>&1 || \
@@ -50,6 +51,7 @@ exit 0
 
 %post
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
+install -d -m 0755 /etc/qemu
 if getent group disk >/dev/null 2>&1; then
   for unit in barkvisor.service barkvisor-agent.service; do
     mkdir -p /etc/systemd/system/${unit}.d

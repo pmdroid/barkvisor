@@ -175,6 +175,7 @@ if getent group disk >/dev/null 2>&1; then
   done
 fi
 install -d -o barkvisor -g barkvisor -m 0755 /var/lib/barkvisor /var/run/barkvisor
+install -d -m 0755 /etc/qemu
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   systemctl enable barkvisor.service

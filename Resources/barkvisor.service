@@ -34,6 +34,9 @@ KillMode=process
 RuntimeDirectory=barkvisor
 RuntimeDirectoryMode=0770
 RuntimeDirectoryPreserve=yes
+# Ubuntu qemu packages often omit /etc/qemu. Create it at start so
+# ReadWritePaths=-/etc/qemu is not ignored under ProtectSystem=strict.
+ConfigurationDirectory=qemu
 # QEMU bridged networking launches setuid qemu-bridge-helper. NoNewPrivileges=true
 # blocks that privilege transition, so bridged VMs fail under systemd while NAT works.
 # Keep other sandboxing; do not re-enable NoNewPrivileges without an alternate bridge path.

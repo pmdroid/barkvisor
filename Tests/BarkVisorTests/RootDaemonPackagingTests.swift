@@ -30,6 +30,7 @@ struct RootDaemonPackagingTests {
             #expect(unit.contains("-/etc/netplan"))
             #expect(unit.contains("-/etc/NetworkManager"))
             #expect(unit.contains("-/etc/qemu"))
+            #expect(unit.contains("ConfigurationDirectory=qemu"))
             #expect(unit.contains("-/etc/systemd/network"))
             #expect(unit.contains("-/usr/lib/qemu/qemu-bridge-helper"))
             #expect(unit.contains("-/usr/libexec/qemu-bridge-helper"))
@@ -37,6 +38,30 @@ struct RootDaemonPackagingTests {
             #expect(unit.contains("RuntimeDirectoryMode=0770"))
             #expect(unit.contains("Group=barkvisor"))
         }
+    }
+
+    @Test func `linux packaging creates etc qemu before the unit starts`() throws {
+        let postinst = try read("packaging/linux/debian/postinst")
+        #expect(postinst.contains("install -d -m 0755 /etc/qemu"))
+        let qemuDir = try #require(postinst.range(of: "install -d -m 0755 /etc/qemu"))
+        let restart = try #require(postinst.range(of: "try-restart barkvisor.service"))
+        #expect(qemuDir.lowerBound < restart.lowerBound)
+
+        let spec = try read("packaging/linux/rpm/barkvisor.spec.in")
+        #expect(spec.contains("install -d -m 0755 /etc/qemu"))
+        #expect(spec.contains("%dir /etc/qemu"))
+
+        let arch = try read("packaging/linux/arch/barkvisor.install")
+        #expect(arch.contains("install -d -m 0755 /etc/qemu"))
+
+        let stage = try read("scripts/lib/linux-package-stage.sh")
+        #expect(stage.contains("\"$stage/etc/qemu\""))
+
+        let tarball = try read("scripts/build-linux-packages.sh")
+        #expect(tarball.contains("install -d -m 0755 /etc/qemu"))
+
+        let sourceInstall = try read("scripts/install-linux.sh")
+        #expect(sourceInstall.contains("/etc/qemu"))
     }
 
     @Test func `macos appliance plist is root without _barkvisor`() throws {
