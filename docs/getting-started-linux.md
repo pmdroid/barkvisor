@@ -299,23 +299,23 @@ Your data directory is preserved across upgrades. Database migrations run automa
 
 ## Bridged networking (optional)
 
-NAT works out of the box. Bridged mode uses a **host bridge** plus QEMU’s `qemu-bridge-helper` (no BarkVisor XPC helper on Linux).
+NAT works out of the box. Bridged mode uses a **host bridge** plus QEMU’s `qemu-bridge-helper` (no BarkVisor XPC helper on Linux). The root Device daemon can persist `br0` from **Networks → Bridge setup → Apply**. Equivalent commands stay on the page. Host addressing (DHCP or static IP/gateway/DNS) is the Device’s address on `br0`, not the guest.
 
 ```sh
-# Example: bridge br0 with physical NIC eth0
-sudo ip link add name br0 type bridge
-sudo ip link set br0 up
-sudo ip link set eth0 master br0
-# Configure IP/DHCP on br0 as appropriate for your network
+# Persist br0 (NetworkManager, netplan, or systemd-networkd). Refuse Wi-Fi and ifupdown.
+sudo ./scripts/linux-bridge-apply.sh --apply --nic eth0 --dhcp
+# Static Device address (not the guest):
+# sudo ./scripts/linux-bridge-apply.sh --apply --nic eth0 --static \
+#   --address 192.168.1.10/24 --gateway 192.168.1.1 --dns 1.1.1.1 --confirm
 
-echo 'allow br0' | sudo tee /etc/qemu/bridge.conf
-# Ensure the helper is setuid (path varies by distro):
+# Marker-tagged ACL + setuid helper (also done by apply):
 #   /usr/lib/qemu/qemu-bridge-helper
 #   /usr/libexec/qemu-bridge-helper
-sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper 2>/dev/null || true
 ```
 
-In the UI: **Networks** → **Bridge setup** is **install guides only**. It does not Setup / Start / Stop / Remove a bridge. Copy the commands, then create a **bridged** network with interface `br0`. VM-on-bridge wiring is unchanged.
+If the NIC carries SSH or the SPA, apply prints a change list and requires `--confirm`. Rollback is a host timer (`netplan try`), not a browser Confirm after the uplink dies. `--revert` removes BarkVisor files and never default-deletes a shared `br0`.
+
+Then create a **bridged** network with interface `br0`. VM-on-bridge wiring is unchanged.
 
 ---
 

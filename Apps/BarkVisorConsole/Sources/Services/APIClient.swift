@@ -353,6 +353,23 @@ struct APIClient {
         try await get(scoped("/networks", on: device))
     }
 
+    func applyHostBridge(
+        interface: String?,
+        action: String,
+        confirm: Bool,
+        on device: HomeDeviceHealthSnapshot? = nil,
+    ) async throws -> HostBridgeApplyResponse {
+        try await post(
+            scoped("/system/bridges", on: device),
+            body: HostBridgeApplyBody(
+                interface: interface,
+                action: action,
+                addressing: "dhcp",
+                confirm: confirm,
+            ),
+        )
+    }
+
     func logs(limit: Int = 200) async throws -> [ServerLogEntry] {
         try await get("/api/logs", query: [URLQueryItem(name: "limit", value: String(limit))])
     }

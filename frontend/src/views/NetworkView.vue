@@ -2,7 +2,7 @@
 import { apiErrorMessage } from '../api/errors'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api/client'
-import type { BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeReadiness, HostInterface } from '../api/types'
+import type { BridgeActionResponse, BridgeInfo, HomeDeviceHealthSnapshot, HostBridgeApplyRequest, HostBridgeReadiness, HostInterface } from '../api/types'
 import GuestCommandAccordion from '../components/ui/GuestCommandAccordion.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -25,12 +25,14 @@ import { defaultCapabilities } from '../utils/capabilitiesParse'
 import { deviceDisplayLabel } from '../utils/deviceCompatibility'
 import {
   canCallDeviceAPI,
+  deviceBridgesPath,
   deviceHostBridgeReadinessPath,
   isSelfDevice,
 } from '../utils/homeDeviceApi'
 import { HOST_BRIDGE_SUGGESTED } from '../utils/hostBridgeFacts'
 import {
   hostBridgeSetupPending,
+  linuxBridgeCanApply,
   linuxBridgeFallbackReadiness,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
@@ -201,6 +203,16 @@ const readinessByHost = ref<Record<string, HostBridgeReadiness>>({})
 const pendingReadinessLoading = ref(false)
 /** Newest host-bridge-readiness request; stale completions must not write. */
 let readinessSeq = 0
+
+const linuxApplyLoading = ref(false)
+const linuxApplyResult = ref<BridgeActionResponse | null>(null)
+const linuxApplyConfirm = ref<'apply' | 'revert' | null>(null)
+
+const canApplyLinuxBridge = computed(() => linuxBridgeCanApply({
+  platform: bridgeCaps.value.platform,
+  supportsHostMutation: bridgeCaps.value.supportsHostMutation,
+  supportsHostBridgeManagement: bridgeCaps.value.supportsHostBridgeManagement,
+}))
 
 const appliedReadiness = computed(() => {
   if (!readinessAppliesTo(
@@ -613,6 +625,64 @@ onUnmounted(() => {
   if (bridgePoll) clearInterval(bridgePoll)
 })
 
+async function postLinuxBridge(body: HostBridgeApplyRequest): Promise<BridgeActionResponse> {
+  const device = bridgeDevice.value
+  const path = device && useHomeUnion.value ? deviceBridgesPath(device) : '/system/bridges'
+  const { data } = await api.post<BridgeActionResponse>(path, body)
+  return data
+}
+
+async function runLinuxBridge(action: 'apply' | 'revert', confirm = false) {
+  linuxApplyResult.value = null
+  linuxApplyLoading.value = true
+  try {
+    const nic = appliedReadiness.value?.defaultRouteInterface || undefined
+    const data = action === 'revert'
+      ? await api.delete<BridgeActionResponse>(
+        (bridgeDevice.value && useHomeUnion.value
+          ? `${deviceBridgesPath(bridgeDevice.value)}/br0`
+          : '/system/bridges/br0'),
+        { data: { confirm, action: 'revert' } },
+      ).then((r) => r.data)
+      : await postLinuxBridge({
+        interface: nic,
+        action: 'apply',
+        addressing: 'dhcp',
+        confirm,
+      })
+    linuxApplyResult.value = data
+    if (data.needsConfirm && !confirm) {
+      linuxApplyConfirm.value = action
+      return
+    }
+    if (data.success) {
+      toast.success(data.message || (action === 'revert' ? 'Reverted host bridge files.' : 'Applied host bridge.'))
+      await fetchLinuxReadiness()
+    } else if (data.message) {
+      toast.error(data.message)
+    }
+  } catch (e: unknown) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    linuxApplyLoading.value = false
+  }
+}
+
+function applyLinuxBridge() {
+  void runLinuxBridge('apply')
+}
+
+function revertLinuxBridge() {
+  void runLinuxBridge('revert')
+}
+
+async function confirmLinuxBridge() {
+  const action = linuxApplyConfirm.value
+  linuxApplyConfirm.value = null
+  if (!action) return
+  await runLinuxBridge(action, true)
+}
+
 function resetForm() {
   newName.value = ''
   newMode.value = 'nat'
@@ -913,7 +983,7 @@ async function doDeleteNetwork() {
   </template>
   </div>
 
-  <!-- Bridge setup (install guides only) -->
+  <!-- Bridge setup: Linux apply/revert + commands; macOS socket_vmnet guide -->
   <AppModal v-if="showBridges" title="Bridge setup" max-width="800px" @close="showBridges = false">
     <div v-if="bridgeDeviceOptions.length > 0" class="form-group">
       <label>{{ DEVICE_LABEL }}</label>
@@ -939,6 +1009,17 @@ async function doDeleteNetwork() {
         <p v-if="appliedReadiness.onlyUplink" style="color:var(--text-secondary);font-size:12px;margin-top:12px">
           Do not enslave the only uplink. Prefer NAT on this Device.
         </p>
+        <div v-if="linuxApplyResult" style="margin-top:12px;font-size:13px">
+          <p style="margin:0 0 8px">{{ linuxApplyResult.message }}</p>
+          <ul v-if="linuxApplyResult.changes?.length" style="margin:0;padding-left:18px">
+            <li v-for="change in linuxApplyResult.changes" :key="change">{{ change }}</li>
+          </ul>
+          <p
+            v-for="warn in (linuxApplyResult.warnings ?? [])"
+            :key="warn"
+            style="color:var(--amber);margin:8px 0 0"
+          >{{ warn }}</p>
+        </div>
       </template>
       <p v-else style="color:var(--text-secondary);font-size:13px">
         Could not read host-bridge status on this Device.
@@ -987,6 +1068,17 @@ async function doDeleteNetwork() {
       :text="bridgeCaps.details?.find((d) => d.code === 'managedBridgeDaemon' && !d.supported)?.remediation || managedBridge.explanation"
     />
     <template #actions>
+      <AppButton
+        v-if="selectedBridgeMode === 'linux-guide' && canApplyLinuxBridge"
+        :disabled="linuxApplyLoading || linuxReadinessLoading"
+        :loading="linuxApplyLoading"
+        @click="applyLinuxBridge"
+      >Apply</AppButton>
+      <AppButton
+        v-if="selectedBridgeMode === 'linux-guide' && canApplyLinuxBridge"
+        :disabled="linuxApplyLoading || linuxReadinessLoading"
+        @click="revertLinuxBridge"
+      >Revert</AppButton>
       <AppButton
         v-if="selectedBridgeMode !== 'hidden'"
         :disabled="linuxReadinessLoading"
@@ -1066,7 +1158,7 @@ async function doDeleteNetwork() {
           autocomplete="off"
         />
         <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">
-          Use an existing host bridge (e.g. br0). Create it with ip/netplan before starting VMs.
+          Use an existing host bridge (e.g. br0). Apply it from Bridge setup before starting VMs.
           Bridges without an IP still appear when detected; you can also type the name.
         </p>
         <p v-if="typedBridgeMissing" style="color:var(--text-secondary);font-size:12px;margin:6px 0 0">
@@ -1085,6 +1177,17 @@ async function doDeleteNetwork() {
       <AppButton variant="primary" :loading="loading" :disabled="cannotSaveBridged" :loading-text="'Saving...'" @click="saveNetwork">{{ editingId ? 'Save' : 'Create' }}</AppButton>
     </template>
   </AppModal>
+
+  <ConfirmDialog
+    v-if="linuxApplyConfirm"
+    title="Confirm host bridge change"
+    :message="(linuxApplyResult?.warnings || []).join(' ') || 'This NIC may carry SSH or the SPA. Rollback is a host timer, not a browser Confirm after the uplink dies.'"
+    confirm-label="Apply anyway"
+    :danger="true"
+    :loading="linuxApplyLoading"
+    @confirm="confirmLinuxBridge"
+    @cancel="linuxApplyConfirm = null"
+  />
 
   <ConfirmDialog
     v-if="deleteTarget"

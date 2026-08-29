@@ -3732,6 +3732,9 @@ components:
           type: boolean
         supportsHostBridgeManagement:
           type: boolean
+        supportsHostMutation:
+          type: boolean
+          description: Root Device daemon may persist host br0 or start socket_vmnet.
         supportsUSBPassthrough:
           type: boolean
         supportsInAppUpdate:

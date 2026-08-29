@@ -3,6 +3,8 @@ import type { HostBridgeReadiness } from '../api/types'
 import {
   BRIDGE_MUTATION_ACTION_KEYS,
   hostBridgeSetupPending,
+  linuxBridgeApplyCommands,
+  linuxBridgeCanApply,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
   macosSocketVmnetSetupGroups,
@@ -46,7 +48,9 @@ describe('linuxBridgeSetup (PAS-222)', () => {
   test('missing pieces get copyable steps', () => {
     const groups = linuxBridgeSetupGroups(base())
     expect(groups.map((g) => g.id)).toEqual(['create-bridge', 'allow-acl', 'setuid-helper'])
-    expect(groups[0].commands).toContain('ip link add name br0')
+    expect(groups[0].commands).toContain('linux-bridge-apply.sh --apply')
+    expect(groups[0].commands).toContain('--dhcp')
+    expect(groups[0].commands).not.toContain('ip link add')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
     }
@@ -119,6 +123,23 @@ describe('macosSocketVmnetSetup', () => {
   test('missing facts keep a copyable guide', () => {
     expect(macosSocketVmnetStatusSummary(null)).toContain('socket_vmnet')
     expect(macosSocketVmnetStatusSummary(base({ ready: false }))).toContain('Homebrew')
+  })
+})
+
+describe('linuxBridgeApply', () => {
+  test('script flags stay off the SPA (Device address, not guest)', () => {
+    const cmds = linuxBridgeApplyCommands(base())
+    expect(cmds.join('\n')).toContain('--nic eth0 --dhcp')
+    expect(cmds.join('\n')).toContain('Device')
+    expect(cmds.join('\n')).not.toContain('guest static')
+    expect(cmds.join('\n')).toContain('host timer')
+  })
+
+  test('apply is available on Linux host mutation', () => {
+    expect(linuxBridgeCanApply({ supportsHostMutation: true })).toBe(true)
+    expect(linuxBridgeCanApply({ platform: 'Linux' })).toBe(true)
+    expect(linuxBridgeCanApply({ supportsHostBridgeManagement: true })).toBe(true)
+    expect(linuxBridgeCanApply({ platform: 'macOS', supportsHostMutation: false })).toBe(false)
   })
 })
 

@@ -518,6 +518,24 @@ export interface BridgeInfo {
 export interface BridgeActionResponse {
   success: boolean
   message: string | null
+  applied?: boolean
+  needsConfirm?: boolean
+  backend?: string
+  changes?: string[]
+  warnings?: string[]
+  commands?: string[]
+}
+
+export interface HostBridgeApplyRequest {
+  interface?: string
+  bridge?: string
+  action?: 'apply' | 'check' | 'dry-run' | 'revert'
+  addressing?: 'dhcp' | 'static'
+  address?: string
+  gateway?: string
+  dns?: string[]
+  confirm?: boolean
+  dryRun?: boolean
 }
 
 export interface GuestUser {
@@ -926,8 +944,10 @@ export interface SystemCapabilities {
   supportsBridgedNetworking: boolean
   /** Install/start/stop privileged bridge daemons (macOS only). */
   supportsManagedBridgeDaemon: boolean
-  /** Linux Bridge setup shows host-bridge install guidance (no mutation). */
+  /** Linux Bridge setup can apply/revert host br0 from the root daemon. */
   supportsHostBridgeManagement?: boolean
+  /** Root Device daemon may mutate host networking. */
+  supportsHostMutation?: boolean
   supportsUSBPassthrough: boolean
   supportsInAppUpdate: boolean
   /** Linux IOMMU + vfio-pci + KVM + a GPU. Not QEMU attach (PAS-274). */

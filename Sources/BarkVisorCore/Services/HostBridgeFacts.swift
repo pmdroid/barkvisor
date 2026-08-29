@@ -192,10 +192,10 @@ public enum HostBridgeFactsService {
                 id: "create-bridge",
                 label: "Create \(br)",
                 commands: [
-                    "sudo ip link add name \(br) type bridge",
-                    "sudo ip link set \(br) up",
-                    "# Then put the host IP/DHCP on \(br), not the physical NIC.",
-                    "# sudo ip link set <nic> master \(br)",
+                    "# Persist \(br) with NetworkManager, netplan, or systemd-networkd. Refuse Wi-Fi.",
+                    "# Host address on \(br) is this Device (DHCP or static). Guest static IP is separate.",
+                    "sudo linux-bridge-apply.sh --apply --nic <wired-uplink> --dhcp",
+                    "# Rollback is a host timer (netplan try). Do not Confirm in the browser after the uplink dies.",
                 ].joined(separator: "\n"),
             ))
         }
@@ -203,7 +203,10 @@ public enum HostBridgeFactsService {
             groups.append(HostBridgeRemediation(
                 id: "allow-acl",
                 label: "Allow \(br) in qemu-bridge.conf",
-                commands: "echo 'allow \(br)' | sudo tee \(defaultACLPath)",
+                commands: [
+                    "# \(LinuxHostBridgeApply.aclMarker)",
+                    "printf '%s\\n%s\\n' '\(LinuxHostBridgeApply.aclMarker)' 'allow \(br)' | sudo tee -a \(defaultACLPath)",
+                ].joined(separator: "\n"),
             ))
         }
         if !inputs.helperSetuid {
