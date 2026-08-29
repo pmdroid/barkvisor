@@ -8,14 +8,14 @@ struct PrivilegeBoundaryTests {
         let sourcesRoot = try Self.packageSourcesRoot()
         let violations = try Self.scan(
             in: sourcesRoot,
-            needles: ["HelperXPCClient", "BarkVisorHelper", "XPC connection invalidated"],
+            needles: ["HelperXPCClient", "BarkVisorHelper", "SMJobBless", "XPC connection invalidated"],
         )
 
         #expect(
             violations.isEmpty,
             """
             Privileged helper / XPC client must stay removed (PAS-294). \
-            Attach to Homebrew socket_vmnet instead.
+            Attach to Homebrew socket_vmnet from the root Device daemon. No SMJobBless.
             Violations:
             \(violations.joined(separator: "\n"))
             """,

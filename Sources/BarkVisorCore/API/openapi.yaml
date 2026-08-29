@@ -1171,6 +1171,86 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/system/updates/check:
+    get:
+      tags: [evolving]
+      operationId: checkSystemUpdates
+      x-barkvisor-stability: evolving
+      summary: Compare this Device version to GitHub Releases
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateCheck"
+        "422":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/updates/install:
+    post:
+      tags: [evolving]
+      operationId: installSystemUpdate
+      x-barkvisor-stability: evolving
+      summary: Apply a .deb or .pkg as root
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version:
+                  type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskAccepted"
+        "422":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/system/updates/settings:
+    get:
+      tags: [evolving]
+      operationId: getUpdateSettings
+      x-barkvisor-stability: evolving
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateSettings"
+        "422":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [evolving]
+      operationId: putUpdateSettings
+      x-barkvisor-stability: evolving
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettings"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateSettings"
+        "422":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
   /api/system/device-name:
     get:
       tags: [evolving]
@@ -3456,6 +3536,8 @@ components:
             - acl_denied
             - linux_os_managed
             - linux_pkg_update
+            - homebrew_service
+            - not_appliance
             - iommu_missing
             - vfio_missing
             - gpu_missing
@@ -3789,6 +3871,58 @@ components:
         processUptimeSeconds:
           type: integer
         displayName:
+          type: string
+
+    UpdateInfo:
+      type: object
+      required: [version, packageURL, checksumURL, packageKind, changelog, publishedAt, isPrerelease]
+      properties:
+        version:
+          type: string
+        packageURL:
+          type: string
+        checksumURL:
+          type: string
+        packageKind:
+          type: string
+          enum: [deb, pkg]
+        changelog:
+          type: string
+        publishedAt:
+          type: string
+        isPrerelease:
+          type: boolean
+
+    UpdateCheck:
+      type: object
+      required: [currentVersion]
+      properties:
+        currentVersion:
+          type: string
+        update:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UpdateInfo"
+
+    UpdateSettings:
+      type: object
+      properties:
+        channel:
+          type: string
+          enum: [stable, beta]
+        autoCheck:
+          type: boolean
+        isDevBuild:
+          type: boolean
+        updateURL:
+          type: string
+          nullable: true
+
+    TaskAccepted:
+      type: object
+      required: [taskID]
+      properties:
+        taskID:
           type: string
 
     DeviceName:

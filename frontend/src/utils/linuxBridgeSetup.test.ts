@@ -5,6 +5,7 @@ import {
   hostBridgeSetupPending,
   linuxBridgeApplyCommands,
   linuxBridgeCanApply,
+  macosSocketVmnetCanManage,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
   macosSocketVmnetSetupGroups,
@@ -139,7 +140,16 @@ describe('linuxBridgeApply', () => {
     expect(linuxBridgeCanApply({ supportsHostMutation: true })).toBe(true)
     expect(linuxBridgeCanApply({ platform: 'Linux' })).toBe(true)
     expect(linuxBridgeCanApply({ supportsHostBridgeManagement: true })).toBe(true)
+    expect(linuxBridgeCanApply({ platform: 'macOS', supportsHostMutation: true })).toBe(false)
     expect(linuxBridgeCanApply({ platform: 'macOS', supportsHostMutation: false })).toBe(false)
+  })
+
+  test('macOS socket_vmnet manage is Mac only', () => {
+    expect(macosSocketVmnetCanManage({ platform: 'macOS' })).toBe(true)
+    expect(macosSocketVmnetCanManage({ platform: 'darwin', supportsManagedBridgeDaemon: true })).toBe(true)
+    expect(macosSocketVmnetCanManage({ supportsManagedBridgeDaemon: true })).toBe(true)
+    expect(macosSocketVmnetCanManage({ platform: 'Linux', supportsManagedBridgeDaemon: false })).toBe(false)
+    expect(macosSocketVmnetCanManage({ platform: 'Linux', supportsHostMutation: true })).toBe(false)
   })
 })
 

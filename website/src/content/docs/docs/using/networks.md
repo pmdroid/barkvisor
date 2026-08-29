@@ -8,7 +8,7 @@ description: "NAT, bridged, and isolated networks plus host bridge setup."
 
 ## Toolbar
 
-- **Bridge setup** — copyable host commands when the Device is not ready for bridged networks yet
+- **Bridge setup** — Linux Apply/Revert for `br0`; macOS Setup/Start/Stop for `socket_vmnet`. Copyable install commands stay on the sheet.
 - **Create Network** — opens the create modal
 
 ## The list
@@ -24,7 +24,7 @@ Selecting a network shows:
 - Attached Workloads
 - Interfaces table
 
-Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) and **Re-check**.
+Selecting a pending bridge shows the host commands for that Device (Linux `br0` / macOS `socket_vmnet`) plus **Setup / Start / Stop** on a Mac Device, then **Re-check**. NAT still works when `socket_vmnet` is down.
 
 ## Create Network
 

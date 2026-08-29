@@ -69,6 +69,9 @@ const emit = defineEmits<{
     </div>
     <div v-if="selectedNetworkId && selectedNetwork" style="margin-top:12px;font-size:12px;color:var(--text-secondary)">
       <div style="margin-bottom:4px;font-weight:500">{{ selectedNetwork.name }} &mdash; {{ selectedNetwork.mode }}</div>
+      <p v-if="selectedNetwork.mode === 'bridged'" style="margin:8px 0 0;font-size:11px;color:var(--text-dim)">
+        Bridged Workloads use LAN DHCP by default. Set a static IPv4 on a cloud-init Workload, or paste the Workload MAC into your router. Installer ISOs are not configured by BarkVisor.
+      </p>
     </div>
 
     <!-- Port Forwarding (NAT only; Agent class forbids hostfwd) -->

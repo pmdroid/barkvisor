@@ -1,7 +1,8 @@
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { useCapabilitiesStore } from '../stores/capabilities'
+import { MACOS_SOCKET_VMNET_ACTION_KEYS } from '../utils/linuxBridgeSetup'
 
-export { BRIDGE_MUTATION_ACTION_KEYS } from '../utils/linuxBridgeSetup'
+export { BRIDGE_MUTATION_ACTION_KEYS, MACOS_SOCKET_VMNET_ACTION_KEYS } from '../utils/linuxBridgeSetup'
 
 /**
  * Wave 0 capability gates — current host only (PAS-38).
@@ -13,12 +14,12 @@ export { BRIDGE_MUTATION_ACTION_KEYS } from '../utils/linuxBridgeSetup'
  * | hostBridgeManagement  | NetworkView Bridge setup (Linux apply + commands)             |
  * | usbPassthrough        | CreateVM network step, CreateVM summary, VMDetail attach USB  |
  * | gpuPassthrough        | Device/Workload GPU copy. No QEMU vfio-pci attach (PAS-274).  |
- * | inAppUpdate           | Always off — upgrade via Homebrew or the distro package        |
+ * | inAppUpdate           | Settings → Updates on a root .deb / .pkg appliance             |
  *
  * Prefer disable + server remediation over hide. Setup omits the macOS-only
  * bridge-install step instead of showing a dead wizard page.
  * Networks Bridge setup is `bridgeManagementMode` (linux-guide / macos-guide).
- * Linux apply/revert uses the root daemon; setup/start/stop/remove stay hidden.
+ * Linux apply/revert uses the root daemon. macOS Setup/Start/Stop starts socket_vmnet.
  */
 export const FEATURE_CODES = [
   'bridgedNetworking',
@@ -54,7 +55,7 @@ export function networksUsableOnHost<T extends { mode: string }>(
 
 export type BridgeManagementMode = 'linux-guide' | 'macos-guide' | 'hidden'
 
-/** Which Networks Bridge-setup surface to show. Never a mutation toolbar. */
+/** Which Networks Bridge-setup surface to show. */
 export function bridgeManagementMode(caps: {
   platform?: string | null
   supportsHostBridgeManagement?: boolean | null
@@ -76,14 +77,15 @@ export function bridgeManagementMode(caps: {
 
 /**
  * Action keys the Networks Bridge-setup UI may render.
- * Guides are copyable text only — never setup / start / stop / remove.
+ * Linux stays Apply/Revert. macOS Setup/Start/Stop. Remove stays gone.
  */
 export function bridgeGuideActionKeys(
   mode: BridgeManagementMode,
 ): readonly string[] {
   switch (mode) {
-    case 'linux-guide':
     case 'macos-guide':
+      return [...MACOS_SOCKET_VMNET_ACTION_KEYS]
+    case 'linux-guide':
     case 'hidden':
       return []
   }

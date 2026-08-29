@@ -24,7 +24,7 @@ struct BarkVisorCLI: AsyncParsableCommand {
             abstract: role.serveFrontend
                 ? "BarkVisor Device daemon"
                 : "BarkVisor Device daemon (API-only, no SPA)",
-            subcommands: [Serve.self, Join.self],
+            subcommands: [Serve.self, Join.self, Doctor.self],
             defaultSubcommand: Serve.self,
         )
     }()
@@ -67,6 +67,35 @@ struct Join: AsyncParsableCommand {
         FileHandle.standardOutput.write(
             Data("Joined Home. Peer Device \(result.peerHostId)\n".utf8),
         )
+    }
+}
+
+/// Read-only Device checks. Never mutates the host.
+struct Doctor: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Read-only Device capability checks.",
+        discussion: """
+        Probes daemon uid, QEMU, /dev/kvm, swtpm, /api/health, and host-bridge \
+        facts (Linux helper/setuid/br0 or macOS socket_vmnet). Never applies \
+        network or package changes. The SPA can fetch the same report from \
+        GET /api/system/doctor.
+        """,
+    )
+
+    @Flag(name: .long, help: "Print JSON.")
+    var json = false
+
+    func run() async throws {
+        let report = DoctorService.probe()
+        if json {
+            try FileHandle.standardOutput.write(DoctorService.jsonData(report))
+            FileHandle.standardOutput.write(Data("\n".utf8))
+        } else {
+            FileHandle.standardOutput.write(Data(DoctorService.renderText(report).utf8))
+        }
+        if !report.ok {
+            throw ExitCode(1)
+        }
     }
 }
 

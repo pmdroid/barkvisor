@@ -25,6 +25,7 @@ import Foundation
 /// | spec.networks[0].networkId | networkId |
 /// | spec.networks[0].mac | macAddress |
 /// | spec.networks[0].portForwards | portForwards |
+/// | spec.networks[0].addressing | guestAddressingJson |
 /// | spec.cloudInit.userDataRef | cloudInitPath |
 /// | spec.usb | usbDevices |
 /// | spec.gpu | gpuDevices |
@@ -57,6 +58,7 @@ public enum WorkloadSpecProjector {
             networkId: vm.networkId,
             mac: vm.macAddress,
             portForwards: forwards,
+            addressing: vm.decodedGuestAddressing,
         )
         let cloudInit: WorkloadCloudInit? =
             vm.cloudInitPath.map { WorkloadCloudInit(userDataRef: $0) }
@@ -156,6 +158,11 @@ public enum WorkloadSpecProjector {
                 PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
             }
             vm.setPortForwards(rules.isEmpty ? nil : rules)
+            if let addressing = net?.addressing {
+                try vm.setGuestAddressing(addressing.validated())
+            } else {
+                vm.setGuestAddressing(nil)
+            }
         }
 
         if let cloud = spec.spec.cloudInit {
@@ -230,6 +237,9 @@ public enum WorkloadSpecProjector {
             try PortRegistry.assertUnique(net.portForwards.map {
                 PortForwardRule(protocol: $0.proto, hostPort: $0.hostPort, guestPort: $0.guestPort)
             })
+            if let addressing = net.addressing {
+                _ = try addressing.validated()
+            }
         }
         if let resolution = resolved.spec.display?.resolution {
             _ = try QEMUBuilder.validateResolution(resolution)

@@ -142,6 +142,9 @@ final class AppModel {
     var ollamaSettings: OllamaSettingsSnapshot?
     var remoteAccess: RemoteAccessStatus?
     var diskSettings: DiskSettingsSnapshot?
+    var updateCheck: UpdateCheckResponse?
+    var updateBusy = false
+    var updatePhase = ""
 
     var showsChat: Bool {
         ChatAvailability.visible(catalog: ollamaCatalog)
@@ -452,6 +455,91 @@ final class AppModel {
         } catch {
             diskSettings = nil
             handle(error)
+        }
+    }
+
+    @discardableResult
+    func refreshUpdates() async {
+        do {
+            updateCheck = try await requireClient().checkUpdates()
+        } catch {
+            updateCheck = nil
+            banner = error.localizedDescription
+        }
+    }
+
+    func applyUpdate(_ version: String) async -> Bool {
+        updateBusy = true
+        updatePhase = "Installing v\(version)…"
+        defer { updateBusy = false }
+        do {
+            let accepted = try await requireClient().installUpdate(version: version)
+            var consecutiveMisses = 0
+            var startHealthPoll = false
+            for _ in 0 ..< 60 {
+                try? await Task.sleep(for: .seconds(2))
+                do {
+                    let task = try await requireClient().taskStatus(taskID: accepted.taskID)
+                    consecutiveMisses = 0
+                    if task.status == "failed" {
+                        banner = task.error ?? "Update failed"
+                        updatePhase = ""
+                        return false
+                    }
+                    if task.status == "completed" {
+                        startHealthPoll = true
+                        break
+                    }
+                } catch {
+                    consecutiveMisses += 1
+                    if consecutiveMisses >= ApplianceUpdateApply.consecutiveTaskMissesBeforeHealthPoll {
+                        startHealthPoll = true
+                        break
+                    }
+                }
+            }
+            guard startHealthPoll else {
+                banner = "Timed out waiting for the update to finish."
+                updatePhase = ""
+                return false
+            }
+            return await pollHealthAfterUpdate()
+        } catch {
+            if ApplianceUpdateApply.isConnectionLoss(error) {
+                return await pollHealthAfterUpdate()
+            }
+            banner = error.localizedDescription
+            updatePhase = ""
+            return false
+        }
+    }
+
+    /// SPA waits for task completion or connection loss before /api/health.
+    /// The daemon keeps serving health during download/dpkg/pkg, so health==ok is not "done".
+    private func pollHealthAfterUpdate() async -> Bool {
+        updatePhase = "Waiting for this Device…"
+        for _ in 0 ..< 60 {
+            try? await Task.sleep(for: .seconds(2))
+            if let health = try? await requireClient().processHealth(), health.status == "ok" {
+                await refreshUpdates()
+                updatePhase = ""
+                return true
+            }
+        }
+        banner = "Timed out waiting for /api/health after the update."
+        updatePhase = ""
+        return false
+    }
+
+    @discardableResult
+    func saveDeviceName(_ displayName: String, on device: HomeDeviceHealthSnapshot) async -> Bool {
+        do {
+            _ = try await requireClient().saveDeviceName(displayName, on: device)
+            await refreshHome()
+            return true
+        } catch {
+            handle(error)
+            return false
         }
     }
 

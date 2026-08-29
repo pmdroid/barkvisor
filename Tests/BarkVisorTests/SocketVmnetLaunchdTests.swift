@@ -46,6 +46,14 @@ struct SocketVmnetLaunchdTests {
             SocketVmnetLaunchd.kickstartArguments(label: "dev.barkvisor.socket-vmnet.en0")
                 == ["kickstart", "-k", "system/dev.barkvisor.socket-vmnet.en0"],
         )
+        #expect(
+            SocketVmnetLaunchd.printArguments(label: "homebrew.mxcl.socket_vmnet")
+                == ["print", "system/homebrew.mxcl.socket_vmnet"],
+        )
+        #expect(SocketVmnetLaunchd.brewServicesStartArguments() == ["services", "start", "socket_vmnet"])
+        #expect(SocketVmnetLaunchd.brewServicesStopArguments() == ["services", "stop", "socket_vmnet"])
+        #expect(!SocketVmnetLaunchd.brewServicesStartArguments().contains("install"))
+        #expect(SocketVmnetLaunchd.homebrewServiceLabel == "homebrew.mxcl.socket_vmnet")
     }
 
     @Test func `install hint never says sudo brew install`() {

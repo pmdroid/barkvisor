@@ -2,11 +2,12 @@ import Foundation
 
 // MARK: - Protocol
 
-/// Abstracts privileged host operations that used to go through XPC.
+/// Abstracts privileged host operations that used to go through a helper.
 ///
-/// macOS no longer ships a privileged XPC helper (PAS-294). The root Device
+/// macOS no longer ships a privileged helper (PAS-294). The root Device
 /// daemon starts/stops BarkVisor-owned `socket_vmnet` plists via launchctl.
-/// Linux uses host bridges. In-app PKG updates are unsupported (`PlatformCapabilities`).
+/// Linux uses host bridges. Appliance .deb/.pkg updates run in-process as root
+/// (`UpdateService`); they do not go through this service.
 ///
 /// Controllers and other call sites must use `PrivilegeService.shared` only
 /// (enforced by PrivilegeBoundaryTests).
@@ -125,7 +126,7 @@ public struct LinuxPrivilegeService: PrivilegeServicing {
 /// Alias used by call sites / tests that prefer a no-op name.
 public typealias NoopPrivilegeService = LinuxPrivilegeService
 
-/// Pre-PAS-294 SMJobBless leftover. Never reconnect; warn once if files remain.
+/// Pre-PAS-294 privileged helper leftover. Never reconnect; warn once if files remain.
 public enum LeftoverHelperInventory {
     public static let launchdLabel = "dev.barkvisor.helper"
 

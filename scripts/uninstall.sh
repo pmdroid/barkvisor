@@ -109,12 +109,13 @@ if [ -z "$TEST_ROOT" ]; then
     if command -v brew >/dev/null 2>&1; then
         brew services stop socket_vmnet >/dev/null 2>&1 || true
     fi
-    # Leftover helper-era bridge plists stay in this script (#379 owns socket-vmnet.*.plist).
-    for plist in /Library/LaunchDaemons/dev.barkvisor.bridge.*.plist; do
+    # Leftover helper-era bridge plists plus BarkVisor-owned socket_vmnet (#379).
+    for plist in /Library/LaunchDaemons/dev.barkvisor.bridge.*.plist \
+                 /Library/LaunchDaemons/dev.barkvisor.socket-vmnet.*.plist; do
         [ -f "$plist" ] || continue
         svc="$(basename "$plist" .plist)"
         launchctl bootout "system/$svc" 2>/dev/null || true
-        log "Removing leftover helper bridge plist $plist"
+        log "Removing leftover plist $plist"
         rm -f "$plist"
     done
 
