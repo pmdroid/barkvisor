@@ -134,6 +134,10 @@ export function deviceHostBridgeReadinessPath(device: DeviceApiTarget): string {
   return devicePath(device, '/system/host-bridge-readiness')
 }
 
+export function deviceDoctorPath(device: DeviceApiTarget): string {
+  return devicePath(device, '/system/doctor')
+}
+
 export function deviceImagePath(device: DeviceApiTarget, imageId: string): string {
   return devicePath(device, `/images/${encodeURIComponent(imageId)}`)
 }

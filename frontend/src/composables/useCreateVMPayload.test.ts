@@ -113,11 +113,35 @@ describe('useCreateVMPayload (PAS-240)', () => {
       userData: '#cloud-config',
     })
     expect(req.networkId).toBe('net-1')
+    expect(req.guestAddressing).toBeUndefined()
     expect(req.portForwards).toEqual([{ protocol: 'tcp', hostPort: 2222, guestPort: 22 }])
     expect(req.sharedPaths).toEqual(['/Users/me/share'])
     expect(req.displayResolution).toBe('1920x1080')
     expect(req.uefi).toBe(false)
     expect(req.tpmEnabled).toBe(true)
+  })
+
+  test('bridged cloud-init create can send static guest addressing', () => {
+    const req = buildCreateVMPayload({
+      ...base,
+      mode: 'cloud',
+      imageId: 'cloud-1',
+      selectedNetworkId: 'net-br',
+      guestAddressing: {
+        mode: 'static',
+        ipv4: '192.168.1.40',
+        prefixLength: 24,
+        gateway: '192.168.1.1',
+        nameservers: ['1.1.1.1'],
+      },
+    })
+    expect(req.guestAddressing).toEqual({
+      mode: 'static',
+      ipv4: '192.168.1.40',
+      prefixLength: 24,
+      gateway: '192.168.1.1',
+      nameservers: ['1.1.1.1'],
+    })
   })
 
   test('USB devices are omitted unless the Device advertises passthrough', () => {

@@ -531,6 +531,19 @@ final class AppModel {
         return false
     }
 
+    @discardableResult
+    func saveDeviceName(_ displayName: String, on device: HomeDeviceHealthSnapshot) async -> Bool {
+        do {
+            _ = try await requireClient().saveDeviceName(displayName, on: device)
+            await refreshHome()
+            return true
+        } catch {
+            handle(error)
+            return false
+        }
+    }
+
+    @discardableResult
     func saveDiskSettings(_ directory: String) async -> Bool {
         do {
             diskSettings = try await requireClient().saveDiskSettings(

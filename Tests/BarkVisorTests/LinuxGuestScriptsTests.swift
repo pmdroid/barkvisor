@@ -478,6 +478,8 @@ struct LinuxGuestScriptsTests {
         )
         #expect(app.contains("import ArgumentParser"))
         #expect(app.contains("struct Join"))
+        #expect(app.contains("struct Doctor"))
+        #expect(app.contains("DoctorService.probe"))
         #expect(app.contains("var code: String"))
         #expect(app.contains("LocalPairingJoin.post"))
         #expect(app.contains("http://127.0.0.1:7777/api/pairing/join"))
