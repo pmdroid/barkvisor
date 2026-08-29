@@ -406,6 +406,7 @@ public enum QEMUBuilder {
         guard spec.spec.firmware?.tpm == true else { return ([], nil, nil, nil) }
         let tpmStateDir = Config.dataDir.appendingPathComponent("tpm/\(vmID)")
         try FileManager.default.createDirectory(at: tpmStateDir, withIntermediateDirectories: true)
+        try WorkloadPrivilegeDrop.handoffForDroppedUser(tpmStateDir)
         let tpmSock = tpmStateDir.appendingPathComponent("swtpm.sock")
         let exe = try resolveSwtpm()
         let swtpmArgs = [
@@ -678,6 +679,7 @@ public enum QEMUBuilder {
         let profile = try GuestProfiles.require(vmType)
         let fwDir = Config.dataDir.appendingPathComponent("efivars/\(vmID)")
         try FileManager.default.createDirectory(at: fwDir, withIntermediateDirectories: true)
+        try WorkloadPrivilegeDrop.handoffForDroppedUser(fwDir)
         let varsFile = fwDir.appendingPathComponent("vars.fd")
 
         switch profile.firmware {
@@ -729,18 +731,20 @@ public enum QEMUBuilder {
         templateCandidates: [String],
         zeroFillBytes: Int,
     ) throws {
-        guard !FileManager.default.fileExists(atPath: varsFile.path) else { return }
+        if !FileManager.default.fileExists(atPath: varsFile.path) {
+            // Prefer a VARS file that matches the CODE variant (4M / secboot).
+            var candidates = templateCandidates
+            candidates = preferMatchingFirmwareToken("secboot", in: candidates, codePath: codePath)
+            candidates = preferMatchingFirmwareToken("4M", in: candidates, codePath: codePath)
 
-        // Prefer a VARS file that matches the CODE variant (4M / secboot).
-        var candidates = templateCandidates
-        candidates = preferMatchingFirmwareToken("secboot", in: candidates, codePath: codePath)
-        candidates = preferMatchingFirmwareToken("4M", in: candidates, codePath: codePath)
-
-        if let template = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
-            try FileManager.default.copyItem(atPath: template, toPath: varsFile.path)
-            return
+            if let template = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+                try FileManager.default.copyItem(atPath: template, toPath: varsFile.path)
+            } else {
+                FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: zeroFillBytes))
+            }
         }
-        FileManager.default.createFile(atPath: varsFile.path, contents: Data(count: zeroFillBytes))
+        // copyItem keeps the template's 0644; umask 0022 is group-read only.
+        try WorkloadPrivilegeDrop.handoffForDroppedUser(varsFile)
     }
 
     // MARK: - socket_vmnet resolution

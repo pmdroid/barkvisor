@@ -147,13 +147,73 @@ public enum WorkloadPrivilegeDrop {
         ] + arguments
     }
 
+    /// Files `0660`, directories `0770`, so the drop user can write via group
+    /// when the daemon created the path as `root:barkvisor`.
+    public static func handoffMode(isDirectory: Bool) -> Int {
+        isDirectory ? 0o770 : 0o660
+    }
+
+    /// User QEMU / swtpm will run as, if this process would drop. Nil on macOS,
+    /// when not root, or when no `barkvisor` / `qemu` account exists.
+    public static func dropUserIfNeeded(
+        euid: uid_t,
+        dropsOnPlatform: Bool,
+        userExists: (String) -> Bool,
+    ) -> String? {
+        guard dropsOnPlatform, euid == 0 else { return nil }
+        return preferredUsers.first(where: userExists)
+    }
+
+    /// After qemu-img / copyItem / createDirectory as root, chown+chmod so the
+    /// dropped user can write. No-op when this process would not drop.
+    ///
+    /// `copyItem` from `/usr/share` keeps 0644 (UMask does not apply). Disks and
+    /// TPM dirs created under systemd default umask 0022 are group-read only.
+    public static func handoffForDroppedUser(_ path: URL) throws {
+        guard let user = dropUserIfNeeded(
+            euid: currentEUID(),
+            dropsOnPlatform: dropsOnThisPlatform,
+            userExists: userAccountExists,
+        ) else { return }
+        guard let ids = posixIDs(forUser: user) else {
+            throw BarkVisorError.internalError("drop user \(user) has no passwd entry")
+        }
+        let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
+        let isDir = (attrs[.type] as? FileAttributeType) == .typeDirectory
+        try applyHandoff(path, uid: ids.uid, gid: ids.gid, mode: handoffMode(isDirectory: isDir))
+    }
+
+    package static func applyHandoff(_ path: URL, uid: uid_t, gid: gid_t, mode: Int) throws {
+        do {
+            try FileManager.default.setAttributes(
+                [
+                    .ownerAccountID: NSNumber(value: uid),
+                    .groupOwnerAccountID: NSNumber(value: gid),
+                    .posixPermissions: mode,
+                ],
+                ofItemAtPath: path.path,
+            )
+        } catch {
+            throw BarkVisorError.internalError(
+                "handoff \(path.path) to uid \(uid) gid \(gid) mode "
+                    + String(mode, radix: 8)
+                    + " failed: \(error.localizedDescription)",
+            )
+        }
+    }
+
     public static func currentEUID() -> uid_t {
         geteuid()
     }
 
     private static func userAccountExists(_ name: String) -> Bool {
+        posixIDs(forUser: name) != nil
+    }
+
+    private static func posixIDs(forUser name: String) -> (uid: uid_t, gid: gid_t)? {
         name.withCString { ptr in
-            getpwnam(ptr) != nil
+            guard let pw = getpwnam(ptr) else { return nil }
+            return (pw.pointee.pw_uid, pw.pointee.pw_gid)
         }
     }
 
