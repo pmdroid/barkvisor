@@ -52,6 +52,23 @@ struct RootDaemonPackagingTests {
         }
     }
 
+    @Test func `prerm does not stop barkvisor on upgrade`() throws {
+        let prerm = try read("packaging/linux/debian/prerm")
+        guard let upgradeRange = prerm.range(of: "upgrade)"),
+              let removeRange = prerm.range(of: "remove|deconfigure")
+        else {
+            Issue.record("prerm must split upgrade from remove|deconfigure")
+            return
+        }
+        #expect(upgradeRange.lowerBound < removeRange.lowerBound)
+        let upgradeBody = String(prerm[upgradeRange.upperBound ..< removeRange.lowerBound])
+        #expect(!upgradeBody.contains("stop barkvisor.service"))
+        #expect(upgradeBody.contains("stop_agent") || upgradeBody.contains("barkvisor-agent.service"))
+        let removeBody = String(prerm[removeRange.upperBound...])
+        #expect(removeBody.contains("stop barkvisor.service") || removeBody.contains("stop_units"))
+        #expect(prerm.contains("systemctl stop barkvisor.service"))
+    }
+
     @Test func `macos appliance plist is root without _barkvisor`() throws {
         let plist = try read("Resources/dev.barkvisor.plist")
         #expect(!plist.contains("<key>UserName</key>"))

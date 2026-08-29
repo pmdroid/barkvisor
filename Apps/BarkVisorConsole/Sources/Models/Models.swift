@@ -1148,6 +1148,22 @@ struct BackgroundTaskSnapshot: Decodable, Equatable {
     var error: String?
 }
 
+enum ApplianceUpdateApply {
+    static let consecutiveTaskMissesBeforeHealthPoll = 3
+
+    static func isConnectionLoss(_ error: Error) -> Bool {
+        guard let api = error as? APIError else { return true }
+        switch api {
+        case .transport, .invalidURL:
+            return true
+        case let .http(status, _) where status >= 500:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 struct RemoteAccessStatus: Decodable, Hashable {
     var tailscale: RemoteAccessTailnet
     var wireguard: RemoteAccessWireGuard

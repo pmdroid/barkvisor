@@ -1,12 +1,30 @@
 #!/bin/sh
 set -e
 
+# In-app `dpkg -i` runs inside barkvisor.service. Stopping this unit on upgrade
+# deadlocks: the main PID is blocked in dpkg, systemd waits for TimeoutStopSec,
+# then SIGKILL. Restart=on-failure does not restart after an explicit stop, and
+# PrivateTmp discards the .deb. postinst try-restart (and UpdateService) restart
+# after a successful install.
+stop_agent() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
+  fi
+}
+
+stop_units() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop barkvisor.service >/dev/null 2>&1 || true
+    systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
+  fi
+}
+
 case "$1" in
-  remove|upgrade|deconfigure)
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl stop barkvisor.service >/dev/null 2>&1 || true
-      systemctl stop barkvisor-agent.service >/dev/null 2>&1 || true
-    fi
+  upgrade)
+    stop_agent
+    ;;
+  remove|deconfigure)
+    stop_units
     ;;
 esac
 

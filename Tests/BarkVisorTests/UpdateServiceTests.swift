@@ -150,4 +150,37 @@ struct UpdateServiceTests {
         #expect(!AppliancePackageInstaller.shouldFixDepends(exitCode: 0, output: "ok"))
         #expect(!AppliancePackageInstaller.shouldFixDepends(exitCode: 2, output: "I/O error"))
     }
+
+    @Test func `console waits for the update task before polling health`() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0 ..< 3 {
+            url.deleteLastPathComponent()
+        }
+        let source = try String(
+            contentsOf: url.appendingPathComponent(
+                "Apps/BarkVisorConsole/Sources/Services/AppModel.swift",
+            ),
+            encoding: .utf8,
+        )
+        guard let start = source.range(of: "func applyUpdate("),
+              let end = source.range(of: "\n    func saveDiskSettings", range: start.upperBound ..< source.endIndex)
+        else {
+            Issue.record("applyUpdate missing")
+            return
+        }
+        let body = String(source[start.lowerBound ..< end.lowerBound])
+        let loops = body.components(separatedBy: "for _ in 0 ..< 60")
+        #expect(loops.count == 3)
+        let taskLoop = loops[1]
+        let healthLoop = loops[2]
+        #expect(taskLoop.contains("taskStatus(taskID:"))
+        #expect(!taskLoop.contains("processHealth()"))
+        #expect(healthLoop.contains("processHealth()"))
+        #expect(!healthLoop.contains("taskStatus(taskID:"))
+        #expect(body.contains("task.status == \"failed\""))
+        #expect(body.contains("task.status == \"completed\""))
+        #expect(body.contains("pollHealthAfterUpdate()"))
+        #expect(body.contains("ApplianceUpdateApply.isConnectionLoss"))
+        #expect(body.contains("ApplianceUpdateApply.consecutiveTaskMissesBeforeHealthPoll"))
+    }
 }

@@ -474,36 +474,61 @@ final class AppModel {
         defer { updateBusy = false }
         do {
             let accepted = try await requireClient().installUpdate(version: version)
-            updatePhase = "Waiting for this Device…"
+            var consecutiveMisses = 0
+            var startHealthPoll = false
             for _ in 0 ..< 60 {
                 try? await Task.sleep(for: .seconds(2))
-                if let task = try? await requireClient().taskStatus(taskID: accepted.taskID) {
+                do {
+                    let task = try await requireClient().taskStatus(taskID: accepted.taskID)
+                    consecutiveMisses = 0
                     if task.status == "failed" {
                         banner = task.error ?? "Update failed"
                         updatePhase = ""
                         return false
                     }
-                    if task.status == "completed" { break }
-                }
-                if let health = try? await requireClient().processHealth(), health.status == "ok" {
-                    await refreshUpdates()
-                    updatePhase = ""
-                    return true
+                    if task.status == "completed" {
+                        startHealthPoll = true
+                        break
+                    }
+                } catch {
+                    consecutiveMisses += 1
+                    if consecutiveMisses >= ApplianceUpdateApply.consecutiveTaskMissesBeforeHealthPoll {
+                        startHealthPoll = true
+                        break
+                    }
                 }
             }
+            guard startHealthPoll else {
+                banner = "Timed out waiting for the update to finish."
+                updatePhase = ""
+                return false
+            }
+            return await pollHealthAfterUpdate()
+        } catch {
+            if ApplianceUpdateApply.isConnectionLoss(error) {
+                return await pollHealthAfterUpdate()
+            }
+            banner = error.localizedDescription
+            updatePhase = ""
+            return false
+        }
+    }
+
+    /// SPA waits for task completion or connection loss before /api/health.
+    /// The daemon keeps serving health during download/dpkg/pkg, so health==ok is not "done".
+    private func pollHealthAfterUpdate() async -> Bool {
+        updatePhase = "Waiting for this Device…"
+        for _ in 0 ..< 60 {
+            try? await Task.sleep(for: .seconds(2))
             if let health = try? await requireClient().processHealth(), health.status == "ok" {
                 await refreshUpdates()
                 updatePhase = ""
                 return true
             }
-            banner = "Timed out waiting for /api/health after the update."
-            updatePhase = ""
-            return false
-        } catch {
-            banner = error.localizedDescription
-            updatePhase = ""
-            return false
         }
+        banner = "Timed out waiting for /api/health after the update."
+        updatePhase = ""
+        return false
     }
 
     func saveDiskSettings(_ directory: String) async -> Bool {
