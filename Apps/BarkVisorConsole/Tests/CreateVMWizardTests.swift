@@ -49,7 +49,50 @@ struct CreateVMWizardTests {
             sshKey: key,
         )
         #expect(inputs["hostname"] == "dev")
-        #expect(inputs["ssh_keys"] == "ssh-ed25519 AAA")
+        #expect(inputs["ssh_keys"] == "ssh-ed25519 AAA laptop")
+    }
+
+    @Test func seedTemplateInputsUsesDefaults() {
+        let template = VMTemplateRecord(
+            id: "t1",
+            slug: "rocky-cloud",
+            name: "Rocky Linux 9",
+            description: nil,
+            category: "linux",
+            icon: "linux",
+            imageSlug: "rocky-9-arm64",
+            cpuCount: 2,
+            memoryMB: 2048,
+            diskSizeGB: 20,
+            networkMode: "nat",
+            inputs: [
+                TemplateInputRecord(id: "username", label: "Username", required: true, default: "rocky", minLength: nil),
+                TemplateInputRecord(id: "ssh_keys", label: "SSH", required: true, default: nil, minLength: nil),
+            ],
+            userDataTemplate: "",
+            architectures: ["arm64"],
+            minMemoryMB: nil,
+            requiredFeatures: nil,
+            compatible: true,
+            catalogImages: nil,
+        )
+        let seeded = CreateVMWizard.seedTemplateInputs(template)
+        #expect(seeded["username"] == "rocky")
+        #expect(seeded["ssh_keys"] == nil)
+        #expect(CreateVMWizard.templateInputsComplete(template, values: seeded))
+    }
+
+    @Test func sshKeyCloudInitComment() {
+        let key = SSHKeyRecord(
+            id: "k1",
+            name: "laptop",
+            publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5",
+            fingerprint: "fp",
+            keyType: "ed25519",
+            isDefault: true,
+            createdAt: "now",
+        )
+        #expect(key.cloudInitAuthorizedKey.hasSuffix(" laptop"))
     }
 
     @Test func resolveTemplateBySlugOnMember() {

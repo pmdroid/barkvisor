@@ -85,6 +85,22 @@ struct SSHKeyRecord: Decodable, Identifiable, Hashable {
     var keyType: String
     var isDefault: Bool
     var createdAt: String
+
+    /// Same shape as web `authorizedKeyForCloudInit` (public key + Home key name comment).
+    var cloudInitAuthorizedKey: String {
+        let text = publicKey
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let comment = name
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if comment.isEmpty { return text }
+        let parts = text.split(whereSeparator: \.isWhitespace)
+        if parts.count >= 3, parts[2...].joined(separator: " ") == comment { return text }
+        return "\(text) \(comment)"
+    }
 }
 
 struct DeployTemplateBody: Encodable {

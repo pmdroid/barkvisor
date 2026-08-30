@@ -413,6 +413,7 @@ struct CreateVMWizardView: View {
         if let loaded = await imgs { images = loaded }
         if let selectedTemplate, let match = templates.first(where: { $0.slug == selectedTemplate.slug }) {
             self.selectedTemplate = match
+            templateInputs = CreateVMWizard.seedTemplateInputs(match).merging(templateInputs) { _, kept in kept }
         }
         if !networkID.isEmpty, !networks.contains(where: { $0.id == networkID }) { networkID = "" }
     }
@@ -422,6 +423,7 @@ struct CreateVMWizardView: View {
         selectedTemplate = template
         selectedImage = nil
         name = CreateVMWizard.defaultName(for: .template, template: template)
+        templateInputs = CreateVMWizard.seedTemplateInputs(template)
         presetID = CreateVMWizard.presets.first { $0.cpu == template.cpuCount && $0.memoryMB == template.memoryMB }?.id ?? "medium"
         step = .configure
     }

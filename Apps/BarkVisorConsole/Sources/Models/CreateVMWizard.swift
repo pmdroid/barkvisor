@@ -83,11 +83,25 @@ enum CreateVMWizard {
         template.visibleInputs
             .filter { $0.required == true }
             .allSatisfy { input in
-                let value = values[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let value = effectiveInputValue(input, values: values)
                 if value.isEmpty { return false }
                 if let min = input.minLength, value.count < min { return false }
                 return true
             }
+    }
+
+    static func seedTemplateInputs(_ template: VMTemplateRecord?) -> [String: String] {
+        guard let template else { return [:] }
+        var values: [String: String] = [:]
+        for input in template.visibleInputs {
+            values[input.id] = input.default ?? ""
+        }
+        return values
+    }
+
+    static func effectiveInputValue(_ input: TemplateInputRecord, values: [String: String]) -> String {
+        values[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? input.default?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     static func canProceedConfigure(
@@ -144,14 +158,23 @@ enum CreateVMWizard {
     ) -> [String: String] {
         var inputs: [String: String] = [:]
         for input in template.visibleInputs {
-            let value = values[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? input.default?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let value = effectiveInputValue(input, values: values)
             if !value.isEmpty { inputs[input.id] = value }
         }
         if template.declaresSSHKeys, let sshKey {
-            inputs["ssh_keys"] = sshKey.publicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            inputs["ssh_keys"] = sshKey.cloudInitAuthorizedKey
         }
         return inputs
+    }
+
+    /// Prefer the target Device row; keep catalog images from the gallery pick when the member list omits them.
+    static func mergeTemplateCatalog(picked: VMTemplateRecord, resolved: VMTemplateRecord) -> VMTemplateRecord {
+        guard (resolved.catalogImages ?? []).isEmpty, let images = picked.catalogImages, !images.isEmpty else {
+            return resolved
+        }
+        var merged = resolved
+        merged.catalogImages = images
+        return merged
     }
 
     /// Match the target Device's template row by slug (ids differ per host in a Home).

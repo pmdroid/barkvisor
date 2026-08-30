@@ -878,16 +878,25 @@ final class AppModel {
             if kind == .template, let template {
                 let deviceTemplates = try await client.templates(on: device)
                 let resolved = CreateVMWizard.resolveTemplate(template, on: deviceTemplates)
-                let hostArch = device.platform?.arch
+                let merged = CreateVMWizard.mergeTemplateCatalog(picked: template, resolved: resolved)
+                let about = try? await client.about(on: device)
+                let hostArch = device.platform?.arch ?? about?.hostArch ?? merged.architectures?.first
+                let recipe = CreateVMWizard.buildDeployRecipe(template: merged, hostArch: hostArch)
+                let onDevice = deviceTemplates.contains { $0.slug == template.slug }
+                if recipe == nil, !onDevice {
+                    banner =
+                        "\(template.name) is not on this \(Copy.device.lowercased()). Sync templates in the web UI on that host, or pick This \(Copy.device)."
+                    return nil
+                }
                 let body = DeployTemplateBody(
-                    templateId: resolved.id,
+                    templateId: merged.id,
                     vmName: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    inputs: CreateVMWizard.deployInputs(template: resolved, values: templateInputs, sshKey: sshKey),
+                    inputs: CreateVMWizard.deployInputs(template: merged, values: templateInputs, sshKey: sshKey),
                     cpuCount: preset.cpu,
                     memoryMB: preset.memoryMB,
                     diskSizeGB: diskSource == .new ? diskSizeGB : nil,
                     networkId: network?.id,
-                    recipe: CreateVMWizard.buildDeployRecipe(template: resolved, hostArch: hostArch),
+                    recipe: recipe,
                 )
                 let created = try await client.deployTemplate(body, on: device)
                 await refreshDeviceScoped()
