@@ -8,6 +8,7 @@ import {
   macosSocketVmnetCanManage,
   linuxBridgeSetupGroups,
   linuxBridgeStatusSummary,
+  macosDeviceAddressCommands,
   macosSocketVmnetSetupGroups,
   macosSocketVmnetStatusSummary,
   readinessAppliesTo,
@@ -77,11 +78,13 @@ describe('linuxBridgeSetup (PAS-222)', () => {
 describe('macosSocketVmnetSetup', () => {
   test('fallback is copyable Homebrew commands, not mutation actions', () => {
     const groups = macosSocketVmnetSetupGroups(null)
-    expect(groups.map((g) => g.id)).toEqual(['homebrew-socket-vmnet'])
+    expect(groups.map((g) => g.id)).toEqual(['homebrew-socket-vmnet', 'device-address'])
     expect(groups[0].commands).toBe(SOCKET_VMNET_INSTALL_COMMANDS)
     expect(groups[0].commands).toContain('brew install socket_vmnet')
     expect(groups[0].commands).not.toContain('brew services start')
     expect(groups[0].commands).not.toContain('sudo brew install')
+    expect(groups[1].commands).toBe(macosDeviceAddressCommands())
+    expect(groups[1].commands).toContain('networksetup -setdhcp "Ethernet"')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
     }
@@ -103,15 +106,21 @@ describe('macosSocketVmnetSetup', () => {
     }
   })
 
-  test('ready Device has no command nag', () => {
+  test('ready Device still shows device-address commands', () => {
     const groups = macosSocketVmnetSetupGroups(
       base({
         ready: true,
-        remediations: [],
+        remediations: [{
+          id: 'device-address',
+          label: 'Device address',
+          commands: 'sudo networksetup -setdhcp "USB 10/100/1000 LAN"',
+        }],
         bridges: [{ name: 'en0', enslaved: [] }],
       }),
     )
-    expect(groups).toEqual([])
+    expect(groups.map((g) => g.id)).toEqual(['device-address'])
+    expect(groups[0].commands).toContain('USB 10/100/1000 LAN')
+    expect(groups[0].commands).not.toContain('"Ethernet"')
     for (const action of BRIDGE_MUTATION_ACTION_KEYS) {
       expect(groups.map((g) => g.id)).not.toContain(action)
     }
@@ -119,6 +128,18 @@ describe('macosSocketVmnetSetup', () => {
       ready: true,
       bridges: [{ name: 'en0', enslaved: [] }],
     }))).toContain('ready')
+  })
+
+  test('ready Device without remediations still shows device-address fallback', () => {
+    const groups = macosSocketVmnetSetupGroups(
+      base({
+        ready: true,
+        remediations: [],
+        bridges: [{ name: 'en0', enslaved: [] }],
+      }),
+    )
+    expect(groups.map((g) => g.id)).toEqual(['device-address'])
+    expect(groups[0].commands).toContain('networksetup')
   })
 
   test('missing facts keep a copyable guide', () => {

@@ -22,6 +22,7 @@ public struct HostBridgeFactInputs: Sendable, Equatable {
     public var defaultRouteInterface: String?
     /// Homebrew `socket_vmnet` (no qemu-bridge-helper / ACL).
     public var macSocketVmnet: Bool
+    public var hardwarePortName: String?
 
     public init(
         helperPath: String? = nil,
@@ -30,6 +31,7 @@ public struct HostBridgeFactInputs: Sendable, Equatable {
         bridges: [HostBridgeSnapshot] = [],
         defaultRouteInterface: String? = nil,
         macSocketVmnet: Bool = false,
+        hardwarePortName: String? = nil,
     ) {
         self.helperPath = helperPath
         self.helperSetuid = helperSetuid
@@ -37,6 +39,7 @@ public struct HostBridgeFactInputs: Sendable, Equatable {
         self.bridges = bridges
         self.defaultRouteInterface = defaultRouteInterface
         self.macSocketVmnet = macSocketVmnet
+        self.hardwarePortName = hardwarePortName
     }
 
     public static let empty = HostBridgeFactInputs()
@@ -72,10 +75,15 @@ public struct LiveHostBridgeFactSource: HostBridgeFactSource {
             )
         #else
             let sockets = SocketVmnetDiscovery.existingSockets()
+            let uplink = SocketVmnetDiscovery.sharedUplinkInterface()
+            let ports = MacHostNetwork.parseHardwarePorts(
+                MacHostNetwork.liveHardwarePortsOutput() ?? "",
+            )
             return HostBridgeFactInputs(
                 bridges: sockets.map { HostBridgeSnapshot(name: $0.interface, enslaved: []) },
-                defaultRouteInterface: SocketVmnetDiscovery.sharedUplinkInterface(),
+                defaultRouteInterface: uplink,
                 macSocketVmnet: true,
+                hardwarePortName: MacHostNetwork.serviceName(forDevice: uplink, ports: ports),
             )
         #endif
     }
@@ -171,19 +179,19 @@ public enum HostBridgeFactsService {
 
     public static func remediations(from inputs: HostBridgeFactInputs) -> [HostBridgeRemediation] {
         if inputs.macSocketVmnet {
+            var groups: [HostBridgeRemediation] = []
             if inputs.bridges.isEmpty {
-                return [
-                    HostBridgeRemediation(
-                        id: "homebrew-socket-vmnet",
-                        label: "Install and start socket_vmnet",
-                        commands: SocketVmnetDiscovery.installHint.replacingOccurrences(
-                            of: " && ",
-                            with: "\n",
-                        ),
+                groups.append(HostBridgeRemediation(
+                    id: "homebrew-socket-vmnet",
+                    label: "Install and start socket_vmnet",
+                    commands: SocketVmnetDiscovery.installHint.replacingOccurrences(
+                        of: " && ",
+                        with: "\n",
                     ),
-                ]
+                ))
             }
-            return []
+            groups.append(MacHostNetwork.deviceAddressRemediation(service: inputs.hardwarePortName))
+            return groups
         }
         let br = suggestedBridgeName
         let helper = inputs.helperPath ?? qemuBridgeHelperCandidates[0]

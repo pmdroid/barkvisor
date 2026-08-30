@@ -40,19 +40,24 @@ struct HostBridgeReadinessTests {
         let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(macSocketVmnet: true))
         #expect(!facts.ready)
         #expect(facts.bridges.isEmpty)
-        #expect(facts.remediations.map(\.id) == ["homebrew-socket-vmnet"])
+        #expect(facts.remediations.map(\.id) == ["homebrew-socket-vmnet", "device-address"])
         #expect(facts.remediations[0].commands.contains("brew install socket_vmnet"))
         #expect(facts.remediations[0].commands.contains("do not sudo brew install"))
         #expect(facts.remediations[0].commands.contains("Device starts socket_vmnet"))
+        #expect(facts.remediations[1].commands.contains("networksetup -setdhcp \"Ethernet\""))
     }
 
-    @Test func `mac socket_vmnet present is ready without linux remediations`() {
+    @Test func `mac socket_vmnet present is ready and still shows device-address`() {
         let facts = HostBridgeFactsService.assemble(from: HostBridgeFactInputs(
             bridges: [HostBridgeSnapshot(name: "en0", enslaved: [])],
+            defaultRouteInterface: "en0",
             macSocketVmnet: true,
+            hardwarePortName: "USB 10/100/1000 LAN",
         ))
         #expect(facts.ready)
-        #expect(facts.remediations.isEmpty)
+        #expect(facts.remediations.map(\.id) == ["device-address"])
+        #expect(facts.remediations[0].commands.contains("networksetup -setdhcp \"USB 10/100/1000 LAN\""))
+        #expect(!facts.remediations[0].commands.contains("\"Ethernet\""))
         #expect(facts.bridges.map(\.name) == ["en0"])
     }
 

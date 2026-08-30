@@ -104,7 +104,17 @@ export function linuxBridgeStatusSummary(
   return `${name} is not ready for Bridged networks yet. Run the steps below, then Re-check.`
 }
 
-/** Copyable macOS socket_vmnet steps. Prefer remediations from HostBridgeFacts. */
+export const MACOS_DEVICE_ADDRESS_PLACEHOLDER = 'Ethernet'
+
+export function macosDeviceAddressCommands(service = MACOS_DEVICE_ADDRESS_PLACEHOLDER): string {
+  const quoted = JSON.stringify(service)
+  return [
+    '# Host address on this Device (DHCP or static). Guest static IP is separate.',
+    `sudo networksetup -setdhcp ${quoted}`,
+    `sudo networksetup -setmanual ${quoted} 192.168.1.10 255.255.255.0 192.168.1.1`,
+  ].join('\n')
+}
+
 export function macosSocketVmnetSetupGroups(
   ready?: HostBridgeReadiness | null,
 ): GuestCommandGroup[] {
@@ -115,14 +125,20 @@ export function macosSocketVmnetSetupGroups(
       commands: step.commands,
     }))
   }
-  if (ready?.ready) return []
-  return [
-    {
+  const groups: GuestCommandGroup[] = []
+  if (!ready?.ready) {
+    groups.push({
       id: 'homebrew-socket-vmnet',
       label: 'Install socket_vmnet (the Device starts the service)',
       commands: SOCKET_VMNET_INSTALL_COMMANDS,
-    },
-  ]
+    })
+  }
+  groups.push({
+    id: 'device-address',
+    label: 'Device address',
+    commands: macosDeviceAddressCommands(),
+  })
+  return groups
 }
 
 export function macosSocketVmnetStatusSummary(
